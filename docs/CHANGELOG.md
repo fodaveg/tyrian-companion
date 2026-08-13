@@ -17,5 +17,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Operaciones que fijan un único secreto efímero, reset A→B y concurrencia deduplicada/latest-wins.
 - Cooldown real de rate limit con último estado bueno, countdown y limpieza de timers.
 - Validación estricta de carpetas y soporte seguro de subtokens limitados a los endpoints de conexión.
+- Modelo `storage_snapshot` discriminado con identidad temporal, ubicaciones, bindings abiertos, metadatos, contenedores equipados, hijos engastados y entregas pendientes.
+- Captura GW2 con secreto, identidad y schema fijados, allowlist de subtoken por ruta, fuentes obligatorias/opcionales, cobertura por pasada y límites de concurrencia globales al servicio.
+- Consistencia A/B/C con fingerprints canónicos, calidad estable, movimiento de colocación, parcial o inestable.
+- Totales separados de objetos disponibles, objetos propios y divisas agregadas con desglose wallet/delivery, sin catálogo, precios ni valoración patrimonial.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
-- Tests de migración, seguridad del cliente, respuestas inválidas, errores HTTP y estado de conexión.
+- Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

@@ -40,11 +40,14 @@ La versión `0.1.0` valida la base técnica:
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
 - **Check connection** valida explícitamente la clave y la cuenta; ninguna otra acción realiza llamadas de red.
 - Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección sin activar todavía esas funciones.
+- El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
+- Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
 ## Fuera de alcance de la vertical 0.1.0
 
-- Sincronización de inventario u otros datos de cuenta más allá de la comprobación inicial.
+- Ejecución del snapshot desde la UI, sincronización periódica o persistencia de sus resultados.
+- Catálogo/cache, precios y cálculo de patrimonio total.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.

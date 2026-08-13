@@ -10,8 +10,12 @@ The current `0.1.0` vertical provides:
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
 - Validated account and permission summaries without displaying or persisting the token.
 - Versioned settings for language, safe output folder, preferred character, polling interval, and detection mode.
+- A domain-only `storage_snapshot` capture for characters, account storage, bank, materials,
+  and optional wallet/delivery data, qualified by consistency and source coverage.
 
-Inventory synchronization, vault writes, polling, detection, and recommendations are intentionally not implemented yet.
+Automatic synchronization, catalog/cache enrichment, valuation, vault writes, polling, detection,
+and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
+or plugin load; it describes observed storage, not total account wealth.
 
 ## Requirements
 
@@ -43,6 +47,12 @@ The connection check pins one ephemeral SecretStorage value for the complete ope
 `account` is required for the initial connection; `characters`, `inventories`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommendations for future modules and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
 
 Rate limits create a real cooldown: both connection controls remain disabled and show a live countdown until retry is allowed. Transient failures preserve the last verified account with an explicit stale-data warning.
+
+The storage snapshot service reuses one pinned secret for its complete A/B/C capture and pins every
+request to GW2 schema `2024-07-20T01:00:00.000Z`. It requires `account`, `characters`, and
+`inventories`; `wallet` and `tradingpost` add optional sources when granted. Embedded upgrades and
+infusions and equipped bags count as owned but not as independently available items. Wallet and
+delivery currency are aggregated by currency id while retaining source subtotals.
 
 ## Project documentation
 

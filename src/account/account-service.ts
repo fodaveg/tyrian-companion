@@ -1,7 +1,6 @@
 import { HttpTransportError } from '../core/http';
 import {
 	MissingApiKeyError,
-	type GuildWars2Client,
 	type GuildWars2Operation,
 } from './guild-wars-2-client';
 
@@ -71,12 +70,14 @@ export interface AccountGateway {
 /** Performs the explicit and atomic tokeninfo → account connection check. */
 export class GuildWars2AccountGateway implements AccountGateway {
 	constructor(
-		private readonly client: Pick<GuildWars2Client, 'beginOperation'>,
+		private readonly client: {
+			beginOperation(): Pick<GuildWars2Operation, 'request'>;
+		},
 		private readonly now: () => number = Date.now,
 	) {}
 
 	async checkConnection(): Promise<ConnectionDetails> {
-		let operation: GuildWars2Operation;
+		let operation: Pick<GuildWars2Operation, 'request'>;
 		try {
 			operation = this.client.beginOperation();
 		} catch (error) {

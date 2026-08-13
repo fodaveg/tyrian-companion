@@ -12,6 +12,7 @@ export class MissingApiKeyError extends Error {
 
 export interface GuildWars2Operation {
 	request(path: string, retryStatuses?: ReadonlySet<number>): Promise<unknown>;
+	requestDetailed(path: string, retryStatuses?: ReadonlySet<number>): Promise<HttpResponse>;
 }
 
 /** Creates authenticated operations that pin one ephemeral key value for their full lifetime. */
@@ -35,6 +36,8 @@ export class GuildWars2Client {
 		return {
 			request: (path, retryStatuses = new Set()) =>
 				this.requestWithKey(apiKey, path, retryStatuses),
+			requestDetailed: (path, retryStatuses = new Set()) =>
+				this.requestDetailedWithKey(apiKey, path, retryStatuses),
 		};
 	}
 
@@ -43,9 +46,17 @@ export class GuildWars2Client {
 		path: string,
 		retryStatuses: ReadonlySet<number>,
 	): Promise<unknown> {
+		return (await this.requestDetailedWithKey(apiKey, path, retryStatuses)).body;
+	}
+
+	private async requestDetailedWithKey(
+		apiKey: string,
+		path: string,
+		retryStatuses: ReadonlySet<number>,
+	): Promise<HttpResponse> {
 		for (let attempt = 0; attempt < 2; attempt += 1) {
 			try {
-				return (await this.send(apiKey, path)).body;
+				return await this.send(apiKey, path);
 			} catch (error) {
 				if (
 					!(error instanceof HttpTransportError) ||
