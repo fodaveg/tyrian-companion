@@ -73,5 +73,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Aritmética monetaria de enteros seguros con rechazo de overflow, tasas inválidas o mayores que el bruto; no líquido usa `null` y no falsos ceros.
 - Política H4.2 versionada del bazar: 5% de publicación y 10% de intercambio calculados por separado sobre el total de la pila, con redondeo y mínimo de un cobre por tasa.
 - Valor de mercader H4.2 solo para `CatalogItem` válido, `vendorValue` positivo y sin `NoSell`; el binding aislado no se interpreta como prohibición.
+- Clasificador H4.3 por pila con rutas TP/mercader separadas, binding observado o derivado, estado de precio explícito y ausencia de valor líquido representada con `null`.
+- Pilas account/character-bound, binding desconocido, precio ausente y objetos engastados/equipados nunca reciben valor TP; el mercader solo conserva su suelo probado.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

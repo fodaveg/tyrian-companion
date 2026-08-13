@@ -38,6 +38,8 @@ The current `0.1.0` vertical provides:
   with explicit liquidity and overflow-safe integer arithmetic.
 - A versioned H4.2 Guild Wars 2 fee policy that applies the 5% listing and 10% exchange fees
   to the total stack sale, plus conservative vendor eligibility from validated catalog metadata.
+- A strict H4.3 per-stack liquidity classifier that keeps bound, unpriced, embedded, equipped,
+  or malformed holdings out of unsupported Trading Post value while retaining proven vendor value.
   It does not fetch prices yet.
 
 Automatic synchronization, live-price valuation, vault writes, unattended detection,
