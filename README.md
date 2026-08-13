@@ -48,6 +48,8 @@ The current `0.1.0` vertical provides:
   outcomes, integer-millionth expected units, uncertainty, and explicit valuation policy.
 - A conservative H4.7 Trick-or-Treat Bag model pinned to a 106,264-bag GW2 Wiki sample;
   every super-rare jackpot and unsupported long-tail outcome is excluded from its future EV.
+- A pure H4.8 conservative opening EV with separate instant-sale and listing estimates,
+  micro-copper precision, explicit route coverage, and zero liquid value for excluded rewards.
 
 Automatic synchronization, persisted valuation reports, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
