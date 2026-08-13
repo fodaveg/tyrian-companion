@@ -1,0 +1,9 @@
+{
+	"id": "tyrian-companion",
+	"name": "Tyrian Companion",
+	"version": "0.1.0",
+	"minAppVersion": "1.11.4",
+	"description": "Bring Guild Wars 2 account context and planning into Obsidian.",
+	"author": "David",
+	"isDesktopOnly": true
+}
