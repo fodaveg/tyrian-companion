@@ -13,10 +13,9 @@ export interface ContainerOutcomeModel {
 	key: string;
 	namespace: ContainerOutcomeNamespace;
 	id: number;
-	probabilityMillionths: number;
-	quantityWhenDroppedMillionths: number;
+	label: string;
+	sampleUnits: number;
 	expectedUnitsMillionths: number;
-	sampleOccurrences: number;
 	valuationPolicy: OutcomeValuationPolicy;
 }
 
@@ -39,6 +38,11 @@ export interface ContainerModelV1 {
 		observedUntil: string | null;
 	};
 	outcomes: ContainerOutcomeModel[];
+	excluded: Array<{
+		category: string;
+		sampleUnits: number;
+		reason: 'unsupported_long_tail' | 'super_rare_jackpot';
+	}>;
 	uncertainty: {
 		method: 'sample_only' | 'confidence_interval' | 'curated_bounds';
 		confidenceBasisPoints: number | null;
@@ -60,7 +64,7 @@ export function createContainerModel(value: unknown): ContainerModelResult {
 export function isContainerModel(value: unknown): value is ContainerModelV1 {
 	if (!isRecord(value) || !exactKeys(value, [
 		'schemaVersion', 'modelId', 'modelVersion', 'containerItemId', 'title',
-		'source', 'sample', 'outcomes', 'uncertainty', 'createdAt',
+		'source', 'sample', 'outcomes', 'excluded', 'uncertainty', 'createdAt',
 	])) return false;
 	if (value.schemaVersion !== CONTAINER_MODEL_SCHEMA_VERSION
 		|| !slug(value.modelId)
@@ -74,15 +78,20 @@ export function isContainerModel(value: unknown): value is ContainerModelV1 {
 	if (!isSource(source) || !isSample(sample) || !isUncertainty(uncertainty)) return false;
 	if (!Array.isArray(value.outcomes) || value.outcomes.length === 0
 		|| !value.outcomes.every(isOutcome)) return false;
+	if (!Array.isArray(value.excluded) || !value.excluded.every(isExcluded)) return false;
 	const outcomes = value.outcomes;
 	if (!outcomes.every((outcome, index) => index === 0
 		|| compareOutcomes(outcomes[index - 1]!, outcome) < 0)) return false;
 	if (new Set(outcomes.map((outcome) => outcome.key)).size !== outcomes.length) return false;
-	if (outcomes.some((outcome) => outcome.sampleOccurrences > sample.observations)) return false;
-	if (outcomes.some((outcome) => roundedRatioMillionths(
-		outcome.sampleOccurrences,
-		sample.observations,
-	) !== outcome.probabilityMillionths)) return false;
+	if (outcomes.some((outcome) => outcome.sampleUnits > sample.observations)) return false;
+	if (outcomes.some((outcome) => expectedUnitsMillionths(
+		outcome.sampleUnits,
+		sample.containersOpened,
+	) !== outcome.expectedUnitsMillionths)) return false;
+	const accounted = [...outcomes.map((outcome) => outcome.sampleUnits),
+		...value.excluded.map((entry) => entry.sampleUnits)]
+		.reduce((sum, units) => Number.isSafeInteger(sum + units) ? sum + units : Number.NaN, 0);
+	if (accounted !== sample.observations) return false;
 	return true;
 }
 
@@ -110,24 +119,27 @@ function isSample(value: unknown): value is ContainerModelV1['sample'] {
 
 function isOutcome(value: unknown): value is ContainerOutcomeModel {
 	if (!isRecord(value) || !exactKeys(value, [
-		'key', 'namespace', 'id', 'probabilityMillionths', 'quantityWhenDroppedMillionths',
-		'expectedUnitsMillionths', 'sampleOccurrences', 'valuationPolicy',
+		'key', 'namespace', 'id', 'label', 'sampleUnits', 'expectedUnitsMillionths',
+		'valuationPolicy',
 	])) return false;
 	if (!['item', 'currency'].includes(value.namespace as string)
 		|| !positiveInteger(value.id)
 		|| value.key !== `${String(value.namespace)}:${String(value.id)}`
-		|| !millionths(value.probabilityMillionths)
-		|| !positiveInteger(value.quantityWhenDroppedMillionths)
+		|| !nonEmptyString(value.label)
+		|| !nonNegativeInteger(value.sampleUnits)
 		|| !nonNegativeInteger(value.expectedUnitsMillionths)
-		|| !nonNegativeInteger(value.sampleOccurrences)
 		|| !validValuationPolicy(value.namespace, value.valuationPolicy)) {
 		return false;
 	}
-	const expected = roundedProductMillionths(
-		value.probabilityMillionths,
-		value.quantityWhenDroppedMillionths,
-	);
-	return expected !== null && expected === value.expectedUnitsMillionths;
+	return true;
+}
+
+function isExcluded(value: unknown): value is ContainerModelV1['excluded'][number] {
+	return isRecord(value)
+		&& exactKeys(value, ['category', 'sampleUnits', 'reason'])
+		&& nonEmptyString(value.category)
+		&& positiveInteger(value.sampleUnits)
+		&& ['unsupported_long_tail', 'super_rare_jackpot'].includes(value.reason as string);
 }
 
 function validValuationPolicy(namespace: unknown, policy: unknown): policy is OutcomeValuationPolicy {
@@ -141,8 +153,8 @@ function compareOutcomes(left: ContainerOutcomeModel, right: ContainerOutcomeMod
 	return namespaceOrder === 0 ? left.id - right.id : namespaceOrder;
 }
 
-function roundedRatioMillionths(numerator: number, denominator: number): number | null {
-	if (!nonNegativeInteger(numerator) || !positiveInteger(denominator) || numerator > denominator) return null;
+export function expectedUnitsMillionths(numerator: number, denominator: number): number | null {
+	if (!nonNegativeInteger(numerator) || !positiveInteger(denominator)) return null;
 	const scaled = BigInt(numerator) * BigInt(EXPECTED_UNITS_SCALE);
 	const divisor = BigInt(denominator);
 	const quotient = scaled / divisor;
@@ -163,19 +175,6 @@ function isUncertainty(value: unknown): value is ContainerModelV1['uncertainty']
 		return positiveInteger(value.confidenceBasisPoints) && value.confidenceBasisPoints <= 10_000;
 	}
 	return value.confidenceBasisPoints === null;
-}
-
-function roundedProductMillionths(probability: number, quantity: number): number | null {
-	const quotient = Math.floor(quantity / EXPECTED_UNITS_SCALE);
-	const remainder = quantity % EXPECTED_UNITS_SCALE;
-	const base = quotient * probability;
-	const fraction = Math.round((remainder * probability) / EXPECTED_UNITS_SCALE);
-	const result = base + fraction;
-	return Number.isSafeInteger(result) ? result : null;
-}
-
-function millionths(value: unknown): value is number {
-	return nonNegativeInteger(value) && value <= EXPECTED_UNITS_SCALE;
 }
 
 function httpUrl(value: unknown): boolean {

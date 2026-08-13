@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	containerOutcomeKey,
 	createContainerModel,
+	expectedUnitsMillionths,
 	isContainerModel,
 	type ContainerModelV1,
 } from './container-model';
@@ -29,20 +30,21 @@ function model(): ContainerModelV1 {
 		outcomes: [
 			{
 				key: 'currency:1', namespace: 'currency', id: 1,
-				probabilityMillionths: 100_000,
-				quantityWhenDroppedMillionths: 2_000_000,
+				label: 'Coin',
+				sampleUnits: 2_000,
 				expectedUnitsMillionths: 200_000,
-				sampleOccurrences: 1_000,
 				valuationPolicy: 'direct_currency',
 			},
 			{
 				key: 'item:123', namespace: 'item', id: 123,
-				probabilityMillionths: 500_000,
-				quantityWhenDroppedMillionths: 1_000_000,
+				label: 'Sample item',
+				sampleUnits: 5_000,
 				expectedUnitsMillionths: 500_000,
-				sampleOccurrences: 5_000,
 				valuationPolicy: 'liquid_market',
 			},
+		],
+		excluded: [
+			{ category: 'Excluded sample remainder', sampleUnits: 3_000, reason: 'unsupported_long_tail' },
 		],
 		uncertainty: {
 			method: 'confidence_interval',
@@ -62,24 +64,24 @@ describe('container model schema', () => {
 	});
 
 	it('requires source, sample dates, outcomes and uncertainty', () => {
-		for (const key of ['source', 'sample', 'outcomes', 'uncertainty'] as const) {
+		for (const key of ['source', 'sample', 'outcomes', 'excluded', 'uncertainty'] as const) {
 			const value = structuredClone(model()) as unknown as Record<string, unknown>;
 			delete value[key];
 			expect(isContainerModel(value)).toBe(false);
 		}
 	});
 
-	it('checks expected units from integer probability and quantity', () => {
+	it('checks expected units from total observed units per container', () => {
 		const value = model();
 		value.outcomes[1]!.expectedUnitsMillionths += 1;
 		expect(isContainerModel(value)).toBe(false);
 	});
 
-	it('derives probability from sample occurrences and the declared observation denominator', () => {
+	it('derives expected units from sample totals and the declared container denominator', () => {
 		const value = model();
-		value.outcomes[0]!.sampleOccurrences = 0;
+		value.outcomes[0]!.sampleUnits = 0;
+		value.excluded[0]!.sampleUnits += 2_000;
 		expect(isContainerModel(value)).toBe(false);
-		value.outcomes[0]!.probabilityMillionths = 0;
 		value.outcomes[0]!.expectedUnitsMillionths = 0;
 		expect(isContainerModel(value)).toBe(true);
 	});
@@ -88,15 +90,31 @@ describe('container model schema', () => {
 		const value = model();
 		value.sample.containersOpened = 9_007_199_254_740_991;
 		value.sample.observations = 9_007_199_254_740_991;
-		value.outcomes[0]!.sampleOccurrences = 9_371_990_824_558;
-		value.outcomes[0]!.probabilityMillionths = 1_040;
-		value.outcomes[0]!.expectedUnitsMillionths = 2_080;
-		value.outcomes[1]!.sampleOccurrences = 0;
-		value.outcomes[1]!.probabilityMillionths = 0;
+		value.outcomes[0]!.sampleUnits = 9_371_990_824_558;
+		value.outcomes[0]!.expectedUnitsMillionths = 1_040;
+		value.outcomes[1]!.sampleUnits = 0;
 		value.outcomes[1]!.expectedUnitsMillionths = 0;
+		value.excluded[0]!.sampleUnits = 8_997_827_263_916_433;
 		expect(isContainerModel(value)).toBe(true);
-		value.outcomes[0]!.probabilityMillionths = 1_041;
+		value.outcomes[0]!.expectedUnitsMillionths = 1_041;
 		expect(isContainerModel(value)).toBe(false);
+	});
+
+	it('requires modeled and excluded units to reconcile the complete sample', () => {
+		const value = model();
+		value.excluded[0]!.sampleUnits -= 1;
+		expect(isContainerModel(value)).toBe(false);
+	});
+
+	it('allows a fully modeled sample with an empty exclusion ledger', () => {
+		const value = model();
+		value.sample.observations -= value.excluded[0]!.sampleUnits;
+		value.excluded = [];
+		expect(isContainerModel(value)).toBe(true);
+	});
+
+	it('supports outcomes averaging more than one unit per container', () => {
+		expect(expectedUnitsMillionths(386_935, 106_264)).toBe(3_641_261);
 	});
 
 	it('requires canonical unique outcome keys and chronological observations', () => {
@@ -116,6 +134,7 @@ describe('container model schema', () => {
 			{ ...base, key: 'item:2', id: 2 },
 			{ ...base, key: 'item:10', id: 10 },
 		];
+		value.sample.observations += base.sampleUnits;
 		expect(isContainerModel(value)).toBe(true);
 		value.outcomes.reverse();
 		expect(isContainerModel(value)).toBe(false);
@@ -135,7 +154,7 @@ describe('container model schema', () => {
 		missingConfidence.uncertainty.confidenceBasisPoints = null;
 		expect(isContainerModel(missingConfidence)).toBe(false);
 		const impossibleOccurrences = model();
-		impossibleOccurrences.outcomes[0]!.sampleOccurrences = 10_001;
+		impossibleOccurrences.outcomes[0]!.sampleUnits = 10_001;
 		expect(isContainerModel(impossibleOccurrences)).toBe(false);
 	});
 

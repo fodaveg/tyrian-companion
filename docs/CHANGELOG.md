@@ -81,6 +81,8 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Valoración H4.5 por item con rutas separadas de venta inmediata, listado y mercader, eligiendo el mejor suelo demostrado sin convertir ausencias en cero.
 - Totales de sesión reproducibles con moneda neta observada, cantidad no líquida, sacos/h en milésimas y cobre/h; pérdidas, catálogo, binding o precios incompletos quedan como warnings explícitos.
 - Esquema H4.6 versionado para modelos de contenedor con fuente, muestra, fechas, resultados, incertidumbre y política de valoración obligatorias.
-- Probabilidades, cantidades y unidades esperadas en millonésimas enteras, con orden canónico, claves separadas por namespace y validación reproducible sin floats.
+- Unidades muestrales y esperadas por saco en millonésimas enteras, con orden canónico, claves separadas por namespace y validación reproducible sin floats.
+- Modelo H4.7 conservador de Bolsa de truco o trato, fijado a 106.264 aperturas de la revisión wiki `3161313`, con 18 resultados identificados por item id.
+- Exclusión explícita de todos los superraros y de la cola rara no respaldada para que ningún jackpot observado infle el valor esperado.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.
