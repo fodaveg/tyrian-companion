@@ -7,7 +7,7 @@
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos y limitación FIFO de concurrencia.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
-- `economy`: contrato monetario puro en cobre; todavía sin precios, tasas ni agregación de sesión.
+- `economy`: contrato monetario puro en cobre, tasas GW2 versionadas y elegibilidad de mercader; todavía sin precios vivos ni agregación de sesión.
 - `advisor`: estado de preparación, sin lógica de recomendación todavía.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
@@ -29,7 +29,7 @@ storage delta comparator -> dos StorageSnapshot (puro, sin I/O)
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
-economy monetary contract -> valores unitarios y cantidades ya validados (puro, sin I/O)
+economy monetary contract -> valores unitarios, cantidades y CatalogItem validado (puro, sin I/O)
 
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
@@ -58,7 +58,9 @@ El runtime de sesión sube a versión 2 y añade `review`. Los records v1 válid
 
 H3.10 mide la detección sin acoplarla al runtime crítico. `DetectionQualityRecorder` guarda en una tercera IndexedDB local eventos estrictos e idempotentes por frontera o propuesta: fase, decisión, modo manual/asistido, causa, ventana, incertidumbre, calidad y vínculo opcional a sesión. Confirmar una propuesta conserva su evidencia; iniciar o parar sin propuesta conserva la ventana real entre la petición manual y el fin de la captura estable. Descartar exige una causa cerrada y conserva el falso positivo, incluidos los inicios que no llegaron a crear sesión. El resumen por `sessionId` deriva modo manual, asistido, mixto o incompleto y suma incertidumbre sin inventar datos históricos. La carga y cada escritura son auxiliares y asíncronas: corrupción, conflicto o indisponibilidad desactivan solo la medición y quedan visibles, pero nunca retrasan H3.1 ni escriben en el vault.
 
-H4.1 fija una única unidad monetaria de dominio: cobre entero, seguro y no negativo; cantidades de línea enteras y positivas. El bruto es `precio unitario × cantidad`. Venta inmediata usa la mejor orden de compra observada y el neto es `bruto − listing fee − exchange fee`; listado usa el precio de listado elegido y la misma resta, pero queda marcado como liquidez condicional porque aún debe venderse. Mercader es `vendor value × cantidad`, sin tasas del bazar. No líquido conserva ambos importes como `null`, nunca como cero: significa que no hay valor realizable probado, no que el objeto no valga nada. Las tasas concretas y su redondeo pertenecen a H4.2; H4.1 recibe importes de tasa ya calculados, valida toda la aritmética y rechaza overflow o tasas mayores que el bruto.
+H4.1 fija una única unidad monetaria de dominio: cobre entero, seguro y no negativo; cantidades de línea enteras y positivas. El bruto es `precio unitario × cantidad`. Venta inmediata usa la mejor orden de compra observada y el neto es `bruto − listing fee − exchange fee`; listado usa el precio de listado elegido y la misma resta, pero queda marcado como liquidez condicional porque aún debe venderse. Mercader es `vendor value × cantidad`, sin tasas del bazar. No líquido conserva ambos importes como `null`, nunca como cero: significa que no hay valor realizable probado, no que el objeto no valga nada. H4.1 valida toda la aritmética y rechaza overflow o tasas mayores que el bruto.
+
+H4.2 añade una política GW2 v1 separada del contrato monetario. Tanto venta inmediata como listado descuentan por separado un 5% de publicación y un 10% de intercambio sobre el precio total de la pila. Cada componente se redondea al cobre más cercano —mitades hacia arriba— y tiene un mínimo de un cobre; la fábrica rechaza una cotización si esos mínimos superan el bruto. La elegibilidad de mercader se deriva únicamente de un `CatalogItem` normalizado: exige `vendorValue > 0` y ausencia del flag exacto `NoSell`. Un binding por sí solo no demuestra que el mercader esté prohibido. El módulo es puro, no consulta precios ni hace red, y conserva la versión de la política junto a la cotización.
 
 `GuildWars2AccountGateway` ejecuta la comprobación atómica `tokeninfo → account` y valida ambos payloads antes de publicarlos. Un `401` se reintenta una vez; `403` en `tokeninfo` también se reintenta y no destruye el último estado bueno, mientras que `403` en `account` representa falta de permiso. Errores offline, timeout y `5xx` conservan el último estado conectado como aviso.
 

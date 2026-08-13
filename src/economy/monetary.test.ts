@@ -97,6 +97,10 @@ describe('copper monetary contract', () => {
 		expect(createGrossCopperValue(1, 0)).toEqual({ status: 'invalid', reason: 'invalid_quantity' });
 		expect(createGrossCopperValue(Number.MAX_SAFE_INTEGER, 2))
 			.toEqual({ status: 'invalid', reason: 'arithmetic_overflow' });
+		expect(createTradingPostCopperValue('instant_sell', 0, 1, {
+			listingFeeCopper: 0,
+			exchangeFeeCopper: 0,
+		})).toEqual({ status: 'invalid', reason: 'invalid_unit_price' });
 	});
 
 	it('rejects invalid fees, fee overflow and fees greater than gross', () => {
@@ -125,6 +129,7 @@ describe('copper monetary contract', () => {
 		expect(isCopperValue({ ...result.value, priceSource: 'listing_price' })).toBe(false);
 		expect(isCopperValue({ ...result.value, liquidity: 'conditional' })).toBe(false);
 		expect(isCopperValue({ ...result.value, extra: true })).toBe(false);
+		expect(isCopperValue({ ...result.value, unitCopper: 0, grossCopper: 0, netCopper: 0 })).toBe(false);
 		for (const candidate of [
 			createGrossCopperValue(1, 1),
 			createTradingPostCopperValue('listing', 100, 1, { listingFeeCopper: 5, exchangeFeeCopper: 10 }),

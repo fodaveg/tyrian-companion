@@ -66,11 +66,11 @@ export type CopperValueError =
 	| 'arithmetic_overflow'
 	| 'fees_exceed_gross';
 
-export type CopperValueResult =
-	| { status: 'ok'; value: CopperValue }
+export type CopperValueResult<T extends CopperValue = CopperValue> =
+	| { status: 'ok'; value: T }
 	| { status: 'invalid'; reason: CopperValueError };
 
-export function createGrossCopperValue(unitCopper: number, quantity: number): CopperValueResult {
+export function createGrossCopperValue(unitCopper: number, quantity: number): CopperValueResult<GrossCopperValue> {
 	const input = validateBasis(unitCopper, quantity);
 	if (input.status === 'invalid') return input;
 	return {
@@ -92,9 +92,10 @@ export function createTradingPostCopperValue(
 	unitCopper: number,
 	quantity: number,
 	fees: { listingFeeCopper: number; exchangeFeeCopper: number },
-): CopperValueResult {
+): CopperValueResult<TradingPostCopperValue> {
 	const input = validateBasis(unitCopper, quantity);
 	if (input.status === 'invalid') return input;
+	if (input.grossCopper === 0) return { status: 'invalid', reason: 'invalid_unit_price' };
 	if (!isCopper(fees.listingFeeCopper) || !isCopper(fees.exchangeFeeCopper)) {
 		return { status: 'invalid', reason: 'invalid_fee' };
 	}
@@ -119,7 +120,7 @@ export function createTradingPostCopperValue(
 	};
 }
 
-export function createVendorCopperValue(unitCopper: number, quantity: number): CopperValueResult {
+export function createVendorCopperValue(unitCopper: number, quantity: number): CopperValueResult<VendorCopperValue> {
 	const input = validateBasis(unitCopper, quantity);
 	if (input.status === 'invalid') return input;
 	return {
@@ -140,7 +141,7 @@ export function createVendorCopperValue(unitCopper: number, quantity: number): C
 export function createNonLiquidCopperValue(
 	quantity: number,
 	reason: NonLiquidReason,
-): CopperValueResult {
+): CopperValueResult<NonLiquidCopperValue> {
 	if (!isQuantity(quantity)) return { status: 'invalid', reason: 'invalid_quantity' };
 	return {
 		status: 'ok',
@@ -176,6 +177,7 @@ export function isCopperValue(value: unknown): value is CopperValue {
 		if (value.priceSource !== expectedSource
 			|| value.liquidity !== expectedLiquidity
 			|| !isCopper(grossCopper)
+			|| grossCopper === 0
 			|| !validBasis(value.unitCopper, value.quantity, grossCopper)
 			|| !isCopper(value.listingFeeCopper)
 			|| !isCopper(value.exchangeFeeCopper)

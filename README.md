@@ -35,9 +35,12 @@ The current `0.1.0` vertical provides:
 - H3.10 local detection-quality measurement: each accepted boundary keeps its manual or assisted
   mode, uncertainty and cause, while dismissed proposals keep a structured correction cause.
 - A pure H4.1 copper contract for gross, instant-sale, listing, vendor and non-liquid values,
-  with explicit liquidity and overflow-safe integer arithmetic. It does not fetch prices yet.
+  with explicit liquidity and overflow-safe integer arithmetic.
+- A versioned H4.2 Guild Wars 2 fee policy that applies the 5% listing and 10% exchange fees
+  to the total stack sale, plus conservative vendor eligibility from validated catalog metadata.
+  It does not fetch prices yet.
 
-Automatic synchronization, valuation, vault writes, unattended detection,
+Automatic synchronization, live-price valuation, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
 **Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
 storage, not total account wealth.
