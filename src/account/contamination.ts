@@ -241,14 +241,133 @@ function classification(
 		scope: 'observed_storage_net',
 		reasons: canonicalUnique(reasons),
 		reviewRequests: canonicalUnique(reviewRequests),
-		permissions: {
-			finalize: status === 'exact' || status === 'contaminated' || (status === 'estimated' && acceptedEstimate),
-			showNet: status !== 'invalid',
-			valueNet: status === 'exact' || status === 'estimated',
-			grossPerHour: status === 'exact',
-			recommend: false,
-		},
+		permissions: classificationPermissions(status, confidence, acceptedEstimate),
 	};
+}
+
+/** Validates the self-contained H2.7 classification envelope. Evidence-bound reviews still recompute it. */
+export function isSessionDeltaClassification(value: unknown): value is SessionDeltaClassification {
+	if (!isRecord(value) || !hasExactKeys(value, [
+		'version', 'status', 'confidence', 'scope', 'reasons', 'reviewRequests', 'permissions',
+	])) return false;
+	if (value.version !== SESSION_CLASSIFICATION_VERSION ||
+		!['exact', 'estimated', 'contaminated', 'invalid'].includes(String(value.status)) ||
+		!['high', 'medium', 'low'].includes(String(value.confidence)) ||
+		value.scope !== 'observed_storage_net' || !Array.isArray(value.reasons) ||
+		!value.reasons.every(isClassificationReason) || !Array.isArray(value.reviewRequests) ||
+		!value.reviewRequests.every(isReviewRequest) || !isPermissions(value.permissions)) return false;
+	const typed = value as unknown as SessionDeltaClassification;
+	if ((typed.status === 'exact' && typed.confidence !== 'high') ||
+		(typed.status === 'invalid' && typed.confidence !== 'low') ||
+		(typed.status === 'estimated' && typed.confidence === 'high') ||
+		(typed.status === 'contaminated' && typed.confidence !== 'high')) return false;
+	if (!validClassificationSemantics(typed)) return false;
+	if (canonical(typed.reasons) !== canonical([...typed.reasons].sort(compareCanonical)) ||
+		canonical(typed.reviewRequests) !== canonical([...typed.reviewRequests].sort(compareCanonical)) ||
+		!uniqueCanonical(typed.reasons) || !uniqueCanonical(typed.reviewRequests)) return false;
+	const expected = classificationPermissions(typed.status, typed.confidence, isAcceptedEstimate(typed));
+	return canonical(typed.permissions) === canonical(expected);
+}
+
+function classificationPermissions(
+	status: SessionDeltaClassification['status'],
+	confidence: SessionDeltaClassification['confidence'],
+	acceptedEstimate = false,
+): SessionDeltaClassification['permissions'] {
+	return {
+		finalize: status === 'exact' || status === 'contaminated' || (status === 'estimated' && acceptedEstimate),
+		showNet: status !== 'invalid',
+		valueNet: status === 'exact' || status === 'estimated',
+		grossPerHour: status === 'exact',
+		recommend: status === 'exact' && confidence === 'high',
+	};
+}
+
+const CLASSIFICATION_REASONS = new Set<string>([
+	'delta_invalid', 'boundary_invalid', 'boundary_delta_mismatch', 'boundary_arithmetic_invalid',
+	'delta_arithmetic_invalid', 'classification_context_invalid', 'trading_post_evidence_invalid',
+	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
+	'wallet_decreased', 'wallet_increased_ambiguous', 'wallet_increase_clean_confirmation_used',
+	'roster_changed', 'activity_declared', 'clean_declaration_conflicts_with_evidence', 'delta_limited',
+	'boundary_not_manually_confirmed', 'declaration_not_clean',
+	'trading_post_not_complete_clean_declaration_used',
+]);
+const REVIEW_REQUESTS = new Set<string>([
+	'repair_boundary_evidence', 'review_detected_external_activity', 'confirm_session_boundaries',
+	'confirm_session_cleanliness', 'review_wallet_increase', 'review_limited_surface',
+]);
+const FATAL_REASONS = new Set<string>([
+	'delta_invalid', 'boundary_invalid', 'boundary_delta_mismatch', 'boundary_arithmetic_invalid',
+	'delta_arithmetic_invalid', 'classification_context_invalid', 'trading_post_evidence_invalid',
+]);
+const CONTAMINATING_REASONS = new Set<string>([
+	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
+	'wallet_decreased', 'roster_changed', 'activity_declared',
+]);
+const ESTIMATE_REVIEW = new Map<string, string>([
+	['wallet_increased_ambiguous', 'review_wallet_increase'],
+	['delta_limited', 'review_limited_surface'],
+	['boundary_not_manually_confirmed', 'confirm_session_boundaries'],
+	['declaration_not_clean', 'confirm_session_cleanliness'],
+]);
+const EXACT_INFO_REASONS = new Set<string>([
+	'wallet_increase_clean_confirmation_used',
+	'trading_post_not_complete_clean_declaration_used',
+]);
+
+function validClassificationSemantics(value: SessionDeltaClassification): boolean {
+	const codes = value.reasons.map((reason) => reason.code);
+	const reviews = value.reviewRequests.map((request) => request.code);
+	if (value.status === 'exact') {
+		return reviews.length === 0 && codes.every((code) => EXACT_INFO_REASONS.has(code));
+	}
+	if (value.status === 'invalid') {
+		return codes.some((code) => FATAL_REASONS.has(code)) &&
+			codes.every((code) => FATAL_REASONS.has(code)) &&
+			reviews.length === 1 && reviews[0] === 'repair_boundary_evidence';
+	}
+	if (value.status === 'contaminated') {
+		return codes.some((code) => CONTAMINATING_REASONS.has(code)) &&
+			codes.every((code) => CONTAMINATING_REASONS.has(code) || code === 'clean_declaration_conflicts_with_evidence') &&
+			reviews.length === 1 && reviews[0] === 'review_detected_external_activity';
+	}
+	if (codes.length === 0 || !codes.every((code) => ESTIMATE_REVIEW.has(code))) return false;
+	const expectedReviews = [...new Set(codes.map((code) => ESTIMATE_REVIEW.get(code)!))]
+		.sort((left, right) => canonical({ code: left }).localeCompare(canonical({ code: right })));
+	return canonical(reviews) === canonical(expectedReviews);
+}
+
+function isAcceptedEstimate(value: SessionDeltaClassification): boolean {
+	if (value.status !== 'estimated') return false;
+	const codes = new Set(value.reasons.map((reason) => reason.code));
+	return value.confidence === 'medium' && codes.has('delta_limited') &&
+		!codes.has('boundary_not_manually_confirmed') && !codes.has('declaration_not_clean') &&
+		!codes.has('wallet_increased_ambiguous');
+}
+
+function isClassificationReason(value: unknown): boolean {
+	if (!isRecord(value) || !CLASSIFICATION_REASONS.has(String(value.code))) return false;
+	if (value.code === 'activity_declared') {
+		return hasExactKeys(value, ['code', 'detail']) && DECLARED_ACTIVITIES.has(value.detail as DeclaredActivity);
+	}
+	return hasExactKeys(value, ['code']);
+}
+
+function isReviewRequest(value: unknown): boolean {
+	return isRecord(value) && hasExactKeys(value, ['code']) && REVIEW_REQUESTS.has(String(value.code));
+}
+
+function isPermissions(value: unknown): value is SessionDeltaClassification['permissions'] {
+	return isRecord(value) && hasExactKeys(value, ['finalize', 'showNet', 'valueNet', 'grossPerHour', 'recommend']) &&
+		Object.values(value).every((entry) => typeof entry === 'boolean');
+}
+
+function compareCanonical(left: unknown, right: unknown): number {
+	return canonical(left).localeCompare(canonical(right));
+}
+
+function uniqueCanonical(values: unknown[]): boolean {
+	return new Set(values.map(canonical)).size === values.length;
 }
 
 export function isStorageDelta(value: unknown): value is StorageDelta {
@@ -819,4 +938,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasOnlyKeys(value: Record<string, unknown>, allowed: string[]): boolean {
 	const allowedSet = new Set(allowed);
 	return Object.keys(value).every((key) => allowedSet.has(key));
+}
+
+function hasExactKeys(value: Record<string, unknown>, expected: string[]): boolean {
+	const actual = Object.keys(value).sort();
+	const sortedExpected = [...expected].sort();
+	return actual.length === sortedExpected.length &&
+		actual.every((key, index) => key === sortedExpected[index]);
 }

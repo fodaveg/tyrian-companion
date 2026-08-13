@@ -60,11 +60,12 @@ La versión `0.1.0` valida la base técnica:
 - H4.7 fija el primer modelo de Bolsa de truco o trato a la revisión `3161313` de la investigación comunitaria de la wiki: 106.264 sacos y 18 resultados auditables. El modelo conservador excluye todos los superraros y el resto de la cola rara, en lugar de atribuir a un jackpot observado un valor esperado injustificable.
 - H4.8 calcula el EV conservador de abrir en microcobre y mantiene dos cifras distintas: venta inmediata al bid y listado al ask, ambas netas de tasas. Los premios excluidos o ligados suman exactamente cero oro líquido; si falta una cotización, el total de esa ruta queda desconocido y solo se muestra el subtotal respaldado.
 - H4.9 reserva el balance final para objetivos activos sin duplicar unidades: distingue propiedad de disponibilidad, prioridad, faltantes, uso previsto y cobertura demostrada por namespace. Sus allowances dicen qué cantidad sigue elegible para liquidar, abrir, consumir, canjear o gastar; evidencia desconocida bloquea ese cálculo. El overlay solo acepta evidencia H4.5 coherente, separa cantidades protegidas/elegibles y conserva intactos importes, fees, cobertura y tasas. Todavía no persiste objetivos/planes, muestra UI ni recomienda una acción.
+- H4.10 emite una recomendación pura y trazable de abrir o vender únicamente para la parte no reservada de un contenedor. Exige sesión exacta de alta confianza, modelo aprobado y vigente, un único batch de precios fresco, identidad coherente y una ruta de venta realizable. Recalcula tasas para la pila libre y compara con enteros exactos contra un margen versionado; igualdad abre. Evidencia limitada bloquea sin acción y evidencia incoherente invalida. No abre, vende, persiste ni muestra todavía la recomendación.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
-- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. H3.9 posee las preguntas y persistencia; H2.7 sigue sin UI, red, valoración ni recomendación.
+- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H3.9 posee las preguntas y persistencia, mientras H2.7 sigue sin UI, red ni valoración.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
@@ -75,7 +76,7 @@ La versión `0.1.0` valida la base técnica:
 - Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
 - Escritura o modificación de notas del vault.
-- Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
+- UI, persistencia o ejecución de recomendaciones; H4.10 solo entrega una explicación pura para contenedores.
 - Inicio o cierre automático de sesiones sin confirmación.
 - Compatibilidad móvil.
 

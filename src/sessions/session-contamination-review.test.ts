@@ -98,6 +98,20 @@ describe('session contamination review', () => {
 		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
 	});
 
+	it('loads an exact legacy v1 classification read-only but never grants recommendation permission', () => {
+		const { before, after, delta } = fixtures();
+		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		if (!review) throw new Error('Expected review fixture.');
+		const legacy = structuredClone(review);
+		legacy.classification = {
+			...legacy.classification,
+			version: 1,
+			permissions: { ...legacy.classification.permissions, recommend: false },
+		} as never;
+		expect(isSessionContaminationReview(legacy, before, after, delta)).toBe(true);
+		expect(legacy).toMatchObject({ classification: { version: 1, permissions: { recommend: false } } });
+	});
+
 	it('does not mutate answers or evidence inputs', () => {
 		const { before, after, delta } = fixtures();
 		const input = answers();

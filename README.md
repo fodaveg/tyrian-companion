@@ -52,9 +52,11 @@ The current `0.1.0` vertical provides:
   micro-copper precision, explicit route coverage, and zero liquid value for excluded rewards.
 - A pure H4.9 reservation plan that allocates final owned/available balances across active goals,
   exposes action-specific allowances, and overlays protected gains without changing valuation money.
+- A pure H4.10 container disposition engine that protects reservations first, then compares an
+  attested opening model with a fresh immediate-sale floor using exact integer thresholds.
 
-Automatic synchronization, persisted valuation reports, vault writes, unattended detection,
-and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
+Automatic synchronization, persisted valuation/recommendation reports, vault writes, unattended
+detection, and recommendation UI or account operations are intentionally not implemented yet. Snapshot capture runs from explicit
 **Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
 storage, not total account wealth.
 
@@ -138,7 +140,8 @@ the session boundary with explicit complete/missing/asymmetric coverage. `classi
 combines that evidence with a v1 storage delta, normalized Trading Post events, boundary certainty,
 and an explicit user declaration. Observed or declared outside activity always dominates a clean
 claim. Its permissions distinguish showing the observed net, provisional valuation, finalization,
-and gross-per-hour eligibility; economic recommendations remain disabled. Both functions are pure
+and gross-per-hour eligibility. Classification v2 grants recommendation permission only to an
+`exact` result with `high` confidence; persisted v1 classifications remain ineligible. Both functions are pure
 and H3.9 still owns questions, acceptance workflow, and persistence.
 Residual delivery or wallet data is never interpreted as activity unless that surface is complete
 on both boundaries. A wallet increase remains estimated until a manual clean confirmation resolves
@@ -158,9 +161,24 @@ partitions gained item quantities into protected and eligible actions, retaining
 valuation unchanged. Callers provide the exact sorted sack IDs so bags/hour cannot be forged, and
 the same authoritative H2.7 delta validator rejects malformed reasons or composition. Its standalone
 validator checks internal quantity invariants, but intended-use
-provenance must be checked with the reservation plan that created it. H4.9 has no persistence, UI,
-prices, API calls or recommendation policy; goal storage and economic recomputation belong to later
-verticals.
+provenance must be checked with the reservation plan that created it. Allocations retain goal reason
+as well as basis and intended use so a later decision can explain protected quantities. H4.9 has no
+persistence, UI, prices or API calls.
+
+`recommendContainerDisposition(input)` is the pure H4.10 policy boundary. It validates the complete
+before/after snapshots, delta and derived H3.9 review, derives the final H4.9 balance, rebuilds the
+plan from the supplied goals, and then recomputes the overlay from that same delta, plan and sack-ID
+set before intersecting the liquidation/open allowances. Account,
+session and final-snapshot identity is checked before any
+economic calculation; a fully protected gain returns `reserved_only` even when its older session
+classification cannot authorize a recommendation. Free units require a v2 exact/high classification,
+an approved model review inside its validity/age window and after the model evidence dates, plus a
+matching canonical SHA-256 model fingerprint and a single fresh public price batch. The
+engine reruns H4.8 from raw quotes, recomputes H4.2 fees over the complete free stack, uses the better
+of immediate bid and an eligible vendor floor, and compares opening EV with the versioned margin by
+`BigInt`. Equality favors opening. Missing or stale evidence returns typed `blocked`; malformed or
+inconsistent evidence returns `invalid`; neither status contains an economic action. The output is an
+explanation only: H4.10 performs no API call, persistence, UI, vault write, Trading Post action or item use.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

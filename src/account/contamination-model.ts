@@ -1,7 +1,8 @@
 import type { StorageDelta } from './storage-delta-model';
 
 export const BOUNDARY_EVIDENCE_VERSION = 1 as const;
-export const SESSION_CLASSIFICATION_VERSION = 1 as const;
+export const SESSION_CLASSIFICATION_VERSION = 2 as const;
+export const LEGACY_SESSION_CLASSIFICATION_VERSION = 1 as const;
 
 export type BoundaryCoverage = 'complete_both' | 'missing_both' | 'asymmetric';
 
@@ -133,7 +134,7 @@ export interface SessionPermissions {
 	showNet: boolean;
 	valueNet: boolean;
 	grossPerHour: boolean;
-	recommend: false;
+	recommend: boolean;
 }
 
 export interface SessionDeltaClassification {

@@ -8,7 +8,7 @@ import {
 	exactContext,
 } from './__fixtures__/contamination';
 import { afterSnapshot, deliveryCurrency, deliveryHolding, embeddedHolding, looseHolding, storageDeltaSnapshot, walletCurrency, withoutDelivery } from './__fixtures__/storage-delta';
-import { buildBoundaryEvidence, classifySessionDelta } from './contamination';
+import { buildBoundaryEvidence, classifySessionDelta, isSessionDeltaClassification } from './contamination';
 import type { DeclaredActivity, SessionClassificationContext } from './contamination-model';
 import { compareStorageSnapshots } from './storage-delta';
 
@@ -93,9 +93,55 @@ describe('buildBoundaryEvidence', () => {
 });
 
 describe('classifySessionDelta', () => {
+	it('rejects a classification envelope outside the producer status/confidence matrix', () => {
+		const exact = classifySessionDelta(cleanDelta(), exactContext());
+		expect(isSessionDeltaClassification(exact)).toBe(true);
+		expect(isSessionDeltaClassification({ ...exact, confidence: 'medium', permissions: {
+			...exact.permissions, recommend: false,
+		} })).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'activity_declared', detail: 'open' }],
+		})).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, status: 'contaminated', reasons: [],
+			permissions: { finalize: true, showNet: true, valueNet: false, grossPerHour: false, recommend: false },
+		})).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, status: 'invalid', confidence: 'low', reasons: [{ code: 'wallet_increase_clean_confirmation_used' }],
+			permissions: { finalize: false, showNet: false, valueNet: false, grossPerHour: false, recommend: false },
+		})).toBe(false);
+		const estimated = classifySessionDelta(cleanDelta(), { ...exactContext(), declaration: { status: 'unsure' } });
+		expect(isSessionDeltaClassification({ ...estimated, reviewRequests: [] })).toBe(false);
+		expect(isSessionDeltaClassification({ ...estimated, permissions: {
+			...estimated.permissions, finalize: true,
+		} })).toBe(false);
+		const low = classifySessionDelta(cleanDelta(), exactContext({ declaration: { status: 'absent' } }));
+		expect(isSessionDeltaClassification({ ...low, permissions: { ...low.permissions, finalize: true } })).toBe(false);
+		const limitedBefore = withoutDelivery(storageDeltaSnapshot());
+		const limitedAfter = withoutDelivery(afterSnapshot());
+		const accepted = classifySessionDelta(compareStorageSnapshots(limitedBefore, limitedAfter), exactContext({
+			boundary: buildBoundaryEvidence(limitedBefore, limitedAfter),
+		}));
+		expect(isSessionDeltaClassification(accepted)).toBe(true);
+		expect(isSessionDeltaClassification({ ...accepted, permissions: {
+			...accepted.permissions, finalize: false,
+		} })).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'wallet_increase_clean_confirmation_used', detail: 'open' }],
+		})).toBe(false);
+		const contaminated = classifySessionDelta(cleanDelta(), exactContext({
+			declaration: { status: 'activities', activities: ['open'] },
+		}));
+		expect(isSessionDeltaClassification({
+			...contaminated, reasons: [{ code: 'activity_declared', detail: 'not-an-activity' }],
+		})).toBe(false);
+		expect(isSessionDeltaClassification({
+			...contaminated, reasons: [{ code: 'activity_declared' }],
+		})).toBe(false);
+	});
 	it('classifies full, manually confirmed, clean evidence as exact', () => {
 		expect(classifySessionDelta(cleanDelta(), exactContext())).toMatchObject({
-			version: 1,
+			version: 2,
 			status: 'exact',
 			confidence: 'high',
 			scope: 'observed_storage_net',
@@ -104,7 +150,7 @@ describe('classifySessionDelta', () => {
 				showNet: true,
 				valueNet: true,
 				grossPerHour: true,
-				recommend: false,
+				recommend: true,
 			},
 		});
 	});

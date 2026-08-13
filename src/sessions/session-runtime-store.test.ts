@@ -184,6 +184,27 @@ describe('session runtime persistence', () => {
 		expect(isSessionRuntimeRecord(tampered)).toBe(false);
 	});
 
+	it('keeps a valid runtime v3 record with a legacy v1 review loadable and ineligible to recommend', () => {
+		const baseline = storageDeltaSnapshot();
+		const final = afterSnapshot();
+		const state = provisionalState(baseline, final);
+		const delta = compareStorageSnapshots(baseline, final);
+		const review = createSessionContaminationReview(baseline, final, delta, {
+			certainty: 'confirmed', activities: {
+				open: false, salvage: false, consume: false, craft: false,
+				tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
+				transfer: false, other: false,
+			},
+		}, '2026-08-13T09:00:03.000Z');
+		if (!review) throw new Error('Review fixture is invalid.');
+		review.classification = { ...review.classification, version: 1,
+			permissions: { ...review.classification.permissions, recommend: false } } as never;
+		const record = createSessionRuntimeRecord(state, baseline, final, delta,
+			Date.parse(review.reviewedAt), review);
+		expect(isSessionRuntimeRecord(record)).toBe(true);
+		expect(record?.review?.classification).toMatchObject({ version: 1, permissions: { recommend: false } });
+	});
+
 	it('fails closed on a corrupt record and leaves it untouched', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('corrupt');

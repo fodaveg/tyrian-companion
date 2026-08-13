@@ -1,0 +1,491 @@
+import { createHash } from 'node:crypto';
+import { describe, expect, it } from 'vitest';
+
+import { compareStorageSnapshots } from '../account/storage-delta';
+import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import { createSessionContaminationReview } from '../sessions/session-contamination-review';
+import type { CatalogItem } from '../catalog/public-catalog-model';
+import {
+	DEFAULT_CONTAINER_RECOMMENDATION_POLICY,
+	containerModelFingerprint,
+	recommendContainerDisposition,
+	type ContainerRecommendationInput,
+} from './container-recommendation';
+import type { ContainerModelV1 } from './container-model';
+import { buildReservationBalance, createReservationPlan } from './reservation';
+import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
+import type { SessionValuation } from './session-valuation';
+
+const ITEM_ID = 999;
+const AS_OF = '2026-08-13T10:00:00.000Z';
+
+describe('recommendContainerDisposition', () => {
+	it('fingerprints canonical model content with SHA-256', () => {
+		const model = modelFor(100, false);
+		const expected = createHash('sha256').update(canonicalForTest(model)).digest('hex');
+		expect(containerModelFingerprint(model)).toBe(expected);
+		expect(containerModelFingerprint({ ...model, title: 'Changed' })).not.toBe(expected);
+	});
+	it('opens exactly at the configured BigInt threshold and sells one microcopper below it', () => {
+		const threshold = input({ modelEvMicro: 102_300_000 });
+		expect(ready(threshold).economicDecision).toMatchObject({ action: 'open', quantity: 1 });
+		expect(ready(threshold).explanation?.threshold.requiredOpenMicroCopper).toBe('102300000');
+		expect(ready(input({ modelEvMicro: 102_299_999 })).economicDecision?.action).toBe('sell');
+	});
+
+	it.each([0, 800, 1_000, 10_000])('applies a %i bps policy without floating-point comparison', (margin) => {
+		const value = input({ modelEvMicro: 93_000_000, marginBps: margin });
+		const result = ready(value);
+		const required = BigInt(result.explanation!.threshold.requiredOpenMicroCopper);
+		const expected = (93_000_000n * BigInt(10_000 + margin) + 9_999n) / 10_000n;
+		expect(required).toBe(expected);
+		expect(result.economicDecision?.action).toBe(margin === 0 ? 'open' : 'sell');
+	});
+
+	it.each([1, 250])('recalculates the 5%% and 10%% fees over the free stack of %i', (quantity) => {
+		const result = ready(input({ gainedQuantity: quantity, finalQuantity: quantity, modelEvMicro: 1 }));
+		expect(result.explanation?.sellNow).toMatchObject({
+			grossCopper: 110 * quantity,
+		});
+		const sell = result.explanation!.sellNow;
+		expect(sell.netCopper).toBe(sell.grossCopper - sell.listingFeeCopper - sell.exchangeFeeCopper);
+		expect(result.economicDecision).toMatchObject({ action: 'sell', quantity });
+	});
+
+	it('uses an eligible vendor value as the immediate floor', () => {
+		const result = ready(input({ vendorValue: 200, modelEvMicro: 1 }));
+		expect(result.economicDecision).toMatchObject({ action: 'sell', sellRoute: 'vendor' });
+		expect(result.explanation?.sellNow).toMatchObject({ route: 'vendor', netCopper: 200, totalFeesCopper: 0 });
+	});
+
+	it.each([
+		{ intendedUse: 'hold' as const, target: 6 },
+		{ intendedUse: 'exchange' as const, target: 6 },
+		{ intendedUse: 'open' as const, target: 6 },
+	])('protects $intendedUse reservations before economics', ({ intendedUse, target }) => {
+		const value = input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: target, intendedUse });
+		const result = ready(value);
+		expect(result.allocations.freeQuantity).toBe(4);
+		expect(result.allocations.reserved).toEqual([{
+			goalId: 'goal-a', reason: 'personal', intendedUse, quantity: 6,
+		}]);
+		expect(result.economicDecision?.quantity).toBe(4);
+	});
+
+	it('invalidates a malformed classification instead of treating it as an observed invalid session', () => {
+		const value = input();
+		value.session.review.classification = { version: 2, status: 'exact' } as never;
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }], recommendation: null,
+		});
+	});
+
+	it('returns reserved_only before inspecting a legacy session or stale market', () => {
+		const value = input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 10 });
+		value.session.review.classification = { ...value.session.review.classification, version: 1,
+			permissions: { ...value.session.review.classification.permissions, recommend: false } } as never;
+		value.market.capturedAt = '2020-01-01T00:00:00.000Z';
+		const result = recommendContainerDisposition(value);
+		expect(result.status).toBe('reserved_only');
+		if (result.status === 'reserved_only') {
+			expect(result.recommendation.economicDecision).toBeNull();
+			expect(result.recommendation.allocations.freeQuantity).toBe(0);
+		}
+	});
+
+	it('never lets fully reserved quantity bypass malformed H3.9 review evidence', () => {
+		const value = input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 10 });
+		value.session.review = {} as never;
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }], recommendation: null,
+		});
+	});
+
+	it('caps the session allocation by the gained quantity when older excess is unreserved', () => {
+		const result = ready(input({ gainedQuantity: 30, finalQuantity: 120, reservedTarget: 100 }));
+		expect(result.allocations).toMatchObject({ freeQuantity: 20, reserved: [{ quantity: 10 }] });
+	});
+
+	it('rejects a transplanted classification or overlay even when its standalone shell is valid', () => {
+		const reviewTransplant = input();
+		const donor = input({ reviewKind: 'estimated' }).session.review;
+		reviewTransplant.session.review.classification = donor.classification;
+		expect(recommendContainerDisposition(reviewTransplant)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+		const overlayTransplant = input({ gainedQuantity: 2, finalQuantity: 2 });
+		overlayTransplant.reservation.overlay = input().reservation.overlay;
+		expect(recommendContainerDisposition(overlayTransplant)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+	});
+
+	it('validates identity before reserved_only can bypass inconsistent evidence', () => {
+		const value = input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 10 });
+		value.session.delta.afterSnapshotId = 'transplanted';
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }], recommendation: null,
+		});
+	});
+
+	it('rejects a valid-looking delta that was not recomputed from the supplied snapshots', () => {
+		const value = input();
+		value.session.afterSnapshot.holdings[1]!.quantity = 2;
+		value.session.afterSnapshot.ownedByItem[String(ITEM_ID)] = 2;
+		value.session.afterSnapshot.availableByItem[String(ITEM_ID)] = 2;
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+	});
+
+	it('blocks a structurally valid reservation that belongs to another snapshot', () => {
+		const value = input();
+		value.reservation.plan.snapshotId = 'other';
+		expect(recommendContainerDisposition(value)).toMatchObject({ status: 'invalid', reasons: [{ code: 'evidence_mismatch' }] });
+	});
+
+	it('rejects a plan not reproduced from the supplied goals and final snapshot balance', () => {
+		const changedGoal = input({ reservedTarget: 1 });
+		changedGoal.reservation.goals[0]!.requirements[0]!.targetQuantity = 2;
+		expect(recommendContainerDisposition(changedGoal)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+		const changedCapture = input();
+		changedCapture.reservation.plan.capturedAt = '2026-08-13T09:00:02.000Z';
+		expect(recommendContainerDisposition(changedCapture)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+	});
+
+	it.each([
+		['legacy' as const, 'session_classification_v1'],
+		['estimated' as const, 'session_estimated'],
+		['contaminated' as const, 'session_contaminated'],
+	] as const)('blocks an authentic %s review', (reviewKind, reason) => {
+		const value = input({ reviewKind });
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'blocked', reasons: [{ code: reason }],
+			recommendation: { economicDecision: null, allocations: { freeQuantity: 1 } },
+		});
+	});
+
+	it('binds approval to canonical model content and rejects impossible review chronology', () => {
+		const mutated = input();
+		mutated.model.title = 'Same version, different model';
+		expect(recommendContainerDisposition(mutated)).toMatchObject({
+			status: 'blocked', reasons: [{ code: 'model_review_mismatch' }],
+		});
+		const chronology = input();
+		chronology.model.source.retrievedAt = '2026-08-13T09:00:00.000Z';
+		chronology.modelReview.modelFingerprint = containerModelFingerprint(chronology.model)!;
+		chronology.modelReview.reviewedAt = '2026-08-13T08:59:59.999Z';
+		expect(recommendContainerDisposition(chronology)).toMatchObject({
+			status: 'blocked', reasons: [{ code: 'model_review_future' }],
+		});
+	});
+
+	it('requires final snapshot completion no later than review and review no later than asOf', () => {
+		const tooLate = input();
+		tooLate.asOf = '2026-08-13T09:00:01.500Z';
+		expect(recommendContainerDisposition(tooLate)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
+		});
+		const beforeFinal = input();
+		beforeFinal.session.review.reviewedAt = '2026-08-13T09:00:00.999Z';
+		expect(recommendContainerDisposition(beforeFinal)).toMatchObject({ status: 'invalid' });
+	});
+
+	it('invalidates account, snapshot, session, catalog and model identity mismatches', () => {
+		for (const mutate of [
+			(value: ContainerRecommendationInput) => { value.session.afterSnapshot.accountId = 'other'; },
+			(value: ContainerRecommendationInput) => { value.session.afterSnapshot.snapshotId = 'other'; },
+			(value: ContainerRecommendationInput) => { value.session.sessionId = 'other'; },
+			(value: ContainerRecommendationInput) => { value.container.catalogItem.id = 1; },
+			(value: ContainerRecommendationInput) => { value.model.containerItemId = 1; },
+		]) {
+			const value = input();
+			mutate(value);
+			expect(recommendContainerDisposition(value)).toMatchObject({ status: 'invalid' });
+		}
+	});
+
+	it.each([
+		[(value: ContainerRecommendationInput) => { value.modelReview.status = 'revoked'; }, 'model_revoked'],
+		[(value: ContainerRecommendationInput) => { value.modelReview.modelVersion += 1; }, 'model_review_mismatch'],
+		[(value: ContainerRecommendationInput) => { value.modelReview.reviewedAt = '2026-08-13T10:00:01.000Z'; }, 'model_review_future'],
+		[(value: ContainerRecommendationInput) => { value.modelReview.validUntil = '2026-08-13T09:59:59.999Z'; }, 'model_review_stale'],
+	] as const)('blocks invalid review attestation %#', (mutate, reason) => {
+		const value = input();
+		mutate(value);
+		expect(recommendContainerDisposition(value)).toMatchObject({ status: 'blocked', reasons: [{ code: reason }] });
+	});
+
+	it('accepts the price TTL boundary and blocks one millisecond later or beyond future skew', () => {
+		const boundary = input();
+		boundary.market.capturedAt = new Date(Date.parse(AS_OF) - boundary.policy.maxPriceAgeMs).toISOString();
+		expect(recommendContainerDisposition(boundary).status).toBe('ready');
+		const stale = structuredClone(boundary);
+		stale.market.capturedAt = new Date(Date.parse(stale.market.capturedAt) - 1).toISOString();
+		expect(recommendContainerDisposition(stale)).toMatchObject({ status: 'blocked', reasons: [{ code: 'price_stale' }] });
+		const future = input();
+		future.market.capturedAt = new Date(Date.parse(AS_OF) + future.policy.maxFutureSkewMs + 1).toISOString();
+		expect(recommendContainerDisposition(future)).toMatchObject({ status: 'blocked', reasons: [{ code: 'price_future' }] });
+	});
+
+	it('rejects duplicate quotes from the supposedly atomic market batch', () => {
+		const value = input();
+		value.market.quotes.push({ ...value.market.quotes[0]! });
+		expect(recommendContainerDisposition(value)).toMatchObject({ status: 'invalid', reasons: [{ code: 'malformed_input' }] });
+	});
+
+	it('blocks incomplete instant EV while allowing an incomplete informational listing route', () => {
+		const value = input({ marketOutcome: true });
+		value.market.quotes.find((quote) => quote.itemId === 1)!.bidUnitCopper = null;
+		expect(recommendContainerDisposition(value)).toMatchObject({ status: 'blocked', reasons: [{ code: 'open_ev_partial' }] });
+		const listingOnlyMissing = input({ marketOutcome: true });
+		listingOnlyMissing.market.quotes.find((quote) => quote.itemId === 1)!.askUnitCopper = null;
+		expect(recommendContainerDisposition(listingOnlyMissing).status).toBe('ready');
+	});
+
+	it.each([
+		['full', false, 'ready'],
+		['free_to_play', false, 'blocked'],
+		['unknown', false, 'blocked'],
+		['free_to_play', true, 'ready'],
+		['unknown', true, 'ready'],
+	] as const)('applies %s access to whitelisted=%s', (access, whitelisted, status) => {
+		const value = input({ vendorValue: 0 });
+		value.container.tradingAccess = access;
+		value.market.quotes.find((quote) => quote.itemId === ITEM_ID)!.whitelisted = whitelisted;
+		expect(recommendContainerDisposition(value).status).toBe(status);
+	});
+
+	it('blocks unknown binding and a container with no realizable sale route', () => {
+		const unknown = input();
+		unknown.container.binding = 'unknown';
+		expect(recommendContainerDisposition(unknown)).toMatchObject({ status: 'blocked', reasons: [{ code: 'binding_unknown' }] });
+		const closed = input({ vendorValue: 0 });
+		closed.container.binding = 'account_bound';
+		expect(recommendContainerDisposition(closed)).toMatchObject({ status: 'blocked', reasons: [{ code: 'container_not_sellable' }] });
+	});
+
+	it('retains reservation provenance without any economic action when later evidence blocks', () => {
+		const value = input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 6 });
+		value.session.review.classification = { ...value.session.review.classification, version: 1,
+			permissions: { ...value.session.review.classification.permissions, recommend: false } } as never;
+		const result = recommendContainerDisposition(value);
+		expect(result).toMatchObject({
+			status: 'blocked',
+			recommendation: {
+				economicDecision: null,
+				allocations: { freeQuantity: 4, reserved: [{ goalId: 'goal-a', quantity: 6 }] },
+				reasons: [{ code: 'session_classification_v1' }],
+			},
+		});
+	});
+
+	it('rejects catalog binding flags that contradict explicit unbound evidence', () => {
+		const value = input();
+		value.container.catalogItem.flags = ['AccountBound'];
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }], recommendation: null,
+		});
+	});
+
+	it('keeps excluded rare outcomes visible in the numeric explanation', () => {
+		const value = input();
+		value.model.sample.observations += 1;
+		value.model.excluded = [{ category: 'Rare', sampleUnits: 1, reason: 'super_rare_jackpot' }];
+		value.model.uncertainty.rareDropTreatment = 'excluded';
+		value.modelReview.modelFingerprint = containerModelFingerprint(value.model)!;
+		const result = ready(value);
+		expect(result.explanation?.open).toMatchObject({ excludedSampleUnits: 1, rareTreatment: 'excluded' });
+		expect(result.explanation?.caveats).toContain('excluded_outcomes_not_valued');
+	});
+
+	it('fails closed on malformed input and arithmetic overflow', () => {
+		expect(recommendContainerDisposition(null)).toMatchObject({ status: 'invalid' });
+		const overflow = input({ gainedQuantity: 2, finalQuantity: 2, vendorValue: 0 });
+		overflow.market.quotes.find((quote) => quote.itemId === ITEM_ID)!.bidUnitCopper = Number.MAX_SAFE_INTEGER;
+		expect(recommendContainerDisposition(overflow)).toMatchObject({ status: 'invalid', reasons: [{ code: 'arithmetic_overflow' }] });
+	});
+
+	it('is invariant to quote order and does not mutate evidence', () => {
+		const value = input({ marketOutcome: true });
+		const before = structuredClone(value);
+		const forward = recommendContainerDisposition(value);
+		const reversed = structuredClone(value);
+		reversed.market.quotes.reverse();
+		expect(recommendContainerDisposition(reversed)).toEqual(forward);
+		expect(value).toEqual(before);
+	});
+});
+
+function input(options: {
+	gainedQuantity?: number;
+	finalQuantity?: number;
+	reservedTarget?: number;
+	intendedUse?: 'hold' | 'open' | 'consume' | 'exchange';
+	modelEvMicro?: number;
+	marginBps?: number;
+	vendorValue?: number;
+	marketOutcome?: boolean;
+	reviewKind?: 'exact' | 'legacy' | 'estimated' | 'contaminated';
+} = {}): ContainerRecommendationInput {
+	const gainedQuantity = options.gainedQuantity ?? 1;
+	const finalQuantity = options.finalQuantity ?? gainedQuantity;
+	const goals = goalsFor(options.reservedTarget ?? 0, options.intendedUse ?? 'hold');
+	const beforeQuantity = finalQuantity - gainedQuantity;
+	const beforeSnapshot = storageDeltaSnapshot({ holdings: [
+		looseHolding(100, 2, { source: 'bank', slot: 0 }),
+		...(beforeQuantity > 0 ? [looseHolding(ITEM_ID, beforeQuantity, { source: 'bank', slot: 1 })] : []),
+	] });
+	const after = afterSnapshot({ holdings: [
+		looseHolding(100, 2, { source: 'bank', slot: 0 }),
+		looseHolding(ITEM_ID, finalQuantity, { source: 'bank', slot: 1 }),
+	] });
+	const delta = compareStorageSnapshots(beforeSnapshot, after);
+	if (delta.status === 'invalid') throw new Error('Invalid delta fixture.');
+	const plan = planFor(after, goals);
+	const overlay = overlayFor(plan, gainedQuantity);
+	const model = modelFor(options.modelEvMicro ?? 1, options.marketOutcome ?? false);
+	const activities = {
+			open: false, salvage: false, consume: false, craft: false, tpBuy: false, tpSell: false,
+			vendorBuy: false, vendorSell: false, transfer: false, other: false,
+	};
+	if (options.reviewKind === 'contaminated') activities.open = true;
+	const review = createSessionContaminationReview(beforeSnapshot, after, delta, {
+		certainty: options.reviewKind === 'estimated' ? 'unsure' : 'confirmed', activities,
+	}, '2026-08-13T09:00:02.000Z');
+	if (!review) throw new Error('Invalid review fixture.');
+	if (options.reviewKind === 'legacy') review.classification = {
+		...review.classification, version: 1,
+		permissions: { ...review.classification.permissions, recommend: false },
+	} as never;
+	return {
+		version: 1,
+		asOf: AS_OF,
+		session: {
+			sessionId: 'session-1', beforeSnapshot, afterSnapshot: after, delta, review,
+		},
+		container: {
+			itemId: ITEM_ID,
+			catalogItem: item(options.vendorValue ?? 1),
+			binding: 'unbound',
+			tradingAccess: 'full',
+		},
+		reservation: { goals, overlay, plan, sackItemIds: [] },
+		model,
+		modelReview: {
+			version: 1, modelId: model.modelId, modelVersion: model.modelVersion,
+			modelFingerprint: containerModelFingerprint(model)!, status: 'approved',
+			reviewedAt: '2026-08-12T10:00:00.000Z', validUntil: '2026-09-12T10:00:00.000Z',
+			reviewReason: 'Reviewed sample and exclusions.',
+		},
+		market: {
+			version: 1, batchId: 'batch-1', capturedAt: AS_OF, source: 'gw2-commerce-prices',
+			quotes: [
+				{ itemId: ITEM_ID, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 },
+				...(options.marketOutcome ? [{ itemId: 1, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 }] : []),
+			],
+		},
+		policy: { ...DEFAULT_CONTAINER_RECOMMENDATION_POLICY, openAdvantageBps: options.marginBps ?? 1_000 },
+	};
+}
+
+function modelFor(evMicro: number, marketOutcome: boolean): ContainerModelV1 {
+	const sampleUnits = marketOutcome ? 1 : evMicro;
+	const containersOpened = marketOutcome ? 1 : 1_000_000;
+	return {
+		schemaVersion: 1, modelId: 'test-container', modelVersion: 1, containerItemId: ITEM_ID,
+		title: 'Test container',
+		source: { name: 'Fixture', url: 'https://example.com/model', publishedAt: null, retrievedAt: '2026-08-11T10:00:00.000Z' },
+		sample: { containersOpened, observations: sampleUnits, observedFrom: null, observedUntil: null },
+		outcomes: marketOutcome
+			? [{ key: 'item:1', namespace: 'item', id: 1, label: 'Market item', sampleUnits,
+				expectedUnitsMillionths: 1_000_000, valuationPolicy: 'liquid_market' }]
+			: [{ key: 'currency:1', namespace: 'currency', id: 1, label: 'Coin', sampleUnits,
+				expectedUnitsMillionths: evMicro, valuationPolicy: 'direct_currency' }],
+		excluded: [],
+		uncertainty: { method: 'sample_only', confidenceBasisPoints: null, rareDropTreatment: 'observed_only', notes: [] },
+		createdAt: '2026-08-11T10:00:00.000Z',
+	};
+}
+
+function goalsFor(target: number, intendedUse: 'hold' | 'open' | 'consume' | 'exchange'): ReservationGoal[] {
+	return target === 0 ? [] : [{
+		schemaVersion: 1, goalId: 'goal-a', title: 'Goal A', status: 'active', priority: 10, reason: 'personal',
+		requirements: [{ key: `item:${ITEM_ID}`, namespace: 'item', id: ITEM_ID, targetQuantity: target,
+			creditedQuantity: 0, basis: 'available', intendedUse }],
+	}];
+}
+
+
+function planFor(snapshot: ReturnType<typeof afterSnapshot>, goals: ReservationGoal[]): ReservationPlan {
+	const derived = buildReservationBalance(snapshot);
+	if (derived.status !== 'ok') throw new Error(derived.reason);
+	const result = createReservationPlan({
+		goals,
+		balance: derived.balance,
+	});
+	if (result.status !== 'ok') throw new Error(result.reason);
+	return result.plan;
+}
+
+function overlayFor(plan: ReservationPlan, gainedQuantity: number): SessionValuationReservationOverlay {
+	const asset = plan.assets.find((entry) => entry.key === `item:${ITEM_ID}`)!;
+	const liquidationEligible = Math.min(gainedQuantity, asset.allowances.liquidate!);
+	const valuation = valuationFor(gainedQuantity);
+	return {
+		schemaVersion: 1, accountId: plan.accountId, snapshotId: plan.snapshotId, sackItemIds: [], valuation,
+		lines: [{
+			itemId: ITEM_ID, gainedQuantity,
+			protectedFromLiquidation: gainedQuantity - liquidationEligible,
+			liquidationEligible,
+			openEligible: Math.min(gainedQuantity, asset.allowances.open!),
+			consumeEligible: Math.min(gainedQuantity, asset.allowances.consume!),
+			exchangeEligible: Math.min(gainedQuantity, asset.allowances.exchange!),
+		}],
+	};
+}
+
+function valuationFor(quantity: number): SessionValuation {
+	const gross = quantity;
+	return {
+		version: 1, sessionId: 'session-1', priceCapturedAt: AS_OF, priceSource: 'gw2-commerce-prices',
+		coverage: 'complete', durationMs: 3_600_000,
+		lines: [{
+			itemId: ITEM_ID, quantity, binding: 'unbound', instantSell: null, listing: null,
+			vendor: { version: 1, kind: 'vendor', priceSource: 'vendor_value', liquidity: 'immediate',
+				quantity, unitCopper: 1, grossCopper: gross, netCopper: gross },
+			immediateBestCopper: gross, listingBestCopper: gross, nonLiquid: false, reason: null,
+		}],
+		totals: { itemImmediateCopper: gross, itemListingCopper: gross, coinNetCopper: 0,
+			observedImmediateCopper: gross, observedListingCopper: gross,
+			nonLiquidItemKinds: 0, nonLiquidQuantity: 0 },
+		rates: { sacks: 0, sacksPerHourMilli: 0, immediateCopperPerHour: gross,
+			listingCopperPerHour: gross },
+		warnings: [],
+	};
+}
+
+function item(vendorValue: number): CatalogItem {
+	return {
+		kind: 'item', id: ITEM_ID, name: 'Test container', type: 'Container', rarity: 'Basic', level: 0,
+		vendorValue, flags: [], gameTypes: [], restrictions: [],
+	};
+}
+
+function ready(value: ContainerRecommendationInput) {
+	const result = recommendContainerDisposition(value);
+	if (result.status !== 'ready') throw new Error(`Expected ready, got ${JSON.stringify(result)}.`);
+	return result.recommendation;
+}
+
+function canonicalForTest(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalForTest).join(',')}]`;
+	if (typeof value === 'object' && value !== null) return `{${Object.entries(value)
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([key, child]) => `${JSON.stringify(key)}:${canonicalForTest(child)}`).join(',')}}`;
+	return JSON.stringify(value) ?? 'undefined';
+}

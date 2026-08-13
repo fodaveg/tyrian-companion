@@ -36,7 +36,12 @@ export interface SessionContaminationReview {
 	answers: SessionContaminationAnswers;
 	declaration: UserDeclaration;
 	boundary: BoundaryEvidence;
-	classification: SessionDeltaClassification;
+	classification: SessionDeltaClassification | LegacySessionDeltaClassification;
+}
+
+export interface LegacySessionDeltaClassification extends Omit<SessionDeltaClassification, 'version' | 'permissions'> {
+	version: 1;
+	permissions: Omit<SessionDeltaClassification['permissions'], 'recommend'> & { recommend: false };
 }
 
 export function createSessionContaminationReview(
@@ -80,7 +85,16 @@ export function isSessionContaminationReview(
 		return false;
 	}
 	const expected = createSessionContaminationReview(before, after, delta, value.answers, value.reviewedAt);
-	return expected !== null && JSON.stringify(expected) === JSON.stringify(value);
+	if (expected === null) return false;
+	if (JSON.stringify(expected) === JSON.stringify(value)) return true;
+	if (!isRecord(value.classification) || value.classification.version !== 1) return false;
+	const legacy = structuredClone(expected);
+	legacy.classification = {
+		...legacy.classification,
+		version: 1,
+		permissions: { ...legacy.classification.permissions, recommend: false },
+	};
+	return JSON.stringify(legacy) === JSON.stringify(value);
 }
 
 export function isSessionContaminationAnswers(value: unknown): value is SessionContaminationAnswers {

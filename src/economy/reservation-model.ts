@@ -47,6 +47,7 @@ export interface ReservationBalance {
 export interface ReservationAllocation {
 	goalId: string;
 	priority: number;
+	reason: ReservationReason;
 	required: number;
 	satisfied: number;
 	protectedAvailable: number;

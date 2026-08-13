@@ -37,7 +37,8 @@ describe('createReservationPlan', () => {
 		expect(plan.assets[0]).toMatchObject({
 			requested: 100, protectedAvailable: 100, unprotectedAvailable: 20,
 			allowances: { liquidate: 20, open: 20, consume: 20, exchange: 20 },
-			allocations: [{ goalId: 'goal-a', required: 100, satisfied: 100, protectedAvailable: 100, shortfall: 0 }],
+			allocations: [{ goalId: 'goal-a', reason: 'personal', required: 100, satisfied: 100,
+				protectedAvailable: 100, shortfall: 0 }],
 		});
 	});
 

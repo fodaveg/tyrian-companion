@@ -70,7 +70,7 @@ export function createReservationPlan(input: unknown): ReservationPlanResult {
 				protectedAvailable = safeAdd(protectedAvailable, fromAvailable);
 				shortfall = safeAdd(shortfall, missing);
 				allocations.push({
-					goalId: goal.goalId, priority: goal.priority, required, satisfied,
+					goalId: goal.goalId, priority: goal.priority, reason: goal.reason, required, satisfied,
 					protectedAvailable: fromAvailable, shortfall: missing,
 					basis: requirement.basis, intendedUse: requirement.intendedUse,
 				});
@@ -293,8 +293,9 @@ function isPlanAsset(value: unknown): value is ReservationPlanAsset {
 }
 
 function isAllocation(value: unknown): value is ReservationAllocation {
-	if (!(isRecord(value) && exactKeys(value, ['goalId', 'priority', 'required', 'satisfied', 'protectedAvailable', 'shortfall', 'basis', 'intendedUse']) &&
+	if (!(isRecord(value) && exactKeys(value, ['goalId', 'priority', 'reason', 'required', 'satisfied', 'protectedAvailable', 'shortfall', 'basis', 'intendedUse']) &&
 		trimmed(value.goalId, 128) && safeNonNegative(value.priority) && (value.priority) <= 1_000 &&
+		['achievement', 'purchase', 'personal'].includes(String(value.reason)) &&
 		positive(value.required) && safeNonNegative(value.satisfied) && safeNonNegative(value.protectedAvailable) &&
 		safeNonNegative(value.shortfall) && (value.protectedAvailable) <= (value.satisfied) &&
 		(value.basis === 'owned' || value.basis === 'available') &&
