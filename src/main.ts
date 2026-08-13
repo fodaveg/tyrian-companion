@@ -7,7 +7,16 @@ import { StorageSnapshotService } from './account/storage-snapshot-service';
 import type { StorageDelta } from './account/storage-delta-model';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
-import { DEFAULT_SETTINGS, migrateSettings, type TyrianSettings } from './core/settings';
+import {
+	DEFAULT_SETTINGS,
+	migrateSettings,
+	type DetectionMode,
+	type TyrianSettings,
+} from './core/settings';
+import {
+	AssistedDetectionService,
+	type AssistedDetectionState,
+} from './sessions/assisted-detection-service';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import {
 	ManualSessionStartService,
@@ -26,6 +35,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = { ...DEFAULT_SETTINGS };
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
+	private assistedDetection!: AssistedDetectionService;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 
@@ -49,6 +59,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		);
 		await this.sessions.initialize();
+		this.assistedDetection = new AssistedDetectionService({
+			snapshots,
+			getSessionState: () => this.sessions.getState(),
+			onStateChange: () => this.renderViews(),
+		});
+		this.assistedDetection.setOnline(navigator.onLine);
+		this.registerDomEvent(window, 'online', () => this.assistedDetection.setOnline(true));
+		this.registerDomEvent(window, 'offline', () => this.assistedDetection.setOnline(false));
+		this.registerDomEvent(document, 'visibilitychange', () => {
+			if (document.visibilityState === 'visible') this.assistedDetection.notifyWake();
+		});
 
 		this.registerView(
 			COMPANION_VIEW_TYPE,
@@ -63,10 +84,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 				void this.activateView();
 			},
 		});
+		this.addCommand({
+			id: 'arm-assisted-detection',
+			name: 'Arm assisted detection',
+			callback: () => { void this.armAssistedDetection(); },
+		});
+		this.addCommand({
+			id: 'disarm-assisted-detection',
+			name: 'Disarm assisted detection',
+			callback: () => this.disarmAssistedDetection(),
+		});
 	}
 
 	onunload(): void {
 		this.startModal?.close();
+		this.assistedDetection?.dispose();
 		void this.sessions?.dispose();
 	}
 
@@ -86,6 +118,39 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getSessionState(): SessionState {
 		return this.sessions.getState();
+	}
+
+	getDetectionMode(): DetectionMode {
+		return this.settings.detectionMode;
+	}
+
+	getAssistedDetectionState(): AssistedDetectionState {
+		return this.assistedDetection.getState();
+	}
+
+	async armAssistedDetection(): Promise<void> {
+		const connected = this.connection.getState().status;
+		const session = this.sessions.getState();
+		const recovery = this.sessions.getRecoveryState();
+		if (
+			this.settings.detectionMode !== 'assisted' ||
+			(connected !== 'connected' && connected !== 'warning') ||
+			(session.status !== 'idle' && session.status !== 'active') ||
+			(session.status === 'idle' && recovery.status !== 'none')
+		) return;
+		this.renderViews();
+		await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000);
+		this.renderViews();
+	}
+
+	disarmAssistedDetection(): void {
+		this.assistedDetection.disarm();
+		this.renderViews();
+	}
+
+	dismissAssistedProposal(): void {
+		this.assistedDetection.dismissProposal();
+		this.renderViews();
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
@@ -117,6 +182,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async stopManualSession(): Promise<void> {
 		this.renderViews();
 		await this.sessions.stop();
+		if (this.sessions.getState().status === 'provisional') {
+			this.assistedDetection.disarm('session_stopped');
+		}
 		this.renderViews();
 	}
 
@@ -134,6 +202,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async startManualSession(input: SessionStartInput): Promise<void> {
 		this.renderViews();
 		const result = await this.sessions.start(input);
+		if (result.status === 'started') this.assistedDetection.dismissProposal();
 		if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
 			try {
 				await this.updateSettings({ preferredCharacter: input.characterName.trim() });
@@ -144,13 +213,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {
 		const previousSecret = this.settings.apiKeySecret;
+		const previousDetectionMode = this.settings.detectionMode;
+		const previousPollingInterval = this.settings.pollingIntervalMinutes;
 		const nextSettings = migrateSettings(
 			{ ...this.settings, ...settings },
 			this.app.vault.configDir,
 		);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
+		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
+			this.assistedDetection.disarm('mode_off');
+		}
+		if (previousPollingInterval !== nextSettings.pollingIntervalMinutes) {
+			this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000);
+		}
 		if (secretChanged) {
+			this.assistedDetection.disarm('connection_changed');
 			this.connection.reset();
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();

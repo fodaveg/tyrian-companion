@@ -38,16 +38,17 @@ La versión `0.1.0` valida la base técnica:
 - Un comando abre una vista con el estado de conexión.
 - Los ajustes permiten seleccionar una clave de API con `SecretComponent`.
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
-- **Check connection** valida explícitamente la clave y la cuenta; **Start session** y **Stop session** capturan las fronteras manuales. Ninguna llamada de red ocurre al cargar o abrir la vista.
-- Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección sin activar todavía esas funciones.
+- **Check connection** valida explícitamente la clave y la cuenta; **Start session** y **Stop session** capturan las fronteras manuales. **Arm assisted detection** inicia el muestreo solo tras una acción explícita. Ninguna llamada de red ocurre al cargar o abrir la vista.
+- Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección; el modo asistido expone un control de armado que siempre vuelve desarmado al recargar.
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
 - H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; todavía no clasifica ni crea historial durable.
 - H3.4 persiste localmente el runtime recuperable —baseline, final/delta cuando existen y estado cercado— y ofrece recuperación o descarte explícitos tras reiniciar, sin red automática ni escritura al vault.
-- H3.5 aporta el reloj de polling para la detección autoasistida futura: es explícito, no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. Todavía no está armado ni interpreta deltas; H3.6–H3.8 poseen esas decisiones.
-- H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos contiguos generan una propuesta con la ventana en que pudo empezar. No usa nombres ni heurísticas de catálogo, y no inicia una sesión sin el armado/confirmación futuros.
+- H3.5 aporta el reloj de polling: no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. H3.8 solo lo arranca tras capturar un baseline estable desde el control de armado.
+- H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos que comparten snapshot fronterizo generan una propuesta con la ventana en que pudo empezar. La regla inicial usa el id oficial de los sacos de Halloween; no usa nombres ni heurísticas de catálogo y no inicia una sesión sin confirmación.
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
+- H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -58,12 +59,12 @@ La versión `0.1.0` valida la base técnica:
 
 ## Fuera de alcance de la vertical 0.1.0
 
-- Sincronización periódica armada o historial durable de sesiones finalizadas.
+- Sincronización periódica independiente del armado o historial durable de sesiones finalizadas.
 - Precios y cálculo de patrimonio total.
 - Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
-- Seguimiento automático de sesiones.
+- Inicio o cierre automático de sesiones sin confirmación.
 - Compatibilidad móvil.
 
 ## Principios

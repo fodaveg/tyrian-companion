@@ -77,7 +77,7 @@ export class InactivityStopDetector {
 		const contiguous = this.lastSample === null ||
 			(this.lastSample.accountId === sample.accountId &&
 				this.lastSample.afterSnapshotId === sample.beforeSnapshotId &&
-				this.lastSample.window.to === sample.window.from);
+				Date.parse(this.lastSample.window.to) <= Date.parse(sample.window.from));
 		if (!contiguous) this.resetEvidence();
 		this.lastSample = sample;
 		this.lastSampleIdentity = identity;

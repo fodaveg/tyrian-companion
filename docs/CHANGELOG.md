@@ -57,5 +57,10 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Adaptación conservadora de errores HTTP saneados a política de scheduler; errores de programación o autenticación fallan cerrados y no generan bucles infinitos.
 - Detector H3.6 puro de inicio por items relevantes: dos deltas positivos contiguos producen una propuesta idempotente con intervalo temporal, evidencia completa/limitada y reglas de IDs versionadas.
 - Detector H3.7 puro de inactividad: mide silencio contiguo por tiempo, reinicia ante ganancias y solo propone una ventana de fin con incertidumbre y calidad de evidencia.
+- Controlador H3.8 de detección asistida: armado/desarmado explícitos, baseline estable previo al polling, estado visible y propuestas de inicio/fin que pausan la captura y requieren acción humana.
+- Regla Halloween v1 por id público oficial `36038` (**Trick-or-Treat Bag**), sin depender de nombres localizados ni metadatos de catálogo.
+- Integración segura de H3.5–H3.8 con pausa offline/wake, deduplicación de armado, invalidación de capturas tardías y reinicio desarmado al recargar.
+- Rebase automático al entrar o salir de una sesión y desarmado al cambiar la credencial, evitando mezclar evidencia anterior al inicio o snapshots de cuentas distintas.
+- Contigüidad corregida en H3.6/H3.7: los deltas comparten snapshot fronterizo y admiten el tiempo real no solapado que tarda la captura A/B/C, en lugar de exigir timestamps imposiblemente idénticos.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

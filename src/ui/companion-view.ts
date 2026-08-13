@@ -1,6 +1,8 @@
 import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
+import type { DetectionMode } from '../core/settings';
+import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type {
@@ -15,6 +17,11 @@ export interface CompanionActions {
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
 	getSessionState(): SessionState;
+	getDetectionMode(): DetectionMode;
+	getAssistedDetectionState(): AssistedDetectionState;
+	armAssistedDetection(): Promise<void>;
+	disarmAssistedDetection(): void;
+	dismissAssistedProposal(): void;
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
@@ -84,6 +91,7 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		this.renderSession(contentEl, connectionState, sessionState);
+		this.renderAssistedDetection(contentEl, connectionState, sessionState);
 
 		contentEl.createEl('h3', { text: 'Modules' });
 		const modules = contentEl.createEl('ul', { cls: 'tyrian-companion-view__modules' });
@@ -144,6 +152,121 @@ export class TyrianCompanionView extends ItemView {
 		if (state.details.hasFutureUrlRestrictions) {
 			addDetail(details, 'Future URL access', 'Restricted by this subtoken');
 		}
+	}
+
+	private renderAssistedDetection(
+		container: HTMLElement,
+		connection: ConnectionState,
+		session: SessionState,
+	): void {
+		const mode = this.actions.getDetectionMode();
+		const state = this.actions.getAssistedDetectionState();
+		const card = container.createDiv({ cls: 'tyrian-companion-view__detection' });
+		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
+		card.setAttr('aria-live', 'polite');
+		card.createEl('h3', { text: 'Assisted detection' });
+
+		if (mode === 'off') {
+			card.createEl('p', { text: 'Disabled in settings. No background account checks can run.' });
+			addDetectionDetail(card, 'State', 'Off');
+			return;
+		}
+		if (state.status === 'disarmed') {
+			card.createEl('p', { text: 'Disarmed. No polling or inference is running.' });
+			addDetectionDetail(card, 'State', 'Disarmed');
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const arm = actions.createEl('button', { text: 'Arm detection', cls: 'mod-cta' });
+			const connected = connection.status === 'connected' || connection.status === 'warning';
+			const sessionReady = session.status === 'idle' || session.status === 'active';
+			const recoveryReady = session.status !== 'idle' || this.actions.getSessionRecoveryState().status === 'none';
+			arm.disabled = !connected || !sessionReady || !recoveryReady;
+			arm.addEventListener('click', () => { void this.armDetection(); });
+			if (!connected) card.createEl('p', { text: 'Check the account connection before arming.' });
+			else if (!sessionReady || !recoveryReady) {
+				card.createEl('p', { text: 'Resolve the current session state before arming.' });
+			}
+			return;
+		}
+
+		if (state.status === 'arming') {
+			card.createEl('p', { text: 'Capturing a stable account baseline before polling starts…' });
+			addDetectionDetail(card, 'State', 'Arming');
+			this.addDisarmButton(card);
+			return;
+		}
+
+		if (state.status === 'error') {
+			card.createEl('p', { text: state.message, cls: 'tyrian-companion-view__session-error' });
+			addDetectionDetail(card, 'State', 'Error');
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const retry = actions.createEl('button', { text: 'Try arming again', cls: 'mod-cta' });
+			retry.addEventListener('click', () => { void this.armDetection(); });
+			const disarm = actions.createEl('button', { text: 'Disarm' });
+			disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
+			return;
+		}
+
+		if (state.status === 'start_proposed') {
+			card.createEl('p', { text: 'Relevant festival gains were observed twice. Starting a session still requires you.' });
+			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const start = actions.createEl('button', { text: 'Review and start', cls: 'mod-cta' });
+			start.disabled = session.status !== 'idle';
+			start.addEventListener('click', () => this.actions.openManualSessionStart());
+			this.addDismissAndDisarm(actions);
+			return;
+		}
+
+		if (state.status === 'stop_proposed') {
+			card.createEl('p', { text: 'The configured quiet period was observed. The plugin will not stop the session by itself.' });
+			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const stop = actions.createEl('button', { text: 'Stop session', cls: 'mod-cta' });
+			stop.disabled = session.status !== 'active';
+			stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			this.addDismissAndDisarm(actions);
+			return;
+		}
+
+		card.createEl('p', { text: 'Armed. Polling may suggest a start or stop, but never changes a session silently.' });
+		const details = card.createEl('dl');
+		addDetail(details, 'State', 'Armed');
+		addDetail(details, 'Scheduler', state.scheduler.status);
+		addDetail(details, 'Interval', formatInterval(state.scheduler.intervalMs));
+		if (state.lastSnapshotAt) addDetail(details, 'Last snapshot', formatTimestamp(state.lastSnapshotAt));
+		this.addDisarmButton(card);
+	}
+
+	private async armDetection(): Promise<void> {
+		const arm = this.actions.armAssistedDetection();
+		this.render();
+		await arm;
+		this.render();
+	}
+
+	private addDisarmButton(container: HTMLElement): void {
+		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const disarm = actions.createEl('button', { text: 'Disarm' });
+		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
+	}
+
+	private addDismissAndDisarm(container: HTMLElement): void {
+		const dismiss = container.createEl('button', { text: 'Dismiss proposal' });
+		dismiss.addEventListener('click', () => this.actions.dismissAssistedProposal());
+		const disarm = container.createEl('button', { text: 'Disarm' });
+		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
+	}
+
+	private renderProposalDetails(
+		container: HTMLElement,
+		window: { from: string; to: string; uncertaintyMs: number },
+		quality: 'complete' | 'limited',
+	): void {
+		const details = container.createEl('dl');
+		addDetail(details, 'Possible from', formatTimestamp(window.from));
+		addDetail(details, 'Possible to', formatTimestamp(window.to));
+		addDetail(details, 'Uncertainty', formatDuration(window.uncertaintyMs));
+		addDetail(details, 'Evidence', quality);
 	}
 
 	private renderSession(
@@ -331,6 +454,11 @@ function addDetail(list: HTMLDListElement, term: string, detail: string): void {
 	list.createEl('dd', { text: detail });
 }
 
+function addDetectionDetail(container: HTMLElement, term: string, detail: string): void {
+	const list = container.createEl('dl');
+	addDetail(list, term, detail);
+}
+
 function isCoolingDown(retryAt: number | null): retryAt is number {
 	return retryAt !== null && retryAt > Date.now();
 }
@@ -341,4 +469,13 @@ function cooldownText(retryAt: number): string {
 
 function formatTimestamp(value: string): string {
 	return new Date(value).toLocaleString();
+}
+
+function formatInterval(intervalMs: number | null): string {
+	return intervalMs === null ? 'Paused' : `${Math.round(intervalMs / 60_000)} minutes`;
+}
+
+function formatDuration(durationMs: number): string {
+	const minutes = Math.max(1, Math.ceil(durationMs / 60_000));
+	return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }

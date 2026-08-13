@@ -85,13 +85,22 @@ describe('RelevantItemStartDetector', () => {
 		expect(detector.getProposal()).toBeNull();
 	});
 
-	it('requires the shared snapshot timestamp to match exactly', () => {
+	it('rejects overlapping windows even when the snapshot id appears contiguous', () => {
 		const detector = new RelevantItemStartDetector(RULE_SET);
 		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
 		const shifted = delta('b', 'c', 1, [{ id: 36_001, delta: 1 }]);
-		shifted.window = { from: '2026-08-13T10:01:01.000Z', to: '2026-08-13T10:02:00.000Z' };
+		shifted.window = { from: '2026-08-13T10:00:59.000Z', to: '2026-08-13T10:02:00.000Z' };
 
 		expect(detector.observe(shifted).status).toBe('first_signal');
+	});
+
+	it('accepts the real capture-time gap of the shared snapshot', () => {
+		const detector = new RelevantItemStartDetector(RULE_SET);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
+		const afterCapture = delta('b', 'c', 1, [{ id: 36_001, delta: 1 }]);
+		afterCapture.window = { from: '2026-08-13T10:01:02.000Z', to: '2026-08-13T10:02:00.000Z' };
+
+		expect(detector.observe(afterCapture).status).toBe('proposed');
 	});
 
 	it('treats redelivery as duplicate rather than a second signal', () => {

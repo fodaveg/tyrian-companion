@@ -13,7 +13,8 @@
 	padding-inline-start: var(--size-4-5);
 }
 
-.tyrian-companion-view__session {
+.tyrian-companion-view__session,
+.tyrian-companion-view__detection {
 	margin-block: var(--size-4-6);
 	padding: var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
@@ -21,11 +22,13 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-companion-view__session h3 {
+.tyrian-companion-view__session h3,
+.tyrian-companion-view__detection h3 {
 	margin-block-start: 0;
 }
 
 .tyrian-companion-view__session dl,
+.tyrian-companion-view__detection dl,
 .tyrian-companion-view__status dl {
 	display: grid;
 	grid-template-columns: minmax(7rem, max-content) 1fr;
@@ -33,6 +36,7 @@
 }
 
 .tyrian-companion-view__session dd,
+.tyrian-companion-view__detection dd,
 .tyrian-companion-view__status dd {
 	margin-inline-start: 0;
 	min-width: 0;

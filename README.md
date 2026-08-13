@@ -28,10 +28,13 @@ The current `0.1.0` vertical provides:
   account delta, rechecks the fence, and leaves the session provisional for later review.
 - H3.4 crash/restart recovery backed by a second fail-closed IndexedDB store that preserves the
   full baseline, optional final snapshot, canonical delta, and fenced runtime state.
+- H3.8 assisted detection with an explicit arm/disarm control, a stable baseline before polling,
+  and visible start/stop proposals that always require a user action.
 
-Automatic synchronization, valuation, vault writes, polling, detection,
-and recommendations are intentionally not implemented yet. The snapshot service runs from explicit
-**Start session** and **Stop session** actions only; it describes observed storage, not total account wealth.
+Automatic synchronization, valuation, vault writes, unattended detection,
+and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
+**Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
+storage, not total account wealth.
 
 ## Requirements
 
@@ -59,8 +62,10 @@ The production build creates `main.js` in the project root. A distributable rele
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
-session**, or **Stop session** is explicitly selected. Loading the plugin or opening its view reads
-only local recovery state and does not make network requests.
+session**, **Stop session**, or **Arm assisted detection** is explicitly selected. Loading the plugin
+or opening its view reads only local recovery state and does not make network requests. Assisted
+detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
+without confirmation.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

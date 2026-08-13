@@ -199,7 +199,7 @@ function relevantSignal(delta: ParsedDelta, relevantIds: ReadonlySet<number>): R
 function areContiguous(first: RelevantDeltaSignal, second: RelevantDeltaSignal): boolean {
 	return first.accountId === second.accountId &&
 		first.afterSnapshotId === second.beforeSnapshotId &&
-		first.window.to === second.window.from;
+		Date.parse(first.window.to) <= Date.parse(second.window.from);
 }
 
 function buildProposal(

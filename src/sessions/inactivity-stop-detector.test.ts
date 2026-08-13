@@ -77,6 +77,18 @@ describe('InactivityStopDetector', () => {
 		expect(detector.getProposal()).toBeNull();
 	});
 
+	it('accepts the real capture-time gap of a shared snapshot', () => {
+		const detector = createDetector(120_000);
+		detector.observe(sample('a', 'b', 0, 0));
+		const afterCapture = sample('b', 'c', 1, 0);
+		afterCapture.window = {
+			from: '2026-08-13T10:01:02.000Z',
+			to: '2026-08-13T10:02:02.000Z',
+		};
+
+		expect(detector.observe(afterCapture).status).toBe('proposed');
+	});
+
 	it('does not combine accounts even when snapshot ids appear contiguous', () => {
 		const detector = createDetector(120_000);
 		detector.observe(sample('a', 'b', 0, 0));

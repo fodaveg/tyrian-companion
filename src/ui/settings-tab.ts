@@ -120,7 +120,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				name: 'Polling interval',
-				desc: 'Reserved interval for future assisted detection. Polling is not active yet.',
+				desc: 'Interval used only while assisted detection is explicitly armed.',
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
 						for (const minutes of [15, 30, 60, 120, 240]) {
@@ -136,7 +136,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				name: 'Detection mode',
-				desc: 'Off makes no background checks. Assisted is reserved for a future explicit workflow.',
+				desc: 'Off disables background checks. Assisted exposes explicit arm and disarm controls and resets to disarmed after reload.',
 				render: (setting) => {
 					setting.addDropdown((dropdown) =>
 						dropdown
