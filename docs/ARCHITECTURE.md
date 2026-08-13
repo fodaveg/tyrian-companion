@@ -6,6 +6,7 @@
 
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos y limitación FIFO de concurrencia.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
+- `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
 - `advisor`: estado de preparación, sin lógica de recomendación todavía.
 - `sessions`: modelo y contrato de persistencia de sesiones.
 - `objectives`: modelo y contrato de persistencia de objetivos.
@@ -21,6 +22,9 @@ main -> ui -> connection service -> account gateway -> GW2 client
 main -> advisor
 
 storage snapshot service -> GW2 operation fijada -> core concurrency
+
+public catalog service -> public GW2 client -> core HTTP
+	                  -> cache adapter
 
 sessions ----> contratos puros
 objectives --> contratos puros
@@ -54,6 +58,16 @@ Cada resultado conserva holdings y divisas con desglose, además de `availableBy
 
 La consistencia usa dos pasadas y una tercera como máximo. Los fingerprints canónicos son independientes del orden de respuesta. Dos pasadas con la misma propiedad dan `stable` si también coinciden colocación y detalles o `stable_owned_placement_changed` si cambian ubicación, binding, cargas o configuración; si cambia la propiedad, B y C deben ser consecutivamente iguales o el resultado es `unstable`. Mover moneda entre delivery y wallet conserva propiedad y cambia colocación. Los límites compartidos por el servicio son seis peticiones globales y cuatro inventarios de personaje, también entre cuentas o claves distintas. Tras verificar por separado sus secretos, capturas simultáneas con el mismo token, cuenta, permisos y restricciones comparten el mismo lote; contextos diferentes nunca se coalescen. Todos los trabajos hermanos se drenan antes de liberar un lote fallido, evitando solapar un reintento con peticiones huérfanas.
 
+## Catálogo público
+
+`PublicCatalogService` recibe un `StorageSnapshot` y devuelve una `CatalogResolution` separada, correlacionada por `snapshotId`; no modifica el snapshot ni mezcla metadatos públicos con la observación de cuenta. Deduplica y ordena ids de objetos, divisas y categorías de materiales, consulta `/v2/items`, `/v2/currencies` y `/v2/materials` en lotes de hasta 200 e incluye `lang=es|en` y el mismo `PINNED_SCHEMA`. `GuildWars2PublicCatalogClient` carece deliberadamente de proveedor de secretos y nunca añade `Authorization`.
+
+El modelo normaliza campos mínimos y conserva enums como strings abiertos. Los items retienen tipo/subtipo y un resumen de `details`: bolsas, consumibles, cargas, mini, sufijos, elecciones de stats y datos desconocidos validados para evolución. `suffix_item_id` conserva su id numérico; el campo legacy `secondary_suffix_item_id` conserva su representación string y `""` significa ausente. Las categorías deduplican sus `itemIds`. Wallet y delivery pueden resolver el mismo id público, pero la salida mantiene claves separadas como `wallet:1` y `delivery:1`.
+
+La cobertura se publica por id como `resolved`, `missing`, `invalid`, `malformed` o `unavailable`, con causa y origen de red/cache. El parsing es por entrada: un válido no se descarta por otro malformado o extra. Duplicados idénticos se toleran; un conflicto invalida solo ese id. Una omisión en `200` es `missing_response`; `206` conserva válidos y registra omitidos como `partial_response`; `404` registra el lote como `not_found`. Warnings estructurados identifican extras, duplicados, malformados y categorías que no incluyen un item observado en material storage; estos avisos no modifican snapshot ni quality.
+
+`CatalogCacheAdapter` separa la política de resolución del almacenamiento. Tanto la clave como el record contienen `schemaVersion` y `normalizerVersion`, evitando mezclar payloads incompatibles en un futuro adapter persistente. `MemoryCatalogCache` clona estructuralmente al escribir y leer: una resolución mutable nunca comparte arrays u objetos con el estado cacheado. La implementación actual vive solo durante el proceso: objetos y divisas tienen TTL de siete días, categorías de 24 horas y negativos de una hora. Ante `429/500/502/503/504`, timeout o red, un positivo de hasta 30 días puede responder como `cache_stale`; payloads inválidos y fallos no transitorios no usan stale. Resoluciones idénticas comparten promesa y el límite de tres peticiones simultáneas es global a la instancia del servicio.
+
 ## Ajustes y migración
 
 El esquema actual es `2`. `migrateSettings` convierte de forma idempotente los datos sin versión de `0.1.0`, descarta propiedades desconocidas y valida enums e intervalos. La carpeta de salida solo acepta segmentos relativos separados por `/`: rechaza `.`/`..`, NUL, barras inversas, `:*?"<>|`, punto o espacio final, rutas absolutas y el directorio de configuración real del vault. Esta vertical no escribe ningún archivo.
@@ -69,4 +83,5 @@ Antes de activar sesiones u objetivos hay que decidir:
 - Cómo se explican y auditan las recomendaciones.
 - Cómo recuperar automáticamente cambios de roster/`404` durante una captura sin ocultar cobertura parcial.
 - Cómo coordinar un cooldown `429` global entre las peticiones paralelas de una captura.
-- Catálogo, caché y valoración; no forman parte de `storage_snapshot`.
+- Adaptador persistente de catálogo cuando exista un contrato seguro de almacenamiento local.
+- Precios y valoración; no forman parte de `storage_snapshot` ni de `PublicCatalog`.

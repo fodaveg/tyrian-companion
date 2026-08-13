@@ -12,8 +12,10 @@ The current `0.1.0` vertical provides:
 - Versioned settings for language, safe output folder, preferred character, polling interval, and detection mode.
 - A domain-only `storage_snapshot` capture for characters, account storage, bank, materials,
   and optional wallet/delivery data, qualified by consistency and source coverage.
+- A public catalog resolver for localized item, currency, and material-category metadata,
+  with bounded batching, coverage per ID, and an in-memory stale-aware cache.
 
-Automatic synchronization, catalog/cache enrichment, valuation, vault writes, polling, detection,
+Automatic synchronization, persistent catalog caching, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
 or plugin load; it describes observed storage, not total account wealth.
 
@@ -53,6 +55,13 @@ request to GW2 schema `2024-07-20T01:00:00.000Z`. It requires `account`, `charac
 `inventories`; `wallet` and `tradingpost` add optional sources when granted. Embedded upgrades and
 infusions and equipped bags count as owned but not as independently available items. Wallet and
 delivery currency are aggregated by currency id while retaining source subtotals.
+
+`PublicCatalogService` accepts a snapshot without modifying it and calls only public `/v2/items`,
+`/v2/currencies`, and `/v2/materials` endpoints. Requests use `es` or `en`, the same pinned schema,
+sorted batches of at most 200 IDs, and at most three simultaneous requests. It never receives an API
+key. Positive item/currency metadata remains fresh for seven days, material categories for one day,
+and missing IDs for one hour; transient failures may use positive entries up to 30 days old. Cache
+keys and records include both GW2 schema and normalizer versions, so formats cannot be mixed.
 
 ## Project documentation
 
