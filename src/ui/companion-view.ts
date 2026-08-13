@@ -24,6 +24,11 @@ import {
 	type SessionDetectionQualitySummary,
 } from '../sessions/session-detection-quality';
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
+import {
+	buildCompanionStatus,
+	visibleRailItems,
+	type CompanionStatusProjection,
+} from './companion-status-model';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -53,7 +58,16 @@ export interface CompanionActions {
 }
 
 export class TyrianCompanionView extends ItemView {
-	private countdownInterval: number | null = null;
+	private refreshInterval: number | null = null;
+	private readonly dynamicStatusNodes = new Map<string, { value: HTMLElement; detail: HTMLElement }>();
+	private headerPhase: HTMLElement | null = null;
+	private headerElapsed: HTMLElement | null = null;
+	private checkButton: HTMLButtonElement | null = null;
+	private readonly cooldownNodes: HTMLElement[] = [];
+	private incident: HTMLElement | null = null;
+	private incidentMessage: HTMLElement | null = null;
+	private incidentMore: HTMLElement | null = null;
+	private ledger: HTMLElement | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -79,20 +93,33 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
-		this.clearCountdown();
+		this.clearRefresh();
 	}
 
 	render(): void {
-		this.clearCountdown();
+		this.clearRefresh();
 		const { contentEl } = this;
 		const connectionState = this.actions.getConnectionState();
 		const sessionState = this.actions.getSessionState();
+		const projection = this.projectStatus(Date.now());
 
 		contentEl.empty();
+		this.dynamicStatusNodes.clear();
+		this.headerPhase = null;
+		this.headerElapsed = null;
+		this.checkButton = null;
+		this.cooldownNodes.length = 0;
+		this.incident = null;
+		this.incidentMessage = null;
+		this.incidentMore = null;
+		this.ledger = null;
 		contentEl.addClass('tyrian-companion-view');
-		contentEl.createEl('h2', { text: 'Tyrian companion' });
+		this.renderLedgerHeader(contentEl, projection, connectionState, sessionState);
+		this.renderStatusRail(contentEl, projection);
 
-		const status = contentEl.createDiv({ cls: 'tyrian-companion-view__status' });
+		const account = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		account.createEl('summary', { text: 'Account connection' });
+		const status = account.createDiv({ cls: 'tyrian-companion-view__status' });
 		status.setAttr('role', connectionState.status === 'error' ? 'alert' : 'status');
 		status.setAttr('aria-live', 'polite');
 		this.renderConnectionState(status, connectionState);
@@ -101,22 +128,155 @@ export class TyrianCompanionView extends ItemView {
 			text: connectionState.status === 'checking' ? 'Checking…' : 'Check connection',
 			cls: 'mod-cta',
 		});
+		this.checkButton = checkButton;
 		const retryAt = getRetryAt(connectionState);
 		checkButton.disabled = connectionState.status === 'checking' || isCoolingDown(retryAt);
 		checkButton.addEventListener('click', () => {
 			void this.checkConnection();
 		});
-		if (isCoolingDown(retryAt)) {
-			this.countdownInterval = contentEl.win.setInterval(() => this.render(), 1_000);
+
+		const sessionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		sessionDetails.createEl('summary', { text: 'Session details' });
+		this.renderSession(sessionDetails, connectionState, sessionState);
+		const detectionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		detectionDetails.createEl('summary', { text: 'Detection details' });
+		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
+
+		if (projection.refreshEveryMs !== null || isCoolingDown(retryAt)) {
+			this.refreshInterval = contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
 		}
+	}
 
-		this.renderSession(contentEl, connectionState, sessionState);
-		this.renderAssistedDetection(contentEl, connectionState, sessionState);
+	private projectStatus(now: number): CompanionStatusProjection {
+		const session = this.actions.getSessionState();
+		const observed = session.status === 'error' ? session.failedState : session;
+		return buildCompanionStatus({
+			now,
+			connection: this.actions.getConnectionState(),
+			session,
+			detectionMode: this.actions.getDetectionMode(),
+			detection: this.actions.getAssistedDetectionState(),
+			qualityState: this.actions.getDetectionQualityState(),
+			qualityStats: this.actions.getDetectionQualityStats(),
+			sessionQuality: 'sessionId' in observed ? this.actions.getSessionDetectionQuality(observed.sessionId) : null,
+			delta: this.actions.getProvisionalDelta(),
+			review: this.actions.getContaminationReview(),
+			recovery: this.actions.getSessionRecoveryState(),
+			startFailure: this.actions.getSessionStartFailure(),
+			stopFailure: this.actions.getSessionStopFailure(),
+		});
+	}
 
-		contentEl.createEl('h3', { text: 'Modules' });
-		const modules = contentEl.createEl('ul', { cls: 'tyrian-companion-view__modules' });
-		for (const moduleName of ['Account', 'Advisor', 'Sessions', 'Objectives']) {
-			modules.createEl('li', { text: moduleName });
+	private refreshDynamicStatus(): void {
+		const projection = this.projectStatus(Date.now());
+		const connection = this.actions.getConnectionState();
+		for (const status of projection.items.filter((item) => item.id !== 'session')) {
+			const nodes = this.dynamicStatusNodes.get(status.id);
+			nodes?.value.setText(status.value);
+			nodes?.detail.setText(status.detail);
+		}
+		const session = projection.items.find((status) => status.id === 'session');
+		if (session) {
+			this.headerPhase?.setText(session.value);
+			this.headerElapsed?.setText(session.detail);
+		}
+		const retryAt = getRetryAt(connection);
+		const coolingDown = isCoolingDown(retryAt);
+		if (this.checkButton) {
+			this.checkButton.disabled = connection.status === 'checking' || coolingDown;
+			this.checkButton.setText(connection.status === 'checking' ? 'Checking…' : 'Check connection');
+		}
+		for (const node of this.cooldownNodes) {
+			node.hidden = !coolingDown;
+			if (coolingDown) node.setText(cooldownText(retryAt));
+		}
+		if (this.ledger) this.ledger.setAttr('data-tone', projection.surfaceTone);
+		if (this.incident && this.incidentMessage && this.incidentMore) {
+			this.incident.hidden = projection.errors.length === 0;
+			this.incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
+			this.incidentMessage.setText(projection.errors[0] ?? 'The current state needs attention.');
+			this.incidentMore.hidden = projection.errors.length <= 1;
+			this.incidentMore.setText(`+${String(Math.max(0, projection.errors.length - 1))} more`);
+		}
+		if (projection.refreshEveryMs === null) this.clearRefresh();
+	}
+
+	private renderLedgerHeader(
+		container: HTMLElement,
+		projection: CompanionStatusProjection,
+		connection: ConnectionState,
+		session: SessionState,
+	): void {
+		const header = container.createEl('header', { cls: 'tyrian-companion-view__masthead' });
+		const signature = header.createDiv({ cls: 'tyrian-companion-view__compass' });
+		signature.setAttr('aria-hidden', 'true');
+		const title = header.createDiv({ cls: 'tyrian-companion-view__title' });
+		title.createEl('p', { text: 'Tyria field ledger', cls: 'tyrian-companion-view__eyebrow' });
+		title.createEl('h2', { text: 'Tyrian companion' });
+		const sessionStatus = projection.items.find((status) => status.id === 'session');
+		if (sessionStatus) {
+			this.headerPhase = title.createEl('strong', { text: sessionStatus.value, cls: 'tyrian-companion-view__phase' });
+			this.headerElapsed = title.createEl('p', { text: sessionStatus.detail, cls: 'tyrian-companion-view__elapsed' });
+		}
+		const action = header.createDiv({ cls: 'tyrian-companion-view__primary-action' });
+		this.renderPrimaryAction(action, projection, connection);
+	}
+
+	private renderStatusRail(container: HTMLElement, projection: CompanionStatusProjection): void {
+		const ledger = container.createEl('section', { cls: 'tyrian-companion-view__ledger' });
+		this.ledger = ledger;
+		ledger.setAttr('aria-label', 'Farming status');
+		ledger.setAttr('data-tone', projection.surfaceTone);
+		const rail = ledger.createDiv({ cls: 'tyrian-companion-view__rail' });
+		for (const status of visibleRailItems(projection)) {
+			const cell = rail.createDiv({ cls: 'tyrian-companion-view__rail-item' });
+			if (status.id === 'account') cell.addClass('tyrian-companion-view__account-mark');
+			cell.setAttr('data-tone', status.tone);
+			cell.createSpan({ text: status.label, cls: 'tyrian-companion-view__rail-label' });
+			const value = cell.createEl('strong', { text: status.value });
+			const detail = cell.createEl('small', { text: status.detail });
+			if (status.id !== 'account') this.dynamicStatusNodes.set(status.id, { value, detail });
+		}
+		const incident = ledger.createDiv({ cls: 'tyrian-companion-view__incident' });
+		this.incident = incident;
+		incident.hidden = projection.errors.length === 0;
+		incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
+		incident.setAttr('role', 'alert');
+		incident.createEl('strong', { text: 'Attention' });
+		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? 'The current state needs attention.' });
+		this.incidentMore = incident.createEl('small', { text: `+${String(Math.max(0, projection.errors.length - 1))} more` });
+		this.incidentMore.hidden = projection.errors.length <= 1;
+	}
+
+	private renderPrimaryAction(
+		container: HTMLElement,
+		projection: CompanionStatusProjection,
+		connection: ConnectionState,
+	): void {
+		if (projection.primaryAction === 'stop') {
+			const button = container.createEl('button', { text: 'Stop session', cls: 'mod-cta' });
+			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			return;
+		}
+		if (projection.primaryAction === 'review') {
+			const button = container.createEl('button', { text: 'Review activity', cls: 'mod-cta' });
+			button.addEventListener('click', () => this.openContaminationReview(this.actions.getContaminationReview()));
+			return;
+		}
+		if (projection.primaryAction === 'clear') {
+			const button = container.createEl('button', { text: 'Clear session' });
+			button.addEventListener('click', () => { void this.actions.resetCompletedSession(); });
+			return;
+		}
+		if (projection.primaryAction === 'recover') {
+			const button = container.createEl('button', { text: 'Recover session', cls: 'mod-cta' });
+			button.addEventListener('click', () => { void this.runRecovery(); });
+			return;
+		}
+		if (projection.primaryAction === 'start') {
+			const button = container.createEl('button', { text: 'Start session', cls: 'mod-cta' });
+			button.disabled = connection.status !== 'connected' && connection.status !== 'warning';
+			button.addEventListener('click', () => this.actions.openManualSessionStart());
 		}
 	}
 
@@ -142,9 +302,9 @@ export class TyrianCompanionView extends ItemView {
 			container.createEl('h3', { text: 'Connection failed' });
 			container.createEl('p', { text: state.message });
 			if (isCoolingDown(state.retryAt)) {
-				container.createEl('p', {
+				this.cooldownNodes.push(container.createEl('p', {
 					text: cooldownText(state.retryAt),
-				});
+				}));
 			}
 			return;
 		}
@@ -155,7 +315,7 @@ export class TyrianCompanionView extends ItemView {
 		if (state.status === 'warning') {
 			container.createEl('p', { text: state.message });
 			if (isCoolingDown(state.retryAt)) {
-				container.createEl('p', { text: cooldownText(state.retryAt) });
+				this.cooldownNodes.push(container.createEl('p', { text: cooldownText(state.retryAt) }));
 			}
 		}
 		const details = container.createEl('dl');
@@ -524,10 +684,10 @@ export class TyrianCompanionView extends ItemView {
 		}
 	}
 
-	private clearCountdown(): void {
-		if (this.countdownInterval !== null) {
-			this.contentEl.win.clearInterval(this.countdownInterval);
-			this.countdownInterval = null;
+	private clearRefresh(): void {
+		if (this.refreshInterval !== null) {
+			this.contentEl.win.clearInterval(this.refreshInterval);
+			this.refreshInterval = null;
 		}
 	}
 }

@@ -4,6 +4,8 @@
 
 Tyrian Companion es una plataforma modular para entender y organizar una cuenta de Guild Wars 2 desde Obsidian. Su norte es convertir datos dispersos de cuenta, inventario, economía, sesiones y objetivos en información explicada y accionable, sin operar nunca sobre la cuenta del jugador.
 
+H5.1 convierte la vista base en una bitácora de campo: en dos segundos debe responder si una sesión puede o está farmeando y si su observación es fiable. Fase y duración dominan; detector, polling, calidad y cuenta forman una sola rail, mientras la incidencia más importante interrumpe la superficie y el diagnóstico completo queda bajo disclosures. Esta vertical no añade comandos, notificaciones, historial ni acciones económicas.
+
 Está pensado tanto para un jugador individual como para grupos o clanes que quieran compartir la misma herramienta manteniendo sus datos separados. Cada instalación usa la clave y el vault de su propietario: no existe un servidor central, no se comparten claves ni se agregan datos del clan por defecto.
 
 ## Semántica de exactitud

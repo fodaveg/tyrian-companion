@@ -8,6 +8,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 
 - Scaffold de plugin Obsidian TypeScript/esbuild con ESLint, Vitest y CI.
 - Vista **Tyrian Companion** y comando **Open companion**.
+- Bitácora H5.1 status-first con fase/duración, detector, polling, calidad, cuenta e incidencia priorizada; detalles secundarios plegables, layout responsive, foco visible y controles táctiles de 44 px.
 - Selección de clave con `SecretComponent` y resolución mediante `SecretStorage`.
 - Cliente mínimo de Guild Wars 2 inactivo hasta una petición explícita.
 - Verificación de referencias borradas en `SecretStorage` y validación del perfil de cuenta.
