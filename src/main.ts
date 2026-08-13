@@ -19,6 +19,9 @@ import {
 } from './sessions/assisted-detection-service';
 import type { SessionContaminationAnswers } from './sessions/session-contamination-review';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
+import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
+import { DetectionQualityRecorder } from './sessions/session-detection-quality-recorder';
+import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
 import {
 	ManualSessionStartService,
 	type SessionRecoveryState,
@@ -37,6 +40,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private assistedDetection!: AssistedDetectionService;
+	private detectionQuality!: DetectionQualityRecorder;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 
@@ -60,6 +64,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		);
 		await this.sessions.initialize();
+		this.detectionQuality = new DetectionQualityRecorder(
+			new IndexedDbDetectionQualityStore(window.indexedDB),
+		);
+		void this.detectionQuality.initialize().then(() => this.renderViews());
 		this.assistedDetection = new AssistedDetectionService({
 			snapshots,
 			getSessionState: () => this.sessions.getState(),
@@ -100,6 +108,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	onunload(): void {
 		this.startModal?.close();
 		this.assistedDetection?.dispose();
+		this.detectionQuality?.dispose();
 		void this.sessions?.dispose();
 	}
 
@@ -129,6 +138,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.assistedDetection.getState();
 	}
 
+	getDetectionQualityState() {
+		return this.detectionQuality.getState();
+	}
+
+	getSessionDetectionQuality(sessionId: string) {
+		return this.detectionQuality.getSessionSummary(sessionId);
+	}
+
+	getDetectionQualityStats() {
+		return this.detectionQuality.getStats();
+	}
+
 	async armAssistedDetection(): Promise<void> {
 		const connected = this.connection.getState().status;
 		const session = this.sessions.getState();
@@ -149,7 +170,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 	}
 
-	dismissAssistedProposal(): void {
+	async dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void> {
+		const detection = this.assistedDetection.getState();
+		const session = this.sessions.getState();
+		if (detection.status === 'start_proposed') {
+			void this.detectionQuality.recordDismissed('start', null, cause, detection.proposal)
+				.then(() => this.renderViews());
+		} else if (detection.status === 'stop_proposed') {
+			const observed = session.status === 'error' ? session.failedState : session;
+			const sessionId = observed.status === 'active' ? observed.sessionId : null;
+			if (sessionId) {
+				void this.detectionQuality.recordDismissed('stop', sessionId, cause, detection.proposal)
+					.then(() => this.renderViews());
+			}
+		}
 		this.assistedDetection.dismissProposal();
 		this.renderViews();
 	}
@@ -196,9 +230,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async stopManualSession(): Promise<void> {
+		const detection = this.assistedDetection.getState();
+		const proposal = detection.status === 'stop_proposed' ? detection.proposal : null;
 		this.renderViews();
-		await this.sessions.stop();
-		if (this.sessions.getState().status === 'provisional') {
+		const result = await this.sessions.stop();
+		if (result.status === 'stopped') {
+			void this.detectionQuality.recordAccepted(
+				'stop',
+				result.state.sessionId,
+				result.state.finalSnapshot.completedAt,
+				proposal ?? {
+					mode: 'manual',
+					window: {
+						from: result.state.stopRequestedAt,
+						to: result.state.finalSnapshot.completedAt,
+					},
+				},
+			).then(() => this.renderViews());
 			this.assistedDetection.disarm('session_stopped');
 		}
 		this.renderViews();
@@ -216,9 +264,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async startManualSession(input: SessionStartInput): Promise<void> {
+		const detection = this.assistedDetection.getState();
+		const proposal = detection.status === 'start_proposed' ? detection.proposal : null;
 		this.renderViews();
 		const result = await this.sessions.start(input);
-		if (result.status === 'started') this.assistedDetection.dismissProposal();
+		if (result.status === 'started') {
+			void this.detectionQuality.recordAccepted(
+				'start',
+				result.state.sessionId,
+				result.state.baseline.completedAt,
+				proposal ?? {
+					mode: 'manual',
+					window: {
+						from: result.state.requestedAt,
+						to: result.state.baseline.completedAt,
+					},
+				},
+			).then(() => this.renderViews());
+			this.assistedDetection.dismissProposal();
+		}
 		if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
 			try {
 				await this.updateSettings({ preferredCharacter: input.characterName.trim() });

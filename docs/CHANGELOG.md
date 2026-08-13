@@ -66,5 +66,8 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Clasificación H2.7 conectada al cierre: limpio confirmado, estimado pendiente o contaminado, sin inferir actividad TP que todavía no se consulta.
 - Runtime de sesión v2 con revisión derivada y terminal completo persistentes; migración segura de v1 a `review:null` y rechazo de clasificaciones manipuladas.
 - Recarga local de la última sesión completa y borrado explícito antes de empezar otra, sin prometer todavía historial multiparte ni notas.
+- Medición H3.10 local e idempotente de fronteras manuales/asistidas con incertidumbre, evidencia y causa en IndexedDB dedicada.
+- Corrección explícita de falsos positivos mediante causas cerradas; los descartes de inicio sin sesión también se conservan localmente.
+- Resumen visible por sesión con modo manual/asistido/mixto, incertidumbre y correcciones, sin bloquear el motor si la telemetría local falla.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

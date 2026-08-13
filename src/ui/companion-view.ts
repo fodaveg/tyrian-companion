@@ -16,6 +16,14 @@ import {
 	type SessionContaminationAnswers,
 	type SessionContaminationReview,
 } from '../sessions/session-contamination-review';
+import {
+	DETECTION_CORRECTION_CAUSES,
+	type DetectionCorrectionCause,
+	type DetectionDecisionCause,
+	type DetectionQualityStats,
+	type SessionDetectionQualitySummary,
+} from '../sessions/session-detection-quality';
+import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -25,9 +33,12 @@ export interface CompanionActions {
 	getSessionState(): SessionState;
 	getDetectionMode(): DetectionMode;
 	getAssistedDetectionState(): AssistedDetectionState;
+	getDetectionQualityState(): DetectionQualityRecorderState;
+	getSessionDetectionQuality(sessionId: string): SessionDetectionQualitySummary | null;
+	getDetectionQualityStats(): DetectionQualityStats | null;
 	armAssistedDetection(): Promise<void>;
 	disarmAssistedDetection(): void;
-	dismissAssistedProposal(): void;
+	dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void>;
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
@@ -174,6 +185,7 @@ export class TyrianCompanionView extends ItemView {
 		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		card.setAttr('aria-live', 'polite');
 		card.createEl('h3', { text: 'Assisted detection' });
+		this.renderDetectionQualityStatus(card);
 
 		if (mode === 'off') {
 			card.createEl('p', { text: 'Disabled in settings. No background account checks can run.' });
@@ -222,7 +234,7 @@ export class TyrianCompanionView extends ItemView {
 			const start = actions.createEl('button', { text: 'Review and start', cls: 'mod-cta' });
 			start.disabled = session.status !== 'idle';
 			start.addEventListener('click', () => this.actions.openManualSessionStart());
-			this.addDismissAndDisarm(actions);
+			this.addDismissAndDisarm(actions, 'start');
 			return;
 		}
 
@@ -233,7 +245,7 @@ export class TyrianCompanionView extends ItemView {
 			const stop = actions.createEl('button', { text: 'Stop session', cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
 			stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
-			this.addDismissAndDisarm(actions);
+			this.addDismissAndDisarm(actions, 'stop');
 			return;
 		}
 
@@ -259,11 +271,34 @@ export class TyrianCompanionView extends ItemView {
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
-	private addDismissAndDisarm(container: HTMLElement): void {
+	private addDismissAndDisarm(container: HTMLElement, phase: 'start' | 'stop'): void {
 		const dismiss = container.createEl('button', { text: 'Dismiss proposal' });
-		dismiss.addEventListener('click', () => this.actions.dismissAssistedProposal());
+		dismiss.addEventListener('click', () => {
+			new DetectionCorrectionModal(
+				this.app,
+				phase,
+				(cause) => this.actions.dismissAssistedProposal(cause),
+			).open();
+		});
 		const disarm = container.createEl('button', { text: 'Disarm' });
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
+	}
+
+	private renderDetectionQualityStatus(container: HTMLElement): void {
+		const state = this.actions.getDetectionQualityState();
+		if (state.status === 'unavailable') {
+			container.createEl('p', { text: state.message, cls: 'tyrian-companion-view__session-error' });
+			return;
+		}
+		if (state.status === 'loading') {
+			container.createEl('p', { text: 'Loading local detection quality…' });
+			return;
+		}
+		const stats = this.actions.getDetectionQualityStats();
+		if (!stats) return;
+		const details = container.createEl('dl');
+		addDetail(details, 'Recorded boundaries', String(stats.acceptedBoundaries));
+		addDetail(details, 'Corrected proposals', String(stats.correctedFalsePositives));
 	}
 
 	private renderProposalDetails(
@@ -463,6 +498,30 @@ export class TyrianCompanionView extends ItemView {
 		addDetail(details, 'Profession', state.startContext.build.profession);
 		addDetail(details, 'Magic Find', `${state.startContext.magicFind.value} (manual)`);
 		addDetail(details, 'Started', formatTimestamp(state.baseline.completedAt));
+		this.renderSessionDetectionQuality(details, state.sessionId);
+	}
+
+	private renderSessionDetectionQuality(
+		details: HTMLDListElement,
+		sessionId: string,
+	): void {
+		const summary = this.actions.getSessionDetectionQuality(sessionId);
+		if (!summary) return;
+		addDetail(details, 'Detection mode', detectionModeLabel(summary.mode));
+		addDetail(details, 'Start cause', summary.start ? detectionCauseLabel(summary.start.cause) : 'Not recorded');
+		addDetail(details, 'Start uncertainty', summary.start ? formatDuration(summary.start.uncertaintyMs) : 'Unknown');
+		if (summary.stop) {
+			addDetail(details, 'Stop cause', detectionCauseLabel(summary.stop.cause));
+			addDetail(details, 'Stop uncertainty', formatDuration(summary.stop.uncertaintyMs));
+		}
+		addDetail(details, 'Corrected false positives', String(summary.correctedFalsePositives.length));
+		if (summary.correctedFalsePositives.length > 0) {
+			addDetail(
+				details,
+				'Correction causes',
+				summary.correctedFalsePositives.map((event) => detectionCauseLabel(event.cause)).join(', '),
+			);
+		}
 	}
 
 	private clearCountdown(): void {
@@ -493,6 +552,60 @@ class ConfirmDiscardSessionModal extends Modal {
 			void this.onConfirm().finally(() => this.close());
 		});
 		cancel.focus();
+	}
+}
+
+class DetectionCorrectionModal extends Modal {
+	constructor(
+		app: App,
+		private readonly phase: 'start' | 'stop',
+		private readonly onConfirm: (cause: DetectionCorrectionCause) => Promise<void>,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle(this.phase === 'start' ? 'Why was the start proposal wrong?' : 'Why was the stop proposal wrong?');
+		this.contentEl.createEl('p', {
+			text: 'This structured label helps measure detection quality. It is stored only on this device.',
+		});
+		const form = this.contentEl.createEl('form', { cls: 'tyrian-companion-quality-correction' });
+		const fieldset = form.createEl('fieldset');
+		fieldset.createEl('legend', { text: 'Correction cause' });
+		const allowed = correctionCauses(this.phase);
+		const inputs = allowed.map((cause, index) => ({
+			cause,
+			input: radioOption(
+				fieldset,
+				'detection-correction-cause',
+				cause,
+				detectionCauseLabel(cause),
+				index === 0,
+			),
+		}));
+		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
+		error.setAttr('role', 'alert');
+		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: 'Keep proposal', type: 'button' });
+		const submit = actions.createEl('button', { text: 'Save and dismiss', type: 'submit', cls: 'mod-cta' });
+		cancel.addEventListener('click', () => this.close());
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const selected = inputs.find(({ input }) => input.checked)?.cause;
+			if (!selected) {
+				error.setText('Choose a correction cause.');
+				return;
+			}
+			submit.disabled = true;
+			cancel.disabled = true;
+			error.setText('');
+			void this.onConfirm(selected).then(() => this.close()).catch(() => {
+				error.setText('The proposal could not be dismissed.');
+				submit.disabled = false;
+				cancel.disabled = false;
+			});
+		});
+		inputs[0]?.input.focus();
 	}
 }
 
@@ -614,6 +727,38 @@ function activityLabel(key: SessionActivityKey): string {
 	return labels[key];
 }
 
+function correctionCauses(phase: 'start' | 'stop'): DetectionCorrectionCause[] {
+	const allowed: DetectionCorrectionCause[] = phase === 'start'
+		? ['not_farming', 'unrelated_account_activity', 'other']
+		: ['still_farming', 'temporary_pause', 'unrelated_account_activity', 'other'];
+	return allowed.filter((cause) => DETECTION_CORRECTION_CAUSES.includes(cause));
+}
+
+function detectionModeLabel(mode: SessionDetectionQualitySummary['mode']): string {
+	const labels: Record<SessionDetectionQualitySummary['mode'], string> = {
+		manual: 'Manual',
+		assisted: 'Assisted',
+		mixed: 'Mixed',
+		incomplete: 'Incomplete legacy data',
+	};
+	return labels[mode];
+}
+
+function detectionCauseLabel(cause: DetectionDecisionCause): string {
+	const labels: Record<DetectionDecisionCause, string> = {
+		manual_start: 'Manual start',
+		manual_stop: 'Manual stop',
+		relevant_item_gain: 'Relevant item gains',
+		inactivity: 'Inactivity threshold',
+		not_farming: 'I was not farming',
+		still_farming: 'I was still farming',
+		temporary_pause: 'It was only a temporary pause',
+		unrelated_account_activity: 'The account activity was unrelated',
+		other: 'Another reason',
+	};
+	return labels[cause];
+}
+
 function isCoolingDown(retryAt: number | null): retryAt is number {
 	return retryAt !== null && retryAt > Date.now();
 }
@@ -631,6 +776,11 @@ function formatInterval(intervalMs: number | null): string {
 }
 
 function formatDuration(durationMs: number): string {
-	const minutes = Math.max(1, Math.ceil(durationMs / 60_000));
+	if (durationMs === 0) return '0 seconds';
+	if (durationMs < 60_000) {
+		const seconds = Math.max(1, Math.ceil(durationMs / 1_000));
+		return `${seconds} second${seconds === 1 ? '' : 's'}`;
+	}
+	const minutes = Math.ceil(durationMs / 60_000);
 	return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }

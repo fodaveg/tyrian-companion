@@ -32,6 +32,8 @@ The current `0.1.0` vertical provides:
   and visible start/stop proposals that always require a user action.
 - H3.9 contamination review for provisional sessions, with explicit activity declarations,
   conservative H2.7 classification, crash-safe local persistence, and a completed-session state.
+- H3.10 local detection-quality measurement: each accepted boundary keeps its manual or assisted
+  mode, uncertainty and cause, while dismissed proposals keep a structured correction cause.
 
 Automatic synchronization, valuation, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
@@ -74,6 +76,11 @@ crafting/conversion occurred, purchases or sales happened through the Trading Po
 transfers occurred, or other account activity took place. A declared activity always produces a
 contaminated result. “Not sure” remains estimated and provisional. Trading Post history is not queried
 yet, so the user declaration is explicit rather than inferred.
+
+Detection-quality observations use a separate local IndexedDB database. They contain session and
+proposal identifiers, boundary window and uncertainty, evidence quality, decision and correction cause, but no
+API key, item payload or free-text note. If this optional measurement store is unavailable, session
+start, stop and proposal dismissal continue to work and the view reports the missing telemetry.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

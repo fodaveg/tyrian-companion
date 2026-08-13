@@ -50,6 +50,7 @@ La versión `0.1.0` valida la base técnica:
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
 - H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
 - H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; el historial de varias sesiones aún no existe.
+- H3.10 registra localmente cómo se fijó cada frontera: manual o asistida, causa, incertidumbre y calidad de evidencia. Descartar una propuesta exige clasificar el falso positivo; el resumen de la sesión conserva correcciones, modo e incertidumbre sin texto libre ni datos de inventario. La medición es auxiliar y nunca bloquea la sesión.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -63,6 +64,7 @@ La versión `0.1.0` valida la base técnica:
 - Sincronización periódica independiente del armado o historial durable de sesiones finalizadas.
 - Precios y cálculo de patrimonio total.
 - Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
+- Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Inicio o cierre automático de sesiones sin confirmación.
