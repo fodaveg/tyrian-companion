@@ -53,5 +53,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Recovery H3.4 tras reinicio con record runtime JSON cercado en IndexedDB dedicada, snapshots completos y delta canónico verificable.
 - Vista de sesión recuperable con estados busy/error accesibles, acción explícita de recuperación y descarte destructivo confirmado.
 - CAS de persistencia por machine/session/fence/instance y `assertOwned` previo a save/clear, sin fallback a memoria en producción.
+- Scheduler H3.5 explícito y single-flight para polling API futuro, con intervalo configurable, pausa offline/sleep, `Retry-After`, backoff acotado y descarte de ticks perdidos.
+- Adaptación conservadora de errores HTTP saneados a política de scheduler; errores de programación o autenticación fallan cerrados y no generan bucles infinitos.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

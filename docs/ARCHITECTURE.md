@@ -29,10 +29,19 @@ public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
 sessions ----> coordinación local + contratos puros
+         \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+## Scheduler de polling API
+
+H3.5 añade `ApiPollScheduler` como una primitiva independiente de snapshots y de la máquina de sesión. Construirla no registra listeners, no crea timers y no llama a la red. Un consumidor futuro debe arrancarla explícitamente con el intervalo ya normalizado de settings; H3.8 posee ese armado y H3.6/H3.7 poseen la interpretación de los resultados.
+
+El scheduler usa un único `setTimeout` por deadline y mantiene una sola promesa de polling en vuelo. El siguiente intervalo empieza después de resolver la consulta, por lo que una API lenta no acumula trabajo. Cambiar intervalo, pasar offline, despertar, detener o disponer incrementa una generación: timers y completions antiguos no pueden rearmar el ciclo. Volver online o despertar introduce un retraso de reanudación y nunca reproduce ticks perdidos.
+
+Los resultados forman una unión cerrada: éxito, offline, rate limit, fallo transitorio o fatal. `apiPollOutcomeFromError` traduce únicamente `HttpTransportError` saneado: network/timeout y `500|502|503|504` son transitorios, `429` conserva `retryAfterMs`, y autenticación, respuestas no recuperables o errores desconocidos fallan cerrados. Los fallos transitorios usan backoff exponencial acotado con jitter; un éxito reinicia el contador. La detección de sleep contrasta deadline de reloj de pared y monotónico, descarta la ejecución tardía y programa una sola reanudación fresca.
 
 `GuildWars2AccountGateway` ejecuta la comprobación atómica `tokeninfo → account` y valida ambos payloads antes de publicarlos. Un `401` se reintenta una vez; `403` en `tokeninfo` también se reintenta y no destruye el último estado bueno, mientras que `403` en `account` representa falta de permiso. Errores offline, timeout y `5xx` conservan el último estado conectado como aviso.
 

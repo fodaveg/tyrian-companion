@@ -45,6 +45,7 @@ La versión `0.1.0` valida la base técnica:
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
 - H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; todavía no clasifica ni crea historial durable.
 - H3.4 persiste localmente el runtime recuperable —baseline, final/delta cuando existen y estado cercado— y ofrece recuperación o descarte explícitos tras reiniciar, sin red automática ni escritura al vault.
+- H3.5 aporta el reloj de polling para la detección autoasistida futura: es explícito, no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. Todavía no está armado ni interpreta deltas; H3.6–H3.8 poseen esas decisiones.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -55,7 +56,7 @@ La versión `0.1.0` valida la base técnica:
 
 ## Fuera de alcance de la vertical 0.1.0
 
-- Sincronización periódica o historial durable de sesiones finalizadas.
+- Sincronización periódica armada o historial durable de sesiones finalizadas.
 - Precios y cálculo de patrimonio total.
 - Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
 - Escritura o modificación de notas del vault.
