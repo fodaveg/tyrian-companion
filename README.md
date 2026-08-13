@@ -56,6 +56,8 @@ The current `0.1.0` vertical provides:
   attested opening model with a fresh immediate-sale floor using exact integer thresholds.
 - A pure H4.11 user hold-intent allocator that protects a bounded free quantity until a target
   price or deadline and feeds the remaining quantity into H4.10 without performing an operation.
+- A strict H4.12 JSON recommendation envelope that labels every decision manual-only and
+  side-effect-free, with a mechanical boundary test against I/O dependencies and operations.
 
 Automatic synchronization, persisted valuation/recommendation reports, vault writes, unattended
 detection, and recommendation UI or account operations are intentionally not implemented yet. Snapshot capture runs from explicit
@@ -191,6 +193,17 @@ projection. `recommendContainerDisposition` recomputes the supplied plan from th
 overlay and price batch, validates batch freshness before any hold can consume the free pool,
 subtracts held units before economics and preserves their provenance.
 H4.11 has no persistence, UI, API calls or automatic sell/open operation.
+
+Every H4.10 result also carries an H4.12 `RecommendationEnvelopeV1`. It is an exact JSON-only
+handoff with `execution: manual_in_game`, `sideEffects: none` and `requiresUserAction: true`.
+Its decisions partition reserved, held and economically free quantities through internal
+explanation references. Sell decisions require `instant_sell|vendor`, holds require
+`instant_sell|listing`, and actions without a route reject one; blocked results may request review and invalid results carry an empty
+envelope. No public executor exists. A mechanical Vitest guard scans every production
+`*recommendation*.ts` module for forbidden clients, transports, stores, secrets, Obsidian imports,
+operation inputs and execution/order calls, including side-effect imports plus literal dynamic
+`import()` and `require()`. It does not cover computed specifiers, obfuscated property access or
+modules outside the named recommendation boundary.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

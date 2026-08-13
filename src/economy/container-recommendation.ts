@@ -35,6 +35,11 @@ import {
 	type HoldIntentV1,
 	type HoldPlan,
 } from './hold-intent';
+import {
+	createRecommendationEnvelope,
+	type RecommendationDecision,
+	type RecommendationEnvelopeV1,
+} from './recommendation-envelope';
 
 export const CONTAINER_RECOMMENDATION_VERSION = 1 as const;
 const MICRO_COPPER = 1_000_000n;
@@ -148,6 +153,7 @@ export interface ReservedContainerAllocation {
 export interface HeldContainerAllocation {
 	intentId: string;
 	state: 'holding' | 'price_unavailable';
+	route: 'instant_sell' | 'listing';
 	reason: HoldIntentV1['reason'];
 	quantity: number;
 }
@@ -210,11 +216,12 @@ export interface ContainerDispositionRecommendation {
 }
 
 export type ContainerRecommendationResult =
-	| { status: 'ready'; recommendation: ContainerDispositionRecommendation }
-	| { status: 'reserved_only'; recommendation: ContainerDispositionRecommendation }
+	| { status: 'ready'; recommendation: ContainerDispositionRecommendation; envelope: RecommendationEnvelopeV1 }
+	| { status: 'reserved_only'; recommendation: ContainerDispositionRecommendation; envelope: RecommendationEnvelopeV1 }
 	| { status: 'blocked'; reasons: ContainerRecommendationReason[];
-		recommendation: ContainerDispositionRecommendation | null }
-	| { status: 'invalid'; reasons: ContainerRecommendationReason[]; recommendation: null };
+		recommendation: ContainerDispositionRecommendation | null; envelope: RecommendationEnvelopeV1 }
+	| { status: 'invalid'; reasons: ContainerRecommendationReason[]; recommendation: null;
+		envelope: RecommendationEnvelopeV1 };
 
 /** Pure H4.10 decision engine. It never performs a market, account, persistence or item operation. */
 export function recommendContainerDisposition(inputValue: unknown): ContainerRecommendationResult {
@@ -229,9 +236,11 @@ export function recommendContainerDisposition(inputValue: unknown): ContainerRec
 		const { freeQuantity: reservationFree, reserved, gainedQuantity } = reservation;
 		// Fully reserved gains need no temporal market evidence and cannot produce an action.
 		if (reservationFree === 0) {
+			const recommendation = baseRecommendation(input, reserved, [], 0, null, null, []);
 			return {
 				status: 'reserved_only',
-				recommendation: baseRecommendation(input, reserved, [], 0, null, null, []),
+				recommendation,
+				envelope: envelopeForRecommendation(recommendation, 'reserved_only'),
 			};
 		}
 		// Holds interpret market quotes, so their batch must be fresh before they can consume the free pool.
@@ -244,9 +253,11 @@ export function recommendContainerDisposition(inputValue: unknown): ContainerRec
 		const { freeQuantity, held, reasons: holdReasons } = hold;
 		// A fresh hold that consumes the remaining pool cannot produce an economic action.
 		if (freeQuantity === 0) {
+			const recommendation = baseRecommendation(input, reserved, held, freeQuantity, null, null, holdReasons);
 			return {
 				status: 'reserved_only',
-				recommendation: baseRecommendation(input, reserved, held, freeQuantity, null, null, holdReasons),
+				recommendation,
+				envelope: envelopeForRecommendation(recommendation, 'reserved_only'),
 			};
 		}
 		if (gainedQuantity < reservationFree || reservationFree < freeQuantity) return invalid('evidence_mismatch');
@@ -262,17 +273,19 @@ export function recommendContainerDisposition(inputValue: unknown): ContainerRec
 			return economics.status === 'invalid' ? invalid(economics.reason)
 				: blockedWithReservation(input, reserved, held, freeQuantity, economics.reason, holdReasons);
 		}
+		const recommendation = baseRecommendation(
+			input,
+			reserved,
+			held,
+			freeQuantity,
+			economics.decision,
+			economics.explanation,
+			holdReasons,
+		);
 		return {
 			status: 'ready',
-			recommendation: baseRecommendation(
-				input,
-				reserved,
-				held,
-				freeQuantity,
-				economics.decision,
-				economics.explanation,
-				holdReasons,
-			),
+			recommendation,
+			envelope: envelopeForRecommendation(recommendation, 'ready'),
 		};
 	} catch {
 		return invalid('arithmetic_overflow');
@@ -305,6 +318,7 @@ function holdEvidence(input: ContainerRecommendationInput):
 		.map((entry) => ({
 			intentId: entry.intentId,
 			state: entry.state as 'holding' | 'price_unavailable',
+			route: entry.projectedTargetNet.route,
 			reason: structuredClone(entry.reason),
 			quantity: entry.allocatedQuantity,
 		}));
@@ -726,11 +740,13 @@ const SHA256_CONSTANTS = [
 ] as const;
 
 function invalid(reason: ContainerRecommendationReasonCode): ContainerRecommendationResult {
-	return { status: 'invalid', reasons: canonicalReasons([{ code: reason }]), recommendation: null };
+	return { status: 'invalid', reasons: canonicalReasons([{ code: reason }]), recommendation: null,
+		envelope: emptyRecommendationEnvelope() };
 }
 
 function blocked(reason: ContainerRecommendationReasonCode): ContainerRecommendationResult {
-	return { status: 'blocked', reasons: canonicalReasons([{ code: reason }]), recommendation: null };
+	return { status: 'blocked', reasons: canonicalReasons([{ code: reason }]), recommendation: null,
+		envelope: emptyRecommendationEnvelope() };
 }
 
 function blockedWithReservation(
@@ -742,11 +758,60 @@ function blockedWithReservation(
 	holdReasons: ContainerRecommendationReason[],
 ): ContainerRecommendationResult {
 	const reasons = canonicalReasons([{ code: reason }, ...holdReasons]);
+	const recommendation = baseRecommendation(input, reserved, held, freeQuantity, null, null, reasons);
 	return {
 		status: 'blocked',
 		reasons,
-		recommendation: baseRecommendation(input, reserved, held, freeQuantity, null, null, reasons),
+		recommendation,
+		envelope: envelopeForRecommendation(recommendation, 'blocked'),
 	};
+}
+
+function envelopeForRecommendation(
+	recommendation: ContainerDispositionRecommendation,
+	status: 'ready' | 'reserved_only' | 'blocked',
+): RecommendationEnvelopeV1 {
+	const decisions: RecommendationDecision[] = [
+		...recommendation.allocations.reserved.map((_, index) => ({
+			action: 'reserve' as const,
+			itemId: recommendation.itemId,
+			quantity: recommendation.allocations.reserved[index]!.quantity,
+			explanationRef: `#/recommendation/allocations/reserved/${String(index)}`,
+		})),
+		...recommendation.allocations.held.map((allocation, index) => ({
+			action: 'hold' as const,
+			itemId: recommendation.itemId,
+			quantity: allocation.quantity,
+			route: allocation.route,
+			explanationRef: `#/recommendation/allocations/held/${String(index)}`,
+		})),
+	];
+	if (status === 'ready' && recommendation.economicDecision !== null) {
+		decisions.push({
+			action: recommendation.economicDecision.action,
+			itemId: recommendation.itemId,
+			quantity: recommendation.economicDecision.quantity,
+			...(recommendation.economicDecision.action === 'sell'
+				? { route: recommendation.economicDecision.sellRoute } : {}),
+			explanationRef: '#/recommendation/explanation',
+		});
+	} else if (status === 'blocked' && recommendation.allocations.freeQuantity > 0) {
+		decisions.push({
+			action: 'review',
+			itemId: recommendation.itemId,
+			quantity: recommendation.allocations.freeQuantity,
+			explanationRef: '#/recommendation/reasons',
+		});
+	}
+	const envelope = createRecommendationEnvelope(decisions);
+	if (envelope === null) throw new Error('Invalid recommendation envelope.');
+	return envelope;
+}
+
+function emptyRecommendationEnvelope(): RecommendationEnvelopeV1 {
+	const envelope = createRecommendationEnvelope([]);
+	if (envelope === null) throw new Error('Invalid empty recommendation envelope.');
+	return envelope;
 }
 
 function canonicalReasons(reasons: ContainerRecommendationReason[]): ContainerRecommendationReason[] {

@@ -93,6 +93,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Intenciones H4.11 puras y versionadas: asignación exclusiva por deadline/id sobre la cantidad libre posterior a reservas, liberación por objetivo/cancelación/expiración, protección explícita sin precio y proyección neta H4.2.
 - Integración H4.10 de planes H4.11 recomputados contra el mismo overlay y batch: las unidades retenidas conservan procedencia y se excluyen de la economía sin ejecutar ninguna operación.
 - Frescura H4.10 validada antes de interpretar intenciones cuando H4.9 deja unidades libres; un batch stale/futuro bloquea y no puede ocultarse como `reserved_only`.
+- Envelope H4.12 JSON-only para todos los estados H4.10, marcado siempre manual, sin efectos laterales y con refs internas a reserva, retención, economía o revisión; no existe executor público.
+- Guard arquitectónico H4.12 sobre todos los módulos productivos de recomendación, probado en rojo mediante sabotaje con un import de `GuildWars2Client` y restaurado después con contenido/modo exactos.
+- Matriz action/route H4.12 cerrada por acción y guard ampliado a imports side-effect, `import()` y `require()` literales, con regresiones de las cuatro sintaxis.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { compareStorageSnapshots } from '../account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
@@ -13,6 +13,7 @@ import {
 } from './container-recommendation';
 import type { ContainerModelV1 } from './container-model';
 import { evaluateHoldIntents, type HoldIntentV1 } from './hold-intent';
+import { isRecommendationEnvelope } from './recommendation-envelope';
 import { buildReservationBalance, createReservationPlan } from './reservation';
 import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
 import type { SessionValuation } from './session-valuation';
@@ -323,12 +324,88 @@ describe('recommendContainerDisposition', () => {
 			reserved: [{ goalId: 'goal-a', reason: 'personal', intendedUse: 'hold', quantity: 2 }],
 			held: [{
 				intentId: 'intent-a', state: 'holding',
+				route: 'instant_sell',
 				reason: { category: 'market_target', note: 'Wait for the target.' }, quantity: 4,
 			}],
 			freeQuantity: 4,
 		});
 		expect(result.economicDecision?.quantity).toBe(4);
 		expect(result.reasons).toEqual([{ code: 'hold_intent_active' }]);
+	});
+
+	it('emits a manual envelope that partitions reserved, held and economic quantities', () => {
+		const value = withHold(input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 2 }), [
+			holdIntent({ quantity: 4 }),
+		]);
+		const result = recommendContainerDisposition(value);
+		expect(result.status).toBe('ready');
+		expect(result.envelope).toEqual({
+			version: 1,
+			kind: 'recommendation',
+			execution: 'manual_in_game',
+			sideEffects: 'none',
+			requiresUserAction: true,
+			decisions: [
+				{ action: 'reserve', itemId: ITEM_ID, quantity: 2,
+					explanationRef: '#/recommendation/allocations/reserved/0' },
+				{ action: 'hold', itemId: ITEM_ID, quantity: 4, route: 'instant_sell',
+					explanationRef: '#/recommendation/allocations/held/0' },
+				{ action: 'sell', itemId: ITEM_ID, quantity: 4, route: 'instant_sell',
+					explanationRef: '#/recommendation/explanation' },
+			],
+		});
+		expect(isRecommendationEnvelope(result.envelope)).toBe(true);
+		expect(result.envelope.decisions.reduce((sum, decision) => sum + decision.quantity, 0)).toBe(10);
+	});
+
+	it('never adds an economic decision for fully reserved or held quantities', () => {
+		const reserved = recommendContainerDisposition(input({ gainedQuantity: 5, finalQuantity: 5, reservedTarget: 5 }));
+		expect(reserved.status).toBe('reserved_only');
+		expect(reserved.envelope.decisions).toEqual([{
+			action: 'reserve', itemId: ITEM_ID, quantity: 5,
+			explanationRef: '#/recommendation/allocations/reserved/0',
+		}]);
+		const held = recommendContainerDisposition(withHold(
+			input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })],
+		));
+		expect(held.status).toBe('reserved_only');
+		expect(held.envelope.decisions).toEqual([{
+			action: 'hold', itemId: ITEM_ID, quantity: 5, route: 'instant_sell',
+			explanationRef: '#/recommendation/allocations/held/0',
+		}]);
+	});
+
+	it('keeps blocked and invalid results as data-only manual envelopes', () => {
+		const blockedResult = recommendContainerDisposition(input({ reviewKind: 'estimated' }));
+		expect(blockedResult).toMatchObject({
+			status: 'blocked',
+			envelope: { execution: 'manual_in_game', sideEffects: 'none', decisions: [{
+				action: 'review', itemId: ITEM_ID, quantity: 1, explanationRef: '#/recommendation/reasons',
+			}] },
+		});
+		const invalidResult = recommendContainerDisposition(null);
+		expect(invalidResult).toMatchObject({
+			status: 'invalid', recommendation: null,
+			envelope: { execution: 'manual_in_game', sideEffects: 'none', decisions: [] },
+		});
+		for (const result of [blockedResult, invalidResult]) {
+			expect(isRecommendationEnvelope(result.envelope)).toBe(true);
+			expect(JSON.parse(JSON.stringify(result.envelope))).toEqual(result.envelope);
+		}
+	});
+
+	it('does not mutate deeply frozen evidence or perform network I/O while producing an envelope', () => {
+		const value = deepFreeze(input());
+		const fetchSpy = vi.fn();
+		vi.stubGlobal('fetch', fetchSpy);
+		try {
+			const result = recommendContainerDisposition(value);
+			expect(result.status).toBe('ready');
+			expect(isRecommendationEnvelope(result.envelope)).toBe(true);
+			expect(fetchSpy).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('protects unavailable-price holds but releases target-reached, expired and cancelled intents', () => {
@@ -625,4 +702,10 @@ function canonicalForTest(value: unknown): string {
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([key, child]) => `${JSON.stringify(key)}:${canonicalForTest(child)}`).join(',')}}`;
 	return JSON.stringify(value) ?? 'undefined';
+}
+
+function deepFreeze<T>(value: T): T {
+	if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+	for (const child of Object.values(value)) deepFreeze(child);
+	return Object.freeze(value);
 }

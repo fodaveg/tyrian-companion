@@ -62,6 +62,7 @@ La versión `0.1.0` valida la base técnica:
 - H4.9 reserva el balance final para objetivos activos sin duplicar unidades: distingue propiedad de disponibilidad, prioridad, faltantes, uso previsto y cobertura demostrada por namespace. Sus allowances dicen qué cantidad sigue elegible para liquidar, abrir, consumir, canjear o gastar; evidencia desconocida bloquea ese cálculo. El overlay solo acepta evidencia H4.5 coherente, separa cantidades protegidas/elegibles y conserva intactos importes, fees, cobertura y tasas. Todavía no persiste objetivos/planes, muestra UI ni recomienda una acción.
 - H4.10 emite una recomendación pura y trazable de abrir o vender únicamente para la parte no reservada de un contenedor. Exige sesión exacta de alta confianza, modelo aprobado y vigente, un único batch de precios fresco, identidad coherente y una ruta de venta realizable. Recalcula tasas para la pila libre y compara con enteros exactos contra un margen versionado; igualdad abre. Evidencia limitada bloquea sin acción y evidencia incoherente invalida. No abre, vende, persiste ni muestra todavía la recomendación.
 - H4.11 permite expresar una intención explícita de conservar items hasta un precio o deadline. Las intenciones activas comparten sin duplicar la cantidad libre posterior a reservas; alcanzar el precio, cancelar o expirar devuelve unidades a H4.10, y un precio ausente conserva temporalmente en vez de inventar una señal. La salida explica asignación, faltante y neto objetivo con las tasas H4.2. Todavía no persiste ni edita intenciones y nunca opera sobre la cuenta.
+- H4.12 convierte cada resultado en un envelope JSON manual y sin efectos laterales. Reserva, retención, recomendación económica o revisión quedan como decisiones con cantidades y referencias internas; ningún dato contiene callbacks, credenciales, órdenes ejecutadas o una capacidad de operar. El guard arquitectónico impide que la frontera de recomendaciones importe clientes/transportes/stores/secretos o invoque métodos de ejecución.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -77,7 +78,7 @@ La versión `0.1.0` valida la base técnica:
 - Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
 - Escritura o modificación de notas del vault.
-- UI, persistencia o ejecución de recomendaciones e intenciones; H4.10/H4.11 solo entregan decisiones y planes puros.
+- UI, persistencia o ejecución de recomendaciones e intenciones; H4.10–H4.12 solo entregan decisiones, planes y envelopes manuales puros.
 - Inicio o cierre automático de sesiones sin confirmación.
 - Compatibilidad móvil.
 
