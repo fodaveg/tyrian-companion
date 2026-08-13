@@ -62,8 +62,8 @@ export class ManualSessionStartModal extends Modal {
 					.onClick(() => {
 						try {
 							const input = parseManualSessionForm(characterName, magicFindText);
-							this.close();
 							this.onSubmit(input);
+							this.close();
 						} catch (caught) {
 							error.setText(caught instanceof Error ? caught.message : 'Check the session details.');
 							(characterName.trim() ? magicFindInput : characterInput)?.focus();
