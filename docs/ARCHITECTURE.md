@@ -7,7 +7,7 @@
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos y limitación FIFO de concurrencia.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
-- `economy`: contrato monetario puro en cobre, tasas GW2 versionadas, binding, rutas líquidas por pila y snapshot de precios al cierre; todavía sin valoración agregada de sesión.
+- `economy`: contrato monetario puro en cobre, tasas GW2 versionadas, binding, rutas líquidas por pila, snapshot de precios al cierre, valoración de sesión y modelos versionados de contenedores.
 - `advisor`: estado de preparación, sin lógica de recomendación todavía.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
@@ -69,6 +69,8 @@ H4.4 toma únicamente los cambios positivos de `StorageDelta` al cerrar una sesi
 El snapshot H4.4 fija schema, timestamp y fuente `gw2-commerce-prices`, con estado `complete|partial|unavailable`. Los fallos de red no bloquean **Stop session**: se persiste un snapshot `unavailable` con los ids pendientes. El runtime sube a v3, migra v1/v2 sin inventar cotizaciones y valida que sesión, ids y cantidades ganadas coincidan con el delta canónico antes de aceptar el record. Este lote no aplica tasas ni agrega oro: H4.5 consumirá la evidencia temporal conservada.
 
 H4.5 es un cálculo puro sobre `StorageDelta`, el snapshot H4.4, catálogo normalizado, binding explícito, duración e ids de sacos. Cada línea reutiliza H4.3 y H4.2 para obtener rutas válidas: el valor inmediato elige el mayor entre bid neto y mercader; el valor de listado elige el mayor entre ask neto y mercader. Una ruta ausente sigue siendo `null`; no líquido conserva cantidad y motivo. Los totales suman moneda id `1` observada por H2.6 y separan valor de items, moneda y cantidad no líquida. Sacos/h se expresa en milésimas y cobre/h en enteros, ambos con redondeo al más cercano y guardas de overflow. Pérdidas de items no se valoran sin una atribución de coste y generan warning; precio, catálogo o binding incompletos degradan cobertura a `partial`.
+
+H4.6 define `ContainerModelV1` como contrato puro y no como datos implícitos en código. Cada modelo tiene id y versión propios, item contenedor, fuente pública con fecha de publicación y consulta, tamaño y ventana de muestra, resultados ordenados por namespace e id numérico, y un bloque explícito de incertidumbre. Probabilidad, cantidad condicional y unidades esperadas se expresan en millonésimas enteras; el constructor deriva la probabilidad de `sampleOccurrences / observations` y comprueba su aritmética, rangos y orden canónico sin depender de floats. Cada resultado declara además una política compatible con su namespace: bazar o mercader para items, moneda directa para currencies, exclusión o aplazamiento explícitos. El esquema no contiene aún una tabla concreta ni calcula EV: H4.7 aporta el primer dataset y H4.8/H4.9 consumirán este contrato.
 
 `GuildWars2AccountGateway` ejecuta la comprobación atómica `tokeninfo → account` y valida ambos payloads antes de publicarlos. Un `401` se reintenta una vez; `403` en `tokeninfo` también se reintenta y no destruye el último estado bueno, mientras que `403` en `account` representa falta de permiso. Errores offline, timeout y `5xx` conservan el último estado conectado como aviso.
 

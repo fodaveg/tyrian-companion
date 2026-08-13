@@ -80,5 +80,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Runtime de sesión v3 con migración segura de v1/v2 y validación cruzada entre sesión, delta físico e ids/cantidades del snapshot de precios.
 - Valoración H4.5 por item con rutas separadas de venta inmediata, listado y mercader, eligiendo el mejor suelo demostrado sin convertir ausencias en cero.
 - Totales de sesión reproducibles con moneda neta observada, cantidad no líquida, sacos/h en milésimas y cobre/h; pérdidas, catálogo, binding o precios incompletos quedan como warnings explícitos.
+- Esquema H4.6 versionado para modelos de contenedor con fuente, muestra, fechas, resultados, incertidumbre y política de valoración obligatorias.
+- Probabilidades, cantidades y unidades esperadas en millonésimas enteras, con orden canónico, claves separadas por namespace y validación reproducible sin floats.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

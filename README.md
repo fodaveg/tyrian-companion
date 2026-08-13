@@ -44,6 +44,8 @@ The current `0.1.0` vertical provides:
   timestamp, source, gained quantity, and explicit missing/unavailable coverage.
 - A pure H4.5 session valuation that combines those quotes with catalog and binding evidence,
   keeps non-liquid quantities explicit, and reproduces bags/hour and copper/hour safely.
+- A strict H4.6 versioned container-model schema with cited source, dated sample, canonical
+  outcomes, integer-millionth probabilities, uncertainty, and explicit valuation policy.
 
 Automatic synchronization, persisted valuation reports, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
