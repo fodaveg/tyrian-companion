@@ -41,6 +41,7 @@ La versión `0.1.0` valida la base técnica:
 - **Check connection** valida explícitamente la clave y la cuenta; ninguna otra acción realiza llamadas de red.
 - Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección sin activar todavía esas funciones.
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
+- H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`, todavía sin botones, API, timers ni persistencia.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -54,6 +55,7 @@ La versión `0.1.0` valida la base técnica:
 - Ejecución del snapshot desde la UI, sincronización periódica o persistencia de sus resultados.
 - Precios y cálculo de patrimonio total.
 - Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
+- Orquestación H3.2–H3.4 que adquiera el lease, capture los límites y renueve el heartbeat.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.

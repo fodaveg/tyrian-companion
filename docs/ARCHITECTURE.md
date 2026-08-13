@@ -8,7 +8,7 @@
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
 - `advisor`: estado de preparación, sin lógica de recomendación todavía.
-- `sessions`: modelo y contrato de persistencia de sesiones.
+- `sessions`: coordinación cercada, máquina de estados pura y frontera futura de persistencia de sesiones.
 - `objectives`: modelo y contrato de persistencia de objetivos.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
@@ -28,7 +28,7 @@ storage delta comparator -> dos StorageSnapshot (puro, sin I/O)
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
-sessions ----> contratos puros
+sessions ----> coordinación local + contratos puros
 objectives --> contratos puros
 ```
 
@@ -92,11 +92,21 @@ La evidencia representa monedas de delivery explícitamente como currency id `1`
 
 ## Coordinación de sesión activa
 
-H1.4 introduce `ActiveSessionLeaseCoordinator`, una primitiva sin UI ni lifecycle H3.1. Abre de forma lazy una IndexedDB dedicada `tyrian-companion-coordination`; no usa settings, `data.json`, notas del vault ni `SecretStorage`, y nunca cae a memoria. Un único estado versionado conserva `machineId` durable, contador de fence y lease activa. La creación de identidad, incremento de contador y adquisición se confirman en la misma transacción `readwrite`.
+H1.4 introduce `ActiveSessionLeaseCoordinator`, una primitiva sin UI ni acciones de producto. Abre de forma lazy una IndexedDB dedicada `tyrian-companion-coordination`; no usa settings, `data.json`, notas del vault ni `SecretStorage`, y nunca cae a memoria. Un único estado versionado conserva `machineId` durable, contador de fence y lease activa. La creación de identidad, incremento de contador y adquisición se confirman en la misma transacción `readwrite`.
 
 Cada proceso/ventana recibe un `instanceId` efímero. Su formato se valida antes de abrir IndexedDB; un id vacío o excesivo falla como corrupto sin I/O, y la creación del lease valida simétricamente machine/instance/session. `acquire(sessionId)` es single-flight e idempotente por instancia: si esa instancia ya posee un lease vigente, cualquier intención posterior devuelve `already_owned` con el mismo lease/fence/session efectivo, sin sustituirlo. Otros propietarios reciben `busy`. Un lease vencido exige doble observación separada por `expiryConfirmDelayMs`; la segunda transacción compara exactamente el lease observado antes de incrementar fence, por lo que un heartbeat concurrente evita el robo. `renew`, `assertOwned` y `release` exigen CAS exacto de todos los campos: un handle antiguo nunca renueva ni borra al nuevo owner.
 
 Los timestamps persistidos proceden de `Date.now` inyectable y se muestrean dentro de la operación, después de abrir/esperar/leer IndexedDB; una cola lenta nunca crea ni devuelve un lease ya caducado con una hora antigua. Reloj hacia atrás, enteros inseguros, corrupción, schema desconocido, overflow del fence, abort, fallo de apertura o `versionchange` fallan cerrados y las APIs públicas devuelven resultados tipados sin lanzar. Un mutex por coordinador serializa operaciones locales; IndexedDB serializa conexiones/procesos. `dispose()` cierra también una apertura tardía. No existe timer automático de heartbeat: el lifecycle futuro deberá llamar `renew` explícitamente y poseer su limpieza.
+
+## Máquina de estados de sesión
+
+H3.1 define `transitionSession(state, event)` como frontera pura, versionada y defensiva. Su recorrido nominal es `idle → starting → active → stopping → provisional → complete`; cualquier estado en curso puede terminar en `error`, y solo `complete|error` pueden volver a `idle` mediante `reset`. Las entregas repetidas del mismo evento son idempotentes, mientras que saltos de fase, eventos contradictorios o datos con propiedades desconocidas se rechazan sin mutar el estado previo ni lanzar hacia el caller.
+
+`starting` conserva la identidad estable de autoridad derivada del lease: máquina, instancia, sesión, fence y momento de adquisición. Renovación y expiración siguen perteneciendo al coordinador; cada workflow futuro deberá ejecutar `assertOwned` antes de confirmar una transición. Todas las transiciones posteriores exigen la misma autoridad, por lo que un owner con fence antiguo no puede avanzar, finalizar ni marcar como fallida una sesión recuperada por otra instancia.
+
+`active` solo acepta como baseline una captura `stable|stable_owned_placement_changed`. `provisional` exige otra captura comparable, distinta, de la misma cuenta y schema, con ventanas ordenadas y no solapadas. El estado conserva referencias mínimas a ambas capturas, no sus holdings. `complete` registra únicamente `exact|estimated|contaminated`; una clasificación inválida debe conducir a `error` o permanecer provisional. `error` guarda el último estado válido completo para que H3.4 pueda diseñar recovery sin reconstruir evidencia perdida.
+
+H3.1 no adquiere ni renueva leases, no captura snapshots, no llama a H2.7, no temporiza, no pregunta, no persiste y no tiene UI. H3.2–H3.4 poseerán esas acciones y usarán esta máquina como árbitro; H3.9 seguirá siendo dueño de revisión y aceptación.
 
 `exact` exige delta completo/comparable, fronteras confirmadas manualmente, declaración limpia y ausencia de contaminación. Esa declaración puede suplir TP no disponible dejando una razón informativa. La salida v1 usa scope `observed_storage_net`, razones y solicitudes de revisión deduplicadas/canónicas, confianza y permisos explícitos. Un resultado contaminado puede finalizar y mostrar solo el neto; uno estimado permite valoración provisional pero no rendimiento bruto, y solo finaliza si la aceptación ya está reflejada como frontera manual y declaración limpia; uno inválido bloquea todo. Las recomendaciones permanecen deshabilitadas incluso en exacto hasta que existan motores económicos. H3.9 conserva ownership de preguntas, aceptación y persistencia.
 

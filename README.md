@@ -20,6 +20,8 @@ The current `0.1.0` vertical provides:
   contaminated, or invalid without prices, API calls, persistence, or recommendations.
 - A fail-closed H1.4 active-session lease primitive backed by a dedicated IndexedDB database,
   with durable machine identity, fencing, expiry confirmation, and cross-window CAS semantics.
+- A pure H3.1 session lifecycle from idle through provisional review to completion or recoverable
+  error, with strict runtime validation and fenced, idempotent transitions.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
@@ -104,6 +106,11 @@ durable fence. Renew, assert, and release use exact lease CAS, so an old handle 
 owner. Storage/open/version/corruption and backwards-clock failures close safely without a memory
 fallback. Lease timestamps are sampled inside the IndexedDB operation after waits/opening, never
 before entering a queue. The primitive exposes no automatic heartbeat timer and is not yet wired to session UI.
+
+`transitionSession` is the pure H3.1 lifecycle boundary. It retains only stable lease authority and
+minimal references to qualified boundary snapshots, rejects stale fences and malformed or
+out-of-order events, and preserves the last valid in-progress state on error. It performs no API,
+IndexedDB, timer, UI, classification, or vault work; H3.2–H3.4 will own that orchestration.
 
 ## Project documentation
 
