@@ -9,6 +9,7 @@ export const RECOMMENDED_SCOPES = [
 	'account',
 	'characters',
 	'inventories',
+	'builds',
 	'wallet',
 	'tradingpost',
 	'progression',

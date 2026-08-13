@@ -40,6 +40,11 @@ export class StorageSnapshotService {
 
 	async capture(): Promise<StorageSnapshot> {
 		const operation = this.client.beginOperation();
+		return this.captureWithOperation(operation);
+	}
+
+	/** Reuses an already pinned credential for a larger atomic workflow. */
+	async captureWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
 		const context = await verifySnapshotContext(operation, this.globalLimit);
 		const existing = this.inFlight.get(context.key);
 		if (existing) return existing;

@@ -3,16 +3,27 @@ import { Plugin } from 'obsidian';
 import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import { GuildWars2Client } from './account/guild-wars-2-client';
+import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { DEFAULT_SETTINGS, migrateSettings, type TyrianSettings } from './core/settings';
+import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
+import {
+	ManualSessionStartService,
+	type SessionStartFailure,
+} from './sessions/manual-session-start-service';
+import type { SessionState } from './sessions/session';
+import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
 import { COMPANION_VIEW_TYPE, TyrianCompanionView } from './ui/companion-view';
+import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = { ...DEFAULT_SETTINGS };
 	private connection!: ConnectionService;
+	private sessions!: ManualSessionStartService;
 	private settingTab!: TyrianCompanionSettingTab;
+	private startModal: ManualSessionStartModal | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -23,6 +34,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		const client = new GuildWars2Client(new ObsidianRequestTransport(), apiKeyProvider);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
+		const coordinator = new ActiveSessionLeaseCoordinator();
+		this.sessions = new ManualSessionStartService(
+			coordinator,
+			new SessionStartCaptureService(client, new StorageSnapshotService(client)),
+			{ onStateChange: () => this.renderViews() },
+		);
 
 		this.registerView(
 			COMPANION_VIEW_TYPE,
@@ -39,6 +56,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 	}
 
+	onunload(): void {
+		this.startModal?.close();
+		void this.sessions?.dispose();
+	}
+
 	getConnectionState(): ConnectionState {
 		return this.connection.getState();
 	}
@@ -51,6 +73,36 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		return state;
+	}
+
+	getSessionState(): SessionState {
+		return this.sessions.getState();
+	}
+
+	getSessionStartFailure(): SessionStartFailure | null {
+		return this.sessions.getLastFailure();
+	}
+
+	openManualSessionStart(): void {
+		if (this.sessions.getState().status !== 'idle' || this.startModal) return;
+		this.startModal = new ManualSessionStartModal(
+			this.app,
+			this.settings.preferredCharacter,
+			(input) => { void this.startManualSession(input); },
+			() => { this.startModal = null; },
+		);
+		this.startModal.open();
+	}
+
+	private async startManualSession(input: SessionStartInput): Promise<void> {
+		this.renderViews();
+		const result = await this.sessions.start(input);
+		if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
+			try {
+				await this.updateSettings({ preferredCharacter: input.characterName.trim() });
+			} catch { /* the active session does not depend on remembering the preference */ }
+		}
+		this.renderViews();
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {

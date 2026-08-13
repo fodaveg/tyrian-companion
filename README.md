@@ -22,10 +22,12 @@ The current `0.1.0` vertical provides:
   with durable machine identity, fencing, expiry confirmation, and cross-window CAS semantics.
 - A pure H3.1 session lifecycle from idle through provisional review to completion or recoverable
   error, with strict runtime validation and fenced, idempotent transitions.
+- An explicit H3.2 manual start flow that captures a stable baseline, active character build,
+  manual Magic Find, and timestamps before exposing an active farming session.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
-and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
-or plugin load; it describes observed storage, not total account wealth.
+and recommendations are intentionally not implemented yet. The snapshot service runs from the
+explicit **Start session** action only; it describes observed storage, not total account wealth.
 
 ## Requirements
 
@@ -50,11 +52,11 @@ The production build creates `main.js` in the project root. A distributable rele
 
 ## Privacy and network behavior
 
-Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection** is explicitly selected. Loading the plugin or opening its view does not make network requests.
+Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection** or **Start session** is explicitly selected. Loading the plugin or opening its view does not make network requests.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
-`account` is required for the initial connection; `characters`, `inventories`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommendations for future modules and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
+`account` is required for the initial connection; `characters`, `inventories`, `builds`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommended capabilities and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
 
 Rate limits create a real cooldown: both connection controls remain disabled and show a live countdown until retry is allowed. Transient failures preserve the last verified account with an explicit stale-data warning.
 
@@ -105,12 +107,14 @@ second observation following the configured confirmation delay, and every recove
 durable fence. Renew, assert, and release use exact lease CAS, so an old handle cannot affect a newer
 owner. Storage/open/version/corruption and backwards-clock failures close safely without a memory
 fallback. Lease timestamps are sampled inside the IndexedDB operation after waits/opening, never
-before entering a queue. The primitive exposes no automatic heartbeat timer and is not yet wired to session UI.
+before entering a queue. The primitive itself exposes no automatic timer. The H3.2 start workflow
+owns a non-overlapping heartbeat while starting and active, checks the current fence immediately
+before committing the baseline, and releases the lease on a failed start.
 
-`transitionSession` is the pure H3.1 lifecycle boundary. It retains only stable lease authority and
-minimal references to qualified boundary snapshots, rejects stale fences and malformed or
-out-of-order events, and preserves the last valid in-progress state on error. It performs no API,
-IndexedDB, timer, UI, classification, or vault work; H3.2–H3.4 will own that orchestration.
+`transitionSession` is the pure H3.1 lifecycle boundary. It retains stable lease authority,
+qualified boundary references, and the manual start context, rejects stale fences and malformed or
+out-of-order events, and preserves the last valid in-progress state on error. H3.2 orchestrates only
+`idle → starting → active`; H3.3–H3.4 still own stop, final snapshot, and recovery.
 
 ## Project documentation
 

@@ -55,6 +55,7 @@ describe('GuildWars2AccountGateway', () => {
 			scopes: ['account', 'characters'],
 			missingRecommendedScopes: [
 				'inventories',
+				'builds',
 				'wallet',
 				'tradingpost',
 				'progression',

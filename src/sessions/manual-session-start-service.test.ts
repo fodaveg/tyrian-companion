@@ -1,0 +1,266 @@
+/* eslint-disable @typescript-eslint/unbound-method -- Vitest mocks are standalone arrow functions in this suite. */
+import { describe, expect, it, vi } from 'vitest';
+
+import { storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import type { ActiveSessionLeaseHandle } from './coordination-model';
+import {
+	ManualSessionStartService,
+	type SessionLeaseCoordinator,
+	type ManualSessionStartServiceOptions,
+} from './manual-session-start-service';
+import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
+
+const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
+const handle: ActiveSessionLeaseHandle = {
+	machineId: 'machine-1',
+	instanceId: 'instance-1',
+	sessionId: 'session-1',
+	fence: 1,
+	acquiredAt,
+	renewedAt: acquiredAt,
+	expiresAt: acquiredAt + 30_000,
+};
+
+const captured: SessionStartCaptureResult = {
+	snapshot: storageDeltaSnapshot(),
+	context: {
+		characterName: 'Astra Uno',
+		magicFind: { value: 321, source: 'manual' },
+		build: {
+			tab: 1,
+			name: 'Farm',
+			profession: 'Revenant',
+			specializations: [
+				{ id: 3, traits: [1, 2, 3] },
+				{ id: 52, traits: [4, 5, 6] },
+				{ id: 63, traits: [7, 8, 9] },
+			],
+			skills: { heal: 1, utilities: [2, 3, 4], elite: 5 },
+			aquaticSkills: { heal: 6, utilities: [7, 8, 9], elite: 10 },
+		},
+		capturedAt: '2026-08-13T08:00:02.000Z',
+	},
+};
+
+function coordinator(overrides: Partial<SessionLeaseCoordinator> = {}): SessionLeaseCoordinator {
+	const acquire: SessionLeaseCoordinator['acquire'] = vi.fn(async () => ({ status: 'acquired' as const, handle }));
+	const renew: SessionLeaseCoordinator['renew'] = vi.fn(async (lease: ActiveSessionLeaseHandle) => ({
+		status: 'renewed' as const,
+		handle: { ...lease, renewedAt: lease.renewedAt + 10_000, expiresAt: lease.expiresAt + 10_000 },
+	}));
+	const assertOwned: SessionLeaseCoordinator['assertOwned'] = vi.fn(async () => ({ status: 'owned' as const }));
+	const release: SessionLeaseCoordinator['release'] = vi.fn(async () => ({ status: 'released' as const }));
+	return {
+		acquire,
+		renew,
+		assertOwned,
+		release,
+		dispose: vi.fn(),
+		...overrides,
+	};
+}
+
+function serviceOptions(
+	extra: Partial<ManualSessionStartServiceOptions> = {},
+): ManualSessionStartServiceOptions {
+	return {
+		now: () => Date.parse('2026-08-13T07:59:59.500Z'),
+		sessionId: () => 'session-1',
+		setInterval: vi.fn(() => 17),
+		clearInterval: vi.fn(),
+		...extra,
+	};
+}
+
+describe('ManualSessionStartService', () => {
+	it('acquires, captures, fences and exposes an active manual session', async () => {
+		const leases = coordinator();
+		const baseline = { capture: vi.fn(async () => structuredClone(captured)) };
+		const changed = vi.fn();
+		const service = new ManualSessionStartService(
+			leases,
+			baseline,
+			serviceOptions({ onStateChange: changed }),
+		);
+
+		const result = await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		expect(result).toMatchObject({
+			status: 'started',
+			state: {
+				status: 'active',
+				sessionId: 'session-1',
+				baseline: { snapshotId: 'snapshot-before', quality: 'stable' },
+				startContext: { characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual' } },
+			},
+		});
+		expect(leases.acquire).toHaveBeenCalledWith('session-1');
+		expect(leases.assertOwned).toHaveBeenCalledWith(handle);
+		expect(leases.release).not.toHaveBeenCalled();
+		expect(service.getLastFailure()).toBeNull();
+		expect(changed).toHaveBeenCalled();
+	});
+
+	it('coalesces double clicks into one start workflow', async () => {
+		let resolveCapture!: (value: SessionStartCaptureResult) => void;
+		const pending = new Promise<SessionStartCaptureResult>((resolve) => { resolveCapture = resolve; });
+		const leases = coordinator();
+		const baseline = { capture: vi.fn(() => pending) };
+		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
+
+		const first = service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		const second = service.start({ characterName: 'Another input', magicFind: 0 });
+		expect(second).toBe(first);
+		resolveCapture(structuredClone(captured));
+		await expect(first).resolves.toMatchObject({ status: 'started' });
+		expect(leases.acquire).toHaveBeenCalledTimes(1);
+		expect(baseline.capture).toHaveBeenCalledTimes(1);
+	});
+
+	it('releases the lease and returns to idle when capture fails', async () => {
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: async () => { throw new SessionStartCaptureError('snapshot_not_stable', 'Moving account.'); } },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toEqual({
+				status: 'failed',
+				failure: { code: 'snapshot_failed', message: 'Moving account.' },
+			});
+		expect(leases.release).toHaveBeenCalledWith(handle);
+		expect(service.getState()).toEqual({ version: 1, status: 'idle' });
+		expect(service.getLastFailure()).toEqual({ code: 'snapshot_failed', message: 'Moving account.' });
+	});
+
+	it('waits for an in-flight heartbeat and releases its newest handle after capture failure', async () => {
+		let tick: (() => void) | undefined;
+		let rejectCapture!: (reason: unknown) => void;
+		let resolveRenew!: (result: Awaited<ReturnType<SessionLeaseCoordinator['renew']>>) => void;
+		const capturePending = new Promise<SessionStartCaptureResult>((_resolve, reject) => { rejectCapture = reject; });
+		const renewPending = new Promise<Awaited<ReturnType<SessionLeaseCoordinator['renew']>>>((resolve) => { resolveRenew = resolve; });
+		const leases = coordinator({ renew: vi.fn(() => renewPending) });
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(() => capturePending) },
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		const start = service.start({ characterName: 'Astra Uno', magicFind: 1 });
+		await vi.waitFor(() => expect(tick).toBeTypeOf('function'));
+		tick?.();
+		rejectCapture(new SessionStartCaptureError('snapshot_not_stable', 'Moving account.'));
+		await Promise.resolve();
+		expect(leases.release).not.toHaveBeenCalled();
+
+		const renewedHandle = { ...handle, renewedAt: handle.renewedAt + 10_000, expiresAt: handle.expiresAt + 10_000 };
+		resolveRenew({ status: 'renewed', handle: renewedHandle });
+		await expect(start).resolves.toMatchObject({ status: 'failed' });
+		expect(leases.release).toHaveBeenCalledWith(renewedHandle);
+		expect(service.getState().status).toBe('idle');
+	});
+
+	it('does not capture when another window owns the session lease', async () => {
+		const leases = coordinator({
+			acquire: vi.fn(async () => ({ status: 'busy' as const, ownerExpiresAt: acquiredAt + 30_000 })),
+		});
+		const baseline = { capture: vi.fn(async () => captured) };
+		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
+		expect(baseline.capture).not.toHaveBeenCalled();
+		expect(leases.release).not.toHaveBeenCalled();
+		expect(service.getState().status).toBe('idle');
+	});
+
+	it('rejects invalid manual input before acquiring a lease', async () => {
+		const leases = coordinator();
+		const baseline = { capture: vi.fn(async () => captured) };
+		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
+
+		await expect(service.start({ characterName: ' ', magicFind: -1 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'invalid_input' } });
+		expect(leases.acquire).not.toHaveBeenCalled();
+		expect(baseline.capture).not.toHaveBeenCalled();
+	});
+
+	it('never commits active after losing the fence during capture', async () => {
+		const leases = coordinator({ assertOwned: vi.fn(async () => ({ status: 'lost' as const })) });
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => captured) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
+		expect(leases.release).toHaveBeenCalled();
+		expect(service.getState().status).toBe('idle');
+	});
+
+	it('maps an unavailable final fence check without leaving a product session', async () => {
+		const leases = coordinator({
+			assertOwned: vi.fn(async () => ({ status: 'error' as const, code: 'unavailable' as const })),
+		});
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => captured) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'coordination_unavailable' } });
+		expect(service.getState().status).toBe('idle');
+	});
+
+	it('renews the lease while the baseline is being captured and while active', async () => {
+		let tick: (() => void) | undefined;
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => captured) },
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+
+		tick?.();
+		await vi.waitFor(() => expect(leases.renew).toHaveBeenCalledTimes(1));
+		expect(service.getState().status).toBe('active');
+	});
+
+	it('moves an active session to error if its heartbeat loses the lease', async () => {
+		let tick: (() => void) | undefined;
+		const leases = coordinator({ renew: vi.fn(async () => ({ status: 'lost' as const })) });
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => captured) },
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+
+		tick?.();
+		await vi.waitFor(() => expect(service.getState().status).toBe('error'));
+		expect(service.getState()).toMatchObject({
+			status: 'error',
+			code: 'lease_lost',
+			failedState: { status: 'active', startContext: { characterName: 'Astra Uno' } },
+		});
+	});
+
+	it('best-effort releases an active lease on disposal', async () => {
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => captured) },
+			serviceOptions(),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+
+		await service.dispose();
+		expect(leases.release).toHaveBeenCalledWith(handle);
+		expect(leases.dispose).toHaveBeenCalledOnce();
+	});
+});
+/* eslint-enable @typescript-eslint/unbound-method -- End Vitest mock assertions. */

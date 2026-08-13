@@ -1,5 +1,6 @@
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
+import { MAX_MAGIC_FIND, type SessionStartContext } from './session-start-capture';
 import {
 	SESSION_STATE_VERSION,
 	type ActiveSessionState,
@@ -87,9 +88,11 @@ export function isSessionEvent(value: unknown): value is SessionEvent {
 				&& isIsoTimestamp(value.requestedAt)
 				&& Date.parse(value.requestedAt) >= value.authority.acquiredAt;
 		case 'confirm_start':
-			return exactKeys(value, ['type', 'authority', 'baseline'])
+			return exactKeys(value, ['type', 'authority', 'baseline', 'startContext'])
 				&& isAuthority(value.authority)
-				&& isSnapshotReference(value.baseline);
+				&& isSnapshotReference(value.baseline)
+				&& isStartContext(value.startContext)
+				&& Date.parse(value.startContext.capturedAt) >= Date.parse(value.baseline.completedAt);
 		case 'request_stop':
 			return exactKeys(value, ['type', 'authority', 'requestedAt'])
 				&& isAuthority(value.authority)
@@ -130,13 +133,14 @@ function transitionValidated(state: SessionState, event: SessionEvent): SessionT
 			});
 
 		case 'confirm_start':
-			if (containsBaseline(state, event.authority, event.baseline)) return unchanged(state);
+			if (containsStartConfirmation(state, event.authority, event.baseline, event.startContext)) return unchanged(state);
 			if (state.status !== 'starting') return rejected(state, 'illegal_transition');
 			if (!sameAuthority(state.authority, event.authority)) return rejected(state, 'authority_mismatch');
 			return applied({
 				...clone(state),
 				status: 'active',
 				baseline: clone(event.baseline),
+				startContext: clone(event.startContext),
 			});
 
 		case 'request_stop':
@@ -196,28 +200,32 @@ function isStartingState(value: Record<string, unknown>): value is Record<string
 }
 
 function isActiveState(value: Record<string, unknown>): value is Record<string, unknown> & ActiveSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline'])
+	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext'])
 		&& validSessionBase(value)
 		&& isSnapshotReference(value.baseline)
-		&& Date.parse(value.requestedAt as string) <= Date.parse(value.baseline.startedAt);
+		&& isStartContext(value.startContext)
+		&& Date.parse(value.requestedAt as string) <= Date.parse(value.baseline.startedAt)
+		&& Date.parse(value.startContext.capturedAt) >= Date.parse(value.baseline.completedAt);
 }
 
 function isStoppingState(value: Record<string, unknown>): value is Record<string, unknown> & StoppingSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'stopRequestedAt'])
+	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt'])
 		&& validSessionBase(value)
 		&& isSnapshotReference(value.baseline)
+		&& isStartContext(value.startContext)
 		&& isIsoTimestamp(value.stopRequestedAt)
 		&& Date.parse(value.requestedAt as string) <= Date.parse(value.baseline.startedAt)
+		&& Date.parse(value.startContext.capturedAt) >= Date.parse(value.baseline.completedAt)
 		&& Date.parse(value.stopRequestedAt) >= Date.parse(value.baseline.completedAt);
 }
 
 function isProvisionalState(value: Record<string, unknown>): value is Record<string, unknown> & ProvisionalSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot'])
+	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot'])
 		&& validProvisionalFields(value);
 }
 
 function isCompleteState(value: Record<string, unknown>): value is Record<string, unknown> & CompleteSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification'])
+	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification'])
 		&& validProvisionalFields(value)
 		&& isIsoTimestamp(value.finalizedAt)
 		&& Date.parse(value.finalizedAt) >= Date.parse((value.finalSnapshot as SessionSnapshotReference).completedAt)
@@ -243,10 +251,12 @@ function validSessionBase(value: Record<string, unknown>): boolean {
 function validProvisionalFields(value: Record<string, unknown>): boolean {
 	if (!validSessionBase(value)
 		|| !isSnapshotReference(value.baseline)
+		|| !isStartContext(value.startContext)
 		|| !isIsoTimestamp(value.stopRequestedAt)
 		|| !isIsoTimestamp(value.stoppedAt)
 		|| !isSnapshotReference(value.finalSnapshot)) return false;
 	return Date.parse(value.requestedAt as string) <= Date.parse(value.baseline.startedAt)
+		&& Date.parse(value.startContext.capturedAt) >= Date.parse(value.baseline.completedAt)
 		&& Date.parse(value.stopRequestedAt) >= Date.parse(value.baseline.completedAt)
 		&& Date.parse(value.stoppedAt) >= Date.parse(value.stopRequestedAt)
 		&& Date.parse(value.stoppedAt) <= Date.parse(value.finalSnapshot.startedAt)
@@ -290,6 +300,57 @@ function isSnapshotReference(value: unknown): value is SessionSnapshotReference 
 		&& (value.quality === 'stable' || value.quality === 'stable_owned_placement_changed');
 }
 
+function isStartContext(value: unknown): value is SessionStartContext {
+	if (!isRecord(value)
+		|| !exactKeys(value, ['characterName', 'magicFind', 'build', 'capturedAt'])
+		|| !validId(value.characterName)
+		|| !isIsoTimestamp(value.capturedAt)
+		|| !isRecord(value.magicFind)
+		|| !exactKeys(value.magicFind, ['value', 'source'])
+		|| value.magicFind.source !== 'manual'
+		|| !Number.isSafeInteger(value.magicFind.value)
+		|| (value.magicFind.value as number) < 0
+		|| (value.magicFind.value as number) > MAX_MAGIC_FIND
+		|| !isRecord(value.build)
+		|| !exactKeys(value.build, ['tab', 'name', 'profession', 'specializations', 'skills', 'aquaticSkills'])
+		|| !positiveInteger(value.build.tab)
+		|| typeof value.build.name !== 'string'
+		|| typeof value.build.profession !== 'string'
+		|| value.build.profession.length === 0
+		|| !Array.isArray(value.build.specializations)
+		|| value.build.specializations.length !== 3
+		|| !value.build.specializations.every(isBuildSpecialization)
+		|| !isBuildSkills(value.build.skills)
+		|| !isBuildSkills(value.build.aquaticSkills)) return false;
+	return true;
+}
+
+function isBuildSpecialization(value: unknown): boolean {
+	return isRecord(value)
+		&& exactKeys(value, ['id', 'traits'])
+		&& nullablePositiveInteger(value.id)
+		&& Array.isArray(value.traits)
+		&& value.traits.every(nullablePositiveInteger);
+}
+
+function isBuildSkills(value: unknown): boolean {
+	return isRecord(value)
+		&& exactKeys(value, ['heal', 'utilities', 'elite'])
+		&& nullablePositiveInteger(value.heal)
+		&& Array.isArray(value.utilities)
+		&& value.utilities.length === 3
+		&& value.utilities.every(nullablePositiveInteger)
+		&& nullablePositiveInteger(value.elite);
+}
+
+function positiveInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function nullablePositiveInteger(value: unknown): value is number | null {
+	return value === null || positiveInteger(value);
+}
+
 function stateAnchor(state: SessionInProgressState): string {
 	switch (state.status) {
 		case 'starting': return state.requestedAt;
@@ -316,6 +377,12 @@ function sameSnapshot(left: SessionSnapshotReference, right: SessionSnapshotRefe
 		&& left.quality === right.quality;
 }
 
+function sameStartContext(left: unknown, right: unknown): boolean {
+	return isStartContext(left)
+		&& isStartContext(right)
+		&& JSON.stringify(left) === JSON.stringify(right);
+}
+
 function containsStartRequest(state: SessionState, authority: SessionAuthority, requestedAt: string): boolean {
 	const observed = state.status === 'error' ? state.failedState : state;
 	return observed.status !== 'idle'
@@ -323,12 +390,18 @@ function containsStartRequest(state: SessionState, authority: SessionAuthority, 
 		&& observed.requestedAt === requestedAt;
 }
 
-function containsBaseline(state: SessionState, authority: SessionAuthority, baseline: SessionSnapshotReference): boolean {
+function containsStartConfirmation(
+	state: SessionState,
+	authority: SessionAuthority,
+	baseline: SessionSnapshotReference,
+	startContext: SessionStartContext,
+): boolean {
 	const observed = state.status === 'error' ? state.failedState : state;
 	return observed.status !== 'idle'
 		&& observed.status !== 'starting'
 		&& sameAuthority(observed.authority, authority)
-		&& sameSnapshot(observed.baseline, baseline);
+		&& sameSnapshot(observed.baseline, baseline)
+		&& sameStartContext(observed.startContext, startContext);
 }
 
 function containsStopRequest(state: SessionState, authority: SessionAuthority, requestedAt: string): boolean {

@@ -13,6 +13,7 @@ import type {
 	SessionSnapshotReference,
 	SessionState,
 } from './session';
+import type { SessionStartContext } from './session-start-capture';
 
 const REQUESTED_AT = '2026-08-13T08:00:00.000Z';
 const BASELINE_STARTED_AT = '2026-08-13T08:00:01.000Z';
@@ -49,9 +50,27 @@ const finalSnapshot: SessionSnapshotReference = {
 	quality: 'stable_owned_placement_changed',
 };
 
+const startContext: SessionStartContext = {
+	characterName: 'Fixture Character',
+	magicFind: { value: 321, source: 'manual' },
+	build: {
+		tab: 1,
+		name: 'Farm',
+		profession: 'Revenant',
+		specializations: [
+			{ id: 3, traits: [1, 2, 3] },
+			{ id: 52, traits: [4, 5, 6] },
+			{ id: 63, traits: [7, 8, 9] },
+		],
+		skills: { heal: 1, utilities: [2, 3, 4], elite: 5 },
+		aquaticSkills: { heal: 6, utilities: [7, 8, 9], elite: 10 },
+	},
+	capturedAt: '2026-08-13T08:00:03.000Z',
+};
+
 const events = {
 	start: { type: 'request_start', authority, requestedAt: REQUESTED_AT },
-	started: { type: 'confirm_start', authority, baseline },
+	started: { type: 'confirm_start', authority, baseline, startContext },
 	stop: { type: 'request_stop', authority, requestedAt: STOP_REQUESTED_AT },
 	stopped: { type: 'confirm_stop', authority, stoppedAt: STOPPED_AT, finalSnapshot },
 	finalize: { type: 'finalize', authority, finalizedAt: FINALIZED_AT, classification: 'exact' },
@@ -71,6 +90,7 @@ describe('session state machine', () => {
 			status: 'complete',
 			classification: 'exact',
 			baseline: { snapshotId: 'snapshot-before' },
+			startContext: { characterName: 'Fixture Character', magicFind: { value: 321 } },
 			finalSnapshot: { snapshotId: 'snapshot-after' },
 		});
 		expect(isSessionState(state)).toBe(true);
@@ -191,7 +211,19 @@ describe('session state machine', () => {
 		['reversed baseline window', { ...baseline, startedAt: BASELINE_COMPLETED_AT, completedAt: BASELINE_STARTED_AT }],
 	])('rejects an invalid %s', (_label, invalidBaseline) => {
 		expect(transitionSession(stateAt('starting'), {
-			type: 'confirm_start', authority, baseline: invalidBaseline,
+			type: 'confirm_start', authority, baseline: invalidBaseline, startContext,
+		})).toMatchObject({ status: 'rejected', reason: 'invalid_event' });
+	});
+
+	it.each([
+		['missing character', { ...startContext, characterName: '' }],
+		['invalid magic find', { ...startContext, magicFind: { value: -1, source: 'manual' } }],
+		['future source', { ...startContext, magicFind: { value: 321, source: 'api' } }],
+		['invalid build', { ...startContext, build: { ...startContext.build, specializations: [] } }],
+		['capture before baseline', { ...startContext, capturedAt: BASELINE_STARTED_AT }],
+	])('rejects start context with %s', (_label, invalidContext) => {
+		expect(transitionSession(stateAt('starting'), {
+			type: 'confirm_start', authority, baseline, startContext: invalidContext,
 		})).toMatchObject({ status: 'rejected', reason: 'invalid_event' });
 	});
 

@@ -1,5 +1,6 @@
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
+import type { SessionStartContext } from './session-start-capture';
 
 export const SESSION_STATE_VERSION = 1 as const;
 
@@ -52,6 +53,7 @@ export interface ActiveSessionState {
 	authority: SessionAuthority;
 	requestedAt: string;
 	baseline: SessionSnapshotReference;
+	startContext: SessionStartContext;
 }
 
 export interface StoppingSessionState {
@@ -61,6 +63,7 @@ export interface StoppingSessionState {
 	authority: SessionAuthority;
 	requestedAt: string;
 	baseline: SessionSnapshotReference;
+	startContext: SessionStartContext;
 	stopRequestedAt: string;
 }
 
@@ -71,6 +74,7 @@ export interface ProvisionalSessionState {
 	authority: SessionAuthority;
 	requestedAt: string;
 	baseline: SessionSnapshotReference;
+	startContext: SessionStartContext;
 	stopRequestedAt: string;
 	stoppedAt: string;
 	finalSnapshot: SessionSnapshotReference;
@@ -115,7 +119,12 @@ export type SessionState =
 
 export type SessionEvent =
 	| { type: 'request_start'; authority: SessionAuthority; requestedAt: string }
-	| { type: 'confirm_start'; authority: SessionAuthority; baseline: SessionSnapshotReference }
+	| {
+			type: 'confirm_start';
+			authority: SessionAuthority;
+			baseline: SessionSnapshotReference;
+			startContext: SessionStartContext;
+	  }
 	| { type: 'request_stop'; authority: SessionAuthority; requestedAt: string }
 	| {
 			type: 'confirm_stop';
