@@ -50,5 +50,8 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Estado accesible de sesión en la vista, formulario nativo de Obsidian, mensajes saneados y recomendación del permiso `builds`.
 - Cierre manual H3.3 desde la vista con snapshot final estable, delta H2.6, comprobación cercada y transición a `provisional`.
 - Reintento seguro de parada tras fallos de captura o delta, conservando baseline y frontera inicial; pérdida de autoridad preservada como error recuperable.
+- Recovery H3.4 tras reinicio con record runtime JSON cercado en IndexedDB dedicada, snapshots completos y delta canónico verificable.
+- Vista de sesión recuperable con estados busy/error accesibles, acción explícita de recuperación y descarte destructivo confirmado.
+- CAS de persistencia por machine/session/fence/instance y `assertOwned` previo a save/clear, sin fallback a memoria en producción.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

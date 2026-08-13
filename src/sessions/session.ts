@@ -102,6 +102,11 @@ export type SessionInProgressState =
 	| StoppingSessionState
 	| ProvisionalSessionState;
 
+export type RecoverableSessionState =
+	| ActiveSessionState
+	| StoppingSessionState
+	| ProvisionalSessionState;
+
 export interface ErrorSessionState {
 	version: typeof SESSION_STATE_VERSION;
 	status: 'error';
@@ -139,6 +144,7 @@ export type SessionEvent =
 			classification: SessionCompletionKind;
 	  }
 	| { type: 'fail'; authority: SessionAuthority; failedAt: string; code: SessionFailureCode }
+	| { type: 'recover'; authority: SessionAuthority; recoveredAt: string }
 	| { type: 'reset' };
 
 export type SessionTransitionRejection =

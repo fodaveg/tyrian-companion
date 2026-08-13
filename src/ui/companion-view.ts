@@ -1,10 +1,11 @@
-import { ItemView, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type {
 	SessionStartFailure,
+	SessionRecoveryState,
 	SessionStopFailure,
 } from '../sessions/manual-session-start-service';
 
@@ -17,8 +18,11 @@ export interface CompanionActions {
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
+	getSessionRecoveryState(): SessionRecoveryState;
 	openManualSessionStart(): void;
 	stopManualSession(): Promise<void>;
+	recoverSession(): Promise<void>;
+	discardRecoveredSession(): Promise<void>;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -153,6 +157,11 @@ export class TyrianCompanionView extends ItemView {
 		card.createEl('h3', { text: 'Farming session' });
 
 		if (state.status === 'idle') {
+			const recovery = this.actions.getSessionRecoveryState();
+			if (recovery.status !== 'none') {
+				this.renderRecovery(card, recovery);
+				return;
+			}
 			card.createEl('p', { text: 'No farming session is active.' });
 			const failure = this.actions.getSessionStartFailure();
 			if (failure) card.createEl('p', { text: failure.message, cls: 'tyrian-companion-view__session-error' });
@@ -223,6 +232,57 @@ export class TyrianCompanionView extends ItemView {
 		card.createEl('p', { text: `Session status: ${state.status}.` });
 	}
 
+	private renderRecovery(container: HTMLElement, recovery: SessionRecoveryState): void {
+		if (recovery.status === 'none') return;
+		if (recovery.status === 'error') {
+			container.setAttr('role', 'alert');
+			container.createEl('p', {
+				text: recovery.message,
+				cls: 'tyrian-companion-view__session-error',
+			});
+			container.createEl('p', {
+				text: 'Starting a new session is disabled to avoid overwriting recoverable evidence.',
+			});
+			return;
+		}
+		const observed = recovery.state.status === 'error'
+			? recovery.state.failedState
+			: recovery.state;
+		if (recovery.status === 'busy') container.setAttr('role', 'alert');
+		container.createEl('p', {
+			text: recovery.status === 'working'
+				? recovery.action === 'recover' ? 'Recovering the saved session…' : 'Discarding the saved session…'
+				: 'A farming session from a previous Obsidian run is available.',
+		});
+		this.renderSessionDetails(container, observed);
+		if ('message' in recovery && recovery.message) {
+			container.createEl('p', {
+				text: recovery.message,
+				cls: recovery.status === 'busy' ? 'tyrian-companion-view__session-error' : undefined,
+			});
+		}
+		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const recover = actions.createEl('button', { text: 'Recover session', cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: 'Discard saved session' });
+		const working = recovery.status === 'working';
+		recover.disabled = working;
+		discard.disabled = working;
+		recover.addEventListener('click', () => { void this.runRecovery(); });
+		discard.addEventListener('click', () => {
+			new ConfirmDiscardSessionModal(this.app, async () => {
+				await this.actions.discardRecoveredSession();
+				this.render();
+			}).open();
+		});
+	}
+
+	private async runRecovery(): Promise<void> {
+		const recovery = this.actions.recoverSession();
+		this.render();
+		await recovery;
+		this.render();
+	}
+
 	private renderSessionDetails(
 		container: HTMLElement,
 		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' }>,
@@ -240,6 +300,29 @@ export class TyrianCompanionView extends ItemView {
 			this.contentEl.win.clearInterval(this.countdownInterval);
 			this.countdownInterval = null;
 		}
+	}
+}
+
+class ConfirmDiscardSessionModal extends Modal {
+	constructor(app: App, private readonly onConfirm: () => Promise<void>) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle('Discard saved farming session?');
+		this.contentEl.createEl('p', {
+			text: 'This removes the saved baseline and any captured final snapshot. It cannot be undone.',
+		});
+		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: 'Keep session', cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: 'Discard', cls: 'mod-warning' });
+		cancel.addEventListener('click', () => this.close());
+		discard.addEventListener('click', () => {
+			discard.disabled = true;
+			cancel.disabled = true;
+			void this.onConfirm().finally(() => this.close());
+		});
+		cancel.focus();
 	}
 }
 

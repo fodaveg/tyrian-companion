@@ -8,6 +8,7 @@ import {
 	type ErrorSessionState,
 	type IdleSessionState,
 	type ProvisionalSessionState,
+	type RecoverableSessionState,
 	type SessionAuthority,
 	type SessionCompletionKind,
 	type SessionEvent,
@@ -112,6 +113,11 @@ export function isSessionEvent(value: unknown): value is SessionEvent {
 				&& isAuthority(value.authority)
 				&& isIsoTimestamp(value.failedAt)
 				&& FAILURE_CODES.includes(value.code as SessionFailureCode);
+		case 'recover':
+			return exactKeys(value, ['type', 'authority', 'recoveredAt'])
+				&& isAuthority(value.authority)
+				&& isIsoTimestamp(value.recoveredAt)
+				&& Date.parse(value.recoveredAt) >= value.authority.acquiredAt;
 		case 'reset':
 			return exactKeys(value, ['type']);
 		default:
@@ -183,6 +189,20 @@ function transitionValidated(state: SessionState, event: SessionEvent): SessionT
 				failedState: clone(state),
 			});
 
+		case 'recover': {
+			const recoverable = recoverableState(state);
+			if (!recoverable) return rejected(state, 'illegal_transition');
+			if (sameAuthority(recoverable.authority, event.authority)) return unchanged(state);
+			if (!canRecoverAuthority(recoverable.authority, event.authority)) {
+				return rejected(state, 'authority_mismatch');
+			}
+			return applied({
+				...clone(recoverable),
+				sessionId: event.authority.sessionId,
+				authority: clone(event.authority),
+			});
+		}
+
 		case 'reset':
 			if (state.status === 'idle') return unchanged(state);
 			if (state.status !== 'complete' && state.status !== 'error') return rejected(state, 'illegal_transition');
@@ -244,8 +264,7 @@ function validSessionBase(value: Record<string, unknown>): boolean {
 	return validId(value.sessionId)
 		&& isAuthority(value.authority)
 		&& value.sessionId === value.authority.sessionId
-		&& isIsoTimestamp(value.requestedAt)
-		&& Date.parse(value.requestedAt) >= value.authority.acquiredAt;
+		&& isIsoTimestamp(value.requestedAt);
 }
 
 function validProvisionalFields(value: Record<string, unknown>): boolean {
@@ -275,6 +294,18 @@ function isInProgressState(value: unknown): value is SessionInProgressState {
 			: value.status === 'stopping'
 				? isStoppingState(value)
 				: value.status === 'provisional' && isProvisionalState(value);
+}
+
+function recoverableState(state: SessionState): RecoverableSessionState | null {
+	if (state.status === 'active' || state.status === 'stopping' || state.status === 'provisional') {
+		return state;
+	}
+	if (state.status !== 'error') return null;
+	return state.failedState.status === 'active'
+		|| state.failedState.status === 'stopping'
+		|| state.failedState.status === 'provisional'
+		? state.failedState
+		: null;
 }
 
 function isAuthority(value: unknown): value is SessionAuthority {
@@ -366,6 +397,13 @@ function sameAuthority(left: SessionAuthority, right: SessionAuthority): boolean
 		&& left.sessionId === right.sessionId
 		&& left.fence === right.fence
 		&& left.acquiredAt === right.acquiredAt;
+}
+
+function canRecoverAuthority(previous: SessionAuthority, next: SessionAuthority): boolean {
+	return previous.machineId === next.machineId
+		&& previous.sessionId === next.sessionId
+		&& next.fence > previous.fence
+		&& next.acquiredAt >= previous.acquiredAt;
 }
 
 function sameSnapshot(left: SessionSnapshotReference, right: SessionSnapshotReference): boolean {

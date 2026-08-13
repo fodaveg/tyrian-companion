@@ -193,6 +193,65 @@ describe('session state machine', () => {
 		}
 	});
 
+	it.each(['active', 'stopping', 'provisional'] as const)('recovers %s with a strictly newer fence', (status) => {
+		const prior = stateAt(status);
+		const recoveredAuthority = {
+			...authority,
+			instanceId: 'instance-after-restart',
+			fence: authority.fence + 1,
+			acquiredAt: authority.acquiredAt + 10_000,
+		};
+		const result = transitionSession(prior, {
+			type: 'recover',
+			authority: recoveredAuthority,
+			recoveredAt: new Date(recoveredAuthority.acquiredAt).toISOString(),
+		});
+
+		expect(result).toMatchObject({
+			status: 'applied',
+			state: { status, authority: recoveredAuthority },
+		});
+	});
+
+	it('unwraps a failed recoverable state when a new owner takes authority', () => {
+		const failed = apply(stateAt('stopping'), {
+			type: 'fail', authority, failedAt: FINAL_COMPLETED_AT, code: 'lease_lost',
+		});
+		const recoveredAuthority = {
+			...authority,
+			instanceId: 'instance-after-restart',
+			fence: authority.fence + 1,
+			acquiredAt: authority.acquiredAt + 10_000,
+		};
+
+		expect(transitionSession(failed, {
+			type: 'recover',
+			authority: recoveredAuthority,
+			recoveredAt: new Date(recoveredAuthority.acquiredAt).toISOString(),
+		})).toMatchObject({ status: 'applied', state: { status: 'stopping' } });
+	});
+
+	it('rejects recovery with stale, foreign or non-recoverable authority', () => {
+		const active = stateAt('active');
+		for (const changed of [
+			{ ...authority, fence: authority.fence - 1 },
+			{ ...authority, fence: authority.fence + 1, machineId: 'another-machine' },
+			{ ...authority, fence: authority.fence + 1, sessionId: 'another-session' },
+		]) {
+			expect(transitionSession(active, {
+				type: 'recover',
+				authority: changed,
+				recoveredAt: new Date(Math.max(changed.acquiredAt, Date.parse(REQUESTED_AT))).toISOString(),
+			})).toMatchObject({ status: 'rejected', reason: 'authority_mismatch' });
+		}
+		expect(transitionSession(stateAt('starting'), {
+			type: 'recover', authority: { ...authority, fence: 8 }, recoveredAt: REQUESTED_AT,
+		})).toMatchObject({ status: 'rejected', reason: 'illegal_transition' });
+		expect(transitionSession(stateAt('complete'), {
+			type: 'recover', authority: { ...authority, fence: 8 }, recoveredAt: REQUESTED_AT,
+		})).toMatchObject({ status: 'rejected', reason: 'illegal_transition' });
+	});
+
 	it('rejects invalid transition order without changing the prior state', () => {
 		const idle = initialSessionState();
 		const result = transitionSession(idle, events.started);

@@ -26,6 +26,8 @@ The current `0.1.0` vertical provides:
   manual Magic Find, and timestamps before exposing an active farming session.
 - An explicit H3.3 manual stop flow that captures a stable final snapshot, computes the physical
   account delta, rechecks the fence, and leaves the session provisional for later review.
+- H3.4 crash/restart recovery backed by a second fail-closed IndexedDB store that preserves the
+  full baseline, optional final snapshot, canonical delta, and fenced runtime state.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service runs from explicit
@@ -54,7 +56,11 @@ The production build creates `main.js` in the project root. A distributable rele
 
 ## Privacy and network behavior
 
-Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start session**, or **Stop session** is explicitly selected. Loading the plugin or opening its view does not make network requests.
+Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
+machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
+value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
+session**, or **Stop session** is explicitly selected. Loading the plugin or opening its view reads
+only local recovery state and does not make network requests.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
@@ -117,11 +123,22 @@ checks the current fence immediately before committing it. A transient final-cap
 failure leaves the state at `stopping`, retains the original full baseline in memory, and can be retried
 without recapturing the start. A lost fence moves the preserved stopping evidence to `error`.
 
+H3.4 persists every successfully fenced `active`, `stopping`, or `provisional` boundary in the
+dedicated `tyrian-companion-session-runtime` IndexedDB database. A later authority error leaves the
+last durable boundary available instead of attempting an unfenced write. The record includes the full
+baseline and, once available, the full final snapshot plus its recomputed canonical delta. On plugin
+load this database is read locally without acquiring a lease or contacting GW2. The view then offers
+an explicit **Recover session** action or a confirmed destructive discard. Both must first acquire the
+same session lease; recovery requires a strictly newer fence and stale owners cannot save or clear a
+newer record. Corruption, unavailable storage, a live owner in another window, and `versionchange`
+all fail closed without a memory fallback.
+
 `transitionSession` is the pure H3.1 lifecycle boundary. It retains stable lease authority,
 qualified boundary references, and the manual start context, rejects stale fences and malformed or
 out-of-order events, and preserves the last valid in-progress state on error. H3.2 orchestrates
-`idle → starting → active`; H3.3 continues through `stopping → provisional`. H3.4 still owns recovery,
-and H3.9 owns contamination review, acceptance, finalization, and persistence.
+`idle → starting → active`; H3.3 continues through `stopping → provisional`; H3.4 restores those
+recoverable states after a restart. H3.9 owns contamination review, acceptance, finalization, and
+durable session history.
 
 ## Project documentation
 

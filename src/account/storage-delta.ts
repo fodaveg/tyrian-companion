@@ -142,6 +142,12 @@ export function compareStorageSnapshots(before: unknown, after: unknown): Storag
 	};
 }
 
+/** Validates one snapshot against the same invariants used by the delta boundary. */
+export function isComparableStorageSnapshot(value: unknown): value is StorageSnapshot {
+	const reasons: StorageDeltaReason[] = [];
+	return validateSnapshot(value, 'before', reasons) && !hasInvalidReason(reasons);
+}
+
 function validatePair(before: unknown, after: unknown): Validation {
 	const reasons: StorageDeltaReason[] = [];
 	const beforeValid = validateSnapshot(before, 'before', reasons);

@@ -11,9 +11,11 @@ import { DEFAULT_SETTINGS, migrateSettings, type TyrianSettings } from './core/s
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import {
 	ManualSessionStartService,
+	type SessionRecoveryState,
 	type SessionStartFailure,
 	type SessionStopFailure,
 } from './sessions/manual-session-start-service';
+import { IndexedDbSessionRuntimeStore } from './sessions/session-runtime-store';
 import type { SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
 import { COMPANION_VIEW_TYPE, TyrianCompanionView } from './ui/companion-view';
@@ -41,8 +43,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessions = new ManualSessionStartService(
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
-			{ onStateChange: () => this.renderViews() },
+			{
+				onStateChange: () => this.renderViews(),
+				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
+			},
 		);
+		await this.sessions.initialize();
 
 		this.registerView(
 			COMPANION_VIEW_TYPE,
@@ -92,6 +98,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getProvisionalDelta(): StorageDelta | null {
 		return this.sessions.getProvisionalDelta();
+	}
+
+	getSessionRecoveryState(): SessionRecoveryState {
+		return this.sessions.getRecoveryState();
+	}
+
+	async recoverSession(): Promise<void> {
+		await this.sessions.recover();
+		this.renderViews();
+	}
+
+	async discardRecoveredSession(): Promise<void> {
+		await this.sessions.discardRecovery();
+		this.renderViews();
 	}
 
 	async stopManualSession(): Promise<void> {

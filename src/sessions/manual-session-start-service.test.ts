@@ -12,6 +12,7 @@ import {
 	type SessionLeaseCoordinator,
 	type ManualSessionStartServiceOptions,
 } from './manual-session-start-service';
+import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
 
 const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
@@ -72,6 +73,7 @@ function serviceOptions(
 		sessionId: () => 'session-1',
 		setInterval: vi.fn(() => 17),
 		clearInterval: vi.fn(),
+		runtimeStore: new MemorySessionRuntimeStore(),
 		...extra,
 	};
 }
@@ -293,7 +295,7 @@ describe('ManualSessionStartService', () => {
 				itemChanges: [{ id: 100, before: 2, after: 5, delta: 3 }],
 			},
 		});
-		expect(leases.assertOwned).toHaveBeenCalledTimes(2);
+		expect(leases.assertOwned).toHaveBeenCalledTimes(3);
 		expect(leases.release).not.toHaveBeenCalled();
 		expect(service.getLastStopFailure()).toBeNull();
 		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
@@ -363,6 +365,7 @@ describe('ManualSessionStartService', () => {
 	it('never commits provisional after losing the fence at the final boundary', async () => {
 		const assertOwned = vi.fn()
 			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'owned' as const })
 			.mockResolvedValueOnce({ status: 'lost' as const });
 		const leases = coordinator({ assertOwned });
 		const capture = {
@@ -382,6 +385,41 @@ describe('ManualSessionStartService', () => {
 			failedState: { status: 'stopping', baseline: { snapshotId: 'snapshot-before' } },
 		});
 		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	it('does not expose provisional as successful when durable final evidence cannot commit', async () => {
+		const memory = new MemorySessionRuntimeStore();
+		let saves = 0;
+		const runtimeStore: SessionRuntimeStore = {
+			load: () => memory.load(),
+			save: async (record) => ++saves === 3
+				? { status: 'error', code: 'unavailable' }
+				: memory.save(record),
+			clear: (authority) => memory.clear(authority),
+			close: () => memory.close(),
+		};
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({ runtimeStore }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'failed',
+			failure: { code: 'coordination_unavailable' },
+		});
+		expect(service.getState()).toMatchObject({
+			status: 'error',
+			failedState: { status: 'provisional', finalSnapshot: { snapshotId: 'snapshot-after' } },
+		});
+		await expect(memory.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { state: { status: 'stopping' }, finalSnapshot: null, delta: null },
+		});
 	});
 
 	it('moves a retryable stopping session to error when its heartbeat loses authority', async () => {
@@ -434,6 +472,120 @@ describe('ManualSessionStartService', () => {
 				finalSnapshot: { snapshotId: 'snapshot-after' },
 			},
 		}));
+	});
+
+	it('recovers an active session after restart without another account capture', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.dispose();
+
+		const recoveredHandle = {
+			...handle,
+			instanceId: 'instance-after-restart',
+			fence: 2,
+			acquiredAt: acquiredAt + 60_000,
+			renewedAt: acquiredAt + 60_000,
+			expiresAt: acquiredAt + 90_000,
+		};
+		const leases = coordinator({
+			acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: recoveredHandle })),
+		});
+		const capture = { capture: vi.fn(async () => { throw new Error('must not call API'); }) };
+		const second = new ManualSessionStartService(
+			leases,
+			capture,
+			serviceOptions({ runtimeStore, now: () => acquiredAt + 60_001 }),
+		);
+
+		await second.initialize();
+		expect(second.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'active' } });
+		await expect(second.recover()).resolves.toMatchObject({
+			status: 'recovered',
+			state: { status: 'active', authority: { fence: 2, instanceId: 'instance-after-restart' } },
+		});
+		expect(capture.capture).not.toHaveBeenCalled();
+		expect(second.getState()).toMatchObject({
+			status: 'active',
+			baseline: { snapshotId: 'snapshot-before' },
+			startContext: { characterName: 'Astra Uno' },
+		});
+	});
+
+	it('keeps a saved session available when another window still owns its lease', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		const second = new ManualSessionStartService(
+			coordinator({
+				acquire: vi.fn(async () => ({ status: 'busy' as const, ownerExpiresAt: handle.expiresAt })),
+			}),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+
+		await second.initialize();
+		await expect(second.recover()).resolves.toMatchObject({ status: 'busy' });
+		expect(second.getRecoveryState()).toMatchObject({ status: 'busy', state: { status: 'active' } });
+		expect(second.getState().status).toBe('idle');
+	});
+
+	it('blocks a new session when local recovery evidence is corrupt', async () => {
+		const leases = coordinator();
+		const capture = { capture: vi.fn(async () => structuredClone(captured)) };
+		const service = new ManualSessionStartService(
+			leases,
+			capture,
+			serviceOptions({ runtimeStore: new MemorySessionRuntimeStore({ version: 1 }) }),
+		);
+
+		await service.initialize();
+		expect(service.getRecoveryState()).toMatchObject({ status: 'error' });
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
+		expect(leases.acquire).not.toHaveBeenCalled();
+		expect(capture.capture).not.toHaveBeenCalled();
+	});
+
+	it('discards saved evidence only after acquiring a newer fence', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.dispose();
+		const recoveredHandle = {
+			...handle,
+			instanceId: 'instance-after-restart',
+			fence: 2,
+			acquiredAt: acquiredAt + 60_000,
+			renewedAt: acquiredAt + 60_000,
+			expiresAt: acquiredAt + 90_000,
+		};
+		const leases = coordinator({
+			acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: recoveredHandle })),
+		});
+		const second = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+
+		await second.initialize();
+		await expect(second.discardRecovery()).resolves.toEqual({ status: 'discarded' });
+		expect(leases.acquire).toHaveBeenCalledWith('session-1');
+		expect(leases.release).toHaveBeenCalledWith(recoveredHandle);
+		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
 	});
 });
 /* eslint-enable @typescript-eslint/unbound-method -- End Vitest mock assertions. */

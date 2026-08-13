@@ -20,6 +20,12 @@ import type {
 	SessionState,
 } from './session';
 import {
+	createSessionRuntimeRecord,
+	recoverableState,
+	type SessionRuntimeRecord,
+	type SessionRuntimeStore,
+} from './session-runtime-store';
+import {
 	normalizeSessionStartInput,
 	SessionStartCaptureError,
 	type SessionStartCaptureResult,
@@ -61,6 +67,17 @@ export interface SessionStopFailure {
 	message: string;
 }
 
+export type SessionRecoveryState =
+	| { status: 'none' }
+	| { status: 'available' | 'busy'; state: SessionRuntimeRecord['state']; message?: string }
+	| { status: 'working'; action: 'recover' | 'discard'; state: SessionRuntimeRecord['state'] }
+	| { status: 'error'; message: string };
+
+export type SessionRecoveryResult =
+	| { status: 'recovered'; state: SessionState }
+	| { status: 'discarded' }
+	| { status: 'busy' | 'failed'; message: string };
+
 class ManualSessionStartError extends Error {
 	constructor(readonly failure: SessionStartFailure) {
 		super(failure.message);
@@ -86,6 +103,7 @@ export interface ManualSessionStartServiceOptions {
 	setInterval?: (callback: () => void, milliseconds: number) => unknown;
 	clearInterval?: (handle: unknown) => void;
 	onStateChange?: () => void;
+	runtimeStore: SessionRuntimeStore;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -99,25 +117,32 @@ export class ManualSessionStartService {
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
 	private stopFlight: Promise<ManualSessionStopResult> | null = null;
 	private baselineSnapshot: StorageSnapshot | null = null;
+	private finalSnapshot: StorageSnapshot | null = null;
 	private provisionalDelta: StorageDelta | null = null;
 	private lastStopFailure: SessionStopFailure | null = null;
+	private recoveryState: SessionRecoveryState = { status: 'none' };
+	private recoveryRecord: SessionRuntimeRecord | null = null;
+	private initializationFlight: Promise<void> | null = null;
+	private recoveryFlight: Promise<SessionRecoveryResult> | null = null;
 	private disposed = false;
 	private readonly now: () => number;
 	private readonly sessionId: () => string;
 	private readonly scheduleInterval: (callback: () => void, milliseconds: number) => unknown;
 	private readonly cancelInterval: (handle: unknown) => void;
 	private readonly onStateChange: () => void;
+	private readonly runtimeStore: SessionRuntimeStore;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
 		private readonly baselineCapture: SessionBaselineCapture,
-		options: ManualSessionStartServiceOptions = {},
+		options: ManualSessionStartServiceOptions,
 	) {
 		this.now = options.now ?? Date.now;
 		this.sessionId = options.sessionId ?? (() => crypto.randomUUID());
 		this.scheduleInterval = options.setInterval ?? ((callback, milliseconds) => window.setInterval(callback, milliseconds));
 		this.cancelInterval = options.clearInterval ?? ((handle) => window.clearInterval(handle as number));
 		this.onStateChange = options.onStateChange ?? (() => undefined);
+		this.runtimeStore = options.runtimeStore;
 	}
 
 	getState(): SessionState {
@@ -134,6 +159,27 @@ export class ManualSessionStartService {
 
 	getProvisionalDelta(): StorageDelta | null {
 		return this.provisionalDelta === null ? null : structuredClone(this.provisionalDelta);
+	}
+
+	getRecoveryState(): SessionRecoveryState {
+		return structuredClone(this.recoveryState);
+	}
+
+	initialize(): Promise<void> {
+		if (this.initializationFlight) return this.initializationFlight;
+		const flight = this.initializeInternal().finally(() => {
+			if (this.initializationFlight === flight) this.initializationFlight = null;
+		});
+		this.initializationFlight = flight;
+		return flight;
+	}
+
+	recover(): Promise<SessionRecoveryResult> {
+		return this.runRecovery('recover');
+	}
+
+	discardRecovery(): Promise<SessionRecoveryResult> {
+		return this.runRecovery('discard');
 	}
 
 	start(input: SessionStartInput): Promise<ManualSessionStartResult> {
@@ -165,14 +211,140 @@ export class ManualSessionStartService {
 			try { await this.coordinator.release(handle); } catch { /* best effort during unload */ }
 		}
 		this.coordinator.dispose();
+		this.runtimeStore.close();
+	}
+
+	private async initializeInternal(): Promise<void> {
+		if (this.disposed || this.recoveryRecord || this.state.status !== 'idle') return;
+		const loaded = await this.runtimeStore.load();
+		if (loaded.status === 'empty') {
+			this.recoveryState = { status: 'none' };
+		} else if (loaded.status === 'loaded') {
+			this.recoveryRecord = loaded.record;
+			this.recoveryState = { status: 'available', state: loaded.record.state };
+		} else {
+			this.recoveryState = {
+				status: 'error',
+				message: loaded.code === 'corrupt'
+					? 'The saved farming session is corrupt and was left untouched.'
+					: 'Session recovery storage is unavailable.',
+			};
+		}
+		this.onStateChange();
+	}
+
+	private runRecovery(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
+		if (this.recoveryFlight) return this.recoveryFlight;
+		const flight = this.recoveryInternal(action).finally(() => {
+			if (this.recoveryFlight === flight) this.recoveryFlight = null;
+		});
+		this.recoveryFlight = flight;
+		return flight;
+	}
+
+	private async recoveryInternal(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
+		await this.initialize();
+		const record = this.recoveryRecord;
+		if (this.disposed || !record || this.state.status !== 'idle') {
+			return { status: 'failed', message: 'There is no saved session available to recover.' };
+		}
+		this.recoveryState = { status: 'working', action, state: record.state };
+		this.onStateChange();
+		const persisted = recoverableState(record.state);
+		const acquisition = await this.safeAcquire(persisted.sessionId);
+		if (acquisition.status === 'busy') {
+			const message = 'Another Obsidian window still owns this farming session.';
+			this.recoveryState = { status: 'busy', state: record.state, message };
+			this.onStateChange();
+			return { status: 'busy', message };
+		}
+		if (acquisition.status === 'error') {
+			const message = 'Session coordination is unavailable, so the saved session was left untouched.';
+			this.recoveryState = { status: 'available', state: record.state, message };
+			this.onStateChange();
+			return { status: 'failed', message };
+		}
+		const handle = acquisition.handle;
+		if (handle.sessionId !== persisted.sessionId) {
+			await this.safeRelease(handle);
+			const message = 'A different farming session is already owned by this Obsidian window.';
+			this.recoveryState = { status: 'busy', state: record.state, message };
+			this.onStateChange();
+			return { status: 'busy', message };
+		}
+		const authority = sessionAuthorityFromLease(handle);
+		const owned = await this.safeAssert(handle);
+		if (owned.status !== 'owned') {
+			await this.safeRelease(handle);
+			const message = 'The recovered session lease was lost before it could be committed.';
+			this.recoveryState = { status: 'available', state: record.state, message };
+			this.onStateChange();
+			return { status: 'failed', message };
+		}
+		if (action === 'discard') {
+			const cleared = await this.runtimeStore.clear(authority);
+			await this.safeRelease(handle);
+			if (cleared.status !== 'cleared') {
+				const message = 'The saved session could not be discarded safely.';
+				this.recoveryState = { status: 'available', state: record.state, message };
+				this.onStateChange();
+				return { status: 'failed', message };
+			}
+			this.recoveryRecord = null;
+			this.recoveryState = { status: 'none' };
+			this.onStateChange();
+			return { status: 'discarded' };
+		}
+
+		const transition = transitionSession(record.state, {
+			type: 'recover',
+			authority,
+			recoveredAt: this.timestampAtOrAfter(authority.acquiredAt),
+		});
+		if (transition.status === 'rejected') {
+			await this.safeRelease(handle);
+			const message = 'The saved session authority could not be recovered safely.';
+			this.recoveryState = { status: 'available', state: record.state, message };
+			this.onStateChange();
+			return { status: 'failed', message };
+		}
+		const recoveredRecord = createSessionRuntimeRecord(
+			transition.state,
+			record.baselineSnapshot,
+			record.finalSnapshot,
+			record.delta,
+			this.safeNow(),
+		);
+		if (!recoveredRecord || (await this.runtimeStore.save(recoveredRecord)).status !== 'saved') {
+			await this.safeRelease(handle);
+			const message = 'The recovered authority could not be persisted safely.';
+			this.recoveryState = { status: 'available', state: record.state, message };
+			this.onStateChange();
+			return { status: 'failed', message };
+		}
+		this.state = transition.state;
+		this.baselineSnapshot = structuredClone(record.baselineSnapshot);
+		this.finalSnapshot = record.finalSnapshot === null ? null : structuredClone(record.finalSnapshot);
+		this.provisionalDelta = record.delta === null ? null : structuredClone(record.delta);
+		this.currentHandle = handle;
+		this.authorityFailure = null;
+		this.recoveryRecord = null;
+		this.recoveryState = { status: 'none' };
+		this.startHeartbeat(handle);
+		this.onStateChange();
+		return { status: 'recovered', state: this.getState() };
 	}
 
 	private async startInternal(input: SessionStartInput): Promise<ManualSessionStartResult> {
+		await this.initialize();
 		this.lastFailure = null;
 		this.lastStopFailure = null;
 		this.provisionalDelta = null;
 		this.authorityFailure = null;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
+		if (this.recoveryState.status !== 'none') {
+			return this.failWithoutLease('busy', 'Recover or discard the saved farming session first.');
+		}
 		if (this.state.status !== 'idle') {
 			return this.failWithoutLease('busy', 'A farming session is already in progress.');
 		}
@@ -226,6 +398,7 @@ export class ManualSessionStartService {
 				startContext: captured.context,
 			});
 			this.baselineSnapshot = structuredClone(captured.snapshot);
+			await this.persistCurrentState(true);
 			return { status: 'started', state: this.getState() as Extract<SessionState, { status: 'active' }> };
 		} catch (error) {
 			const mapped = mapFailure(error);
@@ -254,6 +427,7 @@ export class ManualSessionStartService {
 					authority,
 					requestedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
 				});
+				await this.persistCurrentState();
 			}
 			const stopping = this.state;
 			if (stopping.status !== 'stopping') {
@@ -286,7 +460,9 @@ export class ManualSessionStartService {
 				stoppedAt: stopping.stopRequestedAt,
 				finalSnapshot: finalReference,
 			});
+			this.finalSnapshot = structuredClone(finalSnapshot);
 			this.provisionalDelta = structuredClone(delta);
+			await this.persistCurrentState(true);
 			return {
 				status: 'stopped',
 				state: this.getState() as Extract<SessionState, { status: 'provisional' }>,
@@ -297,11 +473,13 @@ export class ManualSessionStartService {
 			if (mapped.code === 'lease_lost' || mapped.code === 'coordination_unavailable') {
 				this.stopHeartbeat();
 				try {
-					if (this.state.status === 'stopping') {
+					const failedState = this.getState();
+					if (failedState.status === 'stopping' || failedState.status === 'provisional') {
+						const failedAtFloor = stopFailureFloor(failedState);
 						this.apply({
 							type: 'fail',
 							authority,
-							failedAt: this.safeTimestampAtOrAfter(Date.parse(this.state.stopRequestedAt)),
+							failedAt: this.safeTimestampAtOrAfter(failedAtFloor),
 							code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
 						});
 					}
@@ -316,6 +494,47 @@ export class ManualSessionStartService {
 		if (result.status === 'rejected') throw new Error(`Session transition rejected: ${result.reason}`);
 		this.state = result.state;
 		this.onStateChange();
+	}
+
+	private async persistCurrentState(ownershipChecked = false): Promise<void> {
+		if (!this.baselineSnapshot) {
+			throw new ManualSessionStartError(failure(
+				'coordination_unavailable',
+				'The farming session evidence is incomplete.',
+			));
+		}
+		if (!ownershipChecked) {
+			const owned = await this.safeAssert(this.requireHandle());
+			if (owned.status !== 'owned') {
+				throw new ManualSessionStartError(failure(
+					owned.status === 'lost' ? 'lease_lost' : 'coordination_unavailable',
+					owned.status === 'lost'
+						? 'The session lease was lost before recovery evidence could be committed.'
+						: 'Session coordination is unavailable.',
+				));
+			}
+		}
+		const record = createSessionRuntimeRecord(
+			this.state,
+			this.baselineSnapshot,
+			this.finalSnapshot,
+			this.provisionalDelta,
+			this.safeNow(),
+		);
+		if (!record) {
+			throw new ManualSessionStartError(failure(
+				'coordination_unavailable',
+				'The farming session evidence could not be validated for recovery.',
+			));
+		}
+		const persisted = await this.runtimeStore.save(record);
+		if (persisted.status === 'saved') return;
+		throw new ManualSessionStartError(failure(
+			persisted.status === 'stale' ? 'lease_lost' : 'coordination_unavailable',
+			persisted.status === 'stale'
+				? 'A newer session owner rejected this stale write.'
+				: 'Session recovery storage is unavailable.',
+		));
 	}
 
 	private startHeartbeat(handle: ActiveSessionLeaseHandle): void {
@@ -376,6 +595,7 @@ export class ManualSessionStartService {
 				failedAt: this.safeTimestampAtOrAfter(floor),
 				code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
 			});
+			void this.persistCurrentState().catch(() => undefined);
 		} catch { /* the state machine remains fail-closed */ }
 	}
 
@@ -413,6 +633,7 @@ export class ManualSessionStartService {
 		} catch { /* force the failed-start terminal below */ }
 		if (this.state.status !== 'idle') this.state = initialSessionState();
 		this.baselineSnapshot = null;
+		this.finalSnapshot = null;
 		this.provisionalDelta = null;
 		this.lastFailure = failed;
 		this.onStateChange();
@@ -480,6 +701,14 @@ function snapshotReference(snapshot: StorageSnapshot): SessionSnapshotReference 
 		completedAt: snapshot.completedAt,
 		quality: snapshot.quality,
 	};
+}
+
+function stopFailureFloor(
+	state: Extract<SessionState, { status: 'stopping' | 'provisional' }>,
+): number {
+	return state.status === 'stopping'
+		? Date.parse(state.stopRequestedAt)
+		: Date.parse(state.finalSnapshot.completedAt);
 }
 
 function failure(code: SessionStartFailure['code'], message: string): SessionStartFailure {
