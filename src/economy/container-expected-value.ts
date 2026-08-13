@@ -4,6 +4,8 @@ import { createTradingPostValueWithPolicy, GW2_TRADING_POST_FEE_POLICY } from '.
 export const CONTAINER_EXPECTED_VALUE_VERSION = 1 as const;
 const MICRO_SCALE = 1_000_000n;
 
+export type ContainerTradingAccess = 'full' | 'free_to_play' | 'unknown';
+
 export interface ContainerMarketQuote {
 	itemId: number;
 	whitelisted: boolean;
@@ -18,6 +20,7 @@ export interface ContainerExpectedValueLine {
 	label: string;
 	expectedUnitsMillionths: number;
 	policy: ContainerModelV1['outcomes'][number]['valuationPolicy'];
+	quoteWhitelisted: boolean | null;
 	instantNetMicroCopper: number | null;
 	listingNetMicroCopper: number | null;
 	excludedLiquidMicroCopper: number;
@@ -29,6 +32,7 @@ export interface ContainerExpectedValue {
 	modelVersion: number;
 	containerItemId: number;
 	feePolicyVersion: typeof GW2_TRADING_POST_FEE_POLICY.version;
+	tradingAccess: ContainerTradingAccess;
 	lines: ContainerExpectedValueLine[];
 	instant: { coverage: 'complete' | 'partial'; knownNetMicroCopper: number; netMicroCopper: number | null };
 	listing: { coverage: 'complete' | 'partial'; knownNetMicroCopper: number; netMicroCopper: number | null };
@@ -42,12 +46,15 @@ export type ContainerExpectedValueResult =
 export function calculateContainerExpectedValue(
 	modelValue: unknown,
 	quotesValue: unknown,
+	tradingAccessValue: unknown = 'unknown',
 ): ContainerExpectedValueResult {
-	if (!isContainerModel(modelValue) || !Array.isArray(quotesValue) || !quotesValue.every(isQuote)) {
+	if (!isContainerModel(modelValue) || !Array.isArray(quotesValue) || !quotesValue.every(isQuote)
+		|| !isTradingAccess(tradingAccessValue)) {
 		return { status: 'invalid', reason: 'invalid_input' };
 	}
 	const model = modelValue;
 	const quotes = quotesValue;
+	const tradingAccess = tradingAccessValue;
 	const quoteById = new Map<number, ContainerMarketQuote>();
 	for (const quote of quotes) {
 		if (quoteById.has(quote.itemId)) return { status: 'invalid', reason: 'duplicate_quote' };
@@ -64,16 +71,20 @@ export function calculateContainerExpectedValue(
 		let instant: number | null = 0;
 		let listing: number | null = 0;
 		let excludedLiquidMicroCopper = 0;
+		let quoteWhitelisted: boolean | null = null;
 		if (outcome.sampleUnits === 0) {
 			// An unobserved outcome contributes exactly zero to this sample model and
 			// does not need a market quote to make that zero complete.
 		} else if (outcome.valuationPolicy === 'liquid_market') {
 			const quote = quoteById.get(outcome.id);
-			const instantResult = quote?.whitelisted === true && quote.bidUnitCopper !== null
-				? marketSampleMicroCopper('instant_sell', outcome.sampleUnits, model.sample.containersOpened, quote.bidUnitCopper)
+			quoteWhitelisted = quote?.whitelisted ?? null;
+			const usableQuote = quote !== undefined && (tradingAccess === 'full' || quote.whitelisted)
+				? quote : null;
+			const instantResult = usableQuote !== null && usableQuote.bidUnitCopper !== null
+				? marketSampleMicroCopper('instant_sell', outcome.sampleUnits, model.sample.containersOpened, usableQuote.bidUnitCopper)
 				: { status: 'missing' as const };
-			const listingResult = quote?.whitelisted === true && quote.askUnitCopper !== null
-				? marketSampleMicroCopper('listing', outcome.sampleUnits, model.sample.containersOpened, quote.askUnitCopper)
+			const listingResult = usableQuote !== null && usableQuote.askUnitCopper !== null
+				? marketSampleMicroCopper('listing', outcome.sampleUnits, model.sample.containersOpened, usableQuote.askUnitCopper)
 				: { status: 'missing' as const };
 			if (instantResult.status === 'invalid') return instantResult;
 			if (listingResult.status === 'invalid') return listingResult;
@@ -110,6 +121,7 @@ export function calculateContainerExpectedValue(
 			label: outcome.label,
 			expectedUnitsMillionths: outcome.expectedUnitsMillionths,
 			policy: outcome.valuationPolicy,
+			quoteWhitelisted,
 			instantNetMicroCopper: instant,
 			listingNetMicroCopper: listing,
 			excludedLiquidMicroCopper,
@@ -123,6 +135,7 @@ export function calculateContainerExpectedValue(
 			modelVersion: model.modelVersion,
 			containerItemId: model.containerItemId,
 			feePolicyVersion: GW2_TRADING_POST_FEE_POLICY.version,
+			tradingAccess,
 			lines,
 			instant: {
 				coverage: instantComplete ? 'complete' : 'partial',
@@ -140,6 +153,10 @@ export function calculateContainerExpectedValue(
 			},
 		},
 	};
+}
+
+function isTradingAccess(value: unknown): value is ContainerTradingAccess {
+	return value === 'full' || value === 'free_to_play' || value === 'unknown';
 }
 
 function marketSampleMicroCopper(

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { halloweenTrickOrTreatBagModel } from './models/halloween-trick-or-treat-bag';
-import { calculateContainerExpectedValue, type ContainerMarketQuote } from './container-expected-value';
+import {
+	calculateContainerExpectedValue,
+	type ContainerMarketQuote,
+	type ContainerTradingAccess,
+} from './container-expected-value';
 import { expectedUnitsMillionths, type ContainerModelV1 } from './container-model';
 
 function quotes(): ContainerMarketQuote[] {
@@ -61,6 +65,46 @@ describe('container expected value', () => {
 		const result = calculateContainerExpectedValue(halloweenTrickOrTreatBagModel(), blocked);
 		expect(result.status).toBe('ok');
 		if (result.status === 'ok') expect(result.value.instant.coverage).toBe('partial');
+	});
+
+	it.each([
+		{ access: 'full', whitelisted: false, coverage: 'complete' },
+		{ access: 'free_to_play', whitelisted: false, coverage: 'partial' },
+		{ access: 'unknown', whitelisted: false, coverage: 'partial' },
+		{ access: 'free_to_play', whitelisted: true, coverage: 'complete' },
+		{ access: 'unknown', whitelisted: true, coverage: 'complete' },
+	] as const)(
+		'applies $access access to whitelisted=$whitelisted',
+		({ access, whitelisted, coverage }) => {
+			const model = oneUnitModel();
+			const result = calculateContainerExpectedValue(model, [{
+				itemId: 1,
+				whitelisted,
+				bidUnitCopper: 100,
+				askUnitCopper: 120,
+			}], access satisfies ContainerTradingAccess);
+			expect(result.status).toBe('ok');
+			if (result.status !== 'ok') return;
+			expect(result.value.tradingAccess).toBe(access);
+			expect(result.value.instant.coverage).toBe(coverage);
+			expect(result.value.listing.coverage).toBe(coverage);
+			expect(result.value.lines[0]!.quoteWhitelisted).toBe(whitelisted);
+			expect(result.value.instant.netMicroCopper === null).toBe(coverage === 'partial');
+		},
+	);
+
+	it('defaults omitted access to unknown and rejects malformed access', () => {
+		const blocked = [{
+			itemId: 1, whitelisted: false, bidUnitCopper: 100, askUnitCopper: 120,
+		}];
+		const implicit = calculateContainerExpectedValue(oneUnitModel(), blocked);
+		expect(implicit.status).toBe('ok');
+		if (implicit.status === 'ok') {
+			expect(implicit.value.tradingAccess).toBe('unknown');
+			expect(implicit.value.instant.coverage).toBe('partial');
+		}
+		expect(calculateContainerExpectedValue(oneUnitModel(), blocked, 'trial'))
+			.toEqual({ status: 'invalid', reason: 'invalid_input' });
 	});
 
 	it.each([
