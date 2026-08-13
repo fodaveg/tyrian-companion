@@ -2,7 +2,12 @@ import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { isSessionState } from './session-state-machine';
+import {
+	isSessionContaminationReview,
+	type SessionContaminationReview,
+} from './session-contamination-review';
 import type {
+	CompleteSessionState,
 	ErrorSessionState,
 	RecoverableSessionState,
 	SessionAuthority,
@@ -10,7 +15,7 @@ import type {
 	SessionState,
 } from './session';
 
-export const SESSION_RUNTIME_VERSION = 1 as const;
+export const SESSION_RUNTIME_VERSION = 2 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
 export const SESSION_RUNTIME_DB_VERSION = 1;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
@@ -18,6 +23,7 @@ const RUNTIME_KEY = 'active-session';
 
 export type PersistedSessionState =
 	| RecoverableSessionState
+	| CompleteSessionState
 	| (Omit<ErrorSessionState, 'failedState'> & { failedState: RecoverableSessionState });
 
 export interface SessionRuntimeRecord {
@@ -26,6 +32,7 @@ export interface SessionRuntimeRecord {
 	baselineSnapshot: StorageSnapshot;
 	finalSnapshot: StorageSnapshot | null;
 	delta: StorageDelta | null;
+	review: SessionContaminationReview | null;
 	persistedAt: number;
 }
 
@@ -56,15 +63,18 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 
 	async load(): Promise<SessionRuntimeLoadResult> {
 		if (this.value === undefined) return { status: 'empty' };
-		if (!isSessionRuntimeRecord(this.value)) return { status: 'error', code: 'corrupt' };
-		return { status: 'loaded', record: structuredClone(this.value) };
+		const record = normalizeSessionRuntimeRecord(this.value);
+		if (!record) return { status: 'error', code: 'corrupt' };
+		this.value = structuredClone(record);
+		return { status: 'loaded', record };
 	}
 
 	async save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
 		if (!isSessionRuntimeRecord(record)) return { status: 'error', code: 'corrupt' };
 		if (this.value !== undefined) {
-			if (!isSessionRuntimeRecord(this.value)) return { status: 'error', code: 'corrupt' };
-			if (!canReplace(this.value.state, record.state)) return { status: 'stale' };
+			const current = normalizeSessionRuntimeRecord(this.value);
+			if (!current) return { status: 'error', code: 'corrupt' };
+			if (!canReplace(current, record)) return { status: 'stale' };
 		}
 		this.value = structuredClone(record);
 		return { status: 'saved' };
@@ -72,8 +82,9 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 
 	async clear(authority: SessionAuthority): Promise<SessionRuntimeMutationResult> {
 		if (this.value === undefined) return { status: 'cleared' };
-		if (!isSessionRuntimeRecord(this.value)) return { status: 'error', code: 'corrupt' };
-		if (!canWriteAuthority(runtimeAuthority(this.value.state), authority)) return { status: 'stale' };
+		const current = normalizeSessionRuntimeRecord(this.value);
+		if (!current) return { status: 'error', code: 'corrupt' };
+		if (!canWriteAuthority(runtimeAuthority(current.state), authority)) return { status: 'stale' };
 		this.value = undefined;
 		return { status: 'cleared' };
 	}
@@ -96,8 +107,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		try {
 			const value = await this.read();
 			if (value === undefined) return { status: 'empty' };
-			if (!isSessionRuntimeRecord(value)) return { status: 'error', code: 'corrupt' };
-			return { status: 'loaded', record: structuredClone(value) };
+			const record = normalizeSessionRuntimeRecord(value);
+			if (!record) return { status: 'error', code: 'corrupt' };
+			return { status: 'loaded', record };
 		} catch {
 			return { status: 'error', code: 'unavailable' };
 		}
@@ -106,11 +118,10 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 	async save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
 		if (!isSessionRuntimeRecord(record)) return { status: 'error', code: 'corrupt' };
 		try {
-			return await this.mutate<SessionRuntimeMutationResult>((current) => {
-				if (current !== undefined && !isSessionRuntimeRecord(current)) {
-					return { result: { status: 'error', code: 'corrupt' } as const };
-				}
-				if (current !== undefined && !canReplace(current.state, record.state)) {
+			return await this.mutate<SessionRuntimeMutationResult>((value) => {
+				const current = value === undefined ? null : normalizeSessionRuntimeRecord(value);
+				if (value !== undefined && !current) return { result: { status: 'error', code: 'corrupt' } as const };
+				if (current && !canReplace(current, record)) {
 					return { result: { status: 'stale' } as const };
 				}
 				return {
@@ -125,11 +136,10 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 
 	async clear(authority: SessionAuthority): Promise<SessionRuntimeMutationResult> {
 		try {
-			return await this.mutate<SessionRuntimeMutationResult>((current) => {
-				if (current === undefined) return { result: { status: 'cleared' } as const, remove: true };
-				if (!isSessionRuntimeRecord(current)) {
-					return { result: { status: 'error', code: 'corrupt' } as const };
-				}
+			return await this.mutate<SessionRuntimeMutationResult>((value) => {
+				if (value === undefined) return { result: { status: 'cleared' } as const, remove: true };
+				const current = normalizeSessionRuntimeRecord(value);
+				if (!current) return { result: { status: 'error', code: 'corrupt' } as const };
 				if (!canWriteAuthority(runtimeAuthority(current.state), authority)) {
 					return { result: { status: 'stale' } as const };
 				}
@@ -250,6 +260,7 @@ export function createSessionRuntimeRecord(
 	finalSnapshot: StorageSnapshot | null,
 	delta: StorageDelta | null,
 	persistedAt: number,
+	review: SessionContaminationReview | null = null,
 ): SessionRuntimeRecord | null {
 	const candidate = {
 		version: SESSION_RUNTIME_VERSION,
@@ -257,18 +268,24 @@ export function createSessionRuntimeRecord(
 		baselineSnapshot: structuredClone(baselineSnapshot),
 		finalSnapshot: finalSnapshot === null ? null : structuredClone(finalSnapshot),
 		delta: delta === null ? null : structuredClone(delta),
+		review: review === null ? null : structuredClone(review),
 		persistedAt,
 	};
 	return isSessionRuntimeRecord(candidate) ? candidate : null;
 }
 
 export function isSessionRuntimeRecord(value: unknown): value is SessionRuntimeRecord {
+	return isSessionRuntimeRecordV2(value);
+}
+
+function isSessionRuntimeRecordV2(value: unknown): value is SessionRuntimeRecord {
 	if (!isJsonValue(value) || !isRecord(value) || !exactKeys(value, [
 		'version',
 		'state',
 		'baselineSnapshot',
 		'finalSnapshot',
 		'delta',
+		'review',
 		'persistedAt',
 	])) return false;
 	if (
@@ -281,57 +298,77 @@ export function isSessionRuntimeRecord(value: unknown): value is SessionRuntimeR
 		|| !hasPassEnvelope(value.baselineSnapshot)
 	) return false;
 	const state = value.state;
-	const recoverable = recoverableState(state);
-	if (!sameSnapshotReference(recoverable.baseline, value.baselineSnapshot)) return false;
-	if (recoverable.status !== 'provisional') {
-		return value.finalSnapshot === null && value.delta === null;
+	const evidenceState = state.status === 'error' ? state.failedState : state;
+	if (!sameSnapshotReference(evidenceState.baseline, value.baselineSnapshot)) return false;
+	if (evidenceState.status !== 'provisional' && evidenceState.status !== 'complete') {
+		return value.finalSnapshot === null && value.delta === null && value.review === null;
 	}
 	if (!isComparableStorageSnapshot(value.finalSnapshot)
 		|| !hasPassEnvelope(value.finalSnapshot)
 		|| !sameSnapshotReference(
-		recoverable.finalSnapshot,
-		value.finalSnapshot,
+			evidenceState.finalSnapshot,
+			value.finalSnapshot,
 	)) return false;
 	const calculated = compareStorageSnapshots(value.baselineSnapshot, value.finalSnapshot);
-	return calculated.status !== 'invalid'
-		&& isRecord(value.delta)
-		&& JSON.stringify(calculated) === JSON.stringify(value.delta);
+	if (calculated.status === 'invalid'
+		|| !isRecord(value.delta)
+		|| JSON.stringify(calculated) !== JSON.stringify(value.delta)) return false;
+	if (value.review !== null && !isSessionContaminationReview(
+		value.review,
+		value.baselineSnapshot,
+		value.finalSnapshot,
+		calculated,
+	)) return false;
+	if (evidenceState.status === 'complete') {
+		return value.review !== null
+			&& value.review.classification.permissions.finalize
+			&& value.review.classification.status === evidenceState.classification;
+	}
+	return true;
 }
 
 export function recoverableState(state: PersistedSessionState): RecoverableSessionState {
+	if (state.status === 'complete') throw new Error('A complete session is not recoverable.');
 	return state.status === 'error' ? state.failedState : state;
 }
 
 export function runtimeAuthority(state: PersistedSessionState): SessionAuthority {
-	return recoverableState(state).authority;
+	return state.status === 'complete' ? state.authority : recoverableState(state).authority;
 }
 
 function isPersistableState(state: SessionState): state is PersistedSessionState {
-	if (state.status === 'active' || state.status === 'stopping' || state.status === 'provisional') return true;
+	if (state.status === 'active' || state.status === 'stopping' || state.status === 'provisional' || state.status === 'complete') return true;
 	return state.status === 'error'
 		&& (state.failedState.status === 'active'
 			|| state.failedState.status === 'stopping'
 			|| state.failedState.status === 'provisional');
 }
 
-function canReplace(current: PersistedSessionState, next: PersistedSessionState): boolean {
-	const currentAuthority = runtimeAuthority(current);
-	const nextAuthority = runtimeAuthority(next);
+function canReplace(current: SessionRuntimeRecord, next: SessionRuntimeRecord): boolean {
+	const currentAuthority = runtimeAuthority(current.state);
+	const nextAuthority = runtimeAuthority(next.state);
 	if (!canWriteAuthority(currentAuthority, nextAuthority)) return false;
 	if (nextAuthority.fence > currentAuthority.fence) {
-		return JSON.stringify(stateEvidence(current)) === JSON.stringify(stateEvidence(next));
+		return JSON.stringify(recordEvidence(current)) === JSON.stringify(recordEvidence(next));
 	}
-	const currentBase = recoverableState(current);
-	const nextBase = recoverableState(next);
+	const currentBase = current.state.status === 'error' ? current.state.failedState : current.state;
+	const nextBase = next.state.status === 'error' ? next.state.failedState : next.state;
 	const currentRank = stateRank(currentBase);
 	const nextRank = stateRank(nextBase);
 	if (nextRank < currentRank) return false;
-	if (nextRank > currentRank) return current.status !== 'error';
-	if (current.status === 'error') return JSON.stringify(current) === JSON.stringify(next);
-	if (next.status === 'error') {
-		return JSON.stringify(next.failedState) === JSON.stringify(current);
+	if (nextRank > currentRank) return current.state.status !== 'error';
+	if (current.state.status === 'error') return JSON.stringify(current) === JSON.stringify(next);
+	if (next.state.status === 'error') {
+		return JSON.stringify(next.state.failedState) === JSON.stringify(current.state)
+			&& JSON.stringify(next.review) === JSON.stringify(current.review);
 	}
-	return JSON.stringify(next) === JSON.stringify(current);
+	if (JSON.stringify(next.state) !== JSON.stringify(current.state)) return false;
+	if (current.review === null || JSON.stringify(next.review) === JSON.stringify(current.review)) return true;
+	return current.state.status === 'provisional'
+		&& next.state.status === 'provisional'
+		&& next.review !== null
+		&& next.persistedAt >= current.persistedAt
+		&& Date.parse(next.review.reviewedAt) > Date.parse(current.review.reviewedAt);
 }
 
 function canWriteAuthority(current: SessionAuthority, next: SessionAuthority): boolean {
@@ -351,13 +388,23 @@ function sameSnapshotReference(reference: SessionSnapshotReference, snapshot: St
 		&& reference.quality === snapshot.quality;
 }
 
-function stateEvidence(state: PersistedSessionState): Omit<RecoverableSessionState, 'authority'> {
-	const { authority: _authority, ...evidence } = recoverableState(state);
-	return evidence;
+function recordEvidence(record: SessionRuntimeRecord): object {
+	const state = record.state.status === 'error' ? record.state.failedState : record.state;
+	const { authority: _authority, ...evidence } = state;
+	return { state: evidence, review: record.review };
 }
 
-function stateRank(state: RecoverableSessionState): number {
-	return state.status === 'active' ? 1 : state.status === 'stopping' ? 2 : 3;
+function stateRank(state: RecoverableSessionState | CompleteSessionState): number {
+	return state.status === 'active' ? 1 : state.status === 'stopping' ? 2 : state.status === 'provisional' ? 3 : 4;
+}
+
+function normalizeSessionRuntimeRecord(value: unknown): SessionRuntimeRecord | null {
+	if (isSessionRuntimeRecordV2(value)) return structuredClone(value);
+	if (!isRecord(value) || value.version !== 1 || !exactKeys(value, [
+		'version', 'state', 'baselineSnapshot', 'finalSnapshot', 'delta', 'persistedAt',
+	])) return null;
+	const migrated = { ...structuredClone(value), version: SESSION_RUNTIME_VERSION, review: null };
+	return isSessionRuntimeRecordV2(migrated) ? migrated : null;
 }
 
 function hasPassEnvelope(snapshot: StorageSnapshot): boolean {

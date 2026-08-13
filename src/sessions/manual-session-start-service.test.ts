@@ -7,6 +7,7 @@ import {
 	storageDeltaSnapshot,
 } from '../account/__fixtures__/storage-delta';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
+import type { SessionContaminationAnswers } from './session-contamination-review';
 import {
 	ManualSessionStartService,
 	type SessionLeaseCoordinator,
@@ -474,6 +475,117 @@ describe('ManualSessionStartService', () => {
 		}));
 	});
 
+	it('persists a clean review, finalizes the session and releases its lease', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({ runtimeStore }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		const stopped = await service.stop();
+		expect(stopped).toMatchObject({ status: 'stopped' });
+		expect(service.getState()).toMatchObject({ status: 'provisional' });
+
+		const reviewed = await service.reviewContamination(reviewAnswers());
+		expect(reviewed).toMatchObject({
+			status: 'finalized',
+			review: { classification: { status: 'exact' } },
+			state: { status: 'complete', classification: 'exact' },
+		});
+		expect(leases.release).toHaveBeenCalledWith(handle);
+		expect(service.getContaminationReview()).toMatchObject({ classification: { status: 'exact' } });
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { state: { status: 'complete' }, review: { classification: { status: 'exact' } } },
+		});
+	});
+
+	it('persists declared activity as a contaminated completed session', async () => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions(),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.stop();
+		const answers = reviewAnswers();
+		answers.activities.open = true;
+
+		await expect(service.reviewContamination(answers)).resolves.toMatchObject({
+			status: 'finalized',
+			review: { declaration: { status: 'activities', activities: ['open'] } },
+			state: { status: 'complete', classification: 'contaminated' },
+		});
+	});
+
+	it('keeps an unsure review provisional, recoverable and editable', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({ runtimeStore }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.stop();
+		await expect(service.reviewContamination(reviewAnswers('unsure'))).resolves.toMatchObject({
+			status: 'reviewed',
+			review: { classification: { status: 'estimated', permissions: { finalize: false } } },
+			state: { status: 'provisional' },
+		});
+		const firstReviewedAt = service.getContaminationReview()?.reviewedAt;
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { state: { status: 'provisional' }, review: { answers: { certainty: 'unsure' } } },
+		});
+
+		await expect(service.reviewContamination(reviewAnswers())).resolves.toMatchObject({
+			status: 'finalized',
+			state: { status: 'complete', classification: 'exact' },
+		});
+		expect(Date.parse(service.getContaminationReview()?.reviewedAt ?? '')).toBeGreaterThan(
+			Date.parse(firstReviewedAt ?? ''),
+		);
+	});
+
+	it('loads a completed reviewed session without treating it as crash recovery and resets it explicitly', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({ runtimeStore }),
+		);
+		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.stop();
+		await first.reviewContamination(reviewAnswers());
+
+		const second = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => { throw new Error('must not capture'); }) },
+			serviceOptions({ runtimeStore }),
+		);
+		await second.initialize();
+		expect(second.getRecoveryState()).toEqual({ status: 'none' });
+		expect(second.getState()).toMatchObject({ status: 'complete', classification: 'exact' });
+		expect(second.getContaminationReview()).toMatchObject({ classification: { status: 'exact' } });
+		await expect(second.resetCompletedSession()).resolves.toBe(true);
+		expect(second.getState()).toEqual({ version: 1, status: 'idle' });
+		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
+	});
+
 	it('recovers an active session after restart without another account capture', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const first = new ManualSessionStartService(
@@ -588,4 +700,24 @@ describe('ManualSessionStartService', () => {
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
 	});
 });
+
+function reviewAnswers(
+	certainty: SessionContaminationAnswers['certainty'] = 'confirmed',
+): SessionContaminationAnswers {
+	return {
+		certainty,
+		activities: {
+			open: false,
+			salvage: false,
+			consume: false,
+			craft: false,
+			tpBuy: false,
+			tpSell: false,
+			vendorBuy: false,
+			vendorSell: false,
+			transfer: false,
+			other: false,
+		},
+	};
+}
 /* eslint-enable @typescript-eslint/unbound-method -- End Vitest mock assertions. */

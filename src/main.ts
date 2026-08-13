@@ -17,6 +17,7 @@ import {
 	AssistedDetectionService,
 	type AssistedDetectionState,
 } from './sessions/assisted-detection-service';
+import type { SessionContaminationAnswers } from './sessions/session-contamination-review';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import {
 	ManualSessionStartService,
@@ -163,6 +164,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getProvisionalDelta(): StorageDelta | null {
 		return this.sessions.getProvisionalDelta();
+	}
+
+	getContaminationReview() {
+		return this.sessions.getContaminationReview();
+	}
+
+	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
+		const result = await this.sessions.reviewContamination(answers);
+		this.renderViews();
+		return result.status === 'failed' ? result.message : null;
+	}
+
+	async resetCompletedSession(): Promise<void> {
+		await this.sessions.resetCompletedSession();
+		this.renderViews();
 	}
 
 	getSessionRecoveryState(): SessionRecoveryState {

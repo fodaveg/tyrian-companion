@@ -10,6 +10,12 @@ import type {
 	SessionRecoveryState,
 	SessionStopFailure,
 } from '../sessions/manual-session-start-service';
+import {
+	SESSION_ACTIVITY_KEYS,
+	type SessionActivityKey,
+	type SessionContaminationAnswers,
+	type SessionContaminationReview,
+} from '../sessions/session-contamination-review';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -25,6 +31,9 @@ export interface CompanionActions {
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
+	getContaminationReview(): SessionContaminationReview | null;
+	reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null>;
+	resetCompletedSession(): Promise<void>;
 	getSessionRecoveryState(): SessionRecoveryState;
 	openManualSessionStart(): void;
 	stopManualSession(): Promise<void>;
@@ -336,6 +345,25 @@ export class TyrianCompanionView extends ItemView {
 				addDetail(details, 'Changed item IDs', String(delta.itemChanges.length));
 				addDetail(details, 'Changed currencies', String(delta.currencyChanges.length));
 			}
+			const review = this.actions.getContaminationReview();
+			if (review) this.renderReviewSummary(card, review);
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const reviewButton = actions.createEl('button', {
+				text: review ? 'Review again' : 'Review activity',
+				cls: 'mod-cta',
+			});
+			reviewButton.addEventListener('click', () => this.openContaminationReview(review));
+			return;
+		}
+
+		if (state.status === 'complete') {
+			card.createEl('p', { text: 'The session review is complete.' });
+			this.renderSessionDetails(card, state);
+			const review = this.actions.getContaminationReview();
+			if (review) this.renderReviewSummary(card, review);
+			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const reset = actions.createEl('button', { text: 'Clear completed session', cls: 'mod-cta' });
+			reset.addEventListener('click', () => { void this.actions.resetCompletedSession(); });
 			return;
 		}
 
@@ -353,6 +381,25 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		card.createEl('p', { text: `Session status: ${state.status}.` });
+	}
+
+	private openContaminationReview(current: SessionContaminationReview | null): void {
+		new SessionContaminationReviewModal(
+			this.app,
+			current?.answers ?? null,
+			(answers) => this.actions.reviewSessionContamination(answers),
+		).open();
+	}
+
+	private renderReviewSummary(container: HTMLElement, review: SessionContaminationReview): void {
+		const details = container.createEl('dl');
+		addDetail(details, 'Classification', review.classification.status);
+		addDetail(details, 'Confidence', review.classification.confidence);
+		addDetail(details, 'Reviewed', formatTimestamp(review.reviewedAt));
+		const selected = SESSION_ACTIVITY_KEYS.filter((key) => review.answers.activities[key]);
+		addDetail(details, 'Declared activity', selected.length === 0
+			? review.answers.certainty === 'confirmed' ? 'None confirmed' : 'Unsure'
+			: selected.map(activityLabel).join(', '));
 	}
 
 	private renderRecovery(container: HTMLElement, recovery: SessionRecoveryState): void {
@@ -408,7 +455,7 @@ export class TyrianCompanionView extends ItemView {
 
 	private renderSessionDetails(
 		container: HTMLElement,
-		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' }>,
+		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' | 'complete' }>,
 	): void {
 		const details = container.createEl('dl');
 		addDetail(details, 'Character', state.startContext.characterName);
@@ -449,6 +496,84 @@ class ConfirmDiscardSessionModal extends Modal {
 	}
 }
 
+class SessionContaminationReviewModal extends Modal {
+	constructor(
+		app: App,
+		private readonly current: SessionContaminationAnswers | null,
+		private readonly onSubmit: (answers: SessionContaminationAnswers) => Promise<string | null>,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle('Review session activity');
+		this.contentEl.createEl('p', {
+			text: 'Select anything you did between the two account snapshots. Declared activity makes the observed net contaminated; the plugin never guesses the cause.',
+		});
+		const form = this.contentEl.createEl('form', { cls: 'tyrian-companion-review' });
+		const activityFieldset = form.createEl('fieldset');
+		activityFieldset.createEl('legend', { text: 'During this session, did you…' });
+		const activityInputs = new Map<SessionActivityKey, HTMLInputElement>();
+		for (const key of SESSION_ACTIVITY_KEYS) {
+			const label = activityFieldset.createEl('label');
+			const input = label.createEl('input', { type: 'checkbox' });
+			input.checked = this.current?.activities[key] ?? false;
+			label.appendText(activityLabel(key));
+			activityInputs.set(key, input);
+		}
+
+		const certaintyFieldset = form.createEl('fieldset');
+		certaintyFieldset.createEl('legend', { text: 'If none are selected' });
+		const confirmed = radioOption(
+			certaintyFieldset,
+			'session-review-certainty',
+			'confirmed',
+			'I confirm that none of these activities occurred',
+			this.current?.certainty !== 'unsure',
+		);
+		const unsure = radioOption(
+			certaintyFieldset,
+			'session-review-certainty',
+			'unsure',
+			"I'm not sure",
+			this.current?.certainty === 'unsure',
+		);
+		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
+		error.setAttr('role', 'alert');
+		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: 'Cancel', type: 'button' });
+		const submit = actions.createEl('button', { text: 'Save review', type: 'submit', cls: 'mod-cta' });
+		cancel.addEventListener('click', () => this.close());
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const activities = Object.fromEntries(
+				SESSION_ACTIVITY_KEYS.map((key) => [key, activityInputs.get(key)?.checked === true]),
+			) as SessionContaminationAnswers['activities'];
+			const answers: SessionContaminationAnswers = {
+				certainty: unsure.checked ? 'unsure' : 'confirmed',
+				activities,
+			};
+			submit.disabled = true;
+			cancel.disabled = true;
+			error.setText('');
+			void this.onSubmit(answers).then((message) => {
+				if (message === null) {
+					this.close();
+					return;
+				}
+				error.setText(message);
+				submit.disabled = false;
+				cancel.disabled = false;
+			}).catch(() => {
+				error.setText('The session review could not be saved.');
+				submit.disabled = false;
+				cancel.disabled = false;
+			});
+		});
+		confirmed.focus();
+	}
+}
+
 function addDetail(list: HTMLDListElement, term: string, detail: string): void {
 	list.createEl('dt', { text: term });
 	list.createEl('dd', { text: detail });
@@ -457,6 +582,36 @@ function addDetail(list: HTMLDListElement, term: string, detail: string): void {
 function addDetectionDetail(container: HTMLElement, term: string, detail: string): void {
 	const list = container.createEl('dl');
 	addDetail(list, term, detail);
+}
+
+function radioOption(
+	container: HTMLElement,
+	name: string,
+	value: string,
+	text: string,
+	checked: boolean,
+): HTMLInputElement {
+	const label = container.createEl('label');
+	const input = label.createEl('input', { type: 'radio', attr: { name, value } });
+	input.checked = checked;
+	label.appendText(text);
+	return input;
+}
+
+function activityLabel(key: SessionActivityKey): string {
+	const labels: Record<SessionActivityKey, string> = {
+		open: 'Open containers',
+		salvage: 'Salvage items',
+		consume: 'Consume items or currencies',
+		craft: 'Craft or convert items',
+		tpBuy: 'Buy on the Trading Post',
+		tpSell: 'Sell on the Trading Post',
+		vendorBuy: 'Buy from a vendor',
+		vendorSell: 'Sell to a vendor',
+		transfer: 'Transfer through mail or guild storage',
+		other: 'Perform other account activity',
+	};
+	return labels[key];
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {

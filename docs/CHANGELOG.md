@@ -62,5 +62,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Integración segura de H3.5–H3.8 con pausa offline/wake, deduplicación de armado, invalidación de capturas tardías y reinicio desarmado al recargar.
 - Rebase automático al entrar o salir de una sesión y desarmado al cambiar la credencial, evitando mezclar evidencia anterior al inicio o snapshots de cuentas distintas.
 - Contigüidad corregida en H3.6/H3.7: los deltas comparten snapshot fronterizo y admiten el tiempo real no solapado que tarda la captura A/B/C, en lugar de exigir timestamps imposiblemente idénticos.
+- Revisión H3.9 de contaminación con preguntas explícitas para aperturas, reciclaje, consumo, fabricación/conversión, bazar, mercader, transferencias y otra actividad.
+- Clasificación H2.7 conectada al cierre: limpio confirmado, estimado pendiente o contaminado, sin inferir actividad TP que todavía no se consulta.
+- Runtime de sesión v2 con revisión derivada y terminal completo persistentes; migración segura de v1 a `review:null` y rechazo de clasificaciones manipuladas.
+- Recarga local de la última sesión completa y borrado explícito antes de empezar otra, sin prometer todavía historial multiparte ni notas.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

@@ -20,6 +20,11 @@ import type {
 	SessionState,
 } from './session';
 import {
+	createSessionContaminationReview,
+	type SessionContaminationAnswers,
+	type SessionContaminationReview,
+} from './session-contamination-review';
+import {
 	createSessionRuntimeRecord,
 	recoverableState,
 	type SessionRuntimeRecord,
@@ -69,8 +74,8 @@ export interface SessionStopFailure {
 
 export type SessionRecoveryState =
 	| { status: 'none' }
-	| { status: 'available' | 'busy'; state: SessionRuntimeRecord['state']; message?: string }
-	| { status: 'working'; action: 'recover' | 'discard'; state: SessionRuntimeRecord['state'] }
+	| { status: 'available' | 'busy'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>; message?: string }
+	| { status: 'working'; action: 'recover' | 'discard'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }> }
 	| { status: 'error'; message: string };
 
 export type SessionRecoveryResult =
@@ -97,6 +102,14 @@ export type ManualSessionStopResult =
 	  }
 	| { status: 'failed'; failure: SessionStopFailure };
 
+export type SessionContaminationReviewResult =
+	| {
+			status: 'reviewed' | 'finalized';
+			review: SessionContaminationReview;
+			state: Extract<SessionState, { status: 'provisional' | 'complete' }>;
+	  }
+	| { status: 'failed'; message: string };
+
 export interface ManualSessionStartServiceOptions {
 	now?: () => number;
 	sessionId?: () => string;
@@ -116,10 +129,12 @@ export class ManualSessionStartService {
 	private authorityFailure: SessionStartFailure | null = null;
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
 	private stopFlight: Promise<ManualSessionStopResult> | null = null;
+	private reviewFlight: Promise<SessionContaminationReviewResult> | null = null;
 	private baselineSnapshot: StorageSnapshot | null = null;
 	private finalSnapshot: StorageSnapshot | null = null;
 	private provisionalDelta: StorageDelta | null = null;
 	private lastStopFailure: SessionStopFailure | null = null;
+	private contaminationReview: SessionContaminationReview | null = null;
 	private recoveryState: SessionRecoveryState = { status: 'none' };
 	private recoveryRecord: SessionRuntimeRecord | null = null;
 	private initializationFlight: Promise<void> | null = null;
@@ -161,6 +176,10 @@ export class ManualSessionStartService {
 		return this.provisionalDelta === null ? null : structuredClone(this.provisionalDelta);
 	}
 
+	getContaminationReview(): SessionContaminationReview | null {
+		return this.contaminationReview === null ? null : structuredClone(this.contaminationReview);
+	}
+
 	getRecoveryState(): SessionRecoveryState {
 		return structuredClone(this.recoveryState);
 	}
@@ -200,6 +219,30 @@ export class ManualSessionStartService {
 		return flight;
 	}
 
+	reviewContamination(answers: SessionContaminationAnswers): Promise<SessionContaminationReviewResult> {
+		if (this.reviewFlight) return this.reviewFlight;
+		const flight = this.reviewContaminationInternal(answers).finally(() => {
+			if (this.reviewFlight === flight) this.reviewFlight = null;
+		});
+		this.reviewFlight = flight;
+		return flight;
+	}
+
+	async resetCompletedSession(): Promise<boolean> {
+		if (this.state.status !== 'complete') return false;
+		const cleared = await this.runtimeStore.clear(this.state.authority);
+		if (cleared.status !== 'cleared') return false;
+		const reset = transitionSession(this.state, { type: 'reset' });
+		if (reset.status === 'rejected') return false;
+		this.state = reset.state;
+		this.baselineSnapshot = null;
+		this.finalSnapshot = null;
+		this.provisionalDelta = null;
+		this.contaminationReview = null;
+		this.onStateChange();
+		return true;
+	}
+
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
@@ -220,8 +263,17 @@ export class ManualSessionStartService {
 		if (loaded.status === 'empty') {
 			this.recoveryState = { status: 'none' };
 		} else if (loaded.status === 'loaded') {
-			this.recoveryRecord = loaded.record;
-			this.recoveryState = { status: 'available', state: loaded.record.state };
+			if (loaded.record.state.status === 'complete') {
+				this.state = loaded.record.state;
+				this.baselineSnapshot = loaded.record.baselineSnapshot;
+				this.finalSnapshot = loaded.record.finalSnapshot;
+				this.provisionalDelta = loaded.record.delta;
+				this.contaminationReview = loaded.record.review;
+				this.recoveryState = { status: 'none' };
+			} else {
+				this.recoveryRecord = loaded.record;
+				this.recoveryState = { status: 'available', state: loaded.record.state };
+			}
 		} else {
 			this.recoveryState = {
 				status: 'error',
@@ -247,6 +299,9 @@ export class ManualSessionStartService {
 		const record = this.recoveryRecord;
 		if (this.disposed || !record || this.state.status !== 'idle') {
 			return { status: 'failed', message: 'There is no saved session available to recover.' };
+		}
+		if (record.state.status === 'complete') {
+			return { status: 'failed', message: 'The saved session is already complete.' };
 		}
 		this.recoveryState = { status: 'working', action, state: record.state };
 		this.onStateChange();
@@ -314,6 +369,7 @@ export class ManualSessionStartService {
 			record.finalSnapshot,
 			record.delta,
 			this.safeNow(),
+			record.review,
 		);
 		if (!recoveredRecord || (await this.runtimeStore.save(recoveredRecord)).status !== 'saved') {
 			await this.safeRelease(handle);
@@ -326,6 +382,7 @@ export class ManualSessionStartService {
 		this.baselineSnapshot = structuredClone(record.baselineSnapshot);
 		this.finalSnapshot = record.finalSnapshot === null ? null : structuredClone(record.finalSnapshot);
 		this.provisionalDelta = record.delta === null ? null : structuredClone(record.delta);
+		this.contaminationReview = record.review === null ? null : structuredClone(record.review);
 		this.currentHandle = handle;
 		this.authorityFailure = null;
 		this.recoveryRecord = null;
@@ -340,6 +397,7 @@ export class ManualSessionStartService {
 		this.lastFailure = null;
 		this.lastStopFailure = null;
 		this.provisionalDelta = null;
+		this.contaminationReview = null;
 		this.authorityFailure = null;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.recoveryState.status !== 'none') {
@@ -489,6 +547,84 @@ export class ManualSessionStartService {
 		}
 	}
 
+	private async reviewContaminationInternal(
+		answers: SessionContaminationAnswers,
+	): Promise<SessionContaminationReviewResult> {
+		if (
+			this.disposed
+			|| this.state.status !== 'provisional'
+			|| !this.baselineSnapshot
+			|| !this.finalSnapshot
+			|| !this.provisionalDelta
+			|| !this.currentHandle
+		) return { status: 'failed', message: 'There is no provisional session ready for review.' };
+		const previousReviewFloor = this.contaminationReview
+			? Date.parse(this.contaminationReview.reviewedAt) + 1
+			: 0;
+		const reviewedAt = this.safeTimestampAtOrAfter(Math.max(
+			Date.parse(this.state.finalSnapshot.completedAt),
+			previousReviewFloor,
+		));
+		const review = createSessionContaminationReview(
+			this.baselineSnapshot,
+			this.finalSnapshot,
+			this.provisionalDelta,
+			answers,
+			reviewedAt,
+		);
+		if (!review) return { status: 'failed', message: 'The contamination review is invalid.' };
+		const owned = await this.safeAssert(this.currentHandle);
+		if (owned.status !== 'owned') {
+			return { status: 'failed', message: owned.status === 'lost'
+				? 'The session lease was lost before the review could be saved.'
+				: 'Session coordination is unavailable.' };
+		}
+		const reviewedRecord = createSessionRuntimeRecord(
+			this.state,
+			this.baselineSnapshot,
+			this.finalSnapshot,
+			this.provisionalDelta,
+			this.safeNow(),
+			review,
+		);
+		if (!reviewedRecord || (await this.runtimeStore.save(reviewedRecord)).status !== 'saved') {
+			return { status: 'failed', message: 'The contamination review could not be persisted safely.' };
+		}
+		this.contaminationReview = structuredClone(review);
+		if (!review.classification.permissions.finalize) {
+			this.onStateChange();
+			return { status: 'reviewed', review: structuredClone(review), state: this.getState() as Extract<SessionState, { status: 'provisional' }> };
+		}
+		const finalizedAt = this.safeTimestampAtOrAfter(Date.parse(review.reviewedAt));
+		const transition = transitionSession(this.state, {
+			type: 'finalize',
+			authority: this.state.authority,
+			finalizedAt,
+			classification: review.classification.status,
+		});
+		if (transition.status === 'rejected' || transition.state.status !== 'complete') {
+			return { status: 'failed', message: 'The reviewed session could not be finalized.' };
+		}
+		const completeRecord = createSessionRuntimeRecord(
+			transition.state,
+			this.baselineSnapshot,
+			this.finalSnapshot,
+			this.provisionalDelta,
+			this.safeNow(),
+			review,
+		);
+		if (!completeRecord || (await this.runtimeStore.save(completeRecord)).status !== 'saved') {
+			return { status: 'failed', message: 'The finalized session could not be persisted safely.' };
+		}
+		this.state = transition.state;
+		this.stopHeartbeat();
+		const handle = this.currentHandle;
+		this.currentHandle = null;
+		if (handle) await this.safeRelease(handle);
+		this.onStateChange();
+		return { status: 'finalized', review: structuredClone(review), state: this.getState() as Extract<SessionState, { status: 'complete' }> };
+	}
+
 	private apply(event: SessionEvent): void {
 		const result = transitionSession(this.state, event);
 		if (result.status === 'rejected') throw new Error(`Session transition rejected: ${result.reason}`);
@@ -520,6 +656,7 @@ export class ManualSessionStartService {
 			this.finalSnapshot,
 			this.provisionalDelta,
 			this.safeNow(),
+			this.contaminationReview,
 		);
 		if (!record) {
 			throw new ManualSessionStartError(failure(
@@ -635,6 +772,7 @@ export class ManualSessionStartService {
 		this.baselineSnapshot = null;
 		this.finalSnapshot = null;
 		this.provisionalDelta = null;
+		this.contaminationReview = null;
 		this.lastFailure = failed;
 		this.onStateChange();
 	}

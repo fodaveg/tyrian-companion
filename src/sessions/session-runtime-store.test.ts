@@ -5,6 +5,7 @@ import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/sto
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { transitionSession } from './session-state-machine';
+import { createSessionContaminationReview } from './session-contamination-review';
 import type { SessionAuthority, SessionState } from './session';
 import {
 	createSessionRuntimeRecord,
@@ -53,6 +54,18 @@ describe('session runtime persistence', () => {
 		const second = new IndexedDbSessionRuntimeStore(factory, name);
 		await expect(second.load()).resolves.toEqual({ status: 'loaded', record });
 		second.close();
+	});
+
+	it('migrates a valid v1 runtime record to v2 with no review', async () => {
+		const current = activeRecord();
+		const { review: _review, ...withoutReview } = current;
+		const legacy = { ...withoutReview, version: 1 };
+		const store = new MemorySessionRuntimeStore(legacy);
+
+		await expect(store.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { version: 2, state: { status: 'active' }, review: null },
+		});
 	});
 
 	it('accepts only a newer fence or the exact current owner', async () => {
@@ -113,6 +126,42 @@ describe('session runtime persistence', () => {
 			delta: { ...delta, beforeSnapshotId: 'tampered' },
 		})).toBe(false);
 		expect(createSessionRuntimeRecord(state, baseline, null, null, Date.parse(final.completedAt))).toBeNull();
+	});
+
+	it('validates a derived review and rejects classification tampering', () => {
+		const baseline = storageDeltaSnapshot();
+		const final = afterSnapshot();
+		const state = provisionalState(baseline, final);
+		const delta = compareStorageSnapshots(baseline, final);
+		const review = createSessionContaminationReview(
+			baseline,
+			final,
+			delta,
+			{
+				certainty: 'confirmed',
+				activities: {
+					open: false, salvage: false, consume: false, craft: false,
+					tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
+					transfer: false, other: false,
+				},
+			},
+			'2026-08-13T09:00:03.000Z',
+		);
+		if (!review) throw new Error('Review fixture is invalid.');
+		const record = createSessionRuntimeRecord(
+			state,
+			baseline,
+			final,
+			delta,
+			Date.parse(review.reviewedAt),
+			review,
+		);
+		expect(isSessionRuntimeRecord(record)).toBe(true);
+		if (!record || !record.review) throw new Error('Reviewed record is invalid.');
+		const tampered = structuredClone(record);
+		if (!tampered.review) throw new Error('Reviewed clone is invalid.');
+		tampered.review.classification.status = 'contaminated';
+		expect(isSessionRuntimeRecord(tampered)).toBe(false);
 	});
 
 	it('fails closed on a corrupt record and leaves it untouched', async () => {

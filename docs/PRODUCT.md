@@ -43,17 +43,18 @@ La versión `0.1.0` valida la base técnica:
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
-- H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; todavía no clasifica ni crea historial durable.
+- H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; H3.9 clasifica después y el historial durable sigue pendiente.
 - H3.4 persiste localmente el runtime recuperable —baseline, final/delta cuando existen y estado cercado— y ofrece recuperación o descarte explícitos tras reiniciar, sin red automática ni escritura al vault.
 - H3.5 aporta el reloj de polling: no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. H3.8 solo lo arranca tras capturar un baseline estable desde el control de armado.
 - H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos que comparten snapshot fronterizo generan una propuesta con la ventana en que pudo empezar. La regla inicial usa el id oficial de los sacos de Halloween; no usa nombres ni heurísticas de catálogo y no inicia una sesión sin confirmación.
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
 - H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
+- H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; el historial de varias sesiones aún no existe.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
-- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. Expone permisos conservadores, pero no pregunta, persiste, valora ni recomienda.
+- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. H3.9 posee las preguntas y persistencia; H2.7 sigue sin UI, red, valoración ni recomendación.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
@@ -61,7 +62,7 @@ La versión `0.1.0` valida la base técnica:
 
 - Sincronización periódica independiente del armado o historial durable de sesiones finalizadas.
 - Precios y cálculo de patrimonio total.
-- Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
+- Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Inicio o cierre automático de sesiones sin confirmación.
