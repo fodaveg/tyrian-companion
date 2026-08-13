@@ -7,6 +7,7 @@
 - `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos y limitación FIFO de concurrencia.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
+- `economy`: contrato monetario puro en cobre; todavía sin precios, tasas ni agregación de sesión.
 - `advisor`: estado de preparación, sin lógica de recomendación todavía.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
@@ -27,6 +28,8 @@ storage delta comparator -> dos StorageSnapshot (puro, sin I/O)
 
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
+
+economy monetary contract -> valores unitarios y cantidades ya validados (puro, sin I/O)
 
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
@@ -54,6 +57,8 @@ H3.9 añade `SessionContaminationReview` como dato derivado y verificable, no co
 El runtime de sesión sube a versión 2 y añade `review`. Los records v1 válidos migran en lectura a `review:null`; corrupción o una clasificación manipulada siguen fallando cerrados. Una revisión provisional se persiste antes de cambiar el estado. Si H2.7 permite finalizar, el record `complete` con snapshots, delta y revisión se guarda atómicamente antes de publicar el estado y liberar el lease. Al recargar, una sesión completa se restaura localmente sin presentarla como recovery de una sesión activa; **Clear completed session** borra explícitamente ese terminal. El historial multiparte y las notas siguen perteneciendo a H5, no a este store de una sola sesión.
 
 H3.10 mide la detección sin acoplarla al runtime crítico. `DetectionQualityRecorder` guarda en una tercera IndexedDB local eventos estrictos e idempotentes por frontera o propuesta: fase, decisión, modo manual/asistido, causa, ventana, incertidumbre, calidad y vínculo opcional a sesión. Confirmar una propuesta conserva su evidencia; iniciar o parar sin propuesta conserva la ventana real entre la petición manual y el fin de la captura estable. Descartar exige una causa cerrada y conserva el falso positivo, incluidos los inicios que no llegaron a crear sesión. El resumen por `sessionId` deriva modo manual, asistido, mixto o incompleto y suma incertidumbre sin inventar datos históricos. La carga y cada escritura son auxiliares y asíncronas: corrupción, conflicto o indisponibilidad desactivan solo la medición y quedan visibles, pero nunca retrasan H3.1 ni escriben en el vault.
+
+H4.1 fija una única unidad monetaria de dominio: cobre entero, seguro y no negativo; cantidades de línea enteras y positivas. El bruto es `precio unitario × cantidad`. Venta inmediata usa la mejor orden de compra observada y el neto es `bruto − listing fee − exchange fee`; listado usa el precio de listado elegido y la misma resta, pero queda marcado como liquidez condicional porque aún debe venderse. Mercader es `vendor value × cantidad`, sin tasas del bazar. No líquido conserva ambos importes como `null`, nunca como cero: significa que no hay valor realizable probado, no que el objeto no valga nada. Las tasas concretas y su redondeo pertenecen a H4.2; H4.1 recibe importes de tasa ya calculados, valida toda la aritmética y rechaza overflow o tasas mayores que el bruto.
 
 `GuildWars2AccountGateway` ejecuta la comprobación atómica `tokeninfo → account` y valida ambos payloads antes de publicarlos. Un `401` se reintenta una vez; `403` en `tokeninfo` también se reintenta y no destruye el último estado bueno, mientras que `403` en `account` representa falta de permiso. Errores offline, timeout y `5xx` conservan el último estado conectado como aviso.
 

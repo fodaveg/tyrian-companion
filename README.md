@@ -34,6 +34,8 @@ The current `0.1.0` vertical provides:
   conservative H2.7 classification, crash-safe local persistence, and a completed-session state.
 - H3.10 local detection-quality measurement: each accepted boundary keeps its manual or assisted
   mode, uncertainty and cause, while dismissed proposals keep a structured correction cause.
+- A pure H4.1 copper contract for gross, instant-sale, listing, vendor and non-liquid values,
+  with explicit liquidity and overflow-safe integer arithmetic. It does not fetch prices yet.
 
 Automatic synchronization, valuation, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
