@@ -84,6 +84,17 @@ Run the complete local gate with:
 npm run check
 ```
 
+After committing and before pushing a release, run:
+
+```sh
+npm run release:preflight
+```
+
+The release preflight requires an attached `HEAD` and an exactly clean
+`git status --porcelain`; an upstream is optional. Dirty-state diagnostics expose only counts for
+untracked, unstaged, and staged entries, never paths or file contents.
+It does not verify semantic change scope or replace the test and CI gates.
+
 The production build creates `main.js` in the project root. A distributable release contains `manifest.json`, `main.js`, and `styles.css`.
 
 ## Privacy and network behavior

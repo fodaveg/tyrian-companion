@@ -8,8 +8,10 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
-		"test": "vitest run",
+		"test": "vitest run && npm run test:release-preflight",
+		"test:release-preflight": "bash scripts/tests/probar-release-preflight.sh",
 		"check": "npm run lint && npm run test && npm run build",
+		"release:preflight": "node scripts/release-preflight.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
