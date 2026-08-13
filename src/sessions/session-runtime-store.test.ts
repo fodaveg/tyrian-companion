@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
 import { transitionSession } from './session-state-machine';
 import { createSessionContaminationReview } from './session-contamination-review';
 import type { SessionAuthority, SessionState } from './session';
@@ -56,15 +57,21 @@ describe('session runtime persistence', () => {
 		second.close();
 	});
 
-	it('migrates a valid v1 runtime record to v2 with no review', async () => {
+	it('migrates valid v1 and v2 runtime records to v3 without invented prices', async () => {
 		const current = activeRecord();
-		const { review: _review, ...withoutReview } = current;
+		const { review: _review, priceSnapshot: _priceSnapshot, ...withoutReview } = current;
 		const legacy = { ...withoutReview, version: 1 };
 		const store = new MemorySessionRuntimeStore(legacy);
 
 		await expect(store.load()).resolves.toMatchObject({
 			status: 'loaded',
-			record: { version: 2, state: { status: 'active' }, review: null },
+			record: { version: 3, state: { status: 'active' }, review: null, priceSnapshot: null },
+		});
+
+		const v2 = { ...withoutReview, version: 2, review: null };
+		await expect(new MemorySessionRuntimeStore(v2).load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { version: 3, state: { status: 'active' }, review: null, priceSnapshot: null },
 		});
 	});
 
@@ -117,13 +124,26 @@ describe('session runtime persistence', () => {
 		const final = afterSnapshot();
 		const state = provisionalState(baseline, final);
 		const delta = compareStorageSnapshots(baseline, final);
-		const record = createSessionRuntimeRecord(state, baseline, final, delta, Date.parse(final.completedAt));
+		const priceSnapshot = unavailableSessionPriceSnapshot('session-1', delta, Date.parse(final.completedAt));
+		const record = createSessionRuntimeRecord(
+			state,
+			baseline,
+			final,
+			delta,
+			Date.parse(final.completedAt),
+			null,
+			priceSnapshot,
+		);
 
 		expect(record).not.toBeNull();
 		expect(isSessionRuntimeRecord(record)).toBe(true);
 		expect(isSessionRuntimeRecord({
 			...record,
 			delta: { ...delta, beforeSnapshotId: 'tampered' },
+		})).toBe(false);
+		expect(isSessionRuntimeRecord({
+			...record,
+			priceSnapshot: { ...priceSnapshot, sessionId: 'another-session' },
 		})).toBe(false);
 		expect(createSessionRuntimeRecord(state, baseline, null, null, Date.parse(final.completedAt))).toBeNull();
 	});

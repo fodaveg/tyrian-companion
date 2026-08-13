@@ -1,6 +1,11 @@
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	unavailableSessionPriceSnapshot,
+	type SessionPriceCapture,
+	type SessionPriceSnapshot,
+} from '../economy/session-price-snapshot';
 import type {
 	AcquireLeaseResult,
 	ActiveSessionLeaseHandle,
@@ -117,6 +122,7 @@ export interface ManualSessionStartServiceOptions {
 	clearInterval?: (handle: unknown) => void;
 	onStateChange?: () => void;
 	runtimeStore: SessionRuntimeStore;
+	priceCapture?: SessionPriceCapture;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -135,6 +141,7 @@ export class ManualSessionStartService {
 	private provisionalDelta: StorageDelta | null = null;
 	private lastStopFailure: SessionStopFailure | null = null;
 	private contaminationReview: SessionContaminationReview | null = null;
+	private priceSnapshot: SessionPriceSnapshot | null = null;
 	private recoveryState: SessionRecoveryState = { status: 'none' };
 	private recoveryRecord: SessionRuntimeRecord | null = null;
 	private initializationFlight: Promise<void> | null = null;
@@ -146,6 +153,7 @@ export class ManualSessionStartService {
 	private readonly cancelInterval: (handle: unknown) => void;
 	private readonly onStateChange: () => void;
 	private readonly runtimeStore: SessionRuntimeStore;
+	private readonly priceCapture: SessionPriceCapture | null;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -158,6 +166,7 @@ export class ManualSessionStartService {
 		this.cancelInterval = options.clearInterval ?? ((handle) => window.clearInterval(handle as number));
 		this.onStateChange = options.onStateChange ?? (() => undefined);
 		this.runtimeStore = options.runtimeStore;
+		this.priceCapture = options.priceCapture ?? null;
 	}
 
 	getState(): SessionState {
@@ -178,6 +187,10 @@ export class ManualSessionStartService {
 
 	getContaminationReview(): SessionContaminationReview | null {
 		return this.contaminationReview === null ? null : structuredClone(this.contaminationReview);
+	}
+
+	getPriceSnapshot(): SessionPriceSnapshot | null {
+		return this.priceSnapshot === null ? null : structuredClone(this.priceSnapshot);
 	}
 
 	getRecoveryState(): SessionRecoveryState {
@@ -239,6 +252,7 @@ export class ManualSessionStartService {
 		this.finalSnapshot = null;
 		this.provisionalDelta = null;
 		this.contaminationReview = null;
+		this.priceSnapshot = null;
 		this.onStateChange();
 		return true;
 	}
@@ -269,6 +283,7 @@ export class ManualSessionStartService {
 				this.finalSnapshot = loaded.record.finalSnapshot;
 				this.provisionalDelta = loaded.record.delta;
 				this.contaminationReview = loaded.record.review;
+				this.priceSnapshot = loaded.record.priceSnapshot;
 				this.recoveryState = { status: 'none' };
 			} else {
 				this.recoveryRecord = loaded.record;
@@ -370,6 +385,7 @@ export class ManualSessionStartService {
 			record.delta,
 			this.safeNow(),
 			record.review,
+			record.priceSnapshot,
 		);
 		if (!recoveredRecord || (await this.runtimeStore.save(recoveredRecord)).status !== 'saved') {
 			await this.safeRelease(handle);
@@ -383,6 +399,7 @@ export class ManualSessionStartService {
 		this.finalSnapshot = record.finalSnapshot === null ? null : structuredClone(record.finalSnapshot);
 		this.provisionalDelta = record.delta === null ? null : structuredClone(record.delta);
 		this.contaminationReview = record.review === null ? null : structuredClone(record.review);
+		this.priceSnapshot = record.priceSnapshot === null ? null : structuredClone(record.priceSnapshot);
 		this.currentHandle = handle;
 		this.authorityFailure = null;
 		this.recoveryRecord = null;
@@ -398,6 +415,7 @@ export class ManualSessionStartService {
 		this.lastStopFailure = null;
 		this.provisionalDelta = null;
 		this.contaminationReview = null;
+		this.priceSnapshot = null;
 		this.authorityFailure = null;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.recoveryState.status !== 'none') {
@@ -500,6 +518,22 @@ export class ManualSessionStartService {
 					'The final account snapshot could not be compared with the session baseline.',
 				);
 			}
+			let priceSnapshot: SessionPriceSnapshot;
+			try {
+				priceSnapshot = this.priceCapture
+					? await this.priceCapture.capture(stopping.sessionId, delta)
+					: unavailableSessionPriceSnapshot(
+						stopping.sessionId,
+						delta,
+						Math.max(this.safeNow(), Date.parse(finalSnapshot.completedAt)),
+					);
+			} catch {
+				priceSnapshot = unavailableSessionPriceSnapshot(
+					stopping.sessionId,
+					delta,
+					Math.max(this.safeNow(), Date.parse(finalSnapshot.completedAt)),
+				);
+			}
 			if (this.authorityFailure) throw new ManualSessionStartError(this.authorityFailure);
 			const owned = await this.safeAssert(this.requireHandle());
 			if (owned.status === 'error') {
@@ -520,6 +554,7 @@ export class ManualSessionStartService {
 			});
 			this.finalSnapshot = structuredClone(finalSnapshot);
 			this.provisionalDelta = structuredClone(delta);
+			this.priceSnapshot = structuredClone(priceSnapshot);
 			await this.persistCurrentState(true);
 			return {
 				status: 'stopped',
@@ -586,6 +621,7 @@ export class ManualSessionStartService {
 			this.provisionalDelta,
 			this.safeNow(),
 			review,
+			this.priceSnapshot,
 		);
 		if (!reviewedRecord || (await this.runtimeStore.save(reviewedRecord)).status !== 'saved') {
 			return { status: 'failed', message: 'The contamination review could not be persisted safely.' };
@@ -612,6 +648,7 @@ export class ManualSessionStartService {
 			this.provisionalDelta,
 			this.safeNow(),
 			review,
+			this.priceSnapshot,
 		);
 		if (!completeRecord || (await this.runtimeStore.save(completeRecord)).status !== 'saved') {
 			return { status: 'failed', message: 'The finalized session could not be persisted safely.' };
@@ -657,6 +694,7 @@ export class ManualSessionStartService {
 			this.provisionalDelta,
 			this.safeNow(),
 			this.contaminationReview,
+			this.priceSnapshot,
 		);
 		if (!record) {
 			throw new ManualSessionStartError(failure(
@@ -773,6 +811,7 @@ export class ManualSessionStartService {
 		this.finalSnapshot = null;
 		this.provisionalDelta = null;
 		this.contaminationReview = null;
+		this.priceSnapshot = null;
 		this.lastFailure = failed;
 		this.onStateChange();
 	}

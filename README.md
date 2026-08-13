@@ -40,9 +40,10 @@ The current `0.1.0` vertical provides:
   to the total stack sale, plus conservative vendor eligibility from validated catalog metadata.
 - A strict H4.3 per-stack liquidity classifier that keeps bound, unpriced, embedded, equipped,
   or malformed holdings out of unsupported Trading Post value while retaining proven vendor value.
-  It does not fetch prices yet.
+- H4.4 close-time public Trading Post quotes for gained item IDs, persisted with bid, ask,
+  timestamp, source, gained quantity, and explicit missing/unavailable coverage.
 
-Automatic synchronization, live-price valuation, vault writes, unattended detection,
+Automatic synchronization, aggregated valuation, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
 **Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
 storage, not total account wealth.
@@ -77,6 +78,8 @@ session**, **Stop session**, or **Arm assisted detection** is explicitly selecte
 or opening its view reads only local recovery state and does not make network requests. Assisted
 detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
 without confirmation.
+At **Stop session**, the plugin sends only gained numeric item IDs to the official public
+`/v2/commerce/prices` endpoint; it does not attach the API key, account, character, or quantities.
 
 The contamination review asks whether containers were opened, items were salvaged or consumed,
 crafting/conversion occurred, purchases or sales happened through the Trading Post or vendors,

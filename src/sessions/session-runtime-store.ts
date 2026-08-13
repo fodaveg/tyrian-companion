@@ -1,6 +1,10 @@
 import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	isSessionPriceSnapshot,
+	type SessionPriceSnapshot,
+} from '../economy/session-price-snapshot';
 import { isSessionState } from './session-state-machine';
 import {
 	isSessionContaminationReview,
@@ -15,7 +19,7 @@ import type {
 	SessionState,
 } from './session';
 
-export const SESSION_RUNTIME_VERSION = 2 as const;
+export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
 export const SESSION_RUNTIME_DB_VERSION = 1;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
@@ -33,6 +37,7 @@ export interface SessionRuntimeRecord {
 	finalSnapshot: StorageSnapshot | null;
 	delta: StorageDelta | null;
 	review: SessionContaminationReview | null;
+	priceSnapshot: SessionPriceSnapshot | null;
 	persistedAt: number;
 }
 
@@ -261,6 +266,7 @@ export function createSessionRuntimeRecord(
 	delta: StorageDelta | null,
 	persistedAt: number,
 	review: SessionContaminationReview | null = null,
+	priceSnapshot: SessionPriceSnapshot | null = null,
 ): SessionRuntimeRecord | null {
 	const candidate = {
 		version: SESSION_RUNTIME_VERSION,
@@ -269,16 +275,17 @@ export function createSessionRuntimeRecord(
 		finalSnapshot: finalSnapshot === null ? null : structuredClone(finalSnapshot),
 		delta: delta === null ? null : structuredClone(delta),
 		review: review === null ? null : structuredClone(review),
+		priceSnapshot: priceSnapshot === null ? null : structuredClone(priceSnapshot),
 		persistedAt,
 	};
 	return isSessionRuntimeRecord(candidate) ? candidate : null;
 }
 
 export function isSessionRuntimeRecord(value: unknown): value is SessionRuntimeRecord {
-	return isSessionRuntimeRecordV2(value);
+	return isSessionRuntimeRecordV3(value);
 }
 
-function isSessionRuntimeRecordV2(value: unknown): value is SessionRuntimeRecord {
+function isSessionRuntimeRecordV3(value: unknown): value is SessionRuntimeRecord {
 	if (!isJsonValue(value) || !isRecord(value) || !exactKeys(value, [
 		'version',
 		'state',
@@ -286,6 +293,7 @@ function isSessionRuntimeRecordV2(value: unknown): value is SessionRuntimeRecord
 		'finalSnapshot',
 		'delta',
 		'review',
+		'priceSnapshot',
 		'persistedAt',
 	])) return false;
 	if (
@@ -301,7 +309,8 @@ function isSessionRuntimeRecordV2(value: unknown): value is SessionRuntimeRecord
 	const evidenceState = state.status === 'error' ? state.failedState : state;
 	if (!sameSnapshotReference(evidenceState.baseline, value.baselineSnapshot)) return false;
 	if (evidenceState.status !== 'provisional' && evidenceState.status !== 'complete') {
-		return value.finalSnapshot === null && value.delta === null && value.review === null;
+		return value.finalSnapshot === null && value.delta === null
+			&& value.review === null && value.priceSnapshot === null;
 	}
 	if (!isComparableStorageSnapshot(value.finalSnapshot)
 		|| !hasPassEnvelope(value.finalSnapshot)
@@ -319,6 +328,13 @@ function isSessionRuntimeRecordV2(value: unknown): value is SessionRuntimeRecord
 		value.finalSnapshot,
 		calculated,
 	)) return false;
+	if (value.priceSnapshot !== null && !isSessionPriceSnapshot(
+		value.priceSnapshot,
+		evidenceState.sessionId,
+		calculated,
+	)) return false;
+	if (value.priceSnapshot !== null
+		&& Date.parse(value.priceSnapshot.capturedAt) < Date.parse(value.finalSnapshot.completedAt)) return false;
 	if (evidenceState.status === 'complete') {
 		return value.review !== null
 			&& value.review.classification.permissions.finalize
@@ -391,7 +407,7 @@ function sameSnapshotReference(reference: SessionSnapshotReference, snapshot: St
 function recordEvidence(record: SessionRuntimeRecord): object {
 	const state = record.state.status === 'error' ? record.state.failedState : record.state;
 	const { authority: _authority, ...evidence } = state;
-	return { state: evidence, review: record.review };
+	return { state: evidence, review: record.review, priceSnapshot: record.priceSnapshot };
 }
 
 function stateRank(state: RecoverableSessionState | CompleteSessionState): number {
@@ -399,12 +415,23 @@ function stateRank(state: RecoverableSessionState | CompleteSessionState): numbe
 }
 
 function normalizeSessionRuntimeRecord(value: unknown): SessionRuntimeRecord | null {
-	if (isSessionRuntimeRecordV2(value)) return structuredClone(value);
+	if (isSessionRuntimeRecordV3(value)) return structuredClone(value);
+	if (isRecord(value) && value.version === 2 && exactKeys(value, [
+		'version', 'state', 'baselineSnapshot', 'finalSnapshot', 'delta', 'review', 'persistedAt',
+	])) {
+		const migrated = { ...structuredClone(value), version: SESSION_RUNTIME_VERSION, priceSnapshot: null };
+		return isSessionRuntimeRecordV3(migrated) ? migrated : null;
+	}
 	if (!isRecord(value) || value.version !== 1 || !exactKeys(value, [
 		'version', 'state', 'baselineSnapshot', 'finalSnapshot', 'delta', 'persistedAt',
 	])) return null;
-	const migrated = { ...structuredClone(value), version: SESSION_RUNTIME_VERSION, review: null };
-	return isSessionRuntimeRecordV2(migrated) ? migrated : null;
+	const migrated = {
+		...structuredClone(value),
+		version: SESSION_RUNTIME_VERSION,
+		review: null,
+		priceSnapshot: null,
+	};
+	return isSessionRuntimeRecordV3(migrated) ? migrated : null;
 }
 
 function hasPassEnvelope(snapshot: StorageSnapshot): boolean {

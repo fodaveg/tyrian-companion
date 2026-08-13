@@ -4,9 +4,11 @@ import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
+import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import type { StorageDelta } from './account/storage-delta-model';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
+import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import {
 	DEFAULT_SETTINGS,
 	migrateSettings,
@@ -51,7 +53,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.app,
 			() => this.settings.apiKeySecret,
 		);
-		const client = new GuildWars2Client(new ObsidianRequestTransport(), apiKeyProvider);
+		const transport = new ObsidianRequestTransport();
+		const client = new GuildWars2Client(transport, apiKeyProvider);
+		const publicClient = new GuildWars2PublicCatalogClient(transport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
 		const snapshots = new StorageSnapshotService(client);
@@ -61,6 +65,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{
 				onStateChange: () => this.renderViews(),
 				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
+				priceCapture: new SessionPriceSnapshotService(publicClient),
 			},
 		);
 		await this.sessions.initialize();

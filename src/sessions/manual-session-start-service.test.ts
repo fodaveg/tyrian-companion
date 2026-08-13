@@ -272,6 +272,7 @@ describe('ManualSessionStartService', () => {
 
 	it('captures a final snapshot, computes the delta and enters provisional', async () => {
 		const leases = coordinator();
+		const runtimeStore = new MemorySessionRuntimeStore();
 		const final = afterSnapshot({
 			holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })],
 		});
@@ -279,7 +280,29 @@ describe('ManualSessionStartService', () => {
 			capture: vi.fn(async () => structuredClone(captured)),
 			captureFinal: vi.fn(async () => structuredClone(final)),
 		};
-		const service = new ManualSessionStartService(leases, capture, serviceOptions());
+		const priceCapture = {
+			capture: vi.fn(async () => ({
+				version: 1 as const,
+				sessionId: 'session-1',
+				capturedAt: '2026-08-13T10:00:00.000Z',
+				source: 'gw2-commerce-prices' as const,
+				schemaVersion: '2024-07-20T01:00:00.000Z' as const,
+				status: 'complete' as const,
+				items: [{
+					itemId: 100,
+					quantityGained: 3,
+					whitelisted: true,
+					bid: { quantity: 7, unitCopper: 91 },
+					ask: { quantity: 4, unitCopper: 100 },
+				}],
+				missingItemIds: [],
+			})),
+		};
+		const service = new ManualSessionStartService(
+			leases,
+			capture,
+			serviceOptions({ runtimeStore, priceCapture }),
+		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
 		const result = await service.stop();
@@ -300,6 +323,41 @@ describe('ManualSessionStartService', () => {
 		expect(leases.release).not.toHaveBeenCalled();
 		expect(service.getLastStopFailure()).toBeNull();
 		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
+		expect(priceCapture.capture).toHaveBeenCalledWith('session-1', expect.objectContaining({ status: 'comparable' }));
+		expect(service.getPriceSnapshot()).toMatchObject({
+			status: 'complete',
+			items: [{ itemId: 100, quantityGained: 3, bid: { unitCopper: 91 }, ask: { unitCopper: 100 } }],
+		});
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { priceSnapshot: { source: 'gw2-commerce-prices', items: [{ itemId: 100 }] } },
+		});
+	});
+
+	it('does not block session stop when close-time prices are unavailable', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({
+				runtimeStore,
+				priceCapture: { capture: vi.fn(async () => { throw new Error('offline'); }) },
+			}),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.stop()).resolves.toMatchObject({ status: 'stopped' });
+		expect(service.getPriceSnapshot()).toMatchObject({
+			status: 'unavailable',
+			source: 'gw2-commerce-prices',
+		});
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { priceSnapshot: { status: 'unavailable' } },
+		});
 	});
 
 	it('coalesces double stop clicks into one final capture', async () => {
