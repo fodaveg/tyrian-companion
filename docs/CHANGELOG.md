@@ -90,6 +90,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Recomendación H4.10 pura para contenedores: reserva primero, exige clasificación H2.7 v2 exacta/alta, modelo atestado y precios frescos, recompone EV/fees desde evidencia cruda y decide abrir/vender con umbral `BigInt` explicado sin ejecutar ninguna operación.
 - Endurecimiento H4.10 contra evidencia trasplantada: recompone review y overlay desde los mismos snapshots/delta, valida identidad antes de `reserved_only` y liga la aprobación al SHA-256 canónico completo del modelo; reviews H2.7 v1 históricos siguen cargables pero no autorizan recomendar.
 - Recomputación integral H4.10 de balance y plan desde objetivos + snapshot final, cronología cerrada y coherencia semántica de severidades/solicitudes en clasificaciones H2.7 v2.
+- Intenciones H4.11 puras y versionadas: asignación exclusiva por deadline/id sobre la cantidad libre posterior a reservas, liberación por objetivo/cancelación/expiración, protección explícita sin precio y proyección neta H4.2.
+- Integración H4.10 de planes H4.11 recomputados contra el mismo overlay y batch: las unidades retenidas conservan procedencia y se excluyen de la economía sin ejecutar ninguna operación.
+- Frescura H4.10 validada antes de interpretar intenciones cuando H4.9 deja unidades libres; un batch stale/futuro bloquea y no puede ocultarse como `reserved_only`.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.

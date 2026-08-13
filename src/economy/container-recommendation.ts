@@ -28,6 +28,13 @@ import {
 	isSessionContaminationReview,
 	type SessionContaminationReview,
 } from '../sessions/session-contamination-review';
+import {
+	evaluateHoldIntents,
+	isHoldIntent,
+	isHoldPlan,
+	type HoldIntentV1,
+	type HoldPlan,
+} from './hold-intent';
 
 export const CONTAINER_RECOMMENDATION_VERSION = 1 as const;
 const MICRO_COPPER = 1_000_000n;
@@ -93,6 +100,7 @@ export interface ContainerRecommendationInput {
 		plan: ReservationPlan;
 		sackItemIds: number[];
 	};
+	hold: { intents: HoldIntentV1[]; plan: HoldPlan };
 	model: ContainerModelV1;
 	modelReview: ContainerModelReview;
 	market: ContainerMarketBatch;
@@ -107,6 +115,8 @@ export type ContainerRecommendationReasonCode =
 	| 'session_not_recommendable'
 	| 'reservation_unknown'
 	| 'reservation_mismatch'
+	| 'hold_intent_active'
+	| 'hold_price_unavailable'
 	| 'model_unreviewed'
 	| 'model_revoked'
 	| 'model_review_stale'
@@ -135,6 +145,13 @@ export interface ReservedContainerAllocation {
 	quantity: number;
 }
 
+export interface HeldContainerAllocation {
+	intentId: string;
+	state: 'holding' | 'price_unavailable';
+	reason: HoldIntentV1['reason'];
+	quantity: number;
+}
+
 export interface ContainerDispositionRecommendation {
 	version: typeof CONTAINER_RECOMMENDATION_VERSION;
 	sessionId: string;
@@ -143,6 +160,7 @@ export interface ContainerDispositionRecommendation {
 	itemId: number;
 	allocations: {
 		reserved: ReservedContainerAllocation[];
+		held: HeldContainerAllocation[];
 		freeQuantity: number;
 	};
 	economicDecision: null | {
@@ -208,43 +226,92 @@ export function recommendContainerDisposition(inputValue: unknown): ContainerRec
 		const reservation = reservationEvidence(input);
 		if (reservation.status === 'invalid') return invalid(reservation.reason);
 		if (reservation.status === 'blocked') return blocked(reservation.reason);
-		const { freeQuantity, reserved, gainedQuantity } = reservation;
-		// Reservation is deliberately evaluated before session or market evidence.
+		const { freeQuantity: reservationFree, reserved, gainedQuantity } = reservation;
+		// Fully reserved gains need no temporal market evidence and cannot produce an action.
+		if (reservationFree === 0) {
+			return {
+				status: 'reserved_only',
+				recommendation: baseRecommendation(input, reserved, [], 0, null, null, []),
+			};
+		}
+		// Holds interpret market quotes, so their batch must be fresh before they can consume the free pool.
+		const freshnessReason = validateMarketFreshness(input);
+		if (freshnessReason !== null) {
+			return blockedWithReservation(input, reserved, [], reservationFree, freshnessReason, []);
+		}
+		const hold = holdEvidence(input);
+		if (hold.status === 'invalid') return invalid(hold.reason);
+		const { freeQuantity, held, reasons: holdReasons } = hold;
+		// A fresh hold that consumes the remaining pool cannot produce an economic action.
 		if (freeQuantity === 0) {
 			return {
 				status: 'reserved_only',
-				recommendation: baseRecommendation(input, reserved, freeQuantity, null, null, []),
+				recommendation: baseRecommendation(input, reserved, held, freeQuantity, null, null, holdReasons),
 			};
 		}
-		if (gainedQuantity < freeQuantity) return invalid('evidence_mismatch');
+		if (gainedQuantity < reservationFree || reservationFree < freeQuantity) return invalid('evidence_mismatch');
 
 		const session = validateSessionClassification(input);
 		if (session.status === 'invalid') return invalid(session.reason);
-		if (session.status === 'blocked') return blockedWithReservation(input, reserved, freeQuantity, session.reason);
+		if (session.status === 'blocked') return blockedWithReservation(input, reserved, held, freeQuantity, session.reason, holdReasons);
 		const reviewReason = validateModelReview(input);
-		if (reviewReason !== null) return blockedWithReservation(input, reserved, freeQuantity, reviewReason);
-		const freshnessReason = validateMarketFreshness(input);
-		if (freshnessReason !== null) return blockedWithReservation(input, reserved, freeQuantity, freshnessReason);
+		if (reviewReason !== null) return blockedWithReservation(input, reserved, held, freeQuantity, reviewReason, holdReasons);
 
 		const economics = calculateEconomics(input, freeQuantity);
 		if (economics.status !== 'ok') {
 			return economics.status === 'invalid' ? invalid(economics.reason)
-				: blockedWithReservation(input, reserved, freeQuantity, economics.reason);
+				: blockedWithReservation(input, reserved, held, freeQuantity, economics.reason, holdReasons);
 		}
 		return {
 			status: 'ready',
 			recommendation: baseRecommendation(
 				input,
 				reserved,
+				held,
 				freeQuantity,
 				economics.decision,
 				economics.explanation,
-				[],
+				holdReasons,
 			),
 		};
 	} catch {
 		return invalid('arithmetic_overflow');
 	}
+}
+
+function holdEvidence(input: ContainerRecommendationInput):
+	| { status: 'ok'; freeQuantity: number; held: HeldContainerAllocation[]; reasons: ContainerRecommendationReason[] }
+	| { status: 'invalid'; reason: ContainerRecommendationReasonCode } {
+	const freeQuantityByItem: Record<string, number> = {};
+	for (const line of input.reservation.overlay.lines) {
+		if (line.liquidationEligible === null || line.openEligible === null) continue;
+		freeQuantityByItem[String(line.itemId)] = Math.min(line.gainedQuantity, line.liquidationEligible, line.openEligible);
+	}
+	const result = evaluateHoldIntents({
+		version: 1,
+		asOf: input.asOf,
+		accountId: input.session.afterSnapshot.accountId,
+		snapshotId: input.session.afterSnapshot.snapshotId,
+		sessionId: input.session.sessionId,
+		freeQuantityByItem,
+		intents: input.hold.intents,
+		market: input.market,
+	});
+	if (result.status !== 'ok' || canonical(result.plan) !== canonical(input.hold.plan)) {
+		return { status: 'invalid', reason: 'evidence_mismatch' };
+	}
+	const item = result.plan.items.find((entry) => entry.itemId === input.container.itemId);
+	const held = result.plan.allocations.filter((entry) => entry.itemId === input.container.itemId && entry.allocatedQuantity > 0)
+		.map((entry) => ({
+			intentId: entry.intentId,
+			state: entry.state as 'holding' | 'price_unavailable',
+			reason: structuredClone(entry.reason),
+			quantity: entry.allocatedQuantity,
+		}));
+	const reasons = [...new Set(held.map((entry) => entry.state === 'price_unavailable'
+		? 'hold_price_unavailable' as const : 'hold_intent_active' as const))]
+		.map((code) => ({ code }));
+	return { status: 'ok', freeQuantity: item?.remainingFreeQuantity ?? 0, held, reasons };
 }
 
 function reservationEvidence(input: ContainerRecommendationInput):
@@ -496,6 +563,7 @@ function calculateEconomics(
 function baseRecommendation(
 	input: ContainerRecommendationInput,
 	reserved: ReservedContainerAllocation[],
+	held: HeldContainerAllocation[],
 	freeQuantity: number,
 	economicDecision: ContainerDispositionRecommendation['economicDecision'],
 	explanation: ContainerDispositionRecommendation['explanation'],
@@ -507,7 +575,7 @@ function baseRecommendation(
 		accountId: input.session.afterSnapshot.accountId,
 		afterSnapshotId: input.session.afterSnapshot.snapshotId,
 		itemId: input.container.itemId,
-		allocations: { reserved, freeQuantity },
+		allocations: { reserved, held, freeQuantity },
 		economicDecision,
 		explanation,
 		reasons: canonicalReasons(reasons),
@@ -516,12 +584,17 @@ function baseRecommendation(
 
 function isInputShell(value: unknown): value is ContainerRecommendationInput {
 	if (!isRecord(value) || !exactKeys(value, [
-		'version', 'asOf', 'session', 'container', 'reservation', 'model', 'modelReview', 'market', 'policy',
+		'version', 'asOf', 'session', 'container', 'reservation', 'hold', 'model', 'modelReview', 'market', 'policy',
 	]) || value.version !== 1 || !iso(value.asOf) || !isSessionShell(value.session) ||
-		!isContainerShell(value.container) || !isReservationShell(value.reservation) ||
+		!isContainerShell(value.container) || !isReservationShell(value.reservation) || !isHoldShell(value.hold) ||
 		!isContainerModel(value.model) || !isModelReview(value.modelReview) ||
 		!isMarket(value.market) || !isPolicy(value.policy)) return false;
 	return true;
+}
+
+function isHoldShell(value: unknown): value is ContainerRecommendationInput['hold'] {
+	return isRecord(value) && exactKeys(value, ['intents', 'plan']) && Array.isArray(value.intents) &&
+		value.intents.every(isHoldIntent) && isHoldPlan(value.plan);
 }
 
 function isSessionShell(value: unknown): value is ContainerRecommendationInput['session'] {
@@ -663,14 +736,16 @@ function blocked(reason: ContainerRecommendationReasonCode): ContainerRecommenda
 function blockedWithReservation(
 	input: ContainerRecommendationInput,
 	reserved: ReservedContainerAllocation[],
+	held: HeldContainerAllocation[],
 	freeQuantity: number,
 	reason: ContainerRecommendationReasonCode,
+	holdReasons: ContainerRecommendationReason[],
 ): ContainerRecommendationResult {
-	const reasons = canonicalReasons([{ code: reason }]);
+	const reasons = canonicalReasons([{ code: reason }, ...holdReasons]);
 	return {
 		status: 'blocked',
 		reasons,
-		recommendation: baseRecommendation(input, reserved, freeQuantity, null, null, reasons),
+		recommendation: baseRecommendation(input, reserved, held, freeQuantity, null, null, reasons),
 	};
 }
 

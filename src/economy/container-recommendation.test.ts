@@ -12,6 +12,7 @@ import {
 	type ContainerRecommendationInput,
 } from './container-recommendation';
 import type { ContainerModelV1 } from './container-model';
+import { evaluateHoldIntents, type HoldIntentV1 } from './hold-intent';
 import { buildReservationBalance, createReservationPlan } from './reservation';
 import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
 import type { SessionValuation } from './session-valuation';
@@ -232,6 +233,35 @@ describe('recommendContainerDisposition', () => {
 		expect(recommendContainerDisposition(future)).toMatchObject({ status: 'blocked', reasons: [{ code: 'price_future' }] });
 	});
 
+	it.each([
+		['price_stale' as const, (value: ContainerRecommendationInput) =>
+			new Date(Date.parse(AS_OF) - value.policy.maxPriceAgeMs - 1).toISOString()],
+		['price_future' as const, (value: ContainerRecommendationInput) =>
+			new Date(Date.parse(AS_OF) + value.policy.maxFutureSkewMs + 1).toISOString()],
+	])('blocks %s market evidence before a hold can consume all free quantity', (reason, capturedAt) => {
+		const value = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
+		value.market.capturedAt = capturedAt(value);
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'blocked',
+			reasons: [{ code: reason }],
+			recommendation: { allocations: { held: [], freeQuantity: 5 }, economicDecision: null },
+		});
+	});
+
+	it.each([
+		(value: ContainerRecommendationInput) =>
+			new Date(Date.parse(AS_OF) - value.policy.maxPriceAgeMs).toISOString(),
+		(value: ContainerRecommendationInput) =>
+			new Date(Date.parse(AS_OF) + value.policy.maxFutureSkewMs).toISOString(),
+	])('allows a fully consuming hold at an exact market freshness boundary %#', (capturedAt) => {
+		const value = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
+		value.market.capturedAt = capturedAt(value);
+		expect(recommendContainerDisposition(value)).toMatchObject({
+			status: 'reserved_only',
+			recommendation: { allocations: { held: [{ quantity: 5 }], freeQuantity: 0 } },
+		});
+	});
+
 	it('rejects duplicate quotes from the supposedly atomic market batch', () => {
 		const value = input();
 		value.market.quotes.push({ ...value.market.quotes[0]! });
@@ -282,6 +312,59 @@ describe('recommendContainerDisposition', () => {
 				reasons: [{ code: 'session_classification_v1' }],
 			},
 		});
+	});
+
+	it('subtracts active holds after reservations and preserves user provenance', () => {
+		const value = withHold(input({ gainedQuantity: 10, finalQuantity: 10, reservedTarget: 2 }), [
+			holdIntent({ quantity: 4 }),
+		]);
+		const result = ready(value);
+		expect(result.allocations).toEqual({
+			reserved: [{ goalId: 'goal-a', reason: 'personal', intendedUse: 'hold', quantity: 2 }],
+			held: [{
+				intentId: 'intent-a', state: 'holding',
+				reason: { category: 'market_target', note: 'Wait for the target.' }, quantity: 4,
+			}],
+			freeQuantity: 4,
+		});
+		expect(result.economicDecision?.quantity).toBe(4);
+		expect(result.reasons).toEqual([{ code: 'hold_intent_active' }]);
+	});
+
+	it('protects unavailable-price holds but releases target-reached, expired and cancelled intents', () => {
+		const unavailable = input({ gainedQuantity: 5, finalQuantity: 5 });
+		unavailable.market.quotes[0]!.askUnitCopper = null;
+		withHold(unavailable, [holdIntent({ quantity: 5, target: { route: 'listing', unitGrossCopper: 200 } })]);
+		const protectedResult = recommendContainerDisposition(unavailable);
+		expect(protectedResult).toMatchObject({
+			status: 'reserved_only',
+			recommendation: {
+				allocations: { held: [{ state: 'price_unavailable', quantity: 5 }], freeQuantity: 0 },
+				economicDecision: null,
+				reasons: [{ code: 'hold_price_unavailable' }],
+			},
+		});
+
+		for (const intent of [
+			holdIntent({ target: { route: 'instant_sell', unitGrossCopper: 100 } }),
+			holdIntent({ deadlineAt: AS_OF }),
+			holdIntent({ status: 'cancelled' }),
+		]) {
+			const result = ready(withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [intent]));
+			expect(result.allocations).toMatchObject({ held: [], freeQuantity: 5 });
+			expect(result.economicDecision?.quantity).toBe(5);
+		}
+	});
+
+	it('rejects a transplanted or malformed hold plan even when all quantity would be protected', () => {
+		const target = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
+		target.hold.plan = withHold(input({ gainedQuantity: 4, finalQuantity: 4 }), [holdIntent({ quantity: 4 })]).hold.plan;
+		expect(recommendContainerDisposition(target)).toMatchObject({
+			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }], recommendation: null,
+		});
+		const malformed = withHold(input({ gainedQuantity: 5, finalQuantity: 5 }), [holdIntent({ quantity: 5 })]);
+		malformed.hold.plan = {} as never;
+		expect(recommendContainerDisposition(malformed)).toMatchObject({ status: 'invalid', recommendation: null });
 	});
 
 	it('rejects catalog binding flags that contradict explicit unbound evidence', () => {
@@ -362,6 +445,28 @@ function input(options: {
 		...review.classification, version: 1,
 		permissions: { ...review.classification.permissions, recommend: false },
 	} as never;
+	const market = {
+		version: 1 as const, batchId: 'batch-1', capturedAt: AS_OF, source: 'gw2-commerce-prices' as const,
+		quotes: [
+			{ itemId: ITEM_ID, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 },
+			...(options.marketOutcome ? [{ itemId: 1, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 }] : []),
+		],
+	};
+	const hold = evaluateHoldIntents({
+		version: 1,
+		asOf: AS_OF,
+		accountId: after.accountId,
+		snapshotId: after.snapshotId,
+		sessionId: 'session-1',
+		freeQuantityByItem: { [String(ITEM_ID)]: Math.min(
+			gainedQuantity,
+			overlay.lines[0]!.liquidationEligible ?? 0,
+			overlay.lines[0]!.openEligible ?? 0,
+		) },
+		intents: [],
+		market,
+	});
+	if (hold.status !== 'ok') throw new Error('Invalid hold fixture.');
 	return {
 		version: 1,
 		asOf: AS_OF,
@@ -375,6 +480,7 @@ function input(options: {
 			tradingAccess: 'full',
 		},
 		reservation: { goals, overlay, plan, sackItemIds: [] },
+		hold: { intents: [], plan: hold.plan },
 		model,
 		modelReview: {
 			version: 1, modelId: model.modelId, modelVersion: model.modelVersion,
@@ -382,14 +488,45 @@ function input(options: {
 			reviewedAt: '2026-08-12T10:00:00.000Z', validUntil: '2026-09-12T10:00:00.000Z',
 			reviewReason: 'Reviewed sample and exclusions.',
 		},
-		market: {
-			version: 1, batchId: 'batch-1', capturedAt: AS_OF, source: 'gw2-commerce-prices',
-			quotes: [
-				{ itemId: ITEM_ID, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 },
-				...(options.marketOutcome ? [{ itemId: 1, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 }] : []),
-			],
-		},
+		market,
 		policy: { ...DEFAULT_CONTAINER_RECOMMENDATION_POLICY, openAdvantageBps: options.marginBps ?? 1_000 },
+	};
+}
+
+function withHold(value: ContainerRecommendationInput, intents: HoldIntentV1[]): ContainerRecommendationInput {
+	const freeQuantityByItem = Object.fromEntries(value.reservation.overlay.lines.map((line) => [
+		String(line.itemId),
+		Math.min(line.gainedQuantity, line.liquidationEligible ?? 0, line.openEligible ?? 0),
+	]));
+	const result = evaluateHoldIntents({
+		version: 1,
+		asOf: value.asOf,
+		accountId: value.session.afterSnapshot.accountId,
+		snapshotId: value.session.afterSnapshot.snapshotId,
+		sessionId: value.session.sessionId,
+		freeQuantityByItem,
+		intents,
+		market: value.market,
+	});
+	if (result.status !== 'ok') throw new Error(`Invalid hold fixture: ${result.reason}`);
+	value.hold = { intents, plan: result.plan };
+	return value;
+}
+
+function holdIntent(overrides: Partial<HoldIntentV1> = {}): HoldIntentV1 {
+	return {
+		version: 1,
+		intentId: 'intent-a',
+		accountId: 'account-anonymous',
+		itemId: ITEM_ID,
+		quantity: 2,
+		target: { route: 'instant_sell', unitGrossCopper: 200 },
+		reason: { category: 'market_target', note: 'Wait for the target.' },
+		createdAt: '2026-08-13T09:00:00.000Z',
+		deadlineAt: '2026-08-13T11:00:00.000Z',
+		status: 'active',
+		origin: 'user',
+		...overrides,
 	};
 }
 

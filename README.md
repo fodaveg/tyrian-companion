@@ -54,6 +54,8 @@ The current `0.1.0` vertical provides:
   exposes action-specific allowances, and overlays protected gains without changing valuation money.
 - A pure H4.10 container disposition engine that protects reservations first, then compares an
   attested opening model with a fresh immediate-sale floor using exact integer thresholds.
+- A pure H4.11 user hold-intent allocator that protects a bounded free quantity until a target
+  price or deadline and feeds the remaining quantity into H4.10 without performing an operation.
 
 Automatic synchronization, persisted valuation/recommendation reports, vault writes, unattended
 detection, and recommendation UI or account operations are intentionally not implemented yet. Snapshot capture runs from explicit
@@ -179,6 +181,16 @@ of immediate bid and an eligible vendor floor, and compares opening EV with the 
 `BigInt`. Equality favors opening. Missing or stale evidence returns typed `blocked`; malformed or
 inconsistent evidence returns `invalid`; neither status contains an economic action. The output is an
 explanation only: H4.10 performs no API call, persistence, UI, vault write, Trading Post action or item use.
+
+`evaluateHoldIntents(input)` is the pure H4.11 boundary after H4.9 reservations. Only explicit,
+versioned user intents can retain units. Active intents consume one exclusive free pool in deadline
+then identifier order; a reached target, deadline or cancellation releases its quantity, while an
+unavailable price protects it until the deadline instead of guessing. Each allocation keeps its
+reason, current/target price, requested/allocated/shortfall quantities and an H4.2 target-net
+projection. `recommendContainerDisposition` recomputes the supplied plan from the same reservation
+overlay and price batch, validates batch freshness before any hold can consume the free pool,
+subtracts held units before economics and preserves their provenance.
+H4.11 has no persistence, UI, API calls or automatic sell/open operation.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same
