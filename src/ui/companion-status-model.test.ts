@@ -150,6 +150,15 @@ describe('buildCompanionStatus', () => {
 		]);
 	});
 
+	it('surfaces durable pending confirmations before ordinary connection incidents', () => {
+		const projection = buildCompanionStatus(input({
+			pendingProposals: { status: 'ready', pendingCount: 2, next: null },
+			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
+		}));
+		expect(projection.errors[0]).toBe('Confirmations: 2 farming proposals waiting for review.');
+		expect(projection.errors[1]).toBe('Connection: Offline.');
+	});
+
 	it('preserves long diagnostic text and large safe counters without truncating data', () => {
 		const message = 'x'.repeat(512);
 		const projection = buildCompanionStatus(input({
@@ -200,6 +209,7 @@ function input(overrides: Partial<CompanionStatusInput> = {}): CompanionStatusIn
 		recovery: { status: 'none' },
 		startFailure: null,
 		stopFailure: null,
+		pendingProposals: { status: 'ready', pendingCount: 0, next: null },
 		...overrides,
 	};
 }

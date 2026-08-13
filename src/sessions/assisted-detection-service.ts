@@ -85,6 +85,7 @@ export interface AssistedDetectionServiceOptions {
 	snapshots: Pick<StorageSnapshotService, 'capture'>;
 	getSessionState: () => SessionState;
 	onStateChange?: (state: AssistedDetectionState) => void;
+	onProposal?: (proposal: RelevantStartProposal | InactivityStopProposal) => Promise<boolean>;
 	relevantRuleSet?: RelevantItemRuleSet;
 	inactivityThresholdMs?: number;
 	now?: () => Date;
@@ -99,6 +100,7 @@ export class AssistedDetectionService {
 	private readonly snapshots: AssistedDetectionServiceOptions['snapshots'];
 	private readonly getSessionState: AssistedDetectionServiceOptions['getSessionState'];
 	private readonly onStateChange: NonNullable<AssistedDetectionServiceOptions['onStateChange']>;
+	private readonly onProposal: NonNullable<AssistedDetectionServiceOptions['onProposal']>;
 	private readonly relevantRuleSet: RelevantItemRuleSet;
 	private readonly relevantItemIds: ReadonlySet<number>;
 	private readonly inactivityThresholdMs: number;
@@ -120,6 +122,7 @@ export class AssistedDetectionService {
 		this.snapshots = options.snapshots;
 		this.getSessionState = options.getSessionState;
 		this.onStateChange = options.onStateChange ?? (() => undefined);
+		this.onProposal = options.onProposal ?? (() => Promise.resolve(false));
 		this.relevantRuleSet = options.relevantRuleSet ?? HALLOWEEN_RELEVANT_ITEM_RULE_SET;
 		this.startDetector = new RelevantItemStartDetector(this.relevantRuleSet);
 		this.relevantItemIds = new Set(this.relevantRuleSet.itemIds);
@@ -333,6 +336,7 @@ export class AssistedDetectionService {
 		this.scheduler.stop();
 		this.state.scheduler = { ...this.scheduler.getState() };
 		this.emit();
+		void this.transferProposal(proposal);
 	}
 
 	private publishStopProposal(proposal: InactivityStopProposal): void {
@@ -341,6 +345,17 @@ export class AssistedDetectionService {
 		this.scheduler.stop();
 		this.state.scheduler = { ...this.scheduler.getState() };
 		this.emit();
+		void this.transferProposal(proposal);
+	}
+
+	private async transferProposal(proposal: RelevantStartProposal | InactivityStopProposal): Promise<void> {
+		let transferred = false;
+		try { transferred = await this.onProposal(structuredClone(proposal)); } catch { /* remain paused for foreground recovery */ }
+		if (!transferred || this.disposed) return;
+		const state = this.state;
+		if ((state.status === 'start_proposed' || state.status === 'stop_proposed') && state.proposal.proposalId === proposal.proposalId) {
+			this.dismissProposal();
+		}
 	}
 
 	private onSchedulerState(scheduler: Readonly<ApiPollSchedulerState>): void {

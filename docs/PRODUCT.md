@@ -8,6 +8,8 @@ H5.1 convierte la vista base en una bitácora de campo: en dos segundos debe res
 
 H5.2 hace accesible el mismo lifecycle desde la paleta y un único menú de ribbon. Solo muestra acciones válidas para el estado observado y vuelve a comprobarlas al ejecutar; recovery bloquea Start, stop fallido puede reintentarse, y provisional abre la revisión existente. Descartar recovery o limpiar una sesión completa requiere confirmación y solo afecta datos locales del companion. No existe un comando que cancele una sesión activa ni se añaden operaciones sobre la cuenta.
 
+H5.3 conserva localmente las propuestas asistidas aunque la nota esté cerrada. El fondo solo encola y actualiza indicadores existentes: no reconstruye controles, muestra `Notice`, modal o notificación del sistema, cambia el foco ni revela una vista. La bitácora y el ribbon anuncian cuántas confirmaciones esperan y enseñan una sola propuesta para revisar. La elección fija la identidad exacta observada; aceptar reutiliza Start/Stop, renueva su claim y solo emite receipt tras el éxito, mientras descartar conserva una causa cerrada incluso si la medición auxiliar no puede escribirse. Un Start/Stop manual ordinario deja intacta la cola.
+
 Está pensado tanto para un jugador individual como para grupos o clanes que quieran compartir la misma herramienta manteniendo sus datos separados. Cada instalación usa la clave y el vault de su propietario: no existe un servidor central, no se comparten claves ni se agregan datos del clan por defecto.
 
 ## Semántica de exactitud

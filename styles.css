@@ -180,18 +180,21 @@
 }
 
 .tyrian-companion-view__session,
-.tyrian-companion-view__detection {
+.tyrian-companion-view__detection,
+.tyrian-companion-view__pending {
 	margin: 0;
 	padding-block: var(--size-4-2) var(--size-4-4);
 }
 
 .tyrian-companion-view__session h3,
-.tyrian-companion-view__detection h3 {
+.tyrian-companion-view__detection h3,
+.tyrian-companion-view__pending h3 {
 	margin-block-start: 0;
 }
 
 .tyrian-companion-view__session dl,
 .tyrian-companion-view__detection dl,
+.tyrian-companion-view__pending dl,
 .tyrian-companion-view__status dl {
 	display: grid;
 	grid-template-columns: minmax(7rem, max-content) 1fr;
@@ -200,10 +203,31 @@
 
 .tyrian-companion-view__session dd,
 .tyrian-companion-view__detection dd,
+.tyrian-companion-view__pending dd,
 .tyrian-companion-view__status dd {
 	margin-inline-start: 0;
 	min-width: 0;
 	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-view__pending {
+	border-block-start: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-companion-ribbon--pending {
+	position: relative;
+}
+
+.tyrian-companion-ribbon--pending::after {
+	position: absolute;
+	inset-block-start: var(--size-2-1);
+	inset-inline-end: var(--size-2-1);
+	width: var(--size-4-2);
+	height: var(--size-4-2);
+	border: 1px solid var(--background-primary);
+	border-radius: var(--radius-s);
+	background: var(--text-warning);
+	content: '';
 }
 
 .tyrian-companion-view__session-error,

@@ -15,6 +15,7 @@ import type {
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 import type { SessionContaminationReview } from '../sessions/session-contamination-review';
 import type { SessionRecoveryState } from '../sessions/manual-session-start-service';
+import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 
 export type CompanionStatusTone = 'quiet' | 'active' | 'good' | 'warning' | 'error';
 
@@ -54,6 +55,7 @@ export interface CompanionStatusInput {
 	recovery: SessionRecoveryState;
 	startFailure: SessionStartFailure | null;
 	stopFailure: SessionStopFailure | null;
+	pendingProposals?: ProposalQueueState;
 }
 
 /** Pure H5.1 projection used by the note-independent status view. */
@@ -283,6 +285,10 @@ function qualityStatus(
 
 function statusErrors(input: CompanionStatusInput): string[] {
 	const errors: string[] = [];
+	if (input.pendingProposals?.status === 'unavailable') errors.push(`Confirmations: ${input.pendingProposals.message}`);
+	if (input.pendingProposals?.status === 'ready' && input.pendingProposals.pendingCount > 0) {
+		errors.push(`Confirmations: ${String(input.pendingProposals.pendingCount)} farming proposal${input.pendingProposals.pendingCount === 1 ? '' : 's'} waiting for review.`);
+	}
 	if (input.recovery.status === 'available') {
 		errors.push(`Recovery: ${input.recovery.message ?? 'A saved farming session needs a decision.'}`);
 	}
@@ -306,7 +312,8 @@ function statusErrors(input: CompanionStatusInput): string[] {
 }
 
 function hasErrorIncident(input: CompanionStatusInput): boolean {
-	return input.recovery.status === 'error'
+	return input.pendingProposals?.status === 'unavailable'
+		|| input.recovery.status === 'error'
 		|| input.recovery.status === 'busy'
 		|| input.session.status === 'error'
 		|| input.startFailure !== null

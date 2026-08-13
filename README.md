@@ -6,6 +6,7 @@ The current `0.1.0` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
+- H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
@@ -119,6 +120,13 @@ Detection-quality observations use a separate local IndexedDB database. They con
 proposal identifiers, boundary window and uncertainty, evidence quality, decision and correction cause, but no
 API key, item payload or free-text note. If this optional measurement store is unavailable, session
 start, stop and proposal dismissal continue to work and the view reports the missing telemetry.
+
+Pending assisted confirmations use `tyrian-companion-confirmation-queue`, also outside the vault and
+without credentials. Enqueue is atomic before polling resumes; claims are fenced by exact operation
+and window identity, renewed while the chosen workflow is running, and accepted only after the
+existing start/stop workflow succeeds. Pending proposals expire after 24 hours, receipts after 30
+days, and background work only refreshes existing status indicators: it never rebuilds the view,
+opens a modal, shows a notice, reveals a leaf, focuses a control, or sends an OS notification.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

@@ -24,6 +24,8 @@ import {
 	type SessionDetectionQualitySummary,
 } from '../sessions/session-detection-quality';
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
+import type { ProposalQueueState } from '../sessions/pending-proposal-service';
+import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import {
 	buildCompanionStatus,
 	visibleRailItems,
@@ -41,6 +43,11 @@ export interface CompanionActions {
 	getDetectionQualityState(): DetectionQualityRecorderState;
 	getSessionDetectionQuality(sessionId: string): SessionDetectionQualitySummary | null;
 	getDetectionQualityStats(): DetectionQualityStats | null;
+	getPendingProposalState(): ProposalQueueState;
+	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean>;
+	dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void>;
+	openPendingSessionStart(intent: PendingProposalIntent): void;
+	stopPendingSession(intent: PendingProposalIntent): Promise<void>;
 	armAssistedDetection(): Promise<void>;
 	disarmAssistedDetection(): void;
 	dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void>;
@@ -142,10 +149,15 @@ export class TyrianCompanionView extends ItemView {
 		const detectionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		detectionDetails.createEl('summary', { text: 'Detection details' });
 		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
+		this.renderPendingConfirmation(contentEl);
 
 		if (projection.refreshEveryMs !== null || isCoolingDown(retryAt)) {
 			this.refreshInterval = contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
 		}
+	}
+
+	refreshBackgroundStatus(): void {
+		this.refreshDynamicStatus();
 	}
 
 	private projectStatus(now: number): CompanionStatusProjection {
@@ -165,6 +177,45 @@ export class TyrianCompanionView extends ItemView {
 			recovery: this.actions.getSessionRecoveryState(),
 			startFailure: this.actions.getSessionStartFailure(),
 			stopFailure: this.actions.getSessionStopFailure(),
+			pendingProposals: this.actions.getPendingProposalState(),
+		});
+	}
+
+	private renderPendingConfirmation(container: HTMLElement): void {
+		const state = this.actions.getPendingProposalState();
+		if (state.status === 'loading' || (state.status === 'ready' && state.pendingCount === 0)) return;
+		const section = container.createEl('section', { cls: 'tyrian-companion-view__pending' });
+		section.setAttr('aria-label', 'Pending farming confirmations');
+		if (state.status === 'unavailable') {
+			section.createEl('h3', { text: 'Confirmation queue unavailable' });
+			section.createEl('p', { text: state.message });
+			return;
+		}
+		section.createEl('h3', { text: `${String(state.pendingCount)} pending confirmation${state.pendingCount === 1 ? '' : 's'}` });
+		const next = state.next;
+		if (!next) return;
+		section.createEl('p', {
+			text: next.phase === 'start'
+				? 'Possible farming start detected. Review it before starting a session.'
+				: 'Possible farming stop detected. Review it before finishing the session.',
+		});
+		const details = section.createEl('dl');
+		addDetail(details, 'Detected', formatTimestamp(next.detectedAt));
+		addDetail(details, 'Evidence', next.proposal.evidenceQuality);
+		if (Date.parse(next.staleAt) <= Date.now()) addDetail(details, 'State', 'Stale — verify carefully');
+		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const intent = proposalIntent(next);
+		const review = actions.createEl('button', { text: next.phase === 'start' ? 'Review and start' : 'Review and stop', cls: 'mod-cta' });
+		review.addEventListener('click', () => {
+			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
+				if (!reviewed) return;
+				if (next.phase === 'start') this.actions.openPendingSessionStart(intent);
+				else void this.actions.stopPendingSession(intent);
+			});
+		});
+		const dismiss = actions.createEl('button', { text: 'Dismiss' });
+		dismiss.addEventListener('click', () => {
+			new DetectionCorrectionModal(this.app, next.phase, (cause) => this.actions.dismissPendingProposal(intent, cause)).open();
 		});
 	}
 

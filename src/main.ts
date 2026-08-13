@@ -24,6 +24,10 @@ import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinat
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
 import { DetectionQualityRecorder } from './sessions/session-detection-quality-recorder';
 import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
+import { PendingProposalService, type ProposalQueueState } from './sessions/pending-proposal-service';
+import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
+import { proposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
+import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
 import {
 	ManualSessionStartService,
 	type SessionRecoveryState,
@@ -53,6 +57,8 @@ import {
 	type SessionCommandDispatch,
 } from './ui/session-command-adapter';
 import { SESSION_COMMAND_IDS, type SessionCommandId } from './ui/session-command-model';
+import { projectPendingProposalUi } from './ui/pending-proposal-command';
+import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 
 export default class TyrianCompanionPlugin extends Plugin {
@@ -61,6 +67,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessions!: ManualSessionStartService;
 	private assistedDetection!: AssistedDetectionService;
 	private detectionQuality!: DetectionQualityRecorder;
+	private pendingProposals!: PendingProposalService;
+	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -87,7 +95,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
 			{
-				onStateChange: () => this.renderViews(),
+				onStateChange: () => {
+					this.renderViews();
+					if (this.pendingProposals) void this.reconcilePendingProposals();
+				},
 				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
 				priceCapture: new SessionPriceSnapshotService(publicClient),
 			},
@@ -97,16 +108,42 @@ export default class TyrianCompanionPlugin extends Plugin {
 			new IndexedDbDetectionQualityStore(window.indexedDB),
 		);
 		void this.detectionQuality.initialize().then(() => this.renderViews());
+		this.pendingProposals = new PendingProposalService(
+			new IndexedDbPendingProposalStore(window.indexedDB),
+			crypto.randomUUID(),
+			undefined,
+			() => this.refreshBackgroundIndicators(),
+		);
+		this.pendingClaimRenewals = new PendingProposalRenewalRegistry({
+			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
+			clearInterval: (handle) => window.clearInterval(handle),
+		});
+		void this.pendingProposals.initialize().then(() => this.reconcilePendingProposals());
 		this.assistedDetection = new AssistedDetectionService({
 			snapshots,
 			getSessionState: () => this.sessions.getState(),
-			onStateChange: () => this.renderViews(),
+			onStateChange: () => this.refreshBackgroundIndicators(),
+			onProposal: async (proposal) => {
+				const session = this.sessions.getState();
+				const result = 'ruleSet' in proposal
+					? await this.pendingProposals.enqueue({ phase: 'start', proposal })
+					: session.status === 'active'
+						? await this.pendingProposals.enqueue({
+							phase: 'stop', proposal, sessionId: session.sessionId,
+							baselineSnapshotId: session.baseline.snapshotId,
+						})
+						: { status: 'unavailable' as const };
+				return result.status !== 'unavailable';
+			},
 		});
 		this.assistedDetection.setOnline(navigator.onLine);
 		this.registerDomEvent(window, 'online', () => this.assistedDetection.setOnline(true));
 		this.registerDomEvent(window, 'offline', () => this.assistedDetection.setOnline(false));
 		this.registerDomEvent(document, 'visibilitychange', () => {
-			if (document.visibilityState === 'visible') this.assistedDetection.notifyWake();
+			if (document.visibilityState === 'visible') {
+				this.assistedDetection.notifyWake();
+				void this.reconcilePendingProposals().then(() => this.renderViews());
+			}
 		});
 
 		this.registerView(
@@ -143,6 +180,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.clearModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
+		this.pendingClaimRenewals?.dispose();
+		this.pendingProposals?.dispose();
 		void this.sessions?.dispose();
 	}
 
@@ -155,6 +194,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		const state = await check;
+		void this.reconcilePendingProposals();
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		return state;
@@ -182,6 +222,55 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getDetectionQualityStats() {
 		return this.detectionQuality.getStats();
+	}
+
+	getPendingProposalState(): ProposalQueueState {
+		return this.pendingProposals.getState();
+	}
+
+	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
+		try {
+			if (!await this.pendingProposals.acknowledge(intent)) {
+				new Notice('That farming proposal is no longer available.');
+				return false;
+			}
+			await this.activateView();
+			this.renderViews();
+			return true;
+		} catch {
+			new Notice('The farming proposal could not be reviewed.');
+			return false;
+		}
+	}
+
+	async dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void> {
+		const claim = await this.acquirePendingIntent(intent);
+		try {
+			const sessionId = claim.proposal.phase === 'stop' ? claim.proposal.binding.sessionId : null;
+			const recorded = await this.detectionQuality.recordDismissed(claim.proposal.phase, sessionId, cause, claim.proposal.proposal);
+			if (!await this.pendingProposals.dismiss(intent, claim.operationId, sessionId, cause, recorded)) {
+				throw new Error('Proposal dismissal failed.');
+			}
+		} finally {
+			claim.stopRenewal();
+			this.renderViews();
+		}
+	}
+
+	openPendingSessionStart(intent: PendingProposalIntent): void {
+		if (intent.phase !== 'start' || this.startModal) return;
+		this.startModal = new ManualSessionStartModal(
+			this.app,
+			this.settings.preferredCharacter,
+			(input) => { void this.startManualSession(input, intent).catch(() => new Notice('The pending start could not be completed.')); },
+			() => { this.startModal = null; },
+		);
+		this.startModal.open();
+	}
+
+	async stopPendingSession(intent: PendingProposalIntent): Promise<void> {
+		if (intent.phase !== 'stop') return;
+		await this.performStopManualSession(intent);
 	}
 
 	async armAssistedDetection(): Promise<void> {
@@ -276,61 +365,83 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.sessionDispatch.finish();
 	}
 
-	private async performStopManualSession(): Promise<void> {
+	private async performStopManualSession(intent?: PendingProposalIntent): Promise<void> {
+		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
-		const proposal = detection.status === 'stop_proposed' ? detection.proposal : null;
+		const proposal = pendingClaim?.proposal.phase === 'stop'
+			? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
 		this.renderViews();
-		const result = await this.sessions.stop();
-		if (result.status === 'stopped') {
-			void this.detectionQuality.recordAccepted(
-				'stop',
-				result.state.sessionId,
-				result.state.finalSnapshot.completedAt,
-				proposal ?? {
-					mode: 'manual',
-					window: {
-						from: result.state.stopRequestedAt,
-						to: result.state.finalSnapshot.completedAt,
+		try {
+			const result = await this.sessions.stop();
+			if (result.status === 'stopped') {
+				void this.detectionQuality.recordAccepted(
+					'stop',
+					result.state.sessionId,
+					result.state.finalSnapshot.completedAt,
+					proposal ?? {
+						mode: 'manual',
+						window: {
+							from: result.state.stopRequestedAt,
+							to: result.state.finalSnapshot.completedAt,
+						},
 					},
-				},
-			).then(() => this.renderViews());
-			this.assistedDetection.disarm('session_stopped');
+				).then(() => this.renderViews());
+				this.assistedDetection.disarm('session_stopped');
+				if (intent && pendingClaim) {
+					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
+						throw new Error('Proposal receipt failed.');
+					}
+				}
+			}
+			this.renderViews();
+			if (result.status === 'failed') throw new Error('Stop failed.');
+		} finally {
+			pendingClaim?.stopRenewal();
 		}
-		this.renderViews();
-		if (result.status === 'failed') throw new Error('Stop failed.');
 	}
 
 	openManualSessionStart(): void {
 		void this.sessionCommands.run('start-farming-session');
 	}
 
-	private async startManualSession(input: SessionStartInput): Promise<void> {
+	private async startManualSession(input: SessionStartInput, intent?: PendingProposalIntent): Promise<void> {
+		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
-		const proposal = detection.status === 'start_proposed' ? detection.proposal : null;
+		const proposal = pendingClaim?.proposal.phase === 'start'
+			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
 		this.renderViews();
-		const result = await this.sessions.start(input);
-		if (result.status === 'started') {
-			void this.detectionQuality.recordAccepted(
-				'start',
-				result.state.sessionId,
-				result.state.baseline.completedAt,
-				proposal ?? {
-					mode: 'manual',
-					window: {
-						from: result.state.requestedAt,
-						to: result.state.baseline.completedAt,
+		try {
+			const result = await this.sessions.start(input);
+			if (result.status === 'started') {
+				void this.detectionQuality.recordAccepted(
+					'start',
+					result.state.sessionId,
+					result.state.baseline.completedAt,
+					proposal ?? {
+						mode: 'manual',
+						window: {
+							from: result.state.requestedAt,
+							to: result.state.baseline.completedAt,
+						},
 					},
-				},
-			).then(() => this.renderViews());
-			this.assistedDetection.dismissProposal();
+				).then(() => this.renderViews());
+				this.assistedDetection.dismissProposal();
+				if (intent && pendingClaim) {
+					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
+						throw new Error('Proposal receipt failed.');
+					}
+				}
+			}
+			if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
+				try {
+					await this.updateSettings({ preferredCharacter: input.characterName.trim() });
+				} catch { /* the active session does not depend on remembering the preference */ }
+			}
+			this.renderViews();
+			if (result.status === 'failed') throw new Error('Start failed.');
+		} finally {
+			pendingClaim?.stopRenewal();
 		}
-		if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
-			try {
-				await this.updateSettings({ preferredCharacter: input.characterName.trim() });
-			} catch { /* the active session does not depend on remembering the preference */ }
-		}
-		this.renderViews();
-		if (result.status === 'failed') throw new Error('Start failed.');
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {
@@ -376,6 +487,50 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	private async reconcilePendingProposals(): Promise<void> {
+		if (!this.pendingProposals) return;
+		const connection = this.connection.getState();
+		const accountId = connection.status === 'connected' || connection.status === 'warning'
+			? connection.details.account.id : null;
+		const state = this.sessions.getState();
+		const observed = state.status === 'error' ? state.failedState : state;
+		await this.pendingProposals.reconcile({
+			accountId,
+			recoveryPending: this.sessions.getRecoveryState().status !== 'none',
+			session: observed.status === 'active'
+				? { status: 'active', sessionId: observed.sessionId, baselineSnapshotId: observed.baseline.snapshotId }
+				: { status: observed.status },
+		});
+	}
+
+	private refreshBackgroundIndicators(): void {
+		this.refreshSessionRibbon();
+		refreshBackgroundStatus(
+			this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)
+				.map((leaf) => leaf.view)
+				.filter((view): view is TyrianCompanionView => view instanceof TyrianCompanionView),
+		);
+	}
+
+	private async acquirePendingIntent(intent: PendingProposalIntent): Promise<{
+		proposal: PendingProposal;
+		operationId: string;
+		stopRenewal: () => void;
+	}> {
+		await this.reconcilePendingProposals();
+		const operationId = crypto.randomUUID();
+		const claimed = await this.pendingProposals.claim(intent, operationId);
+		if (claimed.status !== 'claimed' && claimed.status !== 'already_claimed') throw new Error('Proposal claim failed.');
+		const stopRenewal = this.pendingClaimRenewals.start(() => {
+			void this.pendingProposals.renew(intent, operationId);
+		}, 60_000);
+		return {
+			proposal: claimed.proposal,
+			operationId,
+			stopRenewal,
+		};
+	}
+
 	private setupSessionCommands(): void {
 		this.sessionCommands = new SessionCommandController({
 			getContext: () => ({
@@ -393,6 +548,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.sessionCommands,
 			SESSION_COMMAND_IDS,
 		);
+		this.addCommand({
+			id: 'review-pending-farming-proposal',
+			name: 'Review pending farming proposal',
+			checkCallback: (checking) => {
+				const state = this.pendingProposals.getState();
+				const available = projectPendingProposalUi(state).commandAvailable;
+				if (!checking && available && state.next) void this.reviewPendingProposal(proposalIntent(state.next));
+				return available;
+			},
+		});
 		this.sessionRibbon = this.addRibbonIcon('compass', 'Tyrian companion session actions', (event) => {
 			this.openSessionCommandMenu(event);
 		});
@@ -401,6 +566,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private openSessionCommandMenu(event: MouseEvent): void {
 		const menu = new Menu();
+		if (this.pendingProposals.getState().pendingCount > 0) {
+			const next = this.pendingProposals.getState().next;
+			menu.addItem((item) => item.setTitle('Review pending farming proposal').setIcon('inbox')
+				.onClick(() => { if (next) void this.reviewPendingProposal(proposalIntent(next)); }));
+			menu.addSeparator();
+		}
 		for (const entry of projectSessionMenu(this.sessionCommands.available())) {
 			if (entry.type === 'separator') menu.addSeparator();
 			else if (entry.type === 'open') {
@@ -504,9 +675,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private refreshSessionRibbon(): void {
 		if (!this.sessionRibbon || !this.sessionCommands) return;
 		const next = this.sessionCommands.available().find((command) => !command.destructive);
-		const title = next ? `Tyrian companion: ${next.name}` : 'Tyrian companion session actions';
+		const pending = this.pendingProposals
+			? projectPendingProposalUi(this.pendingProposals.getState())
+			: { pendingCount: 0, ribbonLabel: null };
+		const title = pending.ribbonLabel
+			? `Tyrian companion: ${pending.ribbonLabel}`
+			: next ? `Tyrian companion: ${next.name}` : 'Tyrian companion session actions';
 		this.sessionRibbon.setAttr('aria-label', title);
 		this.sessionRibbon.setAttr('title', title);
+		this.sessionRibbon.toggleClass('tyrian-companion-ribbon--pending', pending.pendingCount > 0);
 	}
 
 	private async activateView(): Promise<void> {

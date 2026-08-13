@@ -128,6 +128,30 @@ describe('AssistedDetectionService', () => {
 		expect(session.status).toBe('active');
 	});
 
+	it('keeps polling paused when durable proposal enqueue fails', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
+		], idleSession, undefined, async () => false);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		await Promise.resolve();
+		expect(harness.service.getState().status).toBe('start_proposed');
+		expect(harness.scheduler.getState().status).toBe('idle');
+	});
+
+	it('resumes armed polling only after durable queue ownership succeeds', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
+		], idleSession, undefined, async () => true);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		await Promise.resolve();
+		expect(harness.service.getState().status).toBe('armed');
+		expect(harness.scheduler.getState().status).toBe('scheduled');
+	});
+
 	it('rebases before interpreting an idle-to-active session transition', async () => {
 		let session: SessionState = idleSession();
 		const harness = createHarness([
@@ -277,6 +301,7 @@ function createHarness(
 	snapshots: StorageSnapshot[],
 	getSessionState: () => SessionState = idleSession,
 	inactivityThresholdMs = 30 * 60_000,
+	onProposal?: ConstructorParameters<typeof AssistedDetectionService>[0]['onProposal'],
 ) {
 	const queue = snapshots.map((value) => structuredClone(value));
 	const scheduler = new FakeScheduler();
@@ -291,6 +316,7 @@ function createHarness(
 			},
 		},
 		getSessionState,
+		onProposal,
 		inactivityThresholdMs,
 		now: () => new Date('2026-08-13T09:59:00.000Z'),
 		schedulerFactory: (options) => scheduler.connect(options),
