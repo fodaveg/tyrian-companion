@@ -44,13 +44,15 @@ La versión `0.1.0` valida la base técnica:
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
+- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. Expone permisos conservadores, pero no pregunta, persiste, valora ni recomienda.
+- Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
 ## Fuera de alcance de la vertical 0.1.0
 
 - Ejecución del snapshot desde la UI, sincronización periódica o persistencia de sus resultados.
 - Precios y cálculo de patrimonio total.
-- Interpretación H2.7 de deltas, heurísticas de contaminación y atribución a sesiones.
+- Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.

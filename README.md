@@ -16,6 +16,8 @@ The current `0.1.0` vertical provides:
   with bounded batching, coverage per ID, and a persistent local stale-aware cache.
 - A pure `storage_delta` comparator that recomputes net ownership from two qualified snapshots,
   separates gains/losses from availability and composition, and never values or classifies activity.
+- A pure H2.7 evidence layer that classifies an observed session net as exact, estimated,
+  contaminated, or invalid without prices, API calls, persistence, or recommendations.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
@@ -76,6 +78,20 @@ makes only the currency surface unavailable while item changes remain usable. Wh
 complete in both snapshots it compares the combined item surface; coins include delivery only when
 wallet and delivery are both complete on both sides. Other coverage combinations produce an explicit
 limited surface and deterministic warnings instead of extrapolating missing data.
+
+`buildBoundaryEvidence(before, after)` projects delivery items, delivery coins, and wallet totals at
+the session boundary with explicit complete/missing/asymmetric coverage. `classifySessionDelta`
+combines that evidence with a v1 storage delta, normalized Trading Post events, boundary certainty,
+and an explicit user declaration. Observed or declared outside activity always dominates a clean
+claim. Its permissions distinguish showing the observed net, provisional valuation, finalization,
+and gross-per-hour eligibility; economic recommendations remain disabled. Both functions are pure
+and H3.9 still owns questions, acceptance workflow, and persistence.
+Residual delivery or wallet data is never interpreted as activity unless that surface is complete
+on both boundaries. A wallet increase remains estimated until a manual clean confirmation resolves
+the ambiguity; observed wallet decreases and TP buys/sells remain contamination evidence.
+The classifier treats delta and context as untrusted runtime input: malformed nested structures,
+unknown variants, invalid arithmetic, or a delivery currency other than coin id `1` return an
+invalid classification instead of throwing.
 
 ## Project documentation
 
