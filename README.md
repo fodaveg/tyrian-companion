@@ -13,9 +13,9 @@ The current `0.1.0` vertical provides:
 - A domain-only `storage_snapshot` capture for characters, account storage, bank, materials,
   and optional wallet/delivery data, qualified by consistency and source coverage.
 - A public catalog resolver for localized item, currency, and material-category metadata,
-  with bounded batching, coverage per ID, and an in-memory stale-aware cache.
+  with bounded batching, coverage per ID, and a persistent local stale-aware cache.
 
-Automatic synchronization, persistent catalog caching, valuation, vault writes, polling, detection,
+Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
 or plugin load; it describes observed storage, not total account wealth.
 
@@ -62,6 +62,9 @@ sorted batches of at most 200 IDs, and at most three simultaneous requests. It n
 key. Positive item/currency metadata remains fresh for seven days, material categories for one day,
 and missing IDs for one hour; transient failures may use positive entries up to 30 days old. Cache
 keys and records include both GW2 schema and normalizer versions, so formats cannot be mixed.
+The default persistent adapter uses a versioned IndexedDB database in Obsidian's application storage,
+outside vault notes and without secrets. It opens only when explicitly requested and falls back to
+an in-memory cache when IndexedDB is unavailable or cannot be opened.
 
 ## Project documentation
 

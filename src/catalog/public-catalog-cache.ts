@@ -29,6 +29,7 @@ export interface CatalogCacheAdapter {
 		key: CatalogCacheKey<K>,
 		record: CatalogCacheRecord<CatalogEntityByKind[K]>,
 	): Promise<void>;
+	dispose(): void;
 }
 
 /** Process-local cache adapter. Persistent storage stays outside this vertical. */
@@ -49,6 +50,10 @@ export class MemoryCatalogCache implements CatalogCacheAdapter {
 		record: CatalogCacheRecord<CatalogEntityByKind[K]>,
 	): Promise<void> {
 		this.records.set(key(cacheKey), structuredClone(record));
+	}
+
+	dispose(): void {
+		this.records.clear();
 	}
 }
 
