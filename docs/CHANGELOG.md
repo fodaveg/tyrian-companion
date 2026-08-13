@@ -78,5 +78,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Captura H4.4 de bid/ask al cierre para cada item ganado mediante `/v2/commerce/prices`, sin credencial, en lotes ordenados de hasta 200 ids.
 - Snapshot de precios durable con timestamp, fuente, cantidad ganada y cobertura `complete|partial|unavailable`; errores u omisiones nunca se convierten en precio cero ni bloquean el cierre.
 - Runtime de sesión v3 con migración segura de v1/v2 y validación cruzada entre sesión, delta físico e ids/cantidades del snapshot de precios.
+- Valoración H4.5 por item con rutas separadas de venta inmediata, listado y mercader, eligiendo el mejor suelo demostrado sin convertir ausencias en cero.
+- Totales de sesión reproducibles con moneda neta observada, cantidad no líquida, sacos/h en milésimas y cobre/h; pérdidas, catálogo, binding o precios incompletos quedan como warnings explícitos.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

@@ -42,8 +42,10 @@ The current `0.1.0` vertical provides:
   or malformed holdings out of unsupported Trading Post value while retaining proven vendor value.
 - H4.4 close-time public Trading Post quotes for gained item IDs, persisted with bid, ask,
   timestamp, source, gained quantity, and explicit missing/unavailable coverage.
+- A pure H4.5 session valuation that combines those quotes with catalog and binding evidence,
+  keeps non-liquid quantities explicit, and reproduces bags/hour and copper/hour safely.
 
-Automatic synchronization, aggregated valuation, vault writes, unattended detection,
+Automatic synchronization, persisted valuation reports, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
 **Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
 storage, not total account wealth.
