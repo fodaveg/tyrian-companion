@@ -251,7 +251,7 @@ function classification(
 	};
 }
 
-function isStorageDelta(value: unknown): value is StorageDelta {
+export function isStorageDelta(value: unknown): value is StorageDelta {
 	if (!isRecord(value) || !hasOnlyKeys(value, [
 		'version', 'status', 'accountId', 'beforeSnapshotId', 'afterSnapshotId', 'window',
 		'surface', 'currencySurface', 'reasons', 'warnings', 'itemChanges', 'currencyChanges',
@@ -271,6 +271,9 @@ function isStorageDelta(value: unknown): value is StorageDelta {
 		!Array.isArray(value.itemChanges) || !value.itemChanges.every(isQuantityChange) ||
 		!Array.isArray(value.currencyChanges) || !value.currencyChanges.every(isQuantityChange) ||
 		!Array.isArray(value.availabilityChanges) || !value.availabilityChanges.every(isQuantityChange) ||
+		!isOrderedQuantityChanges(value.itemChanges) ||
+		!isOrderedQuantityChanges(value.currencyChanges) ||
+		!isOrderedQuantityChanges(value.availabilityChanges) ||
 		!Array.isArray(value.compositionChanges) || !value.compositionChanges.every(isCompositionChange) ||
 		!isOrderedCompositionChanges(value.compositionChanges)
 	) return false;
@@ -390,7 +393,17 @@ function isDeltaWarning(value: unknown): boolean {
 function isQuantityChange(value: unknown): boolean {
 	return isRecord(value) && hasOnlyKeys(value, ['id', 'before', 'after', 'delta']) &&
 		isPositiveId(value.id) && isNonNegativeSafeInteger(value.before) &&
-		isNonNegativeSafeInteger(value.after) && Number.isSafeInteger(value.delta);
+		isNonNegativeSafeInteger(value.after) && Number.isSafeInteger(value.delta) &&
+		value.delta !== 0 && value.after - value.before === value.delta;
+}
+
+function isOrderedQuantityChanges(values: unknown[]): boolean {
+	let previousId = 0;
+	return values.every((value) => {
+		if (!isRecord(value) || !isPositiveId(value.id) || value.id <= previousId) return false;
+		previousId = value.id;
+		return true;
+	});
 }
 
 function isCompositionChange(value: unknown): boolean {

@@ -50,6 +50,8 @@ The current `0.1.0` vertical provides:
   every super-rare jackpot and unsupported long-tail outcome is excluded from its future EV.
 - A pure H4.8 conservative opening EV with separate instant-sale and listing estimates,
   micro-copper precision, explicit route coverage, and zero liquid value for excluded rewards.
+- A pure H4.9 reservation plan that allocates final owned/available balances across active goals,
+  exposes action-specific allowances, and overlays protected gains without changing valuation money.
 
 Automatic synchronization, persisted valuation reports, vault writes, unattended detection,
 and recommendations are intentionally not implemented yet. Snapshot capture runs from explicit
@@ -144,6 +146,21 @@ the ambiguity; observed wallet decreases and TP buys/sells remain contamination 
 The classifier treats delta and context as untrusted runtime input: malformed nested structures,
 unknown variants, invalid arithmetic, or a delivery currency other than coin id `1` return an
 invalid classification instead of throwing.
+
+`createReservationPlan({ goals, balance })` is a pure H4.9 boundary. It considers active goals only,
+orders them by priority and stable identifiers, and allocates each item or currency exactly once from
+the final owned and available pools. Each allocation retains its `owned|available` basis and can be
+revalidated against both pools. Namespace coverage proves a missing ID is zero when its surface is
+complete, while unknown evidence blocks the affected allowances instead of inventing a usable
+quantity. `buildReservationBalance(snapshot)` accepts only a comparable H2.6 snapshot and preserves
+delivery/wallet coverage. The optional H4.5 overlay validates routes, totals and rates before it
+partitions gained item quantities into protected and eligible actions, retaining the original
+valuation unchanged. Callers provide the exact sorted sack IDs so bags/hour cannot be forged, and
+the same authoritative H2.7 delta validator rejects malformed reasons or composition. Its standalone
+validator checks internal quantity invariants, but intended-use
+provenance must be checked with the reservation plan that created it. H4.9 has no persistence, UI,
+prices, API calls or recommendation policy; goal storage and economic recomputation belong to later
+verticals.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

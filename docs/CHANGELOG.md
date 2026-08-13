@@ -86,5 +86,8 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Exclusión explícita de todos los superraros y de la cola rara no respaldada para que ningún jackpot observado infle el valor esperado.
 - EV H4.8 conservador por saco en microcobre, separando venta inmediata y listado tras tasas separadas de 5% y 10% con redondeo a cobre, con cobertura independiente por ruta.
 - Resultados ligados o excluidos aportan exactamente cero oro líquido; una cotización ausente deja EV total `null` y conserva solo el subtotal conocido.
+- Plan de reservas H4.9 puro y versionado sobre objetivos activos y balance final, con asignación exclusiva/determinista, bases `owned|available` revalidables, shortfall y cobertura por namespace explícitos.
+- Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
+- Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
 - Fixtures anonimizadas y tests de migración, seguridad, parsers, agregados, cobertura, concurrencia y consistencia.

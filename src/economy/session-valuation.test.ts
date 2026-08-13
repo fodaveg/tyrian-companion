@@ -23,8 +23,8 @@ function delta(): StorageDelta {
 		window: { from: '2026-08-13T09:00:00.000Z', to: '2026-08-13T09:30:00.000Z' },
 		surface: 'core_and_delivery', currencySurface: 'wallet_and_delivery', reasons: [], warnings: [],
 		itemChanges: [
-			{ id: HALLOWEEN_TOT_BAG_ITEM_ID, before: 0, after: 100, delta: 100 },
 			{ id: 2, before: 0, after: 2, delta: 2 },
+			{ id: HALLOWEEN_TOT_BAG_ITEM_ID, before: 0, after: 100, delta: 100 },
 		],
 		currencyChanges: [{ id: 1, before: 1_000, after: 1_140, delta: 140 }],
 		availabilityChanges: [], compositionChanges: [],
@@ -138,7 +138,7 @@ describe('calculateSessionValuation', () => {
 
 	it('reports item losses as an explicit limitation and never subtracts an invented value', () => {
 		const value = input();
-		value.delta.itemChanges.push({ id: 99, before: 3, after: 1, delta: -2 });
+		value.delta.itemChanges.splice(1, 0, { id: 99, before: 3, after: 1, delta: -2 });
 		const result = calculateSessionValuation(value);
 		expect(result).toMatchObject({
 			status: 'ok',
