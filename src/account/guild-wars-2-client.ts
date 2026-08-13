@@ -1,16 +1,20 @@
+import { HttpTransportError, type HttpResponse, type HttpTransport } from '../core/http';
 import type { ApiKeyProvider } from '../core/secret-provider';
-import type { HttpTransport } from '../core/http';
 
 const DEFAULT_API_URL = 'https://api.guildwars2.com/v2';
 
 export class MissingApiKeyError extends Error {
 	constructor() {
-		super('Select a Guild Wars 2 API key in the Tyrian Companion settings.');
+		super('Select an existing Guild Wars 2 API key in the plugin settings.');
 		this.name = 'MissingApiKeyError';
 	}
 }
 
-/** Minimal authenticated client. No requests run until a feature explicitly calls request. */
+export interface GuildWars2Operation {
+	request(path: string, retryStatuses?: ReadonlySet<number>): Promise<unknown>;
+}
+
+/** Creates authenticated operations that pin one ephemeral key value for their full lifetime. */
 export class GuildWars2Client {
 	constructor(
 		private readonly transport: HttpTransport,
@@ -22,12 +26,42 @@ export class GuildWars2Client {
 		return this.apiKeyProvider.hasSelection();
 	}
 
-	async request(path: string): Promise<unknown> {
-		const apiKey = this.apiKeyProvider.getApiKey();
+	beginOperation(): GuildWars2Operation {
+		const apiKey = this.apiKeyProvider.readSelectedApiKey();
 		if (!apiKey) {
 			throw new MissingApiKeyError();
 		}
 
+		return {
+			request: (path, retryStatuses = new Set()) =>
+				this.requestWithKey(apiKey, path, retryStatuses),
+		};
+	}
+
+	private async requestWithKey(
+		apiKey: string,
+		path: string,
+		retryStatuses: ReadonlySet<number>,
+	): Promise<unknown> {
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			try {
+				return (await this.send(apiKey, path)).body;
+			} catch (error) {
+				if (
+					!(error instanceof HttpTransportError) ||
+					error.status === null ||
+					!retryStatuses.has(error.status) ||
+					attempt > 0
+				) {
+					throw error;
+				}
+			}
+		}
+
+		throw new HttpTransportError('network', null, null, 'Request failed.');
+	}
+
+	private send(apiKey: string, path: string): Promise<HttpResponse> {
 		return this.transport.send({
 			url: this.buildUrl(path),
 			method: 'GET',

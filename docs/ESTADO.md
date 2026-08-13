@@ -2,19 +2,19 @@
 
 ## Vertical activa
 
-**Foundation `0.1.0`: implementada con gate local verde.**
+**Foundation y primera conexión GW2: implementadas con gate local verde.**
 
-Incluye scaffold oficial de Obsidian, vista y comando mínimos, selección segura de secreto, cliente inactivo por defecto, límites modulares, tests y CI.
+Incluye scaffold oficial, selección segura y estable por operación, ajustes versionados, conexión explícita `tokeninfo → account`, validación runtime, concurrencia latest-wins, cooldown real, estados accesibles, transporte resiliente, límites modulares, tests y CI. No hay red al cargar ni al abrir la vista.
 
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 5 ficheros y 13 tests verdes.
+- `npm run test`: 7 ficheros y 60 tests verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 
 ## Pendientes de producto
 
-1. Definir permisos mínimos y lectura de cuenta.
-2. Diseñar persistencia explícita de sesiones y objetivos.
-3. Especificar reglas y trazabilidad del advisor antes de implementar recomendaciones.
-4. Probar la carga manual en una bóveda de desarrollo; no forma parte de este worktree.
+1. Diseñar persistencia explícita de sesiones y objetivos.
+2. Especificar reglas y trazabilidad del advisor antes de implementar recomendaciones.
+3. Implementar inventario solo en una vertical posterior con su permiso y contrato.
+4. Probar la carga y conexión manual en una bóveda de desarrollo; no forma parte de este worktree.

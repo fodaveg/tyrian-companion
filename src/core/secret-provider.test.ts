@@ -30,6 +30,6 @@ describe('ObsidianApiKeyProvider', () => {
 		expect(provider.hasSelection()).toBe(true);
 		secretNames.splice(0, 1);
 		expect(provider.hasSelection()).toBe(false);
-		expect(provider.getApiKey()).toBeNull();
+		expect(provider.readSelectedApiKey()).toBeNull();
 	});
 });

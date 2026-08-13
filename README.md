@@ -7,9 +7,11 @@ The current `0.1.0` vertical provides:
 - A loadable Obsidian view and the **Open companion** command.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
-- A minimal Guild Wars 2 HTTP client that remains idle until a feature explicitly requests data.
+- An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
+- Validated account and permission summaries without displaying or persisting the token.
+- Versioned settings for language, safe output folder, preferred character, polling interval, and detection mode.
 
-Account synchronization and recommendations are intentionally not implemented yet.
+Inventory synchronization, vault writes, polling, detection, and recommendations are intentionally not implemented yet.
 
 ## Requirements
 
@@ -34,7 +36,13 @@ The production build creates `main.js` in the project root. A distributable rele
 
 ## Privacy and network behavior
 
-Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when an authenticated request is explicitly made. Loading the plugin, opening its view, and checking its readiness do not make network requests.
+Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection** is explicitly selected. Loading the plugin or opening its view does not make network requests.
+
+The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
+
+`account` is required for the initial connection; `characters`, `inventories`, `wallet`, `tradingpost`, `progression`, and `unlocks` are recommendations for future modules and appear as warnings rather than invalidating a key. URL-limited subtokens work when both connection endpoints are allowed, with a warning that future modules remain restricted.
+
+Rate limits create a real cooldown: both connection controls remain disabled and show a live countdown until retry is allowed. Transient failures preserve the last verified account with an explicit stale-data warning.
 
 ## Project documentation
 

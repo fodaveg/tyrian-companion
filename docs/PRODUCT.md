@@ -30,20 +30,21 @@ La primera versión de producto incluye:
 
 Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas.
 
-## Primera vertical
+## Vertical actual
 
 La versión `0.1.0` valida la base técnica:
 
 - El plugin carga solo en escritorio.
-- Un comando abre una vista mínima con el estado de preparación.
+- Un comando abre una vista con el estado de conexión.
 - Los ajustes permiten seleccionar una clave de API con `SecretComponent`.
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
-- Existe un cliente autenticado preparado, pero ninguna acción de esta vertical realiza llamadas de red.
+- **Check connection** valida explícitamente la clave y la cuenta; ninguna otra acción realiza llamadas de red.
+- Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección sin activar todavía esas funciones.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
 ## Fuera de alcance de la vertical 0.1.0
 
-- Sincronización real de la cuenta.
+- Sincronización de inventario u otros datos de cuenta más allá de la comprobación inicial.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.
