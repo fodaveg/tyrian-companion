@@ -47,6 +47,7 @@ La versión `0.1.0` valida la base técnica:
 - H3.4 persiste localmente el runtime recuperable —baseline, final/delta cuando existen y estado cercado— y ofrece recuperación o descarte explícitos tras reiniciar, sin red automática ni escritura al vault.
 - H3.5 aporta el reloj de polling para la detección autoasistida futura: es explícito, no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. Todavía no está armado ni interpreta deltas; H3.6–H3.8 poseen esas decisiones.
 - H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos contiguos generan una propuesta con la ventana en que pudo empezar. No usa nombres ni heurísticas de catálogo, y no inicia una sesión sin el armado/confirmación futuros.
+- H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
