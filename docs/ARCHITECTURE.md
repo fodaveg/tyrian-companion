@@ -23,6 +23,8 @@ main -> advisor
 
 storage snapshot service -> GW2 operation fijada -> core concurrency
 
+storage delta comparator -> dos StorageSnapshot (puro, sin I/O)
+
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
@@ -72,6 +74,14 @@ Ambos adapters clonan estructuralmente en sus fronteras: una resolución mutable
 
 Las pruebas del store usan `fake-indexeddb` sobre la implementación real para upgrade/store, commits, delete, reapertura, persistencia, blocked/late-success, versionchange y errores de apertura. Solo el callback `transaction.onabort` usa un harness mínimo de eventos: `fake-indexeddb` no expone una vía pública determinista para abortar el `put` interno entre su creación y el commit.
 
+## Delta de almacenamiento
+
+`compareStorageSnapshots(before, after)` es una función pura con contrato de salida v1. Valida que `ownedByItem`, `availableByItem` y `currencyById` coincidan exactamente con una recomputación completa desde holdings y currencies: ids positivos canónicos, enteros seguros, sin ceros ni campos extra y `total = wallet + delivery`. Una segunda pasada comprueba relaciones que un holding aislado no puede demostrar: toda ubicación de personaje pertenece al roster con cobertura completa, bolsas equipadas e hijos engastados tienen cantidad uno, y cada hijo tiene un root no embebido con el `parentItemId` esperado en la misma ubicación canónica. Delivery admite hijos porque el normalizador vivo los produce bajo su root `pending_claim`; una bolsa equipada no es root apto. Una divergencia de índices produce `aggregate_invariant_failed`; el álgebra del delta se vuelve a calcular desde las entidades normalizadas, no desde los índices. Antes de comparar exige ids distintos, misma cuenta y schema fijado, ventanas válidas no solapadas, quality `stable|stable_owned_placement_changed` y core/personajes completos. Un incumplimiento estructural produce `status: invalid` con razones estructuradas y sin cambios parciales.
+
+Items y divisas se cualifican por separado. La superficie de items suma core y delivery solo cuando `commerce_delivery` está completa en ambos snapshots; si no, excluye delivery simétricamente como `core_only`. La divisa usa `wallet_and_delivery` solo cuando wallet y delivery están completas a ambos lados, `wallet_only` cuando wallet es comparable pero delivery no, y `unavailable` cuando wallet falta, es parcial o asimétrica. En este último caso `currencyChanges` y la composición de divisas quedan vacíos, pero el delta de items se conserva. Solo ambas superficies completas producen `status: comparable`; cualquier dimensión limitada o no disponible produce `limited`. Así, reclamar un item o mover monedas de delivery a wallet permanece neutral cuando existe evidencia suficiente, sin extrapolar datos ausentes.
+
+`itemChanges` y `currencyChanges` contienen únicamente netos no nulos. `availabilityChanges` explica cambios de disponibilidad con propiedad neta cero. `compositionChanges` conserva, en orden canónico, movimientos, estado, binding, charges, skin, stats y split/merge sin convertirlos en loot. Warnings deterministas hacen visibles cobertura asimétrica, wallet no observada, cambio de roster, colocación inestable durante captura, límites de superficie y que el neto no revela turnover bruto. El comparador no aplica heurísticas de sesión/contaminación, catálogo, precios ni recomendaciones; esas decisiones pertenecen a H2.7 o verticales posteriores. El delta no se persiste ni está conectado a UI.
+
 ## Ajustes y migración
 
 El esquema actual es `2`. `migrateSettings` convierte de forma idempotente los datos sin versión de `0.1.0`, descarta propiedades desconocidas y valida enums e intervalos. La carpeta de salida solo acepta segmentos relativos separados por `/`: rechaza `.`/`..`, NUL, barras inversas, `:*?"<>|`, punto o espacio final, rutas absolutas y el directorio de configuración real del vault. Esta vertical no escribe ningún archivo.
@@ -88,3 +98,4 @@ Antes de activar sesiones u objetivos hay que decidir:
 - Cómo recuperar automáticamente cambios de roster/`404` durante una captura sin ocultar cobertura parcial.
 - Cómo coordinar un cooldown `429` global entre las peticiones paralelas de una captura.
 - Precios y valoración; no forman parte de `storage_snapshot` ni de `PublicCatalog`.
+- Contrato H2.7 para interpretar sesiones/contaminación sin alterar el álgebra observada de H2.6.

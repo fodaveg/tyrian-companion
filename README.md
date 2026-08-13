@@ -14,6 +14,8 @@ The current `0.1.0` vertical provides:
   and optional wallet/delivery data, qualified by consistency and source coverage.
 - A public catalog resolver for localized item, currency, and material-category metadata,
   with bounded batching, coverage per ID, and a persistent local stale-aware cache.
+- A pure `storage_delta` comparator that recomputes net ownership from two qualified snapshots,
+  separates gains/losses from availability and composition, and never values or classifies activity.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
@@ -65,6 +67,15 @@ keys and records include both GW2 schema and normalizer versions, so formats can
 The default persistent adapter uses a versioned IndexedDB database in Obsidian's application storage,
 outside vault notes and without secrets. It opens only when explicitly requested and falls back to
 an in-memory cache when IndexedDB is unavailable or cannot be opened.
+
+`compareStorageSnapshots(before, after)` has no network, cache, UI, or vault side effects. It accepts
+only stable snapshots from the same account/schema and a non-overlapping window with complete core
+and character coverage. It verifies the snapshot aggregate indexes exactly against the normalized
+holdings before recomputing the delta. Wallet is optional: incomplete or asymmetric wallet coverage
+makes only the currency surface unavailable while item changes remain usable. When delivery is
+complete in both snapshots it compares the combined item surface; coins include delivery only when
+wallet and delivery are both complete on both sides. Other coverage combinations produce an explicit
+limited surface and deterministic warnings instead of extrapolating missing data.
 
 ## Project documentation
 

@@ -43,12 +43,14 @@ La versión `0.1.0` valida la base técnica:
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
+- H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
 ## Fuera de alcance de la vertical 0.1.0
 
 - Ejecución del snapshot desde la UI, sincronización periódica o persistencia de sus resultados.
 - Precios y cálculo de patrimonio total.
+- Interpretación H2.7 de deltas, heurísticas de contaminación y atribución a sesiones.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.
