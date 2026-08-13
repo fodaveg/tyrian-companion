@@ -1,4 +1,4 @@
-import { Plugin } from 'obsidian';
+import { Menu, Notice, Plugin } from 'obsidian';
 
 import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
@@ -33,8 +33,26 @@ import {
 import { IndexedDbSessionRuntimeStore } from './sessions/session-runtime-store';
 import type { SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
-import { COMPANION_VIEW_TYPE, TyrianCompanionView } from './ui/companion-view';
+import {
+	COMPANION_VIEW_TYPE,
+	ConfirmClearCompletedSessionModal,
+	ConfirmDiscardSessionModal,
+	SessionContaminationReviewModal,
+	TyrianCompanionView,
+} from './ui/companion-view';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
+import {
+	SessionCommandController,
+	type PreparedSessionCommand,
+} from './ui/session-command-controller';
+import {
+	createSessionCommandDispatch,
+	hasExactSessionBackendResult,
+	projectSessionMenu,
+	registerSessionPalette,
+	type SessionCommandDispatch,
+} from './ui/session-command-adapter';
+import { SESSION_COMMAND_IDS, type SessionCommandId } from './ui/session-command-model';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 
 export default class TyrianCompanionPlugin extends Plugin {
@@ -45,6 +63,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private detectionQuality!: DetectionQualityRecorder;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
+	private reviewModal: SessionContaminationReviewModal | null = null;
+	private discardModal: ConfirmDiscardSessionModal | null = null;
+	private clearModal: ConfirmClearCompletedSessionModal | null = null;
+	private sessionCommands!: SessionCommandController;
+	private sessionDispatch!: SessionCommandDispatch;
+	private sessionRibbon: HTMLElement | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -108,10 +132,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			name: 'Disarm assisted detection',
 			callback: () => this.disarmAssistedDetection(),
 		});
+		this.setupSessionCommands();
 	}
 
 	onunload(): void {
+		this.sessionCommands?.dispose();
 		this.startModal?.close();
+		this.reviewModal?.close();
+		this.discardModal?.close();
+		this.clearModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
 		void this.sessions?.dispose();
@@ -215,9 +244,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return result.status === 'failed' ? result.message : null;
 	}
 
+	openSessionReview(): void {
+		void this.sessionCommands.run('review-session');
+	}
+
+	confirmClearCompletedSession(): void {
+		void this.sessionCommands.run('clear-completed-session');
+	}
+
 	async resetCompletedSession(): Promise<void> {
-		await this.sessions.resetCompletedSession();
-		this.renderViews();
+		return this.sessionCommands.run('clear-completed-session');
 	}
 
 	getSessionRecoveryState(): SessionRecoveryState {
@@ -225,16 +261,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async recoverSession(): Promise<void> {
-		await this.sessions.recover();
-		this.renderViews();
+		return this.sessionDispatch.recover();
 	}
 
 	async discardRecoveredSession(): Promise<void> {
-		await this.sessions.discardRecovery();
-		this.renderViews();
+		return this.sessionDispatch.discard();
+	}
+
+	confirmDiscardRecoveredSession(): void {
+		void this.sessionCommands.run('discard-saved-session');
 	}
 
 	async stopManualSession(): Promise<void> {
+		return this.sessionDispatch.finish();
+	}
+
+	private async performStopManualSession(): Promise<void> {
 		const detection = this.assistedDetection.getState();
 		const proposal = detection.status === 'stop_proposed' ? detection.proposal : null;
 		this.renderViews();
@@ -255,17 +297,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.assistedDetection.disarm('session_stopped');
 		}
 		this.renderViews();
+		if (result.status === 'failed') throw new Error('Stop failed.');
 	}
 
 	openManualSessionStart(): void {
-		if (this.sessions.getState().status !== 'idle' || this.startModal) return;
-		this.startModal = new ManualSessionStartModal(
-			this.app,
-			this.settings.preferredCharacter,
-			(input) => { void this.startManualSession(input); },
-			() => { this.startModal = null; },
-		);
-		this.startModal.open();
+		void this.sessionCommands.run('start-farming-session');
 	}
 
 	private async startManualSession(input: SessionStartInput): Promise<void> {
@@ -294,6 +330,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			} catch { /* the active session does not depend on remembering the preference */ }
 		}
 		this.renderViews();
+		if (result.status === 'failed') throw new Error('Start failed.');
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {
@@ -331,11 +368,145 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private renderViews(): void {
+		this.refreshSessionRibbon();
 		for (const leaf of this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)) {
 			if (leaf.view instanceof TyrianCompanionView) {
 				leaf.view.render();
 			}
 		}
+	}
+
+	private setupSessionCommands(): void {
+		this.sessionCommands = new SessionCommandController({
+			getContext: () => ({
+				state: this.sessions.getState(),
+				recovery: this.sessions.getRecoveryState(),
+				connection: this.connection.getState().status,
+				stopFailure: this.sessions.getLastStopFailure(),
+			}),
+			prepare: (id) => this.prepareSessionCommand(id),
+			notify: (message) => { new Notice(message); },
+		});
+		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
+		registerSessionPalette(
+			{ addCommand: (command) => { this.addCommand(command); } },
+			this.sessionCommands,
+			SESSION_COMMAND_IDS,
+		);
+		this.sessionRibbon = this.addRibbonIcon('compass', 'Tyrian companion session actions', (event) => {
+			this.openSessionCommandMenu(event);
+		});
+		this.refreshSessionRibbon();
+	}
+
+	private openSessionCommandMenu(event: MouseEvent): void {
+		const menu = new Menu();
+		for (const entry of projectSessionMenu(this.sessionCommands.available())) {
+			if (entry.type === 'separator') menu.addSeparator();
+			else if (entry.type === 'open') {
+				menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(() => { void this.activateView(); }));
+			} else {
+				menu.addItem((item) => item.setTitle(entry.command.name).setIcon(entry.command.icon)
+					.onClick(() => { void this.sessionCommands.run(entry.command.id); }));
+			}
+		}
+		menu.showAtMouseEvent(event);
+	}
+
+	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
+		if (id === 'start-farming-session') return this.prepareStartIntent();
+		if (id === 'review-session') return this.prepareReviewIntent();
+		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
+		if (id === 'clear-completed-session') return this.prepareClearIntent();
+		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
+		return Promise.resolve(() => this.performRecoverSession());
+	}
+
+	private prepareStartIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.startModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let submitted = false;
+			this.startModal = new ManualSessionStartModal(
+				this.app,
+				this.settings.preferredCharacter,
+				(input) => { submitted = true; resolve(() => this.startManualSession(input)); },
+				() => { this.startModal = null; if (!submitted) resolve(null); },
+			);
+			this.startModal.open();
+		});
+	}
+
+	private prepareReviewIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.reviewModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let submitted = false;
+			this.reviewModal = new SessionContaminationReviewModal(
+				this.app,
+				this.sessions.getContaminationReview()?.answers ?? null,
+				(answers) => {
+					submitted = true;
+					resolve(async () => {
+						const message = await this.reviewSessionContamination(answers);
+						if (message !== null) throw new Error('Review failed.');
+					});
+					return Promise.resolve(null);
+				},
+				() => { this.reviewModal = null; if (!submitted) resolve(null); },
+			);
+			this.reviewModal.open();
+		});
+	}
+
+	private prepareDiscardIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.discardModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let confirmed = false;
+			this.discardModal = new ConfirmDiscardSessionModal(
+				this.app,
+				() => { confirmed = true; resolve(() => this.performDiscardRecoveredSession()); return Promise.resolve(); },
+				() => { this.discardModal = null; if (!confirmed) resolve(null); },
+			);
+			this.discardModal.open();
+		});
+	}
+
+	private prepareClearIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.clearModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let confirmed = false;
+			this.clearModal = new ConfirmClearCompletedSessionModal(
+				this.app,
+				() => { confirmed = true; resolve(() => this.performClearCompletedSession()); return Promise.resolve(); },
+				() => { this.clearModal = null; if (!confirmed) resolve(null); },
+			);
+			this.clearModal.open();
+		});
+	}
+
+	private async performRecoverSession(): Promise<void> {
+		const result = await this.sessions.recover();
+		this.renderViews();
+		if (!hasExactSessionBackendResult('recover', result)) throw new Error('Recovery failed.');
+	}
+
+	private async performDiscardRecoveredSession(): Promise<void> {
+		const result = await this.sessions.discardRecovery();
+		this.renderViews();
+		if (!hasExactSessionBackendResult('discard', result)) throw new Error('Discard failed.');
+	}
+
+	private async performClearCompletedSession(): Promise<void> {
+		const cleared = await this.sessions.resetCompletedSession();
+		this.renderViews();
+		if (!hasExactSessionBackendResult('clear', cleared)) throw new Error('Clear failed.');
+	}
+
+	private refreshSessionRibbon(): void {
+		if (!this.sessionRibbon || !this.sessionCommands) return;
+		const next = this.sessionCommands.available().find((command) => !command.destructive);
+		const title = next ? `Tyrian companion: ${next.name}` : 'Tyrian companion session actions';
+		this.sessionRibbon.setAttr('aria-label', title);
+		this.sessionRibbon.setAttr('title', title);
 	}
 
 	private async activateView(): Promise<void> {

@@ -49,12 +49,13 @@ export interface CompanionActions {
 	getProvisionalDelta(): StorageDelta | null;
 	getContaminationReview(): SessionContaminationReview | null;
 	reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null>;
-	resetCompletedSession(): Promise<void>;
+	openSessionReview(): void;
+	confirmClearCompletedSession(): void;
 	getSessionRecoveryState(): SessionRecoveryState;
 	openManualSessionStart(): void;
 	stopManualSession(): Promise<void>;
 	recoverSession(): Promise<void>;
-	discardRecoveredSession(): Promise<void>;
+	confirmDiscardRecoveredSession(): void;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -260,12 +261,12 @@ export class TyrianCompanionView extends ItemView {
 		}
 		if (projection.primaryAction === 'review') {
 			const button = container.createEl('button', { text: 'Review activity', cls: 'mod-cta' });
-			button.addEventListener('click', () => this.openContaminationReview(this.actions.getContaminationReview()));
+			button.addEventListener('click', () => this.actions.openSessionReview());
 			return;
 		}
 		if (projection.primaryAction === 'clear') {
 			const button = container.createEl('button', { text: 'Clear session' });
-			button.addEventListener('click', () => { void this.actions.resetCompletedSession(); });
+			button.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
 		if (projection.primaryAction === 'recover') {
@@ -547,7 +548,7 @@ export class TyrianCompanionView extends ItemView {
 				text: review ? 'Review again' : 'Review activity',
 				cls: 'mod-cta',
 			});
-			reviewButton.addEventListener('click', () => this.openContaminationReview(review));
+			reviewButton.addEventListener('click', () => this.actions.openSessionReview());
 			return;
 		}
 
@@ -558,7 +559,7 @@ export class TyrianCompanionView extends ItemView {
 			if (review) this.renderReviewSummary(card, review);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const reset = actions.createEl('button', { text: 'Clear completed session', cls: 'mod-cta' });
-			reset.addEventListener('click', () => { void this.actions.resetCompletedSession(); });
+			reset.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
 
@@ -576,14 +577,6 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		card.createEl('p', { text: `Session status: ${state.status}.` });
-	}
-
-	private openContaminationReview(current: SessionContaminationReview | null): void {
-		new SessionContaminationReviewModal(
-			this.app,
-			current?.answers ?? null,
-			(answers) => this.actions.reviewSessionContamination(answers),
-		).open();
 	}
 
 	private renderReviewSummary(container: HTMLElement, review: SessionContaminationReview): void {
@@ -633,12 +626,7 @@ export class TyrianCompanionView extends ItemView {
 		recover.disabled = working;
 		discard.disabled = working;
 		recover.addEventListener('click', () => { void this.runRecovery(); });
-		discard.addEventListener('click', () => {
-			new ConfirmDiscardSessionModal(this.app, async () => {
-				await this.actions.discardRecoveredSession();
-				this.render();
-			}).open();
-		});
+		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
 	}
 
 	private async runRecovery(): Promise<void> {
@@ -692,9 +680,17 @@ export class TyrianCompanionView extends ItemView {
 	}
 }
 
-class ConfirmDiscardSessionModal extends Modal {
-	constructor(app: App, private readonly onConfirm: () => Promise<void>) {
+export class ConfirmDiscardSessionModal extends Modal {
+	constructor(
+		app: App,
+		private readonly onConfirm: () => Promise<void>,
+		private readonly onClosed: () => void = () => undefined,
+	) {
 		super(app);
+	}
+
+	onClose(): void {
+		this.onClosed();
 	}
 
 	onOpen(): void {
@@ -712,6 +708,37 @@ class ConfirmDiscardSessionModal extends Modal {
 			void this.onConfirm().finally(() => this.close());
 		});
 		cancel.focus();
+	}
+}
+
+export class ConfirmClearCompletedSessionModal extends Modal {
+	constructor(
+		app: App,
+		private readonly onConfirm: () => Promise<void>,
+		private readonly onClosed: () => void = () => undefined,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle('Clear completed farming session?');
+		this.contentEl.createEl('p', {
+			text: 'This clears only local completed-session data. It does not change the game account or vault notes.',
+		});
+		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: 'Keep session', cls: 'mod-cta' });
+		const clear = actions.createEl('button', { text: 'Clear', cls: 'mod-warning' });
+		cancel.addEventListener('click', () => this.close());
+		clear.addEventListener('click', () => {
+			clear.disabled = true;
+			cancel.disabled = true;
+			void this.onConfirm().finally(() => this.close());
+		});
+		cancel.focus();
+	}
+
+	onClose(): void {
+		this.onClosed();
 	}
 }
 
@@ -769,13 +796,18 @@ class DetectionCorrectionModal extends Modal {
 	}
 }
 
-class SessionContaminationReviewModal extends Modal {
+export class SessionContaminationReviewModal extends Modal {
 	constructor(
 		app: App,
 		private readonly current: SessionContaminationAnswers | null,
 		private readonly onSubmit: (answers: SessionContaminationAnswers) => Promise<string | null>,
+		private readonly onClosed: () => void = () => undefined,
 	) {
 		super(app);
+	}
+
+	onClose(): void {
+		this.onClosed();
 	}
 
 	onOpen(): void {
