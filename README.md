@@ -18,6 +18,8 @@ The current `0.1.0` vertical provides:
   separates gains/losses from availability and composition, and never values or classifies activity.
 - A pure H2.7 evidence layer that classifies an observed session net as exact, estimated,
   contaminated, or invalid without prices, API calls, persistence, or recommendations.
+- A fail-closed H1.4 active-session lease primitive backed by a dedicated IndexedDB database,
+  with durable machine identity, fencing, expiry confirmation, and cross-window CAS semantics.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
 and recommendations are intentionally not implemented yet. The snapshot service is not wired to UI
@@ -92,6 +94,16 @@ the ambiguity; observed wallet decreases and TP buys/sells remain contamination 
 The classifier treats delta and context as untrusted runtime input: malformed nested structures,
 unknown variants, invalid arithmetic, or a delivery currency other than coin id `1` return an
 invalid classification instead of throwing.
+
+`ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
+settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same
+ephemeral instance: a later session intent receives the already persisted effective lease rather
+than replacing it. A different owner sees `busy`; an expired owner is replaced only after a
+second observation following the configured confirmation delay, and every recovery increments a
+durable fence. Renew, assert, and release use exact lease CAS, so an old handle cannot affect a newer
+owner. Storage/open/version/corruption and backwards-clock failures close safely without a memory
+fallback. Lease timestamps are sampled inside the IndexedDB operation after waits/opening, never
+before entering a queue. The primitive exposes no automatic heartbeat timer and is not yet wired to session UI.
 
 ## Project documentation
 
