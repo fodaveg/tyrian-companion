@@ -108,7 +108,9 @@ H3.1 define `transitionSession(state, event)` como frontera pura, versionada y d
 
 H3.1 permanece puro: no adquiere ni renueva leases, no captura snapshots, no llama a H2.7, no temporiza, no pregunta ni persiste. H3.2 usa esa frontera desde `ManualSessionStartService`: valida la entrada antes de coordinar, adquiere un lease, aplica `request_start`, mantiene un heartbeat sin solapes y captura el baseline con `StorageSnapshotService.captureWithOperation`. La misma `GuildWars2Operation` —y por tanto la misma copia efímera de la clave— obtiene después `/v2/characters/:id/buildtabs/active` con schema fijado. La sesión guarda personaje, build normalizado, Magic Find manual y timestamp; el total efectivo de Magic Find no se inventa a partir de `/account/luck`.
 
-Justo antes de `confirm_start`, el workflow ejecuta `assertOwned` con el handle renovado. Un snapshot parcial/inestable, personaje ausente, payload de build inválido, permiso `builds` ausente, pérdida del fence o fallo inesperado pasa por `fail → reset`, detiene el timer y libera el lease best-effort. El estado de producto queda `idle` y el error saneado vive fuera de la máquina para mostrarse en UI. Una pérdida posterior del heartbeat mueve una sesión activa a `error` conservando su evidencia; H3.4 poseerá el recovery. H3.3 poseerá parada y snapshot final, y H3.9 seguirá siendo dueño de revisión y aceptación.
+Justo antes de `confirm_start`, el workflow ejecuta `assertOwned` con el handle renovado. Un snapshot parcial/inestable, personaje ausente, payload de build inválido, permiso `builds` ausente, pérdida del fence o fallo inesperado pasa por `fail → reset`, detiene el timer y libera el lease best-effort. El estado de producto queda `idle` y el error saneado vive fuera de la máquina para mostrarse en UI. Una pérdida posterior del heartbeat mueve una sesión activa a `error` conservando su evidencia; H3.4 poseerá el recovery.
+
+H3.3 amplía el mismo orquestador con una acción explícita de parada. `request_stop` fija una sola frontera temporal y mantiene el heartbeat; después una nueva operación con clave efímera captura el snapshot final A/B/C. El workflow exige calidad estable, calcula `compareStorageSnapshots(baseline, final)` y rechaza resultados `invalid`. Justo antes de `confirm_stop` vuelve a ejecutar `assertOwned` con el handle renovado. Solo entonces publica `provisional` y conserva el delta físico en memoria para la UI y el futuro H3.9. Un fallo transitorio de captura o delta deja `stopping`, el baseline original y la misma frontera intactos, por lo que **Retry stop** no recaptura ni pierde el inicio. Una pérdida de fence o coordinación pasa a `error` con el estado `stopping` completo. H3.9 sigue siendo dueño de revisión, clasificación aceptada, finalización y persistencia; H3.3 no llama todavía al clasificador H2.7.
 
 `exact` exige delta completo/comparable, fronteras confirmadas manualmente, declaración limpia y ausencia de contaminación. Esa declaración puede suplir TP no disponible dejando una razón informativa. La salida v1 usa scope `observed_storage_net`, razones y solicitudes de revisión deduplicadas/canónicas, confianza y permisos explícitos. Un resultado contaminado puede finalizar y mostrar solo el neto; uno estimado permite valoración provisional pero no rendimiento bruto, y solo finaliza si la aceptación ya está reflejada como frontera manual y declaración limpia; uno inválido bloquea todo. Las recomendaciones permanecen deshabilitadas incluso en exacto hasta que existan motores económicos. H3.9 conserva ownership de preguntas, aceptación y persistencia.
 
@@ -120,7 +122,7 @@ El esquema actual es `2`. `migrateSettings` convierte de forma idempotente los d
 
 ## Contratos pendientes
 
-Antes de activar sesiones u objetivos hay que decidir:
+Antes de persistir/finalizar sesiones o activar objetivos hay que decidir:
 
 - Qué datos son efímeros y cuáles se persisten.
 - Qué formato de nota, si alguno, puede escribir el plugin.

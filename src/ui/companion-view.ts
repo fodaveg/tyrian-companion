@@ -2,7 +2,11 @@ import { ItemView, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import type { SessionState } from '../sessions/session';
-import type { SessionStartFailure } from '../sessions/manual-session-start-service';
+import type { StorageDelta } from '../account/storage-delta-model';
+import type {
+	SessionStartFailure,
+	SessionStopFailure,
+} from '../sessions/manual-session-start-service';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -11,7 +15,10 @@ export interface CompanionActions {
 	checkConnection(): Promise<ConnectionState>;
 	getSessionState(): SessionState;
 	getSessionStartFailure(): SessionStartFailure | null;
+	getSessionStopFailure(): SessionStopFailure | null;
+	getProvisionalDelta(): StorageDelta | null;
 	openManualSessionStart(): void;
+	stopManualSession(): Promise<void>;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -168,25 +175,64 @@ export class TyrianCompanionView extends ItemView {
 			return;
 		}
 
+		if (state.status === 'stopping') {
+			const failure = this.actions.getSessionStopFailure();
+			card.createEl('p', {
+				text: failure
+					? 'The final snapshot failed. The baseline is intact and the stop can be retried.'
+					: 'Capturing a stable final account snapshot…',
+			});
+			if (failure) {
+				card.createEl('p', { text: failure.message, cls: 'tyrian-companion-view__session-error' });
+			}
+			const button = card.createEl('button', { text: failure ? 'Retry stop' : 'Stopping…' });
+			button.disabled = failure === null;
+			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			this.renderSessionDetails(card, state);
+			return;
+		}
+
+		if (state.status === 'provisional') {
+			card.createEl('p', {
+				text: 'Final snapshot and account delta captured. The session is ready for contamination review.',
+			});
+			this.renderSessionDetails(card, state);
+			const delta = this.actions.getProvisionalDelta();
+			if (delta) {
+				const details = card.createEl('dl');
+				addDetail(details, 'Delta quality', delta.status);
+				addDetail(details, 'Changed item IDs', String(delta.itemChanges.length));
+				addDetail(details, 'Changed currencies', String(delta.currencyChanges.length));
+			}
+			return;
+		}
+
 		const observed = state.status === 'error' ? state.failedState : state;
 		if (observed.status === 'active' || observed.status === 'stopping' || observed.status === 'provisional') {
 			card.createEl('p', {
 				text: state.status === 'error' ? 'The active session lost its authority.' : 'Baseline captured. The session is active.',
 			});
-			const details = card.createEl('dl');
-			addDetail(details, 'Character', observed.startContext.characterName);
-			addDetail(
-				details,
-				'Build',
-				observed.startContext.build.name || observed.startContext.build.profession,
-			);
-			addDetail(details, 'Profession', observed.startContext.build.profession);
-			addDetail(details, 'Magic Find', `${observed.startContext.magicFind.value} (manual)`);
-			addDetail(details, 'Started', formatTimestamp(observed.baseline.completedAt));
+			this.renderSessionDetails(card, observed);
+			if (state.status === 'active') {
+				const stop = card.createEl('button', { text: 'Stop session' });
+				stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			}
 			return;
 		}
 
 		card.createEl('p', { text: `Session status: ${state.status}.` });
+	}
+
+	private renderSessionDetails(
+		container: HTMLElement,
+		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' }>,
+	): void {
+		const details = container.createEl('dl');
+		addDetail(details, 'Character', state.startContext.characterName);
+		addDetail(details, 'Build', state.startContext.build.name || state.startContext.build.profession);
+		addDetail(details, 'Profession', state.startContext.build.profession);
+		addDetail(details, 'Magic Find', `${state.startContext.magicFind.value} (manual)`);
+		addDetail(details, 'Started', formatTimestamp(state.baseline.completedAt));
 	}
 
 	private clearCountdown(): void {

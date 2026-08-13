@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest mocks are standalone arrow functions in this suite. */
 import { describe, expect, it, vi } from 'vitest';
 
-import { storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import {
+	afterSnapshot,
+	looseHolding,
+	storageDeltaSnapshot,
+} from '../account/__fixtures__/storage-delta';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
 	ManualSessionStartService,
@@ -261,6 +265,175 @@ describe('ManualSessionStartService', () => {
 		await service.dispose();
 		expect(leases.release).toHaveBeenCalledWith(handle);
 		expect(leases.dispose).toHaveBeenCalledOnce();
+	});
+
+	it('captures a final snapshot, computes the delta and enters provisional', async () => {
+		const leases = coordinator();
+		const final = afterSnapshot({
+			holdings: [looseHolding(100, 5, { source: 'bank', slot: 0 })],
+		});
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => structuredClone(final)),
+		};
+		const service = new ManualSessionStartService(leases, capture, serviceOptions());
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		const result = await service.stop();
+
+		expect(result).toMatchObject({
+			status: 'stopped',
+			state: {
+				status: 'provisional',
+				baseline: { snapshotId: 'snapshot-before' },
+				finalSnapshot: { snapshotId: 'snapshot-after' },
+			},
+			delta: {
+				status: 'comparable',
+				itemChanges: [{ id: 100, before: 2, after: 5, delta: 3 }],
+			},
+		});
+		expect(leases.assertOwned).toHaveBeenCalledTimes(2);
+		expect(leases.release).not.toHaveBeenCalled();
+		expect(service.getLastStopFailure()).toBeNull();
+		expect(service.getProvisionalDelta()).toMatchObject({ afterSnapshotId: 'snapshot-after' });
+	});
+
+	it('coalesces double stop clicks into one final capture', async () => {
+		let resolveFinal!: (value: ReturnType<typeof afterSnapshot>) => void;
+		const pending = new Promise<ReturnType<typeof afterSnapshot>>((resolve) => { resolveFinal = resolve; });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(() => pending),
+		};
+		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		const first = service.stop();
+		const second = service.stop();
+		expect(second).toBe(first);
+		resolveFinal(afterSnapshot());
+		await expect(first).resolves.toMatchObject({ status: 'stopped' });
+		expect(capture.captureFinal).toHaveBeenCalledTimes(1);
+	});
+
+	it('keeps the baseline and retries after a final snapshot failure', async () => {
+		const captureFinal = vi.fn()
+			.mockRejectedValueOnce(new Error('offline'))
+			.mockResolvedValueOnce(afterSnapshot());
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal,
+		};
+		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'failed',
+			failure: { code: 'snapshot_failed' },
+		});
+		expect(service.getState()).toMatchObject({
+			status: 'stopping',
+			baseline: { snapshotId: 'snapshot-before' },
+		});
+		await expect(service.stop()).resolves.toMatchObject({ status: 'stopped' });
+		expect(capture.capture).toHaveBeenCalledTimes(1);
+		expect(captureFinal).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps stopping retryable when the snapshots cannot produce a valid delta', async () => {
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot({ accountId: 'another-account' })),
+		};
+		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.stop()).resolves.toEqual({
+			status: 'failed',
+			failure: {
+				code: 'delta_invalid',
+				message: 'The final account snapshot could not be compared with the session baseline.',
+			},
+		});
+		expect(service.getState().status).toBe('stopping');
+		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	it('never commits provisional after losing the fence at the final boundary', async () => {
+		const assertOwned = vi.fn()
+			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'lost' as const });
+		const leases = coordinator({ assertOwned });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		};
+		const service = new ManualSessionStartService(leases, capture, serviceOptions());
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'failed',
+			failure: { code: 'lease_lost' },
+		});
+		expect(service.getState()).toMatchObject({
+			status: 'error',
+			code: 'lease_lost',
+			failedState: { status: 'stopping', baseline: { snapshotId: 'snapshot-before' } },
+		});
+		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	it('moves a retryable stopping session to error when its heartbeat loses authority', async () => {
+		let tick: (() => void) | undefined;
+		const leases = coordinator({ renew: vi.fn(async () => ({ status: 'lost' as const })) });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => { throw new Error('offline'); }),
+		};
+		const service = new ManualSessionStartService(
+			leases,
+			capture,
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.stop();
+		expect(service.getState().status).toBe('stopping');
+
+		tick?.();
+		await vi.waitFor(() => expect(service.getState()).toMatchObject({
+			status: 'error',
+			code: 'lease_lost',
+			failedState: { status: 'stopping' },
+		}));
+	});
+
+	it('keeps provisional evidence recoverable if the heartbeat later loses authority', async () => {
+		let tick: (() => void) | undefined;
+		const leases = coordinator({ renew: vi.fn(async () => ({ status: 'lost' as const })) });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => afterSnapshot()),
+		};
+		const service = new ManualSessionStartService(
+			leases,
+			capture,
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.stop();
+		expect(service.getState().status).toBe('provisional');
+
+		tick?.();
+		await vi.waitFor(() => expect(service.getState()).toMatchObject({
+			status: 'error',
+			code: 'lease_lost',
+			failedState: {
+				status: 'provisional',
+				baseline: { snapshotId: 'snapshot-before' },
+				finalSnapshot: { snapshotId: 'snapshot-after' },
+			},
+		}));
 	});
 });
 /* eslint-enable @typescript-eslint/unbound-method -- End Vitest mock assertions. */

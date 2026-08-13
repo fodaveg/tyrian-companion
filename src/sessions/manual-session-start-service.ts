@@ -1,3 +1,5 @@
+import { compareStorageSnapshots } from '../account/storage-delta';
+import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type {
 	AcquireLeaseResult,
@@ -34,6 +36,7 @@ export interface SessionLeaseCoordinator {
 
 export interface SessionBaselineCapture {
 	capture(input: SessionStartInput): Promise<SessionStartCaptureResult>;
+	captureFinal?(): Promise<StorageSnapshot>;
 }
 
 export interface SessionStartFailure {
@@ -48,6 +51,16 @@ export interface SessionStartFailure {
 	message: string;
 }
 
+export interface SessionStopFailure {
+	code:
+		| 'coordination_unavailable'
+		| 'snapshot_failed'
+		| 'lease_lost'
+		| 'delta_invalid'
+		| 'unexpected';
+	message: string;
+}
+
 class ManualSessionStartError extends Error {
 	constructor(readonly failure: SessionStartFailure) {
 		super(failure.message);
@@ -58,6 +71,14 @@ class ManualSessionStartError extends Error {
 export type ManualSessionStartResult =
 	| { status: 'started'; state: Extract<SessionState, { status: 'active' }> }
 	| { status: 'failed'; failure: SessionStartFailure };
+
+export type ManualSessionStopResult =
+	| {
+			status: 'stopped';
+			state: Extract<SessionState, { status: 'provisional' }>;
+			delta: StorageDelta;
+	  }
+	| { status: 'failed'; failure: SessionStopFailure };
 
 export interface ManualSessionStartServiceOptions {
 	now?: () => number;
@@ -76,6 +97,10 @@ export class ManualSessionStartService {
 	private heartbeatFlight: Promise<void> | null = null;
 	private authorityFailure: SessionStartFailure | null = null;
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
+	private stopFlight: Promise<ManualSessionStopResult> | null = null;
+	private baselineSnapshot: StorageSnapshot | null = null;
+	private provisionalDelta: StorageDelta | null = null;
+	private lastStopFailure: SessionStopFailure | null = null;
 	private disposed = false;
 	private readonly now: () => number;
 	private readonly sessionId: () => string;
@@ -103,12 +128,29 @@ export class ManualSessionStartService {
 		return this.lastFailure === null ? null : { ...this.lastFailure };
 	}
 
+	getLastStopFailure(): SessionStopFailure | null {
+		return this.lastStopFailure === null ? null : { ...this.lastStopFailure };
+	}
+
+	getProvisionalDelta(): StorageDelta | null {
+		return this.provisionalDelta === null ? null : structuredClone(this.provisionalDelta);
+	}
+
 	start(input: SessionStartInput): Promise<ManualSessionStartResult> {
 		if (this.startFlight) return this.startFlight;
 		const flight = this.startInternal(input).finally(() => {
 			if (this.startFlight === flight) this.startFlight = null;
 		});
 		this.startFlight = flight;
+		return flight;
+	}
+
+	stop(): Promise<ManualSessionStopResult> {
+		if (this.stopFlight) return this.stopFlight;
+		const flight = this.stopInternal().finally(() => {
+			if (this.stopFlight === flight) this.stopFlight = null;
+		});
+		this.stopFlight = flight;
 		return flight;
 	}
 
@@ -127,6 +169,8 @@ export class ManualSessionStartService {
 
 	private async startInternal(input: SessionStartInput): Promise<ManualSessionStartResult> {
 		this.lastFailure = null;
+		this.lastStopFailure = null;
+		this.provisionalDelta = null;
 		this.authorityFailure = null;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.state.status !== 'idle') {
@@ -181,11 +225,89 @@ export class ManualSessionStartService {
 				baseline: snapshotReference(captured.snapshot),
 				startContext: captured.context,
 			});
+			this.baselineSnapshot = structuredClone(captured.snapshot);
 			return { status: 'started', state: this.getState() as Extract<SessionState, { status: 'active' }> };
 		} catch (error) {
 			const mapped = mapFailure(error);
 			await this.cleanupFailedStart(mapped, authority);
 			return { status: 'failed', failure: mapped };
+		}
+	}
+
+	private async stopInternal(): Promise<ManualSessionStopResult> {
+		this.lastStopFailure = null;
+		if (this.disposed) {
+			return this.failStop('coordination_unavailable', 'Session coordination is unavailable.');
+		}
+		if (this.state.status !== 'active' && this.state.status !== 'stopping') {
+			return this.failStop('unexpected', 'There is no active farming session to stop.');
+		}
+		if (!this.baselineSnapshot || !this.baselineCapture.captureFinal) {
+			return this.failStop('unexpected', 'The session baseline is unavailable.');
+		}
+
+		const authority = this.state.authority;
+		try {
+			if (this.state.status === 'active') {
+				this.apply({
+					type: 'request_stop',
+					authority,
+					requestedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
+				});
+			}
+			const stopping = this.state;
+			if (stopping.status !== 'stopping') {
+				return this.failStop('unexpected', 'The session could not enter the stopping state.');
+			}
+			const finalSnapshot = await this.baselineCapture.captureFinal();
+			const finalReference = snapshotReference(finalSnapshot);
+			const delta = compareStorageSnapshots(this.baselineSnapshot, finalSnapshot);
+			if (delta.status === 'invalid') {
+				return this.failStop(
+					'delta_invalid',
+					'The final account snapshot could not be compared with the session baseline.',
+				);
+			}
+			if (this.authorityFailure) throw new ManualSessionStartError(this.authorityFailure);
+			const owned = await this.safeAssert(this.requireHandle());
+			if (owned.status === 'error') {
+				throw new ManualSessionStartError(
+					failure('coordination_unavailable', 'Session coordination became unavailable.'),
+				);
+			}
+			if (owned.status === 'lost') {
+				throw new ManualSessionStartError(
+					failure('lease_lost', 'The session lease was lost before the final snapshot could be committed.'),
+				);
+			}
+			this.apply({
+				type: 'confirm_stop',
+				authority,
+				stoppedAt: stopping.stopRequestedAt,
+				finalSnapshot: finalReference,
+			});
+			this.provisionalDelta = structuredClone(delta);
+			return {
+				status: 'stopped',
+				state: this.getState() as Extract<SessionState, { status: 'provisional' }>,
+				delta: structuredClone(delta),
+			};
+		} catch (error) {
+			const mapped = mapStopFailure(error);
+			if (mapped.code === 'lease_lost' || mapped.code === 'coordination_unavailable') {
+				this.stopHeartbeat();
+				try {
+					if (this.state.status === 'stopping') {
+						this.apply({
+							type: 'fail',
+							authority,
+							failedAt: this.safeTimestampAtOrAfter(Date.parse(this.state.stopRequestedAt)),
+							code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
+						});
+					}
+				} catch { /* preserve the last valid state if the terminal transition is rejected */ }
+			}
+			return this.failStop(mapped.code, mapped.message);
 		}
 	}
 
@@ -227,31 +349,34 @@ export class ManualSessionStartService {
 			const mapped = result.status === 'lost'
 				? failure('lease_lost', 'The session lease was lost.')
 				: failure('coordination_unavailable', 'Session coordination became unavailable.');
-			this.authorityFailure = mapped;
-			this.stopHeartbeat();
-			if (this.state.status === 'active') {
-				this.apply({
-					type: 'fail',
-					authority: this.state.authority,
-					failedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
-					code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
-				});
-			}
+			this.failFromAuthority(mapped);
 		} catch {
 			const mapped = failure('coordination_unavailable', 'Session coordination became unavailable.');
-			this.authorityFailure = mapped;
-			this.stopHeartbeat();
-			if (this.state.status === 'active') {
-				try {
-					this.apply({
-						type: 'fail',
-						authority: this.state.authority,
-						failedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
-						code: 'storage_unavailable',
-					});
-				} catch { /* the state machine remains fail-closed */ }
-			}
+			this.failFromAuthority(mapped);
 		}
+	}
+
+	private failFromAuthority(mapped: SessionStartFailure): void {
+		this.authorityFailure = mapped;
+		this.stopHeartbeat();
+		if (
+			this.state.status !== 'active'
+			&& this.state.status !== 'stopping'
+			&& this.state.status !== 'provisional'
+		) return;
+		const floor = this.state.status === 'active'
+			? Date.parse(this.state.baseline.completedAt)
+			: this.state.status === 'stopping'
+				? Date.parse(this.state.stopRequestedAt)
+				: Date.parse(this.state.finalSnapshot.completedAt);
+		try {
+			this.apply({
+				type: 'fail',
+				authority: this.state.authority,
+				failedAt: this.safeTimestampAtOrAfter(floor),
+				code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
+			});
+		} catch { /* the state machine remains fail-closed */ }
 	}
 
 	private stopHeartbeat(): void {
@@ -287,8 +412,17 @@ export class ManualSessionStartService {
 			if (this.state.status === 'error') this.apply({ type: 'reset' });
 		} catch { /* force the failed-start terminal below */ }
 		if (this.state.status !== 'idle') this.state = initialSessionState();
+		this.baselineSnapshot = null;
+		this.provisionalDelta = null;
 		this.lastFailure = failed;
 		this.onStateChange();
+	}
+
+	private failStop(code: SessionStopFailure['code'], message: string): ManualSessionStopResult {
+		const result = { code, message } satisfies SessionStopFailure;
+		this.lastStopFailure = result;
+		this.onStateChange();
+		return { status: 'failed', failure: result };
 	}
 
 	private failWithoutLease(code: SessionStartFailure['code'], message: string): ManualSessionStartResult {
@@ -360,4 +494,20 @@ function mapFailure(error: unknown): SessionStartFailure {
 		return failure('snapshot_failed', error.message);
 	}
 	return failure('unexpected', 'The farming session could not be started.');
+}
+
+function mapStopFailure(error: unknown): SessionStopFailure {
+	if (error instanceof ManualSessionStartError) {
+		if (error.failure.code === 'lease_lost') return { code: 'lease_lost', message: error.message };
+		if (error.failure.code === 'coordination_unavailable') {
+			return { code: 'coordination_unavailable', message: error.message };
+		}
+	}
+	if (error instanceof SessionStartCaptureError) {
+		return { code: 'snapshot_failed', message: error.message };
+	}
+	return {
+		code: 'snapshot_failed',
+		message: 'The final account snapshot could not be captured. You can retry without losing the session baseline.',
+	};
 }

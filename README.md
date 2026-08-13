@@ -24,10 +24,12 @@ The current `0.1.0` vertical provides:
   error, with strict runtime validation and fenced, idempotent transitions.
 - An explicit H3.2 manual start flow that captures a stable baseline, active character build,
   manual Magic Find, and timestamps before exposing an active farming session.
+- An explicit H3.3 manual stop flow that captures a stable final snapshot, computes the physical
+  account delta, rechecks the fence, and leaves the session provisional for later review.
 
 Automatic synchronization, valuation, vault writes, polling, detection,
-and recommendations are intentionally not implemented yet. The snapshot service runs from the
-explicit **Start session** action only; it describes observed storage, not total account wealth.
+and recommendations are intentionally not implemented yet. The snapshot service runs from explicit
+**Start session** and **Stop session** actions only; it describes observed storage, not total account wealth.
 
 ## Requirements
 
@@ -52,7 +54,7 @@ The production build creates `main.js` in the project root. A distributable rele
 
 ## Privacy and network behavior
 
-Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection** or **Start session** is explicitly selected. Loading the plugin or opening its view does not make network requests.
+Plugin data stores only the selected Obsidian secret name. The API-key value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start session**, or **Stop session** is explicitly selected. Loading the plugin or opening its view does not make network requests.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
@@ -109,12 +111,17 @@ owner. Storage/open/version/corruption and backwards-clock failures close safely
 fallback. Lease timestamps are sampled inside the IndexedDB operation after waits/opening, never
 before entering a queue. The primitive itself exposes no automatic timer. The H3.2 start workflow
 owns a non-overlapping heartbeat while starting and active, checks the current fence immediately
-before committing the baseline, and releases the lease on a failed start.
+before committing the baseline, and releases the lease on a failed start. H3.3 keeps that heartbeat
+through stop and provisional review, captures the final boundary under a new pinned operation, and
+checks the current fence immediately before committing it. A transient final-capture or invalid-delta
+failure leaves the state at `stopping`, retains the original full baseline in memory, and can be retried
+without recapturing the start. A lost fence moves the preserved stopping evidence to `error`.
 
 `transitionSession` is the pure H3.1 lifecycle boundary. It retains stable lease authority,
 qualified boundary references, and the manual start context, rejects stale fences and malformed or
-out-of-order events, and preserves the last valid in-progress state on error. H3.2 orchestrates only
-`idle → starting → active`; H3.3–H3.4 still own stop, final snapshot, and recovery.
+out-of-order events, and preserves the last valid in-progress state on error. H3.2 orchestrates
+`idle → starting → active`; H3.3 continues through `stopping → provisional`. H3.4 still owns recovery,
+and H3.9 owns contamination review, acceptance, finalization, and persistence.
 
 ## Project documentation
 

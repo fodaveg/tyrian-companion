@@ -4,6 +4,7 @@ import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
+import type { StorageDelta } from './account/storage-delta-model';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { DEFAULT_SETTINGS, migrateSettings, type TyrianSettings } from './core/settings';
@@ -11,6 +12,7 @@ import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinat
 import {
 	ManualSessionStartService,
 	type SessionStartFailure,
+	type SessionStopFailure,
 } from './sessions/manual-session-start-service';
 import type { SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
@@ -35,9 +37,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const client = new GuildWars2Client(new ObsidianRequestTransport(), apiKeyProvider);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
+		const snapshots = new StorageSnapshotService(client);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
-			new SessionStartCaptureService(client, new StorageSnapshotService(client)),
+			new SessionStartCaptureService(client, snapshots),
 			{ onStateChange: () => this.renderViews() },
 		);
 
@@ -81,6 +84,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getSessionStartFailure(): SessionStartFailure | null {
 		return this.sessions.getLastFailure();
+	}
+
+	getSessionStopFailure(): SessionStopFailure | null {
+		return this.sessions.getLastStopFailure();
+	}
+
+	getProvisionalDelta(): StorageDelta | null {
+		return this.sessions.getProvisionalDelta();
+	}
+
+	async stopManualSession(): Promise<void> {
+		this.renderViews();
+		await this.sessions.stop();
+		this.renderViews();
 	}
 
 	openManualSessionStart(): void {

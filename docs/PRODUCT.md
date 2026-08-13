@@ -38,11 +38,12 @@ La versión `0.1.0` valida la base técnica:
 - Un comando abre una vista con el estado de conexión.
 - Los ajustes permiten seleccionar una clave de API con `SecretComponent`.
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
-- **Check connection** valida explícitamente la clave y la cuenta; **Start session** ejecuta la captura inicial. Ninguna llamada de red ocurre al cargar o abrir la vista.
+- **Check connection** valida explícitamente la clave y la cuenta; **Start session** y **Stop session** capturan las fronteras manuales. Ninguna llamada de red ocurre al cargar o abrir la vista.
 - Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección sin activar todavía esas funciones.
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
+- H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; todavía no clasifica ni persiste la sesión.
 - El núcleo `storage_snapshot` observa roster, inventarios de personaje, almacenamiento compartido, banco y materiales; cartera y delivery son capacidades opcionales.
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
@@ -56,7 +57,7 @@ La versión `0.1.0` valida la base técnica:
 - Sincronización periódica o persistencia de snapshots y sesiones.
 - Precios y cálculo de patrimonio total.
 - Preguntas, aceptación y persistencia H3.9 de la clasificación de sesión.
-- Parada, cierre y recovery H3.3–H3.4 sobre la sesión iniciada.
+- Recovery H3.4 sobre la sesión iniciada o detenida provisionalmente.
 - Escritura o modificación de notas del vault.
 - Recomendaciones, priorización o inferencias sobre qué debería hacer el jugador.
 - Seguimiento automático de sesiones.

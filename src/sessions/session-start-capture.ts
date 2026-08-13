@@ -123,6 +123,11 @@ export class SessionStartCaptureService {
 			},
 		};
 	}
+
+	/** Captures the stable account boundary used to close a manual session. */
+	async captureFinal(): Promise<StorageSnapshot> {
+		return this.snapshots.captureWithOperation(this.client.beginOperation());
+	}
 }
 
 async function captureActiveBuild(
