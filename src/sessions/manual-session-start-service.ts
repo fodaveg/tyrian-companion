@@ -193,6 +193,14 @@ export class ManualSessionStartService {
 		return this.priceSnapshot === null ? null : structuredClone(this.priceSnapshot);
 	}
 
+	async getCompletedRuntimeRecord(): Promise<SessionRuntimeRecord | null> {
+		if (this.state.status !== 'complete') return null;
+		const loaded = await this.runtimeStore.load();
+		if (loaded.status !== 'loaded' || loaded.record.state.status !== 'complete' ||
+			loaded.record.state.sessionId !== this.state.sessionId) return null;
+		return structuredClone(loaded.record);
+	}
+
 	getRecoveryState(): SessionRecoveryState {
 		return structuredClone(this.recoveryState);
 	}

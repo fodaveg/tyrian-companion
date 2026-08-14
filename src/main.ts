@@ -1,4 +1,4 @@
-import { Menu, Notice, Plugin } from 'obsidian';
+import { Menu, Notice, Plugin, TFile } from 'obsidian';
 
 import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
@@ -28,6 +28,7 @@ import { PendingProposalService, type ProposalQueueState } from './sessions/pend
 import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
 import { proposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
+import { SessionNoteWriter, writeSessionNoteBeforeClear } from './sessions/session-note-writer';
 import {
 	ManualSessionStartService,
 	type SessionRecoveryState,
@@ -69,6 +70,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private detectionQuality!: DetectionQualityRecorder;
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
+	private sessionNotes!: SessionNoteWriter;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -104,6 +106,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		);
 		await this.sessions.initialize();
+		this.sessionNotes = new SessionNoteWriter({
+			file: (path) => this.app.vault.getAbstractFileByPath(path),
+			read: async (file) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
+				return await this.app.vault.read(target);
+			},
+			createFolder: async (path) => { await this.app.vault.createFolder(path); },
+			create: async (path, content) => await this.app.vault.create(path, content),
+			process: async (file, update) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
+				return await this.app.vault.process(target, update);
+			},
+		});
 		this.detectionQuality = new DetectionQualityRecorder(
 			new IndexedDbDetectionQualityStore(window.indexedDB),
 		);
@@ -667,7 +684,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async performClearCompletedSession(): Promise<void> {
-		const cleared = await this.sessions.resetCompletedSession();
+		const runtime = await this.sessions.getCompletedRuntimeRecord();
+		if (!runtime) throw new Error('Completed session evidence is unavailable.');
+		const cleared = await writeSessionNoteBeforeClear(this.sessionNotes, {
+			runtime,
+			valuation: null,
+			reservation: null,
+			hold: null,
+			recommendation: null,
+			envelope: null,
+			displayNames: {},
+			locale: this.settings.language,
+			outputFolder: this.settings.outputFolder,
+		}, () => this.sessions.resetCompletedSession());
 		this.renderViews();
 		if (!hasExactSessionBackendResult('clear', cleared)) throw new Error('Clear failed.');
 	}

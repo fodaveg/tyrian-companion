@@ -772,13 +772,13 @@ export class ConfirmClearCompletedSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle('Clear completed farming session?');
+		this.setTitle('Save note and clear completed session?');
 		this.contentEl.createEl('p', {
-			text: 'This clears only local completed-session data. It does not change the game account or vault notes.',
+			text: 'Tyrian companion will create or safely update the session note before clearing local completed-session data. It never changes the game account.',
 		});
 		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const cancel = actions.createEl('button', { text: 'Keep session', cls: 'mod-cta' });
-		const clear = actions.createEl('button', { text: 'Clear', cls: 'mod-warning' });
+		const clear = actions.createEl('button', { text: 'Save note and clear', cls: 'mod-warning' });
 		cancel.addEventListener('click', () => this.close());
 		clear.addEventListener('click', () => {
 			clear.disabled = true;

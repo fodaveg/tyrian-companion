@@ -37,6 +37,7 @@ import {
 } from './hold-intent';
 import {
 	createRecommendationEnvelope,
+	isRecommendationEnvelope,
 	type RecommendationDecision,
 	type RecommendationEnvelopeV1,
 } from './recommendation-envelope';
@@ -222,6 +223,33 @@ export type ContainerRecommendationResult =
 		recommendation: ContainerDispositionRecommendation | null; envelope: RecommendationEnvelopeV1 }
 	| { status: 'invalid'; reasons: ContainerRecommendationReason[]; recommendation: null;
 		envelope: RecommendationEnvelopeV1 };
+
+/** Authoritative runtime guard for persisted or cross-module H4.10 results. */
+export function isContainerRecommendationResult(value: unknown): value is ContainerRecommendationResult {
+	try {
+		if (!isRecord(value) || !['ready', 'reserved_only', 'blocked', 'invalid'].includes(String(value.status)) ||
+			!isRecommendationEnvelope(value.envelope)) return false;
+		const status = value.status as ContainerRecommendationResult['status'];
+		const keys = status === 'blocked' || status === 'invalid'
+			? ['status', 'reasons', 'recommendation', 'envelope']
+			: ['status', 'recommendation', 'envelope'];
+		if (!exactKeys(value, keys)) return false;
+		if (status === 'invalid') {
+			return value.recommendation === null && isRecommendationReasons(value.reasons) && value.reasons.length > 0 &&
+				canonical(value.envelope) === canonical(emptyRecommendationEnvelope());
+		}
+		if (status === 'blocked' && value.recommendation === null) {
+			return isRecommendationReasons(value.reasons) && value.reasons.length > 0 &&
+				canonical(value.envelope) === canonical(emptyRecommendationEnvelope());
+		}
+		if (!isDispositionRecommendation(value.recommendation, status)) return false;
+		if (status === 'blocked' && (!isRecommendationReasons(value.reasons) ||
+			value.reasons.length === 0 || canonical(value.reasons) !== canonical(value.recommendation.reasons))) return false;
+		return canonical(value.envelope) === canonical(envelopeForRecommendation(value.recommendation, status));
+	} catch {
+		return false;
+	}
+}
 
 /** Pure H4.10 decision engine. It never performs a market, account, persistence or item operation. */
 export function recommendContainerDisposition(inputValue: unknown): ContainerRecommendationResult {
@@ -596,6 +624,132 @@ function baseRecommendation(
 	};
 }
 
+function isDispositionRecommendation(
+	value: unknown,
+	status: 'ready' | 'reserved_only' | 'blocked',
+): value is ContainerDispositionRecommendation {
+	if (!isRecord(value) || !exactKeys(value, [
+		'version', 'sessionId', 'accountId', 'afterSnapshotId', 'itemId', 'allocations',
+		'economicDecision', 'explanation', 'reasons',
+	]) || value.version !== CONTAINER_RECOMMENDATION_VERSION || !trimmed(value.sessionId, 256) ||
+		!trimmed(value.accountId, 256) || !trimmed(value.afterSnapshotId, 256) || !positive(value.itemId) ||
+		!isRecommendationAllocations(value.allocations) || !isRecommendationReasons(value.reasons)) return false;
+	if (status !== 'ready') return value.economicDecision === null && value.explanation === null;
+	if (!isEconomicDecision(value.economicDecision, value.allocations.freeQuantity) ||
+		!isEconomicExplanation(value.explanation, value.economicDecision)) return false;
+	return value.economicDecision.quantity === value.allocations.freeQuantity;
+}
+
+function isRecommendationAllocations(value: unknown): value is ContainerDispositionRecommendation['allocations'] {
+	if (!isRecord(value) || !exactKeys(value, ['reserved', 'held', 'freeQuantity']) ||
+		!Array.isArray(value.reserved) || !Array.isArray(value.held) || !nonNegative(value.freeQuantity)) return false;
+	const reserved: unknown[] = value.reserved;
+	const held: unknown[] = value.held;
+	if (!reserved.every((entry): entry is ReservedContainerAllocation => isRecord(entry) && exactKeys(entry, [
+		'goalId', 'reason', 'intendedUse', 'quantity',
+	]) && trimmed(entry.goalId, 256) && ['achievement', 'purchase', 'personal'].includes(String(entry.reason)) &&
+		['hold', 'open', 'consume', 'exchange'].includes(String(entry.intendedUse)) && positive(entry.quantity))) return false;
+	if (!held.every((entry): entry is HeldContainerAllocation => isRecord(entry) && exactKeys(entry, [
+		'intentId', 'state', 'route', 'reason', 'quantity',
+	]) && trimmed(entry.intentId, 256) && ['holding', 'price_unavailable'].includes(String(entry.state)) &&
+		['instant_sell', 'listing'].includes(String(entry.route)) && isRecord(entry.reason) &&
+		exactKeys(entry.reason, ['category', 'note']) &&
+		['seasonal_rebound', 'market_target', 'personal'].includes(String(entry.reason.category)) &&
+		trimmed(entry.reason.note, 1_024) && positive(entry.quantity))) return false;
+	const quantities = [value.freeQuantity, ...reserved.map((entry) => entry.quantity),
+		...held.map((entry) => entry.quantity)];
+	return safeSum(quantities) !== null &&
+		new Set(reserved.map((entry) => entry.goalId)).size === reserved.length &&
+		new Set(held.map((entry) => entry.intentId)).size === held.length;
+}
+
+function isEconomicDecision(value: unknown, freeQuantity: number): value is NonNullable<ContainerDispositionRecommendation['economicDecision']> {
+	return isRecord(value) && exactKeys(value, ['action', 'quantity', 'sellRoute']) &&
+		(value.action === 'open' || value.action === 'sell') && positive(value.quantity) &&
+		value.quantity === freeQuantity && (value.sellRoute === 'instant_sell' || value.sellRoute === 'vendor');
+}
+
+function isEconomicExplanation(
+	value: unknown,
+	decision: NonNullable<ContainerDispositionRecommendation['economicDecision']>,
+): value is NonNullable<ContainerDispositionRecommendation['explanation']> {
+	const quantity = decision.quantity;
+	if (!isRecord(value) || !exactKeys(value, [
+		'sellNow', 'open', 'threshold', 'comparison', 'freshness', 'caveats',
+	]) || !isSellNow(value.sellNow, quantity) || !isRecord(value.open) || !exactKeys(value.open, [
+		'evPerContainerMicroCopper', 'totalExpectedMicroCopper', 'coverage', 'modelId', 'modelVersion',
+		'sampleContainers', 'excludedSampleUnits', 'rareTreatment',
+	]) || !nonNegative(value.open.evPerContainerMicroCopper) || !decimal(value.open.totalExpectedMicroCopper) ||
+		value.open.coverage !== 'complete' || !trimmed(value.open.modelId, 128) || !positive(value.open.modelVersion) ||
+		!positive(value.open.sampleContainers) || !nonNegative(value.open.excludedSampleUnits) ||
+		!['excluded', 'observed_only', 'bounded'].includes(String(value.open.rareTreatment)) ||
+		BigInt(value.open.totalExpectedMicroCopper) !== BigInt(value.open.evPerContainerMicroCopper) * BigInt(quantity)) return false;
+	if (!isRecord(value.threshold) || !exactKeys(value.threshold, ['marginBps', 'requiredOpenMicroCopper']) ||
+		!integerRange(value.threshold.marginBps, 0, 10_000) || !decimal(value.threshold.requiredOpenMicroCopper) ||
+		!isRecord(value.comparison) || !exactKeys(value.comparison, ['differenceMicroCopper', 'advantageBps', 'rule']) ||
+		!signedDecimal(value.comparison.differenceMicroCopper) ||
+		!(value.comparison.advantageBps === null || Number.isSafeInteger(value.comparison.advantageBps)) ||
+		value.comparison.rule !== 'open_at_or_above_threshold' || !isRecord(value.freshness) ||
+		!exactKeys(value.freshness, ['asOf', 'priceCapturedAt', 'priceAgeMs', 'modelReviewedAt', 'modelReviewAgeMs']) ||
+		!iso(value.freshness.asOf) || !iso(value.freshness.priceCapturedAt) || !nonNegative(value.freshness.priceAgeMs) ||
+		!iso(value.freshness.modelReviewedAt) || !nonNegative(value.freshness.modelReviewAgeMs) ||
+		!Array.isArray(value.caveats) || !value.caveats.every((entry) => trimmed(entry, 256))) return false;
+	const asOf = Date.parse(value.freshness.asOf);
+	const priceCapturedAt = Date.parse(value.freshness.priceCapturedAt);
+	const modelReviewedAt = Date.parse(value.freshness.modelReviewedAt);
+	const openTotal = BigInt(value.open.totalExpectedMicroCopper);
+	const sellMicro = BigInt(value.sellNow.netCopper) * MICRO_COPPER;
+	const thresholdNumerator = sellMicro * (BASIS_POINTS + BigInt(value.threshold.marginBps));
+	const requiredOpen = divideRoundUp(thresholdNumerator, BASIS_POINTS);
+	const expectedDifference = openTotal - requiredOpen;
+	const expectedAdvantage = sellMicro === 0n ? null
+		: safeBigIntNumber((openTotal - sellMicro) * BASIS_POINTS / sellMicro);
+	const expectedAction = openTotal * BASIS_POINTS >= thresholdNumerator ? 'open' : 'sell';
+	if (value.threshold.requiredOpenMicroCopper !== requiredOpen.toString() ||
+		value.comparison.differenceMicroCopper !== expectedDifference.toString() ||
+		value.comparison.advantageBps !== expectedAdvantage || decision.action !== expectedAction ||
+		value.freshness.priceAgeMs !== Math.max(0, asOf - priceCapturedAt) ||
+		modelReviewedAt > asOf || value.freshness.modelReviewAgeMs !== asOf - modelReviewedAt) return false;
+	const caveats = value.caveats;
+	return caveats.every((entry, index) => index === 0 || caveats[index - 1]!.localeCompare(entry) < 0);
+}
+
+function isSellNow(
+	value: unknown,
+	quantity: number,
+): value is NonNullable<ContainerDispositionRecommendation['explanation']>['sellNow'] {
+	if (!isRecord(value) || !exactKeys(value, [
+		'route', 'unitCopper', 'grossCopper', 'listingFeeCopper', 'exchangeFeeCopper', 'totalFeesCopper', 'netCopper',
+	]) || !['instant_sell', 'vendor'].includes(String(value.route)) || !nonNegative(value.unitCopper) ||
+		!nonNegative(value.grossCopper) || !nonNegative(value.listingFeeCopper) || !nonNegative(value.exchangeFeeCopper) ||
+		!nonNegative(value.totalFeesCopper) || !nonNegative(value.netCopper)) return false;
+	const gross = safeProduct(value.unitCopper, quantity);
+	const fees = safeSum([value.listingFeeCopper, value.exchangeFeeCopper]);
+	if (gross === null || fees === null || value.grossCopper !== gross || value.totalFeesCopper !== fees ||
+		value.netCopper !== gross - fees) return false;
+	if (value.route === 'vendor') return fees === 0;
+	const expected = createTradingPostValueWithPolicy('instant_sell', value.unitCopper, quantity);
+	return expected.status === 'ok' && expected.value.grossCopper === value.grossCopper &&
+		expected.value.listingFeeCopper === value.listingFeeCopper &&
+		expected.value.exchangeFeeCopper === value.exchangeFeeCopper &&
+		expected.value.totalFeesCopper === value.totalFeesCopper && expected.value.netCopper === value.netCopper;
+}
+
+const RECOMMENDATION_REASON_CODES = new Set<ContainerRecommendationReasonCode>([
+	'session_classification_v1', 'session_estimated', 'session_contaminated', 'session_invalid',
+	'session_not_recommendable', 'reservation_unknown', 'reservation_mismatch', 'hold_intent_active',
+	'hold_price_unavailable', 'model_unreviewed', 'model_revoked', 'model_review_stale', 'model_review_future',
+	'model_review_mismatch', 'price_stale', 'price_future', 'price_missing', 'open_ev_partial',
+	'container_not_sellable', 'binding_unknown', 'trading_access_unknown', 'malformed_input',
+	'evidence_mismatch', 'arithmetic_overflow', 'model_ev_inconsistent',
+]);
+
+function isRecommendationReasons(value: unknown): value is ContainerRecommendationReason[] {
+	return Array.isArray(value) && value.every((reason, index) => isRecord(reason) && exactKeys(reason, ['code']) &&
+		RECOMMENDATION_REASON_CODES.has(reason.code as ContainerRecommendationReasonCode) &&
+		(index === 0 || String((value[index - 1] as ContainerRecommendationReason).code).localeCompare(String(reason.code)) < 0));
+}
+
 function isInputShell(value: unknown): value is ContainerRecommendationInput {
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'asOf', 'session', 'container', 'reservation', 'hold', 'model', 'modelReview', 'market', 'policy',
@@ -842,6 +996,24 @@ function positive(value: unknown): value is number {
 
 function nonNegative(value: unknown): value is number {
 	return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function decimal(value: unknown): value is string {
+	return typeof value === 'string' && value.length <= 64 && /^(?:0|[1-9]\d*)$/u.test(value);
+}
+
+function signedDecimal(value: unknown): value is string {
+	return typeof value === 'string' && value.length <= 65 && /^(?:0|-?[1-9]\d*)$/u.test(value);
+}
+
+function safeSum(values: number[]): number | null {
+	const result = values.reduce((sum, value) => sum + value, 0);
+	return Number.isSafeInteger(result) && result >= 0 ? result : null;
+}
+
+function safeProduct(left: number, right: number): number | null {
+	const result = left * right;
+	return Number.isSafeInteger(result) && result >= 0 ? result : null;
 }
 
 function integerRange(value: unknown, minimum: number, maximum: number): value is number {

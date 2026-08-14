@@ -8,6 +8,7 @@ import type { CatalogItem } from '../catalog/public-catalog-model';
 import {
 	DEFAULT_CONTAINER_RECOMMENDATION_POLICY,
 	containerModelFingerprint,
+	isContainerRecommendationResult,
 	recommendContainerDisposition,
 	type ContainerRecommendationInput,
 } from './container-recommendation';
@@ -356,6 +357,44 @@ describe('recommendContainerDisposition', () => {
 		});
 		expect(isRecommendationEnvelope(result.envelope)).toBe(true);
 		expect(result.envelope.decisions.reduce((sum, decision) => sum + decision.quantity, 0)).toBe(10);
+	});
+
+	it('validates the complete result graph and its envelope relations', () => {
+		const result = recommendContainerDisposition(input());
+		const outputs = [
+			result,
+			recommendContainerDisposition(input({ gainedQuantity: 5, finalQuantity: 5, reservedTarget: 5 })),
+			recommendContainerDisposition(input({ reviewKind: 'estimated' })),
+			recommendContainerDisposition(null),
+		];
+		expect(outputs.map((entry) => entry.status)).toEqual(['ready', 'reserved_only', 'blocked', 'invalid']);
+		expect(outputs.every(isContainerRecommendationResult)).toBe(true);
+		if (result.recommendation === null || result.recommendation.explanation === null) throw new Error('Expected ready fixture.');
+		const mutations: Array<(candidate: typeof result) => void> = [
+			(candidate) => { candidate.recommendation!.explanation!.sellNow.netCopper += 1; },
+			(candidate) => { candidate.recommendation!.explanation!.threshold.requiredOpenMicroCopper = '1'; },
+			(candidate) => { candidate.recommendation!.explanation!.comparison.differenceMicroCopper = '1'; },
+			(candidate) => { candidate.recommendation!.explanation!.comparison.advantageBps = null; },
+			(candidate) => { candidate.recommendation!.economicDecision!.action =
+				candidate.recommendation!.economicDecision!.action === 'open' ? 'sell' : 'open'; },
+			(candidate) => { candidate.recommendation!.explanation!.freshness.priceAgeMs += 1; },
+			(candidate) => { candidate.recommendation!.explanation!.freshness.modelReviewAgeMs += 1; },
+			(candidate) => { candidate.recommendation!.explanation!.freshness.priceCapturedAt =
+				new Date(Date.parse(candidate.recommendation!.explanation!.freshness.priceCapturedAt) - 1).toISOString(); },
+			(candidate) => { candidate.recommendation!.explanation!.threshold.requiredOpenMicroCopper = '01'; },
+			(candidate) => { candidate.recommendation!.explanation!.open.totalExpectedMicroCopper = '9'.repeat(65); },
+		];
+		for (const mutate of mutations) {
+			const candidate = structuredClone(result);
+			mutate(candidate);
+			expect(isContainerRecommendationResult(candidate)).toBe(false);
+		}
+		const reason = structuredClone(result) as unknown as { recommendation: { reasons: unknown[] } };
+		reason.recommendation.reasons.push({ code: 'invented_reason' });
+		expect(isContainerRecommendationResult(reason)).toBe(false);
+		const envelope = structuredClone(result);
+		envelope.envelope.decisions = [];
+		expect(isContainerRecommendationResult(envelope)).toBe(false);
 	});
 
 	it('never adds an economic decision for fully reserved or held quantities', () => {

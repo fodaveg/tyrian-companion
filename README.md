@@ -7,6 +7,7 @@ The current `0.1.0` vertical provides:
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
 - H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
+- H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
@@ -127,6 +128,11 @@ and window identity, renewed while the chosen workflow is running, and accepted 
 existing start/stop workflow succeeds. Pending proposals expire after 24 hours, receipts after 30
 days, and background work only refreshes existing status indicators: it never rebuilds the view,
 opens a modal, shows a notice, reveals a leaf, focuses a control, or sends an OS notification.
+
+Completed session notes are the only generated vault artifact in this vertical. They live below the
+configured output folder in `sessions/<UTC year>/`, use hashed identifiers, and update only `tc_*`
+frontmatter plus six hash-verified managed blocks. A collision uses the complete session hash; an
+ambiguous or human-modified managed region fails closed and leaves the completed runtime available.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

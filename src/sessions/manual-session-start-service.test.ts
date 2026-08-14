@@ -639,7 +639,12 @@ describe('ManualSessionStartService', () => {
 		expect(second.getRecoveryState()).toEqual({ status: 'none' });
 		expect(second.getState()).toMatchObject({ status: 'complete', classification: 'exact' });
 		expect(second.getContaminationReview()).toMatchObject({ classification: { status: 'exact' } });
+		await expect(second.getCompletedRuntimeRecord()).resolves.toMatchObject({
+			state: { status: 'complete', classification: 'exact' },
+			finalSnapshot: { snapshotId: 'snapshot-after' },
+		});
 		await expect(second.resetCompletedSession()).resolves.toBe(true);
+		await expect(second.getCompletedRuntimeRecord()).resolves.toBeNull();
 		expect(second.getState()).toEqual({ version: 1, status: 'idle' });
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
 	});
