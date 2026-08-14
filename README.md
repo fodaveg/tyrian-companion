@@ -9,6 +9,7 @@ The current `0.1.0` vertical provides:
 - H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
 - H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
 - H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion ledger; unreliable evidence withholds value and recommendations instead of guessing.
+- H5.6 installs a generic Obsidian Base only after an explicit preview/apply action. A versioned manifest and resumable CAS journal distinguish intact, missing, modified, foreign and future assets without scanning or overwriting user files.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
@@ -134,6 +135,14 @@ Completed session notes are the only generated vault artifact in this vertical. 
 configured output folder in `sessions/<UTC year>/`, use hashed identifiers, and update only `tc_*`
 frontmatter plus six hash-verified managed blocks. A collision uses the complete session hash; an
 ambiguous or human-modified managed region fails closed and leaves the completed runtime available.
+
+Optional managed assets live below the configured output folder in `Bases/` with ownership recorded
+in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write them. Preview is
+read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
+files are preserved, and uninstall moves exact owned files through Obsidian's trash API. A lazy
+IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
+settings mirror only the last completed root. H5.6 ships one generic `.base`; themed
+Halloween content remains H5.7.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

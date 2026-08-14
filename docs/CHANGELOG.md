@@ -1,5 +1,13 @@
 # Changelog
 
+## H5.6 — Managed assets foundation
+
+- Añadido motor Vault-only para inspección y plan puro de assets `.base`/`.md`, con rutas NFC seguras, colisiones case-insensitive y una Base genérica neutral.
+- Añadidos manifiesto v1, generación CAS y journal durable reanudable para instalación, upgrade y repair explícitos entre ventanas.
+- Añadidos uninstall mediante tombstone verificado + papelera de Obsidian y relocate cercado, siempre preservando bytes modificados o ajenos.
+- Añadida autoridad IndexedDB lazy con root/generación/estado para serializar Apply/Move/Remove entre ventanas; settings v3 refleja el último root completo sin ser la autoridad CAS.
+- Migrados settings a v3 con `managedAssetsRoot:null` sin escaneo/escritura y añadida UI compacta de Preview/Apply/Repair/Move/Remove.
+
 Todos los cambios notables del proyecto se documentan aquí.
 
 ## [0.1.0] - Unreleased

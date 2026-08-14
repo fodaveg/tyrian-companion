@@ -192,7 +192,13 @@ La carga del plugin solo lee ese record local: no adquiere lease, no inicia hear
 
 ## Ajustes y migración
 
-El esquema actual es `2`. `migrateSettings` convierte de forma idempotente los datos sin versión de `0.1.0`, descarta propiedades desconocidas y valida enums e intervalos. La carpeta de salida solo acepta segmentos relativos separados por `/`: rechaza `.`/`..`, NUL, barras inversas, `:*?"<>|`, punto o espacio final, rutas absolutas y el directorio de configuración real del vault. Esta vertical no escribe ningún archivo.
+El esquema actual es `3`. `migrateSettings` convierte de forma idempotente los datos anteriores, descarta propiedades desconocidas y valida enums e intervalos. La migración v2→v3 añade `managedAssetsRoot:null` sin inspeccionar ni escribir el vault; este campo es solo un espejo de presentación tras una operación completa. La autoridad para carreras vive en un puntero IndexedDB dedicado y versionado. La carpeta de salida solo acepta segmentos relativos separados por `/`: rechaza `.`/`..`, NUL, barras inversas, `:*?"<>|`, punto o espacio final, rutas absolutas y el directorio de configuración real del vault.
+
+## Assets gestionados H5.6
+
+`ManagedAssetsManager` recibe un port mínimo de Vault y un bundle inmutable durante cada operación. Construirlo o cargar el plugin no consulta el vault. `inspect` clasifica cada ruta estable como create/unchanged/update/missing/recoverable/modified/occupied/future/conflict; `planManagedAssets` es puro y Preview nunca escribe. El manifiesto `Tyrian Companion Assets.json` es la autoridad y conserva root, locale, bundle, generación, hashes instalados y journal completo.
+
+Una operación explícita hace primero CAS de `ready` a `applying`, reanuda solo el mismo operationId determinista y verifica hash anterior/posterior en cada paso. Create resuelve carreras por relectura; update usa `Vault.process`; ningún modified/unowned/future se sobrescribe. Repair recrea registrados ausentes y reanuda journals. `ManagedAssetsLifecycle` abre perezosamente `tyrian-companion-managed-assets`; cada record se separa mediante el SHA-256 de la identidad canónica local del vault, sin persistir su ruta. Root, generación y estado durable cercan install/remove/move. Un fallo de Apply solo libera el claim si una inspección prueba que no llegó a existir manifiesto; cualquier journal conserva `installing` para reintento. Move reclama origen, activa destino, revalida el mismo record antes de desinstalar origen y converge si otra ventana ya activó ese destino. Remove reanuda incluso si la respuesta al CAS final se perdió. Uninstall escribe un tombstone por CAS, lo relee y usa `FileManager.trashFile`; no borra carpetas y deja el manifiesto detached. El motor no usa filesystem, red, secretos ni locks de sesión; la adaptación de entrada deriva y hashea la ruta base únicamente para namespace local.
 
 `SecretStorage` está disponible desde Obsidian `1.11.4`, que por ello es también `minAppVersion`.
 

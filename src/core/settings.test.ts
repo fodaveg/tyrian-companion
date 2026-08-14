@@ -40,6 +40,15 @@ describe('migrateSettings', () => {
 			migrateSettings({ apiKeySecret: 'gw2-primary', apiKey: 'must-not-be-persisted' }),
 		).not.toHaveProperty('apiKey');
 	});
+
+	it('migrates v2 to v3 without scanning or claiming managed assets', () => {
+		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
+			schemaVersion: 3,
+			managedAssetsRoot: null,
+		});
+		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
+		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
+	});
 });
 
 describe('normalizeVaultFolder', () => {

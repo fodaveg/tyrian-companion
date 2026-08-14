@@ -1,5 +1,6 @@
 import {
 	PluginSettingTab,
+	Modal,
 	SecretComponent,
 	Setting,
 	type App,
@@ -8,6 +9,7 @@ import {
 } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
+import { projectManagedAssetsActions, runConfirmedManagedAssetsRemoval, type ManagedAssetsAction } from '../assets/managed-assets-ui';
 import { normalizeVaultFolder } from '../core/settings';
 import type TyrianCompanionPlugin from '../main';
 
@@ -17,6 +19,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private connectionSetting: Setting | null = null;
 	private connectionButton: ButtonComponent | null = null;
 	private countdownInterval: number | null = null;
+	private managedAssetsSetting: Setting | null = null;
+	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
 
 	constructor(
 		app: App,
@@ -47,6 +51,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionButton = null;
+		this.managedAssetsSetting = null;
+		this.managedAssetButtons.clear();
 		super.hide();
 	}
 
@@ -57,6 +63,18 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			?.setButtonText(state.status === 'checking' ? 'Checking…' : 'Check connection')
 			.setDisabled(state.status === 'checking' || isCoolingDown(getRetryAt(state)));
 		this.startCountdown(state);
+	}
+
+	refreshManagedAssetsRow(): void {
+		const view = this.plugin.getManagedAssetsView();
+		const files = view.plan?.steps.map((step) => `${step.status}: ${step.path}`).join(' · ');
+		this.managedAssetsSetting?.setDesc(files ? `${view.message} ${files}` : view.message);
+		const enabled = projectManagedAssetsActions({
+			working: view.status === 'working',
+			hasManagedRoot: this.plugin.settings.managedAssetsRoot !== null,
+			canMove: this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
+		});
+		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
 	}
 
 	private definitions(): Array<{ name: string; desc: string; render: SettingRenderer }> {
@@ -152,6 +170,25 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: 'Managed assets',
+				desc: this.plugin.getManagedAssetsView().message,
+				render: (setting) => {
+					this.managedAssetsSetting = setting;
+					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText('Preview').onClick(async () => { await this.plugin.previewManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText('Apply').setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText('Repair').onClick(async () => { await this.plugin.repairManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText('Move').onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
+					setting.addButton((button) => {
+						this.managedAssetButtons.set('remove', button);
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText('Remove').onClick(async () => {
+							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.app), () => this.plugin.removeManagedAssets());
+						});
+					});
+					this.refreshManagedAssetsRow();
+				},
+			},
+			{
 				name: 'Connection',
 				desc: this.connectionDescription(this.plugin.getConnectionState()),
 				render: (setting) => {
@@ -223,4 +260,22 @@ function isCoolingDown(retryAt: number | null): retryAt is number {
 
 function cooldownText(retryAt: number): string {
 	return `Try again in ${Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000))} seconds.`;
+}
+
+function confirmManagedAssetsRemoval(app: App): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle('Remove managed assets?');
+				this.contentEl.createEl('p', { text: 'Only intact files owned by the plugin will be moved to the system trash. Modified files are preserved.' });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
+				const remove = actions.createEl('button', { text: 'Remove', cls: 'mod-warning' });
+				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
 }

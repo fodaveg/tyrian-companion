@@ -6,6 +6,11 @@ import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import type { StorageDelta } from './account/storage-delta-model';
+import { genericManagedAssets, sha256Text } from './assets/generic-assets';
+import { ManagedAssetsManager, type ManagedAssetsResult } from './assets/managed-assets';
+import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
+import type { ManagedAssetsPlan } from './assets/managed-assets-model';
+import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
@@ -83,9 +88,43 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionCommands!: SessionCommandController;
 	private sessionDispatch!: SessionCommandDispatch;
 	private sessionRibbon: HTMLElement | null = null;
+	private managedAssets!: ManagedAssetsManager;
+	private managedAssetsLifecycle!: ManagedAssetsLifecycle;
+	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
+	private managedAssetsView: { status: 'idle' | 'working' | 'ready' | 'error'; message: string; plan: ManagedAssetsPlan | null } =
+		{ status: 'idle', message: 'Not inspected. No vault files have been read.', plan: null };
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.managedAssets = new ManagedAssetsManager(
+			{
+				file: (path) => this.app.vault.getAbstractFileByPath(path),
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
+					return await this.app.vault.read(target);
+				},
+				createFolder: async (path) => { await this.app.vault.createFolder(path); },
+				create: async (path, content) => await this.app.vault.create(path, content),
+				process: async (file, update) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
+					return await this.app.vault.process(target, update);
+				},
+				trashFile: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');
+					await this.app.fileManager.trashFile(target);
+				},
+			},
+			this.app.vault.configDir,
+			{ bundleVersion: 1, locale: this.settings.language, assets: await genericManagedAssets() },
+		);
+		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
+		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
+		const vaultId = await sha256Text(canonicalVaultIdentity.normalize('NFC'));
+		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(window.indexedDB, vaultId);
+		this.managedAssetsLifecycle = new ManagedAssetsLifecycle(this.managedAssets, this.managedAssetsPointer);
 
 		const apiKeyProvider = new ObsidianApiKeyProvider(
 			this.app,
@@ -207,6 +246,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.detectionQuality?.dispose();
 		this.pendingClaimRenewals?.dispose();
 		this.pendingProposals?.dispose();
+		this.managedAssetsPointer?.close();
 		void this.sessions?.dispose();
 	}
 
@@ -356,6 +396,76 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.lootPresentation.get();
 	}
 
+	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
+
+	async previewManagedAssets(): Promise<void> {
+		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
+		this.managedAssetsView = { status: 'working', message: 'Inspecting managed assets…', plan: null };
+		this.settingTab.refreshManagedAssetsRow();
+		try {
+			const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
+			const plan = await this.managedAssets.preview(root, kind);
+			this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'Preview ready. No files were changed.' : `Blocked: ${plan.reasons.join(', ')}.`, plan };
+		} catch { this.managedAssetsView = { status: 'error', message: 'Managed assets could not be inspected safely.', plan: null }; }
+		this.settingTab.refreshManagedAssetsRow();
+	}
+
+	async applyManagedAssets(): Promise<void> {
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder));
+		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
+	}
+
+	async repairManagedAssets(): Promise<void> {
+		if (!this.settings.managedAssetsRoot) return;
+		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
+	}
+
+	async relocateManagedAssets(): Promise<void> {
+		const destination = this.settings.outputFolder;
+		if (!await this.ensureManagedAssetsAuthority()) return;
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.move(destination));
+		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
+	}
+
+	async removeManagedAssets(): Promise<void> {
+		if (!await this.ensureManagedAssetsAuthority()) return;
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove());
+		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
+	}
+
+	private async ensureManagedAssetsAuthority(): Promise<boolean> {
+		const mirroredRoot = this.settings.managedAssetsRoot;
+		if (!mirroredRoot) return true;
+		const adopted = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(mirroredRoot));
+		return 'root' in adopted && adopted.root === mirroredRoot;
+	}
+
+	private async runManagedAssetsLifecycle(operation: () => Promise<ManagedAssetsLifecycleResult>): Promise<ManagedAssetsLifecycleResult> {
+		this.managedAssetsView = { status: 'working', message: 'Applying durable managed-assets operation…', plan: null };
+		this.settingTab.refreshManagedAssetsRow();
+		let result: ManagedAssetsLifecycleResult;
+		try { result = await operation(); }
+		catch { result = { status: 'unavailable', message: 'The durable managed-assets authority is unavailable.' }; }
+		this.managedAssetsView = 'root' in result
+			? { status: 'ready', message: 'Managed-assets lifecycle is ready.', plan: null }
+			: { status: 'error', message: result.message, plan: null };
+		this.settingTab.refreshManagedAssetsRow();
+		return result;
+	}
+
+	private async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
+		this.managedAssetsView = { status: 'working', message: 'Applying managed-assets journal…', plan: null };
+		this.settingTab.refreshManagedAssetsRow();
+		const result = await operation();
+		if (result.status === 'applied' || result.status === 'unchanged' || result.status === 'detached') {
+			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'Ownership detached. Managed files were moved to trash.' : 'Managed assets are ready.', plan: null };
+		} else if ('message' in result) {
+			this.managedAssetsView = { status: 'error', message: result.message, plan: null };
+		}
+		this.settingTab.refreshManagedAssetsRow();
+		return result;
+	}
+
 	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
 		const result = await this.sessions.reviewContamination(answers);
 		this.renderViews();
@@ -485,6 +595,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
+		if (previousLanguage !== nextSettings.language && this.managedAssets) {
+			this.managedAssets.setBundle({ bundleVersion: 1, locale: nextSettings.language, assets: await genericManagedAssets() });
+		}
 		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
 			this.assistedDetection.disarm('mode_off');
 		}

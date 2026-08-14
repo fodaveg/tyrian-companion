@@ -1,4 +1,4 @@
-export const SETTINGS_SCHEMA_VERSION = 2 as const;
+export const SETTINGS_SCHEMA_VERSION = 3 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -12,6 +12,8 @@ export interface TyrianSettings {
 	preferredCharacter: string;
 	pollingIntervalMinutes: number;
 	detectionMode: DetectionMode;
+	/** Root of an explicitly installed managed-asset bundle. Null means unowned. */
+	managedAssetsRoot: string | null;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -22,6 +24,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	preferredCharacter: '',
 	pollingIntervalMinutes: 60,
 	detectionMode: 'off',
+	managedAssetsRoot: null,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -50,6 +53,11 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			data.detectionMode === 'assisted' || data.detectionMode === 'off'
 				? data.detectionMode
 				: DEFAULT_SETTINGS.detectionMode,
+		managedAssetsRoot:
+			typeof data.managedAssetsRoot === 'string' &&
+			normalizeVaultFolder(data.managedAssetsRoot, configDir) === data.managedAssetsRoot
+				? data.managedAssetsRoot
+				: null,
 	};
 }
 
