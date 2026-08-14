@@ -1,6 +1,6 @@
 import { buildReservationBalance, createReservationPlan } from '../economy/reservation';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
-import { isInventoryAdvisorInput, sha256CanonicalValue } from './inventory-advisor-contract';
+import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorInput, sha256CanonicalValue } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import type {
 	InventoryAdvisorCoverageV1, InventoryAdvisorInputV1, InventoryAdvisorReasonCode,
@@ -37,7 +37,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const envelope = createInventoryRecommendationEnvelope(report);
 		if (envelope === null) return publicInvalid();
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
-		return isInventoryAdvisorResultForInput(result, input) ? result : publicInvalid();
+		return isInventoryAdvisorResultForInput(result, input, value.knowledgePack) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
 
@@ -49,8 +49,7 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 		const balance = buildReservationBalance(input.snapshot);
 		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
 		if (plan.status !== 'ok') return invalid();
-		const inputRulesFresh = fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
-			&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
+		const inputRulesFresh = rulePackFresh(input);
 		const complete = evidenceComplete(input, plan.plan) && knowledgeFresh(knowledgePack, input);
 		const lines = ids(input).map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0, complete,
@@ -177,7 +176,7 @@ function publicCoverage(input: InventoryAdvisorInputV1, itemId: number, reservat
 	const prices = input.prices.status === 'complete' && fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs);
 	const signalsFresh = fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs);
 	const signals = signalsFresh && input.accountSignals.unlockCoverage === 'complete' && input.accountSignals.achievementCoverage === 'complete' && input.accountSignals.tradingPostAccess !== 'unknown';
-	const rules = fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
+	const rules = rulePackFresh(input);
 	const snapshot = input.snapshot.quality === 'stable' && Object.values(input.snapshot.coverage.sources).every((entry) => entry.status === 'complete');
 	return {
 		snapshot: snapshot ? 'complete' : 'limited', inventory: reservation === 'complete' ? 'complete' : reservation === 'limited' ? 'limited' : 'unknown',
@@ -191,6 +190,7 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		alternative_route_exists: 'alternative_route_exists', no_sell: 'no_sell',
 		reserved_for_goal: 'reserved_for_goal', user_keep_exception: 'user_keep_exception', position_not_actionable: 'position_not_actionable',
 		knowledge_missing: 'rule_missing', rule_missing: 'rule_missing', rule_conflict: 'rule_conflict', rule_stale: 'rule_stale', evidence_incomplete: 'price_partial', no_salvage: 'no_salvage',
+		economic_comparison_missing: 'economic_comparison_missing',
 		tp_access_unknown: 'tp_access_unknown', catalog_invalid: 'catalog_invalid', vendor_best_value: 'alternative_route_exists',
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
@@ -202,19 +202,24 @@ function uniqueReasons<T extends { itemId: number | null; code: string; goalId: 
 function publicInvalid(): InventoryAdvisorResultV1 { return { status: 'invalid', reasons: [{ code: 'snapshot_invalid', itemId: null, goalId: null, ruleId: null }], report: null, envelope: null }; }
 
 function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market'; reason: string; ruleId: string | null } {
+	if (!rulePackUsableForCapability(input)) return { action: 'review', reason: 'rule_stale', ruleId: null };
 	for (const action of ['use', 'open', 'salvage'] as const) {
 		const claim = knowledge?.[action] ?? null;
 		if (claim === null) return { action: 'review', reason: 'knowledge_missing', ruleId: null };
-		const approved = input.rulePack.rules.filter((entry) => entry.itemId === itemId && entry.action === action && entry.status === 'approved');
-		if (approved.length > 1 || (claim.status === 'not_applicable' && approved.some((entry) => entry.assertion === 'applicable'))) {
+		const capabilities = input.rulePack.rules.filter((entry) => entry.itemId === itemId && entry.action === action && isApprovedApplicableCapability(input.rulePack, entry));
+		if (capabilities.length > 1 || (claim.status === 'not_applicable' && capabilities.length > 0)) {
 			return { action: 'review', reason: 'rule_conflict', ruleId: null };
 		}
 		if (claim.status === 'not_applicable') continue;
 		if (action === 'salvage' && input.catalog.items[String(itemId)]?.flags.includes('NoSalvage')) {
 			return { action: 'review', reason: 'no_salvage', ruleId: null };
 		}
-		const rule = input.rulePack.rules.find((entry) => entry.ruleId === claim.ruleId && entry.itemId === itemId && entry.action === action && entry.status === 'approved' && entry.assertion === 'applicable');
+		const rule = input.rulePack.rules.find((entry) => entry.ruleId === claim.ruleId && entry.itemId === itemId && entry.action === action && isApprovedApplicableCapability(input.rulePack, entry));
 		if (!rule) return { action: 'review', reason: 'rule_missing', ruleId: null };
+		if (!isEnabledApplicableRule(input.rulePack, rule)) {
+			return { action: 'review', reason: input.rulePack.schemaVersion === 2 && 'recommendation' in rule && rule.recommendation.status === 'review_only'
+				? rule.recommendation.reason : 'rule_stale', ruleId: null };
+		}
 		if (action === 'use' && claim.target && unlocked(input, claim)) continue;
 		return { action, reason: `curated_${action}`, ruleId: claim.ruleId };
 	}
@@ -248,8 +253,21 @@ function evidenceComplete(input: InventoryAdvisorInputV1, plan: { coverage: stri
 		&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs)
-		&& fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
-		&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
+		&& rulePackFresh(input);
+}
+function rulePackFresh(input: InventoryAdvisorInputV1): boolean {
+	const pack = input.rulePack;
+	return (pack.schemaVersion === 1 || (pack.reviewStatus === 'human_reviewed' && pack.reviewedAt !== null))
+		&& pack.reviewedAt !== null && fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
+		&& (pack.schemaVersion === 2 ? Date.parse(input.asOf) < Date.parse(pack.validUntil)
+			: Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs);
+}
+/** Pending V2 review may explain a withheld capability, but never after its exact expiry. */
+function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
+	const pack = input.rulePack;
+	return pack.schemaVersion === 2
+		? Date.parse(input.asOf) >= Date.parse(pack.publishedAt) && Date.parse(input.asOf) < Date.parse(pack.validUntil)
+		: rulePackFresh(input);
 }
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 { return record(value) && keys(value, ['input', 'knowledgePack']) && isInventoryAdvisorInput(value.input) && isInventoryKnowledgePack(value.knowledgePack); }

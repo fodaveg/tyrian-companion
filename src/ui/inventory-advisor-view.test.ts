@@ -23,8 +23,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
 	it.each([
-		['es', 'Modo solo revisión: no hay rutas curadas. No se recomendará vender, reciclar ni destruir objetos.'],
-		['en', 'Review-only mode: there are no curated routes. Selling, salvaging, or destroying items will not be recommended.'],
+		['es', 'Cobertura curada limitada: se conoce una ruta de apertura, pero su comparación económica sigue pendiente. Todas las decisiones permanecen en revisión manual.'],
+		['en', 'Curated coverage is limited: one opening route is known, but its economic comparison is still pending. Every decision remains under manual review.'],
 	] as const)('shows the honest review-only banner in %s', (locale, expected) => {
 		const mount = render(readyModel(), locale);
 		expect(text(mount.elements())).toContain(expected);

@@ -37,7 +37,7 @@ H6.3 fija que jackpots excluidos no alteran el EV ni la decisión y que un preci
 
 H6.6 añade un benchmark reproducible de cuenta grande, aislado de I/O: fuerza una primera pasada divergente y dos convergentes mediante la ruta pura productiva, finaliza snapshots estables, los compara, clasifica la frontera y valora 4.840 ganancias. Sus 21 muestras fijan mediana/p95 y la retención acumulada contra un baseline único post-warmup; CI prueba verde y sabotaje de heap explícito en Node 22 y 24, sin usar la duración de Vitest como evidencia.
 
-H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.17 aporta un bundle built-in inmutable, solo revisión y sin rutas curadas. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las tres capas con single-flight/latest-wins. H5.12 añade el editor plegable local de objetivos y excepciones: scope hash de vault + cuenta capturada, IndexedDB explícito, CAS entre ventanas y reclasificación de evidencia fresca sin segunda captura. Corrupción, esquema futuro, indisponibilidad, conflicto o evidencia obsoleta bloquean y nunca componen defaults. La QA visual de la vista en Obsidian sigue pendiente; rutas curadas y H6.11 siguen pendientes.
+H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038: demuestra `open`, declara `use` (que excluye abrir) y `salvage` no aplicables, y separa esa capacidad de una compuerta tipada que retiene la recomendación hasta disponer de comparación económica. El resultado permanece `review`, sin economía ni descarte. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las tres capas con single-flight/latest-wins. H5.12 añade el editor plegable local de objetivos y excepciones: scope hash de vault + cuenta capturada, IndexedDB explícito, CAS entre ventanas y reclasificación de evidencia fresca sin segunda captura. Corrupción, esquema futuro, indisponibilidad, conflicto o evidencia obsoleta bloquean y nunca componen defaults. H6.11 está cerrado por auditoría automatizada; siguen pendientes la QA visual/manual de la vista y revisión humana del pack curado.
 
 Recuento H4.16: dos módulos productivos nuevos de allowlist, tres suites H4.16 (funcional, contrato y guard), cuatro módulos H4.13/H4.15 ajustados y cinco documentos actualizados. Gate completo verificado: lint, 79 ficheros/1155 tests, release-preflight, scanner de seguridad y build en verde.
 
@@ -46,14 +46,14 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 92 ficheros y 1281 tests verdes.
+- `npm run test`: 92 ficheros y 1289 tests verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 
 ## Pendientes de producto
 
 1. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 2. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
-3. Proveer rutas curadas revisadas antes de que expire el bundle H4.17.
+3. Ampliar y revisar humanamente la cobertura curada antes de que expire el bundle H4.18; la única capacidad actual (36038/open) sigue sin recomendación económica.
 4. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
 5. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
 6. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.

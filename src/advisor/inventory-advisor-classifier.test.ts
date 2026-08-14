@@ -136,23 +136,23 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(result.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_stale' }));
 	});
 
-	it('requires an unambiguous approved applicable rule for use and treats revoked or conflicting claims as review', () => {
+	it('requires an approved applicable V1 assertion for use and treats revoked or conflicting claims as review', () => {
 		const applicable = fixture();
-		applicable.input.rulePack.rules = [rule('use-10', 'approved', 'applicable')];
+		applicable.input.rulePack.rules = [rule('use-10', 'approved')];
 		applicable.input.rulePack.sha256 = sha256InventoryRulePack(applicable.input.rulePack);
 		applicable.knowledgePack.entries[0]!.use = { status: 'applicable', ruleId: 'use-10', sourceIds: ['source'] };
 		applicable.knowledgePack.sha256 = sha256InventoryKnowledgePack(applicable.knowledgePack);
 		expect(classifyInventoryAdvisor(applicable).report?.lines[0]?.decisions[0]).toMatchObject({ action: 'use', ruleId: 'use-10' });
 
-		const revoked = fixture();
-		revoked.input.rulePack.rules = [rule('use-10', 'revoked', 'applicable')];
-		revoked.input.rulePack.sha256 = sha256InventoryRulePack(revoked.input.rulePack);
-		revoked.knowledgePack.entries[0]!.use = { status: 'applicable', ruleId: 'use-10', sourceIds: ['source'] };
-		revoked.knowledgePack.sha256 = sha256InventoryKnowledgePack(revoked.knowledgePack);
-		expect(classifyInventoryAdvisor(revoked).report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
+		const withheld = fixture();
+		withheld.input.rulePack.rules = [rule('use-10', 'revoked')];
+		withheld.input.rulePack.sha256 = sha256InventoryRulePack(withheld.input.rulePack);
+		withheld.knowledgePack.entries[0]!.use = { status: 'applicable', ruleId: 'use-10', sourceIds: ['source'] };
+		withheld.knowledgePack.sha256 = sha256InventoryKnowledgePack(withheld.knowledgePack);
+		expect(classifyInventoryAdvisor(withheld).report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
 
 		const conflict = fixture();
-		conflict.input.rulePack.rules = [rule('use-a', 'approved', 'applicable'), rule('use-b', 'approved', 'applicable')];
+		conflict.input.rulePack.rules = [rule('use-a', 'approved'), rule('use-b', 'approved')];
 		conflict.input.rulePack.sha256 = sha256InventoryRulePack(conflict.input.rulePack);
 		conflict.knowledgePack.entries[0]!.use = { status: 'applicable', ruleId: 'use-a', sourceIds: ['source'] };
 		conflict.knowledgePack.sha256 = sha256InventoryKnowledgePack(conflict.knowledgePack);
@@ -192,7 +192,7 @@ describe('H4.15 inventory advisor classifier', () => {
 
 	it('treats a positive rule against a not-applicable knowledge claim and stale evidence as review', () => {
 		const contradictory = fixture();
-		contradictory.input.rulePack.rules = [rule('use-10', 'approved', 'applicable')];
+		contradictory.input.rulePack.rules = [rule('use-10', 'approved')];
 		contradictory.input.rulePack.sha256 = sha256InventoryRulePack(contradictory.input.rulePack);
 		expect(classifyInventoryAdvisor(contradictory).report?.lines[0]?.decisions[0])
 			.toMatchObject({ action: 'review' });
@@ -205,8 +205,9 @@ describe('H4.15 inventory advisor classifier', () => {
 	});
 });
 
-function rule(ruleId: string, status: 'approved' | 'revoked', assertion: 'applicable' | 'not_applicable') {
-	return { ruleId, itemId: 10, action: 'use' as const, status, assertion, reason: 'curated_use' as const, sourceIds: ['rule-source'] };
+function rule(ruleId: string, status: 'approved' | 'revoked') {
+	return { ruleId, itemId: 10, action: 'use' as const, status, assertion: 'applicable' as const,
+		reason: 'curated_use' as const, sourceIds: ['rule-source'] };
 }
 
 function fixture(): InventoryAdvisorEngineInputV1 {

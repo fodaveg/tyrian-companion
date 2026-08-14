@@ -9,7 +9,7 @@ import {
 import type {
 	InventoryAdvisorInputV1,
 	InventoryAdvisorPolicyV1,
-	InventoryAdvisorRulePackV1,
+	InventoryAdvisorRulePack,
 	KeepExceptionV1,
 } from './inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -44,7 +44,7 @@ export function createInventoryAdvisorInputFromEvidence(value: {
 	evidence: InventoryAdvisorEvidenceV1;
 	goals: ReservationGoal[];
 	keepExceptions: KeepExceptionV1[];
-	rulePack: InventoryAdvisorRulePackV1;
+	rulePack: InventoryAdvisorRulePack;
 	policy: InventoryAdvisorPolicyV1;
 }): InventoryAdvisorInputV1 | null {
 	try {

@@ -1,5 +1,12 @@
 # Changelog
 
+## H4.18 — Curación segura inicial del Inventory Advisor
+
+- Añadida la capability source-backed de abrir el item 36038; `use` y `salvage` permanecen explícitamente `not_applicable`.
+- RulePack V2 queda en `pending_human_review` con `reviewedAt: null`; la recomendación permanece retenida por comparación económica ausente.
+- Se preserva el hash legacy de V1 y V2 usa SHA-256 estándar; las ventanas `publishedAt`/`validUntil` fallan cerradas.
+- No existen acciones automáticas ni descarte. QA y revisión humana siguen pendientes.
+
 ## H5.12 — Preferencias locales del Inventory Advisor
 
 - Añade objetivos de reserva y excepciones de conservación locales, editables dentro del Advisor tras una acción explícita.

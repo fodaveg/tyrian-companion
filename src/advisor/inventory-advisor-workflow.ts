@@ -3,7 +3,7 @@ import { createInventoryAdvisorInputFromEvidence } from './inventory-advisor-evi
 import { classifyInventoryAdvisor } from './inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { applyInventoryDiscardAllowlist } from './inventory-advisor-discard';
-import type { InventoryAdvisorPolicyV1, InventoryAdvisorRulePackV1, KeepExceptionV1 } from './inventory-advisor-model';
+import type { InventoryAdvisorPolicyV1, InventoryAdvisorRulePack, KeepExceptionV1 } from './inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorContextualPresentationSource, InventoryAdvisorPresentationSource } from './inventory-advisor-presentation';
 import type { CatalogLocale } from '../catalog/public-catalog-model';
@@ -27,7 +27,7 @@ export interface InventoryAdvisorWorkflowPorts {
 }
 
 export type InventoryAdvisorRules = {
-	rulePack: InventoryAdvisorRulePackV1;
+	rulePack: InventoryAdvisorRulePack;
 	knowledgePack: InventoryKnowledgePackV1;
 	policy: InventoryAdvisorPolicyV1;
 };

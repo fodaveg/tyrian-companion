@@ -6,6 +6,8 @@ import {
 	isInventoryAdvisorInput,
 	isInventoryAdvisorReason,
 	isInventoryAdvisorReport,
+	isApprovedApplicableCapability,
+	isEnabledApplicableRule,
 	sha256InventoryAdvisorReport,
 } from './inventory-advisor-contract';
 import type {
@@ -18,6 +20,8 @@ import type {
 import { buildReservationBalance, createReservationPlan } from '../economy/reservation';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
+import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
+import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -49,15 +53,19 @@ function isInventoryAdvisorResultUnsafe(value: unknown): value is InventoryAdvis
 export function isInventoryAdvisorResultForInput(
 	value: unknown,
 	input: unknown,
+	knowledgePack?: unknown,
 ): value is InventoryAdvisorResultV1 {
-	try { return isInventoryAdvisorResultForInputUnsafe(value, input); } catch { return false; }
+	try { return isInventoryAdvisorResultForInputUnsafe(value, input, knowledgePack); } catch { return false; }
 }
 
 function isInventoryAdvisorResultForInputUnsafe(
 	value: unknown,
 	input: unknown,
+	knowledgePack: unknown,
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
+	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
+		|| knowledgePack.sha256 !== input.rulePack.knowledgePackSha256)) return false;
 	if (value.status === 'invalid') return true;
 	const report = value.report;
 	if (report.accountId !== input.snapshot.accountId || report.snapshotId !== input.snapshot.snapshotId
@@ -114,8 +122,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 		const signalsComplete = signalsFresh && input.accountSignals.unlockCoverage === 'complete'
 			&& input.accountSignals.achievementCoverage === 'complete'
 			&& input.accountSignals.tradingPostAccess !== 'unknown';
-		const rulesComplete = fresh(input.rulePack.reviewedAt, input.asOf,
-			input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
+		const rulesComplete = rulePackFresh(input)
 			&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
 		const expectedCoverage = {
 			snapshot: snapshotComplete(input.snapshot) ? 'complete' : 'limited',
@@ -134,11 +141,41 @@ function isInventoryAdvisorResultForInputUnsafe(
 		let remainingBid = price?.bid?.quantity ?? 0;
 		for (const decision of line.decisions) {
 			const explanation = report.explanations.find((entry) => entry.ref === decision.explanationRef);
+			const withheld = isWithheldEconomicComparison(input, knowledgePack as InventoryKnowledgePackV1 | undefined, decision, line.itemId);
+			if (input.rulePack.schemaVersion === 2 && withheld !== (explanation?.reasonCodes.length === 1
+				&& explanation.reasonCodes[0] === 'economic_comparison_missing')) return false;
 			if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException, remainingBid, explanation?.reasonCodes ?? [])) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
 	return true;
+}
+
+/** V2 economic withholding is derivable only from the exact rule and bound knowledge payload. */
+function isWithheldEconomicComparison(
+	input: InventoryAdvisorInputV1,
+	knowledgePack: InventoryKnowledgePackV1 | undefined,
+	decision: InventoryRecommendationDecisionV1,
+	itemId: number,
+): boolean {
+	if (input.rulePack.schemaVersion !== 2 || !knowledgePack || decision.action !== 'review' || decision.ruleId !== null) return false;
+	if (Date.parse(input.asOf) < Date.parse(input.rulePack.publishedAt) || Date.parse(input.asOf) >= Date.parse(input.rulePack.validUntil)) return false;
+	const entry = knowledgePack.entries.find((candidate) => candidate.itemId === itemId);
+	if (!entry) return false;
+	for (const action of ['use', 'open', 'salvage'] as const) {
+		const claim = entry[action];
+		if (claim === null) return false;
+		const capabilities = input.rulePack.rules.filter((candidate) => candidate.itemId === itemId
+			&& candidate.action === action && candidate.status === 'approved' && candidate.capability === 'applicable');
+		if (capabilities.length > 1 || (claim.status === 'not_applicable' && capabilities.length > 0)) return false;
+		if (claim.status === 'not_applicable') continue;
+		if (action === 'salvage' && input.catalog.items[String(itemId)]?.flags.includes('NoSalvage')) return false;
+		const rule = capabilities.find((candidate) => candidate.ruleId === claim.ruleId);
+		if (!rule) return false;
+		if (rule.recommendation.status === 'review_only') return rule.recommendation.reason === 'economic_comparison_missing';
+		return false;
+	}
+	return false;
 }
 
 function validDecisionAgainstInput(
@@ -191,11 +228,10 @@ function validDecisionAgainstInput(
 			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
-	if (!fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs,
-		input.policy.maxFutureSkewMs) || Date.parse(input.asOf) > Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs) return false;
+	if (!rulePackFresh(input)) return false;
 	const matchingRules = input.rulePack.rules.filter((rule) => rule.ruleId === decision.ruleId
 		&& rule.itemId === line.itemId && rule.action === decision.action
-		&& rule.status === 'approved' && rule.assertion === 'applicable');
+		&& isEnabledApplicableRule(input.rulePack, rule));
 	if (matchingRules.length !== 1) return false;
 	if (decision.action === 'salvage') return !item.flags.includes('NoSalvage');
 	if (decision.action === 'use') {
@@ -231,14 +267,21 @@ function validDiscardAgainstInput(
 		|| (item.vendorValue > 0 && !item.flags.includes('NoSell'))
 		|| coverage.status !== 'resolved' || !['network', 'cache_fresh'].includes(coverage.source)
 		|| proof.catalogSource !== coverage.source || proof.rulePackSha256 !== input.rulePack.sha256
-		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && rule.status === 'approved'
-			&& rule.assertion === 'applicable' && (rule.action === 'use' || rule.action === 'open'))) return false;
+		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && isApprovedApplicableCapability(input.rulePack, rule)
+			&& (rule.action === 'use' || rule.action === 'open'))) return false;
 	return fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs,
 			input.policy.maxFutureSkewMs)
-		&& fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
-		&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
+		&& rulePackFresh(input);
+}
+
+function rulePackFresh(input: InventoryAdvisorInputV1): boolean {
+	const pack = input.rulePack;
+	return (pack.schemaVersion === 1 || (pack.reviewStatus === 'human_reviewed' && pack.reviewedAt !== null))
+		&& pack.reviewedAt !== null && fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
+		&& (pack.schemaVersion === 2 ? Date.parse(input.asOf) < Date.parse(pack.validUntil)
+			: Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs);
 }
 
 function fresh(evidenceAt: string, asOf: string, maxAgeMs: number, maxFutureSkewMs: number): boolean {

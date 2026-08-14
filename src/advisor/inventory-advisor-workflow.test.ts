@@ -47,12 +47,13 @@ describe('H5.11 inventory advisor workflow', () => {
 
 	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {
 		const fixture = reviewedDiscardFixture();
+		rebaseEvidence(fixture.evidence, '2026-08-14T18:04:00.000Z');
 		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
 		const workflow = new InventoryAdvisorWorkflow({
 			capture: { capture },
 			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+		now: () => Date.parse('2026-08-14T18:05:00.000Z'),
 		});
 		const result = await workflow.refresh('es');
 		expect(capture).toHaveBeenCalledOnce();
@@ -68,8 +69,8 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(finalActions).toEqual(['review']);
 		expect(result.source.result.proofs).toEqual([]);
 		const presentation = buildInventoryAdvisorPresentation(result.source);
-		expect(presentation.status).toBe('ready');
-		if (presentation.status !== 'ready') throw new Error('Expected ready review-only presentation.');
+		expect(presentation.status).toBe('limited');
+		if (presentation.status !== 'limited') throw new Error('Expected limited review-only presentation.');
 		expect(presentation.discardReview).toEqual({ status: 'unavailable' });
 		expect(presentation.groups.flatMap((group) => group.rows.map((row) => row.action))).toEqual(['review']);
 		expect(JSON.stringify(presentation)).not.toMatch(/"(?:sell|list|vendor|salvage|use|open|discard_review|discard_candidate)"/u);
@@ -82,7 +83,7 @@ describe('H5.11 inventory advisor workflow', () => {
 			capture: { capture },
 			preferences: { load: preferences },
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-			now: () => Date.parse('2026-11-12T00:00:00.000Z'),
+		now: () => Date.parse('2026-11-12T18:04:33.000Z'),
 		});
 		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'missing_rules' });
 		expect(capture).not.toHaveBeenCalled();
@@ -231,6 +232,18 @@ function notApplicable(assertionId: string) {
 
 function completeEndpoint() {
 	return { status: 'complete' as const, capturedAt: '2026-08-14T12:00:00.000Z', reason: null };
+}
+
+function rebaseEvidence(evidence: InventoryAdvisorEvidenceV1, capturedAt: string): void {
+	evidence.snapshot.startedAt = capturedAt;
+	evidence.snapshot.completedAt = capturedAt;
+	evidence.catalog.resolvedAt = capturedAt;
+	evidence.prices.capturedAt = capturedAt;
+	evidence.accountSignals.capturedAt = capturedAt;
+	for (const endpoint of Object.values(evidence.accountSignals.endpointCoverage)) endpoint.capturedAt = capturedAt;
+	evidence.capturedAt = capturedAt;
+	evidence.finishedAt = capturedAt;
+	evidence.snapshotFingerprint = sha256CanonicalValue(evidence.snapshot);
 }
 
 function completeSnapshotCoverage() {

@@ -33,6 +33,18 @@ describe('inventory advisor H4.13 contract', () => {
 		expect(isInventoryAdvisorRulePack(input.rulePack)).toBe(true);
 	});
 
+	it('keeps a frozen V1 rule-pack digest valid without silently migrating it', () => {
+		const legacy = {
+			schemaVersion: 1 as const, id: 'legacy-rules', version: 1,
+			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-14T18:04:33.000Z', validUntil: '2026-11-12T18:04:33.000Z',
+			sha256: 'dcc91250efbef1f92a900e880c26b61f59e2c02cd25202f3ead7382713be0158',
+			sources: [{ id: 'source', url: 'https://example.invalid', retrievedAt: '2026-08-14T18:04:33.000Z' }],
+			rules: [{ ruleId: 'open-1', itemId: 1, action: 'open' as const, status: 'approved' as const, assertion: 'applicable' as const, reason: 'curated_open' as const, sourceIds: ['source'] }],
+		};
+		expect(isInventoryAdvisorRulePack(legacy)).toBe(true);
+		expect(sha256InventoryRulePack(legacy)).toBe(legacy.sha256);
+	});
+
 	it('requires per-endpoint signal provenance, preserves completed achievements without bits and bounds snapshot age', () => {
 		const input = inputFixture();
 		const progress = { achievementId: 42, done: true, current: 1, max: 1, repeated: 0, bits: [] };

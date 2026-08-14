@@ -1,5 +1,6 @@
 import { isComparableStorageSnapshot } from '../account/storage-delta';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
+import { canonicalJson, sha256CanonicalValue as standardSha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
 	isNormalizedCatalogCurrency,
@@ -26,8 +27,11 @@ import {
 	type InventoryAdvisorReasonCode,
 	type InventoryAdvisorReasonV1,
 	type InventoryAdvisorReportV1,
+	type InventoryAdvisorRulePack,
 	type InventoryAdvisorRulePackV1,
+	type InventoryAdvisorRulePackV2,
 	type InventoryAdvisorRuleV1,
+	type InventoryAdvisorRuleV2,
 	type InventoryItemPriceV1,
 	type InventoryPriceSideV1,
 	type InventoryPriceSnapshotV1,
@@ -44,7 +48,7 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'snapshot_invalid', 'snapshot_scope_limited', 'identity_mismatch', 'catalog_missing',
 	'catalog_invalid', 'catalog_stale', 'price_missing', 'price_stale', 'price_partial',
 	'binding_unknown', 'tp_access_unknown', 'position_not_actionable', 'reserved_for_goal',
-	'user_keep_exception', 'rule_missing', 'rule_stale', 'rule_conflict',
+	'user_keep_exception', 'rule_missing', 'rule_stale', 'rule_conflict', 'economic_comparison_missing',
 	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'no_sell',
 	'no_salvage', 'salvage_value_unknown', 'delete_warning', 'alternative_route_exists',
 	'discard_not_allowlisted', 'arithmetic_overflow',
@@ -64,6 +68,13 @@ export function isAccountSignals(value: unknown): value is AccountSignalsV1 {
 }
 export function isInventoryAdvisorRulePack(value: unknown): value is InventoryAdvisorRulePackV1 {
 	return safeGuard(() => isInventoryAdvisorRulePackUnsafe(value));
+}
+/** Accepts the frozen V1 contract and the explicit V2 curation contract. */
+export function isInventoryAdvisorRulePackAny(value: unknown): value is InventoryAdvisorRulePack {
+	return safeGuard(() => isInventoryAdvisorRulePackUnsafe(value) || isInventoryAdvisorRulePackV2Unsafe(value));
+}
+export function isInventoryAdvisorRulePackV2(value: unknown): value is InventoryAdvisorRulePackV2 {
+	return safeGuard(() => isInventoryAdvisorRulePackV2Unsafe(value));
 }
 export function isInventoryAdvisorPolicy(value: unknown): value is InventoryAdvisorPolicyV1 {
 	return safeGuard(() => isInventoryAdvisorPolicyUnsafe(value));
@@ -94,7 +105,7 @@ function isInventoryAdvisorInputUnsafe(value: unknown): value is InventoryAdviso
 		|| !isInventoryPriceSnapshot(value.prices) || !Array.isArray(value.goals)
 		|| !value.goals.every(isReservationGoal) || !unique(value.goals.map((goal) => goal.goalId))
 		|| !Array.isArray(value.keepExceptions) || !value.keepExceptions.every(isKeepException)
-		|| !isAccountSignals(value.accountSignals) || !isInventoryAdvisorRulePack(value.rulePack)
+		|| !isAccountSignals(value.accountSignals) || !isInventoryAdvisorRulePackAny(value.rulePack)
 		|| !isInventoryAdvisorPolicy(value.policy)) return false;
 	const snapshot = value.snapshot;
 	const catalog = value.catalog;
@@ -209,6 +220,28 @@ function isInventoryAdvisorRulePackUnsafe(value: unknown): value is InventoryAdv
 		&& jsonRoundTrip(value);
 }
 
+function isInventoryAdvisorRulePackV2Unsafe(value: unknown): value is InventoryAdvisorRulePackV2 {
+	if (!record(value) || !keys(value, [
+		'schemaVersion', 'id', 'version', 'publishedAt', 'reviewedAt', 'reviewStatus', 'validUntil',
+		'knowledgePackSha256', 'sha256', 'sources', 'rules',
+	]) || value.schemaVersion !== 2 || !identifier(value.id) || !positive(value.version)
+		|| !iso(value.publishedAt) || !iso(value.validUntil) || Date.parse(value.publishedAt) >= Date.parse(value.validUntil)
+		|| !sha(value.knowledgePackSha256) || !sha(value.sha256) || !Array.isArray(value.sources) || !value.sources.every(isRuleSource)
+		|| !unique(value.sources.map((source) => source.id))
+		|| !strictlySorted(value.sources, (left, right) => left.id.localeCompare(right.id))
+		|| !Array.isArray(value.rules) || !value.rules.every(isRuleV2)
+		|| !unique(value.rules.map((rule) => rule.ruleId)) || !strictlySorted(value.rules, ruleOrder)
+		|| !value.rules.every((rule) => rule.sourceIds.every((sourceId) => (value.sources as InventoryRuleSourceV1[])
+			.some((source) => source.id === sourceId)))) return false;
+	if ((value.reviewStatus === 'pending_human_review' && value.reviewedAt !== null)
+		|| (value.reviewStatus === 'human_reviewed' && (!iso(value.reviewedAt)
+			|| Date.parse(value.publishedAt) > Date.parse(value.reviewedAt)
+			|| Date.parse(value.reviewedAt) >= Date.parse(value.validUntil)))) return false;
+	return (value.reviewStatus === 'pending_human_review' || value.reviewStatus === 'human_reviewed')
+		&& value.sha256 === sha256InventoryRulePack(value as unknown as InventoryAdvisorRulePackV2)
+		&& jsonRoundTrip(value);
+}
+
 function isInventoryAdvisorPolicyUnsafe(value: unknown): value is InventoryAdvisorPolicyV1 {
 	return record(value) && keys(value, [
 		'version', 'maxSnapshotAgeMs', 'maxPriceAgeMs', 'maxCatalogAgeMs', 'maxAccountSignalsAgeMs', 'maxRulePackAgeMs',
@@ -236,7 +269,7 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 		|| !strictlySorted(value.reasons, reasonOrder)
 		|| !Array.isArray(value.explanations) || !value.explanations.every(isExplanation)
 		|| !strictlySorted(value.explanations, (left, right) => left.ref.localeCompare(right.ref))
-		|| !isInventoryAdvisorRulePack(value.rulePack)) return false;
+		|| !isInventoryAdvisorRulePackAny(value.rulePack)) return false;
 	const allPositions = value.lines.flatMap((line) => line.positions.map((position) => position.ref));
 	const allDecisions = value.lines.flatMap((line) => line.decisions);
 	const allExplanationRefs = value.explanations.map((explanation) => explanation.ref);
@@ -247,9 +280,9 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 		const explanation = explanations.get(decision.explanationRef);
 		if (!explanation || explanation.itemId !== decision.itemId || explanation.action !== decision.action
 			|| explanation.ruleId !== decision.ruleId) return false;
-		if (decision.ruleId !== null && !value.rulePack.rules.some((rule) => rule.ruleId === decision.ruleId
-			&& rule.itemId === decision.itemId && rule.action === decision.action && rule.status === 'approved'
-			&& rule.assertion === 'applicable')) return false;
+		const rulePack = value.rulePack;
+		if (decision.ruleId !== null && !rulePack.rules.some((rule) => isEnabledApplicableRule(rulePack, rule)
+			&& rule.ruleId === decision.ruleId && rule.itemId === decision.itemId && rule.action === decision.action)) return false;
 		if (decision.action === 'discard_candidate'
 			&& decision.discardProof?.rulePackSha256 !== value.rulePack.sha256) return false;
 	}
@@ -263,17 +296,22 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 }
 
 export function sha256InventoryAdvisorReport(report: InventoryAdvisorReportV1): string {
-	return sha256(canonical(report));
+	return legacySha256(canonical(report));
 }
 
-/** Hashes canonical JSON while preserving every array order as evidence. */
+/** Legacy V1 fingerprint retained for persisted evidence and recommendation envelopes. */
 export function sha256CanonicalValue(value: unknown): string {
-	return sha256(canonical(value));
+	return legacySha256(canonical(value));
 }
 
-export function sha256InventoryRulePack(rulePack: InventoryAdvisorRulePackV1): string {
+/** Standard SHA-256 is reserved for V2 contracts introduced without legacy artifacts. */
+export function sha256StandardCanonicalValue(value: unknown): string {
+	return standardSha256CanonicalValue(value);
+}
+
+export function sha256InventoryRulePack(rulePack: InventoryAdvisorRulePack): string {
 	const { sha256: _ignored, ...content } = rulePack;
-	return sha256(canonical(content));
+	return rulePack.schemaVersion === 2 ? standardSha256CanonicalValue(content) : legacySha256(canonical(content));
 }
 
 function isLine(value: unknown): value is InventoryAdvisorLineV1 {
@@ -422,6 +460,48 @@ function isRule(value: unknown): value is InventoryAdvisorRuleV1 {
 		&& (value.action !== 'discard_candidate' || value.assertion === 'applicable');
 }
 
+function isRuleV2(value: unknown): value is InventoryAdvisorRuleV2 {
+	if (!record(value) || !keys(value, ['ruleId', 'itemId', 'action', 'status', 'capability', 'recommendation', 'reason', 'sourceIds'])
+		|| !identifier(value.ruleId) || !positive(value.itemId)
+		|| !['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action))
+		|| !['approved', 'revoked'].includes(String(value.status)) || value.capability !== 'applicable'
+		|| !isRecommendationGate(value.recommendation) || !Array.isArray(value.sourceIds)
+		|| value.sourceIds.length === 0 || !value.sourceIds.every(identifier) || !sortedStrings(value.sourceIds)) return false;
+	const reasons: Record<InventoryAdvisorRuleV2['action'], InventoryAdvisorRuleV2['reason']> = {
+		salvage: 'curated_salvage', use: 'curated_use', open: 'curated_open',
+		discard_candidate: 'curated_discard_review',
+	};
+	return value.reason === reasons[value.action as InventoryAdvisorRuleV2['action']]
+		&& (value.action !== 'discard_candidate' || value.recommendation.status === 'enabled');
+}
+
+function isRecommendationGate(value: unknown): value is InventoryAdvisorRuleV2['recommendation'] {
+	return record(value) && ((keys(value, ['status']) && value.status === 'enabled')
+		|| (keys(value, ['status', 'reason']) && value.status === 'review_only'
+			&& value.reason === 'economic_comparison_missing'));
+}
+
+export function isEnabledApplicableRule(
+	pack: InventoryAdvisorRulePack,
+	rule: InventoryAdvisorRuleV1 | InventoryAdvisorRuleV2,
+): boolean {
+	if (rule.status !== 'approved') return false;
+	if (pack.schemaVersion === 1) return 'assertion' in rule && rule.assertion === 'applicable';
+	return 'capability' in rule && rule.capability === 'applicable'
+		&& pack.reviewStatus === 'human_reviewed' && pack.reviewedAt !== null
+		&& rule.recommendation.status === 'enabled';
+}
+
+/** Capability is distinct from a human-authorized recommendation in V2. */
+export function isApprovedApplicableCapability(
+	pack: InventoryAdvisorRulePack,
+	rule: InventoryAdvisorRuleV1 | InventoryAdvisorRuleV2,
+): boolean {
+	return rule.status === 'approved' && (pack.schemaVersion === 1
+		? 'assertion' in rule && rule.assertion === 'applicable'
+		: 'capability' in rule && rule.capability === 'applicable');
+}
+
 export function isCatalogResolution(value: unknown): value is CatalogResolution {
 	if (!record(value) || !keys(value, [
 		'snapshotId', 'locale', 'schemaVersion', 'resolvedAt', 'items', 'currencies', 'materials',
@@ -543,7 +623,7 @@ function keepExceptionOrder(left: KeepExceptionV1, right: KeepExceptionV1): numb
 	return left.itemId - right.itemId || left.exceptionId.localeCompare(right.exceptionId);
 }
 
-function ruleOrder(left: InventoryAdvisorRuleV1, right: InventoryAdvisorRuleV1): number {
+function ruleOrder(left: Pick<InventoryAdvisorRuleV1, 'itemId' | 'action' | 'ruleId'>, right: Pick<InventoryAdvisorRuleV1, 'itemId' | 'action' | 'ruleId'>): number {
 	return left.itemId - right.itemId || left.action.localeCompare(right.action)
 		|| left.ruleId.localeCompare(right.ruleId);
 }
@@ -625,14 +705,15 @@ function safeGuard(check: () => boolean): boolean {
 	try { return check(); } catch { return false; }
 }
 function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (record(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
+	return canonicalJson(value);
 }
 
-// Synchronous SHA-256 keeps the contract pure and deterministic in Obsidian and tests.
-function sha256(message: string): string {
+/**
+ * Historical V1 digest retained byte-for-byte for existing local reports and
+ * envelopes. It is intentionally not a general SHA-256 API; new V2 payloads
+ * use sha256StandardCanonicalValue above.
+ */
+function legacySha256(message: string): string {
 	const words: number[] = [];
 	const encoded = new TextEncoder().encode(message);
 	const bitLength = encoded.length * 8;
@@ -656,20 +737,15 @@ function sha256(message: string): string {
 	for (let offset = 0; offset < words.length; offset += 16) {
 		const schedule = words.slice(offset, offset + 16);
 		for (let index = 16; index < 64; index += 1) {
-			const first = schedule[index - 15]!;
-			const second = schedule[index - 2]!;
-			const sigma0 = rotate(first, 7) ^ rotate(first, 18) ^ first >>> 3;
-			const sigma1 = rotate(second, 17) ^ rotate(second, 19) ^ second >>> 10;
-			schedule[index] = (schedule[index - 16]! + sigma0 + schedule[index - 7]! + sigma1) | 0;
+			const first = schedule[index - 15]!; const second = schedule[index - 2]!;
+			schedule[index] = (schedule[index - 16]! + (rotate(first, 7) ^ rotate(first, 18) ^ first >>> 3)
+				+ schedule[index - 7]! + (rotate(second, 17) ^ rotate(second, 19) ^ second >>> 10)) | 0;
 		}
 		let [a, b, c, d, e, f, g, h] = hash;
 		for (let index = 0; index < 64; index += 1) {
-			const upper = rotate(e!, 6) ^ rotate(e!, 11) ^ rotate(e!, 25);
-			const choose = e! & f! ^ ~e! & g!;
-			const temporary1 = (h! + upper + choose + constants[index]! + schedule[index]!) | 0;
-			const lower = rotate(a!, 2) ^ rotate(a!, 13) ^ rotate(a!, 22);
-			const majority = a! & b! ^ a! & c! ^ b! & c!;
-			const temporary2 = (lower + majority) | 0;
+			const temporary1 = (h! + (rotate(e!, 6) ^ rotate(e!, 11) ^ rotate(e!, 25))
+				+ (e! & f! ^ ~e! & g!) + constants[index]! + schedule[index]!) | 0;
+			const temporary2 = ((rotate(a!, 2) ^ rotate(a!, 13) ^ rotate(a!, 22)) + (a! & b! ^ a! & c! ^ b! & c!)) | 0;
 			h = g; g = f; f = e; e = (d! + temporary1) | 0; d = c; c = b; b = a; a = (temporary1 + temporary2) | 0;
 		}
 		const next = [a!, b!, c!, d!, e!, f!, g!, h!];
@@ -677,7 +753,4 @@ function sha256(message: string): string {
 	}
 	return hash.map((value) => (value >>> 0).toString(16).padStart(8, '0')).join('');
 }
-
-function rotate(value: number, count: number): number {
-	return value >>> count | value << (32 - count);
-}
+function rotate(value: number, count: number): number { return value >>> count | value << (32 - count); }

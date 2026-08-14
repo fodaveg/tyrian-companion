@@ -1,6 +1,6 @@
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
-import { isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
+import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
 import { classifyInventoryAdvisor, isInventoryKnowledgePack } from './inventory-advisor-classifier';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
@@ -20,7 +20,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 	try {
 		if (!isInput(value)) return invalid();
 		const reproduced = classifyInventoryAdvisor(value.engineInput);
-		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input)
+		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack)
 			|| canonical(reproduced) !== canonical(value.producerResult)) return invalid();
 		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) return invalid();
 		const producerResultSha256 = sha256CanonicalValue(value.producerResult);
@@ -76,7 +76,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 			producerResultSha256, report, envelope, proofs: proofs.sort((left, right) => left.itemId - right.itemId || left.explanationRef.localeCompare(right.explanationRef)),
 		};
 		const publicResult = { status: result.status, report: result.report, envelope: result.envelope };
-		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input)
+		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack)
 			&& isInventoryDiscardAllowlistResultShape(result) ? result : invalid();
 	} catch { return invalid(); }
 }
@@ -157,10 +157,10 @@ function allowlistProof(engineInput: InventoryDiscardAllowlistInputV1['engineInp
 	if (!knowledge) return null;
 	const use = knowledge.use; const open = knowledge.open; const salvage = knowledge.salvage;
 	if (!isExplicitNotApplicable(use) || !isExplicitNotApplicable(open) || !isExplicitNotApplicable(salvage)
-		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && rule.status === 'approved' && rule.assertion === 'applicable'
-			&& ['use', 'open', 'salvage'].includes(rule.action) && rule.assertion === 'applicable')) return null;
+		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && isApprovedApplicableCapability(input.rulePack, rule)
+			&& ['use', 'open', 'salvage'].includes(rule.action))) return null;
 	const discardRules = input.rulePack.rules.filter((rule) => rule.itemId === line.itemId && rule.action === 'discard_candidate'
-		&& rule.status === 'approved' && rule.assertion === 'applicable' && rule.reason === 'curated_discard_review');
+		&& isEnabledApplicableRule(input.rulePack, rule) && rule.reason === 'curated_discard_review');
 	if (discardRules.length !== 1) return null;
 	const discard = discardRules[0]!;
 	return {
@@ -190,10 +190,17 @@ function freshEvidence(input: InventoryDiscardAllowlistInputV1['engineInput']['i
 		&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs)
-		&& fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
-		&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs
+		&& rulePackFresh(input)
 		&& input.rulePack.sources.every((source) => fresh(source.retrievedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
-			&& Date.parse(source.retrievedAt) <= Date.parse(input.rulePack.reviewedAt));
+			&& input.rulePack.reviewedAt !== null && Date.parse(source.retrievedAt) <= Date.parse(input.rulePack.reviewedAt));
+}
+
+function rulePackFresh(input: InventoryDiscardAllowlistInputV1['engineInput']['input']): boolean {
+	const pack = input.rulePack;
+	return (pack.schemaVersion === 1 || (pack.reviewStatus === 'human_reviewed' && pack.reviewedAt !== null))
+		&& pack.reviewedAt !== null && fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
+		&& (pack.schemaVersion === 2 ? Date.parse(input.asOf) < Date.parse(pack.validUntil)
+			: Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs);
 }
 
 function lineEligible(engineInput: InventoryDiscardAllowlistInputV1['engineInput'], line: InventoryAdvisorLineV1): boolean {

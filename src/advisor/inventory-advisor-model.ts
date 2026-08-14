@@ -38,6 +38,7 @@ export type InventoryAdvisorReasonCode =
 	| 'rule_missing'
 	| 'rule_stale'
 	| 'rule_conflict'
+	| 'economic_comparison_missing'
 	| 'unlock_coverage_unknown'
 	| 'collection_coverage_unknown'
 	| 'already_unlocked'
@@ -154,6 +155,37 @@ export interface InventoryAdvisorRulePackV1 {
 	rules: InventoryAdvisorRuleV1[];
 }
 
+/** V2 keeps the V1 lifecycle while separating route capability from recommendation permission. */
+export interface InventoryAdvisorRuleV2 {
+	ruleId: string;
+	itemId: number;
+	action: 'salvage' | 'use' | 'open' | 'discard_candidate';
+	status: 'approved' | 'revoked';
+	/** V2 positive rules describe only demonstrated capabilities; negatives live in knowledge. */
+	capability: 'applicable';
+	recommendation: { status: 'enabled' } | { status: 'review_only'; reason: 'economic_comparison_missing' };
+	reason: 'curated_salvage' | 'curated_use' | 'curated_open' | 'curated_discard_review';
+	sourceIds: string[];
+}
+
+export interface InventoryAdvisorRulePackV2 {
+	schemaVersion: 2;
+	id: string;
+	version: number;
+	publishedAt: string;
+	/** Null while the source-backed candidate awaits direct human review. */
+	reviewedAt: string | null;
+	reviewStatus: 'pending_human_review' | 'human_reviewed';
+	/** Exact knowledge payload required to explain a withheld V2 recommendation. */
+	knowledgePackSha256: string;
+	validUntil: string;
+	sha256: string;
+	sources: InventoryRuleSourceV1[];
+	rules: InventoryAdvisorRuleV2[];
+}
+
+export type InventoryAdvisorRulePack = InventoryAdvisorRulePackV1 | InventoryAdvisorRulePackV2;
+
 export interface InventoryAdvisorPolicyV1 {
 	version: typeof INVENTORY_ADVISOR_POLICY_VERSION;
 	maxSnapshotAgeMs: number;
@@ -174,7 +206,7 @@ export interface InventoryAdvisorInputV1 {
 	goals: ReservationGoal[];
 	keepExceptions: KeepExceptionV1[];
 	accountSignals: AccountSignalsV1;
-	rulePack: InventoryAdvisorRulePackV1;
+	rulePack: InventoryAdvisorRulePack;
 	policy: InventoryAdvisorPolicyV1;
 }
 
@@ -269,7 +301,7 @@ export interface InventoryAdvisorReportV1 {
 	lines: InventoryAdvisorLineV1[];
 	reasons: InventoryAdvisorReasonV1[];
 	explanations: InventoryAdvisorExplanationV1[];
-	rulePack: InventoryAdvisorRulePackV1;
+	rulePack: InventoryAdvisorRulePack;
 }
 
 export type InventoryAdvisorResultV1 =
