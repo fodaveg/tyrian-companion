@@ -9,6 +9,8 @@
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
 		"test": "vitest run && npm run test:release-preflight",
+		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
+		"test:bench:h6-performance-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-performance-red.ts",
 		"test:release-preflight": "bash scripts/tests/probar-release-preflight.sh",
 		"check": "npm run lint && npm run test && npm run build",
 		"release:preflight": "node scripts/release-preflight.mjs",

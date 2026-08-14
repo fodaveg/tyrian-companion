@@ -1,5 +1,11 @@
 # Changelog
 
+## H6.6 — Rendimiento reproducible de cuenta grande
+
+- Añadido benchmark Node con GC explícito para parser → construcción y estabilización productivas de tres pasadas → delta → clasificación → valoración sobre 48 personajes, 5.132 holdings y 4.840 ganancias.
+- Fijados warmup, 21 muestras, mediana/p95 nearest-rank y heap acumulado post-GC contra un baseline único. Los presupuestos fail-closed detectan colapsos y CI prueba la vía roja con retención explícita posterior al baseline en Node 22 y 24.
+- El benchmark excluye explícitamente HTTP, caches, persistencia, Vault y UI: no simula I/O ni usa tiempo de Vitest como métrica.
+
 ## H5.10 — Exportación de historial durable
 
 - Añadido escaneo manual vault-wide de notas `gw2_farming_session` schema 1/2, con integridad de referencias y seis bloques gestionados. Corrupción, schema futuro o `tc_session_ref` duplicada bloquean la exportación completa.

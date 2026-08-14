@@ -5,13 +5,18 @@ import { parseAccountProfile, parseTokenInfo } from './account-service';
 import {
 	PINNED_SCHEMA,
 	SnapshotCapabilityError,
-	type CurrencyTotal,
 	type SnapshotCoverage,
-	type SnapshotQuality,
 	type SourceCoverage,
 	type StorageSnapshot,
 	type StorageSnapshotPass,
 } from './storage-snapshot-model';
+import {
+	buildStorageSnapshotPass,
+	canonicalSnapshotValue,
+	finalizeStorageSnapshot,
+	qualifyStorageSnapshotPair,
+	qualifyStorageSnapshotTriple,
+} from './storage-snapshot-pure';
 import {
 	parseCharacterInventory,
 	parseDelivery,
@@ -63,30 +68,23 @@ export class StorageSnapshotService {
 		const snapshotId = crypto.randomUUID();
 		const first = await this.capturePass(operation, context);
 		const second = await this.capturePass(operation, context);
-		if (sameOwnership(first, second)) {
-			return finalize(
-				second,
-				classifyConsecutive(first, second),
-				[first, second],
-				context,
+		const pair = qualifyStorageSnapshotPair(first, second);
+		if (pair.status === 'qualified') {
+			return finalizeStorageSnapshot(pair.value, {
+				accountId: context.accountId,
 				snapshotId,
 				startedAt,
-			);
+				completedAt: new Date().toISOString(),
+			});
 		}
 
 		const third = await this.capturePass(operation, context);
-		return finalize(
-			third,
-			isPartial(first.coverage) || isPartial(second.coverage) || isPartial(third.coverage)
-				? 'partial'
-				: sameOwnership(second, third)
-					? classifyConsecutive(second, third)
-					: 'unstable',
-			[first, second, third],
-			context,
+		return finalizeStorageSnapshot(qualifyStorageSnapshotTriple(first, second, third), {
+			accountId: context.accountId,
 			snapshotId,
 			startedAt,
-		);
+			completedAt: new Date().toISOString(),
+		});
 	}
 
 	private async capturePass(
@@ -180,7 +178,7 @@ export class StorageSnapshotService {
 			coverage.sources.characters = { ...characterFailure };
 		}
 
-		return buildPass(holdings, currencies, coverage, roster);
+		return buildStorageSnapshotPass(holdings, currencies, coverage, roster);
 	}
 
 	private async captureItems(
@@ -296,106 +294,6 @@ function emptyCoverage(
 	};
 }
 
-function buildPass(
-	holdings: StorageSnapshotPass['holdings'],
-	currencies: StorageSnapshotPass['currencies'],
-	coverage: SnapshotCoverage,
-	roster: string[],
-): StorageSnapshotPass {
-	const availableByItem: Record<string, number> = {};
-	const ownedByItem: Record<string, number> = {};
-	const currencyById: Record<string, CurrencyTotal> = {};
-	for (const holding of holdings) {
-		add(ownedByItem, holding.itemId, holding.quantity);
-		if (holding.state === 'loose' || holding.state === 'pending_claim') {
-			add(availableByItem, holding.itemId, holding.quantity);
-		}
-	}
-	for (const currency of currencies) {
-		const key = String(currency.currencyId);
-		const total = (currencyById[key] ??= { total: 0, wallet: 0, delivery: 0 });
-		total.total += currency.quantity;
-		total[currency.namespace] += currency.quantity;
-	}
-	return {
-		holdings,
-		currencies,
-		availableByItem,
-		ownedByItem,
-		currencyById,
-		coverage,
-		roster: [...roster].sort(),
-	};
-}
-
-function add(target: Record<string, number>, key: string | number, quantity: number): void {
-	const normalized = String(key);
-	target[normalized] = (target[normalized] ?? 0) + quantity;
-}
-
-function sameOwnership(left: StorageSnapshotPass, right: StorageSnapshotPass): boolean {
-	return (
-		canonical(left.ownedByItem) === canonical(right.ownedByItem) &&
-		canonical(currencyOwnership(left)) === canonical(currencyOwnership(right)) &&
-		canonical(left.roster) === canonical(right.roster)
-	);
-}
-
-function classifyConsecutive(
-	left: StorageSnapshotPass,
-	right: StorageSnapshotPass,
-): SnapshotQuality {
-	if (isPartial(left.coverage) || isPartial(right.coverage)) return 'partial';
-	return placementFingerprint(left) === placementFingerprint(right)
-		? 'stable'
-		: 'stable_owned_placement_changed';
-}
-
-function placementFingerprint(pass: StorageSnapshotPass): string {
-	return canonical({ holdings: pass.holdings, currencies: pass.currencies, roster: pass.roster });
-}
-
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).sort().join(',')}]`;
-	if (value !== null && typeof value === 'object') {
-		return `{${Object.entries(value)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
-			.join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
-}
-
-function isPartial(coverage: SnapshotCoverage): boolean {
-	return [...Object.values(coverage.sources), ...Object.values(coverage.characters)].some(
-		(entry) => entry.status === 'partial',
-	);
-}
-
-function finalize(
-	pass: StorageSnapshotPass,
-	quality: SnapshotQuality,
-	allPasses:
-		| [StorageSnapshotPass, StorageSnapshotPass]
-		| [StorageSnapshotPass, StorageSnapshotPass, StorageSnapshotPass],
-	context: VerifiedSnapshotContext,
-	snapshotId: string,
-	startedAt: string,
-): StorageSnapshot {
-	return {
-		...pass,
-		coverage: mergeCoverages(allPasses.map((entry) => entry.coverage)),
-		snapshotId,
-		accountId: context.accountId,
-		startedAt,
-		completedAt: new Date().toISOString(),
-		passCoverages: allPasses.map((entry) => entry.coverage),
-		quality,
-		passes: allPasses.length,
-		schemaVersion: PINNED_SCHEMA,
-	};
-}
-
 async function verifySnapshotContext(
 	operation: GuildWars2Operation,
 	limit: ReturnType<typeof createLimiter>,
@@ -423,35 +321,13 @@ async function verifySnapshotContext(
 		accountId: account.id,
 		permissions,
 		urls,
-		key: canonical({
+		key: canonicalSnapshotValue({
 			tokenId: tokenInfo.id,
 			accountId: account.id,
 			permissions: [...permissions],
 			urls,
 		}),
 	};
-}
-
-function currencyOwnership(pass: StorageSnapshotPass): Record<string, number> {
-	return Object.fromEntries(
-		Object.entries(pass.currencyById).map(([currencyId, value]) => [currencyId, value.total]),
-	);
-}
-
-function mergeCoverages(coverages: SnapshotCoverage[]): SnapshotCoverage {
-	const merged: SnapshotCoverage = { sources: { ...coverages[0]!.sources }, characters: {} };
-	for (const coverage of coverages) {
-		for (const [source, entry] of Object.entries(coverage.sources)) {
-			if (entry.status === 'partial') {
-				merged.sources[source as keyof SnapshotCoverage['sources']] = { ...entry };
-			}
-		}
-		for (const [character, entry] of Object.entries(coverage.characters)) {
-			const current = merged.characters[character];
-			if (!current || entry.status === 'partial') merged.characters[character] = { ...entry };
-		}
-	}
-	return merged;
 }
 
 function allowsEndpoint(urls: readonly string[], endpoint: string): boolean {

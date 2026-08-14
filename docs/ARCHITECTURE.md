@@ -26,6 +26,8 @@ storage snapshot service -> GW2 operation fijada -> core concurrency
 
 storage delta comparator -> dos StorageSnapshot (puro, sin I/O)
 
+H6.6 benchmark -> payloads GW2 deterministas -> snapshot normalizado -> delta -> clasificación -> valoración (puro, sin I/O)
+
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
@@ -43,6 +45,12 @@ objectives --> contratos puros
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+## Benchmark H6.6 de cuenta grande
+
+`npm run bench:h6-performance` ejecuta bajo Node con `--expose-gc` un fixture determinista de 48 personajes, 5.132 holdings normalizados y 4.840 cambios positivos valorables. Recorre parsers reales de payload y la misma ruta pura de producción que construye cada pasada. Cada snapshot fuerza de manera acotada el peor caso de tres pasadas: la primera difiere en una pila y las dos siguientes convergen; después calcula delta, evidencia de frontera, clasificación y valoración. La entrega se mantiene estable para que la declaración limpia sea coherente con H2.7. No simula ni mide HTTP, concurrencia de captura, catálogo/precios remotos, IndexedDB, Vault o UI: no son trabajo productivo determinista y no se inventa su latencia.
+
+Hay tres warmups y 21 muestras medidas: p95 nearest-rank es la vigésima muestra ordenada, no el máximo. El heap retenido de cada muestra se compara después de GC explícito contra un único baseline post-warmup, por lo que el máximo representa retención acumulada durante el proceso; no afirma medir el pico transitorio. Los límites fail-closed —500 ms de mediana, 1.200 ms de p95 y exactamente 16 MiB acumulados— son detectores deliberadamente holgados de colapso entre runners compartidos, no una alarma de micro-regresiones. CI ejecuta la vía verde y un sabotaje E2E determinista en Node 22 y 24 contra ese mismo presupuesto productivo: inyecta al menos 32 MiB de heap JS retenido después del baseline —como mínimo el doble del límite—, exige que el error informe `cumulative retained heap observedB > budgetB`, comprueba que `budgetB` sea exactamente 16 MiB y que `observedB` lo supere. La causalidad depende así de la retención inyectada con margen suficiente frente al ruido natural del GC: si la inyección deja de retener heap, el benchmark pasa el límite productivo y el control negativo falla.
 
 ## Scheduler de polling API
 
