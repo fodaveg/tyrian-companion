@@ -1,5 +1,17 @@
 # Changelog
 
+## H5.11 — Vista manual del Inventory Advisor
+
+- Añadida una vista Obsidian independiente, responsive y bilingüe con filtros, agrupación, cantidad,
+  ubicación, acción, valor neto H4.2, cobertura y explicación por fila; abrirla solo lee memoria local.
+- Añadidos workflow y comandos separados Open/Refresh: el refresh explícito compone H4.14 → H4.15 →
+  H4.16 una sola vez, comparte vuelo, usa generación latest-wins y se invalida al cambiar clave o locale.
+- `discard_candidate` cruza la frontera de presentación únicamente como `discard_review`, con proof H4.16
+  exacto y aviso irreversible; no existe CTA, executor, operación de juego ni filtro de descarte.
+- El puerto H5.12 de objetivos/excepciones queda reemplazable y vacío. El provider productivo de reglas
+  falla cerrado como `blocked/missing_rules` antes de capturar: no se inventan packs ni reglas de fixture.
+- Gate automatizado completo en verde; la QA visual de la vista dentro de Obsidian queda pendiente.
+
 ## H0.4/H0.6 — Plataformas, integraciones y piloto
 
 - Fijada la matriz de soporte: Linux con Steam/Proton como primaria, macOS con CrossOver como secundaria y Windows en beta.

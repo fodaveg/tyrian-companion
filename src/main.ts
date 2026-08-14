@@ -5,6 +5,8 @@ import { ConnectionService, type ConnectionState } from './account/connection-se
 import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
+import { PublicCatalogService } from './catalog/public-catalog-service';
+import { createCatalogCacheAdapter } from './catalog/persistent-catalog-cache';
 import type { StorageDelta } from './account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetsResult } from './assets/managed-assets';
@@ -13,9 +15,14 @@ import type { ManagedAssetsMessageCode, ManagedAssetsView } from './assets/manag
 import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
-import { createTranslator } from './core/i18n';
+import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
+import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
+import {
+	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+	InventoryAdvisorWorkflow,
+} from './advisor/inventory-advisor-workflow';
 import {
 	DEFAULT_SETTINGS,
 	mergeSettingsUpdate,
@@ -85,6 +92,12 @@ import { SESSION_COMMAND_IDS, type SessionCommandId } from './ui/session-command
 import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
+import { InventoryAdvisorPresentationController } from './ui/inventory-advisor-controller';
+import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
+import {
+	INVENTORY_ADVISOR_VIEW_TYPE,
+	InventoryAdvisorItemView,
+} from './ui/inventory-advisor-item-view';
 
 export type SessionHistoryView =
 	| { status: 'idle' | 'working' | 'conflict' | 'invalid' | 'unavailable'; sessions: number; erased: number; alreadyAbsent: number }
@@ -105,6 +118,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionNotes!: SessionNoteWriter;
 	private sessionHistory!: SessionHistoryService;
 	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
+	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -166,6 +180,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
 		const snapshots = new StorageSnapshotService(client);
+		this.inventoryAdvisor = createInventoryAdvisorRuntime(client, publicClient, snapshots, () => this.settings.language);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
@@ -274,14 +289,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 			COMPANION_VIEW_TYPE,
 			(leaf) => new TyrianCompanionView(leaf, this),
 		);
+		this.registerView(
+			INVENTORY_ADVISOR_VIEW_TYPE,
+			(leaf) => new InventoryAdvisorItemView(leaf, this),
+		);
 		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
+		const inventoryAdvisorCommands = this.inventoryAdvisorCommandCallbacks();
 		this.addCommand({
 			id: 'open-companion',
 			name: createTranslator(this.settings.language).t('commands.openCompanion'),
 			callback: () => {
 				void this.activateView();
 			},
+		});
+		this.addCommand({
+			id: 'open-inventory-advisor',
+			name: createTranslator(this.settings.language).t('commands.openInventoryAdvisor'),
+			callback: inventoryAdvisorCommands.open,
+		});
+		this.addCommand({
+			id: 'refresh-inventory-advisor',
+			name: createTranslator(this.settings.language).t('commands.refreshInventoryAdvisor'),
+			callback: inventoryAdvisorCommands.refresh,
 		});
 		this.addCommand({
 			id: 'arm-assisted-detection',
@@ -298,6 +328,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	onunload(): void {
 		this.sessionCommands?.dispose();
+		this.inventoryAdvisor?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -336,6 +367,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getLocale() {
 		return this.settings.language;
+	}
+
+	getInventoryAdvisorLocale() {
+		return this.settings.language;
+	}
+
+	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
+		return this.inventoryAdvisor.open();
+	}
+
+	async refreshInventoryAdvisor(): Promise<void> {
+		await this.inventoryAdvisor.refresh();
+		this.renderInventoryAdvisorViews();
 	}
 
 	getAssistedDetectionState(): AssistedDetectionState {
@@ -793,6 +837,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
 		if (previousLanguage !== nextSettings.language) {
+			// Catalog names and deterministic ordering are locale-specific. A locale change
+			// invalidates local advisor memory but never captures again implicitly.
+			this.inventoryAdvisor.invalidate();
 			if (this.managedAssets) {
 				this.managedAssets.setBundle({ bundleVersion: 3, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
@@ -805,6 +852,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
+			this.inventoryAdvisor.invalidate();
 			this.runRuntimeMutation(() => this.assistedDetection.disarm('connection_changed'));
 			this.connection.reset();
 			this.settingTab.refreshConnectionRow();
@@ -815,6 +863,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.refreshLootPresentation();
 		}
 		this.renderViews();
+		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
 	}
 
 	private async loadSettings(): Promise<void> {
@@ -831,6 +880,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (leaf.view instanceof TyrianCompanionView) {
 				leaf.view.render();
 			}
+		}
+	}
+
+	private renderInventoryAdvisorViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)) {
+			if (leaf.view instanceof InventoryAdvisorItemView) leaf.view.render();
 		}
 	}
 
@@ -1076,6 +1131,55 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await leaf.setViewState({ type: COMPANION_VIEW_TYPE, active: true });
 		await this.app.workspace.revealLeaf(leaf);
 	}
+
+	private async activateInventoryAdvisorView(): Promise<void> {
+		const existingLeaf = this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)[0];
+		const leaf = existingLeaf ?? this.app.workspace.getLeaf(true);
+		await leaf.setViewState({ type: INVENTORY_ADVISOR_VIEW_TYPE, active: true });
+		await this.app.workspace.revealLeaf(leaf);
+	}
+
+	private inventoryAdvisorCommandCallbacks(): { open: () => void; refresh: () => void } {
+		return createInventoryAdvisorCommandCallbacks({
+			open: () => this.activateInventoryAdvisorView(),
+			refresh: () => this.refreshInventoryAdvisor(),
+		});
+	}
+}
+
+export function createInventoryAdvisorCommandCallbacks(actions: {
+	open(): void | Promise<void>;
+	refresh(): void | Promise<void>;
+}): { open: () => void; refresh: () => void } {
+	return {
+		open: () => { void actions.open(); },
+		refresh: () => { void actions.refresh(); },
+	};
+}
+
+function createInventoryAdvisorRuntime(
+	client: GuildWars2Client,
+	publicClient: GuildWars2PublicCatalogClient,
+	snapshots: StorageSnapshotService,
+	locale: () => Locale,
+): InventoryAdvisorPresentationController {
+	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
+	const inventoryWorkflow = new InventoryAdvisorWorkflow({
+		capture: { capture: async (captureLocale) => {
+			if (inventoryEvidence === null) {
+				const catalogCache = await createCatalogCacheAdapter();
+				inventoryEvidence = new InventoryAdvisorEvidenceService(
+					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
+				);
+			}
+			return await inventoryEvidence.capture(captureLocale);
+		} },
+		preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+		// A reviewed rules/knowledge bundle is a required product input. Until it exists,
+		// explicit refresh is blocked before any account or public API capture begins.
+		rules: { current: () => ({ status: 'unavailable' }) },
+	});
+	return new InventoryAdvisorPresentationController({ load: () => inventoryWorkflow.refresh(locale()) });
 }
 
 function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {

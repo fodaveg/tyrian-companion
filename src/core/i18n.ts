@@ -3,6 +3,8 @@ export type Locale = 'es' | 'en';
 
 const ES = {
 	'commands.openCompanion': 'Abrir acompañante',
+	'commands.openInventoryAdvisor': 'Abrir asesor de inventario',
+	'commands.refreshInventoryAdvisor': 'Actualizar asesor de inventario',
 	'commands.armDetection': 'Activar detección asistida',
 	'commands.disarmDetection': 'Desactivar detección asistida',
 	'commands.startSession': 'Iniciar sesión de farmeo',
@@ -115,6 +117,8 @@ const ES = {
 
 const EN: { [K in keyof typeof ES]: string } = {
 	'commands.openCompanion': 'Open companion',
+	'commands.openInventoryAdvisor': 'Open inventory advisor',
+	'commands.refreshInventoryAdvisor': 'Refresh inventory advisor',
 	'commands.armDetection': 'Arm assisted detection',
 	'commands.disarmDetection': 'Disarm assisted detection',
 	'commands.startSession': 'Start farming session',

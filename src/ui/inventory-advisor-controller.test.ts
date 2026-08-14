@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { InventoryAdvisorPresentationSource } from '../advisor/inventory-advisor-presentation';
+import type { InventoryAdvisorPresentationSource, InventoryAdvisorProducerPresentationSource } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
+import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
 import { InventoryAdvisorPresentationController, type InventoryAdvisorControllerPorts } from './inventory-advisor-controller';
 
 vi.mock('../advisor/inventory-advisor-presentation', async (importOriginal) => {
@@ -20,7 +21,7 @@ vi.mock('../advisor/inventory-advisor-presentation', async (importOriginal) => {
 
 describe('H5.11 inventory advisor presentation controller', () => {
 	it('opens and reads current state without I/O, refreshes explicitly, and never leaks a mutable cached value', async () => {
-		const first = deferred<InventoryAdvisorPresentationSource>();
+		const first = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn(() => first.promise) } satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);
 		expect(controller.open()).toMatchObject({ status: 'loading', groups: [] });
@@ -38,7 +39,7 @@ describe('H5.11 inventory advisor presentation controller', () => {
 	});
 
 	it('shares a single loader flight across concurrent refreshes in one generation', async () => {
-		const capture = deferred<InventoryAdvisorPresentationSource>();
+		const capture = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn(() => capture.promise) } satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);
 		const first = controller.refresh();
@@ -50,9 +51,16 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(firstRowName(controller.current())).toBe('Shared');
 	});
 
+	it('projects the explicit missing-rules result as blocked without inventing rows', async () => {
+		const ports = { load: vi.fn(async () => ({ status: 'blocked', reason: 'missing_rules' } as const)) } satisfies InventoryAdvisorControllerPorts;
+		await expect(new InventoryAdvisorPresentationController(ports).refresh())
+			.resolves.toMatchObject({ status: 'blocked', groups: [] });
+		expect(ports.load).toHaveBeenCalledOnce();
+	});
+
 	it('makes New win when Old completes after the newer explicit refresh', async () => {
-		const a = deferred<InventoryAdvisorPresentationSource>();
-		const b = deferred<InventoryAdvisorPresentationSource>();
+		const a = deferred<InventoryAdvisorWorkflowResult>();
+		const b = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise) } satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);
 		const oldRefresh = controller.refresh();
@@ -71,17 +79,38 @@ describe('H5.11 inventory advisor presentation controller', () => {
 
 	it('fails closed when an integration value cannot be cloned into the memory cache', async () => {
 		const hostile = new Proxy({}, { ownKeys() { throw new Error('trap'); } });
-		const ports = { load: vi.fn(async () => hostile as InventoryAdvisorPresentationSource) } satisfies InventoryAdvisorControllerPorts;
+		const ports = { load: vi.fn(async () => hostile as InventoryAdvisorWorkflowResult) } satisfies InventoryAdvisorControllerPorts;
 		await expect(new InventoryAdvisorPresentationController(ports).refresh()).resolves.toMatchObject({ status: 'invalid', groups: [] });
+	});
+
+	it('fails closed on loader rejection and disposal prevents a late flight or later refresh from loading', async () => {
+		const rejected = { load: vi.fn(async () => { throw new Error('unavailable'); }) } satisfies InventoryAdvisorControllerPorts;
+		await expect(new InventoryAdvisorPresentationController(rejected).refresh())
+			.resolves.toMatchObject({ status: 'invalid', groups: [] });
+		const flight = deferred<InventoryAdvisorWorkflowResult>();
+		const ports = { load: vi.fn(() => flight.promise) } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const pending = controller.refresh();
+		await Promise.resolve();
+		controller.dispose();
+		flight.resolve(sourceNamed('Late'));
+		await expect(pending).resolves.toMatchObject({ status: 'invalid', groups: [] });
+		await expect(controller.refresh()).resolves.toMatchObject({ status: 'invalid', groups: [] });
+		expect(ports.load).toHaveBeenCalledOnce();
 	});
 });
 
-function invalidSource(): InventoryAdvisorPresentationSource {
+function invalidSource(): InventoryAdvisorWorkflowResult {
+	return { status: 'ready', source: invalidPresentationSource() };
+}
+
+function invalidPresentationSource(): InventoryAdvisorProducerPresentationSource {
 	return { input: {} as never, result: { status: 'invalid', reasons: [], report: null, envelope: null } };
 }
 
-function sourceNamed(fixtureName: string): InventoryAdvisorPresentationSource {
-	return { input: { fixtureName } as never, result: invalidSource().result };
+function sourceNamed(fixtureName: string): InventoryAdvisorWorkflowResult {
+	const source = invalidPresentationSource();
+	return { status: 'ready', source: { input: { fixtureName } as never, result: source.result } };
 }
 
 function namedPresentation(name: string) {
@@ -95,6 +124,7 @@ function namedPresentation(name: string) {
 				catalog: 'complete' as const, prices: 'complete' as const, reservations: 'complete' as const,
 				accountSignals: 'complete' as const, rules: 'complete' as const },
 			group: 'review' as const, value: { status: 'unavailable' as const, route: null }, irreversibleReviewOnly: false as const,
+			discardProof: null,
 		}] }],
 	};
 }

@@ -1,48 +1,19 @@
 import type { Translator } from '../core/i18n';
+import type {
+	InventoryAdvisorViewModel,
+	InventoryAdvisorViewModelGroup,
+	InventoryAdvisorViewRow,
+} from './inventory-advisor-view-model';
 
 /** States that can be rendered without asking the inventory pipeline to do work. */
 export type InventoryAdvisorViewState = 'empty' | 'loading' | 'ready' | 'limited' | 'blocked' | 'invalid';
-export type InventoryAdvisorViewAction = 'sell' | 'list' | 'vendor' | 'salvage' | 'use' | 'open' | 'keep' | 'review' | 'discard_candidate';
-export type InventoryAdvisorViewFilterAction = Exclude<InventoryAdvisorViewAction, 'discard_candidate'>;
+export type InventoryAdvisorViewAction = InventoryAdvisorViewRow['action'];
+export type InventoryAdvisorViewFilterAction = Exclude<InventoryAdvisorViewAction, 'discard_review'>;
 export type InventoryAdvisorViewGroupBy = 'action' | 'evidence';
-export type InventoryAdvisorViewLayout = 'table' | 'compact-table' | 'cards';
-export type InventoryAdvisorViewCoverageState = 'complete' | 'limited' | 'unknown';
-
-/** A single, display-safe row supplied by the H5.11 presentation boundary. */
-export interface InventoryAdvisorViewRow {
-	readonly itemId: number;
-	readonly name: string;
-	readonly ownedQuantity: number;
-	readonly availableQuantity: number;
-	readonly action: InventoryAdvisorViewAction;
-	readonly coverage: InventoryAdvisorViewCoverage;
-	readonly irreversibleReviewOnly: boolean;
-}
-
-/** The seven evidence surfaces that make an advisor line safe to interpret. */
-export interface InventoryAdvisorViewCoverage {
-	readonly snapshot: InventoryAdvisorViewCoverageState;
-	readonly inventory: InventoryAdvisorViewCoverageState;
-	readonly catalog: InventoryAdvisorViewCoverageState;
-	readonly prices: InventoryAdvisorViewCoverageState;
-	readonly reservations: InventoryAdvisorViewCoverageState;
-	readonly accountSignals: InventoryAdvisorViewCoverageState;
-	readonly rules: InventoryAdvisorViewCoverageState;
-}
-
-/** The local, side-effect-free model consumed by this DOM adapter. */
-export interface InventoryAdvisorViewModel {
-	readonly status: InventoryAdvisorViewState;
-	readonly title: string;
-	readonly detail: string;
-	readonly groups: readonly InventoryAdvisorViewModelGroup[];
-}
-
-/** UI-neutral groups supplied by the H5.11 presentation boundary. */
-export interface InventoryAdvisorViewModelGroup {
-	readonly key: string;
-	readonly rows: readonly InventoryAdvisorViewRow[];
-}
+export type InventoryAdvisorViewLayout = 'table' | 'cards';
+export type InventoryAdvisorViewCoverage = InventoryAdvisorViewRow['coverage'];
+export type InventoryAdvisorViewCoverageState = InventoryAdvisorViewCoverage[keyof InventoryAdvisorViewCoverage];
+export type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
 
 /**
  * A synchronous read boundary for the view. Implementations must return an
@@ -50,6 +21,11 @@ export interface InventoryAdvisorViewModelGroup {
  */
 export interface InventoryAdvisorViewPort {
 	getViewModel(): InventoryAdvisorViewModel;
+}
+
+export interface InventoryAdvisorViewInteractions {
+	onRefresh?: () => void | Promise<void>;
+	refreshing?: boolean;
 }
 
 export interface InventoryAdvisorViewFilters {
@@ -72,7 +48,7 @@ export const INVENTORY_ADVISOR_VIEW_FIXTURE: InventoryAdvisorViewModel = {
 
 /** Returns the layout selected by the H5.11 container-query breakpoints. */
 export function inventoryAdvisorViewLayout(width: number): InventoryAdvisorViewLayout {
-	return width >= 760 ? 'table' : width >= 480 ? 'compact-table' : 'cards';
+	return width >= 760 ? 'table' : 'cards';
 }
 
 /** Creates a local fixture port suitable for previews and DOM-only tests. */
@@ -107,44 +83,137 @@ export function groupInventoryAdvisorRows(
 	return [...groups.entries()].map(([key, groupedRows]) => ({ key, rows: groupedRows }));
 }
 
+interface MountedInventoryAdvisorView {
+	update(model: InventoryAdvisorViewModel, translator: Translator, interactions: InventoryAdvisorViewInteractions): void;
+}
+
+const mountedViews = new WeakMap<object, MountedInventoryAdvisorView>();
+
 /** Renders a prepared model. It has no knowledge of capture, prices, or account clients. */
 export function renderInventoryAdvisorView(
 	container: HTMLElement,
 	model: InventoryAdvisorViewModel,
 	translator: Translator,
 	initialFilters: InventoryAdvisorViewFilters = { query: '', action: 'all', groupBy: 'action' },
+	interactions: InventoryAdvisorViewInteractions = {},
 ): void {
-	container.replaceChildren();
+	const mounted = mountedViews.get(container);
+	if (mounted !== undefined) {
+		mounted.update(model, translator, interactions);
+		return;
+	}
+	mountedViews.set(container, mountInventoryAdvisorView(container, model, translator, initialFilters, interactions));
+}
+
+function mountInventoryAdvisorView(
+	container: HTMLElement,
+	initialModel: InventoryAdvisorViewModel,
+	initialTranslator: Translator,
+	initialFilters: InventoryAdvisorViewFilters,
+	initialInteractions: InventoryAdvisorViewInteractions,
+): MountedInventoryAdvisorView {
+	let model = initialModel;
+	let translator = initialTranslator;
+	let filters = { ...initialFilters };
+	let interactions = initialInteractions;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
-	section.setAttribute('aria-label', translator.t('advisor.view.title'));
-	section.setAttribute('aria-busy', String(model.status === 'loading'));
 	const heading = createEl('h2');
-	heading.textContent = translator.t('advisor.view.title');
-	section.append(heading);
 	const intro = createEl('p');
 	intro.className = 'tyrian-inventory-advisor__intro';
-	intro.textContent = translator.t('advisor.view.intro');
-	section.append(intro);
-	const state = renderState(model, translator);
+	const state = createEl('p');
+	state.className = 'tyrian-inventory-advisor__state';
+	state.setAttribute('aria-live', 'polite');
 	const results = createDiv();
 	results.className = 'tyrian-inventory-advisor__results';
-	let filters = initialFilters;
+	const controls = createDiv();
+	controls.className = 'tyrian-inventory-advisor__controls';
+	const searchLabel = createEl('label');
+	const searchLabelText = createSpan();
+	const search = createEl('input');
+	search.type = 'search';
+	search.value = filters.query;
+	searchLabel.append(searchLabelText, search);
+	const actionLabel = createEl('label');
+	const actionLabelText = createSpan();
+	const action = createEl('select');
+	const actionOptions = new Map<string, HTMLOptionElement>();
+	for (const candidate of ['all', ...inventoryActions()] as const) {
+		const option = appendOption(action, candidate, '', filters.action);
+		actionOptions.set(candidate, option);
+	}
+	action.value = filters.action;
+	actionLabel.append(actionLabelText, action);
+	const groupLabelElement = createEl('label');
+	const groupLabelText = createSpan();
+	const group = createEl('select');
+	const groupOptions = new Map<InventoryAdvisorViewGroupBy, HTMLOptionElement>();
+	for (const candidate of ['action', 'evidence'] as const) {
+		const option = appendOption(group, candidate, '', filters.groupBy);
+		groupOptions.set(candidate, option);
+	}
+	group.value = filters.groupBy;
+	groupLabelElement.append(groupLabelText, group);
+	controls.append(searchLabel, actionLabel, groupLabelElement);
+	let refreshButton: HTMLButtonElement | null = null;
 	const refreshResults = (): void => {
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const rows = visible ? filterInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters) : [];
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (visible) results.append(renderResults(rows, filters.groupBy, translator, !filteredEmpty));
-		updateLiveState(state, model.status, filteredEmpty, translator);
+		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model.status, translator);
 	};
-	const controls = renderControls(model, translator, filters, (next) => {
-		filters = next;
+	const updateFilters = (): void => {
+		filters = {
+			query: search.value,
+			action: selectedFilterAction(action.value),
+			groupBy: selectedGroup(group.value),
+		};
 		refreshResults();
-	});
-	section.append(controls, state, results);
-	container.append(section);
-	refreshResults();
+	};
+	search.addEventListener('input', updateFilters);
+	action.addEventListener('change', updateFilters);
+	group.addEventListener('change', updateFilters);
+	section.append(heading, intro, controls, state, results);
+	container.replaceChildren(section);
+
+	const update = (nextModel: InventoryAdvisorViewModel, nextTranslator: Translator, nextInteractions: InventoryAdvisorViewInteractions): void => {
+		model = nextModel;
+		translator = nextTranslator;
+		interactions = nextInteractions;
+		section.setAttribute('aria-label', translator.t('advisor.view.title'));
+		section.setAttribute('aria-busy', String(model.status === 'loading'));
+		heading.textContent = translator.t('advisor.view.title');
+		intro.textContent = translator.t('advisor.view.intro');
+		searchLabelText.textContent = translator.t('advisor.view.search');
+		search.placeholder = translator.t('advisor.view.searchPlaceholder');
+		search.setAttribute('aria-label', translator.t('advisor.view.search'));
+		actionLabelText.textContent = translator.t('advisor.view.filter');
+		actionOptions.get('all')!.textContent = translator.t('advisor.view.allActions');
+		for (const candidate of inventoryActions()) actionOptions.get(candidate)!.textContent = actionLabelFor(candidate, translator);
+		groupLabelText.textContent = translator.t('advisor.view.group');
+		groupOptions.get('action')!.textContent = translator.t('advisor.view.groupAction');
+		groupOptions.get('evidence')!.textContent = translator.t('advisor.view.groupEvidence');
+		if (model.status === 'loading') controls.setAttribute('aria-disabled', 'true');
+		else controls.removeAttribute('aria-disabled');
+		if (model.status === 'blocked' || model.status === 'invalid') state.setAttribute('role', 'alert');
+		else state.removeAttribute('role');
+		if (interactions.onRefresh !== undefined && refreshButton === null) {
+			refreshButton = createEl('button');
+			refreshButton.type = 'button';
+			refreshButton.addEventListener('click', () => { void interactions.onRefresh?.(); });
+			controls.append(refreshButton);
+		}
+		if (refreshButton !== null) {
+			refreshButton.textContent = translator.t(interactions.refreshing ? 'advisor.view.refreshing' : 'advisor.view.refresh');
+			refreshButton.setAttribute('aria-label', translator.t('advisor.view.refresh'));
+			refreshButton.disabled = interactions.refreshing === true || interactions.onRefresh === undefined;
+		}
+		refreshResults();
+	};
+	update(model, translator, interactions);
+	return { update };
 }
 
 /** Reads a prepared local model once and delegates all rendering to the DOM adapter. */
@@ -154,66 +223,6 @@ export function renderInventoryAdvisorViewFromPort(
 	translator: Translator,
 ): void {
 	renderInventoryAdvisorView(container, port.getViewModel(), translator);
-}
-
-function renderControls(
-	model: InventoryAdvisorViewModel,
-	translator: Translator,
-	filters: InventoryAdvisorViewFilters,
-	onChange: (filters: InventoryAdvisorViewFilters) => void,
-): HTMLElement {
-	const controls = createDiv();
-	controls.className = 'tyrian-inventory-advisor__controls';
-	const searchLabel = createEl('label');
-	searchLabel.textContent = translator.t('advisor.view.search');
-	const search = createEl('input');
-	search.type = 'search';
-	search.value = filters.query;
-	search.placeholder = translator.t('advisor.view.searchPlaceholder');
-	search.setAttribute('aria-label', translator.t('advisor.view.search'));
-	searchLabel.append(search);
-	const actionLabel = createEl('label');
-	actionLabel.textContent = translator.t('advisor.view.filter');
-	const action = createEl('select');
-	appendOption(action, 'all', translator.t('advisor.view.allActions'), filters.action);
-	for (const candidate of inventoryActions()) appendOption(action, candidate, actionLabelFor(candidate, translator), filters.action);
-	actionLabel.append(action);
-	const groupLabel = createEl('label');
-	groupLabel.textContent = translator.t('advisor.view.group');
-	const group = createEl('select');
-	appendOption(group, 'action', translator.t('advisor.view.groupAction'), filters.groupBy);
-	appendOption(group, 'evidence', translator.t('advisor.view.groupEvidence'), filters.groupBy);
-	groupLabel.append(group);
-	const update = (): void => onChange({
-		query: search.value,
-		action: selectedFilterAction(action.value),
-		groupBy: group.value as InventoryAdvisorViewGroupBy,
-	});
-	search.addEventListener('input', update);
-	action.addEventListener('change', update);
-	group.addEventListener('change', update);
-	controls.append(searchLabel, actionLabel, groupLabel);
-	if (model.status === 'loading') controls.setAttribute('aria-disabled', 'true');
-	return controls;
-}
-
-function renderState(model: InventoryAdvisorViewModel, translator: Translator): HTMLElement {
-	const state = createEl('p');
-	state.className = 'tyrian-inventory-advisor__state';
-	state.setAttribute('aria-live', 'polite');
-	if (model.status === 'blocked' || model.status === 'invalid') state.setAttribute('role', 'alert');
-	state.textContent = stateLabel(model.status, translator);
-	return state;
-}
-
-/** Updates the persistent live region without replacing focused controls. */
-function updateLiveState(
-	state: HTMLElement,
-	status: InventoryAdvisorViewState,
-	filteredEmpty: boolean,
-	translator: Translator,
-): void {
-	state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(status, translator);
 }
 
 function renderResults(
@@ -250,11 +259,11 @@ function renderTable(
 	table.append(caption);
 	const head = createEl('thead');
 	const headRow = createEl('tr');
-	for (const label of ['item', 'owned', 'available', 'action', 'evidence'] as const) {
+	for (const label of ['item', 'owned', 'available', 'quantity', 'location', 'action', 'value', 'evidence', 'explanation'] as const) {
 		const cell = createEl('th');
 		cell.scope = 'col';
 		cell.textContent = translator.t(`advisor.view.${label}`);
-		if (label === 'owned' || label === 'available' || label === 'evidence') cell.className = 'tyrian-inventory-advisor__wide-only';
+		if (['owned', 'available', 'location', 'value', 'evidence', 'explanation'].includes(label)) cell.className = 'tyrian-inventory-advisor__wide-only';
 		headRow.append(cell);
 	}
 	head.append(headRow);
@@ -264,7 +273,7 @@ function renderTable(
 		const groupRow = createEl('tr');
 		const groupCell = createEl('th');
 		groupCell.scope = 'rowgroup';
-		groupCell.colSpan = 5;
+		groupCell.colSpan = 9;
 		groupCell.className = 'tyrian-inventory-advisor__group-heading';
 		groupCell.textContent = groupLabel(group.key, groupBy, translator);
 		groupRow.append(groupCell);
@@ -283,8 +292,12 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	tableRow.append(item);
 	appendCell(tableRow, String(row.ownedQuantity), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, String(row.availableQuantity), 'tyrian-inventory-advisor__wide-only');
+	appendCell(tableRow, String(row.quantity));
+	appendCell(tableRow, allocationLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, decisionLabel(row, translator));
+	appendCell(tableRow, valueLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, evidenceLabel(row.coverage, translator), 'tyrian-inventory-advisor__wide-only');
+	appendCell(tableRow, explanationLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
 	return tableRow;
 }
 
@@ -308,8 +321,12 @@ function renderCards(
 			const list = createEl('dl');
 			addDefinition(list, translator.t('advisor.view.owned'), String(row.ownedQuantity));
 			addDefinition(list, translator.t('advisor.view.available'), String(row.availableQuantity));
+			addDefinition(list, translator.t('advisor.view.quantity'), String(row.quantity));
+			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.action'), decisionLabel(row, translator));
+			addDefinition(list, translator.t('advisor.view.value'), valueLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
+			addDefinition(list, translator.t('advisor.view.explanation'), explanationLabel(row, translator));
 			article.append(list);
 			cards.append(article);
 		}
@@ -332,12 +349,13 @@ function addDefinition(list: HTMLDListElement, term: string, value: string): voi
 	list.append(definitionTerm, definitionValue);
 }
 
-function appendOption(select: HTMLSelectElement, value: string, label: string, selected: string): void {
+function appendOption(select: HTMLSelectElement, value: string, label: string, selected: string): HTMLOptionElement {
 	const option = createEl('option');
 	option.value = value;
 	option.textContent = label;
 	option.selected = value === selected;
 	select.append(option);
+	return option;
 }
 
 function flattenInventoryAdvisorRows(groups: readonly InventoryAdvisorViewModelGroup[]): InventoryAdvisorViewRow[] {
@@ -353,9 +371,56 @@ function actionLabelFor(action: InventoryAdvisorViewAction, translator: Translat
 }
 
 function decisionLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
-	if (row.action !== 'discard_candidate') return actionLabelFor(row.action, translator);
-	const label = `⚠ ${translator.t('advisor.view.irreversibleReview')}`;
-	return row.irreversibleReviewOnly ? label : `${label} · ${translator.t('advisor.view.reviewRequired')}`;
+	if (row.action !== 'discard_review') return actionLabelFor(row.action, translator);
+	return `⚠ ${translator.t('advisor.view.irreversibleReview')}`;
+}
+
+function allocationLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
+	return row.allocations.map((allocation) => {
+		return `${formatInventoryAdvisorLocation(allocation.location, translator)} ×${String(allocation.quantity)}`;
+	}).join(' · ');
+}
+
+export function formatInventoryAdvisorLocation(
+	location: InventoryAdvisorViewRow['allocations'][number]['location'],
+	translator: Translator,
+): string {
+	switch (location.source) {
+		case 'character': {
+			const character = `${translator.t('advisor.view.location.character')}: ${location.character}`;
+			return location.container === 'equipped_bag'
+				? `${character} · ${translator.t('advisor.view.location.equippedBag', { bag: location.bagIndex + 1 })}`
+				: `${character} · ${translator.t('advisor.view.location.bagSlot', { bag: location.bagIndex + 1, slot: location.slot + 1 })}`;
+		}
+		case 'shared_inventory':
+		case 'bank':
+		case 'commerce_delivery':
+			return `${translator.t(`advisor.view.location.${location.source}`)} · ${translator.t('advisor.view.location.slot', { slot: location.slot + 1 })}`;
+		case 'materials':
+			return `${translator.t('advisor.view.location.materials')} · ${translator.t('advisor.view.location.category', { category: location.category })}`;
+		default:
+			return assertNeverLocation(location);
+	}
+}
+
+function assertNeverLocation(value: never): never {
+	throw new Error(`Unsupported Inventory Advisor location: ${JSON.stringify(value)}`);
+}
+
+function valueLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
+	if (row.value.status === 'available') return translator.t('advisor.view.valueCopper', { copper: row.value.copper });
+	return translator.t(`advisor.view.value.${row.value.status}`);
+}
+
+function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
+	if (row.action === 'discard_review') {
+		return row.discardProof === null
+			? translator.t('advisor.view.reviewRequired')
+			: translator.t('advisor.view.discardProof', { rule: row.discardProof.discardRuleId });
+	}
+	return row.reasonCodes.length === 0
+		? translator.t('advisor.view.noExplanation')
+		: row.reasonCodes.map((code) => translator.t(`advisor.view.reason.${code}`)).join(' · ');
 }
 
 function evidenceLabel(coverage: InventoryAdvisorViewCoverage, translator: Translator): string {
@@ -367,7 +432,7 @@ function evidenceLabel(coverage: InventoryAdvisorViewCoverage, translator: Trans
 
 function groupLabel(key: string, groupBy: InventoryAdvisorViewGroupBy, translator: Translator): string {
 	if (groupBy === 'action') {
-		return key === 'discard_candidate'
+		return key === 'discard_review'
 			? `⚠ ${translator.t('advisor.view.irreversibleReview')}`
 			: actionLabelFor(key as InventoryAdvisorViewAction, translator);
 	}
@@ -394,6 +459,10 @@ function selectedFilterAction(value: string): InventoryAdvisorViewFilters['actio
 	return value === 'all' || inventoryActions().includes(value as InventoryAdvisorViewFilterAction)
 		? value as InventoryAdvisorViewFilters['action']
 		: 'all';
+}
+
+function selectedGroup(value: string): InventoryAdvisorViewGroupBy {
+	return value === 'evidence' ? 'evidence' : 'action';
 }
 
 function hasActiveFilter(filters: InventoryAdvisorViewFilters): boolean {

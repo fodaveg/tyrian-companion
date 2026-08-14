@@ -1,18 +1,15 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
+	.filter((file) => file.startsWith('inventory-advisor-')
+		&& file.endsWith('.ts') && !file.endsWith('.test.ts'))
+	.map((file) => ({ file, path: `${directory}/${file}` }));
+
 const INVENTORY_ADVISOR_FILES = [
-	...readdirSync('src/advisor')
-		.filter((file) => file.startsWith('inventory-advisor-')
-			&& file.endsWith('.ts') && !file.endsWith('.test.ts')),
-	...readdirSync('src/ui')
-		.filter((file) => file.startsWith('inventory-advisor-')
-			&& file.endsWith('.ts') && !file.endsWith('.test.ts')),
-].map((file) => ({
-	file,
-	path: file === 'inventory-advisor-controller.ts' || file === 'inventory-advisor-view-model.ts'
-		? `src/ui/${file}` : `src/advisor/${file}`,
-})).sort((left, right) => left.path.localeCompare(right.path))
+	...inventoryAdvisorFiles('src/advisor'),
+	...inventoryAdvisorFiles('src/ui'),
+].sort((left, right) => left.path.localeCompare(right.path))
 	.map((entry) => ({ ...entry, source: readFileSync(entry.path, 'utf8') }));
 
 const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
@@ -31,6 +28,29 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 const PRESENTATION_FILES = INVENTORY_ADVISOR_FILES
 	.filter(({ path }) => PRESENTATION_DOMAIN_ALLOWLIST.has(path));
 
+const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string[] }>([
+	['src/advisor/inventory-advisor-presentation.ts', {
+		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
+			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
+			'./inventory-advisor-presentation-model'],
+		portCalls: [],
+	}],
+	['src/advisor/inventory-advisor-workflow.ts', {
+		imports: ['./inventory-advisor-evidence-model', './inventory-advisor-evidence-contract', './inventory-advisor-classifier',
+			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
+			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model'],
+		portCalls: ['ports.capture.capture', 'ports.preferences.load', 'ports.rules.current'],
+	}],
+	['src/ui/inventory-advisor-item-view.ts', {
+		imports: ['obsidian', '../core/i18n', './inventory-advisor-view-model', './inventory-advisor-view'],
+		portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel', 'actions.refreshInventoryAdvisor'],
+	}],
+	['src/ui/inventory-advisor-view.ts', {
+		imports: ['../core/i18n', './inventory-advisor-view-model'],
+		portCalls: [],
+	}],
+]);
+
 const FORBIDDEN_SOURCE = [
 	/\b(?:fetch|request|requestUrl)\s*\(/u,
 	/\b(?:indexedDB|localStorage|sessionStorage|readFileSync|writeFileSync)\b/u,
@@ -47,6 +67,8 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/advisor/inventory-advisor-classifier-model.ts',
 			'src/advisor/inventory-advisor-classifier.ts',
 			'src/advisor/inventory-advisor-contract.ts',
+			'src/advisor/inventory-advisor-discard-model.ts',
+			'src/advisor/inventory-advisor-discard.ts',
 			'src/advisor/inventory-advisor-evidence-contract.ts',
 			'src/advisor/inventory-advisor-evidence-model.ts',
 			'src/advisor/inventory-advisor-evidence.ts',
@@ -55,8 +77,11 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/advisor/inventory-advisor-presentation-model.ts',
 			'src/advisor/inventory-advisor-presentation.ts',
 			'src/advisor/inventory-advisor-result.ts',
+			'src/advisor/inventory-advisor-workflow.ts',
 			'src/ui/inventory-advisor-controller.ts',
+			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-view-model.ts',
+			'src/ui/inventory-advisor-view.ts',
 		]);
 		expect(PRESENTATION_FILES.map(({ path }) => path)).toEqual([...PRESENTATION_DOMAIN_ALLOWLIST].sort());
 		for (const { path, source } of PRESENTATION_FILES) {
@@ -76,6 +101,24 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			expect(body, `${method} must remain a memory-only projection`).not.toContain('this.ports.');
 		}
 		expect(controller).toContain('async refresh(');
+	});
+
+	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {
+		for (const [path, policy] of BOUNDARY_POLICIES) {
+			const source = readFileSync(path, 'utf8');
+			expect([...new Set(moduleSpecifiers(source))].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
+			for (const forbidden of FORBIDDEN_SOURCE) expect(source, `${path} forbidden source`).not.toMatch(forbidden);
+			expect(boundaryPortCalls(source).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
+		}
+	});
+
+	it('poisons a GuildWars2Client import in either UI boundary', () => {
+		for (const path of ['src/ui/inventory-advisor-item-view.ts', 'src/ui/inventory-advisor-view.ts']) {
+			const source = readFileSync(path, 'utf8');
+			expect(boundarySourceAllowed(path, source)).toBe(true);
+			const poisoned = `import { GuildWars2Client } from '../account/guild-wars-2-client';\n${source}`;
+			expect(boundarySourceAllowed(path, poisoned)).toBe(false);
+		}
 	});
 
 	it('indexes explanations and prices once after validation instead of scanning per decision', () => {
@@ -142,4 +185,16 @@ function forbiddenDependency(specifier: string): boolean {
 	]);
 	if (forbiddenPackages.has(specifier) || specifier.startsWith('undici/')) return true;
 	return specifier.split('/').some((token) => /(?:^|[-_.])(?:client|http|request|gateway|transport|secret|store|capture|evidence|executor|operation)(?:$|[-_.])/iu.test(token));
+}
+
+function boundaryPortCalls(source: string): string[] {
+	return [...new Set([...source.matchAll(/\bthis\.(ports|actions)\.(\w+)(?:\.(\w+))?\s*\(/gu)]
+		.map((match) => `${match[1]}.${match[2]}${match[3] === undefined ? '' : `.${match[3]}`}`))];
+}
+
+function boundarySourceAllowed(path: string, source: string): boolean {
+	const allowed = BOUNDARY_POLICIES.get(path)?.imports;
+	if (allowed === undefined) return false;
+	const actual = [...new Set(moduleSpecifiers(source))].sort();
+	return actual.length === allowed.length && actual.every((specifier, index) => specifier === [...allowed].sort()[index]);
 }

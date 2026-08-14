@@ -516,12 +516,6 @@
 }
 
 @container (max-width: 759px) {
-	.tyrian-inventory-advisor__wide-only {
-		display: none;
-	}
-}
-
-@container (max-width: 479px) {
 	.tyrian-inventory-advisor__table {
 		display: none;
 	}
@@ -534,7 +528,9 @@
 	.tyrian-inventory-advisor__cards h3 {
 		margin-block: var(--size-4-3) 0;
 	}
+}
 
+@container (max-width: 479px) {
 	.tyrian-inventory-advisor__card dl {
 		grid-template-columns: minmax(0, 1fr);
 	}

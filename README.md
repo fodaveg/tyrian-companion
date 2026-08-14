@@ -83,9 +83,14 @@ The current `0.1.0` vertical provides:
 - H4.16 pure discard allowlist: it canonically reproduces the H4.15 producer result before changing
 	only a demonstrated `keep/no_supported_route` into review-only `discard_candidate`, with cited rule
 	and knowledge sources; it has no executor, I/O, persistence, or UI.
+- H5.11 adds a separate responsive **Inventory advisor** view and explicit Open/Refresh commands.
+  Opening is memory-only; Refresh is the sole capture trigger and composes H4.14 → H4.15 → H4.16
+  through a latest-wins single-flight cache. The current product provider intentionally reports
+  `missing_rules`, so refresh blocks before any API request until a reviewed rule/knowledge bundle is shipped.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
-recommendation UI or account operations are intentionally not implemented yet. Vault writes are
+account operations are intentionally not implemented. Inventory preferences and a reviewed production
+rule/knowledge bundle are not implemented yet. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
 JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
@@ -128,7 +133,8 @@ The production build creates `main.js` in the project root. A distributable rele
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
-session**, **Stop session**, or **Arm assisted detection** is explicitly selected. Loading the plugin
+session**, **Stop session**, **Arm assisted detection**, or an enabled **Refresh inventory advisor**
+is explicitly selected. Loading the plugin
 or opening its view reads only local recovery state and does not make network requests. Assisted
 detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
 without confirmation.

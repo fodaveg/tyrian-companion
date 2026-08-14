@@ -1,5 +1,8 @@
 import { createCatalogVendorValue, createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import { isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
+import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
 import type { InventoryAdvisorInputV1, InventoryAdvisorResultV1 } from './inventory-advisor-model';
 import {
 	INVENTORY_ADVISOR_PRESENTATION_VERSION,
@@ -12,9 +15,20 @@ import {
 	type InventoryAdvisorPresentationValue,
 } from './inventory-advisor-presentation-model';
 
-export interface InventoryAdvisorPresentationSource {
+export type InventoryAdvisorPresentationSource = InventoryAdvisorProducerPresentationSource | InventoryAdvisorContextualPresentationSource;
+
+export interface InventoryAdvisorProducerPresentationSource {
 	input: InventoryAdvisorInputV1;
 	result: InventoryAdvisorResultV1;
+}
+
+export interface InventoryAdvisorContextualPresentationSource {
+	input: InventoryAdvisorInputV1;
+	result: InventoryDiscardAllowlistResultV1;
+	discardContext: {
+		engineInput: InventoryAdvisorEngineInputV1;
+		producerResult: InventoryAdvisorResultV1;
+	};
 }
 
 /** Projects one validated H4.15 report into a data-only, manually actionable presentation. */
@@ -29,12 +43,20 @@ export function buildInventoryAdvisorPresentation(
 		}
 		const result = source.result;
 		if (result.status === 'invalid' || result.report === null) return invalidInventoryAdvisorPresentation();
+		const contextual = 'discardContext' in source;
+		const proofByRef = new Map(contextual ? source.result.proofs.map((proof) => [proof.explanationRef, proof]) : []);
 		const explanationByRef = new Map(result.report.explanations.map((entry) => [entry.ref, entry]));
 		const priceByItemId = new Map(source.input.prices.items.map((entry) => [entry.itemId, entry]));
 		const rows = result.report.lines.flatMap((line) => line.decisions.map((decision) => {
-			if (!isPresentationAction(decision.action)) throw new Error('Unsupported presentation action.');
+			const presentationAction = decision.action === 'discard_candidate' ? 'discard_review' : decision.action;
+			if (!isPresentationAction(presentationAction)) throw new Error('Unsupported presentation action.');
 			const reasonCodes = explanationByRef.get(decision.explanationRef)?.reasonCodes;
 			if (reasonCodes === undefined) throw new Error('Decision explanation is missing.');
+			const discardProof = presentationAction === 'discard_review' ? proofByRef.get(decision.explanationRef) ?? null : null;
+			if (presentationAction === 'discard_review' && (discardProof === null || discardProof.itemId !== decision.itemId
+				|| decision.safety !== 'irreversible_review_only' || decision.discardProof === null)) {
+				throw new Error('Discard review proof is missing.');
+			}
 			const allocations = allocationsForDecision(source.input, decision.itemId, decision.quantity, decision.allocations);
 			if (allocations === null) throw new Error('Decision allocations do not resolve to current holdings.');
 			return {
@@ -43,14 +65,15 @@ export function buildInventoryAdvisorPresentation(
 				name: line.name,
 				ownedQuantity: line.ownedQuantity,
 				availableQuantity: line.availableQuantity,
-				action: decision.action,
+				action: presentationAction,
 				quantity: decision.quantity,
 				allocations,
 				reasonCodes: [...reasonCodes],
 				coverage: { ...line.coverage },
-				group: groupFor(decision.action),
-				value: valueFor(source.input, priceByItemId, decision.action, decision.itemId, decision.quantity),
-				irreversibleReviewOnly: false,
+				group: groupFor(presentationAction),
+				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
+				irreversibleReviewOnly: presentationAction === 'discard_review',
+				discardProof: discardProof === null ? null : structuredClone(discardProof),
 			} satisfies InventoryAdvisorPresentationRow;
 		}));
 		const filtered = rows.filter((row) => matchesFilters(row, options.filters, source.input.catalog.locale));
@@ -65,14 +88,25 @@ export function buildInventoryAdvisorPresentation(
 			version: INVENTORY_ADVISOR_PRESENTATION_VERSION,
 			status: groups.length === 0 && result.status === 'ready' ? 'empty' : result.status,
 			groups,
-			discardReview: { status: 'unavailable' },
+			discardReview: contextual && source.result.proofs.length > 0
+				? { status: 'review_only', proofs: structuredClone(source.result.proofs) }
+				: { status: 'unavailable' },
 		};
 	} catch { return invalidInventoryAdvisorPresentation(); }
 }
 
 function isPresentationSource(value: unknown): value is InventoryAdvisorPresentationSource {
-	if (!isRecord(value) || !exactKeys(value, ['input', 'result'])) return false;
-	try { return isInventoryAdvisorResultForInput(value.result, value.input); } catch { return false; }
+	if (!isRecord(value)) return false;
+	try {
+		if (exactKeys(value, ['input', 'result'])) return isInventoryAdvisorResultForInput(value.result, value.input);
+		if (!exactKeys(value, ['discardContext', 'input', 'result']) || !isRecord(value.discardContext)
+			|| !exactKeys(value.discardContext, ['engineInput', 'producerResult'])) return false;
+		const context = value.discardContext;
+		return isRecord(context.engineInput) && context.engineInput.input === value.input
+			&& isInventoryDiscardAllowlistResultForInput(value.result, {
+				engineInput: context.engineInput, producerResult: context.producerResult,
+			});
+	} catch { return false; }
 }
 
 function allocationsForDecision(
@@ -105,7 +139,7 @@ function valueFor(
 	itemId: number,
 	quantity: number,
 ): InventoryAdvisorPresentationValue {
-	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'keep') {
+	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'keep' || action === 'discard_review') {
 		return { status: 'not_applicable', route: null };
 	}
 	const item = input.catalog.items[String(itemId)];
@@ -139,7 +173,7 @@ function matchesFilters(
 	const query = filters.query?.trim().toLocaleLowerCase(locale);
 	if (query !== undefined && query.length > 0
 		&& !`${row.name} ${String(row.itemId)}`.toLocaleLowerCase(locale).includes(query)) return false;
-	if (filters.actions !== undefined && !filters.actions.includes(row.action)) return false;
+	if (filters.actions !== undefined && (row.action === 'discard_review' || !filters.actions.includes(row.action))) return false;
 	return filters.groups === undefined || filters.groups.includes(row.group);
 }
 
@@ -166,7 +200,7 @@ function compareText(left: string, right: string, locale: string): number {
 
 function isPresentationAction(action: unknown): action is InventoryAdvisorPresentationAction {
 	return typeof action === 'string' && [
-		'keep', 'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'review',
+		'keep', 'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'review', 'discard_review',
 	].includes(action);
 }
 
@@ -194,7 +228,7 @@ function isPresentationOptions(value: unknown): value is InventoryAdvisorPresent
 	if (!isRecord(value.filters) || !exactOptionalKeys(value.filters, ['query', 'actions', 'groups'])) return false;
 	if (value.filters.query !== undefined && typeof value.filters.query !== 'string') return false;
 	if (value.filters.actions !== undefined && (!Array.isArray(value.filters.actions)
-		|| !value.filters.actions.every(isPresentationAction))) return false;
+		|| !value.filters.actions.every((action) => isPresentationAction(action) && action !== 'discard_review'))) return false;
 	return value.filters.groups === undefined || (Array.isArray(value.filters.groups)
 		&& value.filters.groups.every((group) => typeof group === 'string'
 			&& ['market', 'curated', 'keep', 'review'].includes(group)));

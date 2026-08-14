@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import {
 	createInventoryAdvisorFixturePort,
 	filterInventoryAdvisorRows,
+	formatInventoryAdvisorLocation,
 	groupInventoryAdvisorRows,
 	inventoryAdvisorViewLayout,
 	renderInventoryAdvisorView,
@@ -18,10 +20,30 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
-	it.each([[479, 'cards'], [480, 'compact-table'], [759, 'compact-table'], [760, 'table']] as const)(
+	it.each([[479, 'cards'], [480, 'cards'], [759, 'cards'], [760, 'table']] as const)(
 		'selects the semantic H5.11 layout at %ipx',
 		(width, expected) => expect(inventoryAdvisorViewLayout(width)).toBe(expected),
 	);
+
+	it('keeps the complete card evidence surface visible at both 480px and 759px breakpoints', () => {
+		const styles = readFileSync('styles.css', 'utf8');
+		const breakpoint = styles.lastIndexOf('@container (max-width: 759px)');
+		const compact = styles.slice(breakpoint, styles.indexOf('@container (max-width: 479px)', breakpoint));
+		expect(compact).toMatch(/tyrian-inventory-advisor__table[\s\S]*display:\s*none/u);
+		expect(compact).toMatch(/tyrian-inventory-advisor__cards[\s\S]*display:\s*grid/u);
+		for (const width of [480, 759]) expect(inventoryAdvisorViewLayout(width)).toBe('cards');
+	});
+
+	it.each([
+		[{ source: 'character', character: 'Astra', container: 'equipped_bag', bagIndex: 1 }, 'Personaje: Astra · Bolsa equipada 2'],
+		[{ source: 'character', character: 'Astra', container: 'bag', bagIndex: 2, slot: 4 }, 'Personaje: Astra · Bolsa 3, ranura 5'],
+		[{ source: 'shared_inventory', slot: 3 }, 'Inventario compartido · Ranura 4'],
+		[{ source: 'bank', slot: 7 }, 'Banco · Ranura 8'],
+		[{ source: 'materials', category: 12 }, 'Almacén de materiales · Categoría 12'],
+		[{ source: 'commerce_delivery', slot: 0 }, 'Entrega del bazar · Ranura 1'],
+	] as const)('formats the exact discriminators for location %#', (location, expected) => {
+		expect(formatInventoryAdvisorLocation(location, createTranslator('es'))).toBe(expected);
+	});
 
 	it('filters by item text or id and groups the local rows without mutating the frozen model', () => {
 		const model = deepFreeze(readyModel());
@@ -67,11 +89,11 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toContain('Resto sin valor');
 	});
 
-	it('keeps discard candidates out of the filter while rendering an explicit review-only warning if wired', () => {
+	it('keeps discard reviews out of the filter while rendering an explicit warning-only proof surface if wired', () => {
 		const mount = render(readyModel());
 		const action = find(mount.elements(), 'select')[0];
 		if (!action) throw new Error('Expected an action filter.');
-		expect(action.children.map((option) => option.value)).not.toContain('discard_candidate');
+		expect(action.children.map((option) => option.value)).not.toContain('discard_review');
 		expect(text(mount.elements())).toContain('⚠ Revisión irreversible');
 		expect(find(mount.elements(), 'th').filter((element) => element.scope === 'rowgroup')
 		.map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
@@ -146,15 +168,17 @@ function createMount(): { container: FakeElement; document: FakeDocument } {
 	const document = new FakeDocument();
 	vi.stubGlobal('createEl', (tag: string) => new FakeElement(tag, document));
 	vi.stubGlobal('createDiv', () => new FakeElement('div', document));
+	vi.stubGlobal('createSpan', () => new FakeElement('span', document));
 	return { container: new FakeElement('div', document), document };
 }
 
 function readyModel(): InventoryAdvisorViewModel {
 	return {
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
-		groups: [{ key: 'initial', rows: [
+		groups: [{ key: 'review', rows: [
 			row({ itemId: 100, name: 'Material seguro', action: 'sell' }),
-			row({ itemId: 200, name: 'Resto sin valor', action: 'discard_candidate', coverage: coverage('limited'), irreversibleReviewOnly: true }),
+			row({ itemId: 200, name: 'Resto sin valor', action: 'discard_review', coverage: coverage('limited'), irreversibleReviewOnly: true,
+				discardProof: { itemId: 200, explanationRef: '#/explanations/200/0', producerResultSha256: 'a'.repeat(64), discardRuleId: 'discard-200', discardRuleSourceIds: ['source'], assertionIds: { use: 'use-200', open: 'open-200', salvage: 'salvage-200' }, assertionSourceIds: { use: ['source'], open: ['source'], salvage: ['source'] } } }),
 		] }],
 	};
 }
@@ -163,7 +187,7 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 	const actions: readonly InventoryAdvisorViewAction[] = ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'];
 	return {
 		status: 'limited', title: 'inventory_advisor.title', detail: 'inventory_advisor.limited',
-		groups: [{ key: 'initial', rows: actions.map((action, index) => row({
+		groups: [{ key: 'review', rows: actions.map((action, index) => row({
 			itemId: index + 1,
 			name: index === 0 ? `Objeto extenso ${'x'.repeat(320)}` : `Objeto ${String(index + 1)}`,
 			action,
@@ -174,8 +198,11 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 
 function row(overrides: Partial<InventoryAdvisorViewRow>): InventoryAdvisorViewRow {
 	return {
-		itemId: 1, name: 'Object', ownedQuantity: 5, availableQuantity: 3,
-		action: 'review', coverage: coverage('complete'), irreversibleReviewOnly: false,
+		id: '#/explanations/1/0', itemId: 1, name: 'Object', ownedQuantity: 5, availableQuantity: 3,
+		action: 'review', quantity: 3,
+		allocations: [{ positionRef: '#/positions/1/0', quantity: 3, location: { source: 'bank', slot: 0 } }],
+		reasonCodes: ['rule_missing'], value: { status: 'unavailable', route: null },
+		coverage: coverage('complete'), irreversibleReviewOnly: false, discardProof: null,
 		...overrides,
 	};
 }
@@ -243,6 +270,7 @@ class FakeElement {
 	append(...children: FakeElement[]): void { this.children.push(...children); }
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
+	removeAttribute(name: string): void { this.attributes.delete(name); }
 	addEventListener(type: string, listener: () => void): void {
 		const listeners = this.listeners.get(type) ?? [];
 		listeners.push(listener);

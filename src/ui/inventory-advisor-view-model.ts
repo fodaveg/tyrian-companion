@@ -14,14 +14,20 @@ export interface InventoryAdvisorViewRow {
 	reasonCodes: InventoryAdvisorPresentationRow['reasonCodes'];
 	value: InventoryAdvisorPresentationRow['value'];
 	coverage: InventoryAdvisorPresentationRow['coverage'];
-	irreversibleReviewOnly: false;
+	irreversibleReviewOnly: boolean;
+	discardProof: InventoryAdvisorPresentationRow['discardProof'];
 }
 
 export interface InventoryAdvisorViewModel {
 	status: InventoryAdvisorViewStatus;
 	title: string;
 	detail: string;
-	groups: Array<{ key: InventoryAdvisorPresentation['groups'][number]['group']; rows: InventoryAdvisorViewRow[] }>;
+	groups: InventoryAdvisorViewModelGroup[];
+}
+
+export interface InventoryAdvisorViewModelGroup {
+	key: InventoryAdvisorPresentation['groups'][number]['group'];
+	rows: InventoryAdvisorViewRow[];
 }
 
 /** Converts the data-only advisor presentation into a UI-neutral render model. */
@@ -37,7 +43,9 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 				id: row.id,
 				itemId: row.itemId, name: row.name, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
 				action: row.action, quantity: row.quantity, allocations: structuredClone(row.allocations),
-				reasonCodes: [...row.reasonCodes], value: { ...row.value }, coverage: { ...row.coverage }, irreversibleReviewOnly: false,
+				reasonCodes: [...row.reasonCodes], value: { ...row.value }, coverage: { ...row.coverage },
+				irreversibleReviewOnly: row.irreversibleReviewOnly,
+				discardProof: row.discardProof === null ? null : structuredClone(row.discardProof),
 			})),
 		})),
 	};

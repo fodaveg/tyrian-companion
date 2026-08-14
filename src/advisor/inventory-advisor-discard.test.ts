@@ -6,6 +6,7 @@ import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-ad
 import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
+import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 
 describe('inventory discard allowlist H4.16', () => {
 	it('converts only the reproduced no-supported-route producer result into a review-only candidate', () => {
@@ -18,6 +19,15 @@ describe('inventory discard allowlist H4.16', () => {
 		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'discard_candidate', ruleId: 'discard-10', safety: 'irreversible_review_only' });
 		expect(result.proofs).toHaveLength(1);
 		expect(isInventoryDiscardAllowlistResultForInput(result, { engineInput, producerResult })).toBe(true);
+		const presentation = buildInventoryAdvisorPresentation({
+			input: engineInput.input, result, discardContext: { engineInput, producerResult },
+		});
+		expect(presentation).toMatchObject({
+			status: 'ready', discardReview: { status: 'review_only', proofs: [{ discardRuleId: 'discard-10' }] },
+			groups: [{ group: 'review', rows: [{ action: 'discard_review', irreversibleReviewOnly: true,
+				discardProof: { discardRuleId: 'discard-10' }, value: { status: 'not_applicable', route: null } }] }],
+		});
+		expect(JSON.stringify(presentation)).not.toContain('destroy');
 		const repeatedAssertions = structuredClone(result);
 		if (repeatedAssertions.status !== 'invalid') repeatedAssertions.proofs[0]!.assertionIds.open = repeatedAssertions.proofs[0]!.assertionIds.use;
 		expect(isInventoryDiscardAllowlistResultForInput(repeatedAssertions, { engineInput, producerResult })).toBe(false);

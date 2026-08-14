@@ -1,16 +1,18 @@
 import type { ItemLocation } from '../account/storage-snapshot-model';
 import type { InventoryAdvisorCoverageV1, InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
+import type { InventoryDiscardAllowlistProofV1 } from './inventory-advisor-discard-model';
 
 export const INVENTORY_ADVISOR_PRESENTATION_VERSION = 1 as const;
 
 export type InventoryAdvisorPresentationStatus = 'empty' | 'ready' | 'limited' | 'blocked' | 'invalid';
 export type InventoryAdvisorPresentationGroup = 'market' | 'curated' | 'keep' | 'review';
 export type InventoryAdvisorPresentationSort = 'value_desc' | 'name_asc' | 'action_asc';
-export type InventoryAdvisorPresentationAction = Exclude<InventoryRecommendationAction, 'discard_candidate'>;
+export type InventoryAdvisorPresentationAction = Exclude<InventoryRecommendationAction, 'discard_candidate'> | 'discard_review';
+export type InventoryAdvisorPresentationFilterAction = Exclude<InventoryAdvisorPresentationAction, 'discard_review'>;
 
 export interface InventoryAdvisorPresentationFilters {
 	query?: string;
-	actions?: InventoryAdvisorPresentationAction[];
+	actions?: InventoryAdvisorPresentationFilterAction[];
 	groups?: InventoryAdvisorPresentationGroup[];
 }
 
@@ -43,8 +45,8 @@ export interface InventoryAdvisorPresentationRow {
 	coverage: InventoryAdvisorCoverageV1;
 	group: InventoryAdvisorPresentationGroup;
 	value: InventoryAdvisorPresentationValue;
-	/** Reserved seam for H4.16 review evidence; it cannot be populated in H5.11-A. */
-	irreversibleReviewOnly: false;
+	irreversibleReviewOnly: boolean;
+	discardProof: InventoryDiscardAllowlistProofV1 | null;
 }
 
 export interface InventoryAdvisorPresentationSection {
@@ -56,6 +58,7 @@ export interface InventoryAdvisorPresentation {
 	version: typeof INVENTORY_ADVISOR_PRESENTATION_VERSION;
 	status: InventoryAdvisorPresentationStatus;
 	groups: InventoryAdvisorPresentationSection[];
-	/** H4.16 may later add an explicit reviewed-discard capability to this seam. */
-	discardReview: { status: 'unavailable' };
+	discardReview:
+		| { status: 'unavailable' }
+		| { status: 'review_only'; proofs: InventoryDiscardAllowlistProofV1[] };
 }

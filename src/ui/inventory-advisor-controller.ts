@@ -1,22 +1,23 @@
 import {
 	buildInventoryAdvisorPresentation,
 	invalidInventoryAdvisorPresentation,
-	type InventoryAdvisorPresentationSource,
 } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
+import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
 import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 
 export interface InventoryAdvisorControllerPorts {
 	/** The integration seam for H4.14/H4.15 evidence; this controller owns no I/O client. */
-	load(): Promise<InventoryAdvisorPresentationSource>;
+	load(): Promise<InventoryAdvisorWorkflowResult>;
 }
 
 /** Memory-only advisor projection cache with generation-scoped explicit refreshes. */
 export class InventoryAdvisorPresentationController {
-	private cached: InventoryAdvisorPresentationSource | null = null;
+	private cached: InventoryAdvisorWorkflowResult | null = null;
 	private flight: { generation: number; promise: Promise<void> } | null = null;
 	private failed = false;
 	private generation = 0;
+	private disposed = false;
 
 	constructor(private readonly ports: InventoryAdvisorControllerPorts) {}
 
@@ -27,14 +28,19 @@ export class InventoryAdvisorPresentationController {
 
 	/** Projects the current memory snapshot. It never performs I/O. */
 	current(options: InventoryAdvisorPresentationOptions = {}): InventoryAdvisorViewModel {
+		if (this.disposed) return clone(buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation()));
 		if (this.cached !== null) {
-			return clone(buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached), options)));
+			if (this.cached.status === 'blocked') return clone(buildInventoryAdvisorViewModel({
+				version: 1, status: 'blocked', groups: [], discardReview: { status: 'unavailable' },
+			}));
+			return clone(buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)));
 		}
 		return clone(buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null));
 	}
 
 	/** Explicitly captures fresh evidence. Only the newest refresh may update or answer from the cache. */
 	async refresh(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
+		if (this.disposed) return this.current(options);
 		const generation = this.generation;
 		await this.runFlight(generation);
 		if (this.generation !== generation) {
@@ -46,13 +52,25 @@ export class InventoryAdvisorPresentationController {
 
 	/** Discards only local memory. An earlier flight cannot repopulate a newer generation. */
 	invalidate(): void {
+		if (this.disposed) return;
 		this.generation += 1;
 		this.cached = null;
 		this.flight = null;
 		this.failed = false;
 	}
 
+	/** Permanently rejects later loads and prevents an outstanding flight from repopulating memory. */
+	dispose(): void {
+		if (this.disposed) return;
+		this.generation += 1;
+		this.cached = null;
+		this.flight = null;
+		this.failed = false;
+		this.disposed = true;
+	}
+
 	private runFlight(generation: number): Promise<void> {
+		if (this.disposed) return Promise.resolve();
 		if (this.flight !== null && this.flight.generation === generation) return this.flight.promise;
 		const promise = Promise.resolve().then(() => this.ports.load()).then((source) => {
 			const safe = clone(source);
