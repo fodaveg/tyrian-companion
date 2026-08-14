@@ -7,6 +7,8 @@ export { sha256Text } from './managed-asset-hash';
 const GENERIC_SESSION_BASE_BODY = `filters:
   and:
     - file.hasTag("gw2/session")
+    - tc_schema >= 1
+    - tc_kind == "gw2_farming_session"
 views:
   - type: table
     name: Sessions
@@ -19,7 +21,7 @@ views:
 /** H5.6 exercises the generic asset engine; themed content is registered by H5.7. */
 export async function genericManagedAssets(): Promise<PackagedAsset[]> {
 	const draft = {
-		id: 'sessions-base', kind: 'base', contentVersion: 1, locale: 'neutral',
+		id: 'sessions-base', kind: 'base', contentVersion: 2, locale: 'neutral',
 		relativePath: 'Sessions.base',
 	} as const;
 	const bytes = `${managedAssetMarker(draft)}\n${GENERIC_SESSION_BASE_BODY}`;

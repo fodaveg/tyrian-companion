@@ -24,6 +24,12 @@ describe('managed asset paths and planning', () => {
 		};
 		expect(planManagedAssets(inspection, 'install')).toMatchObject({ canApply: false, reasons: ['occupied_unowned'] });
 	});
+
+	it('keeps Sessions.base scoped to the durable session schema and kind', async () => {
+		const [asset] = await genericManagedAssets();
+		expect(asset?.bytes).toContain('tc_schema >= 1');
+		expect(asset?.bytes).toContain('tc_kind == "gw2_farming_session"');
+	});
 });
 
 describe('ManagedAssetsManager', () => {
@@ -283,7 +289,7 @@ describe('ManagedAssetsManager', () => {
 async function manager(vault: MemoryAssetVault, version: number): Promise<ManagedAssetsManager> {
 	const [asset] = await genericManagedAssets();
 	if (!asset) throw new Error('missing fixture');
-	const bytes = asset.bytes.replace('version=1', `version=${version}`);
+	const bytes = asset.bytes.replace(/version=\d+/u, `version=${version}`);
 	const contentHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bytes));
 	const hash = [...new Uint8Array(contentHash)].map((part) => part.toString(16).padStart(2, '0')).join('');
 	return new ManagedAssetsManager(vault, CONFIG_DIR, {
@@ -294,7 +300,7 @@ async function manager(vault: MemoryAssetVault, version: number): Promise<Manage
 async function managerWithAdditionalAsset(vault: MemoryAssetVault): Promise<ManagedAssetsManager> {
 	const [asset] = await genericManagedAssets();
 	if (!asset) throw new Error('missing fixture');
-	const bytes = asset.bytes.replace('version=1', 'version=2');
+	const bytes = asset.bytes.replace(/version=\d+/u, 'version=2');
 	const current = { ...asset, contentVersion: 2, bytes, contentHash: await sha256Text(bytes) };
 	const draft = { id: 'later-base', kind: 'base', contentVersion: 1, locale: 'neutral', relativePath: 'Later.base' } as const;
 	const addedBytes = `${managedAssetMarker(draft)}\nfilters:\n  and: []\n`;

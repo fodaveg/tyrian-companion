@@ -12,6 +12,8 @@ The current `0.1.0` vertical provides:
 - H5.6 installs a generic Obsidian Base only after an explicit preview/apply action. A versioned manifest and resumable CAS journal distinguish intact, missing, modified, foreign and future assets without scanning or overwriting user files.
 - H5.8 keeps all accepted and generated Vault paths portable across macOS, Linux, Windows, and Obsidian Sync; session filenames remain UTC plus hashes, never account or character names.
 - H5.9 provides a typed, exhaustive ES/EN catalogue for visible settings, Companion state, actions, notices, confirmations, generated notes, loot and managed Bases while retaining stable command IDs, `tc_*` properties and Base query keys.
+- H5.10 manually scans durable H5.4/H5.7 session notes and creates deterministic, create-only JSON/CSV history exports below `exports/`; malformed, future, or duplicate notes fail closed and no vault read occurs on plugin load.
+- H5.10 also exposes a warning-style Settings scrub with preview and explicit confirmation; it preserves files and human content, removes only validated `tc_*` metadata and managed blocks, and blocks around live session, recovery, or detector state.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
@@ -150,6 +152,14 @@ IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and o
 settings mirror only the last completed root. Bundle v2 keeps the generic `.base` and adds a
 localized `Halloween.base` through the same manifest/CAS path. It reads only session-note schema v2
 fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
+
+Durable-history export is an explicit Settings action. It considers only Markdown notes whose
+`tc_kind` is `gw2_farming_session`, validates supported schemas 1/2, hashed references, and all six
+managed blocks before writing fixed JSON and CRLF CSV files below `exports/`. It never exports raw
+account/session IDs, vault paths, frontmatter character/build fields, or human Markdown. Existing
+export files are never overwritten; an exact previous partial result is reused only to finish the
+missing sibling file. CSV quotes every field and prefixes spreadsheet formula starters. The action
+is single-flight and opening Settings does not list or read vault notes.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 

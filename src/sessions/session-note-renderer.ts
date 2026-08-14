@@ -3,6 +3,7 @@ import type {
 	SessionClassificationReasonCode,
 	SessionClassificationStatus,
 } from '../account/contamination-model';
+import { isMap, isScalar, parseDocument, type Scalar } from 'yaml';
 import type { SnapshotQuality } from '../account/storage-snapshot-model';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
@@ -87,6 +88,44 @@ export async function mergeRenderedSessionNote(
 
 export function frontmatterSessionRef(content: string): string | null {
 	return parseFrontmatter(content)?.sessionRef ?? null;
+}
+
+/** Durable H5.4/H5.7 note codec for explicit history operations. */
+export async function inspectStoredSessionNote(content: string): Promise<{
+	frontmatter: Readonly<Record<string, string | number | null>>;
+	managedBlocksValid: boolean;
+	hasInvalidScalar: boolean;
+} | null> {
+	const parsed = parseFrontmatter(content);
+	if (parsed === null) return null;
+	const strict = parseStrictTcFrontmatter(content);
+	return {
+		frontmatter: strict?.frontmatter ?? parsed.frontmatter,
+		managedBlocksValid: await managedBlockRanges(parsed.body) !== null,
+		hasInvalidScalar: parsed.hasInvalidScalar || strict === null,
+	};
+}
+
+/**
+ * Removes only Tyrian Companion's durable metadata and intact managed blocks.
+ * The surviving frontmatter lines and all human body lines retain their original
+ * byte sequence and ordering.
+ */
+export async function scrubStoredSessionNote(content: string): Promise<string | null> {
+	const parsed = parseFrontmatter(content);
+	if (parsed === null) return null;
+	const ranges = await managedBlockRanges(parsed.body);
+	if (ranges === null) return null;
+	const frontmatterEnd = content.indexOf('\n---\n', 4);
+	if (frontmatterEnd < 0) return null;
+	const retainedFrontmatter = content.slice(4, frontmatterEnd).split('\n')
+		.filter((line) => !/^tc_[A-Za-z0-9_-]+:(?:\s|$)/u.test(line));
+	const bodyLines = parsed.body.split('\n');
+	for (let index = ranges.length - 1; index >= 0; index -= 1) {
+		const range = ranges[index]!;
+		bodyLines.splice(range.start, range.end - range.start + 1);
+	}
+	return '---\n' + retainedFrontmatter.join('\n') + '\n---\n' + bodyLines.join('\n');
 }
 
 function createFrontmatter(
@@ -249,6 +288,17 @@ async function replaceManagedBlocks(
 	blocks: RenderedSessionNote['blocks'],
 ): Promise<string | null> {
 	const lines = body.split('\n');
+	const ranges = await managedBlockRanges(body);
+	if (ranges === null) return null;
+	for (let index = ranges.length - 1; index >= 0; index -= 1) {
+		const range = ranges[index]!;
+		lines.splice(range.start, range.end - range.start + 1, blocks[range.id].serialized);
+	}
+	return lines.join('\n');
+}
+
+async function managedBlockRanges(body: string): Promise<Array<{ id: SessionNoteBlockId; start: number; end: number }> | null> {
+	const lines = body.split('\n');
 	const ranges: Array<{ id: SessionNoteBlockId; start: number; end: number }> = [];
 	let open: { id: SessionNoteBlockId; start: number; hash: string } | null = null;
 	for (let index = 0; index < lines.length; index += 1) {
@@ -258,23 +308,19 @@ async function replaceManagedBlocks(
 			if (open || !SESSION_NOTE_BLOCK_IDS.includes(start[1] as SessionNoteBlockId)) return null;
 			open = { id: start[1] as SessionNoteBlockId, start: index, hash: start[2]! };
 		} else if (end) {
-			if (!open || end[1] !== open.id) return null;
-			const content = lines.slice(open.start + 1, index).join('\n');
-			if (await sha256Text(content) !== open.hash) return null;
+			if (!open || end[1] !== open.id || await sha256Text(lines.slice(open.start + 1, index).join('\n')) !== open.hash) return null;
 			ranges.push({ id: open.id, start: open.start, end: index });
 			open = null;
 		}
 	}
-	if (open || ranges.length !== SESSION_NOTE_BLOCK_IDS.length ||
-		ranges.some((range, index) => range.id !== SESSION_NOTE_BLOCK_IDS[index])) return null;
-	for (let index = ranges.length - 1; index >= 0; index -= 1) {
-		const range = ranges[index]!;
-		lines.splice(range.start, range.end - range.start + 1, blocks[range.id].serialized);
-	}
-	return lines.join('\n');
+	return open || ranges.length !== SESSION_NOTE_BLOCK_IDS.length ||
+		ranges.some((range, index) => range.id !== SESSION_NOTE_BLOCK_IDS[index]) ? null : ranges;
 }
 
-function parseFrontmatter(content: string): { body: string; humanLines: string[]; tags: string[]; sessionRef: string | null } | null {
+function parseFrontmatter(content: string): {
+	body: string; humanLines: string[]; tags: string[]; sessionRef: string | null;
+	frontmatter: Record<string, string | number | null>; hasInvalidScalar: boolean;
+} | null {
 	if (!content.startsWith('---\n')) return null;
 	const end = content.indexOf('\n---\n', 4);
 	if (end < 0) return null;
@@ -283,10 +329,16 @@ function parseFrontmatter(content: string): { body: string; humanLines: string[]
 	const humanLines: string[] = [];
 	const tags: string[] = [];
 	let sessionRef: string | null = null;
+	const frontmatter: Record<string, string | number | null> = {};
+	let hasInvalidScalar = false;
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = lines[index]!;
 		const match = /^([A-Za-z0-9_-]+):(?:\s*(.*))?$/u.exec(line);
 		if (match?.[1]?.startsWith('tc_')) {
+			if (Object.prototype.hasOwnProperty.call(frontmatter, match[1])) return null;
+			const scalar = frontmatterValue(match[2] ?? '');
+			frontmatter[match[1]] = scalar.value;
+			hasInvalidScalar ||= scalar.invalid;
 			if (match[1] === 'tc_session_ref') {
 				if (sessionRef !== null) return null;
 				sessionRef = yamlScalar(match[2] ?? '');
@@ -307,7 +359,42 @@ function parseFrontmatter(content: string): { body: string; humanLines: string[]
 		}
 		humanLines.push(line);
 	}
-	return { body: content.slice(end + 5), humanLines, tags, sessionRef };
+	return { body: content.slice(end + 5), humanLines, tags, sessionRef, frontmatter, hasInvalidScalar };
+}
+
+/** Parses producer-owned scalars with YAML Core and requires the renderer's exact scalar styles. */
+function parseStrictTcFrontmatter(content: string): {
+	frontmatter: Record<string, string | number | null>;
+} | null {
+	if (!content.startsWith('---\n')) return null;
+	const end = content.indexOf('\n---\n', 4);
+	if (end < 0) return null;
+	try {
+		const document = parseDocument(content.slice(4, end), {
+			prettyErrors: false,
+			schema: 'core',
+			strict: true,
+			uniqueKeys: true,
+		});
+		if (document.errors.length > 0 || !isMap(document.contents)) return null;
+		const frontmatter: Record<string, string | number | null> = {};
+		for (const pair of document.contents.items) {
+			if (!isScalar(pair.key) || typeof pair.key.value !== 'string' || !pair.key.value.startsWith('tc_')) continue;
+			if (!isScalar(pair.value)) return null;
+			const scalar = pair.value as Scalar;
+			const value = scalar.value;
+			if (typeof value === 'string') {
+				if (scalar.type !== 'QUOTE_DOUBLE') return null;
+				frontmatter[pair.key.value] = value;
+			} else if (typeof value === 'number') {
+				if (scalar.type !== 'PLAIN' || !Number.isSafeInteger(value)) return null;
+				frontmatter[pair.key.value] = value;
+			} else if (value === null && scalar.type === 'PLAIN') {
+				frontmatter[pair.key.value] = null;
+			} else return null;
+		}
+		return { frontmatter };
+	} catch { return null; }
 }
 
 function serializeFrontmatter(
@@ -456,6 +543,21 @@ function text(value: string): string {
 function yaml(value: string | number | null): string { return value === null ? 'null' : typeof value === 'number' ? String(value) : JSON.stringify(value); }
 function yamlScalar(value: string): string {
 	try { const parsed = JSON.parse(value) as unknown; return typeof parsed === 'string' ? parsed : value; } catch { return value.replace(/^['"]|['"]$/gu, ''); }
+}
+function frontmatterValue(value: string): { value: string | number | null; invalid: boolean } {
+	const trimmed = value.trim();
+	if (trimmed === 'null') return { value: null, invalid: false };
+	try {
+		const parsed = JSON.parse(trimmed) as unknown;
+		if (typeof parsed === 'string') return { value: parsed, invalid: false };
+		if (typeof parsed === 'number' && Number.isSafeInteger(parsed)) return { value: parsed, invalid: false };
+		return { value: null, invalid: true };
+	} catch {
+		const number = Number(trimmed);
+		if (Number.isSafeInteger(number) && trimmed !== '') return { value: number, invalid: false };
+		if (/^(?:true|false|~)$/iu.test(trimmed) || /^[[{]/u.test(trimmed)) return { value: null, invalid: true };
+		return { value: yamlScalar(value), invalid: false };
+	}
 }
 function pad(value: number): string { return String(value).padStart(2, '0'); }
 

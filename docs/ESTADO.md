@@ -4,6 +4,8 @@
 
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.12 y UI/assets H5.1–H5.9: implementados.**
 
+H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
+
 H5.1 sustituye la portada de tarjetas por una bitácora compacta con fase y reloj de sesión, rail de detector/polling/calidad/cuenta, incidencia priorizada y detalles plegables; no añade red ni acciones automáticas.
 
 H5.2 añade paleta y un único ribbon contextual para start, finish/retry, review, recover, discard confirmado y clear confirmado, siempre mediante los workflows existentes y con revalidación ante estado stale.
@@ -31,7 +33,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 65 ficheros y 1032 tests verdes.
+- `npm run test`: 67 ficheros y 1065 tests verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 
 ## Pendientes de producto

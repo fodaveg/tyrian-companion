@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
-import { genericManagedAssets, managedAssetsBundle } from './generic-assets';
+import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic-assets';
 import { halloweenManagedAssets } from './halloween-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
@@ -63,33 +63,42 @@ describe('Halloween Base assets', () => {
 		}
 	});
 
-	it('upgrades bundle 1 to 2 additively, locale-updates one path, and preserves human edits', async () => {
+	it('upgrades bundle 1 to 3, locale-updates one path, and preserves human edits', async () => {
 		const vault = new MemoryVault();
+		const [currentSessions] = await genericManagedAssets();
+		if (!currentSessions) throw new Error('Missing Sessions.base fixture.');
+		const legacyBytes = currentSessions.bytes.replace('version=2', 'version=1');
+		const legacySessions = {
+			...currentSessions, contentVersion: 1, bytes: legacyBytes, contentHash: await sha256Text(legacyBytes),
+		};
 		const v1 = new ManagedAssetsManager(vault, '.config', {
-			bundleVersion: 1, locale: 'es', assets: await genericManagedAssets(),
+			bundleVersion: 1, locale: 'es', assets: [legacySessions],
 		});
 		expect((await v1.apply('Tyrian Companion')).status).toBe('applied');
 		const sessionsBefore = vault.contents.get('Tyrian Companion/Bases/Sessions.base');
 		const bundle = await managedAssetsBundle();
-		const v2 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 2, locale: 'es', assets: bundle });
-		const preview = await v2.preview('Tyrian Companion', 'upgrade');
+		const v3 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 3, locale: 'es', assets: bundle });
+		const preview = await v3.preview('Tyrian Companion', 'upgrade');
 		expect(preview.steps).toEqual([
 			{ id: 'halloween-base', path: 'Tyrian Companion/Bases/Halloween.base', status: 'create' },
-			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'unchanged' },
+			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'update' },
 		]);
-		expect((await v2.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
-		expect(vault.contents.get('Tyrian Companion/Bases/Sessions.base')).toBe(sessionsBefore);
+		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		expect(vault.contents.get('Tyrian Companion/Bases/Sessions.base')).not.toBe(sessionsBefore);
 		const halloweenPath = 'Tyrian Companion/Bases/Halloween.base';
 		const spanish = vault.contents.get(halloweenPath)!;
-		v2.setBundle({ bundleVersion: 2, locale: 'en', assets: bundle });
-		expect((await v2.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		v3.setBundle({ bundleVersion: 3, locale: 'en', assets: bundle });
+		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		expect(vault.contents.get(halloweenPath)).not.toBe(spanish);
 		expect(vault.contents.get(halloweenPath)).toContain('name: "Latest"');
 
 		vault.contents.set(halloweenPath, `${vault.contents.get(halloweenPath)!}# human\n`);
-		v2.setBundle({ bundleVersion: 2, locale: 'es', assets: bundle });
-		expect((await v2.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
+		v3.setBundle({ bundleVersion: 3, locale: 'es', assets: bundle });
+		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
 		expect(vault.contents.get(halloweenPath)).toContain('# human');
+
+		const v2 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 2, locale: 'es', assets: bundle });
+		expect((await v2.inspect('Tyrian Companion')).assets.every((asset) => asset.status === 'newer_than_plugin')).toBe(true);
 	});
 
 	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', async () => {

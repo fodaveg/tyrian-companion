@@ -17,6 +17,8 @@ import {
 import { normalizeVaultFolder } from '../core/settings';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import type TyrianCompanionPlugin from '../main';
+import type { SessionHistoryScrubPreview } from '../sessions/session-history';
+import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
 
 type SettingRenderer = (setting: Setting) => void;
@@ -26,6 +28,10 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private connectionButton: ButtonComponent | null = null;
 	private countdownInterval: number | null = null;
 	private managedAssetsSetting: Setting | null = null;
+	private sessionHistorySetting: Setting | null = null;
+	private sessionHistoryButton: ButtonComponent | null = null;
+	private sessionHistoryScrubButton: ButtonComponent | null = null;
+	private readonly sessionHistoryScrubController: SessionHistoryScrubController;
 	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
 
 	constructor(
@@ -33,6 +39,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		private readonly plugin: TyrianCompanionPlugin,
 	) {
 		super(app, plugin);
+		this.sessionHistoryScrubController = new SessionHistoryScrubController({
+			preview: () => this.plugin.previewSessionHistoryScrub(),
+			confirm: (preview) => confirmSessionHistoryScrub(this.app, this.t.bind(this), preview),
+			cancelPreview: (token) => this.plugin.cancelSessionHistoryScrubPreview(token),
+			scrub: (token) => this.plugin.scrubSessionHistory(token),
+		});
 	}
 
 	display(): void {
@@ -49,6 +61,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.connectionSetting = null;
 		this.connectionButton = null;
 		this.managedAssetsSetting = null;
+		this.sessionHistorySetting = null;
+		this.sessionHistoryButton = null;
+		this.sessionHistoryScrubButton = null;
 		this.managedAssetButtons.clear();
 		const { containerEl } = this;
 		containerEl.empty();
@@ -72,6 +87,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.connectionSetting = null;
 		this.connectionButton = null;
 		this.managedAssetsSetting = null;
+		this.sessionHistorySetting = null;
+		this.sessionHistoryButton = null;
+		this.sessionHistoryScrubButton = null;
 		this.managedAssetButtons.clear();
 		super.hide();
 	}
@@ -94,6 +112,14 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
+	}
+
+	refreshSessionHistoryRow(): void {
+		const history = this.plugin.getSessionHistoryView();
+		this.sessionHistorySetting?.setDesc(this.t(`settings.history.${history.status}` as TranslationKey, history));
+		const working = isHistoryOperationWorking(history.status);
+		this.sessionHistoryButton?.setDisabled(working);
+		this.sessionHistoryScrubButton?.setDisabled(working);
 	}
 
 	private definitions(): Array<{ name: string; desc: string; render: SettingRenderer }> {
@@ -204,6 +230,27 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: this.t('settings.history.name'),
+				desc: this.t(`settings.history.${this.plugin.getSessionHistoryView().status}` as TranslationKey, this.plugin.getSessionHistoryView()),
+					render: (setting) => {
+					this.sessionHistorySetting = setting;
+					setting.addButton((button) => {
+						this.sessionHistoryButton = button;
+						button.setButtonText(this.t('settings.history.export')).setCta().onClick(async () => {
+							await this.plugin.exportSessionHistory();
+						});
+					});
+					setting.addButton((button) => {
+						this.sessionHistoryScrubButton = button;
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText(this.t('settings.history.scrub')).onClick(async () => {
+							await this.sessionHistoryScrubController.run();
+						});
+					});
+					this.refreshSessionHistoryRow();
+				},
+			},
+			{
 				name: this.t('settings.connection.name'),
 				desc: this.connectionDescription(this.plugin.getConnectionState()),
 				render: (setting) => {
@@ -266,6 +313,10 @@ function isCoolingDown(retryAt: number | null): retryAt is number {
 	return retryAt !== null && retryAt > Date.now();
 }
 
+function isHistoryOperationWorking(status: string): boolean {
+	return status === 'working' || status === 'scrub_previewing' || status === 'scrub_ready' || status === 'scrubbing';
+}
+
 function confirmManagedAssetsRemoval(app: App, t: (key: TranslationKey) => string): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
@@ -277,6 +328,36 @@ function confirmManagedAssetsRemoval(app: App, t: (key: TranslationKey) => strin
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
 				const remove = actions.createEl('button', { text: t('settings.assets.remove'), cls: 'mod-warning' });
 				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
+}
+
+function confirmSessionHistoryScrub(
+	app: App,
+	t: (key: TranslationKey, params?: TranslationParams) => string,
+	preview: Extract<SessionHistoryScrubPreview, { status: 'ready' }>,
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle(t('settings.history.scrubModal.title'));
+				this.contentEl.createEl('p', {
+					text: t('settings.history.scrubModal.summary', { sessions: preview.sessions }),
+				});
+				for (const key of [
+					'settings.history.scrubModal.preserves',
+					'settings.history.scrubModal.removes',
+					'settings.history.scrubModal.untouched',
+					'settings.history.scrubModal.noTrash',
+				] as const) this.contentEl.createEl('p', { text: t(key) });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const scrub = actions.createEl('button', { text: t('settings.history.scrubModal.confirm'), cls: 'mod-warning' });
+				scrub.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(app);

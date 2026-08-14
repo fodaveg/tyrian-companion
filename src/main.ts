@@ -46,6 +46,14 @@ import {
 } from './sessions/session-note-model';
 import { SessionNoteWriter, writeSessionNoteBeforeClear } from './sessions/session-note-writer';
 import {
+	SessionHistoryService,
+	SessionHistoryRuntimeAuthority,
+	type SessionHistoryExportResult,
+	type SessionHistoryScrubGate,
+	type SessionHistoryScrubPreview,
+	type SessionHistoryScrubResult,
+} from './sessions/session-history';
+import {
 	ManualSessionStartService,
 	type SessionRecoveryState,
 	type SessionStartFailure,
@@ -78,6 +86,14 @@ import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 
+export type SessionHistoryView =
+	| { status: 'idle' | 'working' | 'conflict' | 'invalid' | 'unavailable'; sessions: number; erased: number; alreadyAbsent: number }
+	| { status: 'written' | 'unchanged'; sessions: number; erased: 0; alreadyAbsent: 0 }
+	| { status: 'scrub_previewing' | 'scrub_blocked' | 'scrub_conflict' | 'scrub_unavailable'; sessions: number; erased: number; alreadyAbsent: number }
+	| { status: 'scrub_ready'; sessions: number; erased: 0; alreadyAbsent: 0 }
+	| { status: 'scrubbing' | 'scrub_stale'; sessions: number; erased: number; alreadyAbsent: number }
+	| { status: 'erased' | 'already_absent'; sessions: 0; erased: number; alreadyAbsent: number };
+
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = { ...DEFAULT_SETTINGS };
 	private connection!: ConnectionService;
@@ -87,6 +103,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
+	private sessionHistory!: SessionHistoryService;
 	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
@@ -101,6 +118,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
+	private sessionHistoryView: SessionHistoryView =
+		{ status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
+	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
+	private sessionHistoryScrubFlight: Promise<SessionHistoryScrubResult> | null = null;
+	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -126,7 +148,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 			this.app.vault.configDir,
-			{ bundleVersion: 2, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: 3, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
@@ -176,6 +198,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 				return await this.app.vault.process(target, update);
 			},
 		});
+		this.sessionHistory = new SessionHistoryService({
+			markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
+			exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
+			file: (path) => {
+				const target = this.app.vault.getAbstractFileByPath(path);
+				return target instanceof TFile ? { path: target.path } : null;
+			},
+			read: async (file) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
+				return await this.app.vault.read(target);
+			},
+			process: async (file, update) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
+				await this.app.vault.process(target, update);
+			},
+			createFolder: async (path) => { await this.app.vault.createFolder(path); },
+			create: async (path, content) => {
+				const file = await this.app.vault.create(path, content);
+				return { path: file.path };
+			},
+		});
 		this.detectionQuality = new DetectionQualityRecorder(
 			new IndexedDbDetectionQualityStore(window.indexedDB),
 		);
@@ -196,24 +241,31 @@ export default class TyrianCompanionPlugin extends Plugin {
 			getSessionState: () => this.sessions.getState(),
 			onStateChange: () => this.refreshBackgroundIndicators(),
 			onProposal: async (proposal) => {
-				const session = this.sessions.getState();
-				const result = 'ruleSet' in proposal
-					? await this.pendingProposals.enqueue({ phase: 'start', proposal })
-					: session.status === 'active'
-						? await this.pendingProposals.enqueue({
-							phase: 'stop', proposal, sessionId: session.sessionId,
-							baselineSnapshotId: session.baseline.snapshotId,
-						})
-						: { status: 'unavailable' as const };
-				return result.status !== 'unavailable';
+				const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+				if (runtimeLease === null) return false;
+				try {
+					const session = this.sessions.getState();
+					const result = 'ruleSet' in proposal
+						? await this.pendingProposals.enqueue({ phase: 'start', proposal })
+						: session.status === 'active'
+							? await this.pendingProposals.enqueue({
+								phase: 'stop', proposal, sessionId: session.sessionId,
+								baselineSnapshotId: session.baseline.snapshotId,
+							})
+							: { status: 'unavailable' as const };
+					return result.status !== 'unavailable';
+				} finally { runtimeLease.release(); }
 			},
 		});
 		this.assistedDetection.setOnline(navigator.onLine);
-		this.registerDomEvent(window, 'online', () => this.assistedDetection.setOnline(true));
-		this.registerDomEvent(window, 'offline', () => this.assistedDetection.setOnline(false));
+		this.registerDomEvent(window, 'online', () => {
+			this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+		});
+		this.registerDomEvent(window, 'offline', () => {
+			this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
+		});
 		this.registerDomEvent(document, 'visibilitychange', () => {
-			if (document.visibilityState === 'visible') {
-				this.assistedDetection.notifyWake();
+			if (document.visibilityState === 'visible' && this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
 				void this.reconcilePendingProposals().then(() => this.renderViews());
 			}
 		});
@@ -254,6 +306,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.detectionQuality?.dispose();
 		this.pendingClaimRenewals?.dispose();
 		this.pendingProposals?.dispose();
+		this.sessionHistory?.dispose();
 		this.managedAssetsPointer?.close();
 		void this.sessions?.dispose();
 	}
@@ -352,6 +405,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async armAssistedDetection(): Promise<void> {
+		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+		if (runtimeLease === null) return;
+		try {
 		const connected = this.connection.getState().status;
 		const session = this.sessions.getState();
 		const recovery = this.sessions.getRecoveryState();
@@ -364,14 +420,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 		await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000);
 		this.renderViews();
+		} finally { runtimeLease.release(); }
 	}
 
 	disarmAssistedDetection(): void {
-		this.assistedDetection.disarm();
-		this.renderViews();
+		this.runRuntimeMutation(() => {
+			this.assistedDetection.disarm();
+			this.renderViews();
+		});
 	}
 
 	async dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void> {
+		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+		if (runtimeLease === null) return;
+		try {
 		const detection = this.assistedDetection.getState();
 		const session = this.sessions.getState();
 		if (detection.status === 'start_proposed') {
@@ -387,6 +449,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		this.assistedDetection.dismissProposal();
 		this.renderViews();
+		} finally { runtimeLease.release(); }
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
@@ -410,6 +473,97 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
+
+	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
+
+	async exportSessionHistory(): Promise<void> {
+		this.sessionHistoryView = { status: 'working', sessions: 0, erased: 0, alreadyAbsent: 0 };
+		this.settingTab.refreshSessionHistoryRow();
+		try {
+			const result = await this.sessionHistory.export(this.settings.outputFolder);
+			this.sessionHistoryView = sessionHistoryView(result);
+		} catch {
+			this.sessionHistoryView = { status: 'unavailable', sessions: 0, erased: 0, alreadyAbsent: 0 };
+		} finally { this.settingTab.refreshSessionHistoryRow(); }
+	}
+
+	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
+		if (this.sessionHistoryPreviewFlight) return this.sessionHistoryPreviewFlight;
+		this.sessionHistoryView = { status: 'scrub_previewing', sessions: 0, erased: 0, alreadyAbsent: 0 };
+		this.settingTab.refreshSessionHistoryRow();
+		const flight = this.sessionHistory.previewScrub(this.sessionHistoryRuntimeAuthority)
+			.then((preview) => {
+				this.sessionHistoryView = scrubPreviewView(preview);
+				return preview;
+			})
+			.catch((): SessionHistoryScrubPreview => {
+				const preview = { status: 'unavailable', message: 'History scrub could not be prepared safely.' } as const;
+				this.sessionHistoryView = scrubPreviewView(preview);
+				return preview;
+			})
+			.finally(() => {
+				if (this.sessionHistoryPreviewFlight === flight) this.sessionHistoryPreviewFlight = null;
+				this.settingTab.refreshSessionHistoryRow();
+			});
+		this.sessionHistoryPreviewFlight = flight;
+		return flight;
+	}
+
+	cancelSessionHistoryScrubPreview(token: string): void {
+		this.sessionHistory.revokeScrub(token);
+		if (this.sessionHistoryView.status !== 'scrub_ready') return;
+		this.sessionHistoryView = { status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
+		this.settingTab.refreshSessionHistoryRow();
+	}
+
+	scrubSessionHistory(token: string): Promise<SessionHistoryScrubResult> {
+		if (this.sessionHistoryScrubFlight) return this.sessionHistoryScrubFlight;
+		this.sessionHistoryView = {
+			status: 'scrubbing', sessions: this.sessionHistoryView.status === 'scrub_ready' ? this.sessionHistoryView.sessions : 0,
+			erased: 0, alreadyAbsent: 0,
+		};
+		this.settingTab.refreshSessionHistoryRow();
+		const flight = this.sessionHistory.scrub(token, this.sessionHistoryRuntimeAuthority)
+			.then((result) => {
+				this.sessionHistoryView = scrubResultView(result);
+				return result;
+			})
+			.catch((): SessionHistoryScrubResult => {
+				const result = {
+					status: 'unavailable', erased: 0, alreadyAbsent: 0,
+					message: 'History scrub could not be completed safely.',
+				} as const;
+				this.sessionHistoryView = scrubResultView(result);
+				return result;
+			})
+			.finally(() => {
+				if (this.sessionHistoryScrubFlight === flight) this.sessionHistoryScrubFlight = null;
+				this.settingTab.refreshSessionHistoryRow();
+			});
+		this.sessionHistoryScrubFlight = flight;
+		return flight;
+	}
+
+	private sessionHistoryScrubGate(): SessionHistoryScrubGate {
+		return {
+			sessionStatus: this.sessions.getState().status,
+			recoveryStatus: this.sessions.getRecoveryState().status,
+			detectorStatus: this.assistedDetection.getState().status,
+		};
+	}
+
+	private runRuntimeMutation(operation: () => void): boolean {
+		const lease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+		if (lease === null) return false;
+		try { operation(); return true; }
+		finally { lease.release(); }
+	}
+
+	private requireRuntimeMutationLease() {
+		const lease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+		if (lease === null) throw new Error('Session history scrub is active.');
+		return lease;
+	}
 
 	hasManagedAssetsRoot(): boolean {
 		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
@@ -506,7 +660,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
-		const result = await this.sessions.reviewContamination(answers);
+		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+		if (runtimeLease === null) return 'Session history scrub is active.';
+		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
 		this.renderViews();
 		return result.status === 'failed' ? result.message : null;
 	}
@@ -544,13 +700,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async performStopManualSession(intent?: PendingProposalIntent): Promise<void> {
+		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
 		const proposal = pendingClaim?.proposal.phase === 'stop'
 			? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
 		this.renderViews();
 		try {
-			const result = await this.sessions.stop();
+			const runtimeLease = this.requireRuntimeMutationLease();
+			const result = await this.sessions.stop().finally(() => runtimeLease.release());
 			if (result.status === 'stopped') {
 				void this.detectionQuality.recordAccepted(
 					'stop',
@@ -583,13 +741,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async startManualSession(input: SessionStartInput, intent?: PendingProposalIntent): Promise<void> {
+		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
 		const proposal = pendingClaim?.proposal.phase === 'start'
 			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
 		this.renderViews();
 		try {
-			const result = await this.sessions.start(input);
+			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+			if (runtimeLease === null) throw new Error('Session history scrub is active.');
+			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
 			if (result.status === 'started') {
 				void this.detectionQuality.recordAccepted(
 					'start',
@@ -633,18 +794,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.settings = nextSettings;
 		if (previousLanguage !== nextSettings.language) {
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: 2, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: 3, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}
 		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
-			this.assistedDetection.disarm('mode_off');
+			this.runRuntimeMutation(() => this.assistedDetection.disarm('mode_off'));
 		}
 		if (previousPollingInterval !== nextSettings.pollingIntervalMinutes) {
-			this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000);
+			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
-			this.assistedDetection.disarm('connection_changed');
+			this.runRuntimeMutation(() => this.assistedDetection.disarm('connection_changed'));
 			this.connection.reset();
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();
@@ -772,6 +933,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
+		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) return Promise.resolve(null);
 		if (id === 'start-farming-session') return this.prepareStartIntent();
 		if (id === 'review-session') return this.prepareReviewIntent();
 		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
@@ -846,18 +1008,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async performRecoverSession(): Promise<void> {
-		const result = await this.sessions.recover();
+		const runtimeLease = this.requireRuntimeMutationLease();
+		const result = await this.sessions.recover().finally(() => runtimeLease.release());
 		this.renderViews();
 		if (!hasExactSessionBackendResult('recover', result)) throw new Error('Recovery failed.');
 	}
 
 	private async performDiscardRecoveredSession(): Promise<void> {
-		const result = await this.sessions.discardRecovery();
+		const runtimeLease = this.requireRuntimeMutationLease();
+		const result = await this.sessions.discardRecovery().finally(() => runtimeLease.release());
 		this.renderViews();
 		if (!hasExactSessionBackendResult('discard', result)) throw new Error('Discard failed.');
 	}
 
 	private async performClearCompletedSession(): Promise<void> {
+		const runtimeLease = this.requireRuntimeMutationLease();
+		try {
 		const runtime = await this.sessions.getCompletedRuntimeRecord();
 		if (!runtime) throw new Error('Completed session evidence is unavailable.');
 		const cleared = await writeSessionNoteBeforeClear(
@@ -867,6 +1033,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		this.renderViews();
 		if (!hasExactSessionBackendResult('clear', cleared)) throw new Error('Clear failed.');
+		} finally { runtimeLease.release(); }
 	}
 
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
@@ -916,4 +1083,36 @@ function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'una
 		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
 	};
 	return codes[status];
+}
+
+function sessionHistoryView(result: SessionHistoryExportResult): {
+	status: 'written' | 'unchanged' | 'conflict' | 'invalid' | 'unavailable';
+	sessions: number; erased: 0; alreadyAbsent: 0;
+} {
+	return result.status === 'written' || result.status === 'unchanged'
+		? { status: result.status, sessions: result.sessions, erased: 0, alreadyAbsent: 0 }
+		: { status: result.status, sessions: 0, erased: 0, alreadyAbsent: 0 };
+}
+
+function scrubPreviewView(preview: SessionHistoryScrubPreview): SessionHistoryView {
+	if (preview.status === 'ready') {
+		return { status: 'scrub_ready', sessions: preview.sessions, erased: 0, alreadyAbsent: 0 };
+	}
+	return {
+		status: preview.status === 'blocked' ? 'scrub_blocked'
+			: preview.status === 'conflict' ? 'scrub_conflict' : 'scrub_unavailable',
+		sessions: 0, erased: 0, alreadyAbsent: 0,
+	};
+}
+
+function scrubResultView(result: SessionHistoryScrubResult): SessionHistoryView {
+	if (result.status === 'erased' || result.status === 'already_absent') {
+		return { status: result.status, sessions: 0, erased: result.erased, alreadyAbsent: result.alreadyAbsent };
+	}
+	return {
+		status: result.status === 'blocked' ? 'scrub_blocked'
+			: result.status === 'stale' ? 'scrub_stale'
+				: result.status === 'conflict' ? 'scrub_conflict' : 'scrub_unavailable',
+		sessions: 0, erased: result.erased, alreadyAbsent: result.alreadyAbsent,
+	};
 }

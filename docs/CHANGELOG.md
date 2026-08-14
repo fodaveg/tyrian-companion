@@ -1,5 +1,13 @@
 # Changelog
 
+## H5.10 — Exportación de historial durable
+
+- Añadido escaneo manual vault-wide de notas `gw2_farming_session` schema 1/2, con integridad de referencias y seis bloques gestionados. Corrupción, schema futuro o `tc_session_ref` duplicada bloquean la exportación completa.
+- Export JSON v1 determinista y CSV fijo CRLF create-only bajo `exports/`, sin IDs crudos, rutas, campos personales ni Markdown humano; el CSV cita todos los campos y neutraliza fórmulas.
+- `Sessions.base` exige ahora `tc_schema` y `tc_kind`; el bundle gestionado sube a v3 para actualizar de forma CAS el asset v2 y una instalación más nueva queda read-only para un plugin antiguo. Ajustes ES/EN ofrece la acción explícita sin I/O al cargar.
+- Añadido scrub warning en Ajustes con preview previa y confirmación ES/EN. El token opaco se consume o revoca en toda salida; una autoridad compartida excluye transiciones de sesión/recovery/detector y relee el gate antes de cada `Vault.process`. Solo elimina metadata `tc_*` y seis bloques verificados, conserva el fichero, frontmatter humano y cuerpo exterior, y trata borrado/renombrado como conflicto.
+- Endurecido el codec del historial con YAML Core real, tipos/estilos escalares y claves únicas; el CSV serializa también su cabecera y cero sesiones no añade una fila vacía.
+
 ## H6.1/H6.2 — Movimientos y contaminación
 
 - Añadida una matriz parser → snapshot → delta para los seis movimientos entre personaje, banco y materiales, con holdings/composición exactos y cero loot o disponibilidad falsos.
