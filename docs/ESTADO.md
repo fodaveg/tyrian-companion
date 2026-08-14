@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.16 y UI/assets H5.1–H5.12: implementados en código.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contrato declarativo H8.1: implementados. El helper/runtime H8 sigue pendiente.**
 
 **H7.4 está implementado técnicamente y H7.5 preparado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -13,12 +13,21 @@ humana en las plataformas soportadas.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
-**H0.4 y H0.6: política documentada; validación multiplataforma y piloto pendientes.** El MVP es
+**H0.4, H0.6 y H8.1: política y contrato v2 documentados; helper/runtime, validación multiplataforma y piloto pendientes.** El MVP es
 API-only con Linux + Steam/Proton como plataforma primaria, macOS + CrossOver como secundaria y
-Windows en beta. Mumble Link queda reservado para v2 como helper IPC opcional de mapa/actividad,
-sin inspección del proceso ni automatización. Las tasas de falso inicio/parada, recovery y precisión
+Windows en beta. H8.1 fija Mumble Link para v2 como helper IPC opt-in de mapa/actividad, sin
+implementarlo: defaults revisables deshabilitado/shadow/on-when-armed, API v1 autoritativa,
+confirmación humana, raw no persistente, payload mínimo, `initialSequence:0` y transporte loopback
+fail-closed. Las tasas de falso inicio/parada, recovery y precisión
 temporal tienen definición, muestra mínima y umbrales verificables en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
+
+El único artefacto productivo H8.1 es un modelo TS declarativo bajo allowlist AST recursiva, sin
+imports, asignaciones, red, procesos, timers, persistencia ni funciones. Scanner v4 permite su
+mención exacta y conserva en rojo cualquier helper
+fuera de censo; los sabotajes cubren inyección, proceso/memoria, logs, tráfico, entrada y
+automatización. La API oficial confirmó el mapa `866` como **Mad King's Labyrinth / Laberinto del
+Rey Loco**. No existe helper, IPC runtime, listener, setting ni conexión con H3.8/H5.3.
 
 H5.1 sustituye la portada de tarjetas por una bitácora compacta con fase y reloj de sesión, rail de detector/polling/calidad/cuenta, incidencia priorizada y detalles plegables; no añade red ni acciones automáticas.
 
@@ -53,19 +62,21 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 94 ficheros y 1315 tests verdes.
+- `npm run test`: 96 ficheros y 1329 tests verdes.
+- `npm run test:security-scan` y `npm run security:scan`: scanner v4 y sabotajes verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
 - `npm run bench:h6-performance` y su sabotaje de heap: verdes en Node 24.19.0.
 
 ## Pendientes de producto
 
-1. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
-2. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
-3. Revisar y aprobar humanamente el pack/economía H4.19 antes de activar la capacidad 36038; el built-in sigue pending/disabled y fail-closed.
-4. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
-5. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
-6. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
-7. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9.
-8. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-9. Descargar el artifact del SHA integrado, verificar el checksum e instalar/actualizar el plugin en una bóveda desechable por plataforma; solo después podrá el release owner publicar la release y activar BRAT.
+1. Implementar el helper/IPC H8 posterior solo tras revisar su lifecycle/discovery, y ejecutar QA real separada en Linux/Steam/Proton, macOS/CrossOver y Windows antes de salir de shadow.
+2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
+3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
+4. Revisar y aprobar humanamente el pack/economía H4.19 antes de activar la capacidad 36038; el built-in sigue pending/disabled y fail-closed.
+5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
+6. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
+7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
+8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9.
+9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
+10. Descargar el artifact del SHA integrado, verificar el checksum e instalar/actualizar el plugin en una bóveda desechable por plataforma; solo después podrá el release owner publicar la release y activar BRAT.

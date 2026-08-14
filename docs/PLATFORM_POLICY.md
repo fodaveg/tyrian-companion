@@ -30,19 +30,62 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 
 ## Mumble Link en v2
 
-Mumble Link solo puede entrar en una v2 como helper local opcional, separado del proceso de
-Obsidian y comunicado mediante un IPC mínimo y versionado. Su única entrada local será la interfaz
-documentada de Mumble Link; no podrá inyectar código, enumerar o controlar procesos, leer la memoria
-del proceso de Guild Wars 2 ni usar técnicas alternativas si el enlace no está disponible.
+H8.1 cumple el prerrequisito documental y de modelos, pero **no implementa todavía el helper ni el
+IPC runtime**. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
+proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
+enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
+el enlace no está disponible.
 
-El helper solo podrá publicar mapa y actividad. No aportará inventario, economía, identidad de
-cuenta ni acciones. Sus eventos podrán mejorar una ventana temporal o generar una propuesta, pero
-nunca iniciar o parar una sesión por sí solos. Deshabilitar, no instalar o perder el helper debe
-mantener funcional el recorrido API-only y degradar la evidencia de forma explícita.
+La instalación y la activación requieren opt-in. Los defaults recomendados para la primera fase son
+`enabled:false`; una vez habilitado, rollout `shadow`, observación `on_when_armed`, proyección
+`mapId + actividad derivada` y retención `none`. Están marcados `recommended_revisable`: no se
+cambiarán silenciosamente y salir de shadow exige decisión humana, revisión del threat model y QA
+real. Shadow no altera propuestas ni sesiones; solo permite comparar datos en memoria.
 
-Antes de implementar el helper se exige un contrato separado de IPC, versionado, permisos,
-retención, cierre y fallo. El plugin debe validar todo mensaje como dato no confiable y poder
-detener/reiniciar el helper sin afectar al runtime de sesión.
+La API-only v1 sigue siendo autoritativa. El dato local no puede corregir por sí solo un snapshot,
+declarar un evento, iniciar/parar una sesión ni resolver una discrepancia. Como máximo, después de
+salir de shadow, podrá acotar una ventana o generar una propuesta que H3.8/H5.3 presenta a una
+persona. Aceptar o descartar sigue siendo obligatorio. Deshabilitar, no instalar o perder el helper
+mantiene funcional el recorrido API-only y degrada la señal local de forma explícita.
+
+### Fuente mínima y semántica
+
+La allowlist de lectura futura se limita a `LinkedMem.uiVersion`, `LinkedMem.uiTick`,
+`LinkedMem.context_len` y `MumbleContext.mapId`. Los dos primeros enteros y `mapId` son `uint32`;
+`uiVersion` se acepta solo con valor `2`. `context_len` se documenta actualmente como 48, debe ser al menos 32 para cubrir `mapId` tras los
+28 bytes de `serverAddress` y no puede superar el buffer de 256 bytes. Un tamaño o versión no
+soportado se descarta. `uiTick` se expone como `tick`; `activity` se deriva únicamente como
+`link_advancing` cuando avanza o `link_stalled` tras 1.500 ms sin avance. Ese umbral es recomendado
+y revisable. Ningún estado significa movimiento, combate o farmeo.
+
+No se lee ni publica `identity`, nombre de personaje, profesión, coordenadas de avatar/cámara/mapa,
+`uiState`, servidor, shard, instance, build, `processId`, mount ni campos futuros. La API oficial
+`/v2/maps/866?lang=en|es` confirmó el 2026-08-14 el mapa inicial: id `866`, **Mad King's Labyrinth /
+Laberinto del Rey Loco**, tipo `Public`. El layout se fija a la revisión `3086433` de
+`API:MumbleLink`, el layout oficial Mumble al commit
+`088209c5a14650a04f6c88991374b44655ead34c` y el bloque de contexto ArenaNet al commit
+`06c4175ad55e4338c7e824c01fdeb6978d1b33d3`.
+
+### Transporte, retención y fallo
+
+El frame v1 futuro contiene exactamente `version`, `nonce`, `sequence`, `tick`, `mapId` y
+`activity`. El transporte recomendado usa solo `127.0.0.1`, puerto efímero, JSON UTF-8 y frames de
+como máximo 512 bytes. El nonce debe aportar al menos 128 bits impredecibles y se verifica antes de
+usar un frame. Campos o versiones desconocidos, host no loopback, frame sobredimensionado, nonce
+incorrecto, secuencia repetida/regresiva, tick fuera de `uint32`, `mapId` no positivo, desconexión o
+layout incompatible fallan cerrados y no activan un fallback. `initialSequence:0` fija que
+`sequence` comienza en cero para un
+nonce nuevo, crece dentro del rango entero seguro de JSON y nunca sobrevive al reinicio del canal.
+
+Ni raw Mumble ni frames se persisten en settings, IndexedDB, Vault, logs o telemetría. La proyección
+válida vive solo en memoria el tiempo necesario para la comparación shadow o la propuesta futura.
+El cierre, caída o reinicio del helper invalida nonce, secuencia y estado derivado; el runtime de
+sesión API permanece independiente.
+
+La QA del helper/runtime real está explícitamente pendiente en Linux con Steam/Proton, macOS con
+CrossOver y Windows. Debe probar lectura, ausencia del juego, enlace stale, rollover de tick,
+replay/reorder, frames corruptos/sobredimensionados, reinicio, coexistencia con Obsidian y
+degradación API-only antes de habilitar influencia alguna fuera de shadow.
 
 ## Política de terceros y operaciones
 

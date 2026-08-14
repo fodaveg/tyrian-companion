@@ -26,6 +26,7 @@ try {
 	testEveryRule();
 	testCurrentGithubTokenFormats();
 	testMumbleVariants();
+	testMumbleContractAllowlist();
 	testRepositoryCorpusAndEncodings();
 	testFalsePositiveControls();
 	testCliRedaction();
@@ -51,6 +52,56 @@ function testMumbleVariants() {
 		assert(
 			scanSecurityBoundaries(root).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
 			`${name} variant did not turn red`,
+		);
+	}
+}
+
+function testMumbleContractAllowlist() {
+	const allowed = isolatedRoot('mumble-contract-allowed');
+	write(allowed, 'src/platform/mumble-v2-contract.ts', [
+		'export interface MumbleV2IpcFrameV1 {',
+		'  version: 1; nonce: string; sequence: number; tick: number;',
+		'  mapId: number; activity: "link_advancing" | "link_stalled";',
+		'}',
+	].join('\n'));
+	write(allowed, 'src/platform/mumble-v2-contract.test.ts', 'Mumble contract test only');
+	write(allowed, 'docs/THREAT-MODEL.md', 'Mumble Link contract documentation only.');
+	assert(scanSecurityBoundaries(allowed).length === 0, 'exact declarative Mumble contract was not allowlisted');
+
+	for (const path of [
+		'src/platform/mumble-v2-contract-helper.ts',
+		'src/platform/mumble-v2-runtime.ts',
+		'src/platform/helper.ts',
+	]) {
+		const root = isolatedRoot(`mumble-contract-bypass-${path.replaceAll('/', '-')}`);
+		const source = path.endsWith('helper.ts') && !path.includes('mumble')
+			? "import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';"
+			: 'export interface MumbleHelper {}';
+		write(root, path, source);
+		assert(
+			scanSecurityBoundaries(root).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+			`${path} bypassed the exact Mumble contract census`,
+		);
+	}
+
+	for (const [capability, source] of [
+		['injection', 'inject(game);'],
+		['process', 'spawn(game);'],
+		['memory', 'ReadProcessMemory(handle);'],
+		['log', 'readGameLog(path);'],
+		['traffic', 'interceptTraffic(socket);'],
+		['input', 'simulateInput(key);'],
+		['automation', 'executeGameAction(action);'],
+		['private-data', 'identity: string;'],
+		['network', "fetch('https://example.invalid');"],
+		['persistence', "localStorage.setItem('key', 'value');"],
+		['timer', 'setTimeout(run, 1);'],
+	]) {
+		const root = isolatedRoot(`mumble-contract-capability-${capability}`);
+		write(root, 'src/platform/mumble-v2-contract.ts', source);
+		assert(
+			scanSecurityBoundaries(root).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+			`${capability} capability bypassed the Mumble contract allowlist`,
 		);
 	}
 }

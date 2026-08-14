@@ -11,6 +11,7 @@
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
+- `platform`: contratos declarativos para integraciones opcionales; H8.1 no contiene adapters ni I/O.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
 ## Frontera de release H7.4/H7.5
@@ -62,6 +63,8 @@ recommendation envelope -> decisiones H4.10 + refs internas (JSON, manual, sin c
 sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
+
+H8.1 contract -/-> helper Mumble, IPC o runtime (todavía no implementados)
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -87,12 +90,47 @@ ningún adapter conoce ni inspecciona el proceso del juego. Linux es la platafor
 la secundaria y Windows permanece en beta. La matriz de validación y los umbrales del piloto viven
 en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Mumble Link no forma parte del grafo de dependencias de v1. Una v2 solo podrá incorporarlo mediante
-un helper local opt-in, fuera del proceso de Obsidian, con IPC mínimo y mensajes de mapa/actividad
-validados como datos no confiables. La ausencia o caída del helper conserva el recorrido API-only.
-No existe fallback mediante inyección, lectura del proceso o de su memoria, logs, tráfico o
-automatización. Ningún evento local puede saltarse las confirmaciones del lifecycle ni ejecutar una
-operación sobre el juego o la cuenta.
+Mumble Link no forma parte del grafo de dependencias de v1. H8.1 añade únicamente el modelo
+declarativo `src/platform/mumble-v2-contract.ts`: no lo importa `main`, no existe helper, IPC,
+scheduler, listener, proceso hijo ni adapter de runtime. El scanner v4 permite la palabra Mumble
+en ese único artefacto contractual y en tests/docs; cualquier sibling, importador o helper fuera del
+censo vuelve a fallar. Un guard AST de allowlist recursiva exige cero imports, asignaciones,
+updates, tagged templates, llamadas, clases o funciones y un censo exacto de exports, además de
+sabotajes causales contra inyección, procesos, memoria, logs, tráfico,
+entrada, automatización, red, persistencia y temporizadores.
+
+El contrato futuro es opt-in. Sus defaults iniciales recomendados —y marcados explícitamente como
+revisables— son `enabled:false`, `shadow`, `on_when_armed` y retención `none`. Incluso tras habilitarlo,
+shadow solo compara señales en memoria: no crea ni modifica propuestas y no alimenta el lifecycle.
+La v1 API-only sigue siendo la autoridad; una discrepancia local degrada o se presenta para revisión,
+nunca sustituye un snapshot. Todo inicio/parada sigue requiriendo la confirmación humana H3.8/H5.3.
+
+La lectura futura tiene una allowlist positiva de cuatro campos: `uiVersion`, `uiTick`, `context_len`
+y `context.mapId`. `uiVersion` debe ser exactamente `2`; junto con `context_len` solo valida el
+layout. `context_len` debe cubrir los
+32 bytes hasta el `uint32 mapId` situado tras los 28 bytes de `serverAddress`, no superar el buffer
+documentado de 256 bytes y hoy se documenta como 48. `uiTick` y `mapId` son `uint32`. La actividad
+proyectada significa exclusivamente `link_advancing|link_stalled`, derivada de que `uiTick` avance o
+permanezca estable durante el default revisable de 1.500 ms; no afirma movimiento, combate ni farmeo.
+No se lee `identity`, nombre, coordenadas, cámara, `uiState`, shard, instance, build, `processId` ni
+mount. El mapa objetivo fijado por la API oficial es `866`, **Mad King's Labyrinth / Laberinto del
+Rey Loco**, tipo `Public`.
+
+Cada frame IPC v1 futuro tendrá exactamente `version`, nonce, `sequence`, `tick`, `mapId` y
+`activity`. El transporte recomendado queda limitado a `127.0.0.1`, puerto efímero, JSON UTF-8 de
+como máximo 512 bytes y nonce impredecible de al menos 128 bits. Versiones, campos o tamaños
+desconocidos, nonce incorrecto, secuencia repetida/regresiva, tick inválido, mapa no positivo,
+secuencia fuera del entero seguro, desconexión o source layout incompatible se descartan
+fail-closed. `initialSequence:0` fija que un nonce/canal nuevo reinicia la secuencia desde cero. El helper no persiste raw ni
+frames; el plugin tampoco los guarda en settings, IndexedDB, Vault, logs o telemetría. La ausencia o
+caída conserva intacto el recorrido API-only.
+
+Las fuentes de layout quedan fijadas al commit oficial Mumble
+`088209c5a14650a04f6c88991374b44655ead34c`, la revisión `3086433` de `API:MumbleLink` y el commit
+ArenaNet `06c4175ad55e4338c7e824c01fdeb6978d1b33d3`; los nombres EN/ES e id se verificaron el
+2026-08-14 contra `/v2/maps/866?lang=en|es`. Antes de escribir runtime deben aprobarse el protocolo
+concreto de lifecycle/discovery del helper y QA real separada en Linux/Steam/Proton,
+macOS/CrossOver y Windows. Ninguna de esas pruebas se declara realizada por H8.1.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 

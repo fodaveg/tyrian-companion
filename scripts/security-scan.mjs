@@ -37,6 +37,22 @@ const ALLOWED_SYNTHETIC_CREDENTIALS = new Set([
 const CONSOLE_REFERENCE_PATTERN = /\bconsole\b/u;
 const LOGGER_CALL_PATTERN = /\b(?:logger|telemetry)\s*(?:\?\.)?\s*(?:\.|\[)/iu;
 const MUMBLE_HELPER_PATTERN = /mumble/iu;
+const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
+	'src/platform/mumble-v2-contract.ts',
+]);
+const MUMBLE_CONTRACT_PROHIBITED_PATTERNS = [
+	/\b(?:inject|injection|dllInject|hookProcess)\b/iu,
+	/\b(?:child_process|spawn|execFile|processId|enumerateProcesses|openProcess)\b/u,
+	/\b(?:ReadProcessMemory|ptrace|processMemory|memoryReader)\b/u,
+	/\b(?:console|logger|readGameLog|logReader)\b/u,
+	/\b(?:pcap|packetSniffer|interceptTraffic|proxyTraffic)\b/u,
+	/\b(?:SendInput|simulateInput|keybd_event|mouse_event)\b/u,
+	/\b(?:bot|macro|automate|automation|executeGameAction)\b/iu,
+	/\b(?:identity|characterName|fAvatarPosition|fCameraPosition|playerX|playerY|processId|pid)\b/iu,
+	/\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|node:net|node:http)\b/u,
+	/\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
+	/\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u,
+];
 
 /** Scans tracked and untracked non-ignored repository text without returning matched values. */
 export function scanSecurityBoundaries(root = process.cwd()) {
@@ -58,7 +74,8 @@ export function scanSecurityBoundaries(root = process.cwd()) {
 			if (LOGGER_CALL_PATTERN.test(source)) {
 				findings.push({ rule: 'production-logger-log', path: file.relative });
 			}
-			if (MUMBLE_HELPER_PATTERN.test(source)) {
+			if ((MUMBLE_HELPER_PATTERN.test(file.relative) || MUMBLE_HELPER_PATTERN.test(source))
+				&& !isReviewedMumbleContract(file.relative, source)) {
 				findings.push({ rule: 'unauthorized-mumble-helper', path: file.relative });
 			}
 		}
@@ -100,6 +117,11 @@ export function scanReleaseArtifacts(root, relativePaths) {
 	}
 
 	return uniqueFindings(findings);
+}
+
+function isReviewedMumbleContract(path, source) {
+	return REVIEWED_MUMBLE_CONTRACT_FILES.has(normalizeRepositoryPath(path))
+		&& !MUMBLE_CONTRACT_PROHIBITED_PATTERNS.some((pattern) => pattern.test(source));
 }
 
 function detectSecretRules(source) {

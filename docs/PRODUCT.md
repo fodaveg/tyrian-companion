@@ -42,7 +42,27 @@ El MVP es estrictamente API-only. Linux con Steam/Proton es la plataforma primar
 CrossOver la secundaria y Windows permanece en beta. La matriz de soporte, los gates y las métricas
 del piloto se fijan en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas. Mumble Link solo puede evaluarse en v2 como helper IPC opcional y separado para mapa/actividad; no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
+Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
+
+## Contrato de entrada v2 H8.1
+
+La integración futura nace deshabilitada y requiere opt-in. Los defaults iniciales recomendados son
+revisables: rollout `shadow`, observación solo `on_when_armed`, proyección no persistente de
+`mapId + link_advancing|link_stalled` y API v1 como autoridad. Shadow no altera propuestas,
+sesiones, notas ni métricas durables; sirve únicamente para contrastar en memoria si una señal local
+podría acotar una ventana. Salir de shadow exige una decisión humana posterior y evidencia de QA.
+
+El helper futuro solo podrá leer los campos documentados necesarios para validar el layout, obtener
+el mapa y detectar avance del tick. El frame no puede contener identidad, nombre, coordenadas,
+cámara, PID, shard, build ni acciones. El mapa inicial respaldado es el id oficial `866`, **Mad
+King's Labyrinth / Laberinto del Rey Loco**. Una actividad derivada no significa que el personaje
+se esté moviendo, combatiendo o farmeando; esa atribución sigue dependiendo de la evidencia API y de
+la persona.
+
+Cada dato local se trata como no confiable, se valida con versionado, nonce, orden y tamaño acotado,
+y cada canal empieza con `initialSequence:0`; se descarta ante cualquier duda. No hay persistencia raw ni fallback por memoria del proceso,
+inyección, logs, interceptación de tráfico o automatización. Incluso en una fase posterior, el dato
+solo podrá mejorar evidencia o proponer revisión: **Start/Stop siempre requiere confirmación humana**.
 
 ## Vertical actual
 

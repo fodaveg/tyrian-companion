@@ -1,5 +1,23 @@
 # Changelog
 
+## H8.1 — Contrato Mumble Link v2
+
+- Añadido el contrato declarativo previo al helper: opt-in, defaults revisables `shadow` y
+  `on_when_armed`, API v1 autoritativa, confirmación humana y retención raw/frame `none`.
+- Fijada la allowlist de lectura a `uiVersion`, `uiTick`, `context_len` y `context.mapId`; el payload
+  IPC mínimo conserva solo versión/nonce/secuencia/tick/mapId/actividad derivada, sin identidad,
+  coordenadas ni PID.
+- Verificado el id oficial `866` para **Mad King's Labyrinth / Laberinto del Rey Loco** y fijadas las
+  fuentes de layout Mumble/GW2 Wiki/ArenaNet por revisión/commit, incluido `uiVersion=2`.
+- Definido transporte futuro solo loopback `127.0.0.1`, puerto efímero, nonce mínimo de 128 bits,
+  `initialSequence:0`, frame JSON UTF-8 de 512 bytes máximo y rechazo fail-closed de
+  versión/campos/orden/layout.
+- Scanner v4 reabre únicamente el fichero contractual exacto; su allowlist AST recursiva y
+  sabotajes mantienen en rojo helpers fuera de censo, exports alternativos, sintaxis ejecutable,
+  inyección, proceso, memoria, logs, tráfico, entrada, automatización, red, persistencia y timers.
+- No se ha implementado helper, IPC runtime ni composición. QA real Linux/Steam/Proton,
+  macOS/CrossOver y Windows queda explícitamente pendiente.
+
 ## H4.19 — Economía manual fail-closed para 36038
 
 - Extraído de H4.10 un kernel económico puro e independiente de sesión que compara apertura conservadora con el mejor suelo inmediato entre bid y mercader usando margen exacto del 10%.

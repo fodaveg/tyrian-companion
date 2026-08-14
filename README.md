@@ -5,6 +5,7 @@ Tyrian Companion is a desktop-only Obsidian plugin foundation for bringing Guild
 The MVP is API-only. Linux with Steam/Proton is the primary platform, macOS with CrossOver is
 secondary, and Windows support is beta. Mumble Link is not part of the MVP; it is reserved for an
 optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
+H8.1 now fixes only that future contract and its guards; no helper or IPC runtime is implemented.
 
 The current `0.1.0` vertical provides:
 
@@ -97,6 +98,10 @@ The current `0.1.0` vertical provides:
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
   exceptions. It derives a hashed vault/account scope only after capture, uses IndexedDB CAS across
   windows, preserves drafts on conflict, and reclassifies only fresh cached evidence without a second capture.
+- H8.1 defines a declarative, opt-in Mumble Link v2 boundary: recommended revisable defaults are
+  disabled/shadow/on-when-armed, API v1 remains authoritative, every lifecycle change still needs
+  human confirmation, and the future loopback frame is limited to version/nonce/sequence/tick,
+  map id and derived link activity with `initialSequence:0`. Raw data and frames may not be persisted.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately
