@@ -71,6 +71,9 @@ The current `0.1.0` vertical provides:
   price or deadline and feeds the remaining quantity into H4.10 without performing an operation.
 - A strict H4.12 JSON recommendation envelope that labels every decision manual-only and
   side-effect-free, with a mechanical boundary test against I/O dependencies and operations.
+- A strict H4.13 Inventory Advisor contract over `supported_storage_v1`: account-wide catalog,
+  prices, reservations, keep exceptions, unlock evidence and reviewed rules remain identity-bound,
+  while every output is manual-only and an irreversible candidate is review-only, never `destroy`.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 recommendation UI or account operations are intentionally not implemented yet. Vault writes are
@@ -272,6 +275,18 @@ envelope. No public executor exists. A mechanical Vitest guard scans every produ
 operation inputs and execution/order calls, including side-effect imports plus literal dynamic
 `import()` and `require()`. It does not cover computed specifiers, obfuscated property access or
 modules outside the named recommendation boundary.
+
+H4.13 defines the next Inventory Advisor boundary without claiming complete account coverage.
+`supported_storage_v1` is limited to the holdings already observed by `StorageSnapshot`: character
+inventories, shared inventory, bank, materials and optional commerce delivery. The input contract
+binds snapshot, catalog, public prices, reservation goals, explicit keep exceptions, account unlock
+signals and a dated, content-hashed rule pack. The report must partition every available quantity
+exactly into reserved, exception-kept, manual action or review. Its sibling
+`InventoryRecommendationEnvelopeV1` preserves `manual_in_game`, `sideEffects: none` and explicit
+user action without widening the session-envelope schema. It has no `destroy` action; the only
+irreversible classification is `discard_candidate`, which requires a reviewed rule and remains a
+manual review item. H4.13 performs no scan, network request, persistence, Vault write or UI work;
+evidence capture and classification belong to H4.14-H4.16.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

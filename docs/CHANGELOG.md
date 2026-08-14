@@ -165,6 +165,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Envelope H4.12 JSON-only para todos los estados H4.10, marcado siempre manual, sin efectos laterales y con refs internas a reserva, retención, economía o revisión; no existe executor público.
 - Guard arquitectónico H4.12 sobre todos los módulos productivos de recomendación, probado en rojo mediante sabotaje con un import de `GuildWars2Client` y restaurado después con contenido/modo exactos.
 - Matriz action/route H4.12 cerrada por acción y guard ampliado a imports side-effect, `import()` y `require()` literales, con regresiones de las cuatro sintaxis.
+- Contrato H4.13 del Inventory Advisor limitado a `supported_storage_v1`, con inputs identity-bound, catálogo/precios/señales/reglas estrictos, partición cuantitativa por posición y resultado fail-closed.
+- Envelope H4.13 específico de inventario, siempre manual y sin efectos laterales; expone `discard_candidate` solo como revisión irreversible ligada a regla curada y no contiene `destroy` ni executor.
+- Guard arquitectónico causal sobre la frontera H4.13 contra clientes, red, secretos, stores, Obsidian, capacidades de operación e imports estáticos/dinámicos prohibidos.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
