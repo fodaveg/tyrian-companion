@@ -246,6 +246,96 @@
 	min-height: 44px;
 }
 
+.tyrian-companion-loot {
+	margin-block: var(--size-4-5);
+	border-block: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-companion-loot__table {
+	width: 100%;
+	table-layout: fixed;
+	border-collapse: collapse;
+}
+
+.tyrian-companion-loot__table caption {
+	padding-block: var(--size-4-2);
+	color: var(--text-muted);
+	text-align: start;
+}
+
+.tyrian-companion-loot__table th,
+.tyrian-companion-loot__table td {
+	padding: var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+	text-align: end;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-loot__table th:first-child,
+.tyrian-companion-loot__table td:first-child {
+	text-align: start;
+}
+
+.tyrian-companion-loot__cards {
+	display: none;
+}
+
+.tyrian-companion-loot__compact {
+	display: none;
+}
+
+.tyrian-companion-loot__economy {
+	padding: var(--size-4-3);
+	background: var(--background-secondary);
+}
+
+.tyrian-companion-loot__economy dl,
+.tyrian-companion-loot__card dl {
+	display: grid;
+	grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-3);
+}
+
+.tyrian-companion-loot__economy dd,
+.tyrian-companion-loot__card dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+@container (max-width: 759px) {
+	.tyrian-companion-loot__table th:nth-child(n + 3):nth-child(-n + 7),
+	.tyrian-companion-loot__table td:nth-child(n + 3):nth-child(-n + 7) {
+		display: none;
+	}
+
+	.tyrian-companion-loot__compact {
+		display: table-cell;
+	}
+}
+
+@container (max-width: 479px) {
+	.tyrian-companion-loot__table {
+		display: none;
+	}
+
+	.tyrian-companion-loot__cards {
+		display: grid;
+	}
+
+	.tyrian-companion-loot__card {
+		padding: var(--size-4-3);
+		border-block-end: 1px solid var(--background-modifier-border);
+	}
+
+	.tyrian-companion-loot__card h4 {
+		margin-block-start: 0;
+	}
+
+	.tyrian-companion-loot__card dl {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
 @container (max-width: 479px) {
 	.tyrian-companion-view__rail {
 		grid-template-columns: repeat(2, minmax(0, 1fr));

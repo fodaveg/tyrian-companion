@@ -14,6 +14,7 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Entrega H5.3 sin interrupciones: el fondo actualiza indicadores in-place sin reconstruir UI ni robar foco; vista, paleta y ribbon proyectan un contador y la siguiente propuesta, y solo un Start/Stop iniciado desde esa propuesta puede aceptarla tras el éxito del workflow existente.
 - Notas H5.4 de sesión completa con ruta UTC e identidades SHA-256, frontmatter `tc_*` estable, seis bloques gestionados verificables y merge que preserva contenido humano.
 - Barrera H5.4 write-before-clear mediante Obsidian Vault: conflictos, colisiones no resolubles o fallo de escritura conservan el runtime completo para reintento.
+- Presentación H5.5 data-only de botín compartida por nota y Companion, bilingüe, responsive y accesible, con destino exclusivo, valoración total/subtotal y recomendaciones ocultas cuando la evidencia no las permite.
 - Selección de clave con `SecretComponent` y resolución mediante `SecretStorage`.
 - Cliente mínimo de Guild Wars 2 inactivo hasta una petición explícita.
 - Verificación de referencias borradas en `SecretStorage` y validación del perfil de cuenta.

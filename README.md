@@ -8,6 +8,7 @@ The current `0.1.0` vertical provides:
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
 - H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
 - H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
+- H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion ledger; unreliable evidence withholds value and recommendations instead of guessing.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.

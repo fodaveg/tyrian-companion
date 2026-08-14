@@ -28,6 +28,9 @@ import { PendingProposalService, type ProposalQueueState } from './sessions/pend
 import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
 import { proposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
+import type { LootPresentationV1 } from './sessions/loot-presentation';
+import { LootPresentationCache } from './sessions/loot-presentation-cache';
+import { prepareSessionNote, type SessionNoteInput } from './sessions/session-note-model';
 import { SessionNoteWriter, writeSessionNoteBeforeClear } from './sessions/session-note-writer';
 import {
 	ManualSessionStartService,
@@ -35,7 +38,7 @@ import {
 	type SessionStartFailure,
 	type SessionStopFailure,
 } from './sessions/manual-session-start-service';
-import { IndexedDbSessionRuntimeStore } from './sessions/session-runtime-store';
+import { IndexedDbSessionRuntimeStore, type SessionRuntimeRecord } from './sessions/session-runtime-store';
 import type { SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
 import {
@@ -71,6 +74,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
+	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -98,7 +102,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			new SessionStartCaptureService(client, snapshots),
 			{
 				onStateChange: () => {
+					const session = this.sessions.getState();
+					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
+					if (session.status === 'complete') void this.refreshLootPresentation();
 					if (this.pendingProposals) void this.reconcilePendingProposals();
 				},
 				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
@@ -106,6 +113,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		);
 		await this.sessions.initialize();
+		await this.refreshLootPresentation();
 		this.sessionNotes = new SessionNoteWriter({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
 			read: async (file) => {
@@ -344,6 +352,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.sessions.getContaminationReview();
 	}
 
+	getLootPresentation(): LootPresentationV1 | null {
+		return this.lootPresentation.get();
+	}
+
 	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
 		const result = await this.sessions.reviewContamination(answers);
 		this.renderViews();
@@ -465,6 +477,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousSecret = this.settings.apiKeySecret;
 		const previousDetectionMode = this.settings.detectionMode;
 		const previousPollingInterval = this.settings.pollingIntervalMinutes;
+		const previousLanguage = this.settings.language;
+		const previousOutputFolder = this.settings.outputFolder;
 		const nextSettings = migrateSettings(
 			{ ...this.settings, ...settings },
 			this.app.vault.configDir,
@@ -484,6 +498,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.renderViews();
 		}
 		await this.saveData(this.settings);
+		if (previousLanguage !== this.settings.language || previousOutputFolder !== this.settings.outputFolder) {
+			await this.refreshLootPresentation();
+		}
 		this.renderViews();
 	}
 
@@ -686,19 +703,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async performClearCompletedSession(): Promise<void> {
 		const runtime = await this.sessions.getCompletedRuntimeRecord();
 		if (!runtime) throw new Error('Completed session evidence is unavailable.');
-		const cleared = await writeSessionNoteBeforeClear(this.sessionNotes, {
-			runtime,
-			valuation: null,
-			reservation: null,
-			hold: null,
-			recommendation: null,
-			envelope: null,
-			displayNames: {},
-			locale: this.settings.language,
-			outputFolder: this.settings.outputFolder,
-		}, () => this.sessions.resetCompletedSession());
+		const cleared = await writeSessionNoteBeforeClear(
+			this.sessionNotes,
+			this.sessionNoteInput(runtime),
+			() => this.sessions.resetCompletedSession(),
+		);
 		this.renderViews();
 		if (!hasExactSessionBackendResult('clear', cleared)) throw new Error('Clear failed.');
+	}
+
+	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
+		return {
+			runtime, valuation: null, reservation: null, hold: null, recommendation: null, envelope: null,
+			displayNames: {}, locale: this.settings.language, outputFolder: this.settings.outputFolder,
+		};
+	}
+
+	private async refreshLootPresentation(): Promise<void> {
+		await this.lootPresentation.refresh(async () => {
+			const runtime = await this.sessions.getCompletedRuntimeRecord();
+			if (!runtime) return null;
+			const prepared = prepareSessionNote(this.sessionNoteInput(runtime));
+			return prepared.status === 'ok' ? prepared.note : null;
+		});
 	}
 
 	private refreshSessionRibbon(): void {

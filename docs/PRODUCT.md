@@ -12,6 +12,8 @@ H5.3 conserva localmente las propuestas asistidas aunque la nota esté cerrada. 
 
 H5.4 convierte una sesión completa en una nota durable antes de permitir **Clear**. La nota muestra el neto observado, su fiabilidad y las decisiones manuales disponibles sin incluir account id, snapshots o cotizaciones crudas. Tyrian Companion conserva cualquier texto humano, no ejecuta acciones en Guild Wars 2 y rechaza actualizar una región gestionada que haya sido alterada o resulte ambigua.
 
+H5.5 presenta ese neto como un ledger de botín compartido por la nota y el Companion: separa ganancia de pérdida, reserva de retención y cantidad libre, y total de subtotal conocido. Si la clasificación no permite valorar o recomendar, conserva las cantidades observadas pero oculta dinero y acciones; ninguna recomendación ejecuta nada en el juego.
+
 Está pensado tanto para un jugador individual como para grupos o clanes que quieran compartir la misma herramienta manteniendo sus datos separados. Cada instalación usa la clave y el vault de su propietario: no existe un servidor central, no se comparten claves ni se agregan datos del clan por defecto.
 
 ## Semántica de exactitud

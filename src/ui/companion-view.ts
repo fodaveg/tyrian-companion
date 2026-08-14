@@ -26,11 +26,13 @@ import {
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import {
 	buildCompanionStatus,
 	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
+import { renderLootPresentationView } from './loot-presentation-view';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -55,6 +57,7 @@ export interface CompanionActions {
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
 	getContaminationReview(): SessionContaminationReview | null;
+	getLootPresentation(): LootPresentationV1 | null;
 	reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null>;
 	openSessionReview(): void;
 	confirmClearCompletedSession(): void;
@@ -124,6 +127,8 @@ export class TyrianCompanionView extends ItemView {
 		contentEl.addClass('tyrian-companion-view');
 		this.renderLedgerHeader(contentEl, projection, connectionState, sessionState);
 		this.renderStatusRail(contentEl, projection);
+		const loot = this.actions.getLootPresentation();
+		if (loot) renderLootPresentationView(contentEl, loot);
 
 		const account = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		account.createEl('summary', { text: 'Account connection' });

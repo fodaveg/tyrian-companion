@@ -44,14 +44,15 @@ describe('session note model and renderer', () => {
 		exact.valuation = valuation(exact.runtime);
 		const renderedExact = await rendered(exact);
 		expect(renderedExact.frontmatter.tc_observed_immediate_copper).toBeTypeOf('number');
-		expect(renderedExact.content).toContain('Observed immediate sale');
+		expect(renderedExact.content).toContain('Observed economy');
+		expect(renderedExact.content).toContain('Liquidation net');
 
 		const contaminated = sessionInput('contaminated');
 		contaminated.valuation = valuation(contaminated.runtime);
 		const renderedContaminated = await rendered(contaminated);
 		expect(renderedContaminated.frontmatter.tc_observed_immediate_copper).toBeNull();
-		expect(renderedContaminated.content).toContain('Valoración ocultada');
-		expect(renderedContaminated.content).toContain('Cambios netos positivos');
+		expect(renderedContaminated.content).toContain('La actividad externa impide atribuir valor');
+		expect(renderedContaminated.content).toContain('Contaminada');
 	});
 
 	it('degrades malformed optional economics without blocking valid runtime', () => {

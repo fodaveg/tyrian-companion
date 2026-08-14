@@ -1,6 +1,6 @@
 import type { SessionClassificationReason } from '../account/contamination-model';
-import type { QuantityChange } from '../account/storage-delta-model';
-import { isRecommendationEnvelope } from '../economy/recommendation-envelope';
+import { buildLootPresentation } from './loot-presentation';
+import { renderLootMarkdown } from './loot-presentation-markdown';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
@@ -139,6 +139,7 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 	const state = note.runtime.state;
 	const classification = note.runtime.review.classification;
 	const locale = note.locale;
+	const loot = renderLootMarkdown(buildLootPresentation(note));
 	return {
 		summary: [
 			locale === 'es' ? '## Resumen' : '## Summary',
@@ -148,9 +149,9 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 			`- ${locale === 'es' ? 'Clasificación' : 'Classification'}: ${classification.status}`,
 		].join('\n'),
 		evidence: renderEvidence(note),
-		results: renderResults(note),
-		economy: renderEconomy(note),
-		decision: renderDecision(note),
+		results: loot.results,
+		economy: loot.economy,
+		decision: loot.decision,
 		provenance: renderProvenance(note),
 	};
 }
@@ -176,70 +177,6 @@ function renderEvidence(note: PreparedSessionNote): string {
 		`- ${note.locale === 'es' ? 'Motivos' : 'Reasons'}: ${classification.reasons.length > 0 ? classification.reasons.map(reasonText).join(', ') : '—'}`,
 		`- ${note.locale === 'es' ? 'Actividad declarada' : 'Declared activity'}: ${activities.length > 0 ? activities.join(', ') : (note.locale === 'es' ? 'ninguna' : 'none')}`,
 	].join('\n');
-}
-
-function renderResults(note: PreparedSessionNote): string {
-	const contaminated = note.runtime.review.classification.status === 'contaminated';
-	const changes = [
-		...note.runtime.delta.itemChanges.map((change) => ({ namespace: 'item' as const, change })),
-		...note.runtime.delta.currencyChanges.map((change) => ({ namespace: 'currency' as const, change })),
-	].sort((a, b) => a.namespace.localeCompare(b.namespace) || a.change.id - b.change.id);
-	const rows = (positive: boolean) => changes.filter(({ change }) => positive ? change.delta > 0 : change.delta < 0)
-		.map(({ namespace, change }) => resultRow(note, namespace, change, contaminated));
-	return [
-		note.locale === 'es' ? '## Resultados' : '## Results',
-		`### ${contaminated ? (note.locale === 'es' ? 'Cambios netos positivos' : 'Positive net changes') : (note.locale === 'es' ? 'Ganancias' : 'Gains')}`,
-		'| Namespace | ID | Name | Quantity |', '|---|---:|---|---:|', ...(rows(true).length ? rows(true) : ['| — | — | — | 0 |']),
-		`### ${contaminated ? (note.locale === 'es' ? 'Cambios netos negativos' : 'Negative net changes') : (note.locale === 'es' ? 'Pérdidas' : 'Losses')}`,
-		'| Namespace | ID | Name | Quantity |', '|---|---:|---|---:|', ...(rows(false).length ? rows(false) : ['| — | — | — | 0 |']),
-	].join('\n');
-}
-
-function renderEconomy(note: PreparedSessionNote): string {
-	const title = note.locale === 'es' ? '## Economía observada' : '## Observed economy';
-	const classification = note.runtime.review.classification;
-	if (classification.status === 'contaminated' || !classification.permissions.valueNet) {
-		return `${title}\n${note.locale === 'es' ? 'Valoración ocultada por los permisos de la clasificación.' : 'Valuation hidden by classification permissions.'}`;
-	}
-	if (note.valuation.status !== 'valid') return `${title}\n${statusCopy(note.locale, note.valuation.status)}`;
-	const value = note.valuation.value;
-	return [title,
-		`- ${note.locale === 'es' ? 'Venta inmediata observada' : 'Observed immediate sale'}: ${money(value.totals.observedImmediateCopper)}`,
-		`- ${note.locale === 'es' ? 'Listado observado (no inmediato)' : 'Observed listing (not immediate)'}: ${money(value.totals.observedListingCopper)}`,
-		`- ${note.locale === 'es' ? 'Moneda neta' : 'Net coin'}: ${money(value.totals.coinNetCopper)}`,
-		`- ${note.locale === 'es' ? 'Objetos no líquidos' : 'Non-liquid items'}: ${String(value.totals.nonLiquidQuantity)}`,
-		`- ${note.locale === 'es' ? 'Cobertura' : 'Coverage'}: ${value.coverage}${value.coverage === 'partial' ? ' (known subtotal)' : ''}`,
-	].join('\n');
-}
-
-function renderDecision(note: PreparedSessionNote): string {
-	const lines = [note.locale === 'es' ? '## Decisión manual' : '## Manual decision'];
-	if (note.reservation.status === 'valid') {
-		for (const asset of note.reservation.value.plan.assets) for (const allocation of asset.allocations) {
-			lines.push(`- Reserve ${text(asset.key)}: ${String(allocation.protectedAvailable)} (${text(allocation.goalId)}, ${allocation.intendedUse})`);
-		}
-	} else lines.push(`- Reservations: ${note.reservation.status}`);
-	if (note.hold.status === 'valid') {
-		for (const allocation of note.hold.value.allocations.filter((entry) => entry.allocatedQuantity > 0)) {
-			lines.push(`- Hold item:${String(allocation.itemId)}: ${String(allocation.allocatedQuantity)} (${allocation.state})`);
-		}
-	} else lines.push(`- Holds: ${note.hold.status}`);
-	if (note.recommendation.status !== 'valid') {
-		lines.push(`- Recommendation: ${note.recommendation.status}`);
-	} else {
-		const result = note.recommendation.value;
-		lines.push(`- Recommendation: ${result.status}`);
-		if (result.status === 'ready' && result.recommendation.economicDecision) {
-			const decision = result.recommendation.economicDecision;
-			lines.push(`- ${decision.action} ${String(decision.quantity)} item:${String(result.recommendation.itemId)} via ${decision.sellRoute}`);
-		} else if (result.status === 'blocked' || result.status === 'invalid') {
-			lines.push(`- Reasons: ${result.reasons.map((reason) => text(reason.code)).join(', ') || '—'}`);
-		}
-	}
-	const envelopeSafe = note.envelope.status === 'valid' && isRecommendationEnvelope(note.envelope.value);
-	if (!envelopeSafe && note.envelope.status !== 'not_evaluated') lines.push('- Recommendation envelope: blocked');
-	lines.push('', 'Tyrian Companion no abre objetos ni compra o vende en el bazar. Esta recomendación solo se ejecuta manualmente dentro de Guild Wars 2.');
-	return lines.join('\n');
 }
 
 function renderProvenance(note: PreparedSessionNote): string {
@@ -344,14 +281,6 @@ function serializeFrontmatter(
 	return `---\n${lines.join('\n')}\n---\n`;
 }
 
-function resultRow(note: PreparedSessionNote, namespace: 'item' | 'currency', change: QuantityChange, contaminated: boolean): string {
-	const fallback = note.locale === 'es' ? `${namespace === 'item' ? 'Objeto' : 'Moneda'} #${String(change.id)}`
-		: `${namespace === 'item' ? 'Item' : 'Currency'} #${String(change.id)}`;
-	const name = note.displayNames[`${namespace}:${String(change.id)}`] || fallback;
-	const quantity = contaminated ? change.delta : Math.abs(change.delta);
-	return `| ${namespace} | ${String(change.id)} | ${table(name)} | ${String(quantity)} |`;
-}
-
 function reasonText(reason: SessionClassificationReason): string {
 	return reason.detail ? `${text(reason.code)} (${text(reason.detail)})` : text(reason.code);
 }
@@ -360,18 +289,9 @@ function aggregateHoldStatus(states: string[]): string {
 	if (states.some((state) => state === 'expired')) return 'expired';
 	return 'released';
 }
-function statusCopy(locale: 'es' | 'en', status: string): string {
-	if (status === 'not_evaluated') return locale === 'es' ? 'No evaluado.' : 'Not evaluated.';
-	return locale === 'es' ? 'La evidencia económica no es válida.' : 'Economic evidence is invalid.';
-}
 function formatDuration(milliseconds: number): string {
 	const seconds = Math.floor(milliseconds / 1_000);
 	return `${pad(Math.floor(seconds / 3_600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
-}
-function money(copper: number): string {
-	const sign = copper < 0 ? '-' : '';
-	const value = Math.abs(copper);
-	return `${sign}${String(Math.floor(value / 10_000))}g ${String(Math.floor(value / 100) % 100)}s ${String(value % 100)}c`;
 }
 function safeSum(values: number[]): number {
 	const result = values.reduce((sum, value) => sum + value, 0);
@@ -383,7 +303,6 @@ function text(value: string): string {
 		.replace(/([\\`*_{}()#+.!|])/gu, '\\$1').replace(/\[/gu, '\\[').replace(/\]/gu, '\\]')
 		.replace(/[\r\n]+/gu, ' ');
 }
-function table(value: string): string { return text(value).replace(/\|/gu, '\\|'); }
 function yaml(value: string | number | null): string { return value === null ? 'null' : typeof value === 'number' ? String(value) : JSON.stringify(value); }
 function yamlScalar(value: string): string {
 	try { const parsed = JSON.parse(value) as unknown; return typeof parsed === 'string' ? parsed : value; } catch { return value.replace(/^['"]|['"]$/gu, ''); }
