@@ -1,5 +1,13 @@
 # Changelog
 
+## H4.19 — Economía manual fail-closed para 36038
+
+- Extraído de H4.10 un kernel económico puro e independiente de sesión que compara apertura conservadora con el mejor suelo inmediato entre bid y mercader usando margen exacto del 10%.
+- Refresh captura como evidencia hermana fresca el saco y los ocho outcomes líquidos H4.7 (`36041`, `36059`, `36060`, `36061`, `79673`, `79677`, `79679`, `89002`), ligados a cuenta, snapshot, schema y TTL.
+- Añadido un pack hasheado que liga modelo, regla, knowledge pack, cobertura, binding, reservas y excepciones. Solo evidencia completa permite recomendar manualmente `open`, `sell` o `vendor`; parcial, revocada, vencida o incoherente termina en `review`.
+- El built-in permanece `pending_human_review`: no se ha fingido aprobación ni activado ninguna recomendación. No existen listing, executor, background ni descarte en esta ruta.
+- Añadidos tests causales y guard arquitectónico. Siguen pendientes la aprobación humana del pack/economía y la QA manual ES/EN en Obsidian.
+
 ## H7.4/H7.5 — Paquete reproducible y preparación del canal beta
 
 - Añadido build causal y stage cerrado a `manifest.json`, `main.js` y `styles.css`, con validación cruzada de manifest/package/versions y tag exacto.

@@ -47,17 +47,17 @@ describe('H5.11 inventory advisor workflow', () => {
 
 	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {
 		const fixture = reviewedDiscardFixture();
-		rebaseEvidence(fixture.evidence, '2026-08-14T18:04:00.000Z');
+		rebaseEvidence(fixture.evidence, '2026-08-14T20:30:30.000Z');
 		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
 		const workflow = new InventoryAdvisorWorkflow({
 			capture: { capture },
 			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-		now: () => Date.parse('2026-08-14T18:05:00.000Z'),
+			now: () => Date.parse('2026-08-14T20:31:00.000Z'),
 		});
 		const result = await workflow.refresh('es');
 		expect(capture).toHaveBeenCalledOnce();
-		expect(capture).toHaveBeenCalledWith('es');
+		expect(capture).toHaveBeenCalledWith('es', [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002]);
 		expect(result.status).toBe('ready');
 		if (result.status !== 'ready' || !('discardContext' in result.source)) throw new Error('Expected contextual workflow result.');
 		expect(result.source.input).toMatchObject({ goals: [], keepExceptions: [] });

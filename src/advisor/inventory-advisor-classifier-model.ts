@@ -1,4 +1,5 @@
 import type { InventoryAdvisorInputV1, InventoryAdvisorPositionV1, InventoryRecommendationAction } from './inventory-advisor-model';
+import type { InventoryContainerEconomyPackV1, InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 
 export const INVENTORY_KNOWLEDGE_PACK_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_ENGINE_VERSION = 1 as const;
@@ -36,6 +37,10 @@ export interface InventoryKnowledgePackV1 {
 export interface InventoryAdvisorEngineInputV1 {
 	input: InventoryAdvisorInputV1;
 	knowledgePack: InventoryKnowledgePackV1;
+	containerEconomy?: {
+		pack: InventoryContainerEconomyPackV1;
+		prices: InventoryContainerPriceEvidenceV1;
+	};
 }
 
 export interface InventoryAdvisorEngineAllocationV1 { positionRef: string; quantity: number; }

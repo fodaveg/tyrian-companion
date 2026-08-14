@@ -39,6 +39,7 @@ export type InventoryAdvisorReasonCode =
 	| 'rule_stale'
 	| 'rule_conflict'
 	| 'economic_comparison_missing'
+	| 'economic_activation_pending'
 	| 'unlock_coverage_unknown'
 	| 'collection_coverage_unknown'
 	| 'already_unlocked'
@@ -163,7 +164,10 @@ export interface InventoryAdvisorRuleV2 {
 	status: 'approved' | 'revoked';
 	/** V2 positive rules describe only demonstrated capabilities; negatives live in knowledge. */
 	capability: 'applicable';
-	recommendation: { status: 'enabled' } | { status: 'review_only'; reason: 'economic_comparison_missing' };
+	recommendation: { status: 'enabled' } | {
+		status: 'review_only';
+		reason: 'economic_comparison_missing' | 'economic_activation_pending';
+	};
 	reason: 'curated_salvage' | 'curated_use' | 'curated_open' | 'curated_discard_review';
 	sourceIds: string[];
 }

@@ -12,6 +12,7 @@ import {
 } from './inventory-advisor-contract';
 import type {
 	InventoryAdvisorInputV1,
+	InventoryAdvisorExplanationV1,
 	InventoryAdvisorLineV1,
 	InventoryAdvisorReasonCode,
 	InventoryAdvisorResultV1,
@@ -22,6 +23,8 @@ import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
 import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
+import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
+import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -54,14 +57,16 @@ export function isInventoryAdvisorResultForInput(
 	value: unknown,
 	input: unknown,
 	knowledgePack?: unknown,
+	containerEconomy?: InventoryAdvisorEngineInputV1['containerEconomy'],
 ): value is InventoryAdvisorResultV1 {
-	try { return isInventoryAdvisorResultForInputUnsafe(value, input, knowledgePack); } catch { return false; }
+	try { return isInventoryAdvisorResultForInputUnsafe(value, input, knowledgePack, containerEconomy); } catch { return false; }
 }
 
 function isInventoryAdvisorResultForInputUnsafe(
 	value: unknown,
 	input: unknown,
 	knowledgePack: unknown,
+	containerEconomy: InventoryAdvisorEngineInputV1['containerEconomy'],
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
@@ -141,41 +146,129 @@ function isInventoryAdvisorResultForInputUnsafe(
 		let remainingBid = price?.bid?.quantity ?? 0;
 		for (const decision of line.decisions) {
 			const explanation = report.explanations.find((entry) => entry.ref === decision.explanationRef);
-			const withheld = isWithheldEconomicComparison(input, knowledgePack as InventoryKnowledgePackV1 | undefined, decision, line.itemId);
-			if (input.rulePack.schemaVersion === 2 && withheld !== (explanation?.reasonCodes.length === 1
-				&& explanation.reasonCodes[0] === 'economic_comparison_missing')) return false;
-			if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException, remainingBid, explanation?.reasonCodes ?? [])) return false;
+			const withheld = withheldEconomicReason(input, knowledgePack as InventoryKnowledgePackV1 | undefined, decision, line.itemId);
+			const explained = explanation?.reasonCodes.length === 1
+				&& ['economic_comparison_missing', 'economic_activation_pending'].includes(explanation.reasonCodes[0]!)
+				? explanation.reasonCodes[0] : null;
+			if (input.rulePack.schemaVersion === 2 && withheld !== explained) return false;
+			const requiresEconomicReproduction = requiresContainerEconomyReproduction(
+				decision, line.itemId, input, knowledgePack as InventoryKnowledgePackV1 | undefined,
+			);
+			if (requiresEconomicReproduction) {
+				if (!validEconomicDecisionAgainstInput(decision, line, input,
+					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy, report.explanations)) return false;
+			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
+				remainingBid, explanation?.reasonCodes ?? [])) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
 	return true;
 }
 
+function requiresContainerEconomyReproduction(
+	decision: InventoryRecommendationDecisionV1,
+	itemId: number,
+	input: InventoryAdvisorInputV1,
+	knowledgePack: InventoryKnowledgePackV1 | undefined,
+): boolean {
+	if (input.rulePack.schemaVersion !== 2 || !knowledgePack
+		|| !['open', 'sell', 'vendor'].includes(decision.action)) return false;
+	const claim = knowledgePack.entries.find((entry) => entry.itemId === itemId)?.open;
+	if (claim?.status !== 'applicable') return false;
+	return input.rulePack.rules.some((rule) => rule.ruleId === claim.ruleId && rule.itemId === itemId
+		&& rule.action === 'open' && isEnabledApplicableRule(input.rulePack, rule));
+}
+
+function validEconomicDecisionAgainstInput(
+	decision: InventoryRecommendationDecisionV1,
+	line: InventoryAdvisorLineV1,
+	input: InventoryAdvisorInputV1,
+	knowledgePack: InventoryKnowledgePackV1 | undefined,
+	economy: InventoryAdvisorEngineInputV1['containerEconomy'],
+	explanations: InventoryAdvisorExplanationV1[],
+): boolean {
+	if (!economy || !knowledgePack || input.rulePack.schemaVersion !== 2
+		|| !['open', 'sell', 'vendor'].includes(decision.action)
+		|| economy.pack.model.containerItemId !== line.itemId) return false;
+	const economicDecisions = line.decisions.filter((candidate) => !['keep', 'review'].includes(candidate.action));
+	if (economicDecisions.length !== 1 || economicDecisions[0] !== decision) return false;
+	const availableRefs = new Set(line.positions.filter((position) => position.state === 'loose'
+		|| position.state === 'pending_claim').map((position) => position.ref));
+	const availableQuantity = (predicate: (candidate: InventoryRecommendationDecisionV1) => boolean): number => line.decisions
+		.filter(predicate).flatMap((candidate) => candidate.allocations)
+		.filter((allocation) => availableRefs.has(allocation.positionRef))
+		.reduce((total, allocation) => total + allocation.quantity, 0);
+	const reasonCodes = (candidate: InventoryRecommendationDecisionV1): InventoryAdvisorReasonCode[] => explanations
+		.find((explanation) => explanation.ref === candidate.explanationRef)?.reasonCodes ?? [];
+	const reserved = availableQuantity((candidate) => reasonCodes(candidate).includes('reserved_for_goal'));
+	const exceptionQuantity = availableQuantity((candidate) => reasonCodes(candidate).includes('user_keep_exception'));
+	const freeQuantity = availableQuantity((candidate) => candidate === decision);
+	const reviewQuantity = availableQuantity((candidate) => candidate !== decision
+		&& !reasonCodes(candidate).includes('reserved_for_goal')
+		&& !reasonCodes(candidate).includes('user_keep_exception'));
+	if (freeQuantity <= 0 || decision.quantity !== freeQuantity
+		|| reserved + exceptionQuantity + reviewQuantity + freeQuantity !== line.availableQuantity) return false;
+	const item = input.catalog.items[String(line.itemId)];
+	if (!item) return false;
+	const bagPrice = economy.prices.items.find((entry) => entry.itemId === line.itemId);
+	const priceStatus = bagPrice?.bid === null || bagPrice === undefined ? 'missing' : 'available';
+	const bindings = decision.allocations.map((allocation) => {
+		const position = line.positions.find((candidate) => candidate.ref === allocation.positionRef);
+		const holding = position ? input.snapshot.holdings[position.holdingIndex] : undefined;
+		const liquidity = classifyItemLiquidity(holding, item, priceStatus);
+		return liquidity.status === 'ok' ? liquidity.classification.binding.kind : 'unknown';
+	});
+	const binding = bindings.length > 0 && bindings.every((entry) => entry === bindings[0]) ? bindings[0]! : 'unknown';
+	const result = evaluateInventoryContainerEconomy({
+		version: 1,
+		asOf: input.asOf,
+		accountId: input.snapshot.accountId,
+		snapshotId: input.snapshot.snapshotId,
+		schemaVersion: input.snapshot.schemaVersion,
+		allocation: {
+			ownedQuantity: line.ownedQuantity,
+			availableQuantity: line.availableQuantity,
+			reservedQuantity: reserved,
+			exceptionQuantity,
+			reviewQuantity,
+			freeQuantity,
+		},
+		container: { itemId: line.itemId, catalogItem: item, binding,
+			tradingAccess: input.accountSignals.tradingPostAccess },
+		rulePack: input.rulePack,
+		knowledgePackSha256: knowledgePack.sha256,
+		economyPack: economy.pack,
+		prices: economy.prices,
+	});
+	return result.status === 'ready' && result.decision.action === decision.action
+		&& result.decision.quantity === decision.quantity && result.decision.ruleId === decision.ruleId;
+}
+
 /** V2 economic withholding is derivable only from the exact rule and bound knowledge payload. */
-function isWithheldEconomicComparison(
+function withheldEconomicReason(
 	input: InventoryAdvisorInputV1,
 	knowledgePack: InventoryKnowledgePackV1 | undefined,
 	decision: InventoryRecommendationDecisionV1,
 	itemId: number,
-): boolean {
-	if (input.rulePack.schemaVersion !== 2 || !knowledgePack || decision.action !== 'review' || decision.ruleId !== null) return false;
-	if (Date.parse(input.asOf) < Date.parse(input.rulePack.publishedAt) || Date.parse(input.asOf) >= Date.parse(input.rulePack.validUntil)) return false;
+): 'economic_comparison_missing' | 'economic_activation_pending' | null {
+	if (input.rulePack.schemaVersion !== 2 || !knowledgePack || decision.action !== 'review' || decision.ruleId !== null) return null;
+	if (Date.parse(input.asOf) < Date.parse(input.rulePack.publishedAt) || Date.parse(input.asOf) >= Date.parse(input.rulePack.validUntil)) return null;
 	const entry = knowledgePack.entries.find((candidate) => candidate.itemId === itemId);
-	if (!entry) return false;
+	if (!entry) return null;
 	for (const action of ['use', 'open', 'salvage'] as const) {
 		const claim = entry[action];
-		if (claim === null) return false;
+		if (claim === null) return null;
 		const capabilities = input.rulePack.rules.filter((candidate) => candidate.itemId === itemId
 			&& candidate.action === action && candidate.status === 'approved' && candidate.capability === 'applicable');
-		if (capabilities.length > 1 || (claim.status === 'not_applicable' && capabilities.length > 0)) return false;
+		if (capabilities.length > 1 || (claim.status === 'not_applicable' && capabilities.length > 0)) return null;
 		if (claim.status === 'not_applicable') continue;
-		if (action === 'salvage' && input.catalog.items[String(itemId)]?.flags.includes('NoSalvage')) return false;
+		if (action === 'salvage' && input.catalog.items[String(itemId)]?.flags.includes('NoSalvage')) return null;
 		const rule = capabilities.find((candidate) => candidate.ruleId === claim.ruleId);
-		if (!rule) return false;
-		if (rule.recommendation.status === 'review_only') return rule.recommendation.reason === 'economic_comparison_missing';
-		return false;
+		if (!rule) return null;
+		if (rule.recommendation.status === 'review_only') return rule.recommendation.reason;
+		return null;
 	}
-	return false;
+	return null;
 }
 
 function validDecisionAgainstInput(

@@ -39,7 +39,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		imports: ['./inventory-advisor-evidence-model', './inventory-advisor-evidence-contract', './inventory-advisor-classifier',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
-			'./inventory-advisor-builtin-bundle'],
+			'./inventory-advisor-builtin-bundle', './inventory-container-economy'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {

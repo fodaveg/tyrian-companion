@@ -12,6 +12,7 @@ const ALLOWED_DEPENDENCIES = new Set([
 	'./inventory-advisor-classifier-model',
 	'./inventory-advisor-contract',
 	'./inventory-advisor-model',
+	'./inventory-container-economy',
 ]);
 
 const IO_OR_NETWORK = /\b(?:fetch|request|requestUrl|XMLHttpRequest|WebSocket|EventSource|readFile|readFileSync|writeFile|writeFileSync)\b/u;

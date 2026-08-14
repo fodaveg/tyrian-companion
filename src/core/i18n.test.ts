@@ -59,6 +59,7 @@ const H5_11_KEYS = [
 	'advisor.view.reason.user_keep_exception', 'advisor.view.reason.rule_missing',
 	'advisor.view.reason.rule_stale', 'advisor.view.reason.rule_conflict',
 	'advisor.view.reason.economic_comparison_missing',
+	'advisor.view.reason.economic_activation_pending',
 	'advisor.view.reason.unlock_coverage_unknown', 'advisor.view.reason.collection_coverage_unknown',
 	'advisor.view.reason.already_unlocked', 'advisor.view.reason.no_sell', 'advisor.view.reason.no_salvage',
 	'advisor.view.reason.salvage_value_unknown', 'advisor.view.reason.delete_warning',

@@ -10,18 +10,26 @@ import type {
 	InventoryAdvisorPolicyV1,
 	InventoryAdvisorRulePackV2,
 } from './inventory-advisor-model';
+import {
+	isInventoryContainerEconomyPack,
+	pendingHalloweenContainerEconomyPack,
+	type InventoryContainerEconomyPackV1,
+} from './inventory-container-economy';
 
-export const INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION = 2 as const;
+export const INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION = 3 as const;
 
-export interface InventoryAdvisorBuiltinBundleV2 {
+export interface InventoryAdvisorBuiltinBundleV3 {
 	version: typeof INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION;
 	policy: InventoryAdvisorPolicyV1;
 	rulePack: InventoryAdvisorRulePackV2;
 	knowledgePack: InventoryKnowledgePackV1;
+	economyPack: InventoryContainerEconomyPackV1;
 }
 
+export type InventoryAdvisorBuiltinBundleV2 = InventoryAdvisorBuiltinBundleV3;
+
 export type InventoryAdvisorBuiltinBundleLoadResult =
-	| { status: 'available'; bundle: InventoryAdvisorBuiltinBundleV2 }
+	| { status: 'available'; bundle: InventoryAdvisorBuiltinBundleV3 }
 	| { status: 'unavailable'; reason: 'invalid' | 'expired'; bundle: null };
 
 /** Pure, replaceable boundary used by UI wiring to obtain the curated review-only data. */
@@ -31,7 +39,7 @@ export interface InventoryAdvisorBuiltinBundleProvider {
 
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
 const VALID_UNTIL = '2026-11-12T18:04:33.000Z';
-const RULE_PACK_SHA256 = 'f5c82cb440b101497e52f078f4a5b00573cd1015b5b5d112989fa3e2869f1eff';
+const RULE_PACK_SHA256 = '1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681';
 const KNOWLEDGE_PACK_SHA256 = '505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686';
 
 const SOURCES = [
@@ -40,7 +48,25 @@ const SOURCES = [
 	{ id: 'gw2-wiki-trick-or-treat-bag', url: 'https://wiki.guildwars2.com/index.php?title=Trick-or-Treat_Bag&oldid=3071874', retrievedAt: PUBLISHED_AT },
 ] as const;
 
-const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV2 = {
+const BUILTIN_RULE_PACK: InventoryAdvisorRulePackV2 = {
+	schemaVersion: 2,
+	id: 'tc.inventory-rules.curated-v2',
+	version: 2,
+	publishedAt: PUBLISHED_AT,
+	reviewedAt: null,
+	reviewStatus: 'pending_human_review',
+	knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
+	validUntil: VALID_UNTIL,
+	sha256: RULE_PACK_SHA256,
+	sources: SOURCES.map((source) => ({ ...source })),
+	rules: [{
+		ruleId: 'open-36038-capability-v1', itemId: 36038, action: 'open', status: 'approved', capability: 'applicable',
+		recommendation: { status: 'review_only', reason: 'economic_activation_pending' },
+		reason: 'curated_open', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'],
+	}],
+};
+
+const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 	version: INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION,
 	policy: {
 		version: 1,
@@ -52,23 +78,7 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV2 = {
 		maxFutureSkewMs: 300_000,
 		listingMinimumAdvantageBps: 1_000,
 	},
-	rulePack: {
-		schemaVersion: 2,
-		id: 'tc.inventory-rules.curated-v2',
-		version: 2,
-		publishedAt: PUBLISHED_AT,
-		reviewedAt: null,
-		reviewStatus: 'pending_human_review',
-		knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
-		validUntil: VALID_UNTIL,
-		sha256: RULE_PACK_SHA256,
-		sources: SOURCES.map((source) => ({ ...source })),
-		rules: [{
-			ruleId: 'open-36038-capability-v1', itemId: 36038, action: 'open', status: 'approved', capability: 'applicable',
-			recommendation: { status: 'review_only', reason: 'economic_comparison_missing' },
-			reason: 'curated_open', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'],
-		}],
-	},
+	rulePack: BUILTIN_RULE_PACK,
 	knowledgePack: {
 		schemaVersion: 1,
 		id: 'tc.inventory-knowledge.curated-v2',
@@ -86,6 +96,15 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV2 = {
 			salvage: { status: 'not_applicable', assertionId: 'no-salvage-36038-v1', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] },
 		}],
 	},
+	economyPack: pendingHalloweenContainerEconomyPack({
+		rulePack: {
+			id: BUILTIN_RULE_PACK.id,
+			version: BUILTIN_RULE_PACK.version,
+			sha256: BUILTIN_RULE_PACK.sha256,
+			ruleId: BUILTIN_RULE_PACK.rules[0]!.ruleId,
+		},
+		knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
+	}),
 };
 
 /**
@@ -102,7 +121,8 @@ export function createInventoryAdvisorBuiltinBundleProvider(
 			try {
 				const bundle = clone(captured);
 				if (!isBuiltinBundle(bundle) || !validTimestamp(asOf)) return unavailable('invalid');
-				if (Date.parse(asOf) < Date.parse(bundle.rulePack.publishedAt)) return unavailable('invalid');
+				const published = Math.max(Date.parse(bundle.rulePack.publishedAt), Date.parse(bundle.economyPack.publishedAt));
+				if (Date.parse(asOf) < published) return unavailable('invalid');
 				const expiry = Math.min(Date.parse(bundle.rulePack.validUntil), Date.parse(bundle.knowledgePack.validUntil));
 				if (Date.parse(asOf) >= expiry) return unavailable('expired');
 				return { status: 'available', bundle };
@@ -115,13 +135,14 @@ export function createInventoryAdvisorBuiltinBundleProvider(
 
 export const inventoryAdvisorBuiltinBundleProvider = createInventoryAdvisorBuiltinBundleProvider();
 
-function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundleV2 {
-	if (!record(value) || !exactKeys(value, ['version', 'policy', 'rulePack', 'knowledgePack'])
+function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundleV3 {
+	if (!record(value) || !exactKeys(value, ['version', 'policy', 'rulePack', 'knowledgePack', 'economyPack'])
 		|| value.version !== INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION
 		|| !isInventoryAdvisorPolicy(value.policy)
 		|| !isInventoryAdvisorRulePackV2(value.rulePack)
-		|| !isInventoryKnowledgePack(value.knowledgePack)) return false;
-	const bundle = value as unknown as InventoryAdvisorBuiltinBundleV2;
+		|| !isInventoryKnowledgePack(value.knowledgePack)
+		|| !isInventoryContainerEconomyPack(value.economyPack)) return false;
+	const bundle = value as unknown as InventoryAdvisorBuiltinBundleV3;
 	return exactPolicy(bundle.policy)
 		&& bundle.rulePack.id === 'tc.inventory-rules.curated-v2'
 		&& bundle.rulePack.version === 2
@@ -142,7 +163,12 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.knowledgePack.validUntil === VALID_UNTIL
 		&& bundle.knowledgePack.sha256 === KNOWLEDGE_PACK_SHA256
 		&& canonical(bundle.knowledgePack.sources) === canonical(SOURCES)
-		&& canonical(bundle.knowledgePack.entries) === canonical(BUILTIN_BUNDLE.knowledgePack.entries);
+		&& canonical(bundle.knowledgePack.entries) === canonical(BUILTIN_BUNDLE.knowledgePack.entries)
+		&& bundle.economyPack.activation.status === 'pending_human_review'
+		&& bundle.economyPack.activation.activatedAt === null
+		&& bundle.economyPack.rulePack.sha256 === RULE_PACK_SHA256
+		&& bundle.economyPack.knowledgePackSha256 === KNOWLEDGE_PACK_SHA256
+		&& canonical(bundle.economyPack) === canonical(BUILTIN_BUNDLE.economyPack);
 }
 
 function exactPolicy(value: InventoryAdvisorPolicyV1): boolean {

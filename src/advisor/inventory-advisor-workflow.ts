@@ -8,6 +8,7 @@ import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorContextualPresentationSource, InventoryAdvisorPresentationSource } from './inventory-advisor-presentation';
 import type { CatalogLocale } from '../catalog/public-catalog-model';
 import type { InventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
+import type { InventoryContainerEconomyPackV1 } from './inventory-container-economy';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -30,6 +31,7 @@ export type InventoryAdvisorRules = {
 	rulePack: InventoryAdvisorRulePack;
 	knowledgePack: InventoryKnowledgePackV1;
 	policy: InventoryAdvisorPolicyV1;
+	containerEconomyPack?: InventoryContainerEconomyPackV1;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
@@ -50,7 +52,9 @@ export class InventoryAdvisorWorkflow {
 		const asOf = new Date(this.ports.now?.() ?? Date.now()).toISOString();
 		const rules = this.ports.rules.current(asOf);
 		if (rules.status === 'unavailable') return { status: 'blocked', reason: 'missing_rules' };
-		const capture = await this.ports.capture.capture(locale);
+		const capture = rules.value.containerEconomyPack === undefined
+			? await this.ports.capture.capture(locale)
+			: await this.ports.capture.capture(locale, rules.value.containerEconomyPack.expectedPriceItemIds);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		const preferences = await this.ports.preferences.load(capture);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
@@ -105,6 +109,7 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 					rulePack: loaded.bundle.rulePack,
 					knowledgePack: loaded.bundle.knowledgePack,
 					policy: loaded.bundle.policy,
+					containerEconomyPack: loaded.bundle.economyPack,
 				} }
 				: { status: 'unavailable' };
 		},
@@ -125,7 +130,15 @@ export function composeInventoryAdvisorRefresh(
 		rulePack: structuredClone(rules.rulePack), policy: structuredClone(rules.policy),
 	});
 	if (input === null) throw new Error('inventory_advisor_input_invalid');
-	const engineInput = { input, knowledgePack: structuredClone(rules.knowledgePack) };
+	const engineInput = {
+		input,
+		knowledgePack: structuredClone(rules.knowledgePack),
+		...(rules.containerEconomyPack !== undefined && capture.containerPrices !== undefined
+			&& capture.containerPrices !== null ? { containerEconomy: {
+			pack: structuredClone(rules.containerEconomyPack),
+			prices: structuredClone(capture.containerPrices),
+		} } : {}),
+	};
 	const producerResult = classifyInventoryAdvisor(engineInput);
 	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 	return { input, result, discardContext: { engineInput, producerResult } };

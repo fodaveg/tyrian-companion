@@ -24,6 +24,12 @@ import {
 } from './inventory-advisor-classifier';
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import {
+	isInventoryContainerEconomyPack,
+	isInventoryContainerPriceEvidence,
+	sha256InventoryContainerEconomyPack,
+	type InventoryContainerPriceEvidenceV1,
+} from './inventory-container-economy';
 
 const BEFORE_EXPIRY = '2026-11-11T23:59:59.999Z';
 
@@ -32,49 +38,26 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
 		expect(result.status).toBe('available');
 		if (result.status !== 'available') return;
-		expect(result.bundle).toEqual({
-			version: 2,
-			policy: {
-				version: 1,
-				maxSnapshotAgeMs: 900_000,
-				maxPriceAgeMs: 900_000,
-				maxCatalogAgeMs: 604_800_000,
-				maxAccountSignalsAgeMs: 86_400_000,
-				maxRulePackAgeMs: 7_776_000_000,
-				maxFutureSkewMs: 300_000,
-				listingMinimumAdvantageBps: 1_000,
-			},
+		expect(result.bundle).toMatchObject({
+			version: 3,
+			policy: { version: 1, maxPriceAgeMs: 900_000, listingMinimumAdvantageBps: 1_000 },
 			rulePack: {
-				schemaVersion: 2,
-				id: 'tc.inventory-rules.curated-v2',
-				version: 2,
-				publishedAt: '2026-08-14T18:04:33.000Z',
-				reviewedAt: null,
-				reviewStatus: 'pending_human_review',
-				knowledgePackSha256: '505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686',
-				validUntil: '2026-11-12T18:04:33.000Z',
-				sha256: 'f5c82cb440b101497e52f078f4a5b00573cd1015b5b5d112989fa3e2869f1eff',
-				sources: sources(),
-				rules: [{ ruleId: 'open-36038-capability-v1', itemId: 36038, action: 'open', status: 'approved', capability: 'applicable',
-					recommendation: { status: 'review_only', reason: 'economic_comparison_missing' }, reason: 'curated_open',
-					sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] }],
+				id: 'tc.inventory-rules.curated-v2', version: 2,
+				reviewStatus: 'pending_human_review', reviewedAt: null,
+				sha256: '1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681',
+				rules: [{ ruleId: 'open-36038-capability-v1', recommendation: {
+					status: 'review_only', reason: 'economic_activation_pending',
+				} }],
 			},
-			knowledgePack: {
-				schemaVersion: 1,
-				id: 'tc.inventory-knowledge.curated-v2',
-				version: 2,
-				publishedAt: '2026-08-14T18:04:33.000Z',
-				reviewedAt: '2026-08-14T18:04:33.000Z',
-				validUntil: '2026-11-12T18:04:33.000Z',
-				sha256: '505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686',
-				sources: sources(),
-				entries: [{ itemId: 36038,
-					use: { status: 'not_applicable', assertionId: 'use-excludes-open-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
-					open: { status: 'applicable', ruleId: 'open-36038-capability-v1', sourceIds: ['gw2-api-item-36038', 'gw2-wiki-trick-or-treat-bag'] },
-					salvage: { status: 'not_applicable', assertionId: 'no-salvage-36038-v1', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] },
-				}],
+			knowledgePack: { id: 'tc.inventory-knowledge.curated-v2', version: 2 },
+			economyPack: {
+				packId: 'tc.inventory-container-economy.halloween-v1',
+				activation: { status: 'pending_human_review', activatedAt: null },
+				expectedPriceItemIds: [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002],
+				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate' },
 			},
 		});
+		expect(result.bundle.rulePack.sources).toEqual(sources());
 	});
 
 	it('passes the authoritative validators and content hashes', () => {
@@ -84,8 +67,10 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(isInventoryAdvisorRulePackV2(result.bundle.rulePack)).toBe(true);
 		expect(isInventoryAdvisorRulePackAny(result.bundle.rulePack)).toBe(true);
 		expect(isInventoryKnowledgePack(result.bundle.knowledgePack)).toBe(true);
+		expect(isInventoryContainerEconomyPack(result.bundle.economyPack)).toBe(true);
 		expect(sha256InventoryRulePack(result.bundle.rulePack)).toBe(result.bundle.rulePack.sha256);
 		expect(sha256InventoryKnowledgePack(result.bundle.knowledgePack)).toBe(result.bundle.knowledgePack.sha256);
+		expect(sha256InventoryContainerEconomyPack(result.bundle.economyPack)).toBe(result.bundle.economyPack.sha256);
 		expect(result.bundle.rulePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: null, reviewStatus: 'pending_human_review',
 			validUntil: '2026-11-12T18:04:33.000Z',
@@ -104,8 +89,8 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(sha256StandardCanonicalValue(content)).toBe(createHash('sha256').update(canonical(content)).digest('hex'));
 	});
 
-	it('keeps the curated open capability under review until its economic comparison exists', () => {
-		const asOf = '2026-08-14T18:05:00.000Z';
+	it('keeps the curated open capability under review until its human economic activation exists', () => {
+		const asOf = '2026-08-14T20:31:00.000Z';
 		const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf);
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const input = advisorInput(loaded.bundle, asOf, 36038);
@@ -118,7 +103,7 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const producerDecisions = producerResult.report?.lines.flatMap((line) => line.decisions) ?? [];
 		expect(producerDecisions.length).toBeGreaterThan(0);
 		expect(producerDecisions).toEqual([expect.objectContaining({ action: 'review', ruleId: null })]);
-		expect(producerResult.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'economic_comparison_missing' }));
+		expect(producerResult.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'economic_activation_pending' }));
 
 		const allowlistResult = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 		expect(allowlistResult.status).toBe('limited');
@@ -127,6 +112,74 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(finalActions).toEqual(['review']);
 		expect(finalActions).not.toContain('discard_candidate');
 		expect(finalActions.some((action) => ['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(action))).toBe(false);
+	});
+
+	it('routes an explicitly human-enabled clone through the H4.19 kernel and reproduces its result', () => {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:31:00.000Z');
+		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
+		const bundle = structuredClone(loaded.bundle);
+		bundle.rulePack.reviewStatus = 'human_reviewed';
+		bundle.rulePack.reviewedAt = '2026-08-14T20:30:00.000Z';
+		bundle.rulePack.rules[0]!.recommendation = { status: 'enabled' };
+		bundle.rulePack.sha256 = sha256InventoryRulePack(bundle.rulePack);
+		bundle.economyPack.rulePack.sha256 = bundle.rulePack.sha256;
+		bundle.economyPack.activation = { status: 'enabled', activatedAt: '2026-08-14T20:30:30.000Z' };
+		bundle.economyPack.sha256 = sha256InventoryContainerEconomyPack(bundle.economyPack);
+		const input = advisorInput(bundle, '2026-08-14T20:31:00.000Z', 36_038);
+		const prices: InventoryContainerPriceEvidenceV1 = {
+			version: 1 as const,
+			accountId: input.snapshot.accountId,
+			snapshotId: input.snapshot.snapshotId,
+			schemaVersion: PINNED_SCHEMA,
+			capturedAt: '2026-08-14T20:30:30.000Z',
+			source: 'gw2-commerce-prices' as const,
+			requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
+			status: 'complete' as const,
+			items: bundle.economyPack.expectedPriceItemIds.map((itemId) => ({
+				itemId, whitelisted: true,
+				bid: { unitCopper: itemId === 36_038 ? 200 : 100, quantity: 1_000 }, ask: null,
+			})),
+			missingItemIds: [],
+		};
+		const engineInput = { input, knowledgePack: bundle.knowledgePack,
+			containerEconomy: { pack: bundle.economyPack, prices } };
+		const result = classifyInventoryAdvisor(engineInput);
+		expect(result.report?.lines[0]?.decisions).toEqual([
+			expect.objectContaining({ action: 'open', quantity: 2, ruleId: 'open-36038-capability-v1' }),
+		]);
+		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack, engineInput.containerEconomy)).toBe(true);
+		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack)).toBe(false);
+		for (const [action, sackBid, outcomeBid] of [
+			['sell', 10_000, 1],
+			['vendor', 1, 1],
+		] as const) {
+			const routed = structuredClone(engineInput);
+			for (const item of routed.containerEconomy.prices.items) {
+				item.bid!.unitCopper = item.itemId === 36_038 ? sackBid : outcomeBid;
+			}
+			const routedResult = classifyInventoryAdvisor(routed);
+			expect(routedResult.report?.lines[0]?.decisions).toEqual([
+				expect.objectContaining({ action, quantity: 2 }),
+			]);
+			expect(isInventoryAdvisorResultForInput(routedResult, input, bundle.knowledgePack,
+				routed.containerEconomy)).toBe(true);
+			expect(isInventoryAdvisorResultForInput(routedResult, input, bundle.knowledgePack)).toBe(false);
+		}
+		const revokedEconomy = structuredClone(engineInput.containerEconomy);
+		revokedEconomy.pack.activation = { status: 'revoked', activatedAt: '2026-08-14T20:30:30.000Z' };
+		revokedEconomy.pack.sha256 = sha256InventoryContainerEconomyPack(revokedEconomy.pack);
+		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack, revokedEconomy)).toBe(false);
+		const revokedResult = classifyInventoryAdvisor({ ...engineInput, containerEconomy: revokedEconomy });
+		expect(revokedResult.report?.lines[0]?.decisions).toEqual([expect.objectContaining({ action: 'review' })]);
+		expect(isInventoryAdvisorResultForInput(revokedResult, input, bundle.knowledgePack, revokedEconomy)).toBe(true);
+		const partial = structuredClone(engineInput);
+		partial.containerEconomy.prices.status = 'partial';
+		partial.containerEconomy.prices.missingItemIds = [89_002];
+		partial.containerEconomy.prices.items.pop();
+		expect(isInventoryContainerPriceEvidence(partial.containerEconomy.prices)).toBe(true);
+		const reviewed = classifyInventoryAdvisor(partial);
+		expect(reviewed.report?.lines[0]?.decisions).toEqual([expect.objectContaining({ action: 'review' })]);
+		expect(reviewed.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'price_partial' }));
 	});
 
 	it('enforces V2 validUntil exclusively in classifier, result validation, and contextual discard', () => {
@@ -160,22 +213,22 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 	});
 
 	it('rejects a forged economic reason when duplicate V2 capabilities conflict', () => {
-		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T18:05:00.000Z');
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:31:00.000Z');
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const bundle = structuredClone(loaded.bundle);
 		bundle.rulePack.rules.push({ ...bundle.rulePack.rules[0]!, ruleId: 'open-36038-capability-duplicate-v1' });
 		bundle.rulePack.rules.sort((left, right) => left.itemId - right.itemId || left.action.localeCompare(right.action) || left.ruleId.localeCompare(right.ruleId));
 		bundle.rulePack.sha256 = sha256InventoryRulePack(bundle.rulePack);
-		const input = advisorInput(bundle, '2026-08-14T18:05:00.000Z', 36038);
+		const input = advisorInput(bundle, '2026-08-14T20:31:00.000Z', 36038);
 		const engineInput = { input, knowledgePack: bundle.knowledgePack };
 		const producer = classifyInventoryAdvisor(engineInput);
 		expect(producer.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_conflict' }));
 		expect(isInventoryAdvisorResultForInput(producer, input, bundle.knowledgePack)).toBe(true);
 		const forged = structuredClone(producer);
 		if (forged.status === 'invalid' || forged.report === null) throw new Error('expected contextual conflict result');
-		forged.report.reasons = [{ code: 'economic_comparison_missing', itemId: 36038, goalId: null, ruleId: null }];
+		forged.report.reasons = [{ code: 'economic_activation_pending', itemId: 36038, goalId: null, ruleId: null }];
 		forged.report.lines[0]!.reasons = structuredClone(forged.report.reasons);
-		forged.report.explanations[0]!.reasonCodes = ['economic_comparison_missing'];
+		forged.report.explanations[0]!.reasonCodes = ['economic_activation_pending'];
 		const forgedEnvelope = createInventoryRecommendationEnvelope(forged.report);
 		if (forgedEnvelope === null) throw new Error('expected forged envelope');
 		forged.envelope = forgedEnvelope;
@@ -228,13 +281,13 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const result = createInventoryAdvisorBuiltinBundleProvider().load(BEFORE_EXPIRY);
 		if (result.status !== 'available') throw new Error(`expected bundle for ${locale}`);
 		expect(JSON.stringify(result.bundle)).not.toContain('locale');
-		expect(result.bundle.rulePack.sha256).toBe('f5c82cb440b101497e52f078f4a5b00573cd1015b5b5d112989fa3e2869f1eff');
+		expect(result.bundle.rulePack.sha256).toBe('1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681');
 		expect(result.bundle.knowledgePack.sha256).toBe('505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686');
 	});
 
 	it('treats validUntil as an exclusive boundary and rejects invalid clocks', () => {
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T18:04:32.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T18:04:33.000Z').status).toBe('available');
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:29:59.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:30:00.000Z').status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY).status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-12T18:04:33.000Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
@@ -305,7 +358,7 @@ const _bundleShape: InventoryAdvisorBuiltinBundleV2 | null = null;
 void _bundleShape;
 
 function advisorInput(bundle: InventoryAdvisorBuiltinBundleV2, asOf: string, itemId = 10) {
-	const capturedAt = '2026-08-14T18:04:00.000Z';
+	const capturedAt = asOf;
 	const snapshot: StorageSnapshot = {
 		snapshotId: 'snapshot-builtin', accountId: 'account-builtin',
 		startedAt: capturedAt, completedAt: capturedAt, schemaVersion: PINNED_SCHEMA,
@@ -363,10 +416,10 @@ function rebaseInput<T extends ReturnType<typeof advisorInput>>(input: T, asOf: 
 function forgeEconomicReason<T extends ReturnType<typeof classifyInventoryAdvisor>>(result: T): T {
 	const forged = structuredClone(result);
 	if (forged.status === 'invalid' || forged.report === null) throw new Error('expected contextual stale result');
-	const reason = { code: 'economic_comparison_missing' as const, itemId: 36038, goalId: null, ruleId: null };
+	const reason = { code: 'economic_activation_pending' as const, itemId: 36038, goalId: null, ruleId: null };
 	forged.report.reasons = [reason];
 	forged.report.lines[0]!.reasons = [reason];
-	forged.report.explanations[0]!.reasonCodes = ['economic_comparison_missing'];
+	forged.report.explanations[0]!.reasonCodes = ['economic_activation_pending'];
 	const envelope = createInventoryRecommendationEnvelope(forged.report);
 	if (envelope === null) throw new Error('expected forged envelope');
 	forged.envelope = envelope;

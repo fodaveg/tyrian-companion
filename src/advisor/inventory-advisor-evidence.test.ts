@@ -28,6 +28,27 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(snapshot).toEqual(before);
 	});
 
+	it('captures a fresh identity-bound sibling batch for the sack and eight H4.7 outcomes', async () => {
+		const snapshot = snapshotFixture([36_038]);
+		const calls: number[][] = [];
+		const gateway = publicGateway((ids) => { calls.push(ids); return ids.map((id) => pricePayload(id)); });
+		const requested = [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002];
+		const result = await serviceFor(snapshot, catalogFor(snapshot, 'en'), gateway).capture('en', requested);
+		expect(calls).toEqual([[36_038], requested]);
+		expect(result.status).toBe('complete');
+		expect(result.containerPrices).toMatchObject({
+			accountId: snapshot.accountId,
+			snapshotId: snapshot.snapshotId,
+			capturedAt: '2026-08-14T12:00:00.000Z',
+			status: 'complete',
+			requestedItemIds: requested,
+			missingItemIds: [],
+		});
+		expect(result.containerPrices?.items.map((item) => item.itemId)).toEqual(requested);
+		await expect(serviceFor(snapshot, catalogFor(snapshot, 'en'), gateway).capture('en', [...requested].reverse()))
+			.resolves.toEqual({ status: 'invalid', evidence: null, containerPrices: null });
+	});
+
 	it('rejects tampered wrapper keys and identity links', async () => {
 		const snapshot = snapshotFixture([10, 11]);
 		const result = await serviceFor(snapshot, catalogFor(snapshot), publicGateway((ids) => ids.map((id) => pricePayload(id)))).capture('es');

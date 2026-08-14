@@ -67,6 +67,8 @@ The current `0.1.0` vertical provides:
   exposes action-specific allowances, and overlays protected gains without changing valuation money.
 - A pure H4.10 container disposition engine that protects reservations first, then compares an
   attested opening model with a fresh immediate-sale floor using exact integer thresholds.
+- H4.19 extracts that economic comparison into a session-independent kernel and binds it to the
+  Inventory Advisor through an explicit, hashed and human-controlled activation pack.
 - A pure H4.11 user hold-intent allocator that protects a bounded free quantity until a target
   price or deadline and feeds the remaining quantity into H4.10 without performing an operation.
 - A strict H4.12 JSON recommendation envelope that labels every decision manual-only and
@@ -87,8 +89,10 @@ The current `0.1.0` vertical provides:
   Opening is memory-only; Refresh is the sole capture trigger and composes H4.14 → H4.15 → H4.16
   through a latest-wins single-flight cache. H4.18 supplies an immutable, source-backed built-in v2 bundle
   with one curated capability for item 36038 (**Trick-or-Treat Bag**): `open` is known, while `use` and
-  `salvage` are explicitly not applicable. Its economic comparison is still withheld, so every result remains
-  `review`, never economy or discard; at its exclusive 2026-11-12 expiry, Refresh fails closed with
+  `salvage` are explicitly not applicable. H4.19 adds a fresh sibling batch for the bag plus its eight liquid
+  outcomes and a 10% manual open-versus-sell/vendor comparison. The built-in activation remains pending
+  human review, so every result remains `review`, never active economy or discard; at its exclusive expiry,
+  Refresh fails closed with
   `missing_rules` before any API request.
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
   exceptions. It derives a hashed vault/account scope only after capture, uses IndexedDB CAS across
@@ -96,7 +100,7 @@ The current `0.1.0` vertical provides:
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately
-review-only until its economic comparison is reviewed. Vault writes are
+review-only until its H4.19 pack and economics are human-approved. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
 JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
@@ -287,6 +291,9 @@ of immediate bid and an eligible vendor floor, and compares opening EV with the 
 `BigInt`. Equality favors opening. Missing or stale evidence returns typed `blocked`; malformed or
 inconsistent evidence returns `invalid`; neither status contains an economic action. The output is an
 explanation only: H4.10 performs no API call, persistence, UI, vault write, Trading Post action or item use.
+Its economic core now lives in `calculateContainerDispositionKernel(input)`: a session-independent,
+data-only function reused by H4.10 and H4.19. The kernel accepts only catalog/binding, the attested model,
+one market batch and policy; it has no session, account capture, persistence or execution capability.
 
 `evaluateHoldIntents(input)` is the pure H4.11 boundary after H4.9 reservations. Only explicit,
 versioned user intents can retain units. Active intents consume one exclusive free pool in deadline
@@ -334,6 +341,11 @@ partitions every owned physical position after reservations and keep exceptions,
 unknown/contradictory evidence to review, caps instant sales to demonstrated top-bid depth and never
 emits `discard_candidate`. Its dynamic guard rejects network, UI, persistence, timers and irreversible
 operations. H4.16 now applies the separate, proof-bound discard allowlist; only persistence and UI remain pending.
+For H4.19, the same explicit Refresh may additionally capture one identity-bound sibling price batch with
+exactly `36038, 36041, 36059, 36060, 36061, 79673, 79677, 79679, 89002`. The advisor validates exact
+coverage, TTL, hashes, rule/model bindings, reservations and keep exceptions before calling the kernel.
+Complete evidence and a 10% margin can produce only manual `open`, `sell` or `vendor`; partial, revoked,
+expired or incoherent evidence produces `review`. The shipped pack is pending/disabled by default.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

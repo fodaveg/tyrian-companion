@@ -49,6 +49,7 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'catalog_invalid', 'catalog_stale', 'price_missing', 'price_stale', 'price_partial',
 	'binding_unknown', 'tp_access_unknown', 'position_not_actionable', 'reserved_for_goal',
 	'user_keep_exception', 'rule_missing', 'rule_stale', 'rule_conflict', 'economic_comparison_missing',
+	'economic_activation_pending',
 	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'no_sell',
 	'no_salvage', 'salvage_value_unknown', 'delete_warning', 'alternative_route_exists',
 	'discard_not_allowlisted', 'arithmetic_overflow',
@@ -478,7 +479,7 @@ function isRuleV2(value: unknown): value is InventoryAdvisorRuleV2 {
 function isRecommendationGate(value: unknown): value is InventoryAdvisorRuleV2['recommendation'] {
 	return record(value) && ((keys(value, ['status']) && value.status === 'enabled')
 		|| (keys(value, ['status', 'reason']) && value.status === 'review_only'
-			&& value.reason === 'economic_comparison_missing'));
+			&& (value.reason === 'economic_comparison_missing' || value.reason === 'economic_activation_pending')));
 }
 
 export function isEnabledApplicableRule(

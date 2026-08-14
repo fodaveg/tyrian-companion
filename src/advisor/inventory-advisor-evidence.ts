@@ -24,6 +24,10 @@ import {
 } from './inventory-advisor-evidence-model';
 import { isInventoryAdvisorEvidence } from './inventory-advisor-evidence-contract';
 import { sha256CanonicalValue } from './inventory-advisor-contract';
+import {
+	isInventoryContainerPriceEvidence,
+	type InventoryContainerPriceEvidenceV1,
+} from './inventory-container-economy';
 
 const BATCH_SIZE = 200;
 const SNAPSHOT_TTL_MS = 15 * 60_000;
@@ -37,7 +41,7 @@ export interface InventoryAdvisorEvidenceClient {
 
 /** Explicit H4.14 capture only. Constructing this service performs no requests or persistence. */
 export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidenceCapture {
-	private readonly inFlight = new Map<CatalogLocale, Promise<InventoryAdvisorEvidenceCaptureResultV1>>();
+	private readonly inFlight = new Map<string, Promise<InventoryAdvisorEvidenceCaptureResultV1>>();
 	constructor(
 		private readonly client: InventoryAdvisorEvidenceClient,
 		private readonly snapshots: Pick<StorageSnapshotService, 'captureWithOperation'>,
@@ -46,15 +50,18 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		private readonly now: () => number = Date.now,
 	) {}
 
-	capture(locale: CatalogLocale): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
-		const existing = this.inFlight.get(locale);
+	capture(locale: CatalogLocale, containerPriceItemIds: readonly number[] = []): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+		const ids = normalizeSupplementalIds(containerPriceItemIds);
+		if (ids === null) return Promise.resolve({ status: 'invalid', evidence: null, containerPrices: null });
+		const key = `${locale}:${ids.join(',')}`;
+		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(locale).finally(() => { if (this.inFlight.get(locale) === promise) this.inFlight.delete(locale); });
-		this.inFlight.set(locale, promise);
+		const promise = this.captureInternal(locale, ids).finally(() => { if (this.inFlight.get(key) === promise) this.inFlight.delete(key); });
+		this.inFlight.set(key, promise);
 		return promise;
 	}
 
-	private async captureInternal(locale: CatalogLocale): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+	private async captureInternal(locale: CatalogLocale, containerPriceItemIds: number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		let operation: GuildWars2Operation;
 		try {
 			operation = this.client.beginOperation();
@@ -67,10 +74,12 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 			const context = await verifiedContext(operation, snapshot.accountId);
 			if (context.status === 'unavailable') return { status: 'unavailable', evidence: null };
 			if (context.status === 'identity_mismatch') return { status: 'invalid', evidence: null };
-			const [catalog, prices, accountSignals] = await Promise.all([
+			const [catalog, prices, accountSignals, containerPrices] = await Promise.all([
 				this.captureCatalog(snapshot, locale, this.now()),
 				captureInventoryPrices(snapshot, this.publicGateway, this.now()),
 				captureAccountSignals(operation, snapshot.accountId, context.token, context.access, this.now),
+				containerPriceItemIds.length === 0 ? Promise.resolve(null)
+					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now()),
 			]);
 			const coverage: InventoryAdvisorEvidenceCoverageV1 = {
 				snapshot: snapshotCoverage(snapshot),
@@ -91,7 +100,8 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				&& coverage.accountSignals === 'unavailable'
 				? { status: 'unavailable', evidence: null }
 			: { status: coverage.snapshot === 'complete' && coverage.catalog === 'complete' && coverage.prices === 'complete'
-					&& coverage.accountSignals === 'complete' ? 'complete' : 'partial', evidence };
+					&& coverage.accountSignals === 'complete' && (containerPrices === null || containerPrices.status === 'complete')
+					? 'complete' : 'partial', evidence, containerPrices };
 		} catch {
 			return { status: 'unavailable', evidence: null };
 		}
@@ -124,6 +134,39 @@ async function captureInventoryPrices(
 	capturedAt: number,
 ): Promise<InventoryPriceSnapshotV1> {
 	const requestedItemIds = ids(snapshot.availableByItem);
+	const captured = await capturePriceItems(requestedItemIds, gateway);
+	return {
+		version: INVENTORY_PRICE_SNAPSHOT_VERSION, accountId: snapshot.accountId, snapshotId: snapshot.snapshotId,
+		capturedAt: new Date(capturedAt).toISOString(), source: 'gw2-commerce-prices', schemaVersion: snapshot.schemaVersion,
+		requestedItemIds, ...captured,
+	};
+}
+
+async function captureContainerPrices(
+	snapshot: StorageSnapshot,
+	requestedItemIds: number[],
+	gateway: PublicCatalogGateway,
+	capturedAt: number,
+): Promise<InventoryContainerPriceEvidenceV1> {
+	const captured = await capturePriceItems(requestedItemIds, gateway);
+	const value: InventoryContainerPriceEvidenceV1 = {
+		version: 1,
+		accountId: snapshot.accountId,
+		snapshotId: snapshot.snapshotId,
+		schemaVersion: snapshot.schemaVersion,
+		capturedAt: new Date(capturedAt).toISOString(),
+		source: 'gw2-commerce-prices',
+		requestedItemIds: structuredClone(requestedItemIds),
+		...captured,
+	};
+	if (!isInventoryContainerPriceEvidence(value)) throw new Error('invalid_container_price_evidence');
+	return value;
+}
+
+async function capturePriceItems(
+	requestedItemIds: number[],
+	gateway: PublicCatalogGateway,
+): Promise<Pick<InventoryPriceSnapshotV1, 'status' | 'items' | 'missingItemIds'>> {
 	const items: InventoryItemPriceV1[] = [];
 	const missing = new Set<number>();
 	for (const batch of chunks(requestedItemIds, BATCH_SIZE)) {
@@ -138,12 +181,7 @@ async function captureInventoryPrices(
 	}
 	items.sort((left, right) => left.itemId - right.itemId);
 	const missingItemIds = [...missing].sort(numberOrder);
-	return {
-		version: INVENTORY_PRICE_SNAPSHOT_VERSION, accountId: snapshot.accountId, snapshotId: snapshot.snapshotId,
-		capturedAt: new Date(capturedAt).toISOString(), source: 'gw2-commerce-prices', schemaVersion: snapshot.schemaVersion,
-		requestedItemIds, status: missingItemIds.length === 0 ? 'complete' : items.length === 0 ? 'unavailable' : 'partial',
-		items, missingItemIds,
-	};
+	return { status: missingItemIds.length === 0 ? 'complete' : items.length === 0 ? 'unavailable' : 'partial', items, missingItemIds };
 }
 
 async function captureAccountSignals(
@@ -262,6 +300,11 @@ function tradingPostAccess(access: string[]): AccountSignalsV1['tradingPostAcces
 	return normalized.some((entry) => ['GuildWars2', 'HeartOfThorns', 'PathOfFire', 'EndOfDragons', 'SecretsOfTheObscure', 'JanthirWilds'].includes(entry)) ? 'full' : 'unknown';
 }
 function optionalNonNegative(value: unknown): boolean { return value === undefined || value === null || nonNegative(value); }
+function normalizeSupplementalIds(values: readonly number[]): number[] | null {
+	if (!Array.isArray(values) || !values.every(positive)
+		|| values.some((value, index) => index > 0 && values[index - 1]! >= value)) return null;
+	return [...values];
+}
 function ids(values: Record<string, number>): number[] { return Object.entries(values).filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort(numberOrder); }
 function chunks<T>(values: T[], size: number): T[][] { const result: T[][] = []; for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size)); return result; }
 function numberOrder(left: number, right: number): number { return left - right; }

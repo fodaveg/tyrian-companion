@@ -12,6 +12,7 @@ import {
 	recommendContainerDisposition,
 	type ContainerRecommendationInput,
 } from './container-recommendation';
+import { calculateContainerDispositionKernel } from './container-disposition-kernel';
 import type { ContainerModelV1 } from './container-model';
 import { evaluateHoldIntents, type HoldIntentV1 } from './hold-intent';
 import { isRecommendationEnvelope } from './recommendation-envelope';
@@ -276,7 +277,35 @@ describe('recommendContainerDisposition', () => {
 		expect(recommendContainerDisposition(value)).toMatchObject({ status: 'blocked', reasons: [{ code: 'open_ev_partial' }] });
 		const listingOnlyMissing = input({ marketOutcome: true });
 		listingOnlyMissing.market.quotes.find((quote) => quote.itemId === 1)!.askUnitCopper = null;
-		expect(recommendContainerDisposition(listingOnlyMissing).status).toBe('ready');
+		const readyWithCaveat = ready(listingOnlyMissing);
+		expect(readyWithCaveat.explanation?.caveats).toContain('listing_route_partial');
+	});
+
+	it('keeps the extracted kernel equivalent to the H4.10 economic result', () => {
+		const value = input({ marketOutcome: true, gainedQuantity: 3, finalQuantity: 3 });
+		value.market.quotes.find((quote) => quote.itemId === 1)!.askUnitCopper = null;
+		const recommendation = ready(value);
+		const kernel = calculateContainerDispositionKernel({
+			version: 1,
+			asOf: value.asOf,
+			quantity: recommendation.allocations.freeQuantity,
+			container: value.container,
+			model: value.model,
+			market: value.market,
+			policy: {
+				version: value.policy.version,
+				openAdvantageBps: value.policy.openAdvantageBps,
+				maxPriceAgeMs: value.policy.maxPriceAgeMs,
+				maxFutureSkewMs: value.policy.maxFutureSkewMs,
+				saleBasis: value.policy.saleBasis,
+			},
+		});
+		expect(kernel.status).toBe('ready');
+		if (kernel.status !== 'ready' || recommendation.explanation === null) return;
+		expect(recommendation.economicDecision).toEqual(kernel.decision);
+		const { modelReviewedAt: _reviewedAt, modelReviewAgeMs: _reviewAge, ...kernelFreshness } =
+			recommendation.explanation.freshness;
+		expect({ ...recommendation.explanation, freshness: kernelFreshness }).toEqual(kernel.explanation);
 	});
 
 	it.each([

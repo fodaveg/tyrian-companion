@@ -9,12 +9,12 @@ import { sha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { isNormalizedCatalogItem } from '../catalog/public-catalog-validators';
 import {
-	calculateContainerExpectedValue,
 	type ContainerMarketQuote,
 	type ContainerTradingAccess,
 } from './container-expected-value';
+import { calculateContainerDispositionKernel } from './container-disposition-kernel';
 import { isContainerModel, type ContainerModelV1 } from './container-model';
-import { createCatalogVendorValue, createTradingPostValueWithPolicy } from './gw2-fees';
+import { createTradingPostValueWithPolicy } from './gw2-fees';
 import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
 import {
 	buildReservationBalance,
@@ -499,106 +499,35 @@ function calculateEconomics(
 ): { status: 'ok'; decision: NonNullable<ContainerDispositionRecommendation['economicDecision']>;
 	explanation: NonNullable<ContainerDispositionRecommendation['explanation']> } |
 	{ status: 'blocked' | 'invalid'; reason: ContainerRecommendationReasonCode } {
-	const quote = input.market.quotes.find((entry) => entry.itemId === input.container.itemId) ?? null;
-	const priceStatus = quote === null || quote.bidUnitCopper === null ? 'missing' : 'available';
-	if (input.container.binding === 'unknown') return { status: 'blocked', reason: 'binding_unknown' };
-	const tpBindingEligible = input.container.binding === 'unbound' &&
-		!input.container.catalogItem.flags.includes('AccountBound') &&
-		!input.container.catalogItem.flags.includes('SoulbindOnAcquire');
-	const tpAccessEligible = quote !== null &&
-		(input.container.tradingAccess === 'full' || quote.whitelisted);
-	if (input.container.tradingAccess === 'unknown' && quote !== null && !quote.whitelisted && tpBindingEligible) {
-		return { status: 'blocked', reason: 'trading_access_unknown' };
-	}
-	const bidUnitCopper = quote?.bidUnitCopper ?? null;
-	const tp = tpBindingEligible && tpAccessEligible && priceStatus === 'available' && bidUnitCopper !== null
-		? createTradingPostValueWithPolicy('instant_sell', bidUnitCopper, quantity) : null;
-	if (tp?.status === 'invalid') return { status: 'invalid', reason: tp.reason === 'arithmetic_overflow'
-		? 'arithmetic_overflow' : 'model_ev_inconsistent' };
-	const vendor = createCatalogVendorValue(input.container.catalogItem, quantity);
-	if (vendor.status === 'invalid') return { status: 'invalid', reason: vendor.reason === 'arithmetic_overflow'
-		? 'arithmetic_overflow' : 'malformed_input' };
-	const tpValue = tp?.status === 'ok' ? tp.value : null;
-	const vendorValue = vendor.status === 'ok' ? vendor.value : null;
-	if (tpValue === null && vendorValue === null) {
-		return { status: 'blocked', reason: quote === null || quote.bidUnitCopper === null
-			? 'price_missing' : 'container_not_sellable' };
-	}
-	const sell = tpValue !== null && (vendorValue === null || tpValue.netCopper >= vendorValue.netCopper)
-		? {
-			route: 'instant_sell' as const,
-			unitCopper: tpValue.unitCopper,
-			grossCopper: tpValue.grossCopper,
-			listingFeeCopper: tpValue.listingFeeCopper,
-			exchangeFeeCopper: tpValue.exchangeFeeCopper,
-			totalFeesCopper: tpValue.totalFeesCopper,
-			netCopper: tpValue.netCopper,
-		}
-		: {
-			route: 'vendor' as const,
-			unitCopper: vendorValue!.unitCopper,
-			grossCopper: vendorValue!.grossCopper,
-			listingFeeCopper: 0,
-			exchangeFeeCopper: 0,
-			totalFeesCopper: 0,
-			netCopper: vendorValue!.netCopper,
-		};
-
-	const ev = calculateContainerExpectedValue(input.model, input.market.quotes, input.container.tradingAccess);
-	if (ev.status === 'invalid') return { status: 'invalid', reason: ev.reason === 'arithmetic_overflow'
-		? 'arithmetic_overflow' : 'model_ev_inconsistent' };
-	if (ev.value.modelId !== input.model.modelId || ev.value.modelVersion !== input.model.modelVersion ||
-		ev.value.containerItemId !== input.container.itemId) return { status: 'invalid', reason: 'model_ev_inconsistent' };
-	if (ev.value.instant.coverage !== 'complete' || ev.value.instant.netMicroCopper === null) {
-		return { status: 'blocked', reason: 'open_ev_partial' };
-	}
-	const openTotal = BigInt(ev.value.instant.netMicroCopper) * BigInt(quantity);
-	const sellMicro = BigInt(sell.netCopper) * MICRO_COPPER;
-	const thresholdNumerator = sellMicro * (BASIS_POINTS + BigInt(input.policy.openAdvantageBps));
-	const requiredOpen = divideRoundUp(thresholdNumerator, BASIS_POINTS);
-	const open = openTotal * BASIS_POINTS >= thresholdNumerator;
-	const difference = openTotal - requiredOpen;
-	const advantage = sellMicro === 0n ? null : safeBigIntNumber((openTotal - sellMicro) * BASIS_POINTS / sellMicro);
 	const modelAge = Date.parse(input.asOf) - Date.parse(input.modelReview.reviewedAt);
-	const priceAge = Math.max(0, Date.parse(input.asOf) - Date.parse(input.market.capturedAt));
-	const caveats = [
-		`model:${input.model.uncertainty.method}`,
-		`rare_drops:${input.model.uncertainty.rareDropTreatment}`,
-		...(input.model.excluded.length > 0 ? ['excluded_outcomes_not_valued'] : []),
-		...(ev.value.listing.coverage === 'partial' ? ['listing_route_partial'] : []),
-	].sort();
+	const result = calculateContainerDispositionKernel({
+		version: 1,
+		asOf: input.asOf,
+		quantity,
+		container: input.container,
+		model: input.model,
+		market: input.market,
+		policy: {
+			version: input.policy.version,
+			openAdvantageBps: input.policy.openAdvantageBps,
+			maxPriceAgeMs: input.policy.maxPriceAgeMs,
+			maxFutureSkewMs: input.policy.maxFutureSkewMs,
+			saleBasis: input.policy.saleBasis,
+		},
+	});
+	if (result.status !== 'ready') {
+		return { status: result.status === 'invalid' ? 'invalid' : 'blocked', reason: result.reason };
+	}
 	return {
 		status: 'ok',
-		decision: { action: open ? 'open' : 'sell', quantity, sellRoute: sell.route },
+		decision: result.decision,
 		explanation: {
-			sellNow: sell,
-			open: {
-				evPerContainerMicroCopper: ev.value.instant.netMicroCopper,
-				totalExpectedMicroCopper: openTotal.toString(),
-				coverage: 'complete',
-				modelId: input.model.modelId,
-				modelVersion: input.model.modelVersion,
-				sampleContainers: input.model.sample.containersOpened,
-				excludedSampleUnits: ev.value.excluded.sampleUnits,
-				rareTreatment: input.model.uncertainty.rareDropTreatment,
-			},
-			threshold: {
-				marginBps: input.policy.openAdvantageBps,
-				requiredOpenMicroCopper: requiredOpen.toString(),
-			},
-			comparison: {
-				differenceMicroCopper: difference.toString(),
-				advantageBps: advantage,
-				rule: 'open_at_or_above_threshold',
-			},
+			...result.explanation,
 			freshness: {
-				asOf: input.asOf,
-				priceCapturedAt: input.market.capturedAt,
-				priceAgeMs: priceAge,
+				...result.explanation.freshness,
 				modelReviewedAt: input.modelReview.reviewedAt,
 				modelReviewAgeMs: modelAge,
 			},
-			caveats,
 		},
 	};
 }

@@ -1,6 +1,7 @@
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
+import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
 
@@ -41,9 +42,10 @@ export interface InventoryAdvisorEvidenceV1 {
 }
 
 export type InventoryAdvisorEvidenceCaptureResultV1 =
-	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1 }
-	| { status: 'unavailable' | 'invalid'; evidence: null };
+	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1;
+		containerPrices?: InventoryContainerPriceEvidenceV1 | null }
+	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null };
 
 export interface InventoryAdvisorEvidenceCapture {
-	capture(locale: CatalogLocale): Promise<InventoryAdvisorEvidenceCaptureResultV1>;
+	capture(locale: CatalogLocale, containerPriceItemIds?: readonly number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1>;
 }

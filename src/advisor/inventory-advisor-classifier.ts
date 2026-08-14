@@ -13,6 +13,13 @@ import {
 	type InventoryKnowledgeEntryV1, type InventoryKnowledgePackV1, type InventoryRouteClaimV1,
 } from './inventory-advisor-classifier-model';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
+import { classifyItemLiquidity } from '../economy/item-liquidity';
+import {
+	evaluateInventoryContainerEconomy,
+	isInventoryContainerEconomyPack,
+	isInventoryContainerPriceEvidence,
+} from './inventory-container-economy';
+import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -37,7 +44,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const envelope = createInventoryRecommendationEnvelope(report);
 		if (envelope === null) return publicInvalid();
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
-		return isInventoryAdvisorResultForInput(result, input, value.knowledgePack) ? result : publicInvalid();
+		return isInventoryAdvisorResultForInput(result, input, value.knowledgePack, value.containerEconomy) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
 
@@ -53,7 +60,7 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 		const complete = evidenceComplete(input, plan.plan) && knowledgeFresh(knowledgePack, input);
 		const lines = ids(input).map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0, complete,
-			inputRulesFresh ? 'evidence_incomplete' : 'rule_stale'));
+			inputRulesFresh ? 'evidence_incomplete' : 'rule_stale', value.containerEconomy));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
 			knowledgePack: { id: knowledgePack.id, version: knowledgePack.version, sha256: knowledgePack.sha256 }, lines };
@@ -97,7 +104,8 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 	} catch { return false; }
 }
 
-function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number, evidenceReady: boolean, incompleteReason: string): InventoryAdvisorEngineLineV1 {
+function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number,
+	evidenceReady: boolean, incompleteReason: string, economy: EngineInput['containerEconomy']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
@@ -120,13 +128,54 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 		}
 	}
 	const knowledge = pack.entries.find((entry) => entry.itemId === itemId);
-	let bidRemaining = input.prices.items.find((entry) => entry.itemId === itemId)?.bid?.quantity ?? 0;
 	for (const position of positions) {
+		const quantity = remaining.get(position.ref) ?? 0;
+		if (quantity > 0 && position.state !== 'loose') add('review', position, quantity, 'position_not_actionable');
+	}
+	const freePositions = positions.filter((position) => position.state === 'loose' && (remaining.get(position.ref) ?? 0) > 0);
+	const freeQuantity = freePositions.reduce((total, position) => total + (remaining.get(position.ref) ?? 0), 0);
+	if (freeQuantity === 0) return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+		ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	const route = chooseRoute(input, knowledge, itemId, freeQuantity);
+	if (route.action === 'review' || !evidenceReady) {
+		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0,
+			route.action === 'review' ? route.reason : incompleteReason);
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
+	if (route.action === 'economy') {
+		const availableRefs = new Set(positions.filter((position) => position.state === 'loose'
+			|| position.state === 'pending_claim').map((position) => position.ref));
+		const availableAllocated = (predicate: (decision: InventoryAdvisorEngineDecisionV1) => boolean): number => decisions
+			.filter(predicate).flatMap((decision) => decision.allocations)
+			.filter((allocation) => availableRefs.has(allocation.positionRef))
+			.reduce((total, allocation) => total + allocation.quantity, 0);
+		const economic = containerEconomyDecision(input, economy, itemId, freeQuantity,
+			availableAllocated((decision) => decision.reason === 'reserved_for_goal'),
+			availableAllocated((decision) => decision.reason === 'user_keep_exception'),
+			availableAllocated((decision) => decision.action === 'review'), freePositions, pack.sha256);
+		if (economic.action === 'review') {
+			for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0, economic.reason);
+		} else {
+			const allocations = freePositions.map((position) => ({
+				positionRef: position.ref,
+				quantity: remaining.get(position.ref) ?? 0,
+			}));
+			for (const allocation of allocations) remaining.set(allocation.positionRef, 0);
+			decisions.push({ action: economic.action, itemId, quantity: freeQuantity, allocations,
+				reason: economic.reason, ruleId: economic.ruleId });
+		}
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
+	if (route.action === 'use' || route.action === 'open' || route.action === 'salvage') {
+		for (const position of freePositions) add(route.action, position, remaining.get(position.ref) ?? 0, route.reason, route.ruleId);
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
+	let bidRemaining = input.prices.items.find((entry) => entry.itemId === itemId)?.bid?.quantity ?? 0;
+	for (const position of freePositions) {
 		const quantity = remaining.get(position.ref) ?? 0; if (quantity === 0) continue;
-		if (position.state !== 'loose') { add('review', position, quantity, 'position_not_actionable'); continue; }
-		const route = chooseRoute(input, knowledge, itemId, quantity);
-		if (route.action === 'review' || !evidenceReady) { add('review', position, quantity, route.action === 'review' ? route.reason : incompleteReason); continue; }
-		if (route.action === 'use' || route.action === 'open' || route.action === 'salvage') { add(route.action, position, quantity, route.reason, route.ruleId); continue; }
 		const sellable = Math.min(quantity, bidRemaining);
 		if (sellable > 0) {
 			const market = marketAction(input, position, sellable, itemId, true, evidenceReady);
@@ -191,6 +240,9 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		reserved_for_goal: 'reserved_for_goal', user_keep_exception: 'user_keep_exception', position_not_actionable: 'position_not_actionable',
 		knowledge_missing: 'rule_missing', rule_missing: 'rule_missing', rule_conflict: 'rule_conflict', rule_stale: 'rule_stale', evidence_incomplete: 'price_partial', no_salvage: 'no_salvage',
 		economic_comparison_missing: 'economic_comparison_missing',
+		economic_activation_pending: 'economic_activation_pending',
+		price_partial: 'price_partial', price_stale: 'price_stale', price_missing: 'price_missing',
+		binding_unknown: 'binding_unknown', arithmetic_overflow: 'arithmetic_overflow',
 		tp_access_unknown: 'tp_access_unknown', catalog_invalid: 'catalog_invalid', vendor_best_value: 'alternative_route_exists',
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
@@ -201,7 +253,7 @@ function reasonOrder(left: { itemId: number | null; code: string; goalId: string
 function uniqueReasons<T extends { itemId: number | null; code: string; goalId: string | null; ruleId: string | null }>(reasons: T[]): T[] { const seen = new Set<string>(); return reasons.filter((reason) => { const key = `${reason.itemId ?? ''}:${reason.code}:${reason.goalId ?? ''}:${reason.ruleId ?? ''}`; if (seen.has(key)) return false; seen.add(key); return true; }); }
 function publicInvalid(): InventoryAdvisorResultV1 { return { status: 'invalid', reasons: [{ code: 'snapshot_invalid', itemId: null, goalId: null, ruleId: null }], report: null, envelope: null }; }
 
-function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market'; reason: string; ruleId: string | null } {
+function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
 	if (!rulePackUsableForCapability(input)) return { action: 'review', reason: 'rule_stale', ruleId: null };
 	for (const action of ['use', 'open', 'salvage'] as const) {
 		const claim = knowledge?.[action] ?? null;
@@ -221,9 +273,82 @@ function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowled
 				? rule.recommendation.reason : 'rule_stale', ruleId: null };
 		}
 		if (action === 'use' && claim.target && unlocked(input, claim)) continue;
+		if (action === 'open' && input.rulePack.schemaVersion === 2) {
+			return { action: 'economy', reason: 'economic_comparison', ruleId: claim.ruleId };
+		}
 		return { action, reason: `curated_${action}`, ruleId: claim.ruleId };
 	}
 	return { action: 'market', reason: 'market', ruleId: null };
+}
+
+function containerEconomyDecision(
+	input: InventoryAdvisorInputV1,
+	economy: EngineInput['containerEconomy'],
+	itemId: number,
+	freeQuantity: number,
+	reservedQuantity: number,
+	exceptionQuantity: number,
+	reviewQuantity: number,
+	positions: InventoryAdvisorPositionV1[],
+	knowledgePackSha256: string,
+): { action: 'open' | 'sell' | 'vendor'; reason: string; ruleId: string | null }
+	| { action: 'review'; reason: string; ruleId: null } {
+	if (economy === undefined) return { action: 'review', reason: 'price_partial', ruleId: null };
+	const catalogItem = input.catalog.items[String(itemId)];
+	if (!catalogItem) return { action: 'review', reason: 'catalog_invalid', ruleId: null };
+	const bagPrice = economy.prices.items.find((entry) => entry.itemId === itemId);
+	const priceStatus = bagPrice?.bid === null || bagPrice === undefined ? 'missing' : 'available';
+	const bindings = positions.map((position) => {
+		const holding = input.snapshot.holdings[position.holdingIndex];
+		const liquidity = classifyItemLiquidity(holding, catalogItem, priceStatus);
+		return liquidity.status === 'ok' ? liquidity.classification.binding.kind : 'unknown';
+	});
+	const binding = bindings.length > 0 && bindings.every((entry) => entry === bindings[0]) ? bindings[0]! : 'unknown';
+	const result = evaluateInventoryContainerEconomy({
+		version: 1,
+		asOf: input.asOf,
+		accountId: input.snapshot.accountId,
+		snapshotId: input.snapshot.snapshotId,
+		schemaVersion: input.snapshot.schemaVersion,
+		allocation: {
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0,
+			availableQuantity: input.snapshot.availableByItem[String(itemId)] ?? 0,
+			reservedQuantity,
+			exceptionQuantity,
+			reviewQuantity,
+			freeQuantity,
+		},
+		container: {
+			itemId,
+			catalogItem,
+			binding,
+			tradingAccess: input.accountSignals.tradingPostAccess,
+		},
+		rulePack: input.rulePack,
+		knowledgePackSha256,
+		economyPack: economy.pack,
+		prices: economy.prices,
+	});
+	if (result.status !== 'ready') return { action: 'review', reason: result.status === 'invalid'
+		? 'rule_conflict' : economyReason(result.reason), ruleId: null };
+	return {
+		action: result.decision.action,
+		reason: result.decision.action === 'open' ? 'curated_open'
+			: result.decision.action === 'vendor' ? 'vendor_best_value' : 'instant_sell_best_value',
+		ruleId: result.decision.ruleId,
+	};
+}
+
+function economyReason(reason: string): string {
+	const reasons: Record<string, string> = {
+		activation_pending: 'economic_activation_pending', activation_revoked: 'rule_stale',
+		activation_expired: 'rule_stale', rule_incoherent: 'rule_conflict', model_incoherent: 'rule_conflict',
+		allocation_incoherent: 'rule_conflict', binding_unknown: 'binding_unknown',
+		trading_access_unknown: 'tp_access_unknown', price_partial: 'price_partial', price_stale: 'price_stale',
+		price_future: 'price_stale', price_missing: 'price_missing', price_incoherent: 'price_partial',
+		open_ev_partial: 'price_partial', container_not_sellable: 'no_sell', arithmetic_overflow: 'arithmetic_overflow',
+	};
+	return reasons[reason] ?? 'rule_conflict';
 }
 
 function marketAction(input: InventoryAdvisorInputV1, position: InventoryAdvisorPositionV1, quantity: number, itemId: number, allowSell: boolean, evidenceReady: boolean): { action: 'sell' | 'list' | 'vendor' | 'keep' | 'review'; reason: string } {
@@ -270,7 +395,15 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 		: rulePackFresh(input);
 }
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
-function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 { return record(value) && keys(value, ['input', 'knowledgePack']) && isInventoryAdvisorInput(value.input) && isInventoryKnowledgePack(value.knowledgePack); }
+function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
+	if (!record(value) || (!keys(value, ['input', 'knowledgePack'])
+		&& !keys(value, ['input', 'knowledgePack', 'containerEconomy']))
+		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
+	return value.containerEconomy === undefined || (record(value.containerEconomy)
+		&& keys(value.containerEconomy, ['pack', 'prices'])
+		&& isInventoryContainerEconomyPack(value.containerEconomy.pack)
+		&& isInventoryContainerPriceEvidence(value.containerEconomy.prices));
+}
 function ids(input: InventoryAdvisorInputV1): number[] { return Object.entries(input.snapshot.ownedByItem).filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort((a, b) => a - b); }
 function invalid(): InventoryAdvisorEngineResultV1 { return { status: 'invalid', report: null, envelope: null }; }
 function entry(value: unknown): value is InventoryKnowledgeEntryV1 { return record(value) && keys(value, ['itemId', 'use', 'open', 'salvage']) && positive(value.itemId) && claim(value.use, 'use') && claim(value.open, 'open') && claim(value.salvage, 'salvage'); }
