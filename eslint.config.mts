@@ -4,6 +4,7 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 
 export default defineConfig(
 	globalIgnores([
+		'.release',
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
@@ -26,7 +27,9 @@ export default defineConfig(
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/release-preflight.mjs',
+						'scripts/release-package.mjs',
 						'scripts/security-scan.mjs',
+						'scripts/tests/probar-release-package.mjs',
 						'scripts/tests/probar-security-scan.mjs',
 					],
 				},

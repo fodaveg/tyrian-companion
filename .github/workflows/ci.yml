@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ['**']
+    tags: ['*']
   pull_request:
     branches: ['**']
 
@@ -25,3 +26,23 @@ jobs:
       - run: npm run check
       - run: npm run bench:h6-performance
       - run: npm run test:bench:h6-performance-red
+
+  release-package:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run release:package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tyrian-companion-${{ github.ref_type }}-${{ github.sha }}
+          path: .release/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14

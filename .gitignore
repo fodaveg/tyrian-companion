@@ -5,3 +5,4 @@ main.js
 .idea/
 .vscode/
 coverage/
+.release/

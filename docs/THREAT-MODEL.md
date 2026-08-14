@@ -49,8 +49,8 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 
 ## Controles ejecutables
 
-- `npm run security:scan` ejecuta el scanner v3 sin red sobre el corpus Git relevante.
-- `npm run test:security-scan` prueba cada regla, corpus/encodings, falsos positivos, redacción y controles de sabotaje.
+- `npm run security:scan` ejecuta el scanner v4 sin red sobre el corpus Git relevante; el empaquetador invoca además su entrada cerrada sobre `manifest.json`, `main.js` y `styles.css` ya staged.
+- `npm run test:security-scan` prueba cada regla, corpus/encodings, falsos positivos, redacción, el bundle final normalmente ignorado y controles de sabotaje.
 - `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras.
 - Los tests de `session-runtime-store`, `session-detection-quality-store` y `session-note-writer` demuestran que los sumideros productivos rechazan capacidad de credencial antes de escribir.
 - `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI ejecuta ese mismo gate en Node 22.20.0 y 22.x.

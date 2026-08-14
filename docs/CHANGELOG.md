@@ -1,5 +1,13 @@
 # Changelog
 
+## H7.4/H7.5 — Paquete reproducible y preparación del canal beta
+
+- Añadido build causal y stage cerrado a `manifest.json`, `main.js` y `styles.css`, con validación cruzada de manifest/package/versions y tag exacto.
+- Añadidos ZIP determinista, SHA-256 y revalidación interna de cabeceras, orden, CRC y contenido; los sabotajes de build, secreto y bytes alterados prueban la vía roja.
+- El scanner v4 cubre también los bytes finales de release, incluido `main.js`, sin exponer valores encontrados.
+- CI genera un artifact temporal para pushes de rama o tag después del gate; mantiene permisos read-only y no publica releases.
+- Documentado el procedimiento manual y la preparación BRAT fail-closed. Publicación, instalación y actualización reales quedan explícitamente pendientes de QA humana.
+
 ## H4.18 — Curación segura inicial del Inventory Advisor
 
 - Añadida la capability source-backed de abrir el item 36038; `use` y `salvage` permanecen explícitamente `not_applicable`.

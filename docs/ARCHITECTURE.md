@@ -13,6 +13,26 @@
 - `objectives`: modelo y contrato de persistencia de objetivos.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
+## Frontera de release H7.4/H7.5
+
+`scripts/release-package.mjs` es la única composición del paquete distribuible. Antes de leer el
+bundle elimina el `main.js` ignorado y exige que el build de producción lo vuelva a crear, evitando
+empaquetar una salida stale. La entrada queda cerrada a `manifest.json`, `main.js` y `styles.css`;
+`package.json`, manifest y `versions.json` deben compartir identidad, versión y mínimo de Obsidian.
+
+El stage se recrea bajo `.release/`, rechaza symlinks, archivos vacíos o entradas extra y pasa los tres
+bytes finales por el scanner de secretos v4. El ZIP usa almacenamiento sin compresión, orden fijo,
+timestamp DOS 1980-01-01, modo `0644`, UTF-8 y cabeceras ZIP32 canónicas. Una segunda lectura interna
+valida directorio central, offsets contiguos, nombres, CRC y bytes contra el stage antes de emitir el
+SHA-256. La reproducibilidad no depende de mtime, permisos locales, locale ni implementación externa de
+`zip`.
+
+CI ejecuta el paquete una sola vez después de que toda la matriz `check` quede verde y sube un artifact
+temporal tanto para ramas como para tags. En tags, `GITHUB_REF_NAME` debe ser idéntico a
+`manifest.version`. El job conserva `contents: read`: preparar un artifact no concede autoridad para
+crear una release o activar BRAT. Esos actos y la QA de instalación/actualización son fronteras humanas
+separadas descritas en [Canal beta y paquete de release](BETA.md).
+
 ## Flujo de dependencias
 
 ```text

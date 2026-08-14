@@ -8,14 +8,16 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
-		"test": "vitest run && npm run test:release-preflight && npm run test:security-scan",
+		"test": "vitest run && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package",
 		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
 		"test:bench:h6-performance-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-performance-red.ts",
 		"test:release-preflight": "bash scripts/tests/probar-release-preflight.sh",
 		"test:security-scan": "node scripts/tests/probar-security-scan.mjs",
+		"test:release-package": "node scripts/tests/probar-release-package.mjs",
 		"security:scan": "node scripts/security-scan.mjs",
 		"check": "npm run lint && npm run test && npm run security:scan && npm run build",
 		"release:preflight": "node scripts/release-preflight.mjs",
+		"release:package": "node scripts/release-package.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

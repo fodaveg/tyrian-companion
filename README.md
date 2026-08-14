@@ -121,7 +121,18 @@ Run the complete local gate with:
 npm run check
 ```
 
-After committing and before pushing a release, run:
+Create a reproducible local candidate with:
+
+```sh
+npm run release:package
+```
+
+The command rebuilds `main.js`, stages only `manifest.json`, `main.js`, and `styles.css`, scans the
+staged bytes, and writes a deterministic ZIP plus SHA-256 under `.release/`. `versions.json` remains
+repository metadata and is not part of the installable archive. See the [beta and manual QA
+guide](docs/BETA.md); no GitHub Release or BRAT channel is published by this command or by CI.
+
+After committing and before a release owner pushes a release, run:
 
 ```sh
 npm run release:preflight
@@ -132,7 +143,8 @@ The release preflight requires an attached `HEAD` and an exactly clean
 untracked, unstaged, and staged entries, never paths or file contents.
 It does not verify semantic change scope or replace the test and CI gates.
 
-The production build creates `main.js` in the project root. A distributable release contains `manifest.json`, `main.js`, and `styles.css`.
+The production build creates `main.js` in the project root. Installation and update inside Obsidian
+remain human QA even when the package and CI gates are green.
 
 ## Privacy and network behavior
 

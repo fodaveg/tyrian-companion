@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 const suitePath = resolve(process.argv[1]);
 const scannerPath = resolve(process.env.SECURITY_SCANNER_UNDER_TEST ?? 'scripts/security-scan.mjs');
 // eslint-disable-next-line no-unsanitized/method -- The path is an explicit local negative-control injection.
-const { scanSecurityBoundaries } = await import(`${pathToFileURL(scannerPath).href}?suite=${String(Date.now())}`);
+const { scanReleaseArtifacts, scanSecurityBoundaries } = await import(`${pathToFileURL(scannerPath).href}?suite=${String(Date.now())}`);
 const testRoot = mkdtempSync(join(tmpdir(), 'tyrian-security-scan-'));
 const failures = [];
 
@@ -29,6 +29,7 @@ try {
 	testRepositoryCorpusAndEncodings();
 	testFalsePositiveControls();
 	testCliRedaction();
+	testReleaseArtifactCorpus();
 	if (process.env.SECURITY_SCANNER_NEGATIVE_CONTROL !== '1') {
 		testCurrentRepository();
 		testSabotageControls();
@@ -152,6 +153,23 @@ function testCliRedaction() {
 	assert(!result.stderr.includes(credential), 'CLI exposed the matched credential value');
 }
 
+function testReleaseArtifactCorpus() {
+	const root = isolatedRoot('release-artifact');
+	const credential = syntheticCredential();
+	write(root, 'manifest.json', '{"id":"tyrian-companion"}');
+	write(root, 'main.js', `const apiKey = '${credential}';`);
+	write(root, 'styles.css', '.safe { color: red; }');
+	const findings = scanReleaseArtifacts(root, ['manifest.json', 'main.js', 'styles.css']);
+	assert(
+		findings.some((finding) => finding.path === 'main.js' && finding.rule === 'long-credential-assignment'),
+		'built main.js was omitted from the release artifact scanner',
+	);
+	assert(
+		scanReleaseArtifacts(root, ['manifest.json', 'main.js']).some((finding) => finding.rule === 'release-artifact-set'),
+		'incomplete release artifact set did not turn red',
+	);
+}
+
 function testCurrentRepository() {
 	const findings = scanSecurityBoundaries(process.cwd());
 	assert(findings.length === 0, `current repository produced ${String(findings.length)} security finding(s)`);
@@ -164,7 +182,10 @@ function testSabotageControls() {
 		assertCausalFailure(result, `${rule} did not turn red`, `disabling ${rule}`);
 	}
 	const alwaysGreen = join(testRoot, 'always-green.mjs');
-	writeFileSync(alwaysGreen, 'export function scanSecurityBoundaries() { return []; }\n');
+	writeFileSync(alwaysGreen, [
+		'export function scanSecurityBoundaries() { return []; }',
+		'export function scanReleaseArtifacts() { return []; }',
+	].join('\n'));
 	assertCausalFailure(runSuiteAgainst(alwaysGreen), 'private-key did not turn red', 'always-green scanner');
 }
 
@@ -186,6 +207,7 @@ function createFilteringStub(rule) {
 		`import { pathToFileURL } from 'node:url';`,
 		`import { scanSecurityBoundaries as actual } from ${JSON.stringify(actualUrl)};`,
 		`export function scanSecurityBoundaries(root) { return actual(root).filter((finding) => finding.rule !== ${JSON.stringify(rule)}); }`,
+		`export function scanReleaseArtifacts() { return []; }`,
 		`if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {`,
 		`  const findings = scanSecurityBoundaries(process.argv[2]);`,
 		`  if (findings.length > 0) { for (const finding of findings) console.error('- ' + JSON.stringify(finding.path) + ': ' + finding.rule); process.exitCode = 1; }`,

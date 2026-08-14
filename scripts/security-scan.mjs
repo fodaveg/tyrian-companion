@@ -4,7 +4,13 @@ import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Textual, dependency-free baseline for credential and telemetry boundary regressions. */
-export const SECURITY_SCANNER_VERSION = 3;
+export const SECURITY_SCANNER_VERSION = 4;
+
+const RELEASE_ARTIFACT_FILES = new Set([
+	'main.js',
+	'manifest.json',
+	'styles.css',
+]);
 
 const FALLBACK_IGNORED_DIRECTORIES = new Set([
 	'.git', 'coverage', 'dist', 'node_modules',
@@ -55,6 +61,41 @@ export function scanSecurityBoundaries(root = process.cwd()) {
 			if (MUMBLE_HELPER_PATTERN.test(source)) {
 				findings.push({ rule: 'unauthorized-mumble-helper', path: file.relative });
 			}
+		}
+	}
+
+	return uniqueFindings(findings);
+}
+
+/** Scans the exact distributable files, including the otherwise ignored bundle. */
+export function scanReleaseArtifacts(root, relativePaths) {
+	const absoluteRoot = resolve(root);
+	const normalizedPaths = [...relativePaths]
+		.map(normalizeRepositoryPath)
+		.sort((left, right) => left.localeCompare(right));
+	const findings = [];
+
+	if (
+		normalizedPaths.length !== RELEASE_ARTIFACT_FILES.size ||
+		new Set(normalizedPaths).size !== RELEASE_ARTIFACT_FILES.size ||
+		normalizedPaths.some((path) => !RELEASE_ARTIFACT_FILES.has(path))
+	) {
+		return [{ rule: 'release-artifact-set', path: '.' }];
+	}
+
+	for (const path of normalizedPaths) {
+		const absolute = resolve(absoluteRoot, path);
+		if (!isWithinRoot(absoluteRoot, absolute) || !existsFile(absolute)) {
+			findings.push({ rule: 'release-artifact-file', path });
+			continue;
+		}
+		const source = readRepositoryText(absolute);
+		if (source === null) {
+			findings.push({ rule: 'release-artifact-text', path });
+			continue;
+		}
+		for (const rule of detectSecretRules(source)) {
+			findings.push({ rule, path });
 		}
 	}
 
@@ -179,6 +220,11 @@ function isProbablySingleByteText(bytes) {
 
 function normalizeRepositoryPath(path) {
 	return path.split(sep).join('/').replace(/^\.\//u, '');
+}
+
+function isWithinRoot(root, path) {
+	const normalizedRoot = root.endsWith(sep) ? root : `${root}${sep}`;
+	return path.startsWith(normalizedRoot);
 }
 
 function isFixture(path) {
