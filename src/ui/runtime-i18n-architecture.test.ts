@@ -7,6 +7,7 @@ const RUNTIME_UI_FILES = [
 	'src/main.ts',
 	'src/ui/companion-view.ts',
 	'src/ui/companion-status-model.ts',
+	'src/ui/inventory-advisor-view.ts',
 	'src/ui/manual-session-start-modal.ts',
 	'src/ui/settings-tab.ts',
 	'src/ui/session-command-adapter.ts',

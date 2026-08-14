@@ -406,3 +406,142 @@
 	gap: var(--size-4-2);
 	min-height: 44px;
 }
+
+/* H5.11 Inventory Advisor: local, review-only inventory presentation. */
+.tyrian-inventory-advisor {
+	container-type: inline-size;
+	max-width: 72rem;
+	padding: var(--size-4-4);
+}
+
+.tyrian-inventory-advisor h2,
+.tyrian-inventory-advisor h3,
+.tyrian-inventory-advisor h4 {
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__intro,
+.tyrian-inventory-advisor__state {
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__controls {
+	display: flex;
+	gap: var(--size-4-3);
+	flex-wrap: wrap;
+	margin-block: var(--size-4-4);
+}
+
+.tyrian-inventory-advisor__controls label {
+	display: grid;
+	gap: var(--size-4-1);
+	min-width: min(100%, 12rem);
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__controls input,
+.tyrian-inventory-advisor__controls select {
+	min-height: 44px;
+	max-width: 100%;
+}
+
+.tyrian-inventory-advisor__controls input:focus-visible,
+.tyrian-inventory-advisor__controls select:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.tyrian-inventory-advisor__results {
+	margin-block-start: var(--size-4-4);
+	border-block: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-inventory-advisor__table {
+	width: 100%;
+	border-collapse: collapse;
+	table-layout: fixed;
+}
+
+.tyrian-inventory-advisor__table caption {
+	padding: var(--size-4-2);
+	color: var(--text-muted);
+	text-align: start;
+}
+
+.tyrian-inventory-advisor__table th,
+.tyrian-inventory-advisor__table td {
+	padding: var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+	text-align: start;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__table td:nth-child(2),
+.tyrian-inventory-advisor__table td:nth-child(3) {
+	text-align: end;
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-inventory-advisor__group-heading {
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+	letter-spacing: .08em;
+	text-transform: uppercase;
+}
+
+.tyrian-inventory-advisor__cards {
+	display: none;
+}
+
+.tyrian-inventory-advisor__card {
+	padding: var(--size-4-3);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-inventory-advisor__card h4 {
+	margin-block-start: 0;
+}
+
+.tyrian-inventory-advisor__card dl {
+	display: grid;
+	grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-3);
+}
+
+.tyrian-inventory-advisor__card dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+@container (max-width: 759px) {
+	.tyrian-inventory-advisor__wide-only {
+		display: none;
+	}
+}
+
+@container (max-width: 479px) {
+	.tyrian-inventory-advisor__table {
+		display: none;
+	}
+
+	.tyrian-inventory-advisor__cards {
+		display: grid;
+		gap: var(--size-4-2);
+	}
+
+	.tyrian-inventory-advisor__cards h3 {
+		margin-block: var(--size-4-3) 0;
+	}
+
+	.tyrian-inventory-advisor__card dl {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-inventory-advisor * {
+		scroll-behavior: auto;
+	}
+}
