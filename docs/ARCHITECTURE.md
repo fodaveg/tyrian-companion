@@ -177,6 +177,26 @@ se copió un binario a la botella, no se abrió CrossOver/GW2 y no se afirma lec
 humano exacto y los criterios de aceptación viven junto al spike. Este árbol queda fuera de `src/`,
 del bundle y de la allowlist productiva del scanner.
 
+H8.3 acepta de forma provisional Rust para el lote posterior de implementación. La única raíz futura
+es `native/mumble-helper`, el único target `x86_64-pc-windows-msvc` con
+`-C target-feature=+crt-static`, y la única salida PE `tyrian-mumble-helper.exe`. La intención es
+conservar una frontera revisable pequeña y un único binario Windows x64 para las tres plataformas,
+sin runtime del lenguaje ni DLL de aplicación distribuidos aparte. C# se conserva como alternativa:
+NativeAOT también puede producir una aplicación nativa self-contained y single-file sin runtime .NET
+instalado. Sus tradeoffs reales son el soporte mínimo de runtime/GC embebido, tamaño medido,
+restricciones de trimming/AOT y código dinámico, compatibilidad de librerías, toolchain MSVC y
+configuración de símbolos/PDB. Rust concentra el riesgo en la frontera `unsafe` Win32, layout,
+linker y dependencias. El ADR se reabre si Rust no puede respetar H8.1, producir el PE único
+reproducible o cubrir la matriz con menos riesgo que C# NativeAOT.
+
+El helper tendrá un ZIP separado, nunca el ZIP BRAT del plugin. El paquete futuro contendrá
+exactamente `tyrian-mumble-helper.exe`, `helper-manifest.json`, `SHA256SUMS`, `LICENSE` y
+`THIRD-PARTY-LICENSES.txt`; manifest y checksums deberán ligar el mismo build/target. La firma
+Authenticode y todo el empaquetado productivo siguen pendientes. El guard H8.3 mantiene este lote
+solo documental: todavía no permite `Cargo.toml`, `.csproj`, EXE, DLL ni ningún fichero bajo la raíz nativa.
+La decisión completa y sus triggers viven en
+[ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
+
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 
 `InactivityStopDetector` cubre H3.7 sin acoplarse al scheduler ni a la máquina de sesión. Recibe muestras normalizadas con cuenta, snapshots fronterizos, ventana, cantidad de ganancia relevante y calidad. Solo acumula silencio cuando las muestras comparten frontera y sus ventanas no se solapan; una ganancia reinicia el umbral y una discontinuidad descarta evidencia anterior. Al alcanzar el tiempo configurado publica una propuesta idempotente, nunca un evento `request_stop`: conserva primera muestra quieta, confirmación, última ganancia conocida, duración y una ventana de fin honesta desde el último intervalo positivo —o el inicio de sesión— hasta la primera observación quieta.

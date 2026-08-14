@@ -98,6 +98,31 @@ la botella, usar la misma botella que GW2, no actualizarla durante la prueba, no
 solo las seis claves del contrato. Esa QA sigue pendiente hasta observar `mapId=866` en el Laberinto
 y estabilidad durante cambios/reinicio sin datos adicionales.
 
+### Decisión de implementación H8.3
+
+<!-- h8.3-platform-authority:start -->
+H8.3 queda `accepted_for_implementation` de forma provisional con Rust y un target único
+`x86_64-pc-windows-msvc` + CRT estático. La misma salida `tyrian-mumble-helper.exe` se validará como
+Windows PE bajo la siguiente matriz independiente de la matriz API-only del MVP:
+
+| Prioridad | Entorno del helper | Artefacto | Estado |
+| --- | --- | --- | --- |
+| Primaria | Linux con Steam/Proton | PE Windows x64 bajo Proton | `qa=pending` |
+| Secundaria | macOS con CrossOver | El mismo PE Windows x64 bajo CrossOver | `qa=pending` |
+| Beta | Windows x64 | El mismo PE Windows x64 nativo | `qa=pending` |
+
+Soporte significa superar la QA específica del mismo artefacto; arrancar en otra capa o arquitectura
+no crea soporte implícito. Quedan fuera de soporte exactamente `linux_native`, `macos_native`,
+`windows_x86`, `windows_arm64`, `mobile` y `wine_outside_steam_proton_or_crossover`. La matriz se reabre si necesita más
+de un binario, si el PE + CRT estático no es reproducible o si Windows ARM64 pasa a ser requisito de
+release.
+
+La distribución futura será un ZIP separado del plugin con EXE, helper manifest, `SHA256SUMS`,
+licencia y avisos de terceros. La firma Authenticode está pendiente y ningún helper unsigned está
+autorizado para release. H8.3 no añade build, package, CI ni artefactos; el contrato exacto está en
+[ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
+<!-- h8.3-platform-authority:end -->
+
 ## Política de terceros y operaciones
 
 Para observar el estado o la actividad del jugador en runtime solo se admiten:

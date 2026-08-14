@@ -9,7 +9,9 @@ export const defaultProjectFiles = [
 	'scripts/release-package.mjs',
 	'scripts/security-scan.mjs',
 	'scripts/support-contract.mjs',
+	'scripts/h8-native-decision-contract.mjs',
 	'scripts/tests/probar-release-package.mjs',
+	'scripts/tests/probar-h8-helper-decision-contract.mjs',
 	'scripts/tests/probar-security-scan.mjs',
 	'scripts/tests/probar-support-contract.mjs',
 	'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
@@ -55,7 +57,7 @@ export default defineConfig(
 				...globals.node,
 			},
 			parserOptions: {
-				projectService: {
+			projectService: {
 					allowDefaultProject: [...defaultProjectFiles],
 					maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: defaultProjectCapacity,
 				},

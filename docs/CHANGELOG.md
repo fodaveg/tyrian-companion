@@ -35,6 +35,25 @@
 - Quedan pendientes compilar el PE y demostrar lectura estable en una sesión real. El spike no se
   importa desde `src`, no entra en el release y no relaja el scanner productivo.
 
+## H8.3 — ADR del helper nativo Mumble
+
+- Comparados Rust y C# NativeAOT; ambos pueden producir una aplicación nativa self-contained y
+  single-file sin runtime instalado. Rust se acepta provisionalmente por su frontera pequeña sin GC
+  administrado y su zona `unsafe` Win32 explícita; C# conserva tradeoffs reales de trimming/AOT,
+  runtime mínimo embebido, tamaño, toolchain y símbolos/PDB, y sigue como opción de reapertura.
+- Fijados la raíz futura `native/mumble-helper`, target único `x86_64-pc-windows-msvc`, flag
+  `-C target-feature=+crt-static` y salida única `tyrian-mumble-helper.exe`.
+- Definido un ZIP separado, fuera del paquete del plugin, con EXE, manifest, `SHA256SUMS`, licencia y
+  avisos de terceros. Authenticode y la firma siguen pendientes; un helper sin firma no sale a release.
+- Registrada la matriz Linux/Steam/Proton primaria, macOS/CrossOver secundaria y Windows x64 beta,
+  toda `qa=pending`, junto a los seis entornos exactos fuera de soporte.
+- Añadidos riesgos/reopen triggers y un guard documental de schema exacto con sabotajes causales. El
+  censo positivo global cubre fuente Rust/C#, configuración Cargo/toolchain exacta, paths helper y
+  cualquier señal de prefijo `mumble-link`/`mumble_link`/`MumbleLink`, además de
+  EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA y symlinks fuera de las superficies no productivas exactas;
+  `bridge` genérico queda permitido. Parsing y hashes gobiernan bloque JSON, ADR y la política de
+  plataforma completa. No se crea runtime.
+
 ## H8.1 — Contrato Mumble Link v2
 
 - Añadido el contrato declarativo previo al helper: opt-in, defaults revisables `shadow` y

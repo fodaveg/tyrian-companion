@@ -9,6 +9,9 @@ secondary, and Windows support is beta. Mumble Link is not part of the MVP; it i
 optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
 H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
+H8.3 provisionally accepts Rust for implementation,
+targeting only `x86_64-pc-windows-msvc` with a static CRT and one `tyrian-mumble-helper.exe`; no
+helper or IPC runtime is implemented.
 
 > [!WARNING]
 > `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
@@ -188,6 +191,10 @@ The current `0.1.0` vertical provides:
   renders one minimal frame;
   the Windows probe opens only the existing named mapping read-only. It is not imported, packaged
   or connected to the plugin, and real-session QA remains pending.
+- H8.3 records an `accepted_for_implementation`, provisional Rust decision for a future single x64
+  Windows PE. Its source will live under `native/mumble-helper`; a separate ZIP will carry the EXE,
+  manifest, checksums and licenses. Linux/Steam/Proton, macOS/CrossOver and Windows x64 QA, plus
+  Authenticode signing, remain pending; this repository still contains no native helper or wiring.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately
