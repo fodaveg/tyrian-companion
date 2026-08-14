@@ -136,6 +136,7 @@ export interface InventoryAdvisorRuleV1 {
 	itemId: number;
 	action: 'salvage' | 'use' | 'open' | 'discard_candidate';
 	status: 'approved' | 'revoked';
+	assertion: 'applicable' | 'not_applicable';
 	reason: 'curated_salvage' | 'curated_use' | 'curated_open' | 'curated_discard_review';
 }
 

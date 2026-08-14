@@ -88,7 +88,10 @@ describe('inventory advisor H4.13 contract', () => {
 		expect(envelope).not.toBeNull();
 		expect(isInventoryRecommendationEnvelope(envelope)).toBe(true);
 		expect(isInventoryAdvisorResult({ status: 'ready', report, envelope })).toBe(true);
-		const input = inputFixture();
+		const baseInput = inputFixture();
+		const input = { ...baseInput, prices: { ...baseInput.prices,
+			items: [{ itemId: 10, whitelisted: true, bid: { unitCopper: 1, quantity: 50 }, ask: { unitCopper: 1, quantity: 30 } }],
+		} };
 		const goal = { schemaVersion: 1 as const, goalId: 'goal-1', title: 'Guardar uno',
 			status: 'active' as const, priority: 100, reason: 'personal' as const,
 			requirements: [{ key: 'item:10', namespace: 'item' as const, id: 10, targetQuantity: 1,
@@ -292,12 +295,13 @@ function reportFixture(): InventoryAdvisorReportV1 {
 					allocations: [{ positionRef: '#/positions/10/0', quantity: 1 }],
 					explanationRef: '#/explanations/vendor', ruleId: null, safety: 'manual_only', discardProof: null },
 			],
-			reasons: [{ code: 'reserved_for_goal', itemId: 10, goalId: 'goal-1', ruleId: null }],
+			reasons: [{ code: 'alternative_route_exists', itemId: 10, goalId: null, ruleId: null },
+				{ code: 'reserved_for_goal', itemId: 10, goalId: 'goal-1', ruleId: null }],
 		}],
 		explanations: [
 			{ ref: '#/explanations/keep', itemId: 10, action: 'keep', reasonCodes: ['reserved_for_goal'],
 				evidenceRefs: ['#/evidence/reservations'], ruleId: null },
-			{ ref: '#/explanations/vendor', itemId: 10, action: 'vendor', reasonCodes: [],
+			{ ref: '#/explanations/vendor', itemId: 10, action: 'vendor', reasonCodes: ['alternative_route_exists'],
 				evidenceRefs: ['#/evidence/catalog'], ruleId: null },
 		],
 	};
@@ -310,7 +314,7 @@ function rulePackFixture(): InventoryAdvisorRulePackV1 {
 		validUntil: '2027-01-01T00:00:00.000Z', sha256: '0'.repeat(64),
 		sources: [{ id: 'gw2-items', url: 'https://wiki.guildwars2.com/wiki/API:2/items',
 			retrievedAt: '2026-08-01T00:00:00.000Z' }],
-		rules: [{ ruleId: 'discard-10', itemId: 10, action: 'discard_candidate', status: 'approved',
+		rules: [{ ruleId: 'discard-10', itemId: 10, action: 'discard_candidate', status: 'approved', assertion: 'applicable',
 			reason: 'curated_discard_review' }],
 	};
 	rulePack.sha256 = sha256InventoryRulePack(rulePack);

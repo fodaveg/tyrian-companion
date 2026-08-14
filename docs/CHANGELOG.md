@@ -176,6 +176,14 @@ Todos los cambios notables del proyecto se documentan aquí.
   degradados, y guard dinámico contra persistencia, UI, temporizadores u operaciones irreversibles.
 - Extraído el parser público de precios H4.4 para que sesiones y evidencia account-wide compartan
   tratamiento de lotes, duplicados, omisiones y bid/ask nulos.
+- H4.15 añade el clasificador puro del Inventory Advisor: particiona todas las posiciones propias,
+  respeta reservas/excepciones, revisa evidencia desconocida o contradictoria y limita TP a bid depth
+  demostrada con tasas H4.2. Knowledge packs V1 hasheados distinguen afirmación positiva de
+  `not_applicable`; no se emite `discard_candidate` ni se realizan efectos laterales.
+- El contrato H4.13 ahora exige que las decisiones y cantidades de una línea particionen propiedad,
+  no solo disponibilidad; sus reglas expresan `applicable|not_applicable`.
+- Nuevo guard dinámico H4.15 contra red, UI, Vault, persistencia, temporizadores y operaciones
+  irreversibles en todos los módulos productivos del clasificador.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.

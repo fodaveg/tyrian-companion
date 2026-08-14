@@ -77,6 +77,9 @@ The current `0.1.0` vertical provides:
 - H4.14 explicit account-wide evidence capture: every owned item receives catalog coverage and every
   available item receives one fresh public price result, while TP/unlock/recipe/skin/mini/achievement
   signals retain identity, coverage and TTL facts without adding UI, persistence or recommendations.
+- H4.15 pure Inventory Advisor classification: every owned physical position is partitioned once,
+  with reservations and keep exceptions first, non-loose positions reviewed, and only fresh complete
+  evidence permitting curated use/open/salvage or conservative vendor/TP routes.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 recommendation UI or account operations are intentionally not implemented yet. Vault writes are
@@ -298,8 +301,12 @@ operation verifies account identity and reads permitted unlock/progression signa
 URL restriction, malformed data and transient failure remain coverage, never empty unlock arrays.
 Its wrapper carries snapshot/catalog/price/signal TTLs, canonical completion timestamps and an
 array-order-preserving SHA-256 fingerprint; it composes into H4.13 only after freshness and identity
-validation. H4.15 classification and H4.16 discard
-allowlisting remain pending.
+validation. H4.15 now performs the next pure step: it consumes that evidence plus a dated, hashed
+knowledge pack whose per-capability assertions are positive or explicitly `not_applicable`. It
+partitions every owned physical position after reservations and keep exceptions, routes non-loose or
+unknown/contradictory evidence to review, caps instant sales to demonstrated top-bid depth and never
+emits `discard_candidate`. Its dynamic guard rejects network, UI, persistence, timers and irreversible
+operations. H4.16 discard allowlisting remains pending.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

@@ -11,11 +11,13 @@ import {
 import type {
 	InventoryAdvisorInputV1,
 	InventoryAdvisorLineV1,
+	InventoryAdvisorReasonCode,
 	InventoryAdvisorResultV1,
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
 import { buildReservationBalance, createReservationPlan } from '../economy/reservation';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
+import { selectInventoryMarketRoute } from './inventory-advisor-market';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -122,8 +124,15 @@ function isInventoryAdvisorResultForInputUnsafe(
 			rules: rulesComplete ? 'complete' : 'limited',
 		};
 		if (canonical(line.coverage) !== canonical(expectedCoverage)) return false;
+		const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
+		const sold = line.decisions.filter((decision) => decision.action === 'sell')
+			.reduce((total, decision) => total + decision.quantity, 0);
+		if (sold > (price?.bid?.quantity ?? 0)) return false;
+		let remainingBid = price?.bid?.quantity ?? 0;
 		for (const decision of line.decisions) {
-			if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException)) return false;
+			const explanation = report.explanations.find((entry) => entry.ref === decision.explanationRef);
+			if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException, remainingBid, explanation?.reasonCodes ?? [])) return false;
+			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
 	return true;
@@ -135,6 +144,8 @@ function validDecisionAgainstInput(
 	input: InventoryAdvisorInputV1,
 	reserved: number,
 	exceptionQuantity: number,
+	remainingBid: number,
+	reasonCodes: InventoryAdvisorReasonCode[],
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	const item = input.catalog.items[String(line.itemId)];
@@ -154,19 +165,35 @@ function validDecisionAgainstInput(
 			|| input.accountSignals.tradingPostAccess === 'unknown'
 			|| (input.accountSignals.tradingPostAccess === 'free_to_play' && !price.whitelisted)) return false;
 		const side = decision.action === 'sell' ? price.bid : price.ask;
-		return side !== null && holdings.every((holding) => {
+		if (side === null || !holdings.every((holding) => {
 			const result = classifyItemLiquidity(holding, item, 'available');
 			return result.status === 'ok' && result.classification.tradingPost.status === 'eligible';
-		});
+		})) return false;
+		const holding = holdings[0];
+		if (!holding || holding.kind !== 'item') return false;
+		const selection = selectInventoryMarketRoute({ holding, item, price,
+			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
+			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
+		return selection.action === decision.action && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
 	if (decision.action === 'vendor') {
-		return holdings.every((holding) => {
+		if (!holdings.every((holding) => {
 			const result = classifyItemLiquidity(holding, item, 'unavailable');
 			return result.status === 'ok' && result.classification.vendor.status === 'eligible';
-		});
+		})) return false;
+		const holding = holdings[0];
+		if (!holding || holding.kind !== 'item') return false;
+		const selection = selectInventoryMarketRoute({ holding, item, price,
+			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
+			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
+		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
 	if (!fresh(input.rulePack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs,
-		input.policy.maxFutureSkewMs)) return false;
+		input.policy.maxFutureSkewMs) || Date.parse(input.asOf) > Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs) return false;
+	const matchingRules = input.rulePack.rules.filter((rule) => rule.ruleId === decision.ruleId
+		&& rule.itemId === line.itemId && rule.action === decision.action
+		&& rule.status === 'approved' && rule.assertion === 'applicable');
+	if (matchingRules.length !== 1) return false;
 	if (decision.action === 'salvage') return !item.flags.includes('NoSalvage');
 	if (decision.action === 'use') {
 		return fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs,

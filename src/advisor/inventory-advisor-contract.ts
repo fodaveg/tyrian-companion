@@ -246,9 +246,15 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 		if (!explanation || explanation.itemId !== decision.itemId || explanation.action !== decision.action
 			|| explanation.ruleId !== decision.ruleId) return false;
 		if (decision.ruleId !== null && !value.rulePack.rules.some((rule) => rule.ruleId === decision.ruleId
-			&& rule.itemId === decision.itemId && rule.action === decision.action && rule.status === 'approved')) return false;
+			&& rule.itemId === decision.itemId && rule.action === decision.action && rule.status === 'approved'
+			&& rule.assertion === 'applicable')) return false;
 		if (decision.action === 'discard_candidate'
 			&& decision.discardProof?.rulePackSha256 !== value.rulePack.sha256) return false;
+	}
+	for (const line of value.lines) {
+		const lineExplanations = line.decisions.map((decision) => explanations.get(decision.explanationRef)!);
+		if (lineExplanations.some((explanation) => explanation.reasonCodes.some((code) => !line.reasons.some((reason) => reason.code === code)))
+			|| line.reasons.some((reason) => !lineExplanations.some((explanation) => explanation.reasonCodes.includes(reason.code)))) return false;
 	}
 	if (value.coverage === 'complete' && value.lines.some((line) => !coverageComplete(line.coverage))) return false;
 	return jsonRoundTrip(value);
@@ -286,7 +292,7 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 	if (value.positions.some((position) => position.itemId !== value.itemId)
 		|| sum(value.positions.map((position) => position.quantity)) !== value.ownedQuantity
 		|| sum([value.reservedQuantity, value.exceptionQuantity, value.actionedQuantity,
-			value.unclassifiedQuantity]) !== value.availableQuantity
+			value.unclassifiedQuantity]) !== value.ownedQuantity
 		|| value.decisions.some((decision) => decision.itemId !== value.itemId)) return false;
 	const positions = new Map(value.positions.map((position) => [position.ref, position]));
 	const allocatedByPosition = new Map<string, number>();
@@ -311,7 +317,8 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 			if (!coverageComplete(value.coverage)) return false;
 		}
 	}
-	return kept === value.reservedQuantity + value.exceptionQuantity
+	return [...positions.values()].every((position) => allocatedByPosition.get(position.ref) === position.quantity)
+		&& kept === value.reservedQuantity + value.exceptionQuantity
 		&& actioned === value.actionedQuantity && reviewed === value.unclassifiedQuantity;
 }
 
@@ -399,15 +406,16 @@ function isRuleSource(value: unknown): value is InventoryRuleSourceV1 {
 }
 
 function isRule(value: unknown): value is InventoryAdvisorRuleV1 {
-	if (!record(value) || !keys(value, ['ruleId', 'itemId', 'action', 'status', 'reason'])
+	if (!record(value) || !keys(value, ['ruleId', 'itemId', 'action', 'status', 'assertion', 'reason'])
 		|| !identifier(value.ruleId) || !positive(value.itemId)
 		|| !['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action))
-		|| !['approved', 'revoked'].includes(String(value.status))) return false;
+		|| !['approved', 'revoked'].includes(String(value.status)) || !['applicable', 'not_applicable'].includes(String(value.assertion))) return false;
 	const reasons: Record<InventoryAdvisorRuleV1['action'], InventoryAdvisorRuleV1['reason']> = {
 		salvage: 'curated_salvage', use: 'curated_use', open: 'curated_open',
 		discard_candidate: 'curated_discard_review',
 	};
-	return value.reason === reasons[value.action as InventoryAdvisorRuleV1['action']];
+	return value.reason === reasons[value.action as InventoryAdvisorRuleV1['action']]
+		&& (value.action !== 'discard_candidate' || value.assertion === 'applicable');
 }
 
 export function isCatalogResolution(value: unknown): value is CatalogResolution {
