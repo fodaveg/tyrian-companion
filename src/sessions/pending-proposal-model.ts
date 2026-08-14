@@ -149,7 +149,7 @@ function isClaim(value: unknown): value is ProposalClaim | null {
 		Date.parse(value.expiresAt) > Date.parse(value.claimedAt));
 }
 
-function isStartProposal(value: unknown): value is RelevantStartProposal {
+export function isRelevantStartProposal(value: unknown): value is RelevantStartProposal {
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'proposalId', 'accountId', 'ruleSet', 'possibleStart', 'evidenceQuality',
 		'confirmedAt', 'firstSignal', 'confirmationSignal',
@@ -166,6 +166,8 @@ function isStartProposal(value: unknown): value is RelevantStartProposal {
 		value.accountId === value.firstSignal.accountId && value.accountId === value.confirmationSignal.accountId &&
 		value.firstSignal.afterSnapshotId === value.confirmationSignal.beforeSnapshotId;
 }
+
+const isStartProposal = isRelevantStartProposal;
 
 function isStopProposal(value: unknown): value is InactivityStopProposal {
 	if (!isRecord(value) || !exactKeys(value, [

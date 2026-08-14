@@ -1,4 +1,8 @@
 import { managedAssetMarker, type PackagedAsset } from './managed-assets-model';
+import { halloweenManagedAssets } from './halloween-base';
+import { sha256Text } from './managed-asset-hash';
+
+export { sha256Text } from './managed-asset-hash';
 
 const GENERIC_SESSION_BASE_BODY = `filters:
   and:
@@ -22,8 +26,7 @@ export async function genericManagedAssets(): Promise<PackagedAsset[]> {
 	return [{ ...draft, bytes, contentHash: await sha256Text(bytes) }];
 }
 
-export async function sha256Text(value: string): Promise<string> {
-	const bytes = new TextEncoder().encode(value.replace(/\r\n?/gu, '\n'));
-	const digest = await crypto.subtle.digest('SHA-256', bytes);
-	return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, '0')).join('');
+/** Complete H5.7 bundle; the manager selects neutral assets plus the active locale. */
+export async function managedAssetsBundle(): Promise<PackagedAsset[]> {
+	return [...await genericManagedAssets(), ...await halloweenManagedAssets()];
 }

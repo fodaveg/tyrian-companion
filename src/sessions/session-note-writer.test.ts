@@ -5,10 +5,19 @@ import { compareStorageSnapshots } from '../account/storage-delta';
 import { calculateSessionValuation, type SessionValuation } from '../economy/session-valuation';
 import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
 import { buildReservationBalance, createReservationPlan, partitionSessionValuation } from '../economy/reservation';
+import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { createSessionContaminationReview } from './session-contamination-review';
+import { createAcceptedDetectionEvent } from './session-detection-quality';
+import type { SessionDetectionQualitySummary } from './session-detection-quality';
+import type { RelevantStartProposal } from './relevant-item-start-detector';
 import { createSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
 import type { CompleteSessionState, SessionAuthority, SessionSnapshotReference } from './session';
-import { prepareSessionNote, normalizeSessionOutputFolder, type SessionNoteInput } from './session-note-model';
+import {
+	prepareSessionNote,
+	normalizeSessionOutputFolder,
+	sessionNoteEventDeclarationFromDetectionSummary,
+	type SessionNoteInput,
+} from './session-note-model';
 import { renderSessionNote } from './session-note-renderer';
 import {
 	SessionNoteWriter,
@@ -29,14 +38,58 @@ describe('session note model and renderer', () => {
 		if (first.status !== 'ok') return;
 		expect(first.note.preferredPath).toMatch(/^Tyrian Companion\/sessions\/2026\/2026-08-13 080001Z - [a-f0-9]{16}\.md$/u);
 		expect(first.note.frontmatter).toMatchObject({
-			tc_schema: 1, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_schema: 2, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_event: null,
 			tc_scope: 'observed_storage_net', tc_execution: 'manual_in_game', tc_side_effects: 'none',
 			tc_observed_immediate_copper: null, tc_recommendation_status: 'not_evaluated',
+			tc_recommendation_action: null, tc_recommendation_quantity: null, tc_recommendation_route: null,
 		});
 		expect(first.note.frontmatter.tc_session_ref).toMatch(/^[a-f0-9]{64}$/u);
 		expect(first.note.content).not.toContain('session-sensitive-id');
 		expect(first.note.content).not.toContain(input.runtime.finalSnapshot?.accountId);
 		expect(first.note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
+	});
+
+	it('records only an explicit validated event and never infers it from session evidence', async () => {
+		const plain = sessionInput();
+		expect((await rendered(plain)).frontmatter.tc_event).toBeNull();
+		expect((await rendered(plain)).frontmatter.tc_event_source).toBeNull();
+		plain.eventDeclaration = { event: 'halloween', source: 'manual_explicit', declaredAt: '2026-08-13T08:30:00.000Z' };
+		expect((await rendered(plain)).frontmatter).toMatchObject({ tc_event: 'halloween', tc_event_source: 'manual_explicit' });
+		expect(prepareSessionNote({ ...plain, eventDeclaration: { event: 'halloween', source: 'manual_explicit' } }))
+			.toEqual({ status: 'invalid', reason: 'invalid_input' });
+		const proposal = halloweenProposal();
+		const accepted = createAcceptedDetectionEvent('start', 'session-sensitive-id', '2026-08-13T08:00:03.000Z', proposal);
+		if (!accepted) throw new Error('Invalid assisted event fixture.');
+		const summary = {
+			version: 1, sessionId: 'session-sensitive-id', mode: 'assisted', stop: null,
+			correctedFalsePositives: [], totalUncertaintyMs: 1, start: accepted,
+		} satisfies SessionDetectionQualitySummary;
+		expect(sessionNoteEventDeclarationFromDetectionSummary('session-sensitive-id', summary)).toMatchObject({
+			event: 'halloween', source: 'assisted', accepted: { proposalId: proposal.proposalId },
+		});
+		expect(sessionNoteEventDeclarationFromDetectionSummary('other-session', summary)).toBeNull();
+		for (const changed of [
+			{ ...proposal, proposalId: `x${proposal.proposalId}` },
+			{ ...proposal, proposalId: `${proposal.proposalId}:suffix` },
+			{ ...proposal, ruleSet: { ...proposal.ruleSet, version: 2 } },
+		]) {
+			const event = { ...accepted, proposalId: changed.proposalId, startProposal: changed };
+			expect(sessionNoteEventDeclarationFromDetectionSummary('session-sensitive-id', { ...summary, start: event })).toBeNull();
+		}
+		for (const changed of [
+			{ ...proposal, firstSignal: { ...proposal.firstSignal, gains: [{ itemId: HALLOWEEN_RELEVANT_ITEM_RULE_SET.itemIds[0]! + 1, quantity: 1 }] } },
+			{ ...proposal, confirmationSignal: { ...proposal.confirmationSignal, gains: [{ itemId: HALLOWEEN_RELEVANT_ITEM_RULE_SET.itemIds[0]! + 1, quantity: 1 }] } },
+		]) {
+			const event = { ...accepted, startProposal: changed };
+			expect(sessionNoteEventDeclarationFromDetectionSummary('session-sensitive-id', { ...summary, start: event })).toBeNull();
+			expect(prepareSessionNote({
+				...sessionInput(), eventDeclaration: { event: 'halloween', source: 'assisted', accepted: event },
+			})).toEqual({ status: 'invalid', reason: 'invalid_input' });
+		}
+		expect(prepareSessionNote({
+			...sessionInput(), eventDeclaration: { event: 'halloween', source: 'assisted', accepted: { ...accepted, sessionId: 'other' } },
+		})).toEqual({ status: 'invalid', reason: 'invalid_input' });
 	});
 
 	it('redacts valuation by classification permission and shows valid exact values', async () => {
@@ -71,6 +124,12 @@ describe('session note model and renderer', () => {
 		expect(prepareSessionNote(input)).toMatchObject({
 			status: 'ok',
 			note: { recommendation: { status: 'invalid' }, envelope: { status: 'invalid' } },
+		});
+		return rendered(input).then((note) => {
+			expect(note.frontmatter).toMatchObject({
+				tc_recommendation_status: 'invalid', tc_recommendation_action: null,
+				tc_recommendation_quantity: null, tc_recommendation_route: null,
+			});
 		});
 	});
 
@@ -267,9 +326,31 @@ async function rendered(input: SessionNoteInput) {
 
 function sessionInput(classification: 'exact' | 'contaminated' = 'exact', locale: 'es' | 'en' = 'es'): SessionNoteInput {
 	return {
-		runtime: completeRuntime(classification), valuation: null, reservation: null, hold: null,
-		recommendation: null, envelope: null, displayNames: { 'item:100': 'Objeto de prueba' },
+			runtime: completeRuntime(classification), valuation: null, reservation: null, hold: null,
+		recommendation: null, envelope: null, eventDeclaration: null, displayNames: { 'item:100': 'Objeto de prueba' },
 		locale, outputFolder: 'Tyrian Companion',
+	};
+}
+
+function halloweenProposal(): RelevantStartProposal {
+	const ruleSet = { id: 'halloween.trick-or-treat-bag', version: 1 };
+	const firstSignal = {
+		accountId: 'account-anonymous', beforeSnapshotId: 'halloween-before', afterSnapshotId: 'halloween-middle',
+		window: { from: '2026-08-13T08:00:00.000Z', to: '2026-08-13T08:00:01.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }],
+	};
+	const confirmationSignal = {
+		accountId: 'account-anonymous', beforeSnapshotId: 'halloween-middle', afterSnapshotId: 'halloween-after',
+		window: { from: '2026-08-13T08:00:01.000Z', to: '2026-08-13T08:00:02.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }],
+	};
+	return {
+		version: 1,
+		proposalId: `relevant-start:${ruleSet.id}:${String(ruleSet.version)}:${firstSignal.beforeSnapshotId}:${confirmationSignal.afterSnapshotId}`,
+		accountId: 'account-anonymous', ruleSet,
+		possibleStart: { ...firstSignal.window, uncertaintyMs: 1_000 },
+		evidenceQuality: 'complete', confirmedAt: confirmationSignal.window.to,
+		firstSignal, confirmationSignal,
 	};
 }
 

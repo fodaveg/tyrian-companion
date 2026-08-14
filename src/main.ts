@@ -6,7 +6,7 @@ import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import type { StorageDelta } from './account/storage-delta-model';
-import { genericManagedAssets, sha256Text } from './assets/generic-assets';
+import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetsResult } from './assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
 import type { ManagedAssetsPlan } from './assets/managed-assets-model';
@@ -35,7 +35,11 @@ import { proposalIntent, type PendingProposal, type PendingProposalIntent } from
 import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from './sessions/loot-presentation';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
-import { prepareSessionNote, type SessionNoteInput } from './sessions/session-note-model';
+import {
+	prepareSessionNote,
+	sessionNoteEventDeclarationFromDetectionSummary,
+	type SessionNoteInput,
+} from './sessions/session-note-model';
 import { SessionNoteWriter, writeSessionNoteBeforeClear } from './sessions/session-note-writer';
 import {
 	ManualSessionStartService,
@@ -118,7 +122,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 			this.app.vault.configDir,
-			{ bundleVersion: 1, locale: this.settings.language, assets: await genericManagedAssets() },
+			{ bundleVersion: 2, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
@@ -596,7 +600,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
 		if (previousLanguage !== nextSettings.language && this.managedAssets) {
-			this.managedAssets.setBundle({ bundleVersion: 1, locale: nextSettings.language, assets: await genericManagedAssets() });
+			this.managedAssets.setBundle({ bundleVersion: 2, locale: nextSettings.language, assets: await managedAssetsBundle() });
 		}
 		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
 			this.assistedDetection.disarm('mode_off');
@@ -826,8 +830,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
+		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
 		return {
 			runtime, valuation: null, reservation: null, hold: null, recommendation: null, envelope: null,
+			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId)),
 			displayNames: {}, locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
 	}

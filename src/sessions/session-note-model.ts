@@ -11,9 +11,15 @@ import {
 	partitionSessionValuation,
 } from '../economy/reservation';
 import { isSessionValuation, type SessionValuation } from '../economy/session-valuation';
+import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { isSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
+import {
+	isDetectionQualityEvent,
+	type DetectionQualityEvent,
+	type SessionDetectionQualitySummary,
+} from './session-detection-quality';
 
-export const SESSION_NOTE_SCHEMA_VERSION = 1 as const;
+export const SESSION_NOTE_SCHEMA_VERSION = 2 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
 export const SESSION_NOTE_BLOCK_IDS = [
 	'summary', 'evidence', 'results', 'economy', 'decision', 'provenance',
@@ -21,6 +27,10 @@ export const SESSION_NOTE_BLOCK_IDS = [
 
 export type SessionNoteBlockId = typeof SESSION_NOTE_BLOCK_IDS[number];
 export type SessionNoteLocale = 'es' | 'en';
+export type SessionNoteEvent = 'halloween';
+export type SessionNoteEventDeclaration =
+	| { event: 'halloween'; source: 'manual_explicit'; declaredAt: string }
+	| { event: 'halloween'; source: 'assisted'; accepted: DetectionQualityEvent };
 
 export interface SessionNoteInput {
 	runtime: SessionRuntimeRecord;
@@ -29,6 +39,8 @@ export interface SessionNoteInput {
 	hold: HoldPlan | null;
 	recommendation: ContainerRecommendationResult | null;
 	envelope: RecommendationEnvelopeV1 | null;
+	/** Closed provenance; callers must never infer an event from loot, text, date, or an id prefix. */
+	eventDeclaration: SessionNoteEventDeclaration | null;
 	displayNames: Record<string, string>;
 	locale: SessionNoteLocale;
 	outputFolder: string;
@@ -52,6 +64,7 @@ export interface PreparedSessionNote {
 	hold: OptionalEvidence<HoldPlan>;
 	recommendation: OptionalEvidence<ContainerRecommendationResult>;
 	envelope: OptionalEvidence<RecommendationEnvelopeV1>;
+	eventDeclaration: SessionNoteEventDeclaration | null;
 	displayNames: Record<string, string>;
 	locale: SessionNoteLocale;
 	outputFolder: string;
@@ -67,10 +80,24 @@ export function prepareSessionNote(value: unknown): PrepareSessionNoteResult {
 	catch { return { status: 'invalid', reason: 'invalid_input' }; }
 }
 
+/** Maps only the accepted, session-bound H3.8 Halloween ruleset; it does not inspect loot or time. */
+export function sessionNoteEventDeclarationFromDetectionSummary(
+	sessionId: string,
+	summary: SessionDetectionQualitySummary | null,
+): SessionNoteEventDeclaration | null {
+	const start = summary?.start;
+	const proposal = start?.startProposal;
+	return summary?.sessionId === sessionId && start?.sessionId === sessionId &&
+		start.outcome === 'accepted' && start.mode === 'assisted' && start.cause === 'relevant_item_gain' &&
+		proposal !== null && proposal !== undefined && isCanonicalHalloweenProposal(proposal) &&
+		proposal.proposalId === start.proposalId
+		? { event: 'halloween', source: 'assisted', accepted: structuredClone(start) } : null;
+}
+
 function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	if (!isRecord(value) || !exactKeys(value, [
 		'runtime', 'valuation', 'reservation', 'hold', 'recommendation', 'envelope',
-		'displayNames', 'locale', 'outputFolder',
+		'eventDeclaration', 'displayNames', 'locale', 'outputFolder',
 	])) return { status: 'invalid', reason: 'invalid_input' };
 	if (!isSessionRuntimeRecord(value.runtime) || value.runtime.state.status !== 'complete' ||
 		value.runtime.finalSnapshot === null || value.runtime.delta === null || value.runtime.review === null) {
@@ -85,6 +112,8 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames)) {
 		return { status: 'invalid', reason: 'invalid_input' };
 	}
+	const eventDeclaration = normalizeEventDeclaration(value.eventDeclaration, runtime);
+	if (value.eventDeclaration !== null && eventDeclaration === null) return { status: 'invalid', reason: 'invalid_input' };
 	const outputFolder = normalizeSessionOutputFolder(value.outputFolder);
 	if (outputFolder === null) return { status: 'invalid', reason: 'unsafe_output_folder' };
 
@@ -103,10 +132,42 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 		status: 'ok',
 		note: {
 			runtime: structuredClone(runtime), durationMs, valuation, reservation, hold,
-			recommendation, envelope, displayNames: structuredClone(value.displayNames),
+			recommendation, envelope, eventDeclaration, displayNames: structuredClone(value.displayNames),
 			locale: value.locale, outputFolder,
 		},
 	};
+}
+
+function normalizeEventDeclaration(
+	value: unknown,
+	runtime: PreparedSessionNote['runtime'],
+): SessionNoteEventDeclaration | null {
+	if (value === null) return null;
+	if (!isRecord(value) || value.event !== 'halloween' ||
+		(value.source !== 'manual_explicit' && value.source !== 'assisted')) return null;
+	if (value.source === 'manual_explicit') {
+		if (!exactKeys(value, ['event', 'source', 'declaredAt']) || !isIso(value.declaredAt)) return null;
+		const declared = Date.parse(value.declaredAt);
+		if (declared < Date.parse(runtime.state.baseline.completedAt) ||
+			declared > Date.parse(runtime.state.finalSnapshot.completedAt)) return null;
+		return structuredClone(value) as SessionNoteEventDeclaration;
+	}
+	if (!exactKeys(value, ['event', 'source', 'accepted']) || !isDetectionQualityEvent(value.accepted)) return null;
+	const accepted = value.accepted;
+	const proposal = accepted.startProposal;
+	if (accepted.phase !== 'start' || accepted.outcome !== 'accepted' || accepted.mode !== 'assisted' ||
+		accepted.cause !== 'relevant_item_gain' || accepted.sessionId !== runtime.state.sessionId ||
+		proposal === null || proposal === undefined || proposal.proposalId !== accepted.proposalId ||
+		proposal.accountId !== runtime.finalSnapshot.accountId || !isCanonicalHalloweenProposal(proposal)) return null;
+	return { event: 'halloween', source: 'assisted', accepted: structuredClone(accepted) };
+}
+
+function isCanonicalHalloweenProposal(proposal: NonNullable<DetectionQualityEvent['startProposal']>): boolean {
+	return proposal.ruleSet.id === HALLOWEEN_RELEVANT_ITEM_RULE_SET.id &&
+		proposal.ruleSet.version === HALLOWEEN_RELEVANT_ITEM_RULE_SET.version &&
+		proposal.firstSignal.gains.every((gain) => HALLOWEEN_RELEVANT_ITEM_RULE_SET.itemIds.includes(gain.itemId)) &&
+		proposal.confirmationSignal.gains.every((gain) => HALLOWEEN_RELEVANT_ITEM_RULE_SET.itemIds.includes(gain.itemId)) &&
+		proposal.proposalId === `relevant-start:${proposal.ruleSet.id}:${String(proposal.ruleSet.version)}:${proposal.firstSignal.beforeSnapshotId}:${proposal.confirmationSignal.afterSnapshotId}`;
 }
 
 /** Strict vault-relative path validation for generated session notes. */
@@ -210,4 +271,8 @@ function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isIso(value: unknown): value is string {
+	return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value;
 }

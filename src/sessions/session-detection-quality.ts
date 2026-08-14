@@ -1,5 +1,6 @@
 import type { InactivityStopProposal } from './inactivity-stop-detector';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
+import { isRelevantStartProposal } from './pending-proposal-model';
 
 export const DETECTION_QUALITY_EVENT_VERSION = 1 as const;
 
@@ -50,6 +51,8 @@ export interface DetectionQualityEvent {
 	evidenceQuality: DetectionEvidenceQuality | null;
 	detectedAt: string | null;
 	recordedAt: string;
+	/** Present on new records; omitted only by legacy v1 records written before H5.7. */
+	startProposal?: RelevantStartProposal | null;
 }
 
 export interface SessionDetectionQualitySummary {
@@ -90,6 +93,7 @@ export function createAcceptedDetectionEvent(
 			cause: phase === 'start' ? 'manual_start' : 'manual_stop',
 			sessionId,
 			proposalId: null,
+			startProposal: null,
 			window: manual.window,
 			uncertaintyMs: manual.uncertaintyMs,
 			evidenceQuality: null,
@@ -105,6 +109,7 @@ export function createAcceptedDetectionEvent(
 			cause: phase === 'start' ? 'relevant_item_gain' : 'inactivity',
 			sessionId,
 			proposalId: evidence!.proposalId,
+			startProposal: phase === 'start' ? structuredClone(source) as RelevantStartProposal : null,
 			window: evidence!.window,
 			uncertaintyMs: evidence!.uncertaintyMs,
 			evidenceQuality: evidence!.evidenceQuality,
@@ -134,6 +139,7 @@ export function createDismissedDetectionEvent(
 		cause,
 		sessionId,
 		proposalId: evidence.proposalId,
+		startProposal: phase === 'start' ? structuredClone(proposal) as RelevantStartProposal : null,
 		window: evidence.window,
 		uncertaintyMs: evidence.uncertaintyMs,
 		evidenceQuality: evidence.evidenceQuality,
@@ -147,7 +153,7 @@ export function isDetectionQualityEvent(value: unknown): value is DetectionQuali
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'eventId', 'phase', 'outcome', 'mode', 'cause', 'sessionId', 'proposalId',
 		'window', 'uncertaintyMs', 'evidenceQuality', 'detectedAt', 'recordedAt',
-	])) return false;
+	], ['startProposal'])) return false;
 	if (
 		value.version !== DETECTION_QUALITY_EVENT_VERSION
 		|| !validIdentifier(value.eventId)
@@ -165,6 +171,14 @@ export function isDetectionQualityEvent(value: unknown): value is DetectionQuali
 	if (uncertaintyMs === null || uncertaintyMs !== value.uncertaintyMs) return false;
 	const windowTo = (value.window as Record<string, unknown>).to as string;
 	if (Date.parse(value.recordedAt) < Date.parse(windowTo)) return false;
+	const hasStartProposal = Object.prototype.hasOwnProperty.call(value, 'startProposal');
+	if (hasStartProposal && value.startProposal !== null) {
+		if (value.phase !== 'start' || value.mode !== 'assisted' || !isRelevantStartProposal(value.startProposal) ||
+			value.startProposal.proposalId !== proposalId || value.startProposal.accountId.length === 0 ||
+			value.startProposal.possibleStart.from !== (value.window as DetectionBoundaryWindow).from ||
+			value.startProposal.possibleStart.to !== (value.window as DetectionBoundaryWindow).to ||
+			value.startProposal.confirmedAt !== detectedAt) return false;
+	}
 	if (value.mode === 'manual') {
 		return value.outcome === 'accepted'
 			&& validIdentifier(sessionId)
@@ -319,8 +333,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+function exactKeys(value: Record<string, unknown>, keys: readonly string[], optional: readonly string[] = []): boolean {
 	const actual = Object.keys(value).sort();
-	const expected = [...keys].sort();
-	return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+	if (keys.some((key) => !actual.includes(key)) || actual.some((key) => !keys.includes(key) && !optional.includes(key))) return false;
+	return true;
 }

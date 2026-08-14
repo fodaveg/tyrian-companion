@@ -1,5 +1,12 @@
 # Changelog
 
+## H5.7 — Halloween Base
+
+- Migrado el frontmatter de notas a schema v2 con `tc_event`/`tc_event_source` y campos estables de recomendación `ready`; la procedencia manual o asistida es cerrada, durable y correlacionada, sin aceptar prefijos ni inferencias por fecha, nombre, texto o loot.
+- Añadido `Halloween.base` ES/EN al bundle gestionado v2, conservando la Base genérica y el mismo manifiesto, hash, CAS y protección de modificaciones humanas.
+- Añadidas cinco tablas para sesiones Halloween: recientes, por build, mejor rendimiento cualificado, contaminadas y abrir/vender histórico manual; `null` permanece vacío y cero permanece cero.
+- Añadidas pruebas con parser YAML real para estructura, referencias, filtros, fórmulas, locales, hashes, upgrade y ausencia de I/O en el asset.
+
 ## H5.6 — Managed assets foundation
 
 - Añadido motor Vault-only para inspección y plan puro de assets `.base`/`.md`, con rutas NFC seguras, colisiones case-insensitive y una Base genérica neutral.

@@ -95,12 +95,15 @@ function createFrontmatter(
 	const hold = note.hold.status === 'valid' ? note.hold.value : null;
 	const recommendationStatus = note.recommendation.status === 'valid'
 		? note.recommendation.value.status : note.recommendation.status;
+	const recommendationDecision = frontmatterRecommendation(note);
 	const reservedQuantity = reservation ? safeSum(reservation.assets.flatMap((asset) =>
 		asset.namespace === 'item' ? asset.allocations.map((allocation) => allocation.protectedAvailable) : [])) : null;
 	const heldQuantity = hold ? safeSum(hold.items.map((item) => item.heldQuantity)) : null;
 	return {
 		tc_schema: SESSION_NOTE_SCHEMA_VERSION,
 		tc_kind: 'gw2_farming_session',
+		tc_event: note.eventDeclaration?.event ?? null,
+		tc_event_source: note.eventDeclaration?.source ?? null,
 		tc_session_ref: sessionRef,
 		tc_account_ref: accountRef,
 		tc_locale: note.locale,
@@ -129,9 +132,32 @@ function createFrontmatter(
 		tc_hold_status: hold ? aggregateHoldStatus(hold.allocations.map((allocation) => allocation.state)) : note.hold.status,
 		tc_held_quantity: heldQuantity,
 		tc_recommendation_status: recommendationStatus,
+		tc_recommendation_action: recommendationDecision?.action ?? null,
+		tc_recommendation_quantity: recommendationDecision?.quantity ?? null,
+		tc_recommendation_route: recommendationDecision?.route ?? null,
 		tc_execution: 'manual_in_game',
 		tc_side_effects: 'none',
 		descripcion: note.locale === 'es' ? 'Sesión de farmeo de Guild Wars 2 registrada por Tyrian Companion.' : 'Guild Wars 2 farming session recorded by Tyrian Companion.',
+	};
+}
+
+function frontmatterRecommendation(note: PreparedSessionNote):
+	| { action: 'open' | 'sell'; quantity: number; route: 'instant_sell' | 'vendor' | null }
+	| null {
+	if (note.recommendation.status !== 'valid' || note.recommendation.value.status !== 'ready' ||
+		note.envelope.status !== 'valid') return null;
+	const recommendation = note.recommendation.value.recommendation;
+	const decision = recommendation.economicDecision;
+	if (decision === null) return null;
+	const envelopeDecision = note.envelope.value.decisions.find((candidate) =>
+		candidate.itemId === recommendation.itemId && candidate.action === decision.action &&
+		candidate.quantity === decision.quantity &&
+		(decision.action === 'open' ? candidate.route === undefined : candidate.route === decision.sellRoute));
+	if (!envelopeDecision) return null;
+	return {
+		action: decision.action,
+		quantity: decision.quantity,
+		route: decision.action === 'sell' ? decision.sellRoute : null,
 	};
 }
 

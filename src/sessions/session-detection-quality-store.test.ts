@@ -2,6 +2,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
 import { createAcceptedDetectionEvent } from './session-detection-quality';
+import type { RelevantStartProposal } from './relevant-item-start-detector';
 import {
 	DETECTION_QUALITY_STORE_NAME,
 	IndexedDbDetectionQualityStore,
@@ -21,6 +22,21 @@ describe('detection quality stores', () => {
 
 		const second = new IndexedDbDetectionQualityStore(factory, name);
 		await expect(second.load()).resolves.toEqual({ status: 'loaded', events: [event] });
+		second.close();
+	});
+
+	it('persists the validated start proposal needed for durable event provenance', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('assisted-provenance');
+		const event = createAcceptedDetectionEvent('start', 'session-1', RECORDED_AT, assistedProposal());
+		if (!event) throw new Error('Assisted event fixture is invalid.');
+		const first = new IndexedDbDetectionQualityStore(factory, name);
+		await expect(first.append(event)).resolves.toEqual({ status: 'saved' });
+		first.close();
+		const second = new IndexedDbDetectionQualityStore(factory, name);
+		await expect(second.load()).resolves.toMatchObject({
+			status: 'loaded', events: [{ startProposal: { ruleSet: { id: 'halloween.trick-or-treat-bag', version: 1 } } }],
+		});
 		second.close();
 	});
 
@@ -95,6 +111,26 @@ function manualEvent(phase: 'start' | 'stop') {
 	});
 	if (!event) throw new Error('Detection event fixture is invalid.');
 	return event;
+}
+
+function assistedProposal(): RelevantStartProposal {
+	const firstSignal = {
+		accountId: 'account', beforeSnapshotId: 'before', afterSnapshotId: 'middle',
+		window: { from: '2026-08-13T11:59:55.000Z', to: '2026-08-13T11:59:56.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }],
+	};
+	const confirmationSignal = {
+		accountId: 'account', beforeSnapshotId: 'middle', afterSnapshotId: 'after',
+		window: { from: '2026-08-13T11:59:56.000Z', to: '2026-08-13T11:59:57.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }],
+	};
+	return {
+		version: 1,
+		proposalId: 'relevant-start:halloween.trick-or-treat-bag:1:before:after',
+		accountId: 'account', ruleSet: { id: 'halloween.trick-or-treat-bag', version: 1 },
+		possibleStart: { ...firstSignal.window, uncertaintyMs: 1_000 }, evidenceQuality: 'complete',
+		confirmedAt: confirmationSignal.window.to, firstSignal, confirmationSignal,
+	};
 }
 
 function databaseName(suffix: string): string {

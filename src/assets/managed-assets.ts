@@ -1,4 +1,4 @@
-import { sha256Text } from './generic-assets';
+import { sha256Text } from './managed-asset-hash';
 import {
 	hasCompatibleMarker,
 	isManagedAssetsManifest,

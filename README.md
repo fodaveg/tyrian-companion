@@ -141,8 +141,9 @@ in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write 
 read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
 files are preserved, and uninstall moves exact owned files through Obsidian's trash API. A lazy
 IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
-settings mirror only the last completed root. H5.6 ships one generic `.base`; themed
-Halloween content remains H5.7.
+settings mirror only the last completed root. Bundle v2 keeps the generic `.base` and adds a
+localized `Halloween.base` through the same manifest/CAS path. It reads only session-note schema v2
+fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
 
 The connection check pins one ephemeral SecretStorage value for the complete operation, calls `/v2/tokeninfo` first, and calls `/v2/account` only after the key grants account access. Changing the selected secret resets prior account state and invalidates any older check still in flight. The UI shows the account name, API-key name, and granted permissions as text, but never shows the token or token ID.
 
