@@ -40,14 +40,18 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
 			'./inventory-advisor-builtin-bundle'],
-		portCalls: ['ports.capture.capture', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
+		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
-		imports: ['obsidian', '../core/i18n', './inventory-advisor-view-model', './inventory-advisor-view'],
-		portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel', 'actions.refreshInventoryAdvisor'],
+		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+			'../economy/reservation-model', './inventory-advisor-view-model', './inventory-advisor-view'],
+			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel', 'actions.refreshInventoryAdvisor',
+				'actions.createInventoryPreferencesEditorSession', 'preferenceSession.current', 'preferenceSession.load',
+				'preferenceSession.upsertGoal', 'preferenceSession.removeGoal', 'preferenceSession.upsertKeepException', 'preferenceSession.removeKeepException'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
-		imports: ['../core/i18n', './inventory-advisor-view-model'],
+		imports: ['../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+			'../economy/reservation-model', './inventory-advisor-view-model'],
 		portCalls: [],
 	}],
 ]);
@@ -95,9 +99,9 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		}
 	});
 
-	it('censuses the only integration capability and keeps open/current free of it', () => {
+	it('censuses explicit integration capabilities and keeps open/current free of them', () => {
 		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts')?.source ?? '';
-		expect([...controller.matchAll(/\bthis\.ports\.(\w+)\s*\(/gu)].map((match) => match[1])).toEqual(['load']);
+		expect([...new Set(boundaryPortCalls(controller))].sort()).toEqual(['ports.invalidate', 'ports.load', 'ports.reclassify']);
 		for (const method of ['open', 'current']) {
 			const body = controller.match(new RegExp(`${method}\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\t\\}`, 'u'))?.[1] ?? '';
 			expect(body, `${method} must remain a memory-only projection`).not.toContain('this.ports.');
@@ -121,6 +125,18 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			const poisoned = `import { GuildWars2Client } from '../account/guild-wars-2-client';\n${source}`;
 			expect(boundarySourceAllowed(path, poisoned)).toBe(false);
 		}
+	});
+
+	it('censuses non-null asserted port calls instead of letting an optional callback bypass the boundary guard', () => {
+		expect(boundaryPortCalls('this.actions.upsertInventoryGoal!(goal); this.ports.reclassify!(); this.actions.loadInventoryPreferences?.(); this.preferenceSession?.current();').sort())
+			.toEqual(['actions.loadInventoryPreferences', 'actions.upsertInventoryGoal', 'ports.reclassify', 'preferenceSession.current']);
+	});
+
+	it('turns red when an ItemView session capability is added without an allowlist entry', () => {
+		const source = readFileSync('src/ui/inventory-advisor-item-view.ts', 'utf8');
+		const poisoned = `${source}\nthis.preferenceSession.exportEverything?.();`;
+		expect(boundaryPortCalls(poisoned)).toContain('preferenceSession.exportEverything');
+		expect(boundaryPortCalls(poisoned).sort()).not.toEqual(BOUNDARY_POLICIES.get('src/ui/inventory-advisor-item-view.ts')!.portCalls.slice().sort());
 	});
 
 	it('indexes explanations and prices once after validation instead of scanning per decision', () => {
@@ -190,7 +206,7 @@ function forbiddenDependency(specifier: string): boolean {
 }
 
 function boundaryPortCalls(source: string): string[] {
-	const instanceCalls = [...source.matchAll(/\bthis\.(ports|actions)\.(\w+)(?:\.(\w+))?\s*\(/gu)]
+	const instanceCalls = [...source.matchAll(/\bthis\.(ports|actions|preferenceSession)(?:!\.|\?\.|\.)(\w+)(?:\.(\w+))?(?:!|\?\.)?\s*\(/gu)]
 		.map((match) => `${match[1]}.${match[2]}${match[3] === undefined ? '' : `.${match[3]}`}`);
 	const providerCalls = [...source.matchAll(/\bprovider\.(\w+)\s*\(/gu)].map((match) => `provider.${match[1]}`);
 	return [...new Set([...instanceCalls, ...providerCalls])];

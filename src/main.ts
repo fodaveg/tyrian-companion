@@ -22,9 +22,17 @@ import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evi
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
-	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 	InventoryAdvisorWorkflow,
 } from './advisor/inventory-advisor-workflow';
+import { IndexedDbInventoryPreferencesStore } from './advisor/inventory-preferences-store';
+import { InventoryPreferencesService } from './advisor/inventory-preferences-service';
+import {
+	InventoryPreferencesRuntime,
+	type InventoryPreferencesEditorSession,
+	type InventoryPreferencesEditorState,
+} from './advisor/inventory-preferences-runtime';
+import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
+import type { ReservationGoal } from './economy/reservation-model';
 import {
 	DEFAULT_SETTINGS,
 	mergeSettingsUpdate,
@@ -121,6 +129,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionHistory!: SessionHistoryService;
 	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
+	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -182,7 +191,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
 		const snapshots = new StorageSnapshotService(client);
-		this.inventoryAdvisor = createInventoryAdvisorRuntime(client, publicClient, snapshots, () => this.settings.language);
+		this.inventoryPreferences = new InventoryPreferencesRuntime(
+			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(window.indexedDB)), vaultId,
+		);
+		this.inventoryAdvisor = createInventoryAdvisorRuntime(
+			client, publicClient, snapshots, () => this.settings.language, this.inventoryPreferences,
+		);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
@@ -331,6 +345,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	onunload(): void {
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
+		this.inventoryPreferences?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -379,8 +394,64 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.inventoryAdvisor.open();
 	}
 
+	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
+		return this.inventoryPreferences.current();
+	}
+
+	/** Gives each ItemView an opaque CAS revision without placing it in its DOM. */
+	createInventoryPreferencesEditorSession(): InventoryPreferencesEditorSession {
+		const session = this.inventoryPreferences.createEditorSession();
+		const after = async (state: InventoryPreferencesEditorState): Promise<InventoryPreferencesEditorState> => {
+			if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+			if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+			this.renderInventoryAdvisorViews();
+			return state;
+		};
+		return Object.freeze({
+			current: () => session.current(), load: async () => await after(await session.load()),
+			upsertGoal: async (goal: ReservationGoal) => await after(await session.upsertGoal(goal)),
+			removeGoal: async (goalId: string) => await after(await session.removeGoal(goalId)),
+			upsertKeepException: async (keepException: KeepExceptionV1) => await after(await session.upsertKeepException(keepException)),
+			removeKeepException: async (exceptionId: string) => await after(await session.removeKeepException(exceptionId)),
+		});
+	}
+
 	async refreshInventoryAdvisor(): Promise<void> {
 		await this.inventoryAdvisor.refresh();
+		this.renderInventoryAdvisorViews();
+	}
+
+	async loadInventoryPreferences(): Promise<void> {
+		const state = await this.inventoryPreferences.loadCached();
+		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+		this.renderInventoryAdvisorViews();
+	}
+
+	async upsertInventoryGoal(goal: ReservationGoal): Promise<void> {
+		const state = await this.inventoryPreferences.upsertGoal(goal);
+		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+		this.renderInventoryAdvisorViews();
+	}
+
+	async removeInventoryGoal(goalId: string): Promise<void> {
+		const state = await this.inventoryPreferences.removeGoal(goalId);
+		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+		this.renderInventoryAdvisorViews();
+	}
+
+	async upsertInventoryKeepException(keepException: KeepExceptionV1): Promise<void> {
+		const state = await this.inventoryPreferences.upsertKeepException(keepException);
+		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
+		this.renderInventoryAdvisorViews();
+	}
+
+	async removeInventoryKeepException(exceptionId: string): Promise<void> {
+		const state = await this.inventoryPreferences.removeKeepException(exceptionId);
+		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
+		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
 		this.renderInventoryAdvisorViews();
 	}
 
@@ -841,7 +912,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (previousLanguage !== nextSettings.language) {
 			// Catalog names and deterministic ordering are locale-specific. A locale change
 			// invalidates local advisor memory but never captures again implicitly.
-			this.inventoryAdvisor.invalidate();
+			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
 				this.managedAssets.setBundle({ bundleVersion: 3, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
@@ -854,7 +925,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
-			this.inventoryAdvisor.invalidate();
+			this.invalidateInventoryAdvisor();
 			this.runRuntimeMutation(() => this.assistedDetection.disarm('connection_changed'));
 			this.connection.reset();
 			this.settingTab.refreshConnectionRow();
@@ -889,6 +960,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)) {
 			if (leaf.view instanceof InventoryAdvisorItemView) leaf.view.render();
 		}
+	}
+
+	private invalidateInventoryAdvisor(): void {
+		this.inventoryAdvisor.invalidate();
+		this.inventoryPreferences.invalidate();
+		this.renderInventoryAdvisorViews();
 	}
 
 	private async reconcilePendingProposals(): Promise<void> {
@@ -1164,6 +1241,7 @@ function createInventoryAdvisorRuntime(
 	publicClient: GuildWars2PublicCatalogClient,
 	snapshots: StorageSnapshotService,
 	locale: () => Locale,
+	preferences: InventoryPreferencesRuntime,
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
 	const inventoryWorkflow = new InventoryAdvisorWorkflow({
@@ -1176,10 +1254,14 @@ function createInventoryAdvisorRuntime(
 			}
 			return await inventoryEvidence.capture(captureLocale);
 		} },
-		preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+		preferences,
 		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
 	});
-	return new InventoryAdvisorPresentationController({ load: () => inventoryWorkflow.refresh(locale()) });
+	return new InventoryAdvisorPresentationController({
+		load: () => inventoryWorkflow.refresh(locale()),
+		reclassify: () => inventoryWorkflow.reclassify(),
+		invalidate: () => inventoryWorkflow.invalidate(),
+	});
 }
 
 function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {

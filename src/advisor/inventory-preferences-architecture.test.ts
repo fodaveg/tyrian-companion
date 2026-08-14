@@ -15,6 +15,7 @@ describe('inventory preferences architecture', () => {
 		expect(PRODUCT_MODULES).toEqual([
 			'inventory-preferences-contract.ts',
 			'inventory-preferences-model.ts',
+			'inventory-preferences-runtime.ts',
 			'inventory-preferences-service.ts',
 			'inventory-preferences-store.ts',
 		]);

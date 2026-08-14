@@ -1,5 +1,13 @@
 # Changelog
 
+## H5.12 — Preferencias locales del Inventory Advisor
+
+- Añade objetivos de reserva y excepciones de conservación locales, editables dentro del Advisor tras una acción explícita.
+- Las claves persistidas combinan hash de vault y cuenta probada por la evidencia; el ItemView no expone identificadores ni generación CAS.
+- Las escrituras usan CAS entre ventanas, preservan el borrador ante conflicto y reclasifican sólo evidencia aún fresca, sin segunda captura.
+- Corrupción, schema futuro, indisponibilidad y evidencia obsoleta fallan cerrados; no se crean recomendaciones con defaults.
+- QA visual real en Obsidian permanece pendiente.
+
 ## H5.11 — Vista manual del Inventory Advisor
 
 - Añadida una vista Obsidian independiente, responsive y bilingüe con filtros, agrupación, cantidad,

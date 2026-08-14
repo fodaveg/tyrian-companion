@@ -15,7 +15,9 @@ import {
 	type InventoryAdvisorViewCoverageState,
 	type InventoryAdvisorViewModel,
 	type InventoryAdvisorViewRow,
+	type InventoryAdvisorViewInteractions,
 } from './inventory-advisor-view';
+import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -162,11 +164,83 @@ describe('Inventory Advisor view', () => {
 		renderInventoryAdvisorViewFromPort(portMount.container as unknown as HTMLElement, createInventoryAdvisorFixturePort(model), createTranslator('en'));
 		expect(portMount.container.children[0]?.attributes.get('aria-label')).toBe('Inventory advisor');
 	});
+
+	it('loads explicitly and creates, updates, resets, and removes redacted local preferences accessibly', async () => {
+		let preferences: InventoryPreferencesEditorState = {
+			status: 'ready', goals: [preferenceGoal('goal-existing')],
+			keepExceptions: [preferenceException('exception-existing', 'all')],
+		};
+		let preferencesBusy = false;
+		const callbacks = {
+			load: vi.fn(async () => {}), upsertGoal: vi.fn(async () => {}), removeGoal: vi.fn(async () => {}),
+			upsertException: vi.fn(async () => {}), removeException: vi.fn(async () => {}),
+		};
+		const interactions: InventoryAdvisorViewInteractions = {
+			get preferences() { return preferences; }, get preferencesBusy() { return preferencesBusy; }, onLoadPreferences: callbacks.load,
+			onUpsertGoal: callbacks.upsertGoal, onRemoveGoal: callbacks.removeGoal,
+			onUpsertKeepException: callbacks.upsertException, onRemoveKeepException: callbacks.removeException,
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		const load = only(find(mount.elements(), 'button').filter((button) => button.textContent === 'Cargar preferencias locales'));
+		load.dispatch('click');
+		expect(callbacks.load).toHaveBeenCalledOnce();
+		const [goalForm, exceptionForm] = byClass(mount.elements(), 'tyrian-inventory-advisor__preference-form');
+		if (goalForm === undefined || exceptionForm === undefined) throw new Error('Expected preference forms.');
+		const goalEdit = only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Editar objetivo goal-existing'));
+		goalEdit.dispatch('click');
+		const goalInputs = find(walk(goalForm), 'input');
+		expect(goalInputs[0]?.value).toBe('goal-existing');
+		expect(only(find(walk(goalForm), 'button').filter((button) => button.type === 'submit')).textContent).toBe('Actualizar objetivo');
+		goalInputs[0]!.value = 'Goal updated'; goalInputs[1]!.value = '10'; goalInputs[2]!.value = '5'; goalInputs[3]!.value = '3';
+		goalForm.dispatch('submit');
+		expect(callbacks.upsertGoal).toHaveBeenCalledWith(expect.objectContaining({ goalId: 'goal-existing', title: 'Goal updated', priority: 3,
+			requirements: [expect.objectContaining({ id: 10, targetQuantity: 5, creditedQuantity: 2 })] }));
+		const newGoal = only(find(walk(goalForm), 'button').filter((button) => button.textContent === 'Nuevo objetivo'));
+		newGoal.dispatch('click');
+		expect(only(find(walk(goalForm), 'button').filter((button) => button.type === 'submit')).textContent).toBe('Añadir objetivo');
+		const exceptionEdit = only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Editar excepción del objeto 12'));
+		exceptionEdit.dispatch('click');
+		const exceptionInputs = find(walk(exceptionForm), 'input');
+		const exceptionSelects = find(walk(exceptionForm), 'select');
+		expect(exceptionSelects.at(-1)?.value).toBe('all');
+		expect(exceptionInputs[0]?.disabled).toBe(false);
+		expect(exceptionInputs[1]?.disabled).toBe(true);
+		exceptionForm.dispatch('submit');
+		expect(callbacks.upsertException).toHaveBeenCalledWith(expect.objectContaining({ exceptionId: 'exception-existing', quantity: { mode: 'all' } }));
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		expect(exceptionInputs[1]?.disabled).toBe(true);
+		const newException = only(find(walk(exceptionForm), 'button').filter((button) => button.textContent === 'Nueva excepción'));
+		newException.dispatch('click');
+		expect(exceptionInputs[1]?.disabled).toBe(false);
+		expect(exceptionInputs[1]?.required).toBe(true);
+		expect(only(find(walk(exceptionForm), 'button').filter((button) => button.type === 'submit')).textContent).toBe('Añadir excepción');
+		const goalRemove = only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Quitar objetivo goal-existing'));
+		goalRemove.dispatch('click'); await Promise.resolve();
+		expect(callbacks.removeGoal).toHaveBeenCalledWith('goal-existing');
+		expect(mount.document.activeElement).toBe(load);
+		preferences = { status: 'conflict', goals: [preferenceGoal('goal-existing')], keepExceptions: [preferenceException('exception-existing', 'all')] };
+		goalInputs[0]!.value = 'Draft preserved';
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		expect(goalInputs[0]?.value).toBe('Draft preserved');
+		expect(exceptionInputs[1]?.disabled).toBe(true);
+		expect(only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Quitar objetivo goal-existing')).disabled).toBe(true);
+		expect(only(find(mount.elements(), 'button').filter((button) => button.attributes.get('aria-label') === 'Editar objetivo goal-existing')).disabled).toBe(true);
+		preferences = { status: 'ready', goals: [preferenceGoal('goal-existing')], keepExceptions: [preferenceException('exception-existing', 'minimum')] };
+		preferencesBusy = true;
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		expect(exceptionInputs[1]?.disabled).toBe(true);
+		preferencesBusy = false;
+		const beforeLocale = text(mount.elements());
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('en'), undefined, interactions);
+		expect(beforeLocale).toContain('ID del objeto 10');
+		expect(text(mount.elements())).toContain('Item ID 10');
+		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
+	});
 });
 
-function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es') {
+function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {
 	const mount = createMount();
-	renderInventoryAdvisorView(mount.container as unknown as HTMLElement, model, createTranslator(locale));
+	renderInventoryAdvisorView(mount.container as unknown as HTMLElement, model, createTranslator(locale), undefined, interactions);
 	const section = mount.container.children[0];
 	if (!section) throw new Error('Expected a rendered Inventory Advisor section.');
 	return { ...mount, section, elements: () => walk(mount.container) };
@@ -263,7 +337,7 @@ class FakeDocument {
 class FakeElement {
 	readonly children: FakeElement[] = [];
 	readonly attributes = new Map<string, string>();
-	readonly listeners = new Map<string, Array<() => void>>();
+	readonly listeners = new Map<string, Array<(event: { preventDefault(): void }) => void>>();
 	className = '';
 	id = '';
 	scope = '';
@@ -272,6 +346,8 @@ class FakeElement {
 	type = '';
 	value = '';
 	placeholder = '';
+	disabled = false;
+	required = false;
 	selected = false;
 
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
@@ -279,11 +355,21 @@ class FakeElement {
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
-	addEventListener(type: string, listener: () => void): void {
+	addEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void {
 		const listeners = this.listeners.get(type) ?? [];
 		listeners.push(listener);
 		this.listeners.set(type, listeners);
 	}
-	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
+	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener({ preventDefault() {} }); }
 	focus(): void { this.ownerDocument.activeElement = this; }
+}
+
+function preferenceGoal(goalId: string) {
+	return { schemaVersion: 1 as const, goalId, title: goalId, status: 'active' as const, priority: 1, reason: 'personal' as const,
+		requirements: [{ key: 'item:10', namespace: 'item' as const, id: 10, targetQuantity: 2, creditedQuantity: 2, basis: 'available' as const, intendedUse: 'hold' as const }] };
+}
+
+function preferenceException(exceptionId: string, mode: 'all' | 'minimum') {
+	return { version: 1 as const, exceptionId, itemId: 12, status: 'active' as const, basis: 'available' as const,
+		quantity: mode === 'all' ? { mode: 'all' as const } : { mode: 'minimum' as const, value: 1 }, reason: 'user_keep' as const };
 }

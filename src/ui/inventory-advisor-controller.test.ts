@@ -51,6 +51,64 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(firstRowName(controller.current())).toBe('Shared');
 	});
 
+	it('queues a reclassification after an in-flight refresh so the final model uses the reclassified capture', async () => {
+		const captured = deferred<InventoryAdvisorWorkflowResult>();
+		const reclassified = deferred<InventoryAdvisorWorkflowResult>();
+		const ports = {
+			load: vi.fn(() => captured.promise), reclassify: vi.fn(() => reclassified.promise),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const refreshing = controller.refresh();
+		await Promise.resolve();
+		const reclassifying = controller.reclassify();
+		expect(ports.reclassify).not.toHaveBeenCalled();
+		captured.resolve(sourceNamed('Captured'));
+		await settle();
+		expect(ports.reclassify).toHaveBeenCalledOnce();
+		reclassified.resolve(sourceNamed('Reclassified'));
+		await Promise.all([refreshing, reclassifying]);
+		expect(firstRowName(controller.current())).toBe('Reclassified');
+	});
+
+	it('queues a new refresh after an in-flight reclassification so fresh capture wins in the opposite order', async () => {
+		const reclassified = deferred<InventoryAdvisorWorkflowResult>();
+		const captured = deferred<InventoryAdvisorWorkflowResult>();
+		const ports = {
+			load: vi.fn(() => captured.promise), reclassify: vi.fn(() => reclassified.promise),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const reclassifying = controller.reclassify();
+		await Promise.resolve();
+		const refreshing = controller.refresh();
+		expect(ports.load).not.toHaveBeenCalled();
+		reclassified.resolve(sourceNamed('Reclassified'));
+		await settle();
+		expect(ports.load).toHaveBeenCalledOnce();
+		captured.resolve(sourceNamed('Fresh'));
+		await Promise.all([reclassifying, refreshing]);
+		expect(firstRowName(controller.current())).toBe('Fresh');
+	});
+
+	it('serializes two reclassifications so a later preference generation produces the final model', async () => {
+		const first = deferred<InventoryAdvisorWorkflowResult>();
+		const second = deferred<InventoryAdvisorWorkflowResult>();
+		const ports = {
+			load: vi.fn(async () => sourceNamed('Captured')),
+			reclassify: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const afterGenerationOne = controller.reclassify();
+		const afterGenerationTwo = controller.reclassify();
+		await Promise.resolve();
+		expect(ports.reclassify).toHaveBeenCalledOnce();
+		first.resolve(sourceNamed('Preference generation 1'));
+		await settle();
+		expect(ports.reclassify).toHaveBeenCalledTimes(2);
+		second.resolve(sourceNamed('Preference generation 2'));
+		await Promise.all([afterGenerationOne, afterGenerationTwo]);
+		expect(firstRowName(controller.current())).toBe('Preference generation 2');
+	});
+
 	it('projects the explicit missing-rules result as blocked without inventing rows', async () => {
 		const ports = { load: vi.fn(async () => ({ status: 'blocked', reason: 'missing_rules' } as const)) } satisfies InventoryAdvisorControllerPorts;
 		await expect(new InventoryAdvisorPresentationController(ports).refresh())
@@ -137,4 +195,9 @@ function deferred<T>() {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((innerResolve) => { resolve = innerResolve; });
 	return { promise, resolve };
+}
+
+async function settle(): Promise<void> {
+	/* A queued flight crosses the completion, finally, and chained `then` jobs. */
+	for (let tick = 0; tick < 10; tick += 1) await Promise.resolve();
 }

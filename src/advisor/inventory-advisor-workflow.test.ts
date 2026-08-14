@@ -33,7 +33,7 @@ describe('H5.11 inventory advisor workflow', () => {
 
 	it('captures exactly once per explicit workflow refresh and rejects unavailable evidence', async () => {
 		const capture = vi.fn(async () => ({ status: 'unavailable' as const, evidence: null }));
-		const preferences = vi.fn(async () => ({ goals: [], keepExceptions: [] }));
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
 		const workflow = new InventoryAdvisorWorkflow({
 			capture: { capture },
 			preferences: { load: preferences },
@@ -115,7 +115,58 @@ describe('H5.11 inventory advisor workflow', () => {
 		});
 		expect(JSON.stringify(presentation)).not.toContain('destroy');
 	});
+
+	it('loads preferences only after capture and reclassifies a fresh capture without a second API capture', async () => {
+		const fixture = reviewedDiscardFixture();
+		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture }, preferences: { load: preferences }, rules: { current: () => ({ status: 'available', value: fixture.rules }) },
+			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+		});
+		await expect(workflow.refresh('es')).resolves.toMatchObject({ status: 'ready' });
+		await expect(workflow.reclassify()).resolves.toMatchObject({ status: 'ready' });
+		expect(capture).toHaveBeenCalledOnce();
+		expect(preferences).toHaveBeenCalledTimes(2);
+		expect(preferences.mock.invocationCallOrder[0]).toBeGreaterThan(capture.mock.invocationCallOrder[0]!);
+	});
+
+	it('invalidates stale retained evidence during reclassification rather than recapturing or composing defaults', async () => {
+		const fixture = reviewedDiscardFixture();
+		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
+		let now = Date.parse('2026-08-14T12:00:00.000Z');
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture }, preferences: { load: preferences }, rules: { current: () => ({ status: 'available', value: fixture.rules }) }, now: () => now,
+		});
+		await workflow.refresh('es');
+		now += fixture.rules.policy.maxSnapshotAgeMs + 1;
+		await expect(workflow.reclassify()).resolves.toEqual({ status: 'blocked', reason: 'stale_evidence' });
+		expect(capture).toHaveBeenCalledOnce();
+	});
+
+	it('does not resurrect a captured account scope after invalidation while capture is pending', async () => {
+		const fixture = reviewedDiscardFixture();
+		const pending = deferred<{ status: 'complete'; evidence: InventoryAdvisorEvidenceV1 }>();
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: () => pending.promise }, preferences: { load: preferences },
+			rules: { current: () => ({ status: 'available', value: fixture.rules }) }, now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+		});
+		const refreshing = workflow.refresh('es');
+		workflow.invalidate();
+		pending.resolve({ status: 'complete', evidence: fixture.evidence });
+		await expect(refreshing).resolves.toEqual({ status: 'blocked', reason: 'stale_evidence' });
+		expect(preferences).not.toHaveBeenCalled();
+		await expect(workflow.reclassify()).resolves.toEqual({ status: 'blocked', reason: 'stale_evidence' });
+	});
 });
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((innerResolve) => { resolve = innerResolve; });
+	return { promise, resolve };
+}
 
 function reviewedDiscardFixture(): { evidence: InventoryAdvisorEvidenceV1; rules: InventoryAdvisorRules } {
 	const snapshot: StorageSnapshot = {

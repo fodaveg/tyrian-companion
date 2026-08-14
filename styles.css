@@ -457,6 +457,47 @@
 	border-block: 1px solid var(--background-modifier-border);
 }
 
+.tyrian-inventory-advisor__preferences {
+	margin-block: var(--size-4-4);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.tyrian-inventory-advisor__preferences summary {
+	cursor: pointer;
+	min-height: 44px;
+	align-content: center;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__preferences-status {
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__preference-form,
+.tyrian-inventory-advisor__preference-entry {
+	display: flex;
+	gap: var(--size-4-2);
+	flex-wrap: wrap;
+	align-items: center;
+	margin-block: var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__preference-form input,
+.tyrian-inventory-advisor__preference-form button,
+.tyrian-inventory-advisor__preferences > button,
+.tyrian-inventory-advisor__preference-entry button {
+	min-height: 44px;
+	max-width: 100%;
+}
+
+.tyrian-inventory-advisor__preference-entry {
+	justify-content: space-between;
+	padding-block: var(--size-4-1);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+
 .tyrian-inventory-advisor__table {
 	width: 100%;
 	border-collapse: collapse;
@@ -533,6 +574,10 @@
 @container (max-width: 479px) {
 	.tyrian-inventory-advisor__card dl {
 		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.tyrian-inventory-advisor__preference-form > * {
+		width: 100%;
 	}
 }
 

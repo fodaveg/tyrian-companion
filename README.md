@@ -88,10 +88,13 @@ The current `0.1.0` vertical provides:
   through a latest-wins single-flight cache. H4.17 supplies an immutable built-in review-only bundle
   with no curated routes: before its exclusive 2026-11-12 expiry every remaining item stays `review`,
   never economy or discard; at expiry, Refresh fails closed with `missing_rules` before any API request.
+- H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
+  exceptions. It derives a hashed vault/account scope only after capture, uses IndexedDB CAS across
+  windows, preserves drafts on conflict, and reclassifies only fresh cached evidence without a second capture.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
-account operations are intentionally not implemented. Inventory preferences and curated production
-rule/knowledge routes are not implemented yet. Vault writes are
+account operations are intentionally not implemented. Curated production rule/knowledge routes are
+not implemented yet. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
 JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted

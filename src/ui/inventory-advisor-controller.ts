@@ -9,12 +9,16 @@ import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from '
 export interface InventoryAdvisorControllerPorts {
 	/** The integration seam for H4.14/H4.15 evidence; this controller owns no I/O client. */
 	load(): Promise<InventoryAdvisorWorkflowResult>;
+	/** Rebuilds a fresh in-memory capture after an explicit preference edit. */
+	reclassify?(): Promise<InventoryAdvisorWorkflowResult>;
+	/** Clears integration-owned retained evidence when the account or locale changes. */
+	invalidate?(): void;
 }
 
 /** Memory-only advisor projection cache with generation-scoped explicit refreshes. */
 export class InventoryAdvisorPresentationController {
 	private cached: InventoryAdvisorWorkflowResult | null = null;
-	private flight: { generation: number; promise: Promise<void> } | null = null;
+	private flight: { generation: number; kind: 'refresh' | 'reclassify'; promise: Promise<void> } | null = null;
 	private failed = false;
 	private generation = 0;
 	private disposed = false;
@@ -42,7 +46,7 @@ export class InventoryAdvisorPresentationController {
 	async refresh(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
 		if (this.disposed) return this.current(options);
 		const generation = this.generation;
-		await this.runFlight(generation);
+		await this.runFlight(generation, 'refresh');
 		if (this.generation !== generation) {
 			const newer = this.flight;
 			if (newer !== null && newer.generation === this.generation) await newer.promise;
@@ -50,11 +54,30 @@ export class InventoryAdvisorPresentationController {
 		return this.current(options);
 	}
 
+	/** Reprojects a cached fresh capture; it never starts a second account capture. */
+	async reclassify(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
+		if (this.disposed || this.ports.reclassify === undefined) return this.current(options);
+		const generation = this.generation;
+		await this.runFlight(generation, 'reclassify');
+		return this.current(options);
+	}
+
 	/** Discards only local memory. An earlier flight cannot repopulate a newer generation. */
 	invalidate(): void {
 		if (this.disposed) return;
+		this.ports.invalidate?.();
 		this.generation += 1;
 		this.cached = null;
+		this.flight = null;
+		this.failed = false;
+	}
+
+	/** Blocks the visible projection after a local preference integrity failure without starting capture. */
+	block(): void {
+		if (this.disposed) return;
+		this.ports.invalidate?.();
+		this.generation += 1;
+		this.cached = { status: 'blocked', reason: 'preferences_unavailable' };
 		this.flight = null;
 		this.failed = false;
 	}
@@ -69,10 +92,18 @@ export class InventoryAdvisorPresentationController {
 		this.disposed = true;
 	}
 
-	private runFlight(generation: number): Promise<void> {
+	private runFlight(generation: number, kind: 'refresh' | 'reclassify'): Promise<void> {
 		if (this.disposed) return Promise.resolve();
-		if (this.flight !== null && this.flight.generation === generation) return this.flight.promise;
-		const promise = Promise.resolve().then(() => this.ports.load()).then((source) => {
+		/* Refreshes have no intervening preference state and can coalesce. A
+		 * reclassification may follow a newer CAS write, so it is always queued
+		 * and recomposed against the runtime's latest durable preference record. */
+		if (kind === 'refresh' && this.flight !== null && this.flight.generation === generation && this.flight.kind === kind) return this.flight.promise;
+		const earlier = this.flight !== null && this.flight.generation === generation ? this.flight.promise : Promise.resolve();
+		const promise = earlier.then(() => {
+			if (this.disposed || this.generation !== generation) return null;
+			return kind === 'reclassify' ? this.ports.reclassify!() : this.ports.load();
+		}).then((source) => {
+			if (source === null) return;
 			const safe = clone(source);
 			if (this.generation !== generation) return;
 			this.cached = safe;
@@ -84,7 +115,7 @@ export class InventoryAdvisorPresentationController {
 		}).finally(() => {
 			if (this.flight?.promise === promise) this.flight = null;
 		});
-		this.flight = { generation, promise };
+		this.flight = { generation, kind, promise };
 		return promise;
 	}
 }
