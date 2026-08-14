@@ -1,5 +1,11 @@
 # Changelog
 
+## H6.1/H6.2 — Movimientos y contaminación
+
+- Añadida una matriz parser → snapshot → delta para los seis movimientos entre personaje, banco y materiales, con holdings/composición exactos y cero loot o disponibilidad falsos.
+- Verificada la revisión durable de apertura, reciclaje, compra en bazar y compra a mercader mediante una segunda instancia del servicio; la clasificación y sus permisos sobreviven al reinicio.
+- Fijado que la actividad del bazar de este flujo procede de declaración explícita: no se inventan eventos TP observados.
+
 ## H5.9 — Internacionalización ES/EN
 
 - Añadido catálogo pequeño, tipado y exhaustivo para ajustes, Companion, estados, acciones, notices, confirmaciones y modales; las claves y placeholders ES/EN se comprueban estructuralmente y la interpolación permanece en texto plano.

@@ -7,7 +7,12 @@ import {
 	characterName,
 	completePassFixture,
 } from './__fixtures__/storage';
-import { InvalidSnapshotPayloadError, SnapshotCapabilityError } from './storage-snapshot-model';
+import {
+	InvalidSnapshotPayloadError,
+	SnapshotCapabilityError,
+	type ItemHolding,
+} from './storage-snapshot-model';
+import { compareStorageSnapshots } from './storage-delta';
 import { StorageSnapshotService } from './storage-snapshot-service';
 
 type PassFixture = Record<string, unknown>;
@@ -111,6 +116,59 @@ function passWith(overrides: PassFixture = {}): PassFixture {
 }
 
 describe('StorageSnapshotService', () => {
+	it.each([
+		['character to bank', 'character', 'bank'],
+		['character to materials', 'character', 'materials'],
+		['bank to character', 'bank', 'character'],
+		['bank to materials', 'bank', 'materials'],
+		['materials to character', 'materials', 'character'],
+		['materials to bank', 'materials', 'bank'],
+	] as const)(
+		'keeps a split or merged stack neutral when it moves from %s',
+		async (_label, from, to) => {
+			const service = new StorageSnapshotService(
+				clientFor([
+					passWithAccountItem(from),
+					passWithAccountItem(from),
+					passWithAccountItem(to),
+					passWithAccountItem(to),
+				], { permissions: allPermissions }).client,
+			);
+			const before = await service.capture();
+			const after = await service.capture();
+			const delta = compareStorageSnapshots(before, after);
+			const beforeHoldings = accountItemHoldings(from);
+			const afterHoldings = accountItemHoldings(to);
+
+			expect({
+				beforeHoldings: before.holdings.filter((holding) => holding.itemId === 777),
+				afterHoldings: after.holdings.filter((holding) => holding.itemId === 777),
+				delta: {
+					status: delta.status,
+					itemChanges: delta.itemChanges,
+					availabilityChanges: delta.availabilityChanges,
+					composition: delta.compositionChanges.filter(
+						(change) => change.kind === 'item' && change.id === 777,
+					),
+				},
+			}).toEqual({
+				beforeHoldings,
+				afterHoldings,
+				delta: {
+					status: 'comparable',
+					itemChanges: [],
+					availabilityChanges: [],
+					composition: [{
+						kind: 'item',
+						id: 777,
+						before: accountItemComposition(from),
+						after: accountItemComposition(to),
+					}],
+				},
+			});
+		},
+	);
+
 	it('pins one operation, encodes names, pins the schema, and builds availability totals', async () => {
 		const seen: string[] = [];
 		const fixture = clientFor([passWith(), passWith()], { seen, permissions: allPermissions });
@@ -458,3 +516,48 @@ describe('StorageSnapshotService', () => {
 		});
 	});
 });
+
+type AccountItemSurface = 'character' | 'bank' | 'materials';
+
+function passWithAccountItem(surface: AccountItemSurface): PassFixture {
+	return passWith({
+		[`characters/${encodeURIComponent(characterName)}/inventory`]: {
+			bags: [{
+				id: 1_001,
+				inventory: surface === 'character'
+					? [{ id: 777, count: 1 }, { id: 777, count: 2 }]
+					: [null, null],
+			}],
+		},
+		'account/bank': surface === 'bank' ? [{ id: 777, count: 3 }] : [],
+		'account/materials': surface === 'materials' ? [{ id: 777, category: 7, count: 3 }] : [],
+	});
+}
+
+function accountItemHoldings(surface: AccountItemSurface): ItemHolding[] {
+	if (surface === 'character') {
+		return [
+			{
+				kind: 'item', itemId: 777, quantity: 1, state: 'loose', metadata: {},
+				location: { source: 'character', character: characterName, container: 'bag', bagIndex: 0, slot: 0 },
+			},
+			{
+				kind: 'item', itemId: 777, quantity: 2, state: 'loose', metadata: {},
+				location: { source: 'character', character: characterName, container: 'bag', bagIndex: 0, slot: 1 },
+			},
+		];
+	}
+	return [{
+		kind: 'item', itemId: 777, quantity: 3, state: 'loose', metadata: {},
+		location: surface === 'bank' ? { source: 'bank', slot: 0 } : { source: 'materials', category: 7 },
+	}];
+}
+
+function accountItemComposition(surface: AccountItemSurface) {
+	return accountItemHoldings(surface).map(({ quantity, state, location, metadata }) => ({
+		quantity,
+		state,
+		location,
+		metadata,
+	}));
+}
