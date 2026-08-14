@@ -502,6 +502,23 @@ describe('recommendContainerDisposition', () => {
 		expect(result.explanation?.caveats).toContain('excluded_outcomes_not_valued');
 	});
 
+	it('does not let an excluded jackpot change EV or the resulting decision', () => {
+		const baseline = ready(input({ modelEvMicro: 102_300_000 }));
+		const withJackpot = input({ modelEvMicro: 102_300_000 });
+		withJackpot.model.sample.observations += 50;
+		withJackpot.model.excluded = [{
+			category: 'Unpriced jackpot', sampleUnits: 50, reason: 'super_rare_jackpot',
+		}];
+		withJackpot.model.uncertainty.rareDropTreatment = 'excluded';
+		withJackpot.modelReview.modelFingerprint = containerModelFingerprint(withJackpot.model)!;
+
+		const result = ready(withJackpot);
+
+		expect(result.explanation?.open.evPerContainerMicroCopper)
+			.toBe(baseline.explanation?.open.evPerContainerMicroCopper);
+		expect(result.economicDecision).toEqual(baseline.economicDecision);
+	});
+
 	it('fails closed on malformed input and arithmetic overflow', () => {
 		expect(recommendContainerDisposition(null)).toMatchObject({ status: 'invalid' });
 		const overflow = input({ gainedQuantity: 2, finalQuantity: 2, vendorValue: 0 });

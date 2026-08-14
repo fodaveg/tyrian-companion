@@ -6,6 +6,12 @@
 - Verificada la revisión durable de apertura, reciclaje, compra en bazar y compra a mercader mediante una segunda instancia del servicio; la clasificación y sus permisos sobreviven al reinicio.
 - Fijado que la actividad del bazar de este flujo procede de declaración explícita: no se inventan eventos TP observados.
 
+## H6.3–H6.5 — Economía, recuperación y red
+
+- Fijado que los jackpots excluidos no cambian EV ni recomendación, y que un precio TP cero degrada a evidencia parcial sin convertirse en cobre cero.
+- Añadida recuperación tras reinicio desde `stopping` y `provisional` sin recapturar baseline, final, delta ni precios; cancelar el modal no llama al backend ni muta runtime.
+- Completada la matriz HTTP: 500/502/503/504 reintentan; 401/403/501 fallan; un 5xx persistente agota reintentos con error saneado.
+
 ## H5.9 — Internacionalización ES/EN
 
 - Añadido catálogo pequeño, tipado y exhaustivo para ajustes, Companion, estados, acciones, notices, confirmaciones y modales; las claves y placeholders ES/EN se comprueban estructuralmente y la interpolación permanece en texto plano.

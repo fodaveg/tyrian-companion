@@ -29,8 +29,11 @@ describe('projectSessionCommands', () => {
 		expect(available(context('stopping', { stopFailure: failure() }))).toEqual(['finish-farming-session']);
 	});
 
-	it.each(['idle', 'error'] as const)('does not offer active-session cancel in %s', (status) => {
-		expect(projectSessionCommands(context(status)).map((command) => command.id)).not.toContain('cancel-session');
+	it('does not define or offer an active-session cancel command', () => {
+		expect(SESSION_COMMAND_IDS as readonly string[]).not.toContain('cancel-session');
+		for (const status of ['idle', 'starting', 'active', 'stopping', 'provisional', 'complete', 'error'] as const) {
+			expect(projectSessionCommands(context(status)).map((command) => command.id)).not.toContain('cancel-session');
+		}
 	});
 
 	it('requires account connection before start', () => {

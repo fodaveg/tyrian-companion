@@ -16,5 +16,5 @@
 		"lib": ["ES2021", "DOM"],
 		"types": ["node", "vitest/globals"]
 	},
-	"include": ["src/**/*.ts"]
+	"include": ["src/**/*.ts", "vitest.config.mts"]
 }

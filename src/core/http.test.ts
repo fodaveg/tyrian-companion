@@ -81,6 +81,46 @@ describe('ObsidianRequestTransport', () => {
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 
+	it.each([
+		[500, true],
+		[502, true],
+		[503, true],
+		[504, true],
+		[401, false],
+		[403, false],
+		[501, false],
+	] as const)('retries status %i only when the transport policy allows it', async (status, retryable) => {
+		const request = vi.fn(async () => response(status));
+		const transport = new ResilientHttpTransport({
+			request,
+			maxRetries: 1,
+			sleep: async () => undefined,
+			...inertTimer,
+		});
+
+		await expect(transport.send({ url: 'https://example.invalid', method: 'GET' }))
+			.rejects.toMatchObject({ kind: 'http', status });
+		expect(request).toHaveBeenCalledTimes(retryable ? 2 : 1);
+	});
+
+	it('exhausts persistent 5xx retries with a sanitized typed error', async () => {
+		const request = vi.fn(async () => response(503, {}, { token: 'secret-token' }));
+		const transport = new ResilientHttpTransport({
+			request,
+			maxRetries: 2,
+			sleep: async () => undefined,
+			...inertTimer,
+		});
+
+		const result = transport.send({
+			url: 'https://api.example.invalid/secret-token', method: 'GET',
+			headers: { Authorization: 'Bearer secret-token' },
+		});
+		await expect(result).rejects.toMatchObject({ kind: 'http', status: 503 });
+		await expect(result).rejects.not.toThrow(/secret-token|api\.example/u);
+		expect(request).toHaveBeenCalledTimes(3);
+	});
+
 	it('returns a sanitized typed error without request secrets', async () => {
 		const transport = new ResilientHttpTransport({
 			request: async () => response(401, {}, { text: 'Bearer secret-token' }),

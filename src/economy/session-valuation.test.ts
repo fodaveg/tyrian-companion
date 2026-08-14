@@ -136,6 +136,28 @@ describe('calculateSessionValuation', () => {
 		});
 	});
 
+	it('keeps a zero-priced TP vertical null and makes the valuation partial', () => {
+		const value = input();
+		value.prices = {
+			...value.prices,
+			status: 'partial',
+			items: value.prices.items.map((entry) => entry.itemId === HALLOWEEN_TOT_BAG_ITEM_ID
+				? { ...entry, bid: null }
+				: entry),
+		};
+
+		const result = calculateSessionValuation(value);
+
+		expect(result).toMatchObject({
+			status: 'ok',
+			valuation: {
+				coverage: 'partial',
+				lines: [{}, { itemId: HALLOWEEN_TOT_BAG_ITEM_ID, instantSell: null }],
+				warnings: ['price_incomplete'],
+			},
+		});
+	});
+
 	it('reports item losses as an explicit limitation and never subtracts an invented value', () => {
 		const value = input();
 		value.delta.itemChanges.splice(1, 0, { id: 99, before: 3, after: 1, delta: -2 });

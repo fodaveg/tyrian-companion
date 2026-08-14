@@ -49,6 +49,7 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 
 		const items: SessionItemPrice[] = [];
 		const missing = new Set<number>();
+		let incompleteSides = false;
 		try {
 			for (const batch of chunks(ids, MAX_BATCH_SIZE)) {
 				const response = await this.gateway.requestDetailed(
@@ -61,6 +62,7 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 				const parsed = parseBatch(response.body, new Set(batch), gainedById);
 				items.push(...parsed.items);
 				parsed.missing.forEach((id) => missing.add(id));
+				incompleteSides ||= parsed.incompleteSides;
 			}
 		} catch {
 			return createResult(sessionId, this.now(), 'unavailable', [], ids);
@@ -71,7 +73,8 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 		return createResult(
 			sessionId,
 			this.now(),
-			missingItemIds.length === 0 ? 'complete' : items.length === 0 ? 'unavailable' : 'partial',
+			missingItemIds.length === 0 && !incompleteSides
+				? 'complete' : items.length === 0 ? 'unavailable' : 'partial',
 			items,
 			missingItemIds,
 		);
@@ -118,7 +121,8 @@ export function isSessionPriceSnapshot(
 	if (typedMissing.some((id) => itemIds.has(id))) return false;
 	if (value.status === 'complete' && typedMissing.length > 0) return false;
 	if (value.status === 'unavailable' && typedItems.length > 0) return false;
-	if (value.status === 'partial' && (typedItems.length === 0 || typedMissing.length === 0)) return false;
+	if (value.status === 'partial' && (typedItems.length === 0
+		|| (typedMissing.length === 0 && typedItems.every((item) => item.bid !== null && item.ask !== null)))) return false;
 
 	if (delta) {
 		const expected = new Map(delta.status === 'invalid' ? [] : delta.itemChanges
@@ -154,10 +158,11 @@ function parseBatch(
 	body: unknown,
 	requested: ReadonlySet<number>,
 	gainedById: ReadonlyMap<number, number>,
-): { items: SessionItemPrice[]; missing: number[] } {
-	if (!Array.isArray(body)) return { items: [], missing: [...requested] };
+): { items: SessionItemPrice[]; missing: number[]; incompleteSides: boolean } {
+	if (!Array.isArray(body)) return { items: [], missing: [...requested], incompleteSides: false };
 	const candidates = new Map<number, SessionItemPrice>();
 	const invalid = new Set<number>();
+	let incompleteSides = false;
 	for (const entry of body) {
 		if (!isRecord(entry) || !positiveInteger(entry.id) || !requested.has(entry.id)) continue;
 		const id = entry.id;
@@ -168,24 +173,26 @@ function parseBatch(
 			invalid.add(id);
 			continue;
 		}
+		incompleteSides ||= bid.incomplete || ask.incomplete;
 		candidates.set(id, {
 			itemId: id,
 			quantityGained: gainedById.get(id)!,
 			whitelisted: entry.whitelisted,
-			bid,
-			ask,
+			bid: bid.side,
+			ask: ask.side,
 		});
 	}
 	const items = [...candidates.values()].sort((left, right) => left.itemId - right.itemId);
-	return { items, missing: [...requested].filter((id) => !candidates.has(id)) };
+	return { items, missing: [...requested].filter((id) => !candidates.has(id)), incompleteSides };
 }
 
-function parseSide(value: unknown): TradingPostQuoteSide | null | undefined {
+function parseSide(value: unknown): { side: TradingPostQuoteSide | null; incomplete: boolean } | undefined {
 	if (!isRecord(value) || !exactKeys(value, ['quantity', 'unit_price'])
 		|| !nonNegativeInteger(value.quantity) || !nonNegativeInteger(value.unit_price)) return undefined;
-	if (value.quantity === 0 && value.unit_price === 0) return null;
-	if (value.quantity === 0 || value.unit_price === 0) return undefined;
-	return { quantity: value.quantity, unitCopper: value.unit_price };
+	if (value.quantity === 0 && value.unit_price === 0) return { side: null, incomplete: false };
+	if (value.unit_price === 0) return { side: null, incomplete: true };
+	if (value.quantity === 0) return undefined;
+	return { side: { quantity: value.quantity, unitCopper: value.unit_price }, incomplete: false };
 }
 
 function isSessionItemPrice(value: unknown): value is SessionItemPrice {

@@ -691,6 +691,53 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	it.each(['stopping', 'provisional'] as const)(
+		'recovers a %s session after restart without recapturing persisted evidence',
+		async (status) => {
+			const runtimeStore = new MemorySessionRuntimeStore();
+			const firstCapture = {
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: status === 'stopping'
+					? vi.fn(async () => { throw new Error('offline'); })
+					: vi.fn(async () => afterSnapshot()),
+			};
+			const first = new ManualSessionStartService(
+				coordinator(),
+				firstCapture,
+				serviceOptions({ runtimeStore }),
+			);
+			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+			await first.stop();
+			expect(first.getState().status).toBe(status);
+			await first.dispose();
+
+			const recoveredHandle = {
+				...handle,
+				instanceId: `instance-after-${status}`,
+				fence: 2,
+				acquiredAt: acquiredAt + 60_000,
+				renewedAt: acquiredAt + 60_000,
+				expiresAt: acquiredAt + 90_000,
+			};
+			const evidence = {
+				capture: vi.fn(async () => { throw new Error('must not recapture baseline'); }),
+				captureFinal: vi.fn(async () => { throw new Error('must not recapture final'); }),
+			};
+			const second = new ManualSessionStartService(
+				coordinator({ acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: recoveredHandle })) }),
+				evidence,
+				serviceOptions({ runtimeStore, now: () => acquiredAt + 60_001 }),
+			);
+
+			await second.initialize();
+			await expect(second.recover()).resolves.toMatchObject({
+				status: 'recovered', state: { status, authority: { fence: 2 } },
+			});
+			expect(evidence.capture).not.toHaveBeenCalled();
+			expect(evidence.captureFinal).not.toHaveBeenCalled();
+		},
+	);
+
 	it('keeps a saved session available when another window still owns its lease', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const first = new ManualSessionStartService(

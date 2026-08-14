@@ -83,6 +83,27 @@ describe('SessionPriceSnapshotService', () => {
 		expect(isSessionPriceSnapshot(result, 'session-1', storageDelta)).toBe(true);
 	});
 
+	it('keeps a zero-priced TP side null as an explicit partial snapshot', async () => {
+		const api = gateway([
+			{ id: 10, whitelisted: true, buys: { quantity: 1, unit_price: 0 }, sells: { quantity: 2, unit_price: 12 } },
+			{ id: 20, whitelisted: true, buys: { quantity: 1, unit_price: 9 }, sells: { quantity: 2, unit_price: 12 } },
+		]);
+		const storageDelta = delta([{ id: 10, before: 0, after: 1 }, { id: 20, before: 0, after: 1 }]);
+
+		const result = await new SessionPriceSnapshotService(api, () => capturedAt)
+			.capture('session-1', storageDelta);
+
+		expect(result).toMatchObject({
+			status: 'partial',
+			items: [
+				{ itemId: 10, bid: null, ask: { unitCopper: 12 } },
+				{ itemId: 20, bid: { unitCopper: 9 } },
+			],
+			missingItemIds: [],
+		});
+		expect(isSessionPriceSnapshot(result, 'session-1', storageDelta)).toBe(true);
+	});
+
 	it('returns an unavailable close-time snapshot when the public request fails', async () => {
 		const api: PublicCatalogGateway = { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) };
 		const storageDelta = delta([{ id: 20, before: 0, after: 4 }]);
