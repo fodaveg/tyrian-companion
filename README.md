@@ -2,6 +2,10 @@
 
 Tyrian Companion is a desktop-only Obsidian plugin foundation for bringing Guild Wars 2 account context and planning into a vault.
 
+The MVP is API-only. Linux with Steam/Proton is the primary platform, macOS with CrossOver is
+secondary, and Windows support is beta. Mumble Link is not part of the MVP; it is reserved for an
+optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
+
 The current `0.1.0` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
@@ -68,10 +72,12 @@ The current `0.1.0` vertical provides:
 - A strict H4.12 JSON recommendation envelope that labels every decision manual-only and
   side-effect-free, with a mechanical boundary test against I/O dependencies and operations.
 
-Automatic synchronization, persisted valuation/recommendation reports, vault writes, unattended
-detection, and recommendation UI or account operations are intentionally not implemented yet. Snapshot capture runs from explicit
-**Start session**, **Stop session**, or **Arm assisted detection** actions; it describes observed
-storage, not total account wealth.
+Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
+recommendation UI or account operations are intentionally not implemented yet. Vault writes are
+limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
+JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
+Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
+detection** actions; it describes observed storage, not total account wealth.
 
 ## Requirements
 
@@ -123,10 +129,15 @@ transfers occurred, or other account activity took place. A declared activity al
 contaminated result. “Not sure” remains estimated and provisional. Trading Post history is not queried
 yet, so the user declaration is explicit rather than inferred.
 
-Detection-quality observations use a separate local IndexedDB database. They contain session and
-proposal identifiers, boundary window and uncertainty, evidence quality, decision and correction cause, but no
-API key, item payload or free-text note. If this optional measurement store is unavailable, session
-start, stop and proposal dismissal continue to work and the view reports the missing telemetry.
+Detection-quality observations use a separate local IndexedDB database. The permitted set is the
+event/session/proposal identifiers, phase, outcome, mode, cause, boundary window, uncertainty,
+evidence quality and metric timestamps. When an assisted-start provenance is required, it may
+retain only the complete `RelevantStartProposal`: `version`, `proposalId`, `accountId`, `ruleSet`
+id/version, `firstSignal` and `confirmationSignal` with boundary snapshot refs, intervals/windows,
+`itemId`/`quantity` gains and `deltaStatus`, plus `possibleStart`, `evidenceQuality` and
+`confirmedAt`. The store never contains an API key, raw snapshots, raw inventory payloads or a
+free-text note. If this optional measurement store is unavailable, session start, stop and proposal
+dismissal continue to work and the view reports the missing telemetry.
 
 Pending assisted confirmations use `tyrian-companion-confirmation-queue`, also outside the vault and
 without credentials. Enqueue is atomic before polling resumes; claims are fenced by exact operation
@@ -135,14 +146,18 @@ existing start/stop workflow succeeds. Pending proposals expire after 24 hours, 
 days, and background work only refreshes existing status indicators: it never rebuilds the view,
 opens a modal, shows a notice, reveals a leaf, focuses a control, or sends an OS notification.
 
-Completed session notes are the only generated vault artifact in this vertical. They live below the
+Completed session notes are the generated H5.4 Vault notes in this vertical. They live below the
 configured output folder in `sessions/<UTC year>/`, use hashed identifiers, and update only `tc_*`
-frontmatter plus six hash-verified managed blocks. A collision uses the complete session hash; an
-ambiguous or human-modified managed region fails closed and leaves the completed runtime available.
+frontmatter plus six hash-verified managed blocks. H5.6 managed assets and the explicit H5.10
+JSON/CSV exports and scrub are the only other allowed Vault writes. A collision uses the complete
+session hash; an ambiguous or human-modified managed region fails closed and leaves the completed
+runtime available.
 The configured folder and every managed asset path are NFC-relative paths with `/` separators and
 portable segments only; absolute, personal, Windows-reserved, or Sync-incompatible paths fail closed.
-An older relative folder that no longer meets that contract is retained without a load-time rewrite;
-only an explicit safe replacement or managed-asset move/remove can retire it.
+Settings are canonically rewritten after normalization: unknown properties are removed and only the
+authorized `legacyOutputFolder` and `legacyManagedAssetsRoot` fields preserve a pre-H5.8 path for
+explicit replacement, move or removal. Those legacy paths cannot become current output roots or
+alter the durable managed-assets pointer.
 
 Optional managed assets live below the configured output folder in `Bases/` with ownership recorded
 in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write them. Preview is
@@ -295,6 +310,7 @@ durable session history.
 
 - [`docs/PRODUCT.md`](docs/PRODUCT.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/PLATFORM_POLICY.md`](docs/PLATFORM_POLICY.md)
 - [`docs/ESTADO.md`](docs/ESTADO.md)
 - [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

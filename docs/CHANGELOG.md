@@ -1,5 +1,12 @@
 # Changelog
 
+## H0.4/H0.6 — Plataformas, integraciones y piloto
+
+- Fijada la matriz de soporte: Linux con Steam/Proton como primaria, macOS con CrossOver como secundaria y Windows en beta.
+- Cerrado el MVP a la API oficial de Guild Wars 2; Mumble Link queda para v2 como helper IPC opcional, separado y limitado a mapa/actividad.
+- Prohibidas la inyección, inspección del proceso o de su memoria, interceptación, simulación de entrada y cualquier operación desatendida.
+- Definidas tasas medibles de falso inicio/parada, recuperación y precisión temporal, con cobertura, muestras mínimas y umbrales de salida del piloto.
+
 ## H6.6 — Rendimiento reproducible de cuenta grande
 
 - Añadido benchmark Node con GC explícito para parser → construcción y estabilización productivas de tres pasadas → delta → clasificación → valoración sobre 48 personajes, 5.132 holdings y 4.840 ganancias.
@@ -36,7 +43,7 @@
 
 - Centralizada la validación fail-closed de las rutas generadas o aceptadas para settings, notas de sesión y assets gestionados.
 - Rechazados rutas absolutas/UNC, separadores de Windows, segmentos vacíos o de navegación, controles y surrogates sin emparejar, caracteres ilegales, nombres de dispositivo Windows —incluidos `COM/LPT` con superíndices—, variantes no NFC y longitudes no portables.
-- Subido settings a v4: una carpeta pre-H5.8 que ahora no sea portable se retiene read-only, no se reescribe al cargar ni altera el puntero durable. Move/Remove inspeccionan siempre esa raíz y solo aceptan manifiesto owned exacto; un puntero divergente falla en conflicto. Move exige `ready` incluso si el puntero ya la nombraba. Un Remove reintentado reconoce el manifiesto exacto ya detached con puntero vacío sin volver a escribir y permite terminar la limpieza legacy.
+- Subido settings a v4: una carpeta pre-H5.8 que ahora no sea portable se retiene read-only en los únicos campos legacy autorizados; la reescritura canónica elimina propiedades desconocidas y no altera el puntero durable. Move/Remove inspeccionan siempre esa raíz y solo aceptan manifiesto owned exacto; un puntero divergente falla en conflicto. Move exige `ready` incluso si el puntero ya la nombraba. Un Remove reintentado reconoce el manifiesto exacto ya detached con puntero vacío sin volver a escribir y permite terminar la limpieza legacy.
 - Ligados manifiesto y journal a la identidad empaquetada `id/kind/locale/path` y a hashes previos permitidos. Los manifiestos ready/detached exigen el locale y conjunto exacto del bundle actual —sin impedir bundles anteriores compatibles—; un trasplante de ruta o `beforeHash` arbitrario queda en conflicto.
 - Las rutas de sesión conservan el diseño UTC + hash estable, sin incorporar cuenta, personaje, evento ni ruta personal.
 

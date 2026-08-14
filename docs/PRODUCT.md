@@ -38,7 +38,11 @@ La primera versión de producto incluye:
 - Notas y Bases instalables sin sobrescribir contenido del usuario.
 - Inventory Advisor limitado a reglas de alta confianza.
 
-Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas.
+El MVP es estrictamente API-only. Linux con Steam/Proton es la plataforma primaria, macOS con
+CrossOver la secundaria y Windows permanece en beta. La matriz de soporte, los gates y las métricas
+del piloto se fijan en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
+
+Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas. Mumble Link solo puede evaluarse en v2 como helper IPC opcional y separado para mapa/actividad; no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
 
 ## Vertical actual
 
@@ -53,14 +57,14 @@ La versión `0.1.0` valida la base técnica:
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
-- H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; H3.9 clasifica después y el historial durable sigue pendiente.
+- H3.3 conecta el cierre manual: captura un final estable, calcula el delta físico y revalida el fence antes de dejar la sesión `provisional`. Un fallo de captura/delta conserva el baseline y permite reintentar; H3.9 clasifica después y H5.10 exporta el historial durable de forma explícita.
 - H3.4 persiste localmente el runtime recuperable —baseline, final/delta cuando existen y estado cercado— y ofrece recuperación o descarte explícitos tras reiniciar, sin red automática ni escritura al vault.
 - H3.5 aporta el reloj de polling: no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. H3.8 solo lo arranca tras capturar un baseline estable desde el control de armado.
 - H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos que comparten snapshot fronterizo generan una propuesta con la ventana en que pudo empezar. La regla inicial usa el id oficial de los sacos de Halloween; no usa nombres ni heurísticas de catálogo y no inicia una sesión sin confirmación.
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
 - H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
-- H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; el historial de varias sesiones aún no existe.
-- H3.10 registra localmente cómo se fijó cada frontera: manual o asistida, causa, incertidumbre y calidad de evidencia. Descartar una propuesta exige clasificar el falso positivo; el resumen de la sesión conserva correcciones, modo e incertidumbre sin texto libre ni datos de inventario. La medición es auxiliar y nunca bloquea la sesión.
+- H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; H5.10 permite exportar el historial durable, aunque el panel/agregación de sesiones siga pendiente.
+- H3.10 registra localmente cómo se fijó cada frontera: manual o asistida, causa, incertidumbre y calidad de evidencia. Descartar una propuesta exige clasificar el falso positivo; el resumen conserva correcciones, modo e incertidumbre sin snapshots ni payloads crudos de inventario ni texto libre. Para procedencia de inicio asistido permite únicamente la `RelevantStartProposal` completa: `version`, `proposalId`, `accountId`, `ruleSet` id/versión, `firstSignal` y `confirmationSignal` con refs de snapshots, intervalos/ventanas, ganancias `itemId`/`quantity` y `deltaStatus`, además de `possibleStart`, `evidenceQuality` y `confirmedAt`. La medición es auxiliar y nunca bloquea la sesión.
 - H4.1 fija todas las magnitudes monetarias en cobre entero. Bruto, venta inmediata, listado, mercader y ausencia de valor líquido tienen fórmulas y liquidez explícitas; `null` significa no valorable, mientras que `0` sigue siendo un importe real.
 - H4.2 aplica una política versionada de tasas del bazar —5% de publicación y 10% de intercambio sobre la venta total— y solo ofrece valor de mercader cuando el catálogo declara un valor positivo y no incluye `NoSell`.
 - H4.3 clasifica cada pila por disponibilidad, binding y evidencia de precio. Ninguna pila ligada o sin precio infla el valor del bazar; un valor de mercader probado permanece separado, incluso para objetos account-bound, y los objetos engastados/equipados no se tratan como realizables sin extraerlos.
@@ -73,7 +77,7 @@ La versión `0.1.0` valida la base técnica:
 - H4.10 emite una recomendación pura y trazable de abrir o vender únicamente para la parte no reservada de un contenedor. Exige sesión exacta de alta confianza, modelo aprobado y vigente, un único batch de precios fresco, identidad coherente y una ruta de venta realizable. Recalcula tasas para la pila libre y compara con enteros exactos contra un margen versionado; igualdad abre. Evidencia limitada bloquea sin acción y evidencia incoherente invalida. No abre, vende, persiste ni muestra todavía la recomendación.
 - H4.11 permite expresar una intención explícita de conservar items hasta un precio o deadline. Las intenciones activas comparten sin duplicar la cantidad libre posterior a reservas; alcanzar el precio, cancelar o expirar devuelve unidades a H4.10, y un precio ausente conserva temporalmente en vez de inventar una señal. La salida explica asignación, faltante y neto objetivo con las tasas H4.2. Todavía no persiste ni edita intenciones y nunca opera sobre la cuenta.
 - H4.12 convierte cada resultado en un envelope JSON manual y sin efectos laterales. Reserva, retención, recomendación económica o revisión quedan como decisiones con cantidades y referencias internas; ningún dato contiene callbacks, credenciales, órdenes ejecutadas o una capacidad de operar. El guard arquitectónico impide que la frontera de recomendaciones importe clientes/transportes/stores/secretos o invoque métodos de ejecución.
-- H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; una raíz heredada se conserva sin escritura automática hasta que el usuario la reubique o retire explícitamente. No se escribe al cargar ni se sobrescriben modificaciones humanas.
+- H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas.
 - H5.9 permite usar ajustes, Companion, confirmaciones, menús, modales, notas de sesión, botín y Bases en español o inglés sin cambiar los datos que consultan Bases ni los identificadores de acciones. El cambio de idioma refresca las superficies abiertas y selecciona el bundle localizado; la paleta de comandos de Obsidian puede conservar el nombre registrado hasta recargar el plugin.
 - H5.10 permite exportar manualmente el historial durable validado como JSON y CSV. El export no recorre el vault hasta que el usuario lo pide, no acepta esquemas futuros, referencias duplicadas ni bloques alterados, y no incluye IDs crudos, rutas, nombres de personaje/build ni notas humanas.
 - H5.10 ofrece también en Ajustes una eliminación conservadora con preview y confirmación explícita: conserva los archivos y todo contenido humano, quita únicamente `tc_*` y los seis bloques gestionados, no toca exports/configuración/assets/stores ni usa la papelera, y se bloquea mientras sesión, recovery o detector no estén en reposo.
@@ -87,11 +91,11 @@ La versión `0.1.0` valida la base técnica:
 
 ## Fuera de alcance de la vertical 0.1.0
 
-- Sincronización periódica independiente del armado o historial durable de sesiones finalizadas.
+- Sincronización periódica independiente del armado o panel/agregación del historial durable de sesiones finalizadas.
 - Precios y cálculo de patrimonio total.
 - Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
-- Escritura o modificación de notas del vault.
+- Escritura libre o automática de notas del vault; H5.4 solo escribe la nota completa con bloques gestionados tras completar la sesión y H5.6 solo modifica assets mediante una operación explícita.
 - UI, persistencia o ejecución de recomendaciones e intenciones; H4.10–H4.12 solo entregan decisiones, planes y envelopes manuales puros.
 - Inicio o cierre automático de sesiones sin confirmación.
 - Compatibilidad móvil.
@@ -101,4 +105,4 @@ La versión `0.1.0` valida la base técnica:
 1. **Privacidad por defecto.** Los secretos no se copian a `data.json`, logs ni vistas.
 2. **Sin actividad implícita.** Cargar o abrir el plugin no inicia peticiones.
 3. **Recomendaciones trazables.** Una vertical futura deberá separar datos observados, reglas y explicación.
-4. **Vault bajo control del usuario.** Cualquier escritura futura requerirá un contrato y una acción explícita.
+4. **Vault bajo control del usuario.** Toda escritura requiere un contrato y una acción explícita.
