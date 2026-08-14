@@ -1,5 +1,6 @@
 import type { SessionCommandController } from './session-command-controller';
 import type { SessionCommandDescriptor, SessionCommandId } from './session-command-model';
+import { createTranslator, type Locale } from '../core/i18n';
 
 export interface PaletteCommandSpec {
 	id: SessionCommandId;
@@ -12,7 +13,7 @@ export interface PaletteCommandRegistry {
 }
 
 export type SessionMenuDescriptor =
-	| { type: 'open'; title: 'Open companion'; icon: 'compass' }
+	| { type: 'open'; title: string; icon: 'compass' }
 	| { type: 'separator' }
 	| { type: 'command'; command: SessionCommandDescriptor };
 
@@ -60,10 +61,10 @@ export function registerSessionPalette(
 	}
 }
 
-export function projectSessionMenu(commands: readonly SessionCommandDescriptor[]): SessionMenuDescriptor[] {
+export function projectSessionMenu(commands: readonly SessionCommandDescriptor[], locale: Locale = 'en'): SessionMenuDescriptor[] {
 	const primary = commands.filter((command) => !command.destructive);
 	const destructive = commands.filter((command) => command.destructive);
-	const menu: SessionMenuDescriptor[] = [{ type: 'open', title: 'Open companion', icon: 'compass' }];
+	const menu: SessionMenuDescriptor[] = [{ type: 'open', title: createTranslator(locale).t('commands.openCompanion'), icon: 'compass' }];
 	if (primary.length > 0) menu.push({ type: 'separator' });
 	menu.push(...primary.map((command) => ({ type: 'command', command }) as const));
 	if (destructive.length > 0) menu.push({ type: 'separator' });

@@ -60,6 +60,13 @@ describe('projectSessionCommands', () => {
 	it('has one stable descriptor for every registered command id', () => {
 		expect(projectSessionCommands(context('idle')).map((command) => command.id)).toEqual(SESSION_COMMAND_IDS);
 	});
+
+	it('localizes names without changing stable command ids', () => {
+		const commands = projectSessionCommands(context('idle'), 'es');
+		expect(commands.find((command) => command.id === 'start-farming-session')).toMatchObject({
+			id: 'start-farming-session', name: 'Iniciar sesión de farmeo',
+		});
+	});
 });
 
 describe('SessionCommandController', () => {
@@ -218,6 +225,10 @@ describe('session command adapters', () => {
 		expect(menu.map((entry) => entry.type === 'command' ? entry.command.id : entry.type)).toEqual([
 			'open', 'separator', 'recover-saved-session', 'separator', 'discard-saved-session',
 		]);
+	});
+
+	it('localizes the stable Open menu entry', () => {
+		expect(projectSessionMenu([], 'es')[0]).toEqual({ type: 'open', title: 'Abrir acompañante', icon: 'compass' });
 	});
 
 	it('routes view recovery and discard actions through the same controller resource', async () => {

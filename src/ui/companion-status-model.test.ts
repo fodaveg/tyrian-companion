@@ -5,14 +5,50 @@ import type { AssistedDetectionState } from '../sessions/assisted-detection-serv
 import type { SessionState } from '../sessions/session';
 import {
 	buildCompanionStatus,
+	localizedClassificationStatus,
+	localizedConfidence,
+	localizedCoverageStatus,
+	localizedDeltaStatus,
 	formatElapsed,
 	visibleRailItems,
 	type CompanionStatusInput,
 } from './companion-status-model';
+import { createTranslator } from '../core/i18n';
+import type { RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 
 const NOW = Date.parse('2026-08-14T12:00:00.000Z');
 
 describe('buildCompanionStatus', () => {
+	it('localizes every visible closed enum in Spanish and English', () => {
+		for (const [locale, expected] of [
+			['es', {
+				coverage: ['Completa', 'Limitada', 'Desconocida'],
+				delta: ['Comparable', 'Limitado', 'No válido'],
+				classification: ['Exacta', 'Estimada', 'Contaminada', 'No válida'],
+				confidence: ['Alta', 'Media', 'Baja'],
+			}],
+			['en', {
+				coverage: ['Complete', 'Limited', 'Unknown'],
+				delta: ['Comparable', 'Limited', 'Invalid'],
+				classification: ['Exact', 'Estimated', 'Contaminated', 'Invalid'],
+				confidence: ['High', 'Medium', 'Low'],
+			}],
+		] as const) {
+			const translator = createTranslator(locale);
+			const text = (key: RuntimeTranslationKey, params?: Record<string, string | number>) => translator.t(key, params);
+			expect((['complete', 'limited', 'unknown'] as const).map((status) => localizedCoverageStatus(status, text))).toEqual(expected.coverage);
+			expect((['comparable', 'limited', 'invalid'] as const).map((status) => localizedDeltaStatus(status, text))).toEqual(expected.delta);
+			expect((['exact', 'estimated', 'contaminated', 'invalid'] as const).map((status) => localizedClassificationStatus(status, text))).toEqual(expected.classification);
+			expect((['high', 'medium', 'low'] as const).map((status) => localizedConfidence(status, text))).toEqual(expected.confidence);
+		}
+	});
+	it('projects status labels in the requested locale without changing domain states', () => {
+		const es = buildCompanionStatus(input({ locale: 'es', detection: detection('armed') }));
+		const en = buildCompanionStatus(input({ locale: 'en', detection: detection('armed') }));
+		expect(es.items[0]).toMatchObject({ label: 'Detección', value: 'Activada' });
+		expect(en.items[0]).toMatchObject({ label: 'Detection', value: 'Armed' });
+		expect(es.items[0]?.id).toBe(en.items[0]?.id);
+	});
 	it('projects the closed-note idle state without scheduling refreshes', () => {
 		const projection = buildCompanionStatus(input());
 
@@ -83,7 +119,7 @@ describe('buildCompanionStatus', () => {
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 			qualityState: { status: 'unavailable', message: 'Recorder unavailable.' },
 		}));
-		expect(projection.errors[0]).toBe('Recovery: Saved evidence is corrupt.');
+		expect(projection.errors[0]).toBe('Recovery: The operation could not be completed safely.');
 		expect(projection.surfaceTone).toBe('error');
 		expect(projection.errors).toHaveLength(4);
 	});
@@ -95,7 +131,7 @@ describe('buildCompanionStatus', () => {
 		expect(during.errors).toContain('Connection: retry cooldown is active.');
 		expect(during.refreshEveryMs).toBe(1_000);
 		expect(after.errors).not.toContain('Connection: retry cooldown is active.');
-		expect(after.errors).toContain('Connection: Too many requests.');
+		expect(after.errors).toContain('Connection: The operation could not be completed safely.');
 		expect(after.refreshEveryMs).toBeNull();
 	});
 
@@ -116,7 +152,7 @@ describe('buildCompanionStatus', () => {
 			recovery: { status: 'available', state: activeSession(), message: 'Resume the saved run.' },
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 		}));
-		expect(projection.errors[0]).toBe('Recovery: Resume the saved run.');
+		expect(projection.errors[0]).toBe('Recovery: A saved farming session needs a decision.');
 		expect(projection.items[1]?.value).toBe('Recovery available');
 		expect(projection.primaryAction).toBe('recover');
 	});
@@ -144,8 +180,8 @@ describe('buildCompanionStatus', () => {
 			qualityState: { status: 'unavailable', message: 'Recorder failed.' },
 		}));
 		expect(projection.errors).toEqual([
-			'Connection: Last verified account shown. Current check failed.',
-			'Quality: Recorder failed.',
+			'Connection: Attention',
+			'Quality: Unavailable',
 			'Account: 1 future permissions are missing.',
 		]);
 	});
@@ -156,7 +192,7 @@ describe('buildCompanionStatus', () => {
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 		}));
 		expect(projection.errors[0]).toBe('Confirmations: 2 farming proposals waiting for review.');
-		expect(projection.errors[1]).toBe('Connection: Offline.');
+		expect(projection.errors[1]).toBe('Connection: The operation could not be completed safely.');
 	});
 
 	it('preserves long diagnostic text and large safe counters without truncating data', () => {
@@ -167,7 +203,8 @@ describe('buildCompanionStatus', () => {
 				not_farming: 0, still_farming: 0, temporary_pause: 0, unrelated_account_activity: 0, other: 0,
 			} },
 		}));
-		expect(projection.errors.join(' ')).toContain(message);
+		expect(projection.errors.join(' ')).not.toContain(message);
+		expect(projection.errors).toContain('Detection: Detection stopped.');
 		expect(projection.items[3]?.value).toContain(String(Number.MAX_SAFE_INTEGER));
 	});
 });

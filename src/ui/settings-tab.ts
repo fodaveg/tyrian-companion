@@ -9,9 +9,15 @@ import {
 } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
-import { projectManagedAssetsActions, runConfirmedManagedAssetsRemoval, type ManagedAssetsAction } from '../assets/managed-assets-ui';
+import {
+	projectManagedAssetsActions,
+	runConfirmedManagedAssetsRemoval,
+	type ManagedAssetsAction,
+} from '../assets/managed-assets-ui';
 import { normalizeVaultFolder } from '../core/settings';
+import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import type TyrianCompanionPlugin from '../main';
+import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
 
 type SettingRenderer = (setting: Setting) => void;
 
@@ -30,6 +36,20 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.renderSettings();
+	}
+
+	/** Rebuilds an open tab after changing only its presentation locale. */
+	refreshForLocaleChange(): void {
+		if (this.containerEl.isConnected) this.renderSettings();
+	}
+
+	private renderSettings(): void {
+		this.clearCountdown();
+		this.connectionSetting = null;
+		this.connectionButton = null;
+		this.managedAssetsSetting = null;
+		this.managedAssetButtons.clear();
 		const { containerEl } = this;
 		containerEl.empty();
 		for (const definition of this.definitions()) {
@@ -60,15 +80,14 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		const state = this.plugin.getConnectionState();
 		this.connectionSetting?.setDesc(this.connectionDescription(state));
 		this.connectionButton
-			?.setButtonText(state.status === 'checking' ? 'Checking…' : 'Check connection')
+			?.setButtonText(state.status === 'checking' ? this.t('settings.connection.checking') : this.t('settings.connection.check'))
 			.setDisabled(state.status === 'checking' || isCoolingDown(getRetryAt(state)));
 		this.startCountdown(state);
 	}
 
 	refreshManagedAssetsRow(): void {
 		const view = this.plugin.getManagedAssetsView();
-		const files = view.plan?.steps.map((step) => `${step.status}: ${step.path}`).join(' · ');
-		this.managedAssetsSetting?.setDesc(files ? `${view.message} ${files}` : view.message);
+		this.managedAssetsSetting?.setDesc(projectManagedAssetsDescription(view, createTranslator(this.plugin.settings.language)));
 		const enabled = projectManagedAssetsActions({
 			working: view.status === 'working',
 			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
@@ -80,8 +99,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private definitions(): Array<{ name: string; desc: string; render: SettingRenderer }> {
 		return [
 			{
-				name: 'API key',
-				desc: 'Select or create an Obsidian secret. The plugin stores only its name.',
+				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
 				render: (setting) => {
 					setting.addComponent((element) =>
 						new SecretComponent(this.app, element)
@@ -93,13 +111,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Language',
-				desc: 'Language for future generated companion content.',
+				name: this.t('settings.language.name'), desc: this.t('settings.language.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) =>
 						dropdown
-							.addOption('es', 'Español')
-							.addOption('en', 'English')
+							.addOption('es', this.t('settings.language.spanish'))
+							.addOption('en', this.t('settings.language.english'))
 							.setValue(this.plugin.settings.language)
 							.onChange(async (language) => {
 								await this.plugin.updateSettings({ language: language === 'en' ? 'en' : 'es' });
@@ -108,14 +125,13 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Output folder',
+				name: this.t('settings.output.name'),
 				desc: this.plugin.settings.legacyOutputFolder === null
-					? 'Vault-relative folder reserved for future output. No files are written yet.'
-					: 'A pre-portability output folder is retained without writing to it. Choose a safe replacement explicitly.',
+					? this.t('settings.output.desc') : this.t('settings.output.legacyDesc'),
 				render: (setting) => {
 					setting.addText((text) =>
 						text
-							.setPlaceholder('Tyrian companion')
+							.setPlaceholder(this.t('settings.output.placeholder'))
 							.setValue(this.plugin.settings.outputFolder)
 							.onChange(async (outputFolder) => {
 								await this.plugin.updateSettings({
@@ -126,8 +142,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Preferred character',
-				desc: 'Optional character name for future assisted context.',
+				name: this.t('settings.character.name'), desc: this.t('settings.character.desc'),
 				render: (setting) => {
 					setting.addText((text) =>
 						text
@@ -139,12 +154,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Polling interval',
-				desc: 'Interval used only while assisted detection is explicitly armed.',
+				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
 						for (const minutes of [15, 30, 60, 120, 240]) {
-							dropdown.addOption(String(minutes), `${minutes} minutes`);
+							dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
 						}
 						dropdown
 							.setValue(String(this.plugin.settings.pollingIntervalMinutes))
@@ -155,13 +169,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Detection mode',
-				desc: 'Off disables background checks. Assisted exposes explicit arm and disarm controls and resets to disarmed after reload.',
+				name: this.t('settings.detection.name'), desc: this.t('settings.detection.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) =>
 						dropdown
-							.addOption('off', 'Off')
-							.addOption('assisted', 'Assisted')
+							.addOption('off', this.t('settings.off'))
+							.addOption('assisted', this.t('settings.assisted'))
 							.setValue(this.plugin.settings.detectionMode)
 							.onChange(async (detectionMode) => {
 								await this.plugin.updateSettings({
@@ -172,26 +185,26 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				name: 'Managed assets',
-				desc: this.plugin.getManagedAssetsView().message,
+				name: this.t('settings.assets.name'),
+				desc: projectManagedAssetsDescription(this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language)),
 				render: (setting) => {
 					this.managedAssetsSetting = setting;
-					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText('Preview').onClick(async () => { await this.plugin.previewManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText('Apply').setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText('Repair').onClick(async () => { await this.plugin.repairManagedAssets(); }); });
-					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText('Move').onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('apply', button); button.setButtonText(this.t('settings.assets.apply')).setCta().onClick(async () => { await this.plugin.applyManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('repair', button); button.setButtonText(this.t('settings.assets.repair')).onClick(async () => { await this.plugin.repairManagedAssets(); }); });
+					setting.addButton((button) => { this.managedAssetButtons.set('move', button); button.setButtonText(this.t('settings.assets.move')).onClick(async () => { await this.plugin.relocateManagedAssets(); }); });
 					setting.addButton((button) => {
 						this.managedAssetButtons.set('remove', button);
 						button.buttonEl.addClass('mod-warning');
-						button.setButtonText('Remove').onClick(async () => {
-							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.app), () => this.plugin.removeManagedAssets());
+						button.setButtonText(this.t('settings.assets.remove')).onClick(async () => {
+							await runConfirmedManagedAssetsRemoval(() => confirmManagedAssetsRemoval(this.app, this.t.bind(this)), () => this.plugin.removeManagedAssets());
 						});
 					});
 					this.refreshManagedAssetsRow();
 				},
 			},
 			{
-				name: 'Connection',
+				name: this.t('settings.connection.name'),
 				desc: this.connectionDescription(this.plugin.getConnectionState()),
 				render: (setting) => {
 					this.connectionSetting = setting;
@@ -199,7 +212,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					setting.addButton((button) => {
 						this.connectionButton = button;
 						button
-							.setButtonText(checking ? 'Checking…' : 'Check connection')
+							.setButtonText(checking ? this.t('settings.connection.checking') : this.t('settings.connection.check'))
 							.setCta()
 							.setDisabled(
 								checking || isCoolingDown(getRetryAt(this.plugin.getConnectionState())),
@@ -217,20 +230,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		];
 	}
 
+	private t(key: TranslationKey, params?: TranslationParams): string {
+		return createTranslator(this.plugin.settings.language).t(key, params);
+	}
+
 	private connectionDescription(state: ConnectionState): string {
-		if (state.status === 'idle') return 'Not checked. No network request has been made.';
-		if (state.status === 'checking') return 'Checking the selected API key and account.';
-		if (state.status === 'error') {
-			return isCoolingDown(state.retryAt)
-				? `${state.message} ${cooldownText(state.retryAt)}`
-				: state.message;
-		}
-		const summary = `${state.details.account.name} · ${state.details.keyName} · ${state.details.scopes.join(', ')}`;
-		if (state.status === 'warning') {
-			const cooldown = isCoolingDown(state.retryAt) ? ` ${cooldownText(state.retryAt)}` : '';
-			return `${state.message}${cooldown} ${summary}`;
-		}
-		return summary;
+		return projectConnectionDescription(state, createTranslator(this.plugin.settings.language));
 	}
 
 	private startCountdown(state: ConnectionState): void {
@@ -254,26 +259,23 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			this.countdownInterval = null;
 		}
 	}
+
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {
 	return retryAt !== null && retryAt > Date.now();
 }
 
-function cooldownText(retryAt: number): string {
-	return `Try again in ${Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000))} seconds.`;
-}
-
-function confirmManagedAssetsRemoval(app: App): Promise<boolean> {
+function confirmManagedAssetsRemoval(app: App, t: (key: TranslationKey) => string): Promise<boolean> {
 	return new Promise((resolve) => {
 		let settled = false;
 		const modal = new class extends Modal {
 			onOpen(): void {
-				this.setTitle('Remove managed assets?');
-				this.contentEl.createEl('p', { text: 'Only intact files owned by the plugin will be moved to the system trash. Modified files are preserved.' });
+				this.setTitle(t('settings.remove.title'));
+				this.contentEl.createEl('p', { text: t('settings.remove.desc') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
-				actions.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
-				const remove = actions.createEl('button', { text: 'Remove', cls: 'mod-warning' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const remove = actions.createEl('button', { text: t('settings.assets.remove'), cls: 'mod-warning' });
 				remove.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }

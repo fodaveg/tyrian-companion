@@ -1,10 +1,12 @@
 import type { SessionCommandContext, SessionCommandDescriptor, SessionCommandId } from './session-command-model';
 import { projectSessionCommand, projectSessionCommands } from './session-command-model';
+import { createTranslator, type Locale } from '../core/i18n';
 
 export type PreparedSessionCommand = () => void | Promise<void>;
 
 export interface SessionCommandPorts {
 	getContext(): SessionCommandContext;
+	getLocale?(): Locale;
 	/** Resolves null on Cancel/Esc and returns a deferred backend action on user confirmation. */
 	prepare(id: SessionCommandId): Promise<PreparedSessionCommand | null>;
 	notify(message: string): void;
@@ -18,11 +20,11 @@ export class SessionCommandController {
 	constructor(private readonly ports: SessionCommandPorts) {}
 
 	describe(id: SessionCommandId): SessionCommandDescriptor {
-		return projectSessionCommand(id, this.ports.getContext());
+		return projectSessionCommand(id, this.ports.getContext(), this.ports.getLocale?.() ?? 'en');
 	}
 
 	available(): SessionCommandDescriptor[] {
-		return projectSessionCommands(this.ports.getContext()).filter((command) => command.available);
+		return projectSessionCommands(this.ports.getContext(), this.ports.getLocale?.() ?? 'en').filter((command) => command.available);
 	}
 
 	run(id: SessionCommandId): Promise<void> {
@@ -39,13 +41,13 @@ export class SessionCommandController {
 			const current = this.describe(id);
 			if (!this.availableNow(current) || current.targetKey !== intended.targetKey) {
 				if (current.available && current.targetKey !== intended.targetKey) {
-					this.ports.notify('That session action is no longer available.');
+					this.ports.notify(createTranslator(this.ports.getLocale?.() ?? 'en').t('commands.actionUnavailable'));
 				}
 				return;
 			}
 			await execute();
 		}).catch(() => {
-			if (!this.disposed) this.ports.notify('The session action could not be completed.');
+			if (!this.disposed) this.ports.notify(createTranslator(this.ports.getLocale?.() ?? 'en').t('commands.actionFailed'));
 		}).finally(() => {
 			if (this.inFlight.get(group) === flight) this.inFlight.delete(group);
 		});
@@ -59,7 +61,7 @@ export class SessionCommandController {
 
 	private availableNow(command: SessionCommandDescriptor): boolean {
 		if (!command.available) {
-			this.ports.notify('That session action is no longer available.');
+			this.ports.notify(createTranslator(this.ports.getLocale?.() ?? 'en').t('commands.actionUnavailable'));
 			return false;
 		}
 		return true;

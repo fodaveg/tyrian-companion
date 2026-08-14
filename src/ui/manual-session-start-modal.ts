@@ -1,5 +1,7 @@
 import { Modal, Setting, type App } from 'obsidian';
 
+import { createTranslator, type Locale, type Translator } from '../core/i18n';
+import { translateRuntime } from '../core/i18n-runtime-catalog';
 import {
 	MAX_MAGIC_FIND,
 	normalizeSessionStartInput,
@@ -10,6 +12,7 @@ export class ManualSessionStartModal extends Modal {
 	constructor(
 		app: App,
 		private readonly preferredCharacter: string,
+		private readonly getLocale: () => Locale,
 		private readonly onSubmit: (input: SessionStartInput) => void,
 		private readonly onDismiss: () => void = () => undefined,
 	) {
@@ -17,11 +20,14 @@ export class ManualSessionStartModal extends Modal {
 	}
 
 	onOpen(): void {
+		const translator = createTranslator(this.getLocale());
+		const t = (key: Parameters<typeof translateRuntime>[1], params?: Record<string, string | number>) =>
+			translateRuntime(translator, key, params);
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl('h2', { text: 'Start farming session' });
+		contentEl.createEl('h2', { text: t('manual.title') });
 		contentEl.createEl('p', {
-			text: 'Tyrian companion will take a stable account baseline before the session becomes active.',
+			text: t('manual.intro'),
 		});
 
 		let characterName = this.preferredCharacter;
@@ -33,18 +39,18 @@ export class ManualSessionStartModal extends Modal {
 		error.setAttr('aria-live', 'polite');
 
 		new Setting(contentEl)
-			.setName('Character')
-			.setDesc('The character you will play during this farming session.')
+			.setName(t('manual.character.name'))
+			.setDesc(t('manual.character.desc'))
 			.addText((text) => {
 				characterInput = text.inputEl;
-				text.setPlaceholder('Character name')
+				text.setPlaceholder(t('manual.character.placeholder'))
 					.setValue(characterName)
 					.onChange((value) => { characterName = value; });
 			});
 
 		new Setting(contentEl)
-			.setName('Magic find')
-			.setDesc('Enter the total shown in the in-game hero panel. The API does not expose this total.')
+			.setName(t('manual.magicFind.name'))
+			.setDesc(t('manual.magicFind.desc'))
 			.addText((text) => {
 				magicFindInput = text.inputEl;
 				text.inputEl.type = 'number';
@@ -57,15 +63,15 @@ export class ManualSessionStartModal extends Modal {
 
 		new Setting(contentEl)
 			.addButton((button) => {
-				button.setButtonText('Start session')
+				button.setButtonText(t('manual.start'))
 					.setCta()
 					.onClick(() => {
 						try {
-							const input = parseManualSessionForm(characterName, magicFindText);
+							const input = parseManualSessionForm(characterName, magicFindText, translator);
 							this.onSubmit(input);
 							this.close();
-						} catch (caught) {
-							error.setText(caught instanceof Error ? caught.message : 'Check the session details.');
+						} catch {
+							error.setText(t('manual.invalidDetails'));
 							(characterName.trim() ? magicFindInput : characterInput)?.focus();
 						}
 					});
@@ -84,9 +90,13 @@ function focusInput(input: HTMLInputElement | null): void {
 	input?.focus();
 }
 
-export function parseManualSessionForm(characterName: string, magicFindText: string): SessionStartInput {
+export function parseManualSessionForm(
+	characterName: string,
+	magicFindText: string,
+	translator: Translator = createTranslator('es'),
+): SessionStartInput {
 	if (!/^\d+$/u.test(magicFindText.trim())) {
-		throw new Error('Magic Find must be a whole number.');
+		throw new Error(translateRuntime(translator, 'manual.magicFindWholeNumber'));
 	}
 	return normalizeSessionStartInput({
 		characterName,

@@ -5,31 +5,35 @@ import {
 	type LootPresentationRow,
 	type LootPresentationV1,
 } from './loot-presentation';
+import { createTranslator } from '../core/i18n';
+import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import type { SessionNoteLocale } from './session-note-model';
 
 export interface LootMarkdownBlocks { results: string; economy: string; decision: string }
 
 /** Serializes the shared H5.5 view model into the three H5.4 managed blocks. */
 export function renderLootMarkdown(presentation: LootPresentationV1): LootMarkdownBlocks {
 	const locale = presentation.locale;
-	const labels = locale === 'es' ? ES : EN;
 	const rows = presentation.rows.map((row) => markdownRow(row, presentation));
+	const quality = localizedLootState(locale, presentation.quality);
+	const decisionStatus = localizedLootState(locale, presentation.decision.status);
 	const results = [
-		`## ${labels.results}`,
-		`${labels.quality}: ${localizedLootState(locale, presentation.quality)}`,
+		`## ${markdownText(locale, 'markdown.results')}`,
+		`${markdownText(locale, 'markdown.quality')}: ${quality}`,
 		'',
-		`| ${labels.loot} | ${labels.netDelta} | ${labels.destination} | ${labels.immediateNet} | ${labels.listingNet} | ${labels.recommendation} |`,
+		`| ${markdownText(locale, 'markdown.loot')} | ${markdownText(locale, 'markdown.netDelta')} | ${markdownText(locale, 'markdown.destination')} | ${markdownText(locale, 'markdown.immediateNet')} | ${markdownText(locale, 'markdown.listingNet')} | ${markdownText(locale, 'markdown.recommendation')} |`,
 		'|---|---:|---|---:|---:|---|',
-		...(rows.length > 0 ? rows : [`| — | 0 | — | — | — | ${labels.noRows} |`]),
+		...(rows.length > 0 ? rows : [`| — | 0 | — | — | — | ${markdownText(locale, 'markdown.noRows')} |`]),
 		...presentation.warnings.map((warning) => `- ${escapeMarkdown(warning)}`),
 	].join('\n');
 	const economy = renderEconomy(presentation);
 	const decision = [
-		`## ${labels.manualDecision}`,
-		`- ${labels.reserved}: ${quantity(presentation.decision.reserved)}`,
-		`- ${labels.held}: ${quantity(presentation.decision.held)}`,
-		`- ${labels.free}: ${quantity(presentation.decision.free)}`,
-		`- ${labels.recommendation}: ${localizedLootState(locale, presentation.decision.status)}`,
-		...presentation.decision.reasons.map((reason) => `- ${labels.reason}: ${escapeMarkdown(reason)}`),
+		`## ${markdownText(locale, 'markdown.manualDecision')}`,
+		`- ${markdownText(locale, 'markdown.reserved')}: ${quantity(presentation.decision.reserved)}`,
+		`- ${markdownText(locale, 'markdown.held')}: ${quantity(presentation.decision.held)}`,
+		`- ${markdownText(locale, 'markdown.free')}: ${quantity(presentation.decision.free)}`,
+		`- ${markdownText(locale, 'markdown.recommendation')}: ${decisionStatus}`,
+		...presentation.decision.reasons.map((reason) => `- ${markdownText(locale, 'markdown.reason')}: ${escapeMarkdown(reason)}`),
 		'',
 		escapeMarkdown(presentation.decision.footer),
 	].join('\n');
@@ -46,36 +50,38 @@ function markdownRow(row: LootPresentationRow, presentation: LootPresentationV1)
 
 function destination(allocation: LootAllocation, presentation: LootPresentationV1): string {
 	if (allocation.status !== 'known') return localizedLootState(presentation.locale, allocation.status);
-	const labels = presentation.locale === 'es' ? ES : EN;
-	return `${labels.reserved} ${String(allocation.reserved)} · ${labels.held} ${String(allocation.held)} · ${labels.free} ${String(allocation.free)}`;
+	return `${markdownText(presentation.locale, 'markdown.reserved')} ${String(allocation.reserved)} · ${markdownText(presentation.locale, 'markdown.held')} ${String(allocation.held)} · ${markdownText(presentation.locale, 'markdown.free')} ${String(allocation.free)}`;
 }
 
 function recommendation(row: LootPresentationRow, presentation: LootPresentationV1): string {
 	const value = row.recommendation;
 	if (value.status !== 'ready') return localizedLootState(presentation.locale, value.status);
-	const action = presentation.locale === 'es'
-		? value.action === 'open' ? 'Abrir' : 'Vender'
-		: value.action === 'open' ? 'Open' : 'Sell';
-	return `${action} ${String(value.quantity)}${value.route ? ` · ${value.route}` : ''}`;
+	const action = markdownText(presentation.locale, value.action === 'open' ? 'markdown.action.open' : 'markdown.action.sell');
+	const route = value.route;
+	const routeLabel = route === undefined ? '' : ` · ${localizedSellRoute(route, presentation.locale)}`;
+	return `${action} ${String(value.quantity)}${routeLabel}`;
 }
 
 function renderEconomy(presentation: LootPresentationV1): string {
-	const labels = presentation.locale === 'es' ? ES : EN;
 	const economy = presentation.economy;
+	const locale = presentation.locale;
+	const coverage = economy.coverage === null ? '—' : localizedCoverage(economy.coverage, locale);
+	const priceSource = economy.priceSource === null ? '—' : localizedPriceSource(economy.priceSource, locale);
+	const priceCapturedAt = economy.priceCapturedAt === null ? '—' : localizedTimestamp(economy.priceCapturedAt, locale);
 	return [
-		`## ${labels.observedEconomy}`,
+		`## ${markdownText(locale, 'markdown.observedEconomy')}`,
 		`**${escapeMarkdown(economy.label)}**`,
-		`- ${labels.immediateNet}: ${money(economy.immediateCopper, presentation)}`,
-		`- ${labels.listingNet}: ${money(economy.listingCopper, presentation)}`,
-		`- ${labels.coinNet}: ${money(economy.coinNetCopper, presentation)}`,
-		`- ${labels.nonLiquid}: ${quantity(economy.nonLiquidQuantity)}`,
+		`- ${markdownText(locale, 'markdown.immediateNet')}: ${money(economy.immediateCopper, presentation)}`,
+		`- ${markdownText(locale, 'markdown.listingNet')}: ${money(economy.listingCopper, presentation)}`,
+		`- ${markdownText(locale, 'markdown.coinNet')}: ${money(economy.coinNetCopper, presentation)}`,
+		`- ${markdownText(locale, 'markdown.nonLiquid')}: ${quantity(economy.nonLiquidQuantity)}`,
 		...(economy.valuedItemKinds === null || economy.totalItemKinds === null ? []
-			: [`- ${labels.valued}: ${String(economy.valuedItemKinds)}/${String(economy.totalItemKinds)}`]),
-		`- ${labels.unvalued}: ${quantity(economy.unvaluedItemKinds)}`,
-		`- ${labels.coverage}: ${economy.coverage ?? '—'}`,
-		`- ${labels.price}: ${economy.priceSource ? `${escapeMarkdown(economy.priceSource)} · ${economy.priceCapturedAt ?? '—'}` : '—'}`,
-		...(economy.immediateCopperPerHour === null ? [] : [`- ${labels.immediatePerHour}: ${money(economy.immediateCopperPerHour, presentation)}`]),
-		...(economy.listingCopperPerHour === null ? [] : [`- ${labels.listingPerHour}: ${money(economy.listingCopperPerHour, presentation)}`]),
+			: [`- ${markdownText(locale, 'markdown.valued')}: ${String(economy.valuedItemKinds)}/${String(economy.totalItemKinds)}`]),
+		`- ${markdownText(locale, 'markdown.unvalued')}: ${quantity(economy.unvaluedItemKinds)}`,
+		`- ${markdownText(locale, 'markdown.coverage')}: ${coverage}`,
+		`- ${markdownText(locale, 'markdown.price')}: ${priceSource === '—' ? '—' : `${priceSource} · ${priceCapturedAt}`}`,
+		...(economy.immediateCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.immediatePerHour')}: ${money(economy.immediateCopperPerHour, presentation)}`]),
+		...(economy.listingCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.listingPerHour')}: ${money(economy.listingCopperPerHour, presentation)}`]),
 	].join('\n');
 }
 
@@ -90,27 +96,28 @@ function escapeMarkdown(value: string): string {
 		.replace(/[\r\n]+/gu, ' ');
 }
 
-interface Labels {
-	results: string; quality: string; loot: string; netDelta: string; destination: string;
-	immediateNet: string; listingNet: string; recommendation: string; noRows: string; manualDecision: string;
-	reserved: string; held: string; free: string; observedEconomy: string; coinNet: string; nonLiquid: string;
-	unvalued: string; coverage: string; price: string; immediatePerHour: string; listingPerHour: string;
-	valued: string;
-	reason: string;
+function markdownText(locale: SessionNoteLocale, key: RuntimeTranslationKey): string {
+	return translateRuntime(createTranslator(locale), key);
 }
-const ES: Labels = {
-	results: 'Resultados', quality: 'Calidad', loot: 'Botín', netDelta: 'Cambio neto', destination: 'Destino',
-	immediateNet: 'Neto liquidación', listingNet: 'Neto listado', recommendation: 'Recomendación',
-	noRows: 'Sin cambios netos visibles', manualDecision: 'Decisión manual', reserved: 'Reserva', held: 'Guardar',
-	free: 'Libre', observedEconomy: 'Economía observada', coinNet: 'Moneda neta', nonLiquid: 'Cantidad no líquida',
-	unvalued: 'Tipos sin valorar', valued: 'Tipos valorados', coverage: 'Cobertura', price: 'Precio', immediatePerHour: 'Neto inmediato por hora',
-	listingPerHour: 'Neto listado por hora', reason: 'Motivo',
-};
-const EN: Labels = {
-	results: 'Results', quality: 'Quality', loot: 'Loot', netDelta: 'Net delta', destination: 'Destination',
-	immediateNet: 'Liquidation net', listingNet: 'Listing net', recommendation: 'Recommendation',
-	noRows: 'No visible net changes', manualDecision: 'Manual decision', reserved: 'Reserved', held: 'Hold',
-	free: 'Free', observedEconomy: 'Observed economy', coinNet: 'Net coin', nonLiquid: 'Non-liquid quantity',
-	unvalued: 'Unvalued kinds', valued: 'Valued kinds', coverage: 'Coverage', price: 'Price', immediatePerHour: 'Immediate net per hour',
-	listingPerHour: 'Listing net per hour', reason: 'Reason',
-};
+
+function localizedSellRoute(route: 'instant_sell' | 'vendor', locale: SessionNoteLocale): string {
+	const keys: Record<'instant_sell' | 'vendor', RuntimeTranslationKey> = {
+		instant_sell: 'enum.sellRoute.instant_sell', vendor: 'enum.sellRoute.vendor',
+	};
+	return markdownText(locale, keys[route]);
+}
+
+function localizedCoverage(coverage: 'complete' | 'partial', locale: SessionNoteLocale): string {
+	return markdownText(locale, coverage === 'complete' ? 'enum.coverage.complete' : 'enum.coverage.partial');
+}
+
+function localizedPriceSource(source: string, locale: SessionNoteLocale): string {
+	return source === 'gw2-commerce-prices'
+		? markdownText(locale, 'enum.priceSource.gw2Commerce')
+		: markdownText(locale, 'note.notEvaluated');
+}
+
+function localizedTimestamp(value: string, locale: SessionNoteLocale): string {
+	const timestamp = new Date(value);
+	return Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString(locale) : '—';
+}

@@ -1,6 +1,14 @@
-import type { SessionClassificationReason } from '../account/contamination-model';
+import type {
+	SessionClassificationReason,
+	SessionClassificationReasonCode,
+	SessionClassificationStatus,
+} from '../account/contamination-model';
+import type { SnapshotQuality } from '../account/storage-snapshot-model';
+import { createTranslator } from '../core/i18n';
+import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import { buildLootPresentation } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
+import type { SessionActivityKey } from './session-contamination-review';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
@@ -48,8 +56,8 @@ export async function renderSessionNote(note: PreparedSessionNote): Promise<Rend
 				serialized: `<!-- tyrian-companion:managed:start:${id} sha256=${hash} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`,
 			};
 		}
-		const heading = note.locale === 'es' ? '# Sesión de farmeo en Guild Wars 2' : '# Guild Wars 2 farming session';
-		const notes = note.locale === 'es' ? '## Mis notas' : '## My notes';
+		const heading = `# ${noteText(note.locale, 'note.heading')}`;
+		const notes = `## ${noteText(note.locale, 'note.myNotes')}`;
 		const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
 		return {
 			status: 'ok',
@@ -99,6 +107,9 @@ function createFrontmatter(
 	const reservedQuantity = reservation ? safeSum(reservation.assets.flatMap((asset) =>
 		asset.namespace === 'item' ? asset.allocations.map((allocation) => allocation.protectedAvailable) : [])) : null;
 	const heldQuantity = hold ? safeSum(hold.items.map((item) => item.heldQuantity)) : null;
+	const reservationStatus = reservation
+		? reservation.coverage + ':' + reservation.satisfaction
+		: note.reservation.status;
 	return {
 		tc_schema: SESSION_NOTE_SCHEMA_VERSION,
 		tc_kind: 'gw2_farming_session',
@@ -127,7 +138,7 @@ function createFrontmatter(
 		tc_sacks_per_hour_milli: canRate && valuation ? valuation.rates.sacksPerHourMilli : null,
 		tc_immediate_copper_per_hour: canRate && valuation ? valuation.rates.immediateCopperPerHour : null,
 		tc_listing_copper_per_hour: canRate && valuation ? valuation.rates.listingCopperPerHour : null,
-		tc_reservation_status: reservation ? `${reservation.coverage}:${reservation.satisfaction}` : note.reservation.status,
+		tc_reservation_status: reservationStatus,
 		tc_reserved_quantity: reservedQuantity,
 		tc_hold_status: hold ? aggregateHoldStatus(hold.allocations.map((allocation) => allocation.state)) : note.hold.status,
 		tc_held_quantity: heldQuantity,
@@ -137,7 +148,7 @@ function createFrontmatter(
 		tc_recommendation_route: recommendationDecision?.route ?? null,
 		tc_execution: 'manual_in_game',
 		tc_side_effects: 'none',
-		descripcion: note.locale === 'es' ? 'Sesión de farmeo de Guild Wars 2 registrada por Tyrian Companion.' : 'Guild Wars 2 farming session recorded by Tyrian Companion.',
+		descripcion: noteText(note.locale, 'note.description'),
 	};
 }
 
@@ -168,11 +179,11 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 	const loot = renderLootMarkdown(buildLootPresentation(note));
 	return {
 		summary: [
-			locale === 'es' ? '## Resumen' : '## Summary',
-			`- ${locale === 'es' ? 'Personaje' : 'Character'}: ${text(state.startContext.characterName)}`,
-			`- ${locale === 'es' ? 'Profesión' : 'Profession'}: ${text(state.startContext.build.profession)}`,
-			`- ${locale === 'es' ? 'Duración' : 'Duration'}: ${formatDuration(note.durationMs)}`,
-			`- ${locale === 'es' ? 'Clasificación' : 'Classification'}: ${classification.status}`,
+			`## ${noteText(locale, 'note.summary')}`,
+			`- ${noteText(locale, 'note.character')}: ${text(state.startContext.characterName)}`,
+			`- ${noteText(locale, 'note.profession')}: ${text(state.startContext.build.profession)}`,
+			`- ${noteText(locale, 'note.duration')}: ${formatDuration(note.durationMs)}`,
+			`- ${noteText(locale, 'note.classification')}: ${localizedClassification(classification.status, locale)}`,
 		].join('\n'),
 		evidence: renderEvidence(note),
 		results: loot.results,
@@ -184,44 +195,51 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 
 function renderEvidence(note: PreparedSessionNote): string {
 	const classification = note.runtime.review.classification;
-	const copy = note.locale === 'es' ? {
-		exact: 'Lectura exacta dentro del alcance observado. Describe el cambio neto del almacenamiento cubierto; no promete observar correo, almacén de clan, equipo ni operaciones activas fuera de esa superficie.',
-		estimated: 'Lectura estimada. Puedes consultar el neto, pero no usarlo como rendimiento bruto por hora.',
-		contaminated: 'Lectura contaminada. Hubo actividad externa declarada u observada; estas cifras son cambios netos, no botín obtenido.',
-	} : {
-		exact: 'Exact reading within the observed scope. It describes the covered storage net change; it does not claim to observe mail, guild storage, equipment, or active operations outside that surface.',
-		estimated: 'Estimated reading. You may inspect the net change, but not use it as gross hourly performance.',
-		contaminated: 'Contaminated reading. External activity was declared or observed; these figures are net changes, not loot obtained.',
-	};
-	const activities = Object.entries(note.runtime.review.answers.activities).filter(([, active]) => active).map(([key]) => text(key));
+	const activities = Object.entries(note.runtime.review.answers.activities)
+		.filter(([, active]) => active)
+		.map(([key]) => localizedActivity(key as SessionActivityKey, note.locale));
+	const confidence = localizedConfidence(classification.confidence, note.locale);
 	const evidenceStatus = classification.status === 'exact' || classification.status === 'contaminated'
 		? classification.status : 'estimated';
 	return [
-		note.locale === 'es' ? '## Evidencia' : '## Evidence',
-		copy[evidenceStatus],
-		`- ${note.locale === 'es' ? 'Confianza' : 'Confidence'}: ${classification.confidence}`,
-		`- ${note.locale === 'es' ? 'Motivos' : 'Reasons'}: ${classification.reasons.length > 0 ? classification.reasons.map(reasonText).join(', ') : '—'}`,
-		`- ${note.locale === 'es' ? 'Actividad declarada' : 'Declared activity'}: ${activities.length > 0 ? activities.join(', ') : (note.locale === 'es' ? 'ninguna' : 'none')}`,
+		`## ${noteText(note.locale, 'note.evidence')}`,
+		noteText(note.locale, `note.evidence.${evidenceStatus}`),
+		`- ${noteText(note.locale, 'note.confidence')}: ${confidence}`,
+		`- ${noteText(note.locale, 'note.reasons')}: ${classification.reasons.length > 0 ? classification.reasons.map((reason) => reasonText(reason, note.locale)).join(', ') : '—'}`,
+		`- ${noteText(note.locale, 'note.declaredActivity')}: ${activities.length > 0 ? activities.join(', ') : noteText(note.locale, 'note.none')}`,
 	].join('\n');
 }
 
 function renderProvenance(note: PreparedSessionNote): string {
 	const delta = note.runtime.delta;
-	const lines = [note.locale === 'es' ? '## Procedencia' : '## Provenance',
-		`- Baseline quality: ${note.runtime.baselineSnapshot.quality}`,
-		`- Final quality: ${note.runtime.finalSnapshot.quality}`,
-		`- Delta surface: ${String(delta.surface)}`,
-		`- Currency surface: ${String(delta.currencySurface)}`,
-		`- Price source: ${note.runtime.priceSnapshot?.source ?? 'not_evaluated'}`,
-		`- Price captured at: ${note.runtime.priceSnapshot?.capturedAt ?? 'not_evaluated'}`,
-		`- Valuation policy: ${note.valuation.status === 'valid' ? `v${String(note.valuation.value.version)}; fee v1` : note.valuation.status}`,
+	const baselineQuality = localizedSnapshotQuality(note.runtime.baselineSnapshot.quality, note.locale);
+	const finalQuality = localizedSnapshotQuality(note.runtime.finalSnapshot.quality, note.locale);
+	const deltaSurface = localizedDeltaSurface(delta.surface, note.locale);
+	const currencySurface = localizedCurrencySurface(delta.currencySurface, note.locale);
+	const priceSource = note.runtime.priceSnapshot
+		? localizedPriceSource(note.runtime.priceSnapshot.source, note.locale)
+		: noteText(note.locale, 'note.notEvaluated');
+	const priceCapturedAt = note.runtime.priceSnapshot
+		? localizedTimestamp(note.runtime.priceSnapshot.capturedAt, note.locale)
+		: noteText(note.locale, 'note.notEvaluated');
+	const valuationPolicy = note.valuation.status === 'valid'
+		? noteText(note.locale, 'note.valuationPolicyVersion', { version: note.valuation.value.version })
+		: noteText(note.locale, 'note.notEvaluated');
+	const lines = [`## ${noteText(note.locale, 'note.provenance')}`,
+		`- ${noteText(note.locale, 'note.baselineQuality')}: ${baselineQuality}`,
+		`- ${noteText(note.locale, 'note.finalQuality')}: ${finalQuality}`,
+		`- ${noteText(note.locale, 'note.deltaSurface')}: ${deltaSurface}`,
+		`- ${noteText(note.locale, 'note.currencySurface')}: ${currencySurface}`,
+		`- ${noteText(note.locale, 'note.priceSource')}: ${priceSource}`,
+		`- ${noteText(note.locale, 'note.priceCapturedAt')}: ${priceCapturedAt}`,
+		`- ${noteText(note.locale, 'note.valuationPolicy')}: ${valuationPolicy}`,
 	];
 	if (note.recommendation.status === 'valid' && note.recommendation.value.recommendation?.explanation) {
 		const explanation = note.recommendation.value.recommendation.explanation;
-		lines.push(`- Container model: ${text(explanation.open.modelId)} v${String(explanation.open.modelVersion)}`);
-		lines.push(`- Model sample/exclusions: ${String(explanation.open.sampleContainers)}/${String(explanation.open.excludedSampleUnits)}`);
-		lines.push(`- Rare treatment: ${explanation.open.rareTreatment}`);
-		lines.push(`- Margin bps: ${String(explanation.threshold.marginBps)}`);
+		lines.push(`- ${noteText(note.locale, 'note.containerModel')}: ${text(explanation.open.modelId)} v${String(explanation.open.modelVersion)}`);
+		lines.push(`- ${noteText(note.locale, 'note.modelSampleExclusions')}: ${String(explanation.open.sampleContainers)}/${String(explanation.open.excludedSampleUnits)}`);
+		lines.push(`- ${noteText(note.locale, 'note.rareTreatment')}: ${localizedRareTreatment(explanation.open.rareTreatment, note.locale)}`);
+		lines.push(`- ${noteText(note.locale, 'note.marginBps')}: ${String(explanation.threshold.marginBps)}`);
 	}
 	return lines.join('\n');
 }
@@ -307,9 +325,115 @@ function serializeFrontmatter(
 	return `---\n${lines.join('\n')}\n---\n`;
 }
 
-function reasonText(reason: SessionClassificationReason): string {
-	return reason.detail ? `${text(reason.code)} (${text(reason.detail)})` : text(reason.code);
+function reasonText(reason: SessionClassificationReason, locale: PreparedSessionNote['locale']): string {
+	return localizedReason(reason.code, locale);
 }
+
+function noteText(
+	locale: PreparedSessionNote['locale'],
+	key: RuntimeTranslationKey,
+	params?: Record<string, string | number>,
+): string {
+	return translateRuntime(createTranslator(locale), key, params);
+}
+
+function localizedClassification(
+	status: SessionClassificationStatus,
+	locale: PreparedSessionNote['locale'],
+): string {
+	const keys: Record<SessionClassificationStatus, RuntimeTranslationKey> = {
+		exact: 'enum.classification.exact', estimated: 'enum.classification.estimated',
+		contaminated: 'enum.classification.contaminated', invalid: 'enum.classification.invalid',
+	};
+	return noteText(locale, keys[status]);
+}
+
+function localizedConfidence(
+	confidence: 'high' | 'medium' | 'low',
+	locale: PreparedSessionNote['locale'],
+): string {
+	const keys: Record<'high' | 'medium' | 'low', RuntimeTranslationKey> = {
+		high: 'enum.confidence.high', medium: 'enum.confidence.medium', low: 'enum.confidence.low',
+	};
+	return noteText(locale, keys[confidence]);
+}
+
+function localizedActivity(key: SessionActivityKey, locale: PreparedSessionNote['locale']): string {
+	const keys: Record<SessionActivityKey, RuntimeTranslationKey> = {
+		open: 'activity.open', salvage: 'activity.salvage', consume: 'activity.consume', craft: 'activity.craft',
+		tpBuy: 'activity.tpBuy', tpSell: 'activity.tpSell', vendorBuy: 'activity.vendorBuy', vendorSell: 'activity.vendorSell',
+		transfer: 'activity.transfer', other: 'activity.other',
+	};
+	return noteText(locale, keys[key]);
+}
+
+function localizedReason(code: SessionClassificationReasonCode, locale: PreparedSessionNote['locale']): string {
+	const keys: Record<SessionClassificationReasonCode, RuntimeTranslationKey> = {
+		delta_invalid: 'reason.delta_invalid', boundary_invalid: 'reason.boundary_invalid',
+		boundary_delta_mismatch: 'reason.boundary_delta_mismatch', boundary_arithmetic_invalid: 'reason.boundary_arithmetic_invalid',
+		delta_arithmetic_invalid: 'reason.delta_arithmetic_invalid', classification_context_invalid: 'reason.classification_context_invalid',
+		trading_post_evidence_invalid: 'reason.trading_post_evidence_invalid', delivery_items_changed: 'reason.delivery_items_changed',
+		delivery_coins_changed: 'reason.delivery_coins_changed', tp_buy_observed: 'reason.tp_buy_observed',
+		tp_sell_observed: 'reason.tp_sell_observed', wallet_decreased: 'reason.wallet_decreased',
+		wallet_increased_ambiguous: 'reason.wallet_increased_ambiguous', wallet_increase_clean_confirmation_used: 'reason.wallet_increase_clean_confirmation_used',
+		roster_changed: 'reason.roster_changed', activity_declared: 'reason.activity_declared',
+		clean_declaration_conflicts_with_evidence: 'reason.clean_declaration_conflicts_with_evidence', delta_limited: 'reason.delta_limited',
+		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed', declaration_not_clean: 'reason.declaration_not_clean',
+		trading_post_not_complete_clean_declaration_used: 'reason.trading_post_not_complete_clean_declaration_used',
+	};
+	return noteText(locale, keys[code]);
+}
+
+function localizedSnapshotQuality(quality: SnapshotQuality, locale: PreparedSessionNote['locale']): string {
+	const keys: Record<SnapshotQuality, RuntimeTranslationKey> = {
+		stable: 'enum.snapshotQuality.stable', stable_owned_placement_changed: 'enum.snapshotQuality.stable_owned_placement_changed',
+		partial: 'enum.snapshotQuality.partial', unstable: 'enum.snapshotQuality.unstable',
+	};
+	return noteText(locale, keys[quality]);
+}
+
+function localizedDeltaSurface(
+	surface: PreparedSessionNote['runtime']['delta']['surface'],
+	locale: PreparedSessionNote['locale'],
+): string {
+	if (surface === null) return noteText(locale, 'enum.deltaSurface.unavailable');
+	const keys: Record<NonNullable<PreparedSessionNote['runtime']['delta']['surface']>, RuntimeTranslationKey> = {
+		core_and_delivery: 'enum.deltaSurface.core_and_delivery', core_only: 'enum.deltaSurface.core_only',
+	};
+	return noteText(locale, keys[surface]);
+}
+
+function localizedCurrencySurface(
+	surface: PreparedSessionNote['runtime']['delta']['currencySurface'],
+	locale: PreparedSessionNote['locale'],
+): string {
+	if (surface === null) return noteText(locale, 'enum.currencySurface.unavailable');
+	const keys: Record<NonNullable<PreparedSessionNote['runtime']['delta']['currencySurface']>, RuntimeTranslationKey> = {
+		wallet_and_delivery: 'enum.currencySurface.wallet_and_delivery', wallet_only: 'enum.currencySurface.wallet_only',
+		unavailable: 'enum.currencySurface.unavailable',
+	};
+	return noteText(locale, keys[surface]);
+}
+
+function localizedPriceSource(source: 'gw2-commerce-prices', locale: PreparedSessionNote['locale']): string {
+	return noteText(locale, 'enum.priceSource.gw2Commerce');
+}
+
+function localizedRareTreatment(
+	treatment: 'excluded' | 'observed_only' | 'bounded',
+	locale: PreparedSessionNote['locale'],
+): string {
+	const keys: Record<'excluded' | 'observed_only' | 'bounded', RuntimeTranslationKey> = {
+		excluded: 'enum.rareTreatment.excluded', observed_only: 'enum.rareTreatment.observed_only', bounded: 'enum.rareTreatment.bounded',
+	};
+	return noteText(locale, keys[treatment]);
+}
+
+function localizedTimestamp(value: string, locale: PreparedSessionNote['locale']): string {
+	const timestamp = new Date(value);
+	return Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString(locale) : noteText(locale, 'note.notEvaluated');
+}
+
 function aggregateHoldStatus(states: string[]): string {
 	if (states.some((state) => state === 'holding' || state === 'price_unavailable')) return 'active';
 	if (states.some((state) => state === 'expired')) return 'expired';

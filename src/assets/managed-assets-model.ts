@@ -8,6 +8,8 @@ export type ManagedAssetKind = 'base' | 'template';
 export type ManagedAssetStatus =
 	| 'create' | 'unchanged' | 'update' | 'missing' | 'recoverable' | 'modified'
 	| 'occupied_unowned' | 'newer_than_plugin' | 'unsupported_manifest' | 'conflict';
+export type ManagedAssetsBlockerReason = Extract<ManagedAssetStatus,
+	'modified' | 'occupied_unowned' | 'newer_than_plugin' | 'unsupported_manifest' | 'conflict'> | 'detached';
 export type ManagedOperationKind = 'install' | 'upgrade' | 'repair' | 'relocate' | 'uninstall';
 
 export interface PackagedAsset {
@@ -80,7 +82,7 @@ export interface ManagedAssetsPlan {
 	kind: ManagedOperationKind;
 	root: string;
 	canApply: boolean;
-	reasons: string[];
+	reasons: ManagedAssetsBlockerReason[];
 	steps: Array<{ id: string; path: string; status: ManagedAssetStatus }>;
 }
 
@@ -114,7 +116,9 @@ export function manifestPath(root: string): string {
 /** Pure preview: modified/unowned/future/conflicting evidence always blocks writes. */
 export function planManagedAssets(inspection: ManagedAssetsInspection, kind: ManagedOperationKind): ManagedAssetsPlan {
 	const blockers = new Set<ManagedAssetStatus>(['modified', 'occupied_unowned', 'newer_than_plugin', 'unsupported_manifest', 'conflict']);
-	const reasons: string[] = inspection.assets.filter((entry) => blockers.has(entry.status)).map((entry) => entry.status);
+	const reasons: ManagedAssetsBlockerReason[] = inspection.assets
+		.filter((entry) => blockers.has(entry.status))
+		.map((entry) => entry.status as ManagedAssetsBlockerReason);
 	if (inspection.manifestStatus === 'unsupported_manifest' || inspection.manifestStatus === 'conflict') reasons.push(inspection.manifestStatus);
 	if (inspection.manifestStatus === 'detached' && kind !== 'uninstall') reasons.push('detached');
 	return {

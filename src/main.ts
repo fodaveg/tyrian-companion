@@ -9,10 +9,12 @@ import type { StorageDelta } from './account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetsResult } from './assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
-import type { ManagedAssetsPlan } from './assets/managed-assets-model';
+import type { ManagedAssetsMessageCode, ManagedAssetsView } from './assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
+import { createTranslator } from './core/i18n';
+import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import {
 	DEFAULT_SETTINGS,
@@ -97,8 +99,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private managedAssets!: ManagedAssetsManager;
 	private managedAssetsLifecycle!: ManagedAssetsLifecycle;
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
-	private managedAssetsView: { status: 'idle' | 'working' | 'ready' | 'error'; message: string; plan: ManagedAssetsPlan | null } =
-		{ status: 'idle', message: 'Not inspected. No vault files have been read.', plan: null };
+	private managedAssetsView: ManagedAssetsView =
+		{ status: 'idle', message: 'not_inspected', plan: null };
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -224,19 +226,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.addSettingTab(this.settingTab);
 		this.addCommand({
 			id: 'open-companion',
-			name: 'Open companion',
+			name: createTranslator(this.settings.language).t('commands.openCompanion'),
 			callback: () => {
 				void this.activateView();
 			},
 		});
 		this.addCommand({
 			id: 'arm-assisted-detection',
-			name: 'Arm assisted detection',
+			name: createTranslator(this.settings.language).t('commands.armDetection'),
 			callback: () => { void this.armAssistedDetection(); },
 		});
 		this.addCommand({
 			id: 'disarm-assisted-detection',
-			name: 'Disarm assisted detection',
+			name: createTranslator(this.settings.language).t('commands.disarmDetection'),
 			callback: () => this.disarmAssistedDetection(),
 		});
 		this.setupSessionCommands();
@@ -279,6 +281,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.settings.detectionMode;
 	}
 
+	getLocale() {
+		return this.settings.language;
+	}
+
 	getAssistedDetectionState(): AssistedDetectionState {
 		return this.assistedDetection.getState();
 	}
@@ -302,14 +308,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
 		try {
 			if (!await this.pendingProposals.acknowledge(intent)) {
-				new Notice('That farming proposal is no longer available.');
+				new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'));
 				return false;
 			}
 			await this.activateView();
 			this.renderViews();
 			return true;
 		} catch {
-			new Notice('The farming proposal could not be reviewed.');
+			new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'));
 			return false;
 		}
 	}
@@ -333,7 +339,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.startModal = new ManualSessionStartModal(
 			this.app,
 			this.settings.preferredCharacter,
-			(input) => { void this.startManualSession(input, intent).catch(() => new Notice('The pending start could not be completed.')); },
+			() => this.settings.language,
+			(input) => { void this.startManualSession(input, intent).catch(() => new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'))); },
 			() => { this.startModal = null; },
 		);
 		this.startModal.open();
@@ -410,24 +417,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async previewManagedAssets(): Promise<void> {
 		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'A legacy managed-assets root is retained. Choose a safe output folder and use Move explicitly.', plan: null };
+			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
 		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
-		this.managedAssetsView = { status: 'working', message: 'Inspecting managed assets…', plan: null };
+		this.managedAssetsView = { status: 'working', message: 'inspecting', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
 		try {
 			const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
 			const plan = await this.managedAssets.preview(root, kind);
-			this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'Preview ready. No files were changed.' : `Blocked: ${plan.reasons.join(', ')}.`, plan };
-		} catch { this.managedAssetsView = { status: 'error', message: 'Managed assets could not be inspected safely.', plan: null }; }
+			this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
+		} catch { this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null }; }
 		this.settingTab.refreshManagedAssetsRow();
 	}
 
 	async applyManagedAssets(): Promise<void> {
 		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'Legacy managed assets can only be moved or removed explicitly.', plan: null };
+			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
@@ -437,7 +444,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async repairManagedAssets(): Promise<void> {
 		if (this.settings.legacyManagedAssetsRoot !== null) {
-			this.managedAssetsView = { status: 'error', message: 'Legacy managed assets can only be moved or removed explicitly.', plan: null };
+			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
 			return;
 		}
@@ -473,26 +480,26 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async runManagedAssetsLifecycle(operation: () => Promise<ManagedAssetsLifecycleResult>): Promise<ManagedAssetsLifecycleResult> {
-		this.managedAssetsView = { status: 'working', message: 'Applying durable managed-assets operation…', plan: null };
+		this.managedAssetsView = { status: 'working', message: 'applying_lifecycle', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
 		let result: ManagedAssetsLifecycleResult;
 		try { result = await operation(); }
 		catch { result = { status: 'unavailable', message: 'The durable managed-assets authority is unavailable.' }; }
 		this.managedAssetsView = 'root' in result
-			? { status: 'ready', message: 'Managed-assets lifecycle is ready.', plan: null }
-			: { status: 'error', message: result.message, plan: null };
+			? { status: 'ready', message: 'lifecycle_ready', plan: null }
+			: { status: 'error', message: managedAssetsFailureCode(result.status), plan: null };
 		this.settingTab.refreshManagedAssetsRow();
 		return result;
 	}
 
 	private async runManagedAssetOperation(operation: () => Promise<ManagedAssetsResult>): Promise<ManagedAssetsResult> {
-		this.managedAssetsView = { status: 'working', message: 'Applying managed-assets journal…', plan: null };
+		this.managedAssetsView = { status: 'working', message: 'applying_journal', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
 		const result = await operation();
 		if (result.status === 'applied' || result.status === 'unchanged' || result.status === 'detached') {
-			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'Ownership detached. Managed files were moved to trash.' : 'Managed assets are ready.', plan: null };
+			this.managedAssetsView = { status: 'ready', message: result.status === 'detached' ? 'ownership_detached' : 'assets_ready', plan: null };
 		} else if ('message' in result) {
-			this.managedAssetsView = { status: 'error', message: result.message, plan: null };
+			this.managedAssetsView = { status: 'error', message: managedAssetsFailureCode(result.status), plan: null };
 		}
 		this.settingTab.refreshManagedAssetsRow();
 		return result;
@@ -624,8 +631,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
-		if (previousLanguage !== nextSettings.language && this.managedAssets) {
-			this.managedAssets.setBundle({ bundleVersion: 2, locale: nextSettings.language, assets: await managedAssetsBundle() });
+		if (previousLanguage !== nextSettings.language) {
+			if (this.managedAssets) {
+				this.managedAssets.setBundle({ bundleVersion: 2, locale: nextSettings.language, assets: await managedAssetsBundle() });
+			}
+			this.settingTab.refreshForLocaleChange();
 		}
 		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
 			this.assistedDetection.disarm('mode_off');
@@ -715,6 +725,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				connection: this.connection.getState().status,
 				stopFailure: this.sessions.getLastStopFailure(),
 			}),
+			getLocale: () => this.settings.language,
 			prepare: (id) => this.prepareSessionCommand(id),
 			notify: (message) => { new Notice(message); },
 		});
@@ -726,15 +737,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		this.addCommand({
 			id: 'review-pending-farming-proposal',
-			name: 'Review pending farming proposal',
+			name: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'),
 			checkCallback: (checking) => {
 				const state = this.pendingProposals.getState();
-				const available = projectPendingProposalUi(state).commandAvailable;
+				const available = projectPendingProposalUi(state, this.settings.language).commandAvailable;
 				if (!checking && available && state.next) void this.reviewPendingProposal(proposalIntent(state.next));
 				return available;
 			},
 		});
-		this.sessionRibbon = this.addRibbonIcon('compass', 'Tyrian companion session actions', (event) => {
+		this.sessionRibbon = this.addRibbonIcon('compass', createTranslator(this.settings.language).t('commands.ribbon'), (event) => {
 			this.openSessionCommandMenu(event);
 		});
 		this.refreshSessionRibbon();
@@ -744,11 +755,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const menu = new Menu();
 		if (this.pendingProposals.getState().pendingCount > 0) {
 			const next = this.pendingProposals.getState().next;
-			menu.addItem((item) => item.setTitle('Review pending farming proposal').setIcon('inbox')
+			menu.addItem((item) => item.setTitle(translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending')).setIcon('inbox')
 				.onClick(() => { if (next) void this.reviewPendingProposal(proposalIntent(next)); }));
 			menu.addSeparator();
 		}
-		for (const entry of projectSessionMenu(this.sessionCommands.available())) {
+		for (const entry of projectSessionMenu(this.sessionCommands.available(), this.settings.language)) {
 			if (entry.type === 'separator') menu.addSeparator();
 			else if (entry.type === 'open') {
 				menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(() => { void this.activateView(); }));
@@ -776,6 +787,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.startModal = new ManualSessionStartModal(
 				this.app,
 				this.settings.preferredCharacter,
+				() => this.settings.language,
 				(input) => { submitted = true; resolve(() => this.startManualSession(input)); },
 				() => { this.startModal = null; if (!submitted) resolve(null); },
 			);
@@ -799,6 +811,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					return Promise.resolve(null);
 				},
 				() => { this.reviewModal = null; if (!submitted) resolve(null); },
+				() => this.settings.language,
 			);
 			this.reviewModal.open();
 		});
@@ -812,6 +825,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				this.app,
 				() => { confirmed = true; resolve(() => this.performDiscardRecoveredSession()); return Promise.resolve(); },
 				() => { this.discardModal = null; if (!confirmed) resolve(null); },
+				() => this.settings.language,
 			);
 			this.discardModal.open();
 		});
@@ -825,6 +839,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				this.app,
 				() => { confirmed = true; resolve(() => this.performClearCompletedSession()); return Promise.resolve(); },
 				() => { this.clearModal = null; if (!confirmed) resolve(null); },
+				() => this.settings.language,
 			);
 			this.clearModal.open();
 		});
@@ -876,11 +891,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (!this.sessionRibbon || !this.sessionCommands) return;
 		const next = this.sessionCommands.available().find((command) => !command.destructive);
 		const pending = this.pendingProposals
-			? projectPendingProposalUi(this.pendingProposals.getState())
+			? projectPendingProposalUi(this.pendingProposals.getState(), this.settings.language)
 			: { pendingCount: 0, ribbonLabel: null };
-		const title = pending.ribbonLabel
-			? `Tyrian companion: ${pending.ribbonLabel}`
-			: next ? `Tyrian companion: ${next.name}` : 'Tyrian companion session actions';
+		const translator = createTranslator(this.settings.language);
+		const title = pending.ribbonLabel || next
+			? translator.t('commands.ribbonCurrentAction', { label: pending.ribbonLabel ?? next!.name })
+			: translator.t('commands.ribbon');
 		this.sessionRibbon.setAttr('aria-label', title);
 		this.sessionRibbon.setAttr('title', title);
 		this.sessionRibbon.toggleClass('tyrian-companion-ribbon--pending', pending.pendingCount > 0);
@@ -893,4 +909,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await leaf.setViewState({ type: COMPANION_VIEW_TYPE, active: true });
 		await this.app.workspace.revealLeaf(leaf);
 	}
+}
+
+function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {
+	const codes: Record<typeof status, ManagedAssetsMessageCode> = {
+		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
+	};
+	return codes[status];
 }

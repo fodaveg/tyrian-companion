@@ -1,5 +1,11 @@
 # Changelog
 
+## H5.9 — Internacionalización ES/EN
+
+- Añadido catálogo pequeño, tipado y exhaustivo para ajustes, Companion, estados, acciones, notices, confirmaciones y modales; las claves y placeholders ES/EN se comprueban estructuralmente y la interpolación permanece en texto plano.
+- Localizadas las notas de sesión, la presentación de botín, los Markdown y las Bases sin cambiar IDs de comandos, enums, `tc_*`, marcadores/hash, rutas ni las propiedades/fórmulas con las que Bases filtra y ordena.
+- El cambio de idioma redibuja las superficies abiertas y actualiza el bundle de assets gestionados. Los nombres de comandos ya registrados en la paleta se actualizan al recargar el plugin, por una limitación de registro de Obsidian.
+
 ## H5.8 — Portabilidad de rutas Vault
 
 - Centralizada la validación fail-closed de las rutas generadas o aceptadas para settings, notas de sesión y assets gestionados.

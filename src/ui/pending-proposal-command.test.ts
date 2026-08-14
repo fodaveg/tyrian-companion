@@ -15,4 +15,10 @@ describe('projectPendingProposalUi', () => {
 			ribbonLabel: '2 pending confirmations',
 		});
 	});
+
+	it('localizes the compact label without changing availability', () => {
+		expect(projectPendingProposalUi({ status: 'ready', pendingCount: 2, next: null }, 'es')).toEqual({
+			commandAvailable: true, pendingCount: 2, ribbonLabel: '2 confirmaciones pendientes',
+		});
+	});
 });

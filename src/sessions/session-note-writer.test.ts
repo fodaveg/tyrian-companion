@@ -50,6 +50,26 @@ describe('session note model and renderer', () => {
 		expect(first.note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
 	});
 
+	it('localizes note labels, provenance, activities and reason codes without changing tc enums', async () => {
+		for (const [locale, expected] of [
+			['es', ['Clasificación: Exacta', 'Confianza: Alta', 'Abrir contenedores', 'El delta está limitado.', 'Núcleo y entrega', 'Precios del bazar de Guild Wars 2']],
+			['en', ['Classification: Exact', 'Confidence: High', 'Open containers', 'The delta is limited.', 'Core and delivery', 'Guild Wars 2 Trading Post prices']],
+		] as const) {
+			const input = sessionInput('exact', locale);
+			const prepared = prepareSessionNote(input);
+			if (prepared.status !== 'ok') throw new Error('Invalid prepared fixture.');
+			prepared.note.runtime.review.answers.activities.open = true;
+			prepared.note.runtime.review.classification.reasons = [{ code: 'delta_limited' }];
+			const result = await renderSessionNote(prepared.note);
+			if (result.status !== 'ok') throw new Error('Render failed.');
+			for (const copy of expected) expect(result.note.content).toContain(copy);
+			expect(result.note.content).not.toContain('delta_limited');
+			expect(result.note.content).not.toContain('core_only');
+			expect(result.note.content).not.toContain('gw2-commerce-prices');
+			expect(result.note.frontmatter).toMatchObject({ tc_classification: 'exact', tc_confidence: 'high' });
+		}
+	});
+
 	it('records only an explicit validated event and never infers it from session evidence', async () => {
 		const plain = sessionInput();
 		expect((await rendered(plain)).frontmatter.tc_event).toBeNull();

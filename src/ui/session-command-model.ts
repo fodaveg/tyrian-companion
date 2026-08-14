@@ -1,4 +1,5 @@
 import type { ConnectionState } from '../account/connection-service';
+import { createTranslator, type Locale, type TranslationKey } from '../core/i18n';
 import type { SessionRecoveryState, SessionStopFailure } from '../sessions/manual-session-start-service';
 import type { SessionState } from '../sessions/session';
 
@@ -29,26 +30,29 @@ export interface SessionCommandDescriptor {
 }
 
 /** Pure H5.2 palette/ribbon policy. Recovery always takes precedence. */
-export function projectSessionCommands(context: SessionCommandContext): SessionCommandDescriptor[] {
+export function projectSessionCommands(context: SessionCommandContext, locale: Locale = 'en'): SessionCommandDescriptor[] {
+	const translator = createTranslator(locale);
+	const t = (key: TranslationKey) => translator.t(key);
 	const recovering = context.recovery.status !== 'none';
 	const recoveryRetry = context.recovery.status === 'available' || context.recovery.status === 'busy';
 	const connected = context.connection === 'connected' || context.connection === 'warning';
 	return [
-		descriptor('start-farming-session', 'Start farming session', !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
-		descriptor('finish-farming-session', context.state.status === 'stopping' ? 'Retry session stop' : 'Finish farming session',
+		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
+		descriptor('finish-farming-session', context.state.status === 'stopping' ? t('commands.retryStop') : t('commands.finishSession'),
 			!recovering && (context.state.status === 'active' || (context.state.status === 'stopping' && context.stopFailure !== null)), 'square', false, targetKey(context, false)),
-		descriptor('review-session', 'Review session', !recovering && context.state.status === 'provisional', 'clipboard-check', false, targetKey(context, false)),
-		descriptor('recover-saved-session', 'Recover saved session', recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
-		descriptor('discard-saved-session', 'Discard saved session', recoveryRetry, 'trash-2', true, targetKey(context, true)),
-		descriptor('clear-completed-session', 'Clear completed session', !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),
+		descriptor('review-session', t('commands.reviewSession'), !recovering && context.state.status === 'provisional', 'clipboard-check', false, targetKey(context, false)),
+		descriptor('recover-saved-session', t('commands.recoverSession'), recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
+		descriptor('discard-saved-session', t('commands.discardSession'), recoveryRetry, 'trash-2', true, targetKey(context, true)),
+		descriptor('clear-completed-session', t('commands.clearSession'), !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),
 	];
 }
 
 export function projectSessionCommand(
 	id: SessionCommandId,
 	context: SessionCommandContext,
+	locale: Locale = 'en',
 ): SessionCommandDescriptor {
-	return projectSessionCommands(context).find((command) => command.id === id)!;
+	return projectSessionCommands(context, locale).find((command) => command.id === id)!;
 }
 
 function descriptor(

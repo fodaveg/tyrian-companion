@@ -1,6 +1,8 @@
 import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
+import { createTranslator, type Locale } from '../core/i18n';
+import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { DetectionMode } from '../core/settings';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
@@ -29,6 +31,10 @@ import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import {
 	buildCompanionStatus,
+	localizedCoverageStatus,
+	localizedClassificationStatus,
+	localizedConfidence,
+	localizedDeltaStatus,
 	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
@@ -37,6 +43,7 @@ import { renderLootPresentationView } from './loot-presentation-view';
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
 export interface CompanionActions {
+	getLocale(): Locale;
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
 	getSessionState(): SessionState;
@@ -92,7 +99,7 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Tyrian companion';
+		return this.t('view.displayName');
 	}
 
 	getIcon(): string {
@@ -131,14 +138,14 @@ export class TyrianCompanionView extends ItemView {
 		if (loot) renderLootPresentationView(contentEl, loot);
 
 		const account = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		account.createEl('summary', { text: 'Account connection' });
+		account.createEl('summary', { text: this.t('view.accountConnection') });
 		const status = account.createDiv({ cls: 'tyrian-companion-view__status' });
 		status.setAttr('role', connectionState.status === 'error' ? 'alert' : 'status');
 		status.setAttr('aria-live', 'polite');
 		this.renderConnectionState(status, connectionState);
 
 		const checkButton = contentEl.createEl('button', {
-			text: connectionState.status === 'checking' ? 'Checking…' : 'Check connection',
+			text: connectionState.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
 			cls: 'mod-cta',
 		});
 		this.checkButton = checkButton;
@@ -149,10 +156,10 @@ export class TyrianCompanionView extends ItemView {
 		});
 
 		const sessionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		sessionDetails.createEl('summary', { text: 'Session details' });
+		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
 		this.renderSession(sessionDetails, connectionState, sessionState);
 		const detectionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		detectionDetails.createEl('summary', { text: 'Detection details' });
+		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
 		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
 		this.renderPendingConfirmation(contentEl);
 
@@ -183,34 +190,39 @@ export class TyrianCompanionView extends ItemView {
 			startFailure: this.actions.getSessionStartFailure(),
 			stopFailure: this.actions.getSessionStopFailure(),
 			pendingProposals: this.actions.getPendingProposalState(),
+			locale: this.actions.getLocale(),
 		});
+	}
+
+	private t(key: RuntimeTranslationKey, params?: Record<string, string | number>): string {
+		return translateRuntime(createTranslator(this.actions.getLocale()), key, params);
 	}
 
 	private renderPendingConfirmation(container: HTMLElement): void {
 		const state = this.actions.getPendingProposalState();
 		if (state.status === 'loading' || (state.status === 'ready' && state.pendingCount === 0)) return;
 		const section = container.createEl('section', { cls: 'tyrian-companion-view__pending' });
-		section.setAttr('aria-label', 'Pending farming confirmations');
+		section.setAttr('aria-label', this.t('view.pendingAria'));
 		if (state.status === 'unavailable') {
-			section.createEl('h3', { text: 'Confirmation queue unavailable' });
-			section.createEl('p', { text: state.message });
+			section.createEl('h3', { text: this.t('view.queueUnavailable') });
+			section.createEl('p', { text: this.t('status.operationFailed') });
 			return;
 		}
-		section.createEl('h3', { text: `${String(state.pendingCount)} pending confirmation${state.pendingCount === 1 ? '' : 's'}` });
+		section.createEl('h3', { text: this.t(state.pendingCount === 1 ? 'view.pendingCount' : 'view.pendingCountPlural', { count: state.pendingCount }) });
 		const next = state.next;
 		if (!next) return;
 		section.createEl('p', {
 			text: next.phase === 'start'
-				? 'Possible farming start detected. Review it before starting a session.'
-				: 'Possible farming stop detected. Review it before finishing the session.',
+				? this.t('view.pendingStart')
+				: this.t('view.pendingStop'),
 		});
 		const details = section.createEl('dl');
-		addDetail(details, 'Detected', formatTimestamp(next.detectedAt));
-		addDetail(details, 'Evidence', next.proposal.evidenceQuality);
-		if (Date.parse(next.staleAt) <= Date.now()) addDetail(details, 'State', 'Stale — verify carefully');
+		addDetail(details, this.t('view.detected'), this.formatTimestamp(next.detectedAt));
+		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(next.proposal.evidenceQuality, (key, params) => this.t(key, params)));
+		if (Date.parse(next.staleAt) <= Date.now()) addDetail(details, this.t('view.state'), this.t('view.stale'));
 		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const intent = proposalIntent(next);
-		const review = actions.createEl('button', { text: next.phase === 'start' ? 'Review and start' : 'Review and stop', cls: 'mod-cta' });
+		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'), cls: 'mod-cta' });
 		review.addEventListener('click', () => {
 			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
 				if (!reviewed) return;
@@ -218,9 +230,9 @@ export class TyrianCompanionView extends ItemView {
 				else void this.actions.stopPendingSession(intent);
 			});
 		});
-		const dismiss = actions.createEl('button', { text: 'Dismiss' });
+		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
 		dismiss.addEventListener('click', () => {
-			new DetectionCorrectionModal(this.app, next.phase, (cause) => this.actions.dismissPendingProposal(intent, cause)).open();
+			new DetectionCorrectionModal(this.app, next.phase, (cause) => this.actions.dismissPendingProposal(intent, cause), () => this.actions.getLocale()).open();
 		});
 	}
 
@@ -241,19 +253,19 @@ export class TyrianCompanionView extends ItemView {
 		const coolingDown = isCoolingDown(retryAt);
 		if (this.checkButton) {
 			this.checkButton.disabled = connection.status === 'checking' || coolingDown;
-			this.checkButton.setText(connection.status === 'checking' ? 'Checking…' : 'Check connection');
+			this.checkButton.setText(connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'));
 		}
 		for (const node of this.cooldownNodes) {
 			node.hidden = !coolingDown;
-			if (coolingDown) node.setText(cooldownText(retryAt));
+			if (coolingDown) node.setText(this.cooldownText(retryAt));
 		}
 		if (this.ledger) this.ledger.setAttr('data-tone', projection.surfaceTone);
 		if (this.incident && this.incidentMessage && this.incidentMore) {
 			this.incident.hidden = projection.errors.length === 0;
 			this.incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
-			this.incidentMessage.setText(projection.errors[0] ?? 'The current state needs attention.');
+			this.incidentMessage.setText(projection.errors[0] ?? this.t('view.currentStateAttention'));
 			this.incidentMore.hidden = projection.errors.length <= 1;
-			this.incidentMore.setText(`+${String(Math.max(0, projection.errors.length - 1))} more`);
+			this.incidentMore.setText(this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }));
 		}
 		if (projection.refreshEveryMs === null) this.clearRefresh();
 	}
@@ -268,8 +280,8 @@ export class TyrianCompanionView extends ItemView {
 		const signature = header.createDiv({ cls: 'tyrian-companion-view__compass' });
 		signature.setAttr('aria-hidden', 'true');
 		const title = header.createDiv({ cls: 'tyrian-companion-view__title' });
-		title.createEl('p', { text: 'Tyria field ledger', cls: 'tyrian-companion-view__eyebrow' });
-		title.createEl('h2', { text: 'Tyrian companion' });
+		title.createEl('p', { text: this.t('view.fieldLedger'), cls: 'tyrian-companion-view__eyebrow' });
+		title.createEl('h2', { text: this.t('view.title') });
 		const sessionStatus = projection.items.find((status) => status.id === 'session');
 		if (sessionStatus) {
 			this.headerPhase = title.createEl('strong', { text: sessionStatus.value, cls: 'tyrian-companion-view__phase' });
@@ -282,7 +294,7 @@ export class TyrianCompanionView extends ItemView {
 	private renderStatusRail(container: HTMLElement, projection: CompanionStatusProjection): void {
 		const ledger = container.createEl('section', { cls: 'tyrian-companion-view__ledger' });
 		this.ledger = ledger;
-		ledger.setAttr('aria-label', 'Farming status');
+		ledger.setAttr('aria-label', this.t('view.farmingStatus'));
 		ledger.setAttr('data-tone', projection.surfaceTone);
 		const rail = ledger.createDiv({ cls: 'tyrian-companion-view__rail' });
 		for (const status of visibleRailItems(projection)) {
@@ -299,9 +311,9 @@ export class TyrianCompanionView extends ItemView {
 		incident.hidden = projection.errors.length === 0;
 		incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
 		incident.setAttr('role', 'alert');
-		incident.createEl('strong', { text: 'Attention' });
-		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? 'The current state needs attention.' });
-		this.incidentMore = incident.createEl('small', { text: `+${String(Math.max(0, projection.errors.length - 1))} more` });
+		incident.createEl('strong', { text: this.t('view.attention') });
+		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? this.t('view.currentStateAttention') });
+		this.incidentMore = incident.createEl('small', { text: this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }) });
 		this.incidentMore.hidden = projection.errors.length <= 1;
 	}
 
@@ -311,27 +323,27 @@ export class TyrianCompanionView extends ItemView {
 		connection: ConnectionState,
 	): void {
 		if (projection.primaryAction === 'stop') {
-			const button = container.createEl('button', { text: 'Stop session', cls: 'mod-cta' });
+			const button = container.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
 			return;
 		}
 		if (projection.primaryAction === 'review') {
-			const button = container.createEl('button', { text: 'Review activity', cls: 'mod-cta' });
+			const button = container.createEl('button', { text: this.t('view.reviewActivity'), cls: 'mod-cta' });
 			button.addEventListener('click', () => this.actions.openSessionReview());
 			return;
 		}
 		if (projection.primaryAction === 'clear') {
-			const button = container.createEl('button', { text: 'Clear session' });
+			const button = container.createEl('button', { text: this.t('view.clearSession') });
 			button.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
 		if (projection.primaryAction === 'recover') {
-			const button = container.createEl('button', { text: 'Recover session', cls: 'mod-cta' });
+			const button = container.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.runRecovery(); });
 			return;
 		}
 		if (projection.primaryAction === 'start') {
-			const button = container.createEl('button', { text: 'Start session', cls: 'mod-cta' });
+			const button = container.createEl('button', { text: this.t('view.startSession'), cls: 'mod-cta' });
 			button.disabled = connection.status !== 'connected' && connection.status !== 'warning';
 			button.addEventListener('click', () => this.actions.openManualSessionStart());
 		}
@@ -346,48 +358,48 @@ export class TyrianCompanionView extends ItemView {
 
 	private renderConnectionState(container: HTMLElement, state: ConnectionState): void {
 		if (state.status === 'idle') {
-			container.createEl('h3', { text: 'Not checked' });
-			container.createEl('p', { text: 'No network request has been made.' });
+			container.createEl('h3', { text: this.t('view.notChecked') });
+			container.createEl('p', { text: this.t('view.noNetworkRequest') });
 			return;
 		}
 		if (state.status === 'checking') {
-			container.createEl('h3', { text: 'Checking connection' });
-			container.createEl('p', { text: 'Verifying the selected API key and account.' });
+			container.createEl('h3', { text: this.t('view.checkingConnection') });
+			container.createEl('p', { text: this.t('view.checkingConnectionDetail') });
 			return;
 		}
 		if (state.status === 'error') {
-			container.createEl('h3', { text: 'Connection failed' });
-			container.createEl('p', { text: state.message });
+			container.createEl('h3', { text: this.t('view.connectionFailed') });
+			container.createEl('p', { text: this.t('status.operationFailed') });
 			if (isCoolingDown(state.retryAt)) {
 				this.cooldownNodes.push(container.createEl('p', {
-					text: cooldownText(state.retryAt),
+					text: this.cooldownText(state.retryAt),
 				}));
 			}
 			return;
 		}
 
 		container.createEl('h3', {
-			text: state.status === 'warning' ? 'Connected with warnings' : 'Connected',
+			text: state.status === 'warning' ? this.t('view.connectedWithWarnings') : this.t('status.connected'),
 		});
 		if (state.status === 'warning') {
-			container.createEl('p', { text: state.message });
+			container.createEl('p', { text: this.t('status.attention') });
 			if (isCoolingDown(state.retryAt)) {
-				this.cooldownNodes.push(container.createEl('p', { text: cooldownText(state.retryAt) }));
+				this.cooldownNodes.push(container.createEl('p', { text: this.cooldownText(state.retryAt) }));
 			}
 		}
 		const details = container.createEl('dl');
-		addDetail(details, 'Account', state.details.account.name);
-		addDetail(details, 'API key name', state.details.keyName);
-		addDetail(details, 'Permissions', state.details.scopes.join(', '));
+		addDetail(details, this.t('status.account'), state.details.account.name);
+		addDetail(details, this.t('view.apiKeyName'), state.details.keyName);
+		addDetail(details, this.t('view.permissions'), state.details.scopes.join(', '));
 		if (state.details.missingRecommendedScopes.length > 0) {
 			addDetail(
 				details,
-				'Missing future permissions',
+				this.t('view.missingFuturePermissions'),
 				state.details.missingRecommendedScopes.join(', '),
 			);
 		}
 		if (state.details.hasFutureUrlRestrictions) {
-			addDetail(details, 'Future URL access', 'Restricted by this subtoken');
+			addDetail(details, this.t('view.futureUrlAccess'), this.t('view.restrictedSubtoken'));
 		}
 	}
 
@@ -401,54 +413,54 @@ export class TyrianCompanionView extends ItemView {
 		const card = container.createDiv({ cls: 'tyrian-companion-view__detection' });
 		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		card.setAttr('aria-live', 'polite');
-		card.createEl('h3', { text: 'Assisted detection' });
+		card.createEl('h3', { text: this.t('view.assistedDetection') });
 		this.renderDetectionQualityStatus(card);
 
 		if (mode === 'off') {
-			card.createEl('p', { text: 'Disabled in settings. No background account checks can run.' });
-			addDetectionDetail(card, 'State', 'Off');
+			card.createEl('p', { text: this.t('view.disabledInSettings') });
+			addDetectionDetail(card, this.t('view.state'), this.t('status.off'));
 			return;
 		}
 		if (state.status === 'disarmed') {
-			card.createEl('p', { text: 'Disarmed. No polling or inference is running.' });
-			addDetectionDetail(card, 'State', 'Disarmed');
+			card.createEl('p', { text: this.t('view.disarmedDetail') });
+			addDetectionDetail(card, this.t('view.state'), this.t('status.disarmed'));
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const arm = actions.createEl('button', { text: 'Arm detection', cls: 'mod-cta' });
+			const arm = actions.createEl('button', { text: this.t('view.armDetection'), cls: 'mod-cta' });
 			const connected = connection.status === 'connected' || connection.status === 'warning';
 			const sessionReady = session.status === 'idle' || session.status === 'active';
 			const recoveryReady = session.status !== 'idle' || this.actions.getSessionRecoveryState().status === 'none';
 			arm.disabled = !connected || !sessionReady || !recoveryReady;
 			arm.addEventListener('click', () => { void this.armDetection(); });
-			if (!connected) card.createEl('p', { text: 'Check the account connection before arming.' });
+			if (!connected) card.createEl('p', { text: this.t('view.checkBeforeArming') });
 			else if (!sessionReady || !recoveryReady) {
-				card.createEl('p', { text: 'Resolve the current session state before arming.' });
+				card.createEl('p', { text: this.t('view.resolveSessionBeforeArming') });
 			}
 			return;
 		}
 
 		if (state.status === 'arming') {
-			card.createEl('p', { text: 'Capturing a stable account baseline before polling starts…' });
-			addDetectionDetail(card, 'State', 'Arming');
+			card.createEl('p', { text: this.t('view.capturingBaselineBeforePolling') });
+			addDetectionDetail(card, this.t('view.state'), this.t('status.arming'));
 			this.addDisarmButton(card);
 			return;
 		}
 
 		if (state.status === 'error') {
-			card.createEl('p', { text: state.message, cls: 'tyrian-companion-view__session-error' });
-			addDetectionDetail(card, 'State', 'Error');
+			card.createEl('p', { text: this.t('status.detectionStopped'), cls: 'tyrian-companion-view__session-error' });
+			addDetectionDetail(card, this.t('view.state'), this.t('status.error'));
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const retry = actions.createEl('button', { text: 'Try arming again', cls: 'mod-cta' });
+			const retry = actions.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
 			retry.addEventListener('click', () => { void this.armDetection(); });
-			const disarm = actions.createEl('button', { text: 'Disarm' });
+			const disarm = actions.createEl('button', { text: this.t('view.disarm') });
 			disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 			return;
 		}
 
 		if (state.status === 'start_proposed') {
-			card.createEl('p', { text: 'Relevant festival gains were observed twice. Starting a session still requires you.' });
+			card.createEl('p', { text: this.t('view.startProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const start = actions.createEl('button', { text: 'Review and start', cls: 'mod-cta' });
+			const start = actions.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
 			start.disabled = session.status !== 'idle';
 			start.addEventListener('click', () => this.actions.openManualSessionStart());
 			this.addDismissAndDisarm(actions, 'start');
@@ -456,22 +468,22 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		if (state.status === 'stop_proposed') {
-			card.createEl('p', { text: 'The configured quiet period was observed. The plugin will not stop the session by itself.' });
+			card.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const stop = actions.createEl('button', { text: 'Stop session', cls: 'mod-cta' });
+			const stop = actions.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
 			stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
 			this.addDismissAndDisarm(actions, 'stop');
 			return;
 		}
 
-		card.createEl('p', { text: 'Armed. Polling may suggest a start or stop, but never changes a session silently.' });
+		card.createEl('p', { text: this.t('view.armedDetail') });
 		const details = card.createEl('dl');
-		addDetail(details, 'State', 'Armed');
-		addDetail(details, 'Scheduler', state.scheduler.status);
-		addDetail(details, 'Interval', formatInterval(state.scheduler.intervalMs));
-		if (state.lastSnapshotAt) addDetail(details, 'Last snapshot', formatTimestamp(state.lastSnapshotAt));
+		addDetail(details, this.t('view.state'), this.t('status.armed'));
+		addDetail(details, this.t('view.scheduler'), schedulerStatusLabel(state.scheduler.status, this.actions.getLocale()));
+		addDetail(details, this.t('view.interval'), this.formatInterval(state.scheduler.intervalMs));
+		if (state.lastSnapshotAt) addDetail(details, this.t('view.lastSnapshot'), this.formatTimestamp(state.lastSnapshotAt));
 		this.addDisarmButton(card);
 	}
 
@@ -484,38 +496,39 @@ export class TyrianCompanionView extends ItemView {
 
 	private addDisarmButton(container: HTMLElement): void {
 		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const disarm = actions.createEl('button', { text: 'Disarm' });
+		const disarm = actions.createEl('button', { text: this.t('view.disarm') });
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
 	private addDismissAndDisarm(container: HTMLElement, phase: 'start' | 'stop'): void {
-		const dismiss = container.createEl('button', { text: 'Dismiss proposal' });
+		const dismiss = container.createEl('button', { text: this.t('view.dismissProposal') });
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
 				this.app,
 				phase,
 				(cause) => this.actions.dismissAssistedProposal(cause),
+				() => this.actions.getLocale(),
 			).open();
 		});
-		const disarm = container.createEl('button', { text: 'Disarm' });
+		const disarm = container.createEl('button', { text: this.t('view.disarm') });
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
 	private renderDetectionQualityStatus(container: HTMLElement): void {
 		const state = this.actions.getDetectionQualityState();
 		if (state.status === 'unavailable') {
-			container.createEl('p', { text: state.message, cls: 'tyrian-companion-view__session-error' });
+			container.createEl('p', { text: this.t('status.unavailable'), cls: 'tyrian-companion-view__session-error' });
 			return;
 		}
 		if (state.status === 'loading') {
-			container.createEl('p', { text: 'Loading local detection quality…' });
+			container.createEl('p', { text: this.t('view.loadingQuality') });
 			return;
 		}
 		const stats = this.actions.getDetectionQualityStats();
 		if (!stats) return;
 		const details = container.createEl('dl');
-		addDetail(details, 'Recorded boundaries', String(stats.acceptedBoundaries));
-		addDetail(details, 'Corrected proposals', String(stats.correctedFalsePositives));
+		addDetail(details, this.t('view.recordedBoundaries'), String(stats.acceptedBoundaries));
+		addDetail(details, this.t('view.correctedProposals'), String(stats.correctedFalsePositives));
 	}
 
 	private renderProposalDetails(
@@ -524,10 +537,10 @@ export class TyrianCompanionView extends ItemView {
 		quality: 'complete' | 'limited',
 	): void {
 		const details = container.createEl('dl');
-		addDetail(details, 'Possible from', formatTimestamp(window.from));
-		addDetail(details, 'Possible to', formatTimestamp(window.to));
-		addDetail(details, 'Uncertainty', formatDuration(window.uncertaintyMs));
-		addDetail(details, 'Evidence', quality);
+		addDetail(details, this.t('view.possibleFrom'), this.formatTimestamp(window.from));
+		addDetail(details, this.t('view.possibleTo'), this.formatTimestamp(window.to));
+		addDetail(details, this.t('view.uncertainty'), this.formatDuration(window.uncertaintyMs));
+		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(quality, (key, params) => this.t(key, params)));
 	}
 
 	private renderSession(
@@ -538,7 +551,7 @@ export class TyrianCompanionView extends ItemView {
 		const card = container.createDiv({ cls: 'tyrian-companion-view__session' });
 		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		card.setAttr('aria-live', 'polite');
-		card.createEl('h3', { text: 'Farming session' });
+		card.createEl('h3', { text: this.t('view.farmingSession') });
 
 		if (state.status === 'idle') {
 			const recovery = this.actions.getSessionRecoveryState();
@@ -546,24 +559,24 @@ export class TyrianCompanionView extends ItemView {
 				this.renderRecovery(card, recovery);
 				return;
 			}
-			card.createEl('p', { text: 'No farming session is active.' });
+			card.createEl('p', { text: this.t('view.noActiveSession') });
 			const failure = this.actions.getSessionStartFailure();
-			if (failure) card.createEl('p', { text: failure.message, cls: 'tyrian-companion-view__session-error' });
-			const start = card.createEl('button', { text: 'Start session', cls: 'mod-cta' });
+			if (failure) card.createEl('p', { text: this.t('status.operationFailed'), cls: 'tyrian-companion-view__session-error' });
+			const start = card.createEl('button', { text: this.t('view.startSession'), cls: 'mod-cta' });
 			const connected = connection.status === 'connected' || connection.status === 'warning';
 			start.disabled = !connected;
 			start.addEventListener('click', () => this.actions.openManualSessionStart());
 			if (!connected) {
 				card.createEl('p', {
-					text: 'Check the account connection before starting.',
+					text: this.t('view.checkBeforeStarting'),
 				});
 			}
 			return;
 		}
 
 		if (state.status === 'starting') {
-			card.createEl('p', { text: 'Capturing a stable account baseline and active build…' });
-			const button = card.createEl('button', { text: 'Starting…' });
+			card.createEl('p', { text: this.t('view.capturingStart') });
+			const button = card.createEl('button', { text: this.t('view.starting') });
 			button.disabled = true;
 			return;
 		}
@@ -572,13 +585,12 @@ export class TyrianCompanionView extends ItemView {
 			const failure = this.actions.getSessionStopFailure();
 			card.createEl('p', {
 				text: failure
-					? 'The final snapshot failed. The baseline is intact and the stop can be retried.'
-					: 'Capturing a stable final account snapshot…',
+					? this.t('view.finalSnapshotFailed') : this.t('view.capturingFinal'),
 			});
 			if (failure) {
-				card.createEl('p', { text: failure.message, cls: 'tyrian-companion-view__session-error' });
+				card.createEl('p', { text: this.t('status.operationFailed'), cls: 'tyrian-companion-view__session-error' });
 			}
-			const button = card.createEl('button', { text: failure ? 'Retry stop' : 'Stopping…' });
+			const button = card.createEl('button', { text: failure ? this.t('view.retryStop') : this.t('status.stopping') });
 			button.disabled = failure === null;
 			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
 			this.renderSessionDetails(card, state);
@@ -587,21 +599,21 @@ export class TyrianCompanionView extends ItemView {
 
 		if (state.status === 'provisional') {
 			card.createEl('p', {
-				text: 'Final snapshot and account delta captured. The session is ready for contamination review.',
+				text: this.t('view.provisionalDetail'),
 			});
 			this.renderSessionDetails(card, state);
 			const delta = this.actions.getProvisionalDelta();
 			if (delta) {
 				const details = card.createEl('dl');
-				addDetail(details, 'Delta quality', delta.status);
-				addDetail(details, 'Changed item IDs', String(delta.itemChanges.length));
-				addDetail(details, 'Changed currencies', String(delta.currencyChanges.length));
+			addDetail(details, this.t('view.deltaQuality'), localizedDeltaStatus(delta.status, (key, params) => this.t(key, params)));
+				addDetail(details, this.t('view.changedItemIds'), String(delta.itemChanges.length));
+				addDetail(details, this.t('view.changedCurrencies'), String(delta.currencyChanges.length));
 			}
 			const review = this.actions.getContaminationReview();
 			if (review) this.renderReviewSummary(card, review);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const reviewButton = actions.createEl('button', {
-				text: review ? 'Review again' : 'Review activity',
+				text: review ? this.t('view.reviewAgain') : this.t('view.reviewActivity'),
 				cls: 'mod-cta',
 			});
 			reviewButton.addEventListener('click', () => this.actions.openSessionReview());
@@ -609,12 +621,12 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		if (state.status === 'complete') {
-			card.createEl('p', { text: 'The session review is complete.' });
+			card.createEl('p', { text: this.t('view.reviewComplete') });
 			this.renderSessionDetails(card, state);
 			const review = this.actions.getContaminationReview();
 			if (review) this.renderReviewSummary(card, review);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const reset = actions.createEl('button', { text: 'Clear completed session', cls: 'mod-cta' });
+			const reset = actions.createEl('button', { text: this.t('view.clearCompleted'), cls: 'mod-cta' });
 			reset.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
@@ -622,28 +634,28 @@ export class TyrianCompanionView extends ItemView {
 		const observed = state.status === 'error' ? state.failedState : state;
 		if (observed.status === 'active' || observed.status === 'stopping' || observed.status === 'provisional') {
 			card.createEl('p', {
-				text: state.status === 'error' ? 'The active session lost its authority.' : 'Baseline captured. The session is active.',
+				text: state.status === 'error' ? this.t('view.authorityLost') : this.t('view.baselineCaptured'),
 			});
 			this.renderSessionDetails(card, observed);
 			if (state.status === 'active') {
-				const stop = card.createEl('button', { text: 'Stop session' });
+				const stop = card.createEl('button', { text: this.t('view.stopSession') });
 				stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
 			}
 			return;
 		}
 
-		card.createEl('p', { text: `Session status: ${state.status}.` });
+		card.createEl('p', { text: this.t('view.sessionStatus', { status: sessionStateLabel(state.status, this.actions.getLocale()) }) });
 	}
 
 	private renderReviewSummary(container: HTMLElement, review: SessionContaminationReview): void {
 		const details = container.createEl('dl');
-		addDetail(details, 'Classification', review.classification.status);
-		addDetail(details, 'Confidence', review.classification.confidence);
-		addDetail(details, 'Reviewed', formatTimestamp(review.reviewedAt));
+		addDetail(details, this.t('view.classification'), localizedClassificationStatus(review.classification.status, (key, params) => this.t(key, params)));
+		addDetail(details, this.t('view.confidence'), localizedConfidence(review.classification.confidence, (key, params) => this.t(key, params)));
+		addDetail(details, this.t('view.reviewed'), this.formatTimestamp(review.reviewedAt));
 		const selected = SESSION_ACTIVITY_KEYS.filter((key) => review.answers.activities[key]);
-		addDetail(details, 'Declared activity', selected.length === 0
-			? review.answers.certainty === 'confirmed' ? 'None confirmed' : 'Unsure'
-			: selected.map(activityLabel).join(', '));
+		addDetail(details, this.t('view.declaredActivity'), selected.length === 0
+			? review.answers.certainty === 'confirmed' ? this.t('view.noneConfirmed') : this.t('view.unsure')
+			: selected.map((key) => activityLabel(key, this.actions.getLocale())).join(', '));
 	}
 
 	private renderRecovery(container: HTMLElement, recovery: SessionRecoveryState): void {
@@ -651,11 +663,11 @@ export class TyrianCompanionView extends ItemView {
 		if (recovery.status === 'error') {
 			container.setAttr('role', 'alert');
 			container.createEl('p', {
-				text: recovery.message,
+				text: this.t('status.operationFailed'),
 				cls: 'tyrian-companion-view__session-error',
 			});
 			container.createEl('p', {
-				text: 'Starting a new session is disabled to avoid overwriting recoverable evidence.',
+				text: this.t('view.recoveryOverwriteBlocked'),
 			});
 			return;
 		}
@@ -665,19 +677,19 @@ export class TyrianCompanionView extends ItemView {
 		if (recovery.status === 'busy') container.setAttr('role', 'alert');
 		container.createEl('p', {
 			text: recovery.status === 'working'
-				? recovery.action === 'recover' ? 'Recovering the saved session…' : 'Discarding the saved session…'
-				: 'A farming session from a previous Obsidian run is available.',
+				? recovery.action === 'recover' ? this.t('view.recovering') : this.t('view.discarding')
+				: this.t('view.recoveryAvailable'),
 		});
 		this.renderSessionDetails(container, observed);
 		if ('message' in recovery && recovery.message) {
 			container.createEl('p', {
-				text: recovery.message,
+				text: this.t(recovery.status === 'busy' ? 'status.recoveryOwner' : 'status.operationFailed'),
 				cls: recovery.status === 'busy' ? 'tyrian-companion-view__session-error' : undefined,
 			});
 		}
 		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const recover = actions.createEl('button', { text: 'Recover session', cls: 'mod-cta' });
-		const discard = actions.createEl('button', { text: 'Discard saved session' });
+		const recover = actions.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: this.t('view.discardSaved') });
 		const working = recovery.status === 'working';
 		recover.disabled = working;
 		discard.disabled = working;
@@ -697,11 +709,11 @@ export class TyrianCompanionView extends ItemView {
 		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' | 'complete' }>,
 	): void {
 		const details = container.createEl('dl');
-		addDetail(details, 'Character', state.startContext.characterName);
-		addDetail(details, 'Build', state.startContext.build.name || state.startContext.build.profession);
-		addDetail(details, 'Profession', state.startContext.build.profession);
-		addDetail(details, 'Magic Find', `${state.startContext.magicFind.value} (manual)`);
-		addDetail(details, 'Started', formatTimestamp(state.baseline.completedAt));
+		addDetail(details, this.t('view.character'), state.startContext.characterName);
+		addDetail(details, this.t('view.build'), state.startContext.build.name || state.startContext.build.profession);
+		addDetail(details, this.t('view.profession'), state.startContext.build.profession);
+		addDetail(details, this.t('view.magicFind'), `${state.startContext.magicFind.value} (${this.t('view.manual')})`);
+		addDetail(details, this.t('view.started'), this.formatTimestamp(state.baseline.completedAt));
 		this.renderSessionDetectionQuality(details, state.sessionId);
 	}
 
@@ -711,21 +723,39 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		const summary = this.actions.getSessionDetectionQuality(sessionId);
 		if (!summary) return;
-		addDetail(details, 'Detection mode', detectionModeLabel(summary.mode));
-		addDetail(details, 'Start cause', summary.start ? detectionCauseLabel(summary.start.cause) : 'Not recorded');
-		addDetail(details, 'Start uncertainty', summary.start ? formatDuration(summary.start.uncertaintyMs) : 'Unknown');
+		addDetail(details, this.t('view.detectionMode'), detectionModeLabel(summary.mode, this.actions.getLocale()));
+		addDetail(details, this.t('view.startCause'), summary.start ? detectionCauseLabel(summary.start.cause, this.actions.getLocale()) : this.t('view.notRecorded'));
+		addDetail(details, this.t('view.startUncertainty'), summary.start ? this.formatDuration(summary.start.uncertaintyMs) : this.t('view.unknown'));
 		if (summary.stop) {
-			addDetail(details, 'Stop cause', detectionCauseLabel(summary.stop.cause));
-			addDetail(details, 'Stop uncertainty', formatDuration(summary.stop.uncertaintyMs));
+			addDetail(details, this.t('view.stopCause'), detectionCauseLabel(summary.stop.cause, this.actions.getLocale()));
+			addDetail(details, this.t('view.stopUncertainty'), this.formatDuration(summary.stop.uncertaintyMs));
 		}
-		addDetail(details, 'Corrected false positives', String(summary.correctedFalsePositives.length));
+		addDetail(details, this.t('view.correctedFalsePositives'), String(summary.correctedFalsePositives.length));
 		if (summary.correctedFalsePositives.length > 0) {
 			addDetail(
 				details,
-				'Correction causes',
-				summary.correctedFalsePositives.map((event) => detectionCauseLabel(event.cause)).join(', '),
+				this.t('view.correctionCauses'),
+				summary.correctedFalsePositives.map((event) => detectionCauseLabel(event.cause, this.actions.getLocale())).join(', '),
 			);
 		}
+	}
+
+	private cooldownText(retryAt: number): string {
+		return this.t('time.retryIn', { seconds: Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000)) });
+	}
+
+	private formatTimestamp(value: string): string {
+		return new Date(value).toLocaleString(this.actions.getLocale());
+	}
+
+	private formatInterval(intervalMs: number | null): string {
+		return intervalMs === null
+			? this.t('time.paused')
+			: this.t('time.minutes', { count: Math.round(intervalMs / 60_000) });
+	}
+
+	private formatDuration(durationMs: number): string {
+		return formatDuration(durationMs, this.actions.getLocale());
 	}
 
 	private clearRefresh(): void {
@@ -741,6 +771,7 @@ export class ConfirmDiscardSessionModal extends Modal {
 		app: App,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
 	) {
 		super(app);
 	}
@@ -750,13 +781,13 @@ export class ConfirmDiscardSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle('Discard saved farming session?');
+		this.setTitle(runtimeText(this.getLocale(), 'modal.discardTitle'));
 		this.contentEl.createEl('p', {
-			text: 'This removes the saved baseline and any captured final snapshot. It cannot be undone.',
+			text: runtimeText(this.getLocale(), 'modal.discardDetail'),
 		});
 		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: 'Keep session', cls: 'mod-cta' });
-		const discard = actions.createEl('button', { text: 'Discard', cls: 'mod-warning' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.discard'), cls: 'mod-warning' });
 		cancel.addEventListener('click', () => this.close());
 		discard.addEventListener('click', () => {
 			discard.disabled = true;
@@ -772,18 +803,19 @@ export class ConfirmClearCompletedSessionModal extends Modal {
 		app: App,
 		private readonly onConfirm: () => Promise<void>,
 		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
-		this.setTitle('Save note and clear completed session?');
+		this.setTitle(runtimeText(this.getLocale(), 'modal.clearTitle'));
 		this.contentEl.createEl('p', {
-			text: 'Tyrian companion will create or safely update the session note before clearing local completed-session data. It never changes the game account.',
+			text: runtimeText(this.getLocale(), 'modal.clearDetail'),
 		});
 		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: 'Keep session', cls: 'mod-cta' });
-		const clear = actions.createEl('button', { text: 'Save note and clear', cls: 'mod-warning' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
+		const clear = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.saveAndClear'), cls: 'mod-warning' });
 		cancel.addEventListener('click', () => this.close());
 		clear.addEventListener('click', () => {
 			clear.disabled = true;
@@ -803,18 +835,19 @@ class DetectionCorrectionModal extends Modal {
 		app: App,
 		private readonly phase: 'start' | 'stop',
 		private readonly onConfirm: (cause: DetectionCorrectionCause) => Promise<void>,
+		private readonly getLocale: () => Locale = () => 'es',
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
-		this.setTitle(this.phase === 'start' ? 'Why was the start proposal wrong?' : 'Why was the stop proposal wrong?');
+		this.setTitle(runtimeText(this.getLocale(), this.phase === 'start' ? 'modal.correctionStartTitle' : 'modal.correctionStopTitle'));
 		this.contentEl.createEl('p', {
-			text: 'This structured label helps measure detection quality. It is stored only on this device.',
+			text: runtimeText(this.getLocale(), 'modal.correctionDetail'),
 		});
 		const form = this.contentEl.createEl('form', { cls: 'tyrian-companion-quality-correction' });
 		const fieldset = form.createEl('fieldset');
-		fieldset.createEl('legend', { text: 'Correction cause' });
+		fieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.correctionCause') });
 		const allowed = correctionCauses(this.phase);
 		const inputs = allowed.map((cause, index) => ({
 			cause,
@@ -822,28 +855,28 @@ class DetectionCorrectionModal extends Modal {
 				fieldset,
 				'detection-correction-cause',
 				cause,
-				detectionCauseLabel(cause),
+				detectionCauseLabel(cause, this.getLocale()),
 				index === 0,
 			),
 		}));
 		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
 		error.setAttr('role', 'alert');
 		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: 'Keep proposal', type: 'button' });
-		const submit = actions.createEl('button', { text: 'Save and dismiss', type: 'submit', cls: 'mod-cta' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepProposal'), type: 'button' });
+		const submit = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.saveAndDismiss'), type: 'submit', cls: 'mod-cta' });
 		cancel.addEventListener('click', () => this.close());
 		form.addEventListener('submit', (event) => {
 			event.preventDefault();
 			const selected = inputs.find(({ input }) => input.checked)?.cause;
 			if (!selected) {
-				error.setText('Choose a correction cause.');
+				error.setText(runtimeText(this.getLocale(), 'modal.chooseCause'));
 				return;
 			}
 			submit.disabled = true;
 			cancel.disabled = true;
 			error.setText('');
 			void this.onConfirm(selected).then(() => this.close()).catch(() => {
-				error.setText('The proposal could not be dismissed.');
+				error.setText(runtimeText(this.getLocale(), 'modal.dismissFailed'));
 				submit.disabled = false;
 				cancel.disabled = false;
 			});
@@ -858,6 +891,7 @@ export class SessionContaminationReviewModal extends Modal {
 		private readonly current: SessionContaminationAnswers | null,
 		private readonly onSubmit: (answers: SessionContaminationAnswers) => Promise<string | null>,
 		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
 	) {
 		super(app);
 	}
@@ -867,43 +901,43 @@ export class SessionContaminationReviewModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle('Review session activity');
+		this.setTitle(runtimeText(this.getLocale(), 'modal.reviewTitle'));
 		this.contentEl.createEl('p', {
-			text: 'Select anything you did between the two account snapshots. Declared activity makes the observed net contaminated; the plugin never guesses the cause.',
+			text: runtimeText(this.getLocale(), 'modal.reviewDetail'),
 		});
 		const form = this.contentEl.createEl('form', { cls: 'tyrian-companion-review' });
 		const activityFieldset = form.createEl('fieldset');
-		activityFieldset.createEl('legend', { text: 'During this session, did you…' });
+		activityFieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.reviewQuestion') });
 		const activityInputs = new Map<SessionActivityKey, HTMLInputElement>();
 		for (const key of SESSION_ACTIVITY_KEYS) {
 			const label = activityFieldset.createEl('label');
 			const input = label.createEl('input', { type: 'checkbox' });
 			input.checked = this.current?.activities[key] ?? false;
-			label.appendText(activityLabel(key));
+			label.appendText(activityLabel(key, this.getLocale()));
 			activityInputs.set(key, input);
 		}
 
 		const certaintyFieldset = form.createEl('fieldset');
-		certaintyFieldset.createEl('legend', { text: 'If none are selected' });
+		certaintyFieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.noneSelected') });
 		const confirmed = radioOption(
 			certaintyFieldset,
 			'session-review-certainty',
 			'confirmed',
-			'I confirm that none of these activities occurred',
+			runtimeText(this.getLocale(), 'modal.confirmNone'),
 			this.current?.certainty !== 'unsure',
 		);
 		const unsure = radioOption(
 			certaintyFieldset,
 			'session-review-certainty',
 			'unsure',
-			"I'm not sure",
+			runtimeText(this.getLocale(), 'view.unsure'),
 			this.current?.certainty === 'unsure',
 		);
 		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
 		error.setAttr('role', 'alert');
 		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: 'Cancel', type: 'button' });
-		const submit = actions.createEl('button', { text: 'Save review', type: 'submit', cls: 'mod-cta' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.cancel'), type: 'button' });
+		const submit = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.saveReview'), type: 'submit', cls: 'mod-cta' });
 		cancel.addEventListener('click', () => this.close());
 		form.addEventListener('submit', (event) => {
 			event.preventDefault();
@@ -917,16 +951,16 @@ export class SessionContaminationReviewModal extends Modal {
 			submit.disabled = true;
 			cancel.disabled = true;
 			error.setText('');
-			void this.onSubmit(answers).then((message) => {
-				if (message === null) {
+			void this.onSubmit(answers).then((failure) => {
+				if (failure === null) {
 					this.close();
 					return;
 				}
-				error.setText(message);
+				error.setText(runtimeText(this.getLocale(), 'modal.reviewSaveFailed'));
 				submit.disabled = false;
 				cancel.disabled = false;
 			}).catch(() => {
-				error.setText('The session review could not be saved.');
+				error.setText(runtimeText(this.getLocale(), 'modal.reviewSaveFailed'));
 				submit.disabled = false;
 				cancel.disabled = false;
 			});
@@ -938,6 +972,14 @@ export class SessionContaminationReviewModal extends Modal {
 function addDetail(list: HTMLDListElement, term: string, detail: string): void {
 	list.createEl('dt', { text: term });
 	list.createEl('dd', { text: detail });
+}
+
+function runtimeText(
+	locale: Locale,
+	key: RuntimeTranslationKey,
+	params?: Record<string, string | number>,
+): string {
+	return translateRuntime(createTranslator(locale), key, params);
 }
 
 function addDetectionDetail(container: HTMLElement, term: string, detail: string): void {
@@ -959,20 +1001,13 @@ function radioOption(
 	return input;
 }
 
-function activityLabel(key: SessionActivityKey): string {
-	const labels: Record<SessionActivityKey, string> = {
-		open: 'Open containers',
-		salvage: 'Salvage items',
-		consume: 'Consume items or currencies',
-		craft: 'Craft or convert items',
-		tpBuy: 'Buy on the Trading Post',
-		tpSell: 'Sell on the Trading Post',
-		vendorBuy: 'Buy from a vendor',
-		vendorSell: 'Sell to a vendor',
-		transfer: 'Transfer through mail or guild storage',
-		other: 'Perform other account activity',
+function activityLabel(key: SessionActivityKey, locale: Locale): string {
+	const labels: Record<SessionActivityKey, RuntimeTranslationKey> = {
+		open: 'activity.open', salvage: 'activity.salvage', consume: 'activity.consume', craft: 'activity.craft',
+		tpBuy: 'activity.tpBuy', tpSell: 'activity.tpSell', vendorBuy: 'activity.vendorBuy', vendorSell: 'activity.vendorSell',
+		transfer: 'activity.transfer', other: 'activity.other',
 	};
-	return labels[key];
+	return runtimeText(locale, labels[key]);
 }
 
 function correctionCauses(phase: 'start' | 'stop'): DetectionCorrectionCause[] {
@@ -982,53 +1017,51 @@ function correctionCauses(phase: 'start' | 'stop'): DetectionCorrectionCause[] {
 	return allowed.filter((cause) => DETECTION_CORRECTION_CAUSES.includes(cause));
 }
 
-function detectionModeLabel(mode: SessionDetectionQualitySummary['mode']): string {
-	const labels: Record<SessionDetectionQualitySummary['mode'], string> = {
-		manual: 'Manual',
-		assisted: 'Assisted',
-		mixed: 'Mixed',
-		incomplete: 'Incomplete legacy data',
+function detectionModeLabel(mode: SessionDetectionQualitySummary['mode'], locale: Locale): string {
+	const labels: Record<SessionDetectionQualitySummary['mode'], RuntimeTranslationKey> = {
+		manual: 'detection.mode.manual', assisted: 'detection.mode.assisted', mixed: 'detection.mode.mixed', incomplete: 'detection.mode.incomplete',
 	};
-	return labels[mode];
+	return runtimeText(locale, labels[mode]);
 }
 
-function detectionCauseLabel(cause: DetectionDecisionCause): string {
-	const labels: Record<DetectionDecisionCause, string> = {
-		manual_start: 'Manual start',
-		manual_stop: 'Manual stop',
-		relevant_item_gain: 'Relevant item gains',
-		inactivity: 'Inactivity threshold',
-		not_farming: 'I was not farming',
-		still_farming: 'I was still farming',
-		temporary_pause: 'It was only a temporary pause',
-		unrelated_account_activity: 'The account activity was unrelated',
-		other: 'Another reason',
+function detectionCauseLabel(cause: DetectionDecisionCause, locale: Locale): string {
+	const labels: Record<DetectionDecisionCause, RuntimeTranslationKey> = {
+		manual_start: 'detection.cause.manual_start', manual_stop: 'detection.cause.manual_stop',
+		relevant_item_gain: 'detection.cause.relevant_item_gain', inactivity: 'detection.cause.inactivity',
+		not_farming: 'detection.cause.not_farming', still_farming: 'detection.cause.still_farming',
+		temporary_pause: 'detection.cause.temporary_pause', unrelated_account_activity: 'detection.cause.unrelated_account_activity',
+		other: 'detection.cause.other',
 	};
-	return labels[cause];
+	return runtimeText(locale, labels[cause]);
+}
+
+function schedulerStatusLabel(status: AssistedDetectionState['scheduler']['status'], locale: Locale): string {
+	const labels: Record<AssistedDetectionState['scheduler']['status'], RuntimeTranslationKey> = {
+		idle: 'status.idle', scheduled: 'status.scheduled', polling: 'status.checkingNow',
+		paused_offline: 'status.offline', paused_sleep: 'status.resuming', backoff: 'status.backingOff',
+		fatal: 'status.failed', disposed: 'status.unavailable',
+	};
+	return runtimeText(locale, labels[status]);
+}
+
+function sessionStateLabel(status: SessionState['status'], locale: Locale): string {
+	const labels: Record<SessionState['status'], RuntimeTranslationKey> = {
+		idle: 'status.idle', starting: 'status.starting', active: 'status.active',
+		stopping: 'status.stopping', provisional: 'status.reviewNeeded', complete: 'status.complete', error: 'status.error',
+	};
+	return runtimeText(locale, labels[status]);
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {
 	return retryAt !== null && retryAt > Date.now();
 }
 
-function cooldownText(retryAt: number): string {
-	return `Try again in ${Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000))} seconds.`;
-}
-
-function formatTimestamp(value: string): string {
-	return new Date(value).toLocaleString();
-}
-
-function formatInterval(intervalMs: number | null): string {
-	return intervalMs === null ? 'Paused' : `${Math.round(intervalMs / 60_000)} minutes`;
-}
-
-function formatDuration(durationMs: number): string {
-	if (durationMs === 0) return '0 seconds';
+function formatDuration(durationMs: number, locale: Locale): string {
+	if (durationMs === 0) return runtimeText(locale, 'time.seconds', { count: 0 });
 	if (durationMs < 60_000) {
 		const seconds = Math.max(1, Math.ceil(durationMs / 1_000));
-		return `${seconds} second${seconds === 1 ? '' : 's'}`;
+		return runtimeText(locale, seconds === 1 ? 'time.second' : 'time.seconds', { count: seconds });
 	}
 	const minutes = Math.ceil(durationMs / 60_000);
-	return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+	return runtimeText(locale, minutes === 1 ? 'time.minute' : 'time.minutes', { count: minutes });
 }

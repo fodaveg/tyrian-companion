@@ -142,9 +142,17 @@ describe('shared loot renderers', () => {
 		expect(first).toEqual(renderLootMarkdown(es));
 		expect(first.results).toContain('Bolsa \\| peligrosa');
 		expect(first.results).toContain('1g 23s 45c');
+		expect(first.results).toContain('Venta instantánea');
+		expect(first.results).not.toContain('instant_sell');
+		const vendor = structuredClone(es);
+		vendor.rows[0]!.recommendation = { status: 'ready', action: 'sell', quantity: 5, route: 'vendor' };
+		expect(renderLootMarkdown(vendor).results).toContain('Mercader');
+		expect(renderLootMarkdown(vendor).results).not.toContain('vendor');
 		const enNote = prepared(); enNote.locale = 'en';
 		const en = renderLootMarkdown(buildLootPresentation(enNote));
 		expect(en.results).toContain('Net delta');
+		expect(en.results).toContain('Instant sell');
+		expect(en.results).not.toContain('instant_sell');
 		expect(en.decision).toContain('Tyrian Companion does not open items');
 	});
 

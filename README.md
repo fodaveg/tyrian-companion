@@ -11,6 +11,7 @@ The current `0.1.0` vertical provides:
 - H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion ledger; unreliable evidence withholds value and recommendations instead of guessing.
 - H5.6 installs a generic Obsidian Base only after an explicit preview/apply action. A versioned manifest and resumable CAS journal distinguish intact, missing, modified, foreign and future assets without scanning or overwriting user files.
 - H5.8 keeps all accepted and generated Vault paths portable across macOS, Linux, Windows, and Obsidian Sync; session filenames remain UTC plus hashes, never account or character names.
+- H5.9 provides a typed, exhaustive ES/EN catalogue for visible settings, Companion state, actions, notices, confirmations, generated notes, loot and managed Bases while retaining stable command IDs, `tc_*` properties and Base query keys.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
