@@ -1,3 +1,4 @@
+import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
 	isContainerRecommendationResult,
 	type ContainerRecommendationResult,
@@ -172,12 +173,10 @@ function isCanonicalHalloweenProposal(proposal: NonNullable<DetectionQualityEven
 
 /** Strict vault-relative path validation for generated session notes. */
 export function normalizeSessionOutputFolder(value: unknown): string | null {
-	if (typeof value !== 'string' || value.length === 0 || value.startsWith('/') || value.includes('\\')) return null;
-	const segments = value.split('/');
-	if (segments.some((segment) => !segment || segment === '.' || segment === '..' ||
-		segment.includes('\0') || /[:*?"<>|]/u.test(segment) || /[. ]$/u.test(segment)) ||
-		segments.some((segment) => segment.toLowerCase() === DEFAULT_CONFIG_SEGMENT)) return null;
-	return segments.join('/');
+	return normalizeVaultRelativePath(value, {
+		forbiddenSegments: [DEFAULT_CONFIG_SEGMENT],
+		maxPathLength: 128,
+	});
 }
 
 function identityMismatch(value: Record<string, unknown>, runtime: PreparedSessionNote['runtime']): boolean {

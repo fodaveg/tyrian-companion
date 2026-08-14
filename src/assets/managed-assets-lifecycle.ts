@@ -4,7 +4,7 @@ import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './man
 export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string };
 
 export class ManagedAssetsLifecycle {
-	constructor(private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'uninstall' | 'inspect'>, private readonly pointer: ManagedAssetsPointerStore) {}
+	constructor(private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>, private readonly pointer: ManagedAssetsPointerStore) {}
 
 	async install(root: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
@@ -37,8 +37,14 @@ export class ManagedAssetsLifecycle {
 		return { status: installed.status === 'unchanged' ? 'unchanged' : 'applied', root, generation: ready.generation };
 	}
 
-	async remove(): Promise<ManagedAssetsLifecycleResult> {
+	async remove(expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
+		if (expectedLegacyRoot !== undefined) {
+			const adopted = await this.adoptExpectedLegacyRoot(current, expectedLegacyRoot, true);
+			if ('failure' in adopted) return adopted.failure;
+			if ('removed' in adopted) return adopted.removed;
+			current = adopted.current;
+		}
 		if (current.status === 'ready' && current.root === null) return { status: 'unchanged', root: null, generation: current.generation };
 		if (current.status === 'ready' && current.root !== null) {
 			const claim = await this.pointer.compareAndSet(current, { status: 'removing', root: current.root, targetRoot: null });
@@ -56,8 +62,14 @@ export class ManagedAssetsLifecycle {
 		return { status: 'removed', root: null, generation: ready.generation };
 	}
 
-	async move(to: string): Promise<ManagedAssetsLifecycleResult> {
+	async move(to: string, expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
+		if (expectedLegacyRoot !== undefined) {
+			const adopted = await this.adoptExpectedLegacyRoot(current, expectedLegacyRoot);
+			if ('failure' in adopted) return adopted.failure;
+			if ('removed' in adopted) return adopted.removed;
+			current = adopted.current;
+		}
 		if (current.status === 'ready' && current.root === to) return { status: 'unchanged', root: to, generation: current.generation };
 		let from: string;
 		if (current.status === 'ready' && current.root !== null) {
@@ -86,6 +98,43 @@ export class ManagedAssetsLifecycle {
 		const ready = await this.pointer.compareAndSet(current, { status: 'ready', root: to, targetRoot: null });
 		if (!ready) return { status: 'conflict', message: 'The managed-assets pointer changed before relocation completed.' };
 		return { status: 'relocated', root: to, generation: ready.generation };
+	}
+
+	/**
+	 * A settings migration may retain a historical root before IndexedDB ever
+	 * held an authority for it. It becomes authoritative only inside the
+	 * requested Move/Remove after an exact, read-only ownership inspection.
+	 */
+	private async adoptExpectedLegacyRoot(
+		current: ManagedAssetsPointerState,
+		expectedRoot: string,
+		acceptDetachedRemoval = false,
+	): Promise<{ current: ManagedAssetsPointerState } | { removed: ManagedAssetsLifecycleResult } | { failure: ManagedAssetsLifecycleResult }> {
+		if (current.status !== 'ready') return { failure: { status: 'busy', message: 'Another managed-assets lifecycle operation is active.' } };
+		if (current.root !== null && current.root !== expectedRoot) return { failure: { status: 'conflict', message: 'The managed-assets pointer names a different root.' } };
+		let inspection: Awaited<ReturnType<ManagedAssetsManager['inspectForLegacyTransition']>>;
+		try { inspection = await this.manager.inspectForLegacyTransition(expectedRoot); }
+		catch { return { failure: { status: 'unavailable', message: 'The retained managed-assets root could not be inspected.' } }; }
+		if (inspection.root !== expectedRoot || inspection.manifest?.root !== expectedRoot) {
+			return { failure: { status: 'conflict', message: 'The retained managed-assets root has no exact owned manifest.' } };
+		}
+		if (acceptDetachedRemoval && inspection.manifestStatus === 'detached') {
+			if (current.root === null) {
+				const reasserted = await this.pointer.read();
+				if (JSON.stringify(reasserted) !== JSON.stringify(current)) {
+					return { failure: { status: 'conflict', message: 'The managed-assets pointer changed while confirming legacy removal.' } };
+				}
+				return { removed: { status: 'removed', root: null, generation: current.generation } };
+			}
+			return { current };
+		}
+		if (inspection.manifestStatus !== 'ready') return { failure: { status: 'conflict', message: 'The retained managed-assets root has no exact owned manifest.' } };
+		if (current.root === expectedRoot) return { current };
+		const adopted = await this.pointer.compareAndSet(current, { status: 'ready', root: expectedRoot, targetRoot: null });
+		if (adopted) return { current: adopted };
+		const raced = await this.pointer.read();
+		if (raced.status === 'ready' && raced.root === expectedRoot) return { current: raced };
+		return { failure: { status: 'conflict', message: 'The managed-assets pointer changed before legacy adoption.' } };
 	}
 }
 

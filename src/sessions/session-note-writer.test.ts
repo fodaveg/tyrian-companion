@@ -160,7 +160,7 @@ describe('session note model and renderer', () => {
 		const input = sessionInput();
 		input.valuation = { sessionId: 'another-session' } as SessionValuation;
 		expect(prepareSessionNote(input)).toEqual({ status: 'invalid', reason: 'identity_mismatch' });
-		for (const path of ['', '/absolute', 'a//b', 'a/../b', 'a\\b', `a/.${'obsidian'}/b`, 'a/b.', 'a/b ', 'a/b:c', 'a/\0b']) {
+		for (const path of ['', '/absolute', 'C:/absolute', 'a//b', 'a/../b', 'a\\b', `a/.${'obsidian'}/b`, 'a/b.', 'a/b ', 'a/b:c', 'a/\0b', 'a/\u0001b', 'a/CON', 'a/COM1.md', `a/${'b'.repeat(121)}`, 'a'.repeat(129)]) {
 			expect(normalizeSessionOutputFolder(path), path).toBeNull();
 		}
 		expect(normalizeSessionOutputFolder('Tyrian Companion/Sesiones')).toBe('Tyrian Companion/Sesiones');

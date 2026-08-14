@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { genericManagedAssets } from './generic-assets';
+import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
-import { MANAGED_ASSETS_MANIFEST, normalizeManagedAssetPath, planManagedAssets } from './managed-assets-model';
+import { ManagedAssetsLifecycle } from './managed-assets-lifecycle';
+import { MANAGED_ASSETS_MANIFEST, managedAssetMarker, normalizeManagedAssetPath, planManagedAssets, type PackagedAsset } from './managed-assets-model';
+import { MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
 
 const CONFIG_DIR = 'vault-config';
 
 describe('managed asset paths and planning', () => {
-	it.each(['A/../B.base', 'A//B.base', '/A.base', 'A\\B.base', 'vault-config/A.base', 'VAULT-CONFIG/A.base', 'A/B?.base', 'A/B. ', `A/\0.base`, 'A/e\u0301.base'])('rejects unsafe or non-NFC path %s', (path) => {
+	it.each(['A/../B.base', 'A//B.base', '/A.base', 'A\\B.base', 'vault-config/A.base', 'VAULT-CONFIG/A.base', 'A/B?.base', 'A/B. ', `A/\0.base`, 'A/\u0001.base', 'A/e\u0301.base', 'A/CON.base', 'A/LPT1.md', `A/${'b'.repeat(121)}.base`])('rejects unsafe or non-NFC path %s', (path) => {
 		expect(normalizeManagedAssetPath(path, CONFIG_DIR)).toBeNull();
 	});
 
@@ -134,6 +136,117 @@ describe('ManagedAssetsManager', () => {
 		}
 	});
 
+	it('rejects a ready manifest that transplants an asset id onto another path', async () => {
+		const vault = new MemoryAssetVault();
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const parsed = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		parsed.assets[0]!.path = 'Tyrian Companion/Bases/Other.base';
+		vault.contents.set(path, `${JSON.stringify(parsed, null, 2)}\n`);
+		expect((await instance.inspect('Tyrian Companion')).manifestStatus).toBe('conflict');
+		expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
+	});
+
+	it('requires the exact current selected asset set for ready manifests', async () => {
+		const vault = new MemoryAssetVault();
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const parsed = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		parsed.assets = [];
+		vault.contents.set(path, `${JSON.stringify(parsed, null, 2)}\n`);
+		expect((await instance.inspect('Tyrian Companion')).manifestStatus).toBe('conflict');
+	});
+
+	it.each(['ready', 'detached'] as const)('rejects %s manifests whose localized entry differs from the manifest locale', async (state) => {
+		const vault = new MemoryAssetVault();
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 2, locale: 'es', assets: await managedAssetsBundle() });
+		await instance.apply('Tyrian Companion');
+		if (state === 'detached') await instance.uninstall('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const parsed = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		parsed.locale = 'en';
+		const localized = parsed.assets.find((entry) => entry.id === 'halloween-base');
+		if (!localized) throw new Error('missing localized fixture');
+		localized.locale = 'es';
+		vault.contents.set(path, `${JSON.stringify(parsed, null, 2)}\n`);
+		expect((await instance.inspect('Tyrian Companion')).manifestStatus).toBe('conflict');
+	});
+
+	it('keeps a compatible prior bundle manifest readable when the current bundle adds an asset', async () => {
+		const vault = new MemoryAssetVault();
+		await (await manager(vault, 1)).apply('Tyrian Companion');
+		const newer = await managerWithAdditionalAsset(vault);
+		expect((await newer.inspect('Tyrian Companion')).manifestStatus).toBe('ready');
+	});
+
+	it('rejects an install journal with an arbitrary before hash', async () => {
+		const vault = new MemoryAssetVault();
+		vault.failAfterWrites = 1;
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const parsed = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		parsed.pendingOperation.steps[0]!.beforeHash = 'a'.repeat(64);
+		parsed.pendingOperation.operationId = await journalOperationId(parsed);
+		vault.contents.set(path, `${JSON.stringify(parsed, null, 2)}\n`);
+		vault.failAfterWrites = null;
+		expect((await instance.inspect('Tyrian Companion')).manifestStatus).toBe('conflict');
+		expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
+	});
+
+	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {
+		const vault = new MemoryAssetVault();
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const legacyRoot = 'Tyrian/e\u0301';
+		const sourceManifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const legacyManifestPath = `${legacyRoot}/${MANAGED_ASSETS_MANIFEST}`;
+		const sourceAssetPath = 'Tyrian Companion/Bases/Sessions.base';
+		const legacyAssetPath = `${legacyRoot}/Bases/Sessions.base`;
+		const manifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal & { root: string };
+		manifest.root = legacyRoot;
+		manifest.assets[0]!.path = legacyAssetPath;
+		vault.contents.set(legacyAssetPath, vault.contents.get(sourceAssetPath)!);
+		vault.contents.set(legacyManifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+		vault.contents.delete(sourceAssetPath);
+		vault.contents.delete(sourceManifestPath);
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const result = await new ManagedAssetsLifecycle(instance, pointer).move('Tyrian Companion Safe', legacyRoot);
+		expect(result).toMatchObject({ status: 'relocated', root: 'Tyrian Companion Safe' });
+		expect(vault.contents.has(legacyAssetPath)).toBe(false);
+		expect(vault.contents.has('Tyrian Companion Safe/Bases/Sessions.base')).toBe(true);
+	});
+
+	it('retries a response-lost legacy Remove from its detached manifest without another write', async () => {
+		const vault = new MemoryAssetVault();
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const legacyRoot = 'Tyrian/e\u0301';
+		const sourceManifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const legacyManifestPath = `${legacyRoot}/${MANAGED_ASSETS_MANIFEST}`;
+		const sourceAssetPath = 'Tyrian Companion/Bases/Sessions.base';
+		const legacyAssetPath = `${legacyRoot}/Bases/Sessions.base`;
+		const manifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
+		manifest.root = legacyRoot;
+		manifest.assets[0]!.path = legacyAssetPath;
+		vault.contents.set(legacyAssetPath, vault.contents.get(sourceAssetPath)!);
+		vault.contents.set(legacyManifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+		vault.contents.delete(sourceAssetPath);
+		vault.contents.delete(sourceManifestPath);
+		const pointer = new ResponseLossPointer();
+		pointer.loseNextReadyNull = true;
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		await expect(lifecycle.remove(legacyRoot)).rejects.toThrow('response_lost');
+		expect(vault.contents.get(legacyManifestPath)).toContain('"state": "detached"');
+		const writes = vault.writeCount;
+		const trashed = [...vault.trashed];
+		await expect(lifecycle.remove(legacyRoot)).resolves.toMatchObject({ status: 'removed', root: null });
+		expect(vault.writeCount).toBe(writes);
+		expect(vault.trashed).toEqual(trashed);
+	});
+
 	it('resumes uninstall after trash succeeded but journal marking crashed', async () => {
 		const vault = new MemoryAssetVault();
 		const first = await manager(vault, 1);
@@ -178,6 +291,17 @@ async function manager(vault: MemoryAssetVault, version: number): Promise<Manage
 	});
 }
 
+async function managerWithAdditionalAsset(vault: MemoryAssetVault): Promise<ManagedAssetsManager> {
+	const [asset] = await genericManagedAssets();
+	if (!asset) throw new Error('missing fixture');
+	const bytes = asset.bytes.replace('version=1', 'version=2');
+	const current = { ...asset, contentVersion: 2, bytes, contentHash: await sha256Text(bytes) };
+	const draft = { id: 'later-base', kind: 'base', contentVersion: 1, locale: 'neutral', relativePath: 'Later.base' } as const;
+	const addedBytes = `${managedAssetMarker(draft)}\nfilters:\n  and: []\n`;
+	const added: PackagedAsset = { ...draft, bytes: addedBytes, contentHash: await sha256Text(addedBytes) };
+	return new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 2, locale: 'es', assets: [current, added] });
+}
+
 function fixtureAsset() {
 	return { id: 'sessions-base', kind: 'base' as const, contentVersion: 1, locale: 'neutral' as const,
 		relativePath: 'Sessions.base', bytes: '# marker\n', contentHash: 'b'.repeat(64) };
@@ -214,7 +338,40 @@ class MemoryAssetVault implements ManagedAssetsVault {
 	private fail(): void { if (this.failAfterWrites !== null && this.writeCount >= this.failAfterWrites) throw new Error('injected'); }
 }
 
+class ResponseLossPointer extends MemoryManagedAssetsPointerStore {
+	loseNextReadyNull = false;
+	override async compareAndSet(expected: Parameters<MemoryManagedAssetsPointerStore['compareAndSet']>[0], next: Parameters<MemoryManagedAssetsPointerStore['compareAndSet']>[1]) {
+		const result = await super.compareAndSet(expected, next);
+		if (this.loseNextReadyNull && next.status === 'ready' && next.root === null) {
+			this.loseNextReadyNull = false;
+			throw new Error('response_lost');
+		}
+		return result;
+	}
+}
+
 interface MutableJournal {
-	pendingOperation: { operationId: string; steps: Array<{ path: string }> };
+	root: string;
+	generation: number;
+	locale: 'es' | 'en';
+	assets: Array<{ id: string; kind: 'base' | 'template'; contentVersion: number; locale: 'neutral' | 'es' | 'en'; path: string; installedHash: string }>;
+	pendingOperation: {
+		operationId: string;
+		kind: 'install' | 'upgrade' | 'repair' | 'relocate' | 'uninstall';
+		fromGeneration: number;
+		targetBundleVersion: number;
+		steps: Array<{ id: string; path: string; beforeHash: string | null; afterHash: string | null; state: 'pending' | 'done' }>;
+	};
 	[key: string]: unknown;
+}
+
+async function journalOperationId(manifest: MutableJournal): Promise<string> {
+	return await sha256Text(JSON.stringify([
+		manifest.root,
+		manifest.pendingOperation.fromGeneration,
+		manifest.pendingOperation.targetBundleVersion,
+		manifest.locale,
+		manifest.pendingOperation.kind,
+		manifest.pendingOperation.steps,
+	]));
 }

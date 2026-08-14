@@ -1,5 +1,13 @@
 # Changelog
 
+## H5.8 — Portabilidad de rutas Vault
+
+- Centralizada la validación fail-closed de las rutas generadas o aceptadas para settings, notas de sesión y assets gestionados.
+- Rechazados rutas absolutas/UNC, separadores de Windows, segmentos vacíos o de navegación, controles y surrogates sin emparejar, caracteres ilegales, nombres de dispositivo Windows —incluidos `COM/LPT` con superíndices—, variantes no NFC y longitudes no portables.
+- Subido settings a v4: una carpeta pre-H5.8 que ahora no sea portable se retiene read-only, no se reescribe al cargar ni altera el puntero durable. Move/Remove inspeccionan siempre esa raíz y solo aceptan manifiesto owned exacto; un puntero divergente falla en conflicto. Move exige `ready` incluso si el puntero ya la nombraba. Un Remove reintentado reconoce el manifiesto exacto ya detached con puntero vacío sin volver a escribir y permite terminar la limpieza legacy.
+- Ligados manifiesto y journal a la identidad empaquetada `id/kind/locale/path` y a hashes previos permitidos. Los manifiestos ready/detached exigen el locale y conjunto exacto del bundle actual —sin impedir bundles anteriores compatibles—; un trasplante de ruta o `beforeHash` arbitrario queda en conflicto.
+- Las rutas de sesión conservan el diseño UTC + hash estable, sin incorporar cuenta, personaje, evento ni ruta personal.
+
 ## H5.7 — Halloween Base
 
 - Migrado el frontmatter de notas a schema v2 con `tc_event`/`tc_event_source` y campos estables de recomendación `ready`; la procedencia manual o asistida es cerrada, durable y correlacionada, sin aceptar prefijos ni inferencias por fecha, nombre, texto o loot.

@@ -71,8 +71,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.managedAssetsSetting?.setDesc(files ? `${view.message} ${files}` : view.message);
 		const enabled = projectManagedAssetsActions({
 			working: view.status === 'working',
-			hasManagedRoot: this.plugin.settings.managedAssetsRoot !== null,
-			canMove: this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
+			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
+			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
 	}
@@ -109,7 +109,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				name: 'Output folder',
-				desc: 'Vault-relative folder reserved for future output. No files are written yet.',
+				desc: this.plugin.settings.legacyOutputFolder === null
+					? 'Vault-relative folder reserved for future output. No files are written yet.'
+					: 'A pre-portability output folder is retained without writing to it. Choose a safe replacement explicitly.',
 				render: (setting) => {
 					setting.addText((text) =>
 						text

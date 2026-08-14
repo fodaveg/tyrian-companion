@@ -1,4 +1,5 @@
 import { sha256Text } from './managed-asset-hash';
+import { legacyVaultFolder } from '../core/settings';
 import {
 	hasCompatibleMarker,
 	isManagedAssetsManifest,
@@ -86,8 +87,33 @@ export class ManagedAssetsManager {
 		return { root: validatedRoot, manifestPath: targetManifestPath, manifest, manifestStatus, bundleVersion: this.bundle.bundleVersion, locale: this.bundle.locale, assets };
 	}
 
+	/** Reads an old managed root only while an explicit removal/move is in progress; it never creates there. */
+	private async inspectLegacyForUninstall(root: string): Promise<ManagedAssetsInspection> {
+		const validatedRoot = legacyVaultFolder(root, this.configDir);
+		if (!validatedRoot) throw new Error('invalid_legacy_root');
+		const targetManifestPath = manifestPath(validatedRoot);
+		const manifestRead = await this.readManifest(targetManifestPath);
+		const manifestMatchesRoot = manifestRead.status === 'valid' && await this.validManifestRelations(manifestRead.manifest, validatedRoot, true);
+		const manifest = manifestMatchesRoot ? manifestRead.manifest : null;
+		const manifestStatus = manifestRead.status === 'missing' ? 'missing'
+			: manifestRead.status === 'unsupported' ? 'unsupported_manifest'
+			: manifestRead.status === 'conflict' || !manifestMatchesRoot ? 'conflict' : manifest!.state;
+		return { root: validatedRoot, manifestPath: targetManifestPath, manifest, manifestStatus, bundleVersion: this.bundle.bundleVersion, locale: this.bundle.locale, assets: [] };
+	}
+
+	private async inspectForUninstall(root: string): Promise<ManagedAssetsInspection> {
+		return legacyVaultFolder(root, this.configDir) === null
+			? await this.inspect(root)
+			: await this.inspectLegacyForUninstall(root);
+	}
+
 	async preview(root: string, kind: ManagedOperationKind = 'install'): Promise<ManagedAssetsPlan> {
 		return planManagedAssets(await this.inspect(root), kind);
+	}
+
+	/** Read-only legacy inspection used solely to adopt a retained root for Move/Remove. */
+	async inspectForLegacyTransition(root: string): Promise<ManagedAssetsInspection> {
+		return await this.inspectForUninstall(root);
 	}
 
 	apply(root: string, kind: Exclude<ManagedOperationKind, 'relocate' | 'uninstall'> = 'install'): Promise<ManagedAssetsResult> {
@@ -255,7 +281,7 @@ export class ManagedAssetsManager {
 
 	private async uninstallInternal(root: string): Promise<ManagedAssetsResult> {
 		try {
-			const inspection = await this.inspect(root);
+			const inspection = await this.inspectForUninstall(root);
 				if (inspection.manifest?.state === 'detached') return { status: 'unchanged', inspection, ownership: 'existing' };
 				if (!inspection.manifest) return { status: 'conflict', message: 'No owned managed bundle exists.' };
 			let journal: ManagedAssetsManifest | null;
@@ -307,7 +333,7 @@ export class ManagedAssetsManager {
 				const raced = await this.exactManifest(manifestPath(root));
 				if (raced?.state !== 'detached') return { status: 'conflict', message: 'Uninstall could not be finalized.' };
 			}
-			return { status: 'detached', inspection: await this.inspect(root), ownership: 'existing' };
+			return { status: 'detached', inspection: await this.inspectForUninstall(root), ownership: 'existing' };
 		} catch { return { status: 'unavailable', message: 'Managed assets could not be removed safely.' }; }
 	}
 
@@ -338,15 +364,26 @@ export class ManagedAssetsManager {
 		} catch { return { status: 'conflict' }; }
 	}
 
-	private async validManifestRelations(manifest: ManagedAssetsManifest, root: string): Promise<boolean> {
+	private async validManifestRelations(manifest: ManagedAssetsManifest, root: string, legacy = false): Promise<boolean> {
 		if (manifest.root !== root) return false;
 		const assetIds = new Set<string>();
 		const assetPaths = new Set<string>();
+		const finalState = manifest.state === 'ready' || manifest.state === 'detached';
+		const assetsForManifestLocale = selectedAssetsForLocale(this.bundle, manifest.locale);
+		const relatedAssets = finalState ? assetsForManifestLocale : this.bundle.assets;
 		for (const entry of manifest.assets) {
 			const folded = entry.path.normalize('NFC').toLocaleLowerCase();
-			if (assetIds.has(entry.id) || assetPaths.has(folded) || normalizeManagedAssetPath(entry.path, this.configDir) === null ||
-				!entry.path.startsWith(`${root}/`) || (entry.kind === 'base' ? !entry.path.endsWith('.base') : !entry.path.endsWith('.md'))) return false;
+			const asset = relatedAssets.find((candidate) => candidate.id === entry.id && candidate.kind === entry.kind &&
+				candidate.locale === entry.locale && entry.path === managedAssetPath(root, candidate));
+			if (assetIds.has(entry.id) || assetPaths.has(folded) || !asset ||
+				(finalState && entry.locale !== 'neutral' && entry.locale !== manifest.locale) ||
+				!validManagedPath(entry.path, this.configDir, legacy) || !entry.path.startsWith(`${root}/`)) return false;
 			assetIds.add(entry.id); assetPaths.add(folded);
+		}
+		if (finalState && manifest.bundleVersion === this.bundle.bundleVersion) {
+			if (manifest.assets.length !== assetsForManifestLocale.length ||
+				assetsForManifestLocale.some((asset) => !manifest.assets.some((entry) => entry.id === asset.id && entry.kind === asset.kind &&
+					entry.locale === asset.locale && entry.path === managedAssetPath(root, asset)))) return false;
 		}
 		if (manifest.state !== 'applying') return true;
 		const operation = manifest.pendingOperation!;
@@ -360,9 +397,13 @@ export class ManagedAssetsManager {
 		for (const step of operation.steps) {
 			const expected = expectedEntries.find((entry) => entry.id === step.id);
 			const folded = step.path.normalize('NFC').toLocaleLowerCase();
+			const registered = manifest.assets.find((entry) => entry.id === step.id) ?? null;
+			const allowedBeforeHashes = operation.kind === 'uninstall'
+				? [expected?.beforeHash]
+				: [null, expected?.afterHash, registered?.installedHash];
 			if (!expected || stepIds.has(step.id) || stepPaths.has(folded) || step.path !== expected.path ||
-				normalizeManagedAssetPath(step.path, this.configDir) === null || !step.path.startsWith(`${root}/`) ||
-				step.afterHash !== expected.afterHash || (operation.kind === 'uninstall' && step.beforeHash !== expected.beforeHash)) return false;
+				!validManagedPath(step.path, this.configDir, legacy) || !step.path.startsWith(`${root}/`) ||
+				step.afterHash !== expected.afterHash || !allowedBeforeHashes.includes(step.beforeHash)) return false;
 			stepIds.add(step.id); stepPaths.add(folded);
 		}
 		if (operation.kind === 'uninstall' && operation.targetBundleVersion !== manifest.bundleVersion) return false;
@@ -376,8 +417,19 @@ export class ManagedAssetsManager {
 	}
 }
 
+function validManagedPath(path: string, configDir: string, legacy: boolean): boolean {
+	if (!legacy) return normalizeManagedAssetPath(path, configDir) !== null;
+	const legacyPath = legacyVaultFolder(path, configDir);
+	if (legacyPath === null) return false;
+	const file = legacyPath.split('/').at(-1) ?? '';
+	return file === 'Tyrian Companion Assets.json' || file.endsWith('.base') || file.endsWith('.md');
+}
+
 function selectedAssets(bundle: ManagedAssetsBundle): PackagedAsset[] {
-	return bundle.assets.filter((asset) => asset.locale === 'neutral' || asset.locale === bundle.locale)
+	return selectedAssetsForLocale(bundle, bundle.locale);
+}
+function selectedAssetsForLocale(bundle: ManagedAssetsBundle, locale: ManagedAssetsBundle['locale']): PackagedAsset[] {
+	return bundle.assets.filter((asset) => asset.locale === 'neutral' || asset.locale === locale)
 		.sort((a, b) => a.id.localeCompare(b.id));
 }
 function validateRoot(root: string, configDir: string): string | null {

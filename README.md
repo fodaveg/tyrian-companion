@@ -10,6 +10,7 @@ The current `0.1.0` vertical provides:
 - H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
 - H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion ledger; unreliable evidence withholds value and recommendations instead of guessing.
 - H5.6 installs a generic Obsidian Base only after an explicit preview/apply action. A versioned manifest and resumable CAS journal distinguish intact, missing, modified, foreign and future assets without scanning or overwriting user files.
+- H5.8 keeps all accepted and generated Vault paths portable across macOS, Linux, Windows, and Obsidian Sync; session filenames remain UTC plus hashes, never account or character names.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
 - Module boundaries for account access, advisor readiness, play sessions, and objectives.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
@@ -135,6 +136,10 @@ Completed session notes are the only generated vault artifact in this vertical. 
 configured output folder in `sessions/<UTC year>/`, use hashed identifiers, and update only `tc_*`
 frontmatter plus six hash-verified managed blocks. A collision uses the complete session hash; an
 ambiguous or human-modified managed region fails closed and leaves the completed runtime available.
+The configured folder and every managed asset path are NFC-relative paths with `/` separators and
+portable segments only; absolute, personal, Windows-reserved, or Sync-incompatible paths fail closed.
+An older relative folder that no longer meets that contract is retained without a load-time rewrite;
+only an explicit safe replacement or managed-asset move/remove can retire it.
 
 Optional managed assets live below the configured output folder in `Bases/` with ownership recorded
 in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write them. Preview is

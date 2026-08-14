@@ -1,3 +1,5 @@
+import { normalizeVaultRelativePath } from '../core/vault-path';
+
 export const MANAGED_ASSETS_SCHEMA_VERSION = 1 as const;
 export const MANAGED_ASSETS_MANIFEST = 'Tyrian Companion Assets.json' as const;
 
@@ -93,13 +95,11 @@ export function hasCompatibleMarker(content: string, asset: PackagedAsset): bool
 
 /** Validates one NFC, vault-relative path and its managed extension. */
 export function normalizeManagedAssetPath(value: unknown, configDir: string): string | null {
-	if (typeof value !== 'string' || value !== value.normalize('NFC') || value.startsWith('/') || value.includes('\\')) return null;
-	const segments = value.split('/');
-	if (segments.some((segment) => !segment || segment === '.' || segment === '..' || segment.includes('\0') || /[:*?"<>|]/u.test(segment) || /[. ]$/u.test(segment))) return null;
-	if (segments[0]?.localeCompare(configDir, undefined, { sensitivity: 'accent' }) === 0 || segments[0]?.toLocaleLowerCase() === configDir.toLocaleLowerCase()) return null;
-	const file = segments.at(-1) ?? '';
+	const path = normalizeVaultRelativePath(value, { forbiddenPathPrefixes: [configDir] });
+	if (path === null) return null;
+	const file = path.split('/').at(-1) ?? '';
 	if (file !== MANAGED_ASSETS_MANIFEST && !file.endsWith('.base') && !file.endsWith('.md')) return null;
-	return segments.join('/');
+	return path;
 }
 
 export function managedAssetPath(root: string, asset: PackagedAsset): string {

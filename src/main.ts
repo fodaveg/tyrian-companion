@@ -16,7 +16,9 @@ import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import {
 	DEFAULT_SETTINGS,
+	mergeSettingsUpdate,
 	migrateSettings,
+	shouldPersistSettingsOnLoad,
 	type DetectionMode,
 	type TyrianSettings,
 } from './core/settings';
@@ -402,7 +404,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
 
+	hasManagedAssetsRoot(): boolean {
+		return this.settings.managedAssetsRoot !== null || this.settings.legacyManagedAssetsRoot !== null;
+	}
+
 	async previewManagedAssets(): Promise<void> {
+		if (this.settings.legacyManagedAssetsRoot !== null) {
+			this.managedAssetsView = { status: 'error', message: 'A legacy managed-assets root is retained. Choose a safe output folder and use Move explicitly.', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+			return;
+		}
 		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
 		this.managedAssetsView = { status: 'working', message: 'Inspecting managed assets…', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
@@ -415,29 +426,46 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyManagedAssets(): Promise<void> {
+		if (this.settings.legacyManagedAssetsRoot !== null) {
+			this.managedAssetsView = { status: 'error', message: 'Legacy managed assets can only be moved or removed explicitly.', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+			return;
+		}
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(this.settings.outputFolder));
 		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
 	}
 
 	async repairManagedAssets(): Promise<void> {
+		if (this.settings.legacyManagedAssetsRoot !== null) {
+			this.managedAssetsView = { status: 'error', message: 'Legacy managed assets can only be moved or removed explicitly.', plan: null };
+			this.settingTab.refreshManagedAssetsRow();
+			return;
+		}
 		if (!this.settings.managedAssetsRoot) return;
 		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
 	}
 
 	async relocateManagedAssets(): Promise<void> {
 		const destination = this.settings.outputFolder;
+		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.move(destination));
-		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined));
+		if ('root' in result && (legacyRoot === null || result.status === 'relocated' && result.root === destination)) {
+			await this.updateSettings({ managedAssetsRoot: result.root });
+		}
 	}
 
 	async removeManagedAssets(): Promise<void> {
+		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove());
-		if ('root' in result) await this.updateSettings({ managedAssetsRoot: result.root });
+		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
+		if ('root' in result && (legacyRoot === null || result.status === 'removed' && result.root === null)) {
+			await this.updateSettings({ managedAssetsRoot: result.root });
+		}
 	}
 
 	private async ensureManagedAssetsAuthority(): Promise<boolean> {
+		if (this.settings.legacyManagedAssetsRoot !== null) return true;
 		const mirroredRoot = this.settings.managedAssetsRoot;
 		if (!mirroredRoot) return true;
 		const adopted = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(mirroredRoot));
@@ -593,10 +621,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousPollingInterval = this.settings.pollingIntervalMinutes;
 		const previousLanguage = this.settings.language;
 		const previousOutputFolder = this.settings.outputFolder;
-		const nextSettings = migrateSettings(
-			{ ...this.settings, ...settings },
-			this.app.vault.configDir,
-		);
+		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
 		if (previousLanguage !== nextSettings.language && this.managedAssets) {
@@ -624,7 +649,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async loadSettings(): Promise<void> {
 		const persisted = (await this.loadData()) as unknown;
 		this.settings = migrateSettings(persisted, this.app.vault.configDir);
-		if (JSON.stringify(persisted) !== JSON.stringify(this.settings)) {
+		if (shouldPersistSettingsOnLoad(persisted, this.settings)) {
 			await this.saveData(this.settings);
 		}
 	}

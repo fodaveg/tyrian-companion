@@ -112,6 +112,51 @@ describe('ManagedAssetsLifecycle', () => {
 		await new ManagedAssetsLifecycle(manager, pointer).install('A');
 		expect(await pointer.read()).toMatchObject({ status: 'ready', root: null });
 	});
+
+	it('adopts an empty pointer for an exact legacy manifest only inside Move', async () => {
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const manager = new ExactLegacyManager('Legacy');
+		const result = await new ManagedAssetsLifecycle(manager, pointer).move('Safe destination', 'Legacy');
+		expect(result).toMatchObject({ status: 'relocated', root: 'Safe destination' });
+		expect(manager.inspected).toEqual(['Legacy']);
+		expect(manager.installed).toEqual(['Safe destination']);
+		expect(manager.uninstalled).toEqual(['Legacy']);
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Safe destination' });
+	});
+
+	it('refuses legacy Move and Remove when the durable pointer names a different root', async () => {
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const manager = new ExactLegacyManager('Legacy');
+		await new ManagedAssetsLifecycle(manager, pointer).install('Other');
+		await expect(new ManagedAssetsLifecycle(manager, pointer).move('Safe destination', 'Legacy')).resolves.toMatchObject({ status: 'conflict' });
+		await expect(new ManagedAssetsLifecycle(manager, pointer).remove('Legacy')).resolves.toMatchObject({ status: 'conflict' });
+		expect(manager.inspected).toEqual([]);
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Other' });
+	});
+
+	it('rejects a detached legacy Remove retry when its pointer changes during inspection', async () => {
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const manager = new BlockingDetachedLegacyManager('Legacy');
+		const removal = new ManagedAssetsLifecycle(manager, pointer).remove('Legacy');
+		await manager.waitUntilInspecting;
+		const empty = await pointer.read();
+		await pointer.compareAndSet(empty, { status: 'ready', root: 'Other', targetRoot: null });
+		manager.resume();
+		await expect(removal).resolves.toMatchObject({ status: 'conflict' });
+		expect(manager.uninstalled).toEqual([]);
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Other' });
+	});
+
+	it.each(['detached', 'conflict'] as const)('rejects Move from pointer-owned legacy evidence that is %s without destination I/O', async (manifestStatus) => {
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const empty = await pointer.read();
+		await pointer.compareAndSet(empty, { status: 'ready', root: 'Legacy', targetRoot: null });
+		const manager = new NonReadyLegacyManager('Legacy', manifestStatus);
+		await expect(new ManagedAssetsLifecycle(manager, pointer).move('Destination', 'Legacy')).resolves.toMatchObject({ status: 'conflict' });
+		expect(manager.installed).toEqual([]);
+		expect(manager.uninstalled).toEqual([]);
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Legacy' });
+	});
 });
 
 class FakeManager {
@@ -120,6 +165,7 @@ class FakeManager {
 	async apply(root: string): Promise<ManagedAssetsResult> { this.installed.push(root); return ok('applied', 'created'); }
 	async uninstall(root: string): Promise<ManagedAssetsResult> { this.uninstalled.push(root); return ok('detached', 'existing'); }
 	async inspect(root: string) { return inspection(root, 'ready'); }
+	async inspectForLegacyTransition(root: string) { return await this.inspect(root); }
 }
 
 class JournalFailureManager extends FakeManager {
@@ -130,6 +176,38 @@ class JournalFailureManager extends FakeManager {
 		return await super.apply(root);
 	}
 	override async inspect(root: string) { return inspection(root, this.fail ? this.manifestStatus : 'ready'); }
+}
+
+class ExactLegacyManager extends FakeManager {
+	readonly inspected: string[] = [];
+	constructor(private readonly ownedRoot: string) { super(); }
+	override async inspectForLegacyTransition(root: string) {
+		this.inspected.push(root);
+		return { ...inspection(root, 'ready'), manifest: root === this.ownedRoot ? { root } as never : null };
+	}
+}
+
+class BlockingDetachedLegacyManager extends ExactLegacyManager {
+	private unblock: (() => void) | null = null;
+	private resolveInspectionStarted: (() => void) | null = null;
+	readonly waitUntilInspecting = new Promise<void>((resolve) => { this.resolveInspectionStarted = resolve; });
+	override async inspectForLegacyTransition(root: string) {
+		this.resolveInspectionStarted?.();
+		await new Promise<void>((resolve) => { this.unblock = resolve; });
+		return { ...inspection(root, 'ready'), manifestStatus: 'detached' as const, manifest: root === 'Legacy' ? { root } as never : null } as never;
+	}
+	resume(): void { this.unblock?.(); }
+}
+
+class NonReadyLegacyManager extends ExactLegacyManager {
+	constructor(ownedRoot: string, private readonly status: 'detached' | 'conflict') { super(ownedRoot); }
+	override async inspectForLegacyTransition(root: string) {
+		return {
+			...inspection(root, 'ready'),
+			manifestStatus: this.status,
+			manifest: this.status === 'detached' && root === 'Legacy' ? { root } as never : null,
+		} as never;
+	}
 }
 
 class ResponseLossPointer extends MemoryManagedAssetsPointerStore {
