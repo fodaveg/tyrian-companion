@@ -85,12 +85,13 @@ The current `0.1.0` vertical provides:
 	and knowledge sources; it has no executor, I/O, persistence, or UI.
 - H5.11 adds a separate responsive **Inventory advisor** view and explicit Open/Refresh commands.
   Opening is memory-only; Refresh is the sole capture trigger and composes H4.14 → H4.15 → H4.16
-  through a latest-wins single-flight cache. The current product provider intentionally reports
-  `missing_rules`, so refresh blocks before any API request until a reviewed rule/knowledge bundle is shipped.
+  through a latest-wins single-flight cache. H4.17 supplies an immutable built-in review-only bundle
+  with no curated routes: before its exclusive 2026-11-12 expiry every remaining item stays `review`,
+  never economy or discard; at expiry, Refresh fails closed with `missing_rules` before any API request.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
-account operations are intentionally not implemented. Inventory preferences and a reviewed production
-rule/knowledge bundle are not implemented yet. Vault writes are
+account operations are intentionally not implemented. Inventory preferences and curated production
+rule/knowledge routes are not implemented yet. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
 JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted

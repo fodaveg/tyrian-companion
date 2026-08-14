@@ -38,8 +38,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/advisor/inventory-advisor-workflow.ts', {
 		imports: ['./inventory-advisor-evidence-model', './inventory-advisor-evidence-contract', './inventory-advisor-classifier',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
-			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model'],
-		portCalls: ['ports.capture.capture', 'ports.preferences.load', 'ports.rules.current'],
+			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
+			'./inventory-advisor-builtin-bundle'],
+		portCalls: ['ports.capture.capture', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', './inventory-advisor-view-model', './inventory-advisor-view'],
@@ -64,6 +65,7 @@ const FORBIDDEN_CAPABILITY = new RegExp(`^\\s*(?:(?:public|private|protected|rea
 describe('H5.11 inventory advisor presentation boundary', () => {
 	it('censuses the complete presentation surface and keeps it review-only', () => {
 		expect(INVENTORY_ADVISOR_FILES.map(({ path }) => path)).toEqual([
+			'src/advisor/inventory-advisor-builtin-bundle.ts',
 			'src/advisor/inventory-advisor-classifier-model.ts',
 			'src/advisor/inventory-advisor-classifier.ts',
 			'src/advisor/inventory-advisor-contract.ts',
@@ -188,8 +190,10 @@ function forbiddenDependency(specifier: string): boolean {
 }
 
 function boundaryPortCalls(source: string): string[] {
-	return [...new Set([...source.matchAll(/\bthis\.(ports|actions)\.(\w+)(?:\.(\w+))?\s*\(/gu)]
-		.map((match) => `${match[1]}.${match[2]}${match[3] === undefined ? '' : `.${match[3]}`}`))];
+	const instanceCalls = [...source.matchAll(/\bthis\.(ports|actions)\.(\w+)(?:\.(\w+))?\s*\(/gu)]
+		.map((match) => `${match[1]}.${match[2]}${match[3] === undefined ? '' : `.${match[3]}`}`);
+	const providerCalls = [...source.matchAll(/\bprovider\.(\w+)\s*\(/gu)].map((match) => `provider.${match[1]}`);
+	return [...new Set([...instanceCalls, ...providerCalls])];
 }
 
 function boundarySourceAllowed(path: string, source: string): boolean {

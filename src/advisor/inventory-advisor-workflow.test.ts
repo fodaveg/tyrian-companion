@@ -7,9 +7,11 @@ import { sha256CanonicalValue, sha256InventoryRulePack } from './inventory-advis
 import { sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import type { InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
+import { inventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import {
+	createInventoryAdvisorBuiltinRulesProvider,
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 	InventoryAdvisorWorkflow,
 	type InventoryAdvisorRules,
@@ -41,6 +43,50 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(capture).toHaveBeenCalledOnce();
 		expect(capture).toHaveBeenCalledWith('en');
 		expect(preferences).toHaveBeenCalledOnce();
+	});
+
+	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {
+		const fixture = reviewedDiscardFixture();
+		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture },
+			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
+			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+		});
+		const result = await workflow.refresh('es');
+		expect(capture).toHaveBeenCalledOnce();
+		expect(capture).toHaveBeenCalledWith('es');
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready' || !('discardContext' in result.source)) throw new Error('Expected contextual workflow result.');
+		expect(result.source.input).toMatchObject({ goals: [], keepExceptions: [] });
+		const producerActions = result.source.discardContext.producerResult.report?.lines
+			.flatMap((line) => line.decisions.map((decision) => decision.action)) ?? [];
+		const finalActions = result.source.result.report?.lines
+			.flatMap((line) => line.decisions.map((decision) => decision.action)) ?? [];
+		expect(producerActions).toEqual(['review']);
+		expect(finalActions).toEqual(['review']);
+		expect(result.source.result.proofs).toEqual([]);
+		const presentation = buildInventoryAdvisorPresentation(result.source);
+		expect(presentation.status).toBe('ready');
+		if (presentation.status !== 'ready') throw new Error('Expected ready review-only presentation.');
+		expect(presentation.discardReview).toEqual({ status: 'unavailable' });
+		expect(presentation.groups.flatMap((group) => group.rows.map((row) => row.action))).toEqual(['review']);
+		expect(JSON.stringify(presentation)).not.toMatch(/"(?:sell|list|vendor|salvage|use|open|discard_review|discard_candidate)"/u);
+	});
+
+	it('fails closed at built-in bundle expiry before capture or preference I/O', async () => {
+		const capture = vi.fn();
+		const preferences = vi.fn();
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture },
+			preferences: { load: preferences },
+			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
+			now: () => Date.parse('2026-11-12T00:00:00.000Z'),
+		});
+		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'missing_rules' });
+		expect(capture).not.toHaveBeenCalled();
+		expect(preferences).not.toHaveBeenCalled();
 	});
 
 	it('composes one real capture through H4.15, H4.16 contextual proof and final presentation with empty H5.12 preferences', async () => {

@@ -18,6 +18,13 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		expect(genericRender).not.toContain('renderInventoryAdvisorViews');
 	});
 
+	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
+		const source = readFileSync('src/main.ts', 'utf8');
+		const runtime = source.slice(source.indexOf('function createInventoryAdvisorRuntime('), source.indexOf('\nfunction managedAssetsFailureCode('));
+		expect(runtime).toContain('createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider)');
+		expect(runtime).not.toContain("rules: { current: () => ({ status: 'unavailable' }) }");
+	});
+
 	it.each([
 		'this.refreshInventoryAdvisor()',
 		'this.inventoryAdvisor.refresh()',

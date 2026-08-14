@@ -7,6 +7,7 @@ import type { InventoryAdvisorPolicyV1, InventoryAdvisorRulePackV1, KeepExceptio
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorContextualPresentationSource, InventoryAdvisorPresentationSource } from './inventory-advisor-presentation';
 import type { CatalogLocale } from '../catalog/public-catalog-model';
+import type { InventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -16,7 +17,7 @@ export interface InventoryAdvisorPreferencesSnapshot {
 export interface InventoryAdvisorWorkflowPorts {
 	capture: Pick<InventoryAdvisorEvidenceCapture, 'capture'>;
 	preferences: { load(): Promise<InventoryAdvisorPreferencesSnapshot> };
-	rules: { current(): InventoryAdvisorRulesAvailability };
+	rules: InventoryAdvisorRulesProvider;
 	now?: () => number;
 }
 
@@ -26,6 +27,7 @@ export type InventoryAdvisorRules = {
 	policy: InventoryAdvisorPolicyV1;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
+export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
 export type InventoryAdvisorWorkflowResult =
 	| { status: 'ready'; source: InventoryAdvisorPresentationSource }
 	| { status: 'blocked'; reason: 'missing_rules' };
@@ -35,7 +37,8 @@ export class InventoryAdvisorWorkflow {
 	constructor(private readonly ports: InventoryAdvisorWorkflowPorts) {}
 
 	async refresh(locale: CatalogLocale): Promise<InventoryAdvisorWorkflowResult> {
-		const rules = this.ports.rules.current();
+		const asOf = new Date(this.ports.now?.() ?? Date.now()).toISOString();
+		const rules = this.ports.rules.current(asOf);
 		if (rules.status === 'unavailable') return { status: 'blocked', reason: 'missing_rules' };
 		const [capture, preferences] = await Promise.all([
 			this.ports.capture.capture(locale),
@@ -43,9 +46,27 @@ export class InventoryAdvisorWorkflow {
 		]);
 		return {
 			status: 'ready',
-			source: composeInventoryAdvisorRefresh(capture, preferences, rules.value, new Date(this.ports.now?.() ?? Date.now()).toISOString()),
+			source: composeInventoryAdvisorRefresh(capture, preferences, rules.value, asOf),
 		};
 	}
+}
+
+/** Maps the immutable H4.17 bundle into the H5.11 workflow without weakening its expiry gate. */
+export function createInventoryAdvisorBuiltinRulesProvider(
+	provider: InventoryAdvisorBuiltinBundleProvider,
+): InventoryAdvisorRulesProvider {
+	return Object.freeze({
+		current(asOf: string): InventoryAdvisorRulesAvailability {
+			const loaded = provider.load(asOf);
+			return loaded.status === 'available'
+				? { status: 'available', value: {
+					rulePack: loaded.bundle.rulePack,
+					knowledgePack: loaded.bundle.knowledgePack,
+					policy: loaded.bundle.policy,
+				} }
+				: { status: 'unavailable' };
+		},
+	});
 }
 
 export function composeInventoryAdvisorRefresh(

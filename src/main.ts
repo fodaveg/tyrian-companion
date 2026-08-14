@@ -19,7 +19,9 @@ import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
+import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import {
+	createInventoryAdvisorBuiltinRulesProvider,
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 	InventoryAdvisorWorkflow,
 } from './advisor/inventory-advisor-workflow';
@@ -1175,9 +1177,7 @@ function createInventoryAdvisorRuntime(
 			return await inventoryEvidence.capture(captureLocale);
 		} },
 		preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
-		// A reviewed rules/knowledge bundle is a required product input. Until it exists,
-		// explicit refresh is blocked before any account or public API capture begins.
-		rules: { current: () => ({ status: 'unavailable' }) },
+		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
 	});
 	return new InventoryAdvisorPresentationController({ load: () => inventoryWorkflow.refresh(locale()) });
 }

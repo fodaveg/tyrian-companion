@@ -8,8 +8,9 @@
   H4.16 una sola vez, comparte vuelo, usa generación latest-wins y se invalida al cambiar clave o locale.
 - `discard_candidate` cruza la frontera de presentación únicamente como `discard_review`, con proof H4.16
   exacto y aviso irreversible; no existe CTA, executor, operación de juego ni filtro de descarte.
-- El puerto H5.12 de objetivos/excepciones queda reemplazable y vacío. El provider productivo de reglas
-  falla cerrado como `blocked/missing_rules` antes de capturar: no se inventan packs ni reglas de fixture.
+- El puerto H5.12 de objetivos/excepciones queda reemplazable y vacío. H4.17 aporta un bundle built-in
+  inmutable, solo revisión y sin rutas curadas: antes de su expiración todos los resultados permanecen
+  `review`; desde el límite exclusivo 2026-11-12 falla como `blocked/missing_rules` antes de capturar.
 - Gate automatizado completo en verde; la QA visual de la vista dentro de Obsidian queda pendiente.
 
 ## H0.4/H0.6 — Plataformas, integraciones y piloto

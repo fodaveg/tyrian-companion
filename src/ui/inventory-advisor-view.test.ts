@@ -20,6 +20,14 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
+	it.each([
+		['es', 'Modo solo revisión: no hay rutas curadas. No se recomendará vender, reciclar ni destruir objetos.'],
+		['en', 'Review-only mode: there are no curated routes. Selling, salvaging, or destroying items will not be recommended.'],
+	] as const)('shows the honest review-only banner in %s', (locale, expected) => {
+		const mount = render(readyModel(), locale);
+		expect(text(mount.elements())).toContain(expected);
+	});
+
 	it.each([[479, 'cards'], [480, 'cards'], [759, 'cards'], [760, 'table']] as const)(
 		'selects the semantic H5.11 layout at %ipx',
 		(width, expected) => expect(inventoryAdvisorViewLayout(width)).toBe(expected),

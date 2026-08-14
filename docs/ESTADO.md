@@ -37,7 +37,7 @@ H6.3 fija que jackpots excluidos no alteran el EV ni la decisión y que un preci
 
 H6.6 añade un benchmark reproducible de cuenta grande, aislado de I/O: fuerza una primera pasada divergente y dos convergentes mediante la ruta pura productiva, finaliza snapshots estables, los compara, clasifica la frontera y valora 4.840 ganancias. Sus 21 muestras fijan mediana/p95 y la retención acumulada contra un baseline único post-warmup; CI prueba verde y sabotaje de heap explícito en Node 22 y 24, sin usar la duración de Vitest como evidencia.
 
-H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H5.11 ya conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las tres capas con single-flight/latest-wins. La vista muestra cantidad, ubicación, ruta/valor H4.2, cobertura y explicación. Los descartes solo cruzan como `discard_review` con proof exacto y sin CTA. Falta un bundle productivo revisado de rules/knowledge: el provider actual devuelve `blocked/missing_rules` antes de cualquier captura. La QA visual de la vista en Obsidian sigue pendiente. H5.12 y H6.11 siguen pendientes.
+H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.17 aporta un bundle built-in inmutable, solo revisión y sin rutas curadas. H5.11 ya conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las tres capas con single-flight/latest-wins. Antes del límite exclusivo 2026-11-12, el bundle deja todos los resultados remanentes en `review`, nunca economía ni descarte; desde ese límite el workflow devuelve `blocked/missing_rules` antes de capturar. La vista muestra cantidad, ubicación, cobertura y explicación, y anuncia honestamente este modo limitado ES/EN. La QA visual de la vista en Obsidian sigue pendiente. H5.12, las rutas curadas y H6.11 siguen pendientes.
 
 Recuento H4.16: dos módulos productivos nuevos de allowlist, tres suites H4.16 (funcional, contrato y guard), cuatro módulos H4.13/H4.15 ajustados y cinco documentos actualizados. Gate completo verificado: lint, 79 ficheros/1155 tests, release-preflight, scanner de seguridad y build en verde.
 
@@ -46,14 +46,14 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 87 ficheros y 1225 tests verdes.
+- `npm run test`: 89 ficheros y 1253 tests verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 
 ## Pendientes de producto
 
 1. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 2. Diseñar el panel/agregación del historial durable de sesiones finalizadas y la persistencia de objetivos.
-3. Proveer el bundle productivo revisado que desbloquea H5.11 y completar H5.12 con persistencia local de objetivos/excepciones.
+3. Proveer rutas curadas revisadas antes de que expire el bundle H4.17 y completar H5.12 con persistencia local de objetivos/excepciones.
 4. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
 5. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
 6. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
