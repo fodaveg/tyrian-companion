@@ -197,6 +197,19 @@ describe('session note model and renderer', () => {
 });
 
 describe('SessionNoteWriter', () => {
+	it('rejects an unknown credential field before any Vault write', async () => {
+		const credential = ['tyrian-h6', 'note-probe', 'not-a-credential'].join('-');
+		const vault = new MemoryVault();
+		const input = { ...sessionInput(), apiKey: credential };
+
+		await expect(new SessionNoteWriter(vault).write(input)).resolves.toEqual({
+			status: 'invalid',
+			reason: 'invalid_input',
+		});
+		expect(vault.createCalls).toBe(0);
+		expect([...vault.contents.values()].join('\n')).not.toContain(credential);
+	});
+
 	it('is byte-idempotent and preserves human frontmatter, tags and notes', async () => {
 		const vault = new MemoryVault();
 		const writer = new SessionNoteWriter(vault);

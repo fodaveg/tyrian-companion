@@ -46,6 +46,47 @@ describe('migrateSettings', () => {
 		).not.toHaveProperty('apiKey');
 	});
 
+	it.each(['apiKey', 'apiToken', 'bearerToken', 'credential'])(
+		'forces a canonical rewrite that purges unknown top-level field %s',
+		(field) => {
+			const persisted = {
+				...DEFAULT_SETTINGS,
+				outputFolder: 'Guild Wars 2/e\u0301',
+				[field]: 'must-not-be-persisted',
+			};
+			const migrated = migrateSettings(persisted);
+			expect(hasLegacyPaths(migrated)).toBe(true);
+			expect(shouldPersistSettingsOnLoad(persisted, migrated)).toBe(true);
+			expect(migrated).toEqual({
+				...DEFAULT_SETTINGS,
+				legacyOutputFolder: persisted.outputFolder,
+			});
+		},
+	);
+
+	it('purges nested unknown and secret-like data while retaining authorized current and legacy fields', () => {
+		const persisted = {
+			...DEFAULT_SETTINGS,
+			apiKeySecret: 'gw2-primary',
+			outputFolder: 'Guild Wars 2/e\u0301',
+			legacyManagedAssetsRoot: 'Guild Wars 2/COM\u00b9',
+			unknown: {
+				apiToken: 'must-not-be-persisted',
+				nested: { bearerToken: 'must-not-be-persisted', credential: 'must-not-be-persisted' },
+			},
+		};
+		const migrated = migrateSettings(persisted);
+
+		expect(migrated).toEqual({
+			...DEFAULT_SETTINGS,
+			apiKeySecret: 'gw2-primary',
+			legacyOutputFolder: persisted.outputFolder,
+			legacyManagedAssetsRoot: persisted.legacyManagedAssetsRoot,
+		});
+		expect(shouldPersistSettingsOnLoad(persisted, migrated)).toBe(true);
+		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
+	});
+
 	it('migrates v2 to v4 without scanning or claiming managed assets', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
 			schemaVersion: 4,
@@ -55,7 +96,7 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
 	});
 
-	it('retains b05e656 legacy paths without rewriting them on load', () => {
+	it('retains b05e656 legacy paths in the canonical rewrite', () => {
 		const b05e656 = {
 			schemaVersion: 3,
 			outputFolder: 'Guild Wars 2/e\u0301',
@@ -70,7 +111,8 @@ describe('migrateSettings', () => {
 			legacyManagedAssetsRoot: b05e656.managedAssetsRoot,
 		});
 		expect(hasLegacyPaths(migrated)).toBe(true);
-		expect(shouldPersistSettingsOnLoad(b05e656, migrated)).toBe(false);
+		expect(shouldPersistSettingsOnLoad(b05e656, migrated)).toBe(true);
+		expect(shouldPersistSettingsOnLoad(migrated, migrateSettings(migrated))).toBe(false);
 	});
 
 	it.each(['Guild Wars 2/e\u0301', 'Guild Wars 2/COM1', 'a'.repeat(129)])(

@@ -35,7 +35,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 69 ficheros y 1070 tests verdes.
+- `npm run test`: 70 ficheros y 1085 tests verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 
 ## Pendientes de producto

@@ -26,6 +26,8 @@ export default defineConfig(
 						'eslint.config.mts',
 						'manifest.json',
 						'scripts/release-preflight.mjs',
+						'scripts/security-scan.mjs',
+						'scripts/tests/probar-security-scan.mjs',
 					],
 				},
 				tsconfigRootDir: import.meta.dirname,

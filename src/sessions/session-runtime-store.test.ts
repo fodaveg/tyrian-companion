@@ -44,6 +44,16 @@ const startContext: SessionStartContext = {
 };
 
 describe('session runtime persistence', () => {
+	it('rejects an unknown credential field before the production IndexedDB sink opens', async () => {
+		const credential = ['tyrian-h6', 'runtime-probe', 'not-a-credential'].join('-');
+		const tainted = { ...activeRecord(), apiKey: credential };
+		const store = new IndexedDbSessionRuntimeStore(new IDBFactory(), databaseName('credential-boundary'));
+
+		await expect(store.save(tainted)).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		store.close();
+	});
+
 	it('persists an active session across IndexedDB close and reopen', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('reopen');

@@ -87,9 +87,9 @@ export function mergeSettingsUpdate(
 	}, configDir);
 }
 
-/** Legacy settings are retained in memory on load and are never rewritten until a user changes settings. */
+/** Rewrites persisted data to the exact current schema, retaining only explicit current/legacy fields. */
 export function shouldPersistSettingsOnLoad(persisted: unknown, migrated: TyrianSettings): boolean {
-	return !hasLegacyPaths(migrated) && JSON.stringify(persisted) !== JSON.stringify(migrated);
+	return JSON.stringify(persisted) !== JSON.stringify(migrated);
 }
 
 export function hasLegacyPaths(settings: Pick<TyrianSettings, 'legacyOutputFolder' | 'legacyManagedAssetsRoot'>): boolean {

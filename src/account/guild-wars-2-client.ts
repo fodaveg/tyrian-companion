@@ -1,7 +1,7 @@
 import { HttpTransportError, type HttpResponse, type HttpTransport } from '../core/http';
 import type { ApiKeyProvider } from '../core/secret-provider';
 
-const DEFAULT_API_URL = 'https://api.guildwars2.com/v2';
+export const OFFICIAL_GW2_API_URL = 'https://api.guildwars2.com/v2';
 
 export class MissingApiKeyError extends Error {
 	constructor() {
@@ -20,7 +20,6 @@ export class GuildWars2Client {
 	constructor(
 		private readonly transport: HttpTransport,
 		private readonly apiKeyProvider: ApiKeyProvider,
-		private readonly apiUrl = DEFAULT_API_URL,
 	) {}
 
 	isConfigured(): boolean {
@@ -87,6 +86,6 @@ export class GuildWars2Client {
 			throw new Error('Guild Wars 2 API paths must be relative.');
 		}
 
-		return `${this.apiUrl.replace(/\/$/u, '')}/${path.replace(/^\//u, '')}`;
+		return `${OFFICIAL_GW2_API_URL}/${path.replace(/^\//u, '')}`;
 	}
 }

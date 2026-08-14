@@ -12,6 +12,19 @@ import {
 const RECORDED_AT = '2026-08-13T12:00:00.000Z';
 
 describe('detection quality stores', () => {
+	it('rejects an unknown credential field before the production IndexedDB sink opens', async () => {
+		const credential = ['tyrian-h6', 'quality-probe', 'not-a-credential'].join('-');
+		const tainted = { ...manualEvent('start'), apiKey: credential };
+		const store = new IndexedDbDetectionQualityStore(
+			new IDBFactory(),
+			databaseName('credential-boundary'),
+		);
+
+		await expect(store.append(tainted)).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
+		store.close();
+	});
+
 	it('persists events across IndexedDB close and reopen', async () => {
 		const factory = new IDBFactory();
 		const name = databaseName('reopen');
