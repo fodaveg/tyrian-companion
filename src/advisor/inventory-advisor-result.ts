@@ -100,6 +100,9 @@ function isInventoryAdvisorResultForInputUnsafe(
 			remaining -= allocated;
 		}
 		if (line.exceptionQuantity !== expectedException) return false;
+		const expectedRetained = line.decisions.filter((decision) => decision.action === 'keep')
+			.reduce((total, decision) => total + decision.quantity, 0) - reserved - expectedException;
+		if (line.retainedQuantity !== expectedRetained) return false;
 		const catalogCoverage = input.catalog.coverage.items[String(line.itemId)];
 		const catalogComplete = catalogCoverage?.status === 'resolved'
 			&& ['network', 'cache_fresh'].includes(catalogCoverage.source)
@@ -229,7 +232,7 @@ function validDiscardAgainstInput(
 		|| coverage.status !== 'resolved' || !['network', 'cache_fresh'].includes(coverage.source)
 		|| proof.catalogSource !== coverage.source || proof.rulePackSha256 !== input.rulePack.sha256
 		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && rule.status === 'approved'
-			&& (rule.action === 'use' || rule.action === 'open'))) return false;
+			&& rule.assertion === 'applicable' && (rule.action === 'use' || rule.action === 'open'))) return false;
 	return fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs,

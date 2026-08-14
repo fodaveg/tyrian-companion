@@ -78,8 +78,11 @@ The current `0.1.0` vertical provides:
   available item receives one fresh public price result, while TP/unlock/recipe/skin/mini/achievement
   signals retain identity, coverage and TTL facts without adding UI, persistence or recommendations.
 - H4.15 pure Inventory Advisor classification: every owned physical position is partitioned once,
-  with reservations and keep exceptions first, non-loose positions reviewed, and only fresh complete
-  evidence permitting curated use/open/salvage or conservative vendor/TP routes.
+	with reservations and keep exceptions first, non-loose positions reviewed, and only fresh complete
+	evidence permitting curated use/open/salvage or conservative vendor/TP routes.
+- H4.16 pure discard allowlist: it canonically reproduces the H4.15 producer result before changing
+	only a demonstrated `keep/no_supported_route` into review-only `discard_candidate`, with cited rule
+	and knowledge sources; it has no executor, I/O, persistence, or UI.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 recommendation UI or account operations are intentionally not implemented yet. Vault writes are
@@ -306,7 +309,7 @@ knowledge pack whose per-capability assertions are positive or explicitly `not_a
 partitions every owned physical position after reservations and keep exceptions, routes non-loose or
 unknown/contradictory evidence to review, caps instant sales to demonstrated top-bid depth and never
 emits `discard_candidate`. Its dynamic guard rejects network, UI, persistence, timers and irreversible
-operations. H4.16 discard allowlisting remains pending.
+operations. H4.16 now applies the separate, proof-bound discard allowlist; only persistence and UI remain pending.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

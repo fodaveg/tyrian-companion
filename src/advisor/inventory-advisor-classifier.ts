@@ -79,6 +79,8 @@ export function isInventoryKnowledgePack(value: unknown): value is InventoryKnow
 		return sorted(pack.sources, (left, right) => left.id.localeCompare(right.id)) && unique(sourceIds)
 			&& sorted(pack.entries, (left, right) => left.itemId - right.itemId)
 			&& pack.entries.every((entry) => claimsReferenceSources(entry, sourceIds))
+			&& pack.entries.every(distinctNotApplicableAssertions)
+			&& pack.sources.every((entry) => Date.parse(entry.retrievedAt) <= Date.parse(pack.reviewedAt))
 			&& pack.sha256 === sha256InventoryKnowledgePack(pack) && json(pack);
 	} catch { return false; }
 }
@@ -153,12 +155,14 @@ function publicLine(engine: InventoryAdvisorEngineLineV1, input: InventoryAdviso
 	}))).sort(reasonOrder);
 	const reservedQuantity = engine.decisions.filter((decision) => decision.reason === 'reserved_for_goal').reduce((total, decision) => total + decision.quantity, 0);
 	const exceptionQuantity = engine.decisions.filter((decision) => decision.reason === 'user_keep_exception').reduce((total, decision) => total + decision.quantity, 0);
+	const retainedQuantity = engine.decisions.filter((decision) => decision.action === 'keep'
+		&& !['reserved_for_goal', 'user_keep_exception'].includes(decision.reason)).reduce((total, decision) => total + decision.quantity, 0);
 	const actionedQuantity = decisions.filter((decision) => !['keep', 'review'].includes(decision.action)).reduce((total, decision) => total + decision.quantity, 0);
 	const unclassifiedQuantity = decisions.filter((decision) => decision.action === 'review').reduce((total, decision) => total + decision.quantity, 0);
 	return { line: {
 		itemId: engine.itemId, name: engine.name, ownedQuantity: engine.ownedQuantity,
 		availableQuantity: input.snapshot.availableByItem[String(engine.itemId)] ?? 0, positions: engine.positions,
-		coverage, reservedQuantity, exceptionQuantity, actionedQuantity, unclassifiedQuantity,
+		coverage, reservedQuantity, exceptionQuantity, retainedQuantity, actionedQuantity, unclassifiedQuantity,
 		decisions, reasons: lineReasons,
 	}, explanations: sources.map(({ source, decision }) => ({
 		ref: decision.explanationRef, itemId: decision.itemId, action: decision.action,
@@ -254,6 +258,7 @@ function invalid(): InventoryAdvisorEngineResultV1 { return { status: 'invalid',
 function entry(value: unknown): value is InventoryKnowledgeEntryV1 { return record(value) && keys(value, ['itemId', 'use', 'open', 'salvage']) && positive(value.itemId) && claim(value.use, 'use') && claim(value.open, 'open') && claim(value.salvage, 'salvage'); }
 function claim(value: unknown, action: 'use' | 'open' | 'salvage'): value is InventoryRouteClaimV1 | null { if (value === null) return true; if (!record(value) || !Array.isArray(value.sourceIds) || value.sourceIds.length === 0 || !value.sourceIds.every(id) || !sorted(value.sourceIds, (a, b) => a.localeCompare(b))) return false; if (value.status === 'not_applicable') return keys(value, ['status', 'assertionId', 'sourceIds']) && id(value.assertionId); return value.status === 'applicable' && keys(value, action === 'use' && value.target !== undefined ? ['status', 'ruleId', 'sourceIds', 'target'] : ['status', 'ruleId', 'sourceIds']) && id(value.ruleId) && (action !== 'use' || value.target === undefined || target(value.target)); }
 function claimsReferenceSources(entry: InventoryKnowledgeEntryV1, sources: string[]): boolean { return [entry.use, entry.open, entry.salvage].every((claim) => claim === null || claim.sourceIds.every((sourceId) => sources.includes(sourceId))); }
+function distinctNotApplicableAssertions(entry: InventoryKnowledgeEntryV1): boolean { const claims = [entry.use, entry.open, entry.salvage].filter((claim): claim is Extract<InventoryRouteClaimV1, { status: 'not_applicable' }> => claim?.status === 'not_applicable'); return new Set(claims.map((claim) => claim.assertionId)).size === claims.length; }
 function target(value: unknown): boolean { return record(value) && ((value.kind === 'generic_consumable' && keys(value, ['kind'])) || ((value.kind === 'recipe' || value.kind === 'skin' || value.kind === 'mini') && keys(value, ['kind', 'id']) && positive(value.id)) || (value.kind === 'achievement' && keys(value, ['kind', 'achievementId', 'bit']) && positive(value.achievementId) && (value.bit === null || nonNegative(value.bit)))); }
 function line(value: unknown): value is InventoryAdvisorEngineLineV1 {
 	if (!record(value) || !keys(value, ['itemId', 'name', 'ownedQuantity', 'positions', 'decisions']) || !positive(value.itemId) || typeof value.name !== 'string' || !positive(value.ownedQuantity) || !Array.isArray(value.positions) || !Array.isArray(value.decisions) || !value.decisions.every(decision)) return false;

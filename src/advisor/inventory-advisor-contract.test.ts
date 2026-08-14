@@ -286,7 +286,7 @@ function reportFixture(): InventoryAdvisorReportV1 {
 				source: 'materials', state: 'loose' }],
 			coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete',
 				reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
-			reservedQuantity: 1, exceptionQuantity: 0, actionedQuantity: 1, unclassifiedQuantity: 0,
+			reservedQuantity: 1, exceptionQuantity: 0, retainedQuantity: 0, actionedQuantity: 1, unclassifiedQuantity: 0,
 			decisions: [
 				{ action: 'keep', itemId: 10, quantity: 1,
 					allocations: [{ positionRef: '#/positions/10/0', quantity: 1 }],
@@ -315,7 +315,7 @@ function rulePackFixture(): InventoryAdvisorRulePackV1 {
 		sources: [{ id: 'gw2-items', url: 'https://wiki.guildwars2.com/wiki/API:2/items',
 			retrievedAt: '2026-08-01T00:00:00.000Z' }],
 		rules: [{ ruleId: 'discard-10', itemId: 10, action: 'discard_candidate', status: 'approved', assertion: 'applicable',
-			reason: 'curated_discard_review' }],
+			reason: 'curated_discard_review', sourceIds: ['gw2-items'] }],
 	};
 	rulePack.sha256 = sha256InventoryRulePack(rulePack);
 	return rulePack;

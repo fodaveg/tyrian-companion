@@ -138,6 +138,8 @@ export interface InventoryAdvisorRuleV1 {
 	status: 'approved' | 'revoked';
 	assertion: 'applicable' | 'not_applicable';
 	reason: 'curated_salvage' | 'curated_use' | 'curated_open' | 'curated_discard_review';
+	/** Canonical evidence references from the enclosing rule pack. */
+	sourceIds: string[];
 }
 
 export interface InventoryAdvisorRulePackV1 {
@@ -240,6 +242,8 @@ export interface InventoryAdvisorLineV1 {
 	coverage: InventoryAdvisorCoverageV1;
 	reservedQuantity: number;
 	exceptionQuantity: number;
+	/** Quantity retained because no supported route was demonstrated. */
+	retainedQuantity: number;
 	actionedQuantity: number;
 	unclassifiedQuantity: number;
 	decisions: InventoryRecommendationDecisionV1[];

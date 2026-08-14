@@ -202,7 +202,9 @@ function isInventoryAdvisorRulePackUnsafe(value: unknown): value is InventoryAdv
 		|| !strictlySorted(value.sources, (left, right) => left.id.localeCompare(right.id))
 		|| !Array.isArray(value.rules) || !value.rules.every(isRule)
 		|| !unique(value.rules.map((rule) => rule.ruleId))
-		|| !strictlySorted(value.rules, ruleOrder)) return false;
+		|| !strictlySorted(value.rules, ruleOrder)
+		|| !value.rules.every((rule) => rule.sourceIds.every((sourceId) => (value.sources as InventoryRuleSourceV1[])
+			.some((source) => source.id === sourceId)))) return false;
 	return value.sha256 === sha256InventoryRulePack(value as unknown as InventoryAdvisorRulePackV1)
 		&& jsonRoundTrip(value);
 }
@@ -277,21 +279,21 @@ export function sha256InventoryRulePack(rulePack: InventoryAdvisorRulePackV1): s
 function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 	if (!record(value) || !keys(value, [
 		'itemId', 'name', 'ownedQuantity', 'availableQuantity', 'positions', 'coverage',
-		'reservedQuantity', 'exceptionQuantity', 'actionedQuantity', 'unclassifiedQuantity',
+		'reservedQuantity', 'exceptionQuantity', 'retainedQuantity', 'actionedQuantity', 'unclassifiedQuantity',
 		'decisions', 'reasons',
 	]) || !positive(value.itemId) || !text(value.name) || !nonNegative(value.ownedQuantity)
 		|| !nonNegative(value.availableQuantity) || value.availableQuantity > value.ownedQuantity
 		|| !Array.isArray(value.positions) || !value.positions.every(isPosition)
 		|| !strictlySorted(value.positions, (left, right) => left.holdingIndex - right.holdingIndex)
 		|| !isCoverage(value.coverage) || !nonNegative(value.reservedQuantity)
-		|| !nonNegative(value.exceptionQuantity) || !nonNegative(value.actionedQuantity)
+		|| !nonNegative(value.exceptionQuantity) || !nonNegative(value.retainedQuantity) || !nonNegative(value.actionedQuantity)
 		|| !nonNegative(value.unclassifiedQuantity) || !Array.isArray(value.decisions)
 		|| !value.decisions.every(isDecision) || !strictlySorted(value.decisions, decisionOrder)
 		|| !Array.isArray(value.reasons) || !value.reasons.every(isInventoryAdvisorReason)
 		|| !strictlySorted(value.reasons, reasonOrder)) return false;
 	if (value.positions.some((position) => position.itemId !== value.itemId)
 		|| sum(value.positions.map((position) => position.quantity)) !== value.ownedQuantity
-		|| sum([value.reservedQuantity, value.exceptionQuantity, value.actionedQuantity,
+		|| sum([value.reservedQuantity, value.exceptionQuantity, value.retainedQuantity, value.actionedQuantity,
 			value.unclassifiedQuantity]) !== value.ownedQuantity
 		|| value.decisions.some((decision) => decision.itemId !== value.itemId)) return false;
 	const positions = new Map(value.positions.map((position) => [position.ref, position]));
@@ -318,7 +320,7 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 		}
 	}
 	return [...positions.values()].every((position) => allocatedByPosition.get(position.ref) === position.quantity)
-		&& kept === value.reservedQuantity + value.exceptionQuantity
+		&& kept === value.reservedQuantity + value.exceptionQuantity + value.retainedQuantity
 		&& actioned === value.actionedQuantity && reviewed === value.unclassifiedQuantity;
 }
 
@@ -406,10 +408,12 @@ function isRuleSource(value: unknown): value is InventoryRuleSourceV1 {
 }
 
 function isRule(value: unknown): value is InventoryAdvisorRuleV1 {
-	if (!record(value) || !keys(value, ['ruleId', 'itemId', 'action', 'status', 'assertion', 'reason'])
+	if (!record(value) || !keys(value, ['ruleId', 'itemId', 'action', 'status', 'assertion', 'reason', 'sourceIds'])
 		|| !identifier(value.ruleId) || !positive(value.itemId)
 		|| !['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action))
-		|| !['approved', 'revoked'].includes(String(value.status)) || !['applicable', 'not_applicable'].includes(String(value.assertion))) return false;
+		|| !['approved', 'revoked'].includes(String(value.status)) || !['applicable', 'not_applicable'].includes(String(value.assertion))
+		|| !Array.isArray(value.sourceIds) || value.sourceIds.length === 0 || !value.sourceIds.every(identifier)
+		|| !sortedStrings(value.sourceIds)) return false;
 	const reasons: Record<InventoryAdvisorRuleV1['action'], InventoryAdvisorRuleV1['reason']> = {
 		salvage: 'curated_salvage', use: 'curated_use', open: 'curated_open',
 		discard_candidate: 'curated_discard_review',

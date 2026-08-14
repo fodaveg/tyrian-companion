@@ -180,7 +180,8 @@ describe('H4.15 inventory advisor classifier', () => {
 		}
 		const noSalvage = fixture();
 		noSalvage.input.catalog.items['10'] = { ...noSalvage.input.catalog.items['10']!, flags: ['NoSalvage'] };
-		noSalvage.input.rulePack.rules = [{ ruleId: 'salvage-10', itemId: 10, action: 'salvage', status: 'approved', assertion: 'applicable', reason: 'curated_salvage' }];
+		noSalvage.input.rulePack.rules = [{ ruleId: 'salvage-10', itemId: 10, action: 'salvage', status: 'approved', assertion: 'applicable', reason: 'curated_salvage', sourceIds: ['rule-source'] }];
+		noSalvage.input.rulePack.sources = [{ id: 'rule-source', url: 'https://wiki.guildwars2.com', retrievedAt: '2026-08-02T00:00:00.000Z' }];
 		noSalvage.input.rulePack.sha256 = sha256InventoryRulePack(noSalvage.input.rulePack);
 		noSalvage.knowledgePack.entries[0]!.salvage = { status: 'applicable', ruleId: 'salvage-10', sourceIds: ['source'] };
 		noSalvage.knowledgePack.sha256 = sha256InventoryKnowledgePack(noSalvage.knowledgePack);
@@ -205,14 +206,14 @@ describe('H4.15 inventory advisor classifier', () => {
 });
 
 function rule(ruleId: string, status: 'approved' | 'revoked', assertion: 'applicable' | 'not_applicable') {
-	return { ruleId, itemId: 10, action: 'use' as const, status, assertion, reason: 'curated_use' as const };
+	return { ruleId, itemId: 10, action: 'use' as const, status, assertion, reason: 'curated_use' as const, sourceIds: ['rule-source'] };
 }
 
 function fixture(): InventoryAdvisorEngineInputV1 {
 	const snapshot: StorageSnapshot = { snapshotId: 'snapshot-1', accountId: 'account-1', startedAt: '2026-08-14T11:59:00.000Z', completedAt: '2026-08-14T11:59:01.000Z', schemaVersion: PINNED_SCHEMA, quality: 'stable', passes: 2,
 		holdings: [{ kind: 'item', itemId: 10, quantity: 2, state: 'loose', location: { source: 'bank', slot: 0 }, metadata: {} }], currencies: [], availableByItem: { '10': 2 }, ownedByItem: { '10': 2 }, currencyById: {}, roster: [],
 		coverage: coverage(), passCoverages: [coverage(), coverage()] };
-	const rulePack = { schemaVersion: 1 as const, id: 'rules', version: 1, publishedAt: '2026-08-01T00:00:00.000Z', reviewedAt: '2026-08-02T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z', sha256: '', sources: [], rules: [] };
+	const rulePack = { schemaVersion: 1 as const, id: 'rules', version: 1, publishedAt: '2026-08-01T00:00:00.000Z', reviewedAt: '2026-08-02T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z', sha256: '', sources: [{ id: 'rule-source', url: 'https://wiki.guildwars2.com', retrievedAt: '2026-08-02T00:00:00.000Z' }], rules: [] };
 	rulePack.sha256 = sha256InventoryRulePack(rulePack);
 	const knowledge: InventoryKnowledgePackV1 = { schemaVersion: 1, id: 'knowledge', version: 1, publishedAt: '2026-08-01T00:00:00.000Z', reviewedAt: '2026-08-02T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z', sha256: '', sources: [{ id: 'source', url: 'https://wiki.guildwars2.com', retrievedAt: '2026-08-02T00:00:00.000Z' }], entries: [{ itemId: 10, use: { status: 'not_applicable', assertionId: 'use-none', sourceIds: ['source'] }, open: { status: 'not_applicable', assertionId: 'open-none', sourceIds: ['source'] }, salvage: { status: 'not_applicable', assertionId: 'salvage-none', sourceIds: ['source'] } }] };
 	knowledge.sha256 = sha256InventoryKnowledgePack(knowledge);

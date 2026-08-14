@@ -183,7 +183,9 @@ Todos los cambios notables del proyecto se documentan aquí.
 - El contrato H4.13 ahora exige que las decisiones y cantidades de una línea particionen propiedad,
   no solo disponibilidad; sus reglas expresan `applicable|not_applicable`.
 - Nuevo guard dinámico H4.15 contra red, UI, Vault, persistencia, temporizadores y operaciones
-  irreversibles en todos los módulos productivos del clasificador.
+	irreversibles en todos los módulos productivos del clasificador.
+- H4.16 añade una allowlist de descarte pura y separada: reproduce H4.15 de forma canónica, enlaza
+	reglas y assertions a fuentes no vacías, y solo emite `discard_candidate` review-only con proof SHA.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.
