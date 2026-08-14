@@ -12,6 +12,7 @@
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
 - `platform`: contratos declarativos para integraciones opcionales; H8.1 no contiene adapters ni I/O.
+- `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
 ## Frontera de release H7.4/H7.5
@@ -64,7 +65,7 @@ sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 
-H8.1 contract -/-> helper Mumble, IPC o runtime (todavía no implementados)
+H8.1 contract -/-> spike H8.2 aislado -/-> plugin, IPC o release
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -131,6 +132,50 @@ ArenaNet `06c4175ad55e4338c7e824c01fdeb6978d1b33d3`; los nombres EN/ES e id se v
 2026-08-14 contra `/v2/maps/866?lang=en|es`. Antes de escribir runtime deben aprobarse el protocolo
 concreto de lifecycle/discovery del helper y QA real separada en Linux/Steam/Proton,
 macOS/CrossOver y Windows. Ninguna de esas pruebas se declara realizada por H8.1.
+
+H8.2 añade únicamente un spike no productivo bajo `spikes/h8-mumble-crossover/`. El ejecutable
+Windows abre el objeto nombrado `MumbleLink` con `FILE_MAP_READ` dentro de la misma botella y mapea
+los 5.460 bytes documentados. Su decoder accede solo a los offsets de `uiVersion`, `uiTick`,
+`context_len` y `context.mapId` mediante words `uint32` naturalmente alineadas —carga única en el
+target Windows x86-64—. Cada intento lee los cuatro words dos veces y solo acepta si ambos candidatos
+completos son idénticos; una diferencia reintenta hasta ocho pares. Es un filtro best-effort, **no un
+seqlock ni una garantía de snapshot coherente del writer**: el mismo híbrido publicado dos veces aún
+podría aceptarse y debe tratarse como señal shadow no autoritativa. Dos muestras aceptadas separadas
+por 1.500 ms producen solo `link_advancing|link_stalled`, y stdout recibe un único frame H8.1 con
+secuencia inicial cero. No enumera procesos, no inspecciona memoria privada, no inyecta, no abre
+sockets, no persiste y no contiene fallback alternativo.
+
+El núcleo portable y sus fixtures se compilan con el C del host bajo la lane normal y ASan/UBSan.
+Sabotajes independientes alteran el offset de `mapId`, el tamaño 5.460, el frame máximo 512, los
+ocho pares y el entero seguro `9007199254740991`; cada uno exige su rojo causal. Un guard dedicado
+censusa el árbol exacto, las llamadas y sumideros del core/wrapper, el stub Windows y el script host;
+exige exactamente un `OpenFileMappingW` y un `MapViewOfFile` con sus argumentos `FILE_MAP_READ`,
+rechaza `0x0002`, write/all, Toolhelp/proceso/memoria, datos privados, red, persistencia y logs, y
+demuestra que el gate no puede ejecutar Wine/CrossOver ni copiar fuera de su temporal. La allowlist
+productiva permanece cerrada. Los argumentos y sumideros se extraen de tokens C reales, con
+comentarios y literales fuera del flujo; un permiso decimal `2u` no puede quedar oculto tras una
+llamada buena comentada. El host gate completo tiene un contrato positivo byte a byte y destinos de
+escritura fijados bajo `test_dir`: cualquier comando nuevo —incluidos `open`, `/bin/cp`, `command cp`,
+`eval`, `rsync` o `install`— exige reabrir deliberadamente el censo.
+El wrapper tiene además un censo positivo separado de preprocesador. Solo admite
+`#define WIN32_LEAN_AND_MEAN`, los cuatro headers de sistema previstos y `mumble_probe_core.h`;
+cualquier `#undef`, macro adicional o redefinición —directa o mediante alias— de `FILE_MAP_READ`,
+`MUMBLE_MAPPING_NAME` o `TC_MUMBLE_LINK_VIEW_BYTES` vuelve rojo el gate. Los controles negativos
+incluyen tanto `2u` como `(1u << 1)`, para no confundir texto nominalmente read-only con permisos
+efectivos de escritura.
+Como autoridad final, la lane invoca el mismo compilador C del harness con `-E -P` y los mismos
+includes (`test-support/windows.h` y `mumble_probe_core.h`). Un validador tokeniza el `main`
+preprocesado y exige exactamente `OpenFileMappingW(0x0004u, 0, MUMBLE_MAPPING_NAME)`,
+`MapViewOfFile(mapping, 0x0004u, 0u, 0u, 5460u)` y la declaración wide `MumbleLink`. Wrapper,
+headers de runtime, stub y validador tienen hashes contractuales exactos. Los sabotajes modifican
+el stub, el core header, usan `%:undef/%:define` y line-splicing; todos llegan a preprocesar y fallan
+por la expansión observada. Esto cubre equivalencias del preprocesador sin perseguir variantes
+textuales.
+El Mac inspeccionado dispone de CrossOver 26.3.0 y una botella win64
+`Guild Wars 2`, pero no de un cross-compiler Windows existente. Por ello no se instaló toolchain, no
+se copió un binario a la botella, no se abrió CrossOver/GW2 y no se afirma lectura real. El comando
+humano exacto y los criterios de aceptación viven junto al spike. Este árbol queda fuera de `src/`,
+del bundle y de la allowlist productiva del scanner.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 

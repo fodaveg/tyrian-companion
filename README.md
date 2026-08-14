@@ -7,7 +7,8 @@ human control: the plugin never operates the game account.
 The MVP is API-only. Linux with Steam/Proton is the primary platform, macOS with CrossOver is
 secondary, and Windows support is beta. Mumble Link is not part of the MVP; it is reserved for an
 optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
-H8.1 now fixes only that future contract and its guards; no helper or IPC runtime is implemented.
+H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
+probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
 
 > [!WARNING]
 > `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
@@ -182,6 +183,11 @@ The current `0.1.0` vertical provides:
   disabled/shadow/on-when-armed, API v1 remains authoritative, every lifecycle change still needs
   human confirmation, and the future loopback frame is limited to version/nonce/sequence/tick,
   map id and derived link activity with `initialSequence:0`. Raw data and frames may not be persisted.
+- H8.2 provides an isolated C spike for the secondary macOS/CrossOver path. Its portable core pins
+  the official byte layout, accepts only a best-effort pair of identical complete samples and
+  renders one minimal frame;
+  the Windows probe opens only the existing named mapping read-only. It is not imported, packaged
+  or connected to the plugin, and real-session QA remains pending.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately
@@ -196,6 +202,8 @@ detection** actions; it describes observed storage, not total account wealth.
 - Obsidian `1.11.4` or newer.
 - Desktop Obsidian.
 - Node.js `22.20.0` or newer within the Node 22 line, or Node.js `24.12.0` or newer. This matches the engines declared by the locked toolchain.
+- A C11 host compiler for the development-only H8.2 spike lane included in `npm run check`; it is
+  not a runtime or installation dependency of the plugin.
 
 ## Development
 

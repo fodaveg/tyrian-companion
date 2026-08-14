@@ -2,7 +2,7 @@
 
 ## Alcance y supuestos
 
-Tyrian Companion es un plugin local de Obsidian para escritorio. Consulta la API oficial de Guild Wars 2 (GW2), escribe notas y assets en la bóveda y mantiene estado operativo en IndexedDB. No tiene backend propio, Sync propio, analítica remota, telemetría remota, exportación de soporte, automatización de cuenta ni runtime Mumble. H8.1 incorpora solo un contrato declarativo de v2, no un helper, transporte, listener ni composición productiva. Sí existe telemetría **local** de calidad de detección API para poder revisar cómo se propuso o confirmó una sesión.
+Tyrian Companion es un plugin local de Obsidian para escritorio. Consulta la API oficial de Guild Wars 2 (GW2), escribe notas y assets en la bóveda y mantiene estado operativo en IndexedDB. No tiene backend propio, Sync propio, analítica remota, telemetría remota, exportación de soporte, automatización de cuenta ni runtime Mumble. H8.1 incorpora solo un contrato declarativo de v2. H8.2 añade un spike C fuera de `src/` y del paquete, no un helper, transporte, listener ni composición productiva. Sí existe telemetría **local** de calidad de detección API para poder revisar cómo se propuso o confirmó una sesión.
 
 Obsidian, sus servicios opcionales de Sync, el sistema operativo, la API de GW2, el repositorio/issue
 tracker de GitHub y cualquier otro plugin instalado son fronteras externas. El modelo protege contra
@@ -35,7 +35,8 @@ Los errores HTTP se reducen a estado y mensaje estable: no incluyen URL, cabecer
 | `tyrian-companion-detection-quality` | Eventos locales, IDs de sesión/propuesta, ventanas, causa y, en propuestas asistidas, `accountId`, IDs de snapshots y ganancias de items | No tiene expiración ni borrado/exportación integral expuestos actualmente. Es telemetría local; nunca se envía por el código inspeccionado. |
 | `tyrian-companion-confirmation-queue` | Cuenta/sesión/propuesta/snapshot y evidencia de ganancias; decisiones de confirmación | Las propuestas pendientes expiran a las 24 h y los recibos se podan a los 30 días durante el procesado. No existe aún un borrado integral explícito para el usuario. |
 | Cache de catálogo | Metadatos públicos de items, monedas y materiales; marcadores de ausencias | TTL: 7 días para items/monedas, 1 día para materiales y 1 hora para ausencias; se admite stale hasta 30 días. No contiene datos personales ni credenciales. |
-| Contrato H8.1 Mumble v2 | Constantes públicas de versión, límites, fuentes, map id 866 y tipos TS | No procesa ni persiste datos. El helper/IPC todavía no existe. El contrato futuro exige retención `none` para raw y frames. |
+| Contrato H8.1 Mumble v2 | Constantes públicas de versión, límites, fuentes, map id 866 y tipos TS | No procesa ni persiste datos. El helper/IPC productivo todavía no existe. El contrato futuro exige retención `none` para raw y frames. |
+| Spike H8.2 CrossOver | Fuente C no productiva, fixtures sintéticos y un frame efímero por stdout en la futura QA | No se importa ni empaqueta. La prueba automatizada no abre la botella; la prueba real aún no se ha ejecutado. El probe no guarda raw ni frame. |
 | Puntero de assets gestionados | Identidad hash de la bóveda, raíz, generación y estado | Persiste para poder actualizar o retirar assets gestionados. No contiene token; la raíz sí puede revelar estructura local a quien ya lea el almacenamiento del plugin. |
 | Notas de sesión en la bóveda | Personaje/profesión/build, tiempos, economía, resultados y referencias estables SHA-256 de cuenta/sesión | Se conservan hasta que el usuario las borra. Los hashes estables son seudónimos, no anonimización. Assets gestionados no contienen datos de cuenta. |
 
@@ -52,6 +53,8 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 | Scanner que deja de vigilar una regla | La suite tiene un positivo por regla, corpus real por Git, encodings, negativos de falsos positivos, redacción de salida, sabotaje individual de cada regla y un scanner always-green. | Al añadir una regla hay que añadir también su positivo y su sabotaje. |
 | Helper Mumble no revisado o fuera de censo | Scanner v4 permite la mención productiva solo en `src/platform/mumble-v2-contract.ts`; docs/tests quedan no productivos. El guard AST usa una allowlist recursiva, rechaza imports, asignaciones, updates, tagged templates, llamadas, clases, funciones y exports alternativos, y censusa cualquier nuevo fichero que lo nombre/importe. | Un nombre deliberadamente oculto o dependencia nativa indirecta todavía requiere review humana y análisis de artefactos de release. No hay aislamiento frente a código local malicioso. |
 | Lectura excesiva de Mumble | Allowlist contractual de `uiVersion`, `uiTick`, `context_len` y `context.mapId`; el frame exacto lleva solo versión/nonce/secuencia/tick/map/activity. Tests rechazan identidad, coordenadas y PID en la proyección. | El futuro helper nativo debe demostrar por revisión y QA que su implementación real respeta offsets/tamaños y no copia el buffer completo a otra superficie. |
+| Tearing o muestra híbrida con tick estable | H8.2 usa loads `uint32` alineados y exige dos candidatos completos idénticos; hasta ocho pares distintos terminan en `unstable_sample`. Fixtures inyectan el mismo tick con map distinto y tearing de word. | No es un seqlock: el writer no coopera y dos híbridos idénticos podrían aceptarse. La señal sigue shadow/no autoritativa y la QA real debe medir el comportamiento. |
+| Spike adoptado accidentalmente como producción | Vive solo bajo `spikes/`, no tiene imports desde `src`, no entra en el ZIP de tres archivos y la documentación prohíbe cablearlo o ampliar la allowlist. Un guard censusa sus ficheros exactos y capacidades. | Un cambio futuro de packaging o un copiado manual exige nueva revisión; el scanner actual no trata `spikes/` como fuente productiva. |
 | Cliente local falso, replay o frame corrupto | Solo loopback numérico, puerto efímero, nonce de 128 bits mínimo, versión exacta, frame máximo 512 bytes, claves cerradas, `initialSequence:0` y secuencia estrictamente creciente. Cualquier desviación se descarta y la API v1 continúa. | Otro proceso con los mismos privilegios podría observar o alterar el canal; el nonce reduce conexión accidental, no sustituye el límite del modelo frente a malware local. |
 | Señal local interpretada como verdad o acción | Defaults `enabled:false`, `shadow`, `on_when_armed`, API v1 autoritativa y confirmación humana obligatoria. `activity` solo expresa avance/stall del tick y nunca movimiento/combate/farmeo. | Una fase posterior podría introducir sesgo en ventanas/propuestas; salir de shadow requiere decisión humana, métricas separadas y QA por plataforma. |
 | Raw o frame retenido/logueado | Contrato `retention:none`; no se admite settings, IndexedDB, Vault, log ni telemetría para raw/frames. Caída/reinicio invalida nonce, secuencia y estado derivado. | Dumps del proceso o herramientas del SO quedan fuera del threat model local actual. |
@@ -70,6 +73,19 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
   Markdown seguro, diagnóstico opcional, confirmación de redacción, bloqueo de issues en blanco, guía
   de permisos y acciones de sesión. Sus sabotajes quitan o añaden campos, introducen prompts hostiles,
   vuelven obligatorios datos opcionales, eliminan categorías/opciones o erosionan la guía.
+- `src/platform/mumble-v2-spike-architecture.test.ts` censusa el spike, core/wrapper, stub y script;
+  fija una sola apertura y un solo map read-only y rechaza permisos write —también `0x0002`—,
+  Toolhelp/proceso/memoria, sumideros alternativos, datos privados, red, persistencia, logs,
+  ejecución de Wine/CrossOver, copias fuera del temporal o una allowlist productiva ampliada.
+  El extractor léxico ignora decoys en comentarios/literales y el host script se acepta únicamente
+  bajo su contrato positivo byte a byte con destinos temporales exactos.
+  Un censo positivo independiente fija todas las directivas del wrapper y rechaza `#undef`, macros
+  o aliases que redefinan permisos, nombre del mapping o tamaño del view.
+  La lane confirma además el resultado de `cc -E -P` con el mismo stub: hashes contractuales y
+  sabotajes desde ambos headers, digraphs `%:` y line-splicing evitan depender solo del texto fuente.
+- `npm run test:h8-crossover-spike` compila el decoder normal y con ASan/UBSan, syntax-checkea el
+  wrapper, valida su expansión real `cc -E -P`, ejecuta fixtures corruptos/interleaved y demuestra rojos causales para offset, 5.460,
+  512, ocho pares y `9007199254740991`. No sustituye la ejecución del PE dentro de CrossOver.
 - `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras.
 - Los tests de `session-runtime-store`, `session-detection-quality-store` y `session-note-writer` demuestran que los sumideros productivos rechazan capacidad de credencial antes de escribir.
 - `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI ejecuta ese mismo gate en Node 22.20.0 y 22.x.

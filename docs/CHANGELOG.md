@@ -1,5 +1,40 @@
 # Changelog
 
+## H8.2 — Spike read-only dentro de CrossOver
+
+- Añadido bajo `spikes/` un decoder C portable del layout oficial y un wrapper Windows que abre
+  únicamente el mapping `MumbleLink` con `FILE_MAP_READ`; no enumera procesos, inyecta, automatiza,
+  abre red ni persiste datos.
+- La proyección queda cerrada a versión/tick/context_len/mapId y a un único frame H8.1 por stdout;
+  hasta ocho intentos exigen dos candidatos completos idénticos antes de aceptar. Es best-effort,
+  no un seqlock ni garantía de coherencia del writer; el activity solo deriva avance/stall.
+- Añadidos fixtures adversariales de tick igual con map híbrido/word tearing, versión, tamaño,
+  contexto, map id, nonce, secuencia y frame. Cinco sabotajes causales fijan offset, 5.460 bytes,
+  512 bytes, ocho pares y el máximo JSON seguro `9007199254740991`; la lane ejecuta además
+  ASan/UBSan.
+- Añadido guard de censo exacto del spike: exige una sola llamada a `OpenFileMappingW` y otra a
+  `MapViewOfFile`, ambas con argumentos `FILE_MAP_READ`; cierra las llamadas y sumideros permitidos,
+  incluye el stub y el script host, rechaza `0x0002`, write/all, Toolhelp/proceso/memoria,
+  identidad/coordenadas, red, persistencia/logs y ejecución de Wine/CrossOver o copias fuera del
+  temporal durante `npm run check`. Las llamadas C se extraen léxicamente ignorando comentarios y
+  literales —incluido el permiso decimal `2u`—, y el script host queda bajo un contrato positivo
+  byte a byte con destinos temporales exactos; sabotajes con código malo y decoys buenos, `open`,
+  `/bin/cp`, `command cp`, `eval`, `rsync` e `install` demuestran la vía roja. El scanner productivo
+  no amplía su allowlist.
+- Cerrado también el preprocesador del wrapper: su censo positivo permite solo
+  `WIN32_LEAN_AND_MEAN` y los cinco includes esperados. `#undef`/redefiniciones de
+  `FILE_MAP_READ`, `MUMBLE_MAPPING_NAME`, `TC_MUMBLE_LINK_VIEW_BYTES` o aliases nuevos fallan;
+  sabotajes cubren permisos `2u` y `(1u << 1)`, nombre y tamaño.
+- La lane preprocesa ahora el wrapper real con el mismo compilador y stub (`-E -P`) y valida el
+  resultado expandido: acceso `0x0004u`, nombre `MumbleLink` y view `5460u`. Hashes contractuales
+  cierran wrapper, core header, stub y validador. Sabotajes en `windows.h`, `core.h`, directivas
+  digraph `%:` y line-splicing preprocesan correctamente pero son rechazados por su semántica.
+- Inventario read-only confirmado en macOS ARM: CrossOver 26.3.0 y botella win64 `Guild Wars 2`
+  existen; Apple Clang está disponible, pero no un cross-compiler Windows. No se instaló toolchain,
+  no se modificó la botella y no se abrió ni ejecutó CrossOver/GW2.
+- Quedan pendientes compilar el PE y demostrar lectura estable en una sesión real. El spike no se
+  importa desde `src`, no entra en el release y no relaja el scanner productivo.
+
 ## H8.1 — Contrato Mumble Link v2
 
 - Añadido el contrato declarativo previo al helper: opt-in, defaults revisables `shadow` y
@@ -15,7 +50,7 @@
 - Scanner v4 reabre únicamente el fichero contractual exacto; su allowlist AST recursiva y
   sabotajes mantienen en rojo helpers fuera de censo, exports alternativos, sintaxis ejecutable,
   inyección, proceso, memoria, logs, tráfico, entrada, automatización, red, persistencia y timers.
-- No se ha implementado helper, IPC runtime ni composición. QA real Linux/Steam/Proton,
+- No se ha implementado helper productivo, IPC runtime ni composición. QA real Linux/Steam/Proton,
   macOS/CrossOver y Windows queda explícitamente pendiente.
 
 ## H4.19 — Economía manual fail-closed para 36038

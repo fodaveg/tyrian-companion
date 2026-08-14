@@ -33,6 +33,7 @@ export default defineConfig(
 						'scripts/tests/probar-release-package.mjs',
 						'scripts/tests/probar-security-scan.mjs',
 						'scripts/tests/probar-support-contract.mjs',
+						'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
 					],
 				},
 				tsconfigRootDir: import.meta.dirname,

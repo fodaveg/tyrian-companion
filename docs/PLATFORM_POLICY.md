@@ -30,8 +30,9 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 
 ## Mumble Link en v2
 
-H8.1 cumple el prerrequisito documental y de modelos, pero **no implementa todavía el helper ni el
-IPC runtime**. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
+H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo y no
+empaquetado para validar la lectura en CrossOver, pero **no implementa todavía el helper ni el IPC
+runtime del plugin**. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
 enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
 el enlace no está disponible.
@@ -86,6 +87,16 @@ La QA del helper/runtime real está explícitamente pendiente en Linux con Steam
 CrossOver y Windows. Debe probar lectura, ausencia del juego, enlace stale, rollover de tick,
 replay/reorder, frames corruptos/sobredimensionados, reinicio, coexistencia con Obsidian y
 degradación API-only antes de habilitar influencia alguna fuera de shadow.
+
+El spike H8.2 vive en `spikes/h8-mumble-crossover/` y no entra en `src/` ni en el paquete. Su wrapper
+Windows abre solo el mapping existente con permiso de lectura y emite una línea; no busca procesos
+ni ofrece una vía alternativa si el mapping falta. Lee words alineadas y exige dos candidatos
+completos idénticos con un máximo de ocho intentos; esto reduce carreras visibles, pero no es un
+seqlock ni demuestra coherencia frente a un writer no cooperativo. Los tests de host validan
+interleavings, layout, límites, guard de capacidades, sanitizers y sabotajes, pero no cuentan como prueba de CrossOver. El procedimiento humano exige compilar fuera de
+la botella, usar la misma botella que GW2, no actualizarla durante la prueba, nonce efímero y aceptar
+solo las seis claves del contrato. Esa QA sigue pendiente hasta observar `mapId=866` en el Laberinto
+y estabilidad durante cambios/reinicio sin datos adicionales.
 
 ## Política de terceros y operaciones
 

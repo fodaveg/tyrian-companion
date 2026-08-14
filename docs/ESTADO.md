@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contrato declarativo H8.1: implementados. El helper/runtime H8 sigue pendiente.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contrato declarativo H8.1: implementados. H8.2 tiene un spike técnico aislado; el helper/runtime productivo y su QA real siguen pendientes.**
 
 **H7.4 está implementado técnicamente y H7.5 preparado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -38,6 +38,28 @@ fuera de censo; los sabotajes cubren inyección, proceso/memoria, logs, tráfico
 automatización. La API oficial confirmó el mapa `866` como **Mad King's Labyrinth / Laberinto del
 Rey Loco**. No existe helper, IPC runtime, listener, setting ni conexión con H3.8/H5.3.
 
+H8.2 aporta bajo `spikes/h8-mumble-crossover/` un decoder C portable, un wrapper PE de lectura
+`FILE_MAP_READ`, muestreo best-effort de pares completos idénticos con ocho intentos, fixtures
+adversariales tick-igual/map-híbrido y tearing, guard de censo/capacidades, ASan/UBSan y sabotajes
+causales de offset/5.460/512/ocho pares/entero seguro. El guard fija una sola apertura y un solo map
+read-only, censa llamadas/sumideros del core, wrapper, stub y script, y mantiene `npm run check` sin
+Wine/CrossOver ni copias fuera del temporal. El extractor léxico no acepta llamadas buenas fingidas
+en comentarios/literales y detecta el permiso decimal `2u`; el host usa un contrato positivo byte a
+byte de todos sus comandos y destinos temporales, no una blacklist. El preprocesador del wrapper
+está igualmente cerrado a un define inocuo y cinco includes exactos:
+no puede redefinir permisos, nombre del mapping, bytes del view ni introducir aliases contractuales.
+Además, la lane usa el mismo `cc` y stub para generar el wrapper preprocesado y valida allí los
+argumentos expandidos `0x0004u`, `MumbleLink` y `5460u`; hashes exactos cubren wrapper, core header,
+stub y validador. Redefiniciones desde headers, `%:` o continuaciones de línea quedan rojas por el
+resultado efectivo, no por una blacklist de grafías.
+No se presenta como seqlock ni como snapshot coherente: dos
+lecturas híbridas idénticas siguen siendo un riesgo residual y la señal permanece shadow. El host inspeccionado
+es macOS 26.6.1 ARM, con CrossOver 26.3.0, botella win64 `Guild Wars 2`, Apple Clang y CMake; no hay
+MinGW/LLVM Windows cross-compiler disponible. El test portable compila y queda verde, pero no se ha
+instalado nada, copiado nada a la botella, abierto CrossOver/GW2 ni ejecutado un PE. Por tanto H8.2
+permanece en curso: la lectura estable durante una sesión real y las transiciones/reinicios son QA
+humana pendiente.
+
 H5.1 sustituye la portada de tarjetas por una bitácora compacta con fase y reloj de sesión, rail de detector/polling/calidad/cuenta, incidencia priorizada y detalles plegables; no añade red ni acciones automáticas.
 
 H5.2 añade paleta y un único ribbon contextual para start, finish/retry, review, recover, discard confirmado y clear confirmado, siempre mediante los workflows existentes y con revalidación ante estado stale.
@@ -71,7 +93,8 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 96 ficheros y 1329 tests verdes.
+- `npm run test`: 97 ficheros y 1339 tests verdes, más la lane C H8.2 normal/ASan/UBSan,
+  syntax-check del wrapper y cinco sabotajes causales.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v4 y sabotajes verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
@@ -82,7 +105,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Pendientes de producto
 
-1. Implementar el helper/IPC H8 posterior solo tras revisar su lifecycle/discovery, y ejecutar QA real separada en Linux/Steam/Proton, macOS/CrossOver y Windows antes de salir de shadow.
+1. Compilar el PE H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después diseñar lifecycle/discovery y ejecutar QA separada en Linux/Steam/Proton, macOS/CrossOver y Windows antes de salir de shadow.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
 4. Revisar y aprobar humanamente el pack/economía H4.19 antes de activar la capacidad 36038; el built-in sigue pending/disabled y fail-closed.
