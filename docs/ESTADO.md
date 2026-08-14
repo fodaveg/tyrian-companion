@@ -11,6 +11,15 @@ solo lectura y sube el candidato como artifact de rama/tag tras el gate. No se h
 Release, BRAT no está activo y la instalación/actualización real en Obsidian sigue pendiente de QA
 humana en las plataformas soportadas.
 
+**H7.2, H7.3 y H7.6 están implementados técnicamente, sin afirmar QA humana.** El README conduce desde
+un artifact verificado hasta la primera sesión, explica que **Open companion** abre la vista y que
+**Finish farming session** solo aparece tras un inicio realmente activo, separa modo manual/asistido y
+expone límites de exactitud e Inventory Advisor. La guía de clave distingue conexión-only, mínimo real
+`account + characters + inventories + builds` y permisos opcionales de cobertura. Soporte aporta un
+issue form cerrado con versión, plataforma, origen, detección, fase y reproducción; prohíbe secretos,
+identidad, rutas, inventario/snapshots, IndexedDB y salida sin redactar. El contrato ejecutable y sus
+sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
+
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
 **H0.4, H0.6 y H8.1: política y contrato v2 documentados; helper/runtime, validación multiplataforma y piloto pendientes.** El MVP es
@@ -67,6 +76,9 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
 - `npm run bench:h6-performance` y su sabotaje de heap: verdes en Node 24.19.0.
+- H7.2/H7.3/H7.6 añade `test:support-contract`: formulario, docs y dieciocho sabotajes causales verdes;
+  `npm run check`, benchmark, sabotaje de heap y `git diff --check` pasan en este worktree. No existe
+  todavía evidencia de instalación, primera sesión o soporte real en dispositivo.
 
 ## Pendientes de producto
 

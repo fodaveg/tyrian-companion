@@ -6,6 +6,11 @@ La automatización prepara candidatos verificables, pero **no existe todavía un
 un canal BRAT activo**. La instalación, primera carga y actualización dentro de Obsidian siguen
 pendientes de QA humana en Linux, macOS y Windows. Un artifact verde de CI no demuestra esos flujos.
 
+Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
+[guía de permisos](API-KEY.md) y conserva a mano el contrato de
+[soporte y redacción](SUPPORT.md). Estos documentos describen el producto actual; no sustituyen la
+matriz humana ni convierten el candidato en una release publicada.
+
 ## Contrato del paquete
 
 `npm run release:package` elimina cualquier `main.js` previo, ejecuta el build de producción y crea
@@ -50,6 +55,11 @@ Referencias del contrato:
    anterior.
 5. Abre Obsidian, activa el plugin y ejecuta la matriz manual aplicable. Registra por separado
    instalación, carga, conexión, sesión, recovery, escritura segura y actualización.
+
+La evidencia de QA debe contener versión, SHA/checksum, plataforma, versión de Obsidian, origen de
+instalación, modo de detección, fase y resultado. No se adjuntan claves, identidad de cuenta o
+personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
+sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
 Si el hash, el contenido o la versión no coinciden, no se instala el candidato. La QA debe usar una
 bóveda desechable; la bóveda canónica queda fuera de este procedimiento.

@@ -4,7 +4,11 @@
 
 Tyrian Companion es un plugin local de Obsidian para escritorio. Consulta la API oficial de Guild Wars 2 (GW2), escribe notas y assets en la bóveda y mantiene estado operativo en IndexedDB. No tiene backend propio, Sync propio, analítica remota, telemetría remota, exportación de soporte, automatización de cuenta ni runtime Mumble. H8.1 incorpora solo un contrato declarativo de v2, no un helper, transporte, listener ni composición productiva. Sí existe telemetría **local** de calidad de detección API para poder revisar cómo se propuso o confirmó una sesión.
 
-Obsidian, sus servicios opcionales de Sync, el sistema operativo, la API de GW2 y cualquier otro plugin instalado son fronteras externas. El modelo protege contra filtraciones accidentales dentro del código y las superficies implementadas. No promete confidencialidad frente a malware local, un plugin con privilegios equivalentes, una bóveda o cuenta ya comprometida ni un paquete de desarrollo malicioso.
+Obsidian, sus servicios opcionales de Sync, el sistema operativo, la API de GW2, el repositorio/issue
+tracker de GitHub y cualquier otro plugin instalado son fronteras externas. El modelo protege contra
+filtraciones accidentales dentro del código y las superficies implementadas. No promete
+confidencialidad frente a malware local, un plugin con privilegios equivalentes, una bóveda o cuenta
+ya comprometida, un reporte humano que ignore la redacción ni un paquete de desarrollo malicioso.
 
 ## Flujos de red y credencial
 
@@ -13,6 +17,9 @@ Obsidian, sus servicios opcionales de Sync, el sistema operativo, la API de GW2 
 - La validación consulta `/v2/tokeninfo`; su identificador, nombre y scopes se materializan transitoriamente al parsear la respuesta. El estado de conexión expuesto al resto del plugin conserva nombre y scopes, pero no el identificador del token ni el token crudo.
 - Catálogos y precios públicos también proceden de la API oficial de GW2 y no llevan la cabecera de autorización.
 - No hay endpoints del proyecto, subida de diagnósticos, analítica remota ni tráfico Mumble. H8.1 reabre el modelo para fijar esa frontera futura, pero no autoriza ni implementa red/IPC. Cualquier runtime posterior exige una nueva revisión sobre su diff y QA real.
+- El formulario de bugs es una superficie humana de GitHub, no un uploader del plugin. Solicita solo
+  versión, plataforma, modo/fase y reproducción redactada; una confirmación obligatoria prohíbe clave,
+  identidad, ruta local, inventario/snapshot crudo, IndexedDB, notas y salida sin redactar.
 
 Los errores HTTP se reducen a estado y mensaje estable: no incluyen URL, cabeceras ni cuerpo remoto. La API de GW2 es entrada no confiable; sus respuestas se validan antes de convertirse en modelos o persistirse.
 
@@ -40,7 +47,7 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 | --- | --- | --- |
 | Token persistido o enviado al host equivocado | `SecretStorage`, migración de settings, operación efímera y host HTTPS oficial no inyectable. El test de frontera ejecuta el cliente y transporte reales y exige host, protocolo y cabecera exactos. | Código nuevo podría crear otro cliente HTTP o leer el secreto fuera del flujo revisado. |
 | Token en runtime, stores o notas | Validadores exactos en fronteras de persistencia; pruebas productivas invocan `save`, `saveData` y el writer real con un centinela y exigen rechazo antes de escribir. Descubrimiento recursivo revisa stores/writers nuevos. | El guard es una defensa de regresión, no aislamiento frente a código local malicioso u ofuscado. |
-| Fuga por errores, logs o soporte | `HttpTransportError` sanea respuestas. No se admite `console.*` ni logger/telemetry remotos en fuente productiva; no existe exportador de soporte. Rutas futuras con nombres de soporte/export/share/backup/report exigen allowlist revisada. | Un nombre no convencional o un sistema fuera de `src` requiere revisión humana. |
+| Fuga por errores, logs o soporte | `HttpTransportError` sanea respuestas. No se admite `console.*` ni logger/telemetry remotos en fuente productiva; no existe exportador de soporte. El issue form exige contexto cerrado y aceptación de redacción; el guard prueba también que los issues en blanco permanecen desactivados. Rutas futuras con nombres de soporte/export/share/backup/report exigen allowlist revisada. | GitHub, notificaciones y caches quedan fuera del plugin; el usuario aún puede pegar un dato prohibido pese al aviso. Un nombre no convencional o un sistema fuera de `src` requiere revisión humana. |
 | Secreto o credencial real en repositorio/fixtures | El scanner enumera ficheros tracked y untracked no ignorados mediante Git, normaliza rutas multiplataforma y decodifica texto UTF-8/UTF-16 con o sin BOM. Busca claves privadas, formatos conocidos, asignaciones de credencial, Bearer y fixtures con evidencia de secreto. Solo informa ruta y regla. | Es análisis textual: no cubre historia Git, binarios, cifrado, fragmentación/obfuscación ni todos los formatos futuros. No sustituye un secret scanner histórico del servidor. |
 | Scanner que deja de vigilar una regla | La suite tiene un positivo por regla, corpus real por Git, encodings, negativos de falsos positivos, redacción de salida, sabotaje individual de cada regla y un scanner always-green. | Al añadir una regla hay que añadir también su positivo y su sabotaje. |
 | Helper Mumble no revisado o fuera de censo | Scanner v4 permite la mención productiva solo en `src/platform/mumble-v2-contract.ts`; docs/tests quedan no productivos. El guard AST usa una allowlist recursiva, rechaza imports, asignaciones, updates, tagged templates, llamadas, clases, funciones y exports alternativos, y censusa cualquier nuevo fichero que lo nombre/importe. | Un nombre deliberadamente oculto o dependencia nativa indirecta todavía requiere review humana y análisis de artefactos de release. No hay aislamiento frente a código local malicioso. |
@@ -57,6 +64,12 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 - `npm run security:scan` ejecuta el scanner v4 sin red sobre el corpus Git relevante; el empaquetador invoca además su entrada cerrada sobre `manifest.json`, `main.js` y `styles.css` ya staged.
 - `npm run test:security-scan` prueba cada regla, corpus/encodings, falsos positivos, redacción, el bundle final normalmente ignorado y controles de sabotaje.
 - `src/platform/mumble-v2-contract-architecture.test.ts` fija el único artefacto permitido, sus exports y ausencia de runtime. Sus sabotajes cubren inyección, proceso, memoria, logs, tráfico, entrada, automatización, red, persistencia, temporizadores y helpers fuera del censo.
+- `npm run test:support-contract` valida el issue form con esquema top-level exacto, allowlist de
+  IDs/tipos y SHA-256 semántico canónico del formulario completo —nombre, descripción, título,
+  prompts y atributos visibles—, además de un único
+  Markdown seguro, diagnóstico opcional, confirmación de redacción, bloqueo de issues en blanco, guía
+  de permisos y acciones de sesión. Sus sabotajes quitan o añaden campos, introducen prompts hostiles,
+  vuelven obligatorios datos opcionales, eliminan categorías/opciones o erosionan la guía.
 - `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras.
 - Los tests de `session-runtime-store`, `session-detection-quality-store` y `session-note-writer` demuestran que los sumideros productivos rechazan capacidad de credencial antes de escribir.
 - `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI ejecuta ese mismo gate en Node 22.20.0 y 22.x.

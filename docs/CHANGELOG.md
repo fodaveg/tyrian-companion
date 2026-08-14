@@ -26,6 +26,23 @@
 - El built-in permanece `pending_human_review`: no se ha fingido aprobación ni activado ninguna recomendación. No existen listing, executor, background ni descarte en esta ruta.
 - Añadidos tests causales y guard arquitectónico. Siguen pendientes la aprobación humana del pack/economía y la QA manual ES/EN en Obsidian.
 
+## H7.2/H7.3/H7.6 — Onboarding, clave API y soporte seguro
+
+- Añadido onboarding desde cero al README: artifact manual verificado, Secret Storage, conexión,
+  apertura real de Companion y lifecycle state-dependent de start → finish → review → save/clear.
+- Documentados modo asistido y límites de exactitud, valoración e Inventory Advisor sin convertir una
+  observación, propuesta o revisión irreversible en una acción automática.
+- Añadida guía de clave con scopes reales: `account` solo conecta; sesiones completas requieren
+  `account`, `characters`, `inventories` y `builds`; wallet/TP/progression/unlocks amplían cobertura.
+- Añadidos revocación/rotación, errores saneados y soporte con lista cerrada de diagnóstico permitido y
+  prohibición explícita de secretos, identidad, rutas, inventario/snapshots, IndexedDB y salida cruda.
+- Añadido issue form obligatorio y un contrato ejecutable fail-closed: esquema top-level exacto,
+  allowlist exacta de IDs/tipos y SHA-256 semántico canónico de todo el formulario —incluidos
+  nombre, descripción, título, prompts y atributos visibles—, un único Markdown seguro,
+  diagnóstico opcional y sabotajes causales de campos hostiles o benignos,
+  redacción, permisos, acción de finalización e issues en blanco. BRAT/publicación y QA humana no se
+  activan ni se declaran completados.
+
 ## H7.4/H7.5 — Paquete reproducible y preparación del canal beta
 
 - Añadido build causal y stage cerrado a `manifest.json`, `main.js` y `styles.css`, con validación cruzada de manifest/package/versions y tag exacto.

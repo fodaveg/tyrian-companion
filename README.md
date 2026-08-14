@@ -1,11 +1,91 @@
 # Tyrian Companion
 
-Tyrian Companion is a desktop-only Obsidian plugin foundation for bringing Guild Wars 2 account context and planning into a vault.
+Tyrian Companion is a desktop-only Obsidian plugin for reviewing Guild Wars 2 farming sessions and
+account inventory context inside a vault. Every recommendation and session boundary remains under
+human control: the plugin never operates the game account.
 
 The MVP is API-only. Linux with Steam/Proton is the primary platform, macOS with CrossOver is
 secondary, and Windows support is beta. Mumble Link is not part of the MVP; it is reserved for an
 optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
 H8.1 now fixes only that future contract and its guards; no helper or IPC runtime is implemented.
+
+> [!WARNING]
+> `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
+> Install only an artifact supplied for a named commit, and use a disposable vault until the manual
+> platform matrix is complete.
+
+## Install a beta candidate
+
+Requirements: desktop Obsidian `1.11.4` or newer and the ZIP plus `.sha256` file from the same CI
+artifact. Node.js is needed only for development, not for manual installation.
+
+1. Verify the checksum and extract the ZIP. It must contain exactly `manifest.json`, `main.js`, and
+   `styles.css`; see the [candidate verification commands](docs/BETA.md#qa-manual-desde-un-artifact-de-rama).
+2. Close Obsidian. Copy those three files to
+   `<vault>/.obsidian/plugins/tyrian-companion/`, keeping a recoverable copy of any previous version.
+3. Open Obsidian, go to **Settings → Community plugins**, enable Tyrian Companion, and then open its
+   settings page.
+4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the
+   **API key** setting. Paste the value only into Obsidian Secret Storage; the plugin setting keeps
+   only the secret name.
+5. Select **Check connection**. A successful connection check proves only `account` access; starting
+   a farming session also requires `characters`, `inventories`, and `builds`.
+6. Open the command palette and run **Open companion**. This opens the Companion view, not Settings.
+
+The full install, update, rollback, and future BRAT procedure is in the [beta guide](docs/BETA.md).
+
+## First farming session
+
+The manual flow is state-dependent. The palette and the Companion view show only the action that is
+valid for the current state.
+
+1. With the connection checked, run **Start farming session**. Choose the character and enter the
+   total Magic Find shown in the game. Wait until Companion says the baseline is captured and the
+   session is active.
+2. Farm normally. Avoid opening, salvaging, crafting, buying, selling, moving account items from
+   another device, or otherwise changing the tracked account outside the run if you need an exact net
+   result.
+3. When the session is active, **Start farming session** is replaced by **Finish farming session**;
+   the Companion view also shows **Finish session**. If the view still says `idle`, no session was
+   started and there is nothing to finish.
+4. After the final snapshot, run **Review session** and declare any outside activity. “Not sure” stays
+   estimated; declaring an activity marks the result contaminated instead of guessing its cause.
+5. When review is complete, **Clear completed session** first writes or updates the managed session
+   note and only then clears the local runtime.
+
+Assisted detection is optional. Set **Detection mode → Assisted**, check the connection, and run
+**Arm assisted detection**. Arming captures a baseline and may later propose a start or finish, but
+every proposal still needs an explicit review action. It always reloads disarmed and never starts or
+stops a session automatically.
+
+## Inventory advisor
+
+Run **Open inventory advisor**, then use **Refresh inventory** to make the one explicit account
+capture. Opening the view alone is local and makes no network request. Filters and explanations help
+review owned positions, reservations, keep exceptions, evidence coverage, and any supported manual
+route.
+
+Coverage is deliberately conservative. A row can remain **Review** because prices, unlock evidence,
+binding, a curated rule, or an economic comparison is incomplete. `discard_review` is never an
+instruction to destroy an item, and the plugin has no sell, vendor, salvage, open, use, or destroy
+executor. Check every action in Guild Wars 2 yourself.
+
+## What the result means
+
+- A session is an observed net change between stable account snapshots, not a drop log and not total
+  account wealth. Transfers and unrelated account activity can change that net.
+- **Exact** requires qualified snapshots, high-confidence boundaries, and a clean human review.
+  Missing or contradictory evidence is shown as estimated, contaminated, limited, or invalid.
+- Trading Post values use public quotes captured at close time. They are estimates after the modeled
+  fees, not proof that an item sold at that price.
+- Assisted detection is a polling heuristic. Offline periods, sleep, API cooldowns, and activity
+  between polls widen uncertainty; no background signal is accepted silently.
+- The MVP has no Mumble Link helper, game-process inspection, input automation, automatic account
+  operation, or unattended session finalization.
+
+For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md). Never include an API
+key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
+contents, or unredacted screenshots/logs in a report.
 
 The current `0.1.0` vertical provides:
 
@@ -387,6 +467,9 @@ durable session history.
 
 ## Project documentation
 
+- [`docs/BETA.md`](docs/BETA.md)
+- [`docs/API-KEY.md`](docs/API-KEY.md)
+- [`docs/SUPPORT.md`](docs/SUPPORT.md)
 - [`docs/PRODUCT.md`](docs/PRODUCT.md)
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - [`docs/PLATFORM_POLICY.md`](docs/PLATFORM_POLICY.md)

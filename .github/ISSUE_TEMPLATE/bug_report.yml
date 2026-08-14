@@ -1,0 +1,104 @@
+name: Bug report
+description: Informa de un fallo reproducible sin compartir secretos ni datos crudos de la cuenta.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tyrian Companion es una beta. Revoca primero cualquier clave que pueda haberse expuesto.
+        No adjuntes claves API, identidad de cuenta/personaje, rutas absolutas, inventario crudo,
+        snapshots, IndexedDB, notas completas ni capturas o logs sin redactar.
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Tyrian Companion
+      description: Usa la versión de manifest.json; no pegues otros ficheros.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: obsidian_version
+    attributes:
+      label: Versión de Obsidian
+      placeholder: 1.11.4
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Plataforma
+      options:
+        - Linux + Steam/Proton
+        - macOS + CrossOver
+        - Windows
+        - Otro desktop
+    validations:
+      required: true
+  - type: dropdown
+    id: install_source
+    attributes:
+      label: Origen de instalación
+      options:
+        - Artifact manual del candidato
+        - Build local de desarrollo
+        - Otro origen no publicado
+    validations:
+      required: true
+  - type: dropdown
+    id: detection_mode
+    attributes:
+      label: Modo de detección
+      options:
+        - Off o sesión manual
+        - Asistido y armado
+        - Asistido y desarmado
+        - No aplicable o desconocido
+    validations:
+      required: true
+  - type: dropdown
+    id: session_phase
+    attributes:
+      label: Fase de sesión visible
+      options:
+        - idle
+        - starting
+        - active
+        - stopping
+        - provisional o review
+        - complete
+        - recovery o error
+        - No aplicable
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Pasos para reproducir
+      description: Enumera el comando o control exacto y el estado visible previo.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Resultado observado
+      description: Incluye solo el texto o código visible ya redactado.
+    validations:
+      required: true
+  - type: checkboxes
+    id: diagnostics_policy
+    attributes:
+      label: Redacción de datos
+      options:
+        - label: He quitado la clave API y otros secretos, identidad de cuenta y personaje, rutas absolutas, inventario crudo, snapshots, IndexedDB, notas completas y capturas o logs sin redactar.
+          required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnóstico mínimo redactado (opcional)
+      description: Pega solo el extracto imprescindible y redactado. Nunca pegues el log o la consola completos.
