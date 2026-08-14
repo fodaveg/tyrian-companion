@@ -6,8 +6,8 @@ import * as resultApi from './inventory-advisor-result';
 import * as envelopeApi from '../economy/inventory-recommendation-envelope';
 
 const BOUNDARY_FILES = [
-	...readdirSync('src/advisor').filter((name) => name.startsWith('inventory-advisor')
-		&& name.endsWith('.ts') && !name.endsWith('.test.ts')).map((name) => `src/advisor/${name}`),
+	...['inventory-advisor-contract.ts', 'inventory-advisor-model.ts', 'inventory-advisor-result.ts']
+		.map((name) => `src/advisor/${name}`),
 	...readdirSync('src/economy').filter((name) => name.startsWith('inventory-recommendation')
 		&& name.endsWith('.ts') && !name.endsWith('.test.ts')).map((name) => `src/economy/${name}`),
 ].sort();

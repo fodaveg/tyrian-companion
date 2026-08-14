@@ -168,6 +168,14 @@ Todos los cambios notables del proyecto se documentan aquí.
 - Contrato H4.13 del Inventory Advisor limitado a `supported_storage_v1`, con inputs identity-bound, catálogo/precios/señales/reglas estrictos, partición cuantitativa por posición y resultado fail-closed.
 - Envelope H4.13 específico de inventario, siempre manual y sin efectos laterales; expone `discard_candidate` solo como revisión irreversible ligada a regla curada y no contiene `destroy` ni executor.
 - Guard arquitectónico causal sobre la frontera H4.13 contra clientes, red, secretos, stores, Obsidian, capacidades de operación e imports estáticos/dinámicos prohibidos.
+- H4.14 captura explícita de evidencia del Inventory Advisor: catálogo para todos los `ownedByItem`,
+  cotizaciones públicas H4.4 para todos los `availableByItem`, señales account-wide y wrapper con
+  identidad, cobertura y TTL independientes; no añade UI, persistencia ni decisiones.
+- Endurecida H4.14: fingerprint SHA-256 sensible al orden físico, TTL de snapshot y timestamps
+  canónicos, endpoints privados `requestDetailed`/HTTP 200, `cache_stale` y delivery limitado
+  degradados, y guard dinámico contra persistencia, UI, temporizadores u operaciones irreversibles.
+- Extraído el parser público de precios H4.4 para que sesiones y evidencia account-wide compartan
+  tratamiento de lotes, duplicados, omisiones y bid/ask nulos.
 - Allowances por intención para items y divisas: una reserva solo habilita de nuevo su uso declarado; evidencia desconocida permanece `null` y nunca se interpreta como cantidad utilizable.
 - Builder desde snapshots H2.6 comparables y overlay cuantitativo sobre evidencia H4.5 validada contra delta, política de fees, binding y procedencia de sack IDs, sin mutar ni prorratear valoración, importes, tasas o cobertura.
 - Módulos `core`, `account`, `advisor`, `sessions` y `objectives`.

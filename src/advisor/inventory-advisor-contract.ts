@@ -18,6 +18,7 @@ import {
 	type InventoryDecisionAllocationV1,
 	type InventoryDiscardProofV1,
 	type InventoryAdvisorExplanationV1,
+	type InventoryAchievementProgressV1,
 	type InventoryAdvisorInputV1,
 	type InventoryAdvisorLineV1,
 	type InventoryAdvisorPolicyV1,
@@ -74,6 +75,16 @@ export function isInventoryAdvisorReason(value: unknown): value is InventoryAdvi
 	return safeGuard(() => isInventoryAdvisorReasonUnsafe(value));
 }
 
+/** Economic decisions require a fresh, resolved catalog record for their item. */
+export function validDecisionAgainstInput(input: unknown, decision: unknown): boolean {
+	return safeGuard(() => {
+		if (!isInventoryAdvisorInputUnsafe(input) || !isDecision(decision)) return false;
+		if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(decision.action)) return true;
+		const coverage = input.catalog.coverage.items[String(decision.itemId)];
+		return coverage?.status === 'resolved' && (coverage.source === 'network' || coverage.source === 'cache_fresh');
+	});
+}
+
 function isInventoryAdvisorInputUnsafe(value: unknown): value is InventoryAdvisorInputV1 {
 	if (!record(value) || !keys(value, [
 		'version', 'asOf', 'snapshot', 'catalog', 'prices', 'goals', 'keepExceptions',
@@ -95,6 +106,7 @@ function isInventoryAdvisorInputUnsafe(value: unknown): value is InventoryAdviso
 		.filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort(numberOrder);
 	const catalogItemIds = Object.keys(catalog.coverage.items).map(Number).sort(numberOrder);
 	return snapshot.accountId === prices.accountId
+		&& fresh(snapshot.completedAt, value.asOf, value.policy.maxSnapshotAgeMs, value.policy.maxFutureSkewMs)
 		&& snapshot.accountId === signals.accountId
 		&& snapshot.snapshotId === catalog.snapshotId
 		&& snapshot.snapshotId === prices.snapshotId
@@ -143,20 +155,37 @@ function isKeepExceptionUnsafe(value: unknown): value is KeepExceptionV1 {
 
 function isAccountSignalsUnsafe(value: unknown): value is AccountSignalsV1 {
 	if (!record(value) || !keys(value, [
-		'version', 'accountId', 'capturedAt', 'tradingPostAccess', 'unlockCoverage',
+		'version', 'source', 'accountId', 'capturedAt', 'schemaVersion', 'tradingPostAccess', 'endpointCoverage', 'unlockCoverage',
 		'unlockedRecipes', 'unlockedSkins', 'unlockedMinis', 'achievementCoverage',
-		'completedAchievementBits',
-	]) || value.version !== INVENTORY_ADVISOR_VERSION || !text(value.accountId)
-		|| !iso(value.capturedAt) || !['full', 'free_to_play', 'unknown'].includes(String(value.tradingPostAccess))
-		|| !coverageEvidence(value.unlockCoverage) || !coverageEvidence(value.achievementCoverage)) return false;
+		'completedAchievementBits', 'achievementProgress',
+	]) || value.version !== INVENTORY_ADVISOR_VERSION || value.source !== 'gw2-account-api' || !text(value.accountId)
+		|| !iso(value.capturedAt) || value.schemaVersion !== PINNED_SCHEMA
+		|| !['full', 'free_to_play', 'unknown'].includes(String(value.tradingPostAccess))
+		|| !endpointCoverage(value.endpointCoverage) || !coverageEvidence(value.unlockCoverage) || !coverageEvidence(value.achievementCoverage)) return false;
 	const unlocks = [value.unlockedRecipes, value.unlockedSkins, value.unlockedMinis];
 	if (!unlocks.every((ids) => ids === null || idArray(ids))) return false;
-	if (value.unlockCoverage === 'complete' && unlocks.some((ids) => ids === null)) return false;
-	if (value.unlockCoverage === 'unavailable' && unlocks.some((ids) => ids !== null)) return false;
+	const signalsCapturedAt = value.capturedAt;
+	if (value.endpointCoverage.account.status !== 'complete' || Object.values(value.endpointCoverage)
+		.some((endpoint) => endpoint.capturedAt !== null && Date.parse(endpoint.capturedAt) > Date.parse(signalsCapturedAt))) return false;
+	const endpointUnlocks = [value.endpointCoverage.recipes, value.endpointCoverage.skins, value.endpointCoverage.minis];
+	if (endpointUnlocks.some((endpoint, index) => (endpoint.status === 'complete') !== (unlocks[index] !== null))) return false;
+	if (value.unlockCoverage !== aggregateCoverage(endpointUnlocks) || (value.unlockCoverage === 'complete' && unlocks.some((ids) => ids === null))
+		|| (value.unlockCoverage === 'unavailable' && unlocks.some((ids) => ids !== null))) return false;
 	if (value.completedAchievementBits !== null
 		&& !achievementBits(value.completedAchievementBits as Record<string, number[]>)) return false;
-	if (value.achievementCoverage === 'complete' && value.completedAchievementBits === null) return false;
-	if (value.achievementCoverage === 'unavailable' && value.completedAchievementBits !== null) return false;
+	if (value.achievementProgress !== null && (!Array.isArray(value.achievementProgress)
+		|| !value.achievementProgress.every(isAchievementProgress)
+		|| !strictlySorted(value.achievementProgress, (left, right) => left.achievementId - right.achievementId))) return false;
+	if (value.completedAchievementBits !== null && value.achievementProgress !== null) {
+		const progress = value.achievementProgress;
+		const expectedBits = Object.fromEntries(progress.filter((entry) => entry.bits !== null)
+			.map((entry) => [String(entry.achievementId), entry.bits]));
+		if (canonical(value.completedAchievementBits) !== canonical(expectedBits)) return false;
+	}
+	if ((value.endpointCoverage.achievements.status === 'complete') !== (value.completedAchievementBits !== null && value.achievementProgress !== null)
+		|| value.achievementCoverage !== aggregateCoverage([value.endpointCoverage.achievements])
+		|| (value.achievementCoverage === 'complete' && (value.completedAchievementBits === null || value.achievementProgress === null))
+		|| (value.achievementCoverage === 'unavailable' && (value.completedAchievementBits !== null || value.achievementProgress !== null))) return false;
 	return jsonRoundTrip(value);
 }
 
@@ -180,9 +209,10 @@ function isInventoryAdvisorRulePackUnsafe(value: unknown): value is InventoryAdv
 
 function isInventoryAdvisorPolicyUnsafe(value: unknown): value is InventoryAdvisorPolicyV1 {
 	return record(value) && keys(value, [
-		'version', 'maxPriceAgeMs', 'maxCatalogAgeMs', 'maxAccountSignalsAgeMs', 'maxRulePackAgeMs',
+		'version', 'maxSnapshotAgeMs', 'maxPriceAgeMs', 'maxCatalogAgeMs', 'maxAccountSignalsAgeMs', 'maxRulePackAgeMs',
 		'maxFutureSkewMs', 'listingMinimumAdvantageBps',
 	]) && value.version === INVENTORY_ADVISOR_POLICY_VERSION
+		&& bounded(value.maxSnapshotAgeMs, 60_000, 30 * 86_400_000)
 		&& bounded(value.maxPriceAgeMs, 60_000, 86_400_000)
 		&& bounded(value.maxCatalogAgeMs, 60_000, 30 * 86_400_000)
 		&& bounded(value.maxAccountSignalsAgeMs, 60_000, 30 * 86_400_000)
@@ -226,6 +256,11 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 
 export function sha256InventoryAdvisorReport(report: InventoryAdvisorReportV1): string {
 	return sha256(canonical(report));
+}
+
+/** Hashes canonical JSON while preserving every array order as evidence. */
+export function sha256CanonicalValue(value: unknown): string {
+	return sha256(canonical(value));
 }
 
 export function sha256InventoryRulePack(rulePack: InventoryAdvisorRulePackV1): string {
@@ -291,7 +326,7 @@ function isPosition(value: unknown): value is InventoryAdvisorPositionV1 {
 
 function isCoverage(value: unknown): value is InventoryAdvisorCoverageV1 {
 	return record(value) && keys(value, [
-		'inventory', 'catalog', 'prices', 'reservations', 'accountSignals', 'rules',
+		'snapshot', 'inventory', 'catalog', 'prices', 'reservations', 'accountSignals', 'rules',
 	]) && Object.values(value).every((entry) => ['complete', 'limited', 'unknown'].includes(String(entry)));
 }
 
@@ -375,7 +410,7 @@ function isRule(value: unknown): value is InventoryAdvisorRuleV1 {
 	return value.reason === reasons[value.action as InventoryAdvisorRuleV1['action']];
 }
 
-function isCatalogResolution(value: unknown): value is CatalogResolution {
+export function isCatalogResolution(value: unknown): value is CatalogResolution {
 	if (!record(value) || !keys(value, [
 		'snapshotId', 'locale', 'schemaVersion', 'resolvedAt', 'items', 'currencies', 'materials',
 		'warnings', 'coverage',
@@ -389,15 +424,32 @@ function isCatalogResolution(value: unknown): value is CatalogResolution {
 		|| !value.warnings.every(isCatalogWarning)
 		|| !strictlySorted(value.warnings as CatalogResolution['warnings'], catalogWarningOrder)
 		|| !record(value.coverage)) return false;
-	return keys(value.coverage, ['items', 'currencies', 'materials'])
-		&& Object.values(value.coverage).every((entries) => record(entries)
-			&& Object.values(entries).every(isCatalogCoverage))
+	if (!keys(value.coverage, ['items', 'currencies', 'materials']) || !record(value.coverage.items)
+		|| !record(value.coverage.currencies) || !record(value.coverage.materials)) return false;
+	return [value.coverage.items, value.coverage.currencies, value.coverage.materials]
+		.every((entries) => Object.values(entries).every(isCatalogCoverage))
+		&& catalogCoverageEntities(value.items, value.coverage.items)
+		&& catalogCoverageEntities(value.currencies, value.coverage.currencies)
+		&& catalogCoverageEntities(value.materials, value.coverage.materials)
 		&& jsonRoundTrip(value);
 }
 
 function catalogEntityKeys(values: Record<string, unknown>): boolean {
 	return Object.entries(values).every(([key, entity]) => record(entity) && positive(entity.id)
 		&& (key === String(entity.id) || key.endsWith(`:${entity.id}`)));
+}
+
+/** A resolved coverage entry proves exactly one entity at the same snapshot reference. */
+function catalogCoverageEntities(entities: Record<string, unknown>, coverage: Record<string, unknown>): boolean {
+	for (const [key, entry] of Object.entries(coverage)) {
+		if (!record(entry)) return false;
+		const entity = entities[key];
+		if (entry.status === 'resolved') {
+			const id = Number(key.slice(key.lastIndexOf(':') + 1));
+			if (!record(entity) || !positive(id) || entity.id !== id) return false;
+		} else if (entity !== undefined) return false;
+	}
+	return Object.keys(entities).every((key) => record(coverage[key]) && coverage[key].status === 'resolved');
 }
 
 function isCatalogCoverage(value: unknown): boolean {
@@ -430,11 +482,45 @@ function catalogWarningOrder(left: CatalogResolution['warnings'][number], right:
 }
 
 function achievementBits(value: Record<string, number[]>): boolean {
-	return Object.entries(value).every(([key, ids]) => positive(Number(key)) && idArray(ids));
+	return Object.entries(value).every(([key, ids]) => positive(Number(key)) && bitArray(ids));
+}
+
+function isAchievementProgress(value: unknown): value is InventoryAchievementProgressV1 {
+	return record(value) && keys(value, ['achievementId', 'done', 'current', 'max', 'repeated', 'bits'])
+		&& positive(value.achievementId) && typeof value.done === 'boolean'
+		&& nullableNonNegative(value.current) && nullableNonNegative(value.max) && nullableNonNegative(value.repeated)
+		&& (value.current === null || value.current === undefined || value.max === null || value.max === undefined || value.current <= value.max)
+		&& (value.bits === null || bitArray(value.bits));
+}
+
+function endpointCoverage(value: unknown): value is AccountSignalsV1['endpointCoverage'] {
+	return record(value) && keys(value, ['account', 'recipes', 'skins', 'minis', 'achievements'])
+		&& Object.values(value).every(isEndpointEvidence);
+}
+
+function isEndpointEvidence(value: unknown): boolean {
+	if (!record(value) || !keys(value, ['status', 'capturedAt', 'reason']) || !['complete', 'missing_scope', 'url_restricted', 'unavailable', 'invalid'].includes(String(value.status))) return false;
+	if (value.status === 'complete') return iso(value.capturedAt) && value.reason === null;
+	if (value.status === 'missing_scope') return value.capturedAt === null && value.reason === 'missing_scope';
+	if (value.status === 'url_restricted') return value.capturedAt === null && value.reason === 'url_restricted';
+	if (value.status === 'unavailable') return value.capturedAt === null && value.reason === 'request_failed';
+	return value.status === 'invalid' && value.capturedAt === null && value.reason === 'invalid_payload';
+}
+
+function aggregateCoverage(entries: Array<AccountSignalsV1['endpointCoverage']['recipes']>): AccountSignalsV1['unlockCoverage'] {
+	return entries.every((entry) => entry.status === 'complete') ? 'complete'
+		: entries.every((entry) => entry.status !== 'complete') ? 'unavailable' : 'partial';
 }
 
 function coverageEvidence(value: unknown): value is AccountSignalsV1['unlockCoverage'] {
 	return ['complete', 'partial', 'unavailable'].includes(String(value));
+}
+function nullableNonNegative(value: unknown): boolean { return value === null || nonNegative(value); }
+function bitArray(value: unknown): value is number[] { return Array.isArray(value) && value.every(nonNegative) && value.every((entry, index) => index === 0 || value[index - 1]! < entry); }
+function fresh(evidenceAt: string, asOf: string, maxAgeMs: number, maxFutureSkewMs: number): boolean {
+	const evidence = Date.parse(evidenceAt);
+	const now = Date.parse(asOf);
+	return evidence <= now + maxFutureSkewMs && now - evidence <= maxAgeMs;
 }
 
 function reasonCode(value: unknown): value is InventoryAdvisorReasonCode {

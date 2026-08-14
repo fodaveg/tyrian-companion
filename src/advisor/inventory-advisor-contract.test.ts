@@ -8,11 +8,13 @@ import {
 } from '../economy/inventory-recommendation-envelope';
 import {
 	isAccountSignals,
+	isCatalogResolution,
 	isInventoryAdvisorInput,
 	isInventoryAdvisorReport,
 	isInventoryAdvisorRulePack,
 	isInventoryPriceSnapshot,
 	sha256InventoryRulePack,
+	validDecisionAgainstInput,
 } from './inventory-advisor-contract';
 import type {
 	InventoryAdvisorInputV1,
@@ -31,6 +33,14 @@ describe('inventory advisor H4.13 contract', () => {
 		expect(isInventoryAdvisorRulePack(input.rulePack)).toBe(true);
 	});
 
+	it('requires per-endpoint signal provenance, preserves completed achievements without bits and bounds snapshot age', () => {
+		const input = inputFixture();
+		const progress = { achievementId: 42, done: true, current: 1, max: 1, repeated: 0, bits: [] };
+		expect(isAccountSignals({ ...input.accountSignals, completedAchievementBits: { '42': [] }, achievementProgress: [progress] })).toBe(true);
+		expect(isAccountSignals({ ...input.accountSignals, endpointCoverage: { ...input.accountSignals.endpointCoverage, recipes: 'missing_scope' } })).toBe(false);
+		expect(isInventoryAdvisorInput({ ...input, asOf: '2026-09-20T09:05:00.000Z' })).toBe(false);
+	});
+
 	it('rejects cross-account, cross-snapshot and incomplete price partitions', () => {
 		const input = inputFixture();
 		expect(isInventoryAdvisorInput({ ...input, prices: { ...input.prices, accountId: 'other' } })).toBe(false);
@@ -40,6 +50,23 @@ describe('inventory advisor H4.13 contract', () => {
 		expect(isInventoryPriceSnapshot({ ...input.prices,
 			items: [{ ...input.prices.items[0]!, bid: null, ask: null }],
 		})).toBe(true);
+	});
+
+	it('requires a network or fresh-cache catalog source for every economic decision', () => {
+		const input = inputFixture();
+		const decision = reportFixture().lines[0]!.decisions[1]!;
+		expect(validDecisionAgainstInput(input, decision)).toBe(true);
+		expect(validDecisionAgainstInput({ ...input, catalog: { ...input.catalog, coverage: {
+			...input.catalog.coverage, items: { '10': { status: 'resolved', source: 'cache_stale' } },
+		} } }, decision)).toBe(false);
+	});
+
+	it('binds catalog entities one-to-one with resolved coverage', () => {
+		const catalog = inputFixture().catalog;
+		expect(isCatalogResolution({ ...catalog, items: {} })).toBe(false);
+		expect(isCatalogResolution({ ...catalog, coverage: { ...catalog.coverage,
+			items: { '10': { status: 'missing', source: 'network', reason: 'missing_response' } },
+		} })).toBe(false);
 	});
 
 	it('requires canonical user exceptions, unlock evidence and a content-bound rule pack', () => {
@@ -227,12 +254,17 @@ function inputFixture(): InventoryAdvisorInputV1 {
 		},
 		goals: [], keepExceptions: [],
 		accountSignals: {
-			version: 1, accountId: snapshot.accountId, capturedAt: '2026-08-14T09:03:00.000Z',
+			version: 1, source: 'gw2-account-api', accountId: snapshot.accountId, capturedAt: '2026-08-14T09:03:00.000Z', schemaVersion: PINNED_SCHEMA,
 			tradingPostAccess: 'full', unlockCoverage: 'complete', unlockedRecipes: [],
-			unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {},
+			endpointCoverage: {
+				account: { status: 'complete', capturedAt: '2026-08-14T09:03:00.000Z', reason: null }, recipes: { status: 'complete', capturedAt: '2026-08-14T09:03:00.000Z', reason: null },
+				skins: { status: 'complete', capturedAt: '2026-08-14T09:03:00.000Z', reason: null }, minis: { status: 'complete', capturedAt: '2026-08-14T09:03:00.000Z', reason: null },
+				achievements: { status: 'complete', capturedAt: '2026-08-14T09:03:00.000Z', reason: null },
+			},
+			unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {}, achievementProgress: [],
 		},
 		rulePack,
-		policy: { version: 1, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000,
+		policy: { version: 1, maxSnapshotAgeMs: 604_800_000, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000,
 			maxAccountSignalsAgeMs: 604_800_000, maxRulePackAgeMs: 15_552_000_000,
 			maxFutureSkewMs: 300_000, listingMinimumAdvantageBps: 1_000 },
 	};
@@ -249,7 +281,7 @@ function reportFixture(): InventoryAdvisorReportV1 {
 			itemId: 10, name: 'Objeto 10', ownedQuantity: 2, availableQuantity: 2,
 			positions: [{ ref: '#/positions/10/0', holdingIndex: 0, itemId: 10, quantity: 2,
 				source: 'materials', state: 'loose' }],
-			coverage: { inventory: 'complete', catalog: 'complete', prices: 'complete',
+			coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete',
 				reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
 			reservedQuantity: 1, exceptionQuantity: 0, actionedQuantity: 1, unclassifiedQuantity: 0,
 			decisions: [

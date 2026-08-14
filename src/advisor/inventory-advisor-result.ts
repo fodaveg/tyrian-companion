@@ -113,6 +113,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 			input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs)
 			&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
 		const expectedCoverage = {
+			snapshot: snapshotComplete(input.snapshot) ? 'complete' : 'limited',
 			inventory: planAsset?.coverage === 'complete' ? 'complete' : planAsset?.coverage === 'limited' ? 'limited' : 'unknown',
 			catalog: catalogComplete ? 'complete' : catalogCoverage ? 'limited' : 'unknown',
 			prices: pricesComplete ? 'complete' : input.prices.status === 'partial' ? 'limited' : 'unknown',
@@ -138,7 +139,9 @@ function validDecisionAgainstInput(
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	const item = input.catalog.items[String(line.itemId)];
 	const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
-	if (!item || !fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs,
+	const catalogCoverage = input.catalog.coverage.items[String(line.itemId)];
+	if (!item || catalogCoverage?.status !== 'resolved' || !['network', 'cache_fresh'].includes(catalogCoverage.source)
+		|| !fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs,
 		input.policy.maxFutureSkewMs)) return false;
 	const holdings = decision.allocations.map((allocation) => input.snapshot.holdings[allocationPositionIndex(allocation.positionRef)]);
 	if (holdings.some((holding) => holding?.kind !== 'item')) return false;
@@ -196,7 +199,7 @@ function validDiscardAgainstInput(
 		|| input.accountSignals.achievementCoverage !== 'complete'
 		|| !item.flags.includes('NoSalvage') || item.flags.includes('DeleteWarning')
 		|| (item.vendorValue > 0 && !item.flags.includes('NoSell'))
-		|| !['network', 'cache_fresh'].includes(coverage.source)
+		|| coverage.status !== 'resolved' || !['network', 'cache_fresh'].includes(coverage.source)
 		|| proof.catalogSource !== coverage.source || proof.rulePackSha256 !== input.rulePack.sha256
 		|| input.rulePack.rules.some((rule) => rule.itemId === line.itemId && rule.status === 'approved'
 			&& (rule.action === 'use' || rule.action === 'open'))) return false;
@@ -212,6 +215,11 @@ function fresh(evidenceAt: string, asOf: string, maxAgeMs: number, maxFutureSkew
 	const evidence = Date.parse(evidenceAt);
 	const now = Date.parse(asOf);
 	return evidence <= now + maxFutureSkewMs && now - evidence <= maxAgeMs;
+}
+
+function snapshotComplete(snapshot: InventoryAdvisorInputV1['snapshot']): boolean {
+	return snapshot.quality === 'stable' && Object.values(snapshot.coverage.sources)
+		.every((coverage) => coverage.status === 'complete');
 }
 
 function sameRulePack(

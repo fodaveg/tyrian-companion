@@ -95,15 +95,34 @@ export interface KeepExceptionV1 {
 
 export interface AccountSignalsV1 {
 	version: typeof INVENTORY_ADVISOR_VERSION;
+	source: 'gw2-account-api';
 	accountId: string;
 	capturedAt: string;
+	schemaVersion: string;
 	tradingPostAccess: 'full' | 'free_to_play' | 'unknown';
+	endpointCoverage: Record<'account' | 'recipes' | 'skins' | 'minis' | 'achievements', InventoryAccountEndpointEvidenceV1>;
 	unlockCoverage: 'complete' | 'partial' | 'unavailable';
 	unlockedRecipes: number[] | null;
 	unlockedSkins: number[] | null;
 	unlockedMinis: number[] | null;
 	achievementCoverage: 'complete' | 'partial' | 'unavailable';
 	completedAchievementBits: Record<string, number[]> | null;
+	achievementProgress: InventoryAchievementProgressV1[] | null;
+}
+
+export interface InventoryAccountEndpointEvidenceV1 {
+	status: 'complete' | 'missing_scope' | 'url_restricted' | 'unavailable' | 'invalid';
+	capturedAt: string | null;
+	reason: 'missing_scope' | 'url_restricted' | 'request_failed' | 'invalid_payload' | null;
+}
+
+export interface InventoryAchievementProgressV1 {
+	achievementId: number;
+	done: boolean;
+	current: number | null;
+	max: number | null;
+	repeated: number | null;
+	bits: number[] | null;
 }
 
 export interface InventoryRuleSourceV1 {
@@ -134,6 +153,7 @@ export interface InventoryAdvisorRulePackV1 {
 
 export interface InventoryAdvisorPolicyV1 {
 	version: typeof INVENTORY_ADVISOR_POLICY_VERSION;
+	maxSnapshotAgeMs: number;
 	maxPriceAgeMs: number;
 	maxCatalogAgeMs: number;
 	maxAccountSignalsAgeMs: number;
@@ -172,6 +192,7 @@ export interface InventoryAdvisorPositionV1 {
 }
 
 export interface InventoryAdvisorCoverageV1 {
+	snapshot: 'complete' | 'limited' | 'unknown';
 	inventory: 'complete' | 'limited' | 'unknown';
 	catalog: 'complete' | 'limited' | 'unknown';
 	prices: 'complete' | 'limited' | 'unknown';

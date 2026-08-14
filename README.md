@@ -74,6 +74,9 @@ The current `0.1.0` vertical provides:
 - A strict H4.13 Inventory Advisor contract over `supported_storage_v1`: account-wide catalog,
   prices, reservations, keep exceptions, unlock evidence and reviewed rules remain identity-bound,
   while every output is manual-only and an irreversible candidate is review-only, never `destroy`.
+- H4.14 explicit account-wide evidence capture: every owned item receives catalog coverage and every
+  available item receives one fresh public price result, while TP/unlock/recipe/skin/mini/achievement
+  signals retain identity, coverage and TTL facts without adding UI, persistence or recommendations.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 recommendation UI or account operations are intentionally not implemented yet. Vault writes are
@@ -287,6 +290,16 @@ user action without widening the session-envelope schema. It has no `destroy` ac
 irreversible classification is `discard_candidate`, which requires a reviewed rule and remains a
 manual review item. H4.13 performs no scan, network request, persistence, Vault write or UI work;
 evidence capture and classification belong to H4.14-H4.16.
+
+H4.14 now captures that evidence only when invoked explicitly. It reuses the public catalog resolver
+for all positive `ownedByItem` IDs and the H4.4 commerce-price parser/batch semantics for all positive
+`availableByItem` IDs; a null bid/ask remains demonstrated absence, never zero. One authenticated
+operation verifies account identity and reads permitted unlock/progression signals. Missing scope,
+URL restriction, malformed data and transient failure remain coverage, never empty unlock arrays.
+Its wrapper carries snapshot/catalog/price/signal TTLs, canonical completion timestamps and an
+array-order-preserving SHA-256 fingerprint; it composes into H4.13 only after freshness and identity
+validation. H4.15 classification and H4.16 discard
+allowlisting remain pending.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

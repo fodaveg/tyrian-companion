@@ -330,7 +330,7 @@ async function verifySnapshotContext(
 	};
 }
 
-function allowsEndpoint(urls: readonly string[], endpoint: string): boolean {
+export function allowsEndpoint(urls: readonly string[], endpoint: string): boolean {
 	return urls.some((url) => {
 		const normalized = url.replace(/\/$/u, '');
 		return normalized === endpoint;

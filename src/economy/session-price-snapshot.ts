@@ -19,6 +19,14 @@ export interface SessionItemPrice {
 	ask: TradingPostQuoteSide | null;
 }
 
+/** A public quote parsed once for both session and account-wide evidence captures. */
+export interface PublicTradingPostItemPrice {
+	itemId: number;
+	whitelisted: boolean;
+	bid: TradingPostQuoteSide | null;
+	ask: TradingPostQuoteSide | null;
+}
+
 export interface SessionPriceSnapshot {
 	version: typeof SESSION_PRICE_SNAPSHOT_VERSION;
 	sessionId: string;
@@ -159,8 +167,21 @@ function parseBatch(
 	requested: ReadonlySet<number>,
 	gainedById: ReadonlyMap<number, number>,
 ): { items: SessionItemPrice[]; missing: number[]; incompleteSides: boolean } {
+	const parsed = parsePublicTradingPostPriceBatch(body, requested);
+	return {
+		items: parsed.items.map((item) => ({ ...item, quantityGained: gainedById.get(item.itemId)! })),
+		missing: parsed.missing,
+		incompleteSides: parsed.incompleteSides,
+	};
+}
+
+/** Parses one official commerce/prices response without attaching session-specific quantities. */
+export function parsePublicTradingPostPriceBatch(
+	body: unknown,
+	requested: ReadonlySet<number>,
+): { items: PublicTradingPostItemPrice[]; missing: number[]; incompleteSides: boolean } {
 	if (!Array.isArray(body)) return { items: [], missing: [...requested], incompleteSides: false };
-	const candidates = new Map<number, SessionItemPrice>();
+	const candidates = new Map<number, PublicTradingPostItemPrice>();
 	const invalid = new Set<number>();
 	let incompleteSides = false;
 	for (const entry of body) {
@@ -176,7 +197,6 @@ function parseBatch(
 		incompleteSides ||= bid.incomplete || ask.incomplete;
 		candidates.set(id, {
 			itemId: id,
-			quantityGained: gainedById.get(id)!,
 			whitelisted: entry.whitelisted,
 			bid: bid.side,
 			ask: ask.side,
