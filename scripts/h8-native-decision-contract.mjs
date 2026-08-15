@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const H8_HELPER_DECISION_CONTRACT_VERSION = 11;
+export const H8_HELPER_DECISION_CONTRACT_VERSION = 14;
 
 const ADR_PATH = 'docs/adr/0001-h8-3-native-mumble-helper.md';
+const RUNTIME_ADR_PATH = 'docs/adr/0003-h8-5-native-helper-runtime.md';
+const RUNTIME_BLOCK_START = '<!-- h8.5-runtime:start -->\n```json\n';
+const RUNTIME_BLOCK_END = '\n```\n<!-- h8.5-runtime:end -->';
 const BLOCK_START = '<!-- h8.3-decision:start -->\n```json\n';
 const BLOCK_END = '\n```\n<!-- h8.3-decision:end -->';
 const ADR_AUTHORITY_START = '<!-- h8.3-adr-authority:start -->\n';
@@ -17,11 +21,40 @@ const PLATFORM_AUTHORITY_PREFIX = `### Decisión de implementación H8.3\n\n${PL
 const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de terceros y operaciones`;
 const EXPECTED_DECISION_SHA256 = 'cca16e7829bc82825bcc9e182f6a08be00b3f4353b26d1225002b3fef0127bb8';
 const ADR_AUTHORITY_SHA256 = '7148a229b490f30d94085a9ae3b77921d1d4e654428a787e9740ba0b2743e246';
-const PLATFORM_AUTHORITY_SHA256 = 'd869c5a3a7265666a901779b052f675a91fe3c20166cf03be5bdfb012b55392a';
-const PLATFORM_DOCUMENT_SHA256 = 'b907cd7e42ce0551544913b3c54c0cc68c9ac66f5484c40e5facd56790d7b632';
-const IGNORED_DIRECTORIES = new Set(['.git', 'coverage', 'node_modules']);
+const PLATFORM_AUTHORITY_SHA256 = '84df5cad83df02edf14bda5d9ede4fd5446501ecec99d7f63664913c9948ef98';
+const PLATFORM_DOCUMENT_SHA256 = '7064a16e6a9b16626b333437b0af296a1379fa8d2c03c4673d963e8acdb57adf';
+const NATIVE_MANIFEST_SHA256 = 'cd7aa03197262d1e3e71868f24b2204a0a00855c70cbb38e0ad7727368b8aa7b';
+const NATIVE_LOCK_SHA256 = '59bfcbfa38ae0ffe6b8454da70238d9ac490de07479ac6c0a0161b69725e83bf';
+const NATIVE_WIN32_SHA256 = '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977';
+const RUNTIME_ADR_DOCUMENT_SHA256 = 'b4af4eec0be6a39d71277927af94e66f8045a53a1a1256057cdcbc7b94af626d';
+const RUNTIME_BLOCK_SHA256 = 'eb8cced7b9035ecb7b06ee7e37a70e26b5035da673da9880580239603799f340';
+const NATIVE_SOURCE_SHA256 = new Map([
+	['native/mumble-helper/src/framing.rs', '8996af14503a161af83305a9426ad2a1149a51ab1eae321bb0462ae1401e88cd'],
+	['native/mumble-helper/src/lib.rs', '0dc14b618c62dda5082f72810d62fae0beb812f73a8d7bf369b488cf049f26c1'],
+	['native/mumble-helper/src/main.rs', 'c58ec63be4d9c7ed1b5a391a0fbcf338e6980fc85dd64d3fada6bca8cca11cdf'],
+	['native/mumble-helper/src/protocol.rs', '98a73fddc63fd023ad4f7cad2a52b06a7ed1d906c9da4c5388a0a5a0df789ac9'],
+	['native/mumble-helper/src/source.rs', '008997c8d34672bb351b021b57d609f4db76e2092189b561ded69a927c415c09'],
+	['native/mumble-helper/src/win32.rs', '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977'],
+]);
+const IGNORED_DIRECTORIES = new Set(['.git', 'coverage', 'node_modules', 'target']);
 const NON_PRODUCT_SOURCE_SCOPE = /(?:^|\/)(?:docs|examples|fixtures|test|tests|__fixtures__|__tests__)(?:\/|$)|\.(?:spec|test)\.[^/]+$/u;
-const REVIEWED_PRODUCT_PATHS = new Set(['src/platform/mumble-v2-contract.ts']);
+const REVIEWED_PRODUCT_PATHS = new Set([
+	'src/platform/mumble-v2-contract.ts',
+]);
+const NATIVE_ROOT = 'native/mumble-helper/';
+const REVIEWED_NATIVE_PATHS = new Set([
+	'native/mumble-helper/.cargo/config.toml',
+	'native/mumble-helper/Cargo.lock',
+	'native/mumble-helper/Cargo.toml',
+	'native/mumble-helper/rust-toolchain.toml',
+	'native/mumble-helper/src/framing.rs',
+	'native/mumble-helper/src/lib.rs',
+	'native/mumble-helper/src/main.rs',
+	'native/mumble-helper/src/protocol.rs',
+	'native/mumble-helper/src/source.rs',
+	'native/mumble-helper/src/win32.rs',
+	'native/mumble-helper/tests/server_lifecycle.rs',
+]);
 const REVIEWED_H8_2_SPIKE_ROOT = 'spikes/h8-mumble-crossover/';
 const REVIEWED_NON_PRODUCT_PATHS = new Set([
 	'spikes/h8-mumble-crossover/README.md',
@@ -102,12 +135,12 @@ const EXPECTED_DECISION = {
 };
 
 const REQUIRED_DOCUMENT_TERMS = new Map([
-	['README.md', ['H8.3', 'Rust', 'x86_64-pc-windows-msvc', 'no helper or IPC runtime is implemented']],
-	['docs/ARCHITECTURE.md', ['H8.3', 'native/mumble-helper', 'tyrian-mumble-helper.exe', 'ZIP separado']],
-	['docs/PLATFORM_POLICY.md', ['H8.3', 'Linux con Steam/Proton', 'macOS con CrossOver', 'Windows x64', 'qa=pending']],
-	['docs/THREAT-MODEL.md', ['H8.3', 'Authenticode', 'único PE', 'firma sigue pendiente']],
-	['docs/ESTADO.md', ['H8.3', 'accepted_for_implementation', 'QA=pending', 'no se ha implementado ningún helper']],
-	['docs/CHANGELOG.md', ['H8.3', 'Rust', 'ZIP separado', 'firma siguen pendientes']],
+	['README.md', ['H8.5', 'Rust', 'x86_64-pc-windows-msvc', 'firma y QA real siguen pendientes']],
+	['docs/ARCHITECTURE.md', ['H8.5', 'native/mumble-helper', 'tyrian-mumble-helper.exe', 'warming_up']],
+	['docs/PLATFORM_POLICY.md', ['H8.5', 'Linux con Steam/Proton', 'macOS con CrossOver', 'Windows x64', 'qa=pending']],
+	['docs/THREAT-MODEL.md', ['H8.5', 'Authenticode', 'FILE_MAP_READ', 'firma sigue pendiente']],
+	['docs/ESTADO.md', ['H8.5', 'implementado', 'QA=pending', 'CI Windows']],
+	['docs/CHANGELOG.md', ['H8.5', 'Rust', 'UNSIGNED-NOT-FOR-RELEASE', 'firma y QA real siguen pendientes']],
 ]);
 
 /** Validates the accepted H8.3 decision without implementing or packaging the helper. */
@@ -117,12 +150,36 @@ export function validateH8HelperDecisionContract(root = process.cwd()) {
 	const adr = readText(absoluteRoot, ADR_PATH, 'adr-document', findings);
 	validateDecisionBlock(adr, findings);
 	validateGovernedAuthority(absoluteRoot, adr, findings);
+	validateRuntimeAdr(absoluteRoot, findings);
 	validateDocumentation(absoluteRoot, findings);
 	validateDocsOnlyScope(absoluteRoot, findings);
+	validateNativeImplementation(absoluteRoot, findings);
 	return {
 		version: H8_HELPER_DECISION_CONTRACT_VERSION,
 		findings: [...new Set(findings)].sort(),
 	};
+}
+
+function validateRuntimeAdr(root, findings) {
+	const source = readText(root, RUNTIME_ADR_PATH, 'runtime-adr-document', findings);
+	if (sha256(canonicalMarkdown(source)) !== RUNTIME_ADR_DOCUMENT_SHA256) {
+		findings.push('runtime-adr-document-hash');
+	}
+	if (source.split(RUNTIME_BLOCK_START).length !== 2 || source.split(RUNTIME_BLOCK_END).length !== 2) {
+		findings.push('runtime-adr-block-count');
+		return;
+	}
+	const block = source.split(RUNTIME_BLOCK_START)[1]?.split(RUNTIME_BLOCK_END)[0] ?? '';
+	try {
+		const parsed = JSON.parse(block);
+		if (parsed.decisionId !== 'H8.5' || parsed.role !== 'helper_server_only'
+			|| parsed.status !== 'implemented_pending_ci_and_real_qa') {
+			findings.push('runtime-adr-value');
+		}
+	} catch {
+		findings.push('runtime-adr-json');
+	}
+	if (sha256(block) !== RUNTIME_BLOCK_SHA256) findings.push('runtime-adr-block-hash');
 }
 
 function validateDecisionBlock(source, findings) {
@@ -202,11 +259,199 @@ function validateDocsOnlyScope(root, findings) {
 			findings.push(`forbidden-product-artifact:${entry.path}`);
 		}
 	}
+	validateRepositoryNativeArtifacts(root, findings);
+}
+
+function validateRepositoryNativeArtifacts(root, findings) {
+	const git = spawnSync(
+		'git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+		{ encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+	);
+	const paths = git.status === 0 && typeof git.stdout === 'string'
+		? git.stdout.split('\0').filter(Boolean).map((path) => path.replaceAll('\\', '/'))
+		: walkIncludingTarget(root, root).map((entry) => entry.path);
+	for (const path of paths) {
+		if (path.startsWith(`${NATIVE_ROOT}target/`) || NATIVE_OUTPUT_FILE.test(path)) {
+			findings.push(`forbidden-product-artifact:${path}`);
+		}
+	}
+}
+
+function validateNativeImplementation(root, findings) {
+	const nativeRoot = resolve(root, 'native/mumble-helper');
+	const hasNativeDirectory = existsSync(nativeRoot) && statSync(nativeRoot).isDirectory();
+	const present = new Set((hasNativeDirectory ? walk(nativeRoot, root) : []).map((entry) => entry.path));
+	for (const path of REVIEWED_NATIVE_PATHS) {
+		if (!present.has(path)) findings.push(`native-missing:${path}`);
+	}
+	for (const path of present) {
+		if (!REVIEWED_NATIVE_PATHS.has(path)) findings.push(`native-unreviewed:${path}`);
+	}
+
+	const manifest = readText(root, `${NATIVE_ROOT}Cargo.toml`, 'native-manifest', findings);
+	if (sha256(manifest) !== NATIVE_MANIFEST_SHA256) findings.push('native-manifest-hash');
+	for (const term of [
+		'name = "tyrian-mumble-helper"', 'rust-version = "1.85"', 'getrandom = "=0.3.4"',
+		'subtle = "=2.6.1"', 'zeroize = "=1.9.0"', 'windows-sys = { version = "=0.59.0"',
+		'"Win32_Foundation"', '"Win32_System_Memory"', 'panic = "abort"', 'strip = "symbols"',
+	]) if (!manifest.includes(term)) findings.push(`native-manifest-term:${term}`);
+	if (/\bgit\s*=/u.test(manifest) || /\b(?:tokio|serde|base64)\b/u.test(manifest)) {
+		findings.push('native-manifest-surface');
+	}
+
+	const lock = readText(root, `${NATIVE_ROOT}Cargo.lock`, 'native-lock', findings);
+	if (sha256(lock) !== NATIVE_LOCK_SHA256) findings.push('native-lock-hash');
+	if (/source = "(?:git|path)\+/u.test(lock)) findings.push('native-lock-source');
+	for (const name of ['getrandom', 'subtle', 'zeroize', 'windows-sys']) {
+		if (!lock.includes(`name = "${name}"`)) findings.push(`native-lock-package:${name}`);
+	}
+	const registryPackages = lock.split('[[package]]').slice(1)
+		.filter((block) => block.includes('source = "registry+'));
+	if (registryPackages.some((block) => !/checksum = "[0-9a-f]{64}"/u.test(block))) {
+		findings.push('native-lock-checksum');
+	}
+
+	const toolchain = readText(root, `${NATIVE_ROOT}rust-toolchain.toml`, 'native-toolchain', findings);
+	if (toolchain !== '[toolchain]\nchannel = "1.85.1"\nprofile = "minimal"\ntargets = ["x86_64-pc-windows-msvc"]\n') {
+		findings.push('native-toolchain-value');
+	}
+	const config = readText(root, `${NATIVE_ROOT}.cargo/config.toml`, 'native-cargo-config', findings);
+	if (config !== '[target.x86_64-pc-windows-msvc]\nrustflags = ["-C", "target-feature=+crt-static"]\n') {
+		findings.push('native-cargo-config-value');
+	}
+
+	const production = [...REVIEWED_NATIVE_PATHS].filter((path) => path.includes('/src/'))
+		.map((path) => [path, readText(root, path, `native-source:${path}`, findings)]);
+	for (const [path, source] of production) {
+		if (sha256(source) !== NATIVE_SOURCE_SHA256.get(path)) findings.push(`native-source-hash:${path}`);
+		const runtimeSource = stripRustCfgTestModules(source);
+		if (path !== `${NATIVE_ROOT}src/win32.rs` && /\bunsafe\s*\{/u.test(runtimeSource)) {
+			findings.push(`native-unsafe-scope:${path}`);
+		}
+		if (/\b(?:identity|characterName|pid|position|movement|combat|loot|indexeddb|vault|telemetry|logger|eprintln|println)\b/iu.test(runtimeSource)) {
+			findings.push(`native-prohibited-surface:${path}`);
+		}
+		for (const match of runtimeSource.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/gu)) {
+			if (match[0] !== '127.0.0.1') findings.push(`native-external-address:${path}`);
+		}
+	}
+	const win32 = production.find(([path]) => path.endsWith('/win32.rs'))?.[1] ?? '';
+	if (sha256(win32) !== NATIVE_WIN32_SHA256) findings.push('native-win32-hash');
+	for (const term of ['OpenFileMappingW', 'MapViewOfFile', 'FILE_MAP_READ', 'MAPPING_NAME', 'VIEW_BYTES']) {
+		if (!win32.includes(term)) findings.push(`native-win32-term:${term}`);
+	}
+	if (/\b(?:OpenProcess|ReadProcessMemory|WriteProcessMemory|CreateToolhelp32Snapshot|VirtualProtect|SendInput)\b/u.test(win32)) {
+		findings.push('native-win32-prohibited-api');
+	}
+	const protocol = production.find(([path]) => path.endsWith('/protocol.rs'))?.[1] ?? '';
+	for (const term of [
+		'ConstantTimeEq', 'zeroize()', 'MAX_SEQUENCE', 'HEARTBEAT_TIMEOUT_MS',
+		'heartbeatIntervalMs', 'sourceStatus', 'impl Drop for SecretString',
+		'output.zeroize()', 'accumulator.zeroize()',
+	]) {
+		if (!protocol.includes(term)) findings.push(`native-protocol-term:${term}`);
+	}
+	const source = production.find(([path]) => path.endsWith('/source.rs'))?.[1] ?? '';
+	for (const term of [
+		'CadenceSchedule', 'CadenceDecision::HeartbeatTimeout', 'record_emitted',
+		'tick_started_at', 'SOURCE_STALLED_AFTER_MS',
+	]) {
+		if (!source.includes(term)) findings.push(`native-cadence-term:${term}`);
+	}
+	const main = production.find(([path]) => path.endsWith('/main.rs'))?.[1] ?? '';
+	for (const term of [
+		'Ipv4Addr::LOCALHOST', 'stdin_task', 'reject_additional_connections', 'ProjectionClock',
+		'cadence.poll(now)', 'cadence.record_emitted', 'maintain_pending_connection',
+		'bootstrap_frame.zeroize()', 'hello_frame.zeroize()',
+		'read_until(listener, stream, &mut payload, deadline, shutdown).is_err()',
+		'error.into_bytes()',
+	]) {
+		if (!main.includes(term)) findings.push(`native-server-term:${term}`);
+	}
+	const framing = production.find(([path]) => path.endsWith('/framing.rs'))?.[1] ?? '';
+	for (const term of [
+		'payload.zeroize()', 'error.into_bytes()',
+		'if let Err(error) = read_exact_classified(reader, &mut payload)',
+	]) {
+		if (!framing.includes(term)) findings.push(`native-framing-term:${term}`);
+	}
+	const lifecycle = readText(
+		root, `${NATIVE_ROOT}tests/server_lifecycle.rs`, 'native-lifecycle-tests', findings,
+	);
+	if (!lifecycle.includes('one_authenticated_and_one_pending_are_kept_while_a_third_is_rejected')) {
+		findings.push('native-lifecycle-term:active-pending-third');
+	}
+	if (!lifecycle.includes('truncated_bom_and_invalid_utf8_hello_payloads_fail_closed')) {
+		findings.push('native-lifecycle-term:rejected-payloads');
+	}
+}
+
+function stripRustCfgTestModules(source) {
+	const marker = '#[cfg(test)]';
+	let cursor = 0;
+	let output = '';
+	while (true) {
+		const start = source.indexOf(marker, cursor);
+		if (start < 0) return output + source.slice(cursor);
+		const opening = source.indexOf('{', start + marker.length);
+		if (opening < 0 || !/^\s*mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/u.test(source.slice(start + marker.length, opening + 1))) {
+			output += source.slice(cursor, start + marker.length);
+			cursor = start + marker.length;
+			continue;
+		}
+		const closing = matchingRustBrace(source, opening);
+		if (closing < 0) return output + source.slice(cursor);
+		output += source.slice(cursor, start);
+		cursor = closing + 1;
+	}
+}
+
+function matchingRustBrace(source, opening) {
+	let depth = 0;
+	let index = opening;
+	while (index < source.length) {
+		if (source.startsWith('//', index)) {
+			index = source.indexOf('\n', index + 2);
+			if (index < 0) return -1;
+			continue;
+		}
+		if (source.startsWith('/*', index)) {
+			let comments = 1;
+			index += 2;
+			while (comments > 0 && index < source.length) {
+				if (source.startsWith('/*', index)) { comments += 1; index += 2; }
+				else if (source.startsWith('*/', index)) { comments -= 1; index += 2; }
+				else index += 1;
+			}
+			continue;
+		}
+		const raw = source.slice(index).match(/^r(#+)?"/u);
+		if (raw !== null) {
+			const hashes = raw[1] ?? '';
+			const end = source.indexOf(`"${hashes}`, index + raw[0].length);
+			if (end < 0) return -1;
+			index = end + hashes.length + 1;
+			continue;
+		}
+		if (source[index] === '"') {
+			index += 1;
+			while (index < source.length && source[index] !== '"') {
+				index += source[index] === '\\' ? 2 : 1;
+			}
+			index += 1;
+			continue;
+		}
+		if (source[index] === '{') depth += 1;
+		if (source[index] === '}' && --depth === 0) return index;
+		index += 1;
+	}
+	return -1;
 }
 
 function isForbiddenNativeEntry(root, entry) {
 	const { path } = entry;
 	if (NATIVE_OUTPUT_FILE.test(path)) return true;
+	if (path.startsWith(NATIVE_ROOT)) return entry.kind !== 'file' || !REVIEWED_NATIVE_PATHS.has(path);
 	if (path.startsWith(REVIEWED_H8_2_SPIKE_ROOT)) {
 		return entry.kind !== 'file' || !REVIEWED_NON_PRODUCT_PATHS.has(path);
 	}
@@ -266,6 +511,16 @@ function walk(directory, root) {
 			target = '<unreadable>';
 		}
 		return [{ path, kind: 'symlink', target }];
+	});
+}
+
+function walkIncludingTarget(directory, root) {
+	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+		if (entry.isDirectory() && ['.git', 'coverage', 'node_modules'].includes(entry.name)) return [];
+		const absolute = resolve(directory, entry.name);
+		if (entry.isDirectory()) return walkIncludingTarget(absolute, root);
+		const path = relative(root, absolute).replaceAll('\\', '/');
+		return entry.isFile() ? [{ path }] : [];
 	});
 }
 

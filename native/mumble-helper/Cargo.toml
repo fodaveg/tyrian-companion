@@ -1,0 +1,33 @@
+[package]
+name = "tyrian-mumble-helper"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+publish = false
+
+[lib]
+name = "tyrian_mumble_helper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tyrian-mumble-helper"
+path = "src/main.rs"
+
+[dependencies]
+getrandom = "=0.3.4"
+subtle = "=2.6.1"
+zeroize = "=1.9.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.59.0", features = [
+	"Win32_Foundation",
+	"Win32_System_Memory",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"

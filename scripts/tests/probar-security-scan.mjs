@@ -104,6 +104,17 @@ function testMumbleContractAllowlist() {
 			`${capability} capability bypassed the Mumble contract allowlist`,
 		);
 	}
+
+	const afterTests = isolatedRoot('native-mumble-after-tests');
+	write(afterTests, 'native/mumble-helper/src/main.rs', [
+		'#[cfg(test)]',
+		'mod tests { const PID: u32 = 7; }',
+		'fn connect_external() { TcpStream::connect("8.8.8.8:80"); }',
+	].join('\n'));
+	assert(
+		scanSecurityBoundaries(afterTests).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+		'native production code after a cfg(test) module bypassed the scanner',
+	);
 }
 
 if (failures.length > 0) {

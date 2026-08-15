@@ -30,10 +30,10 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 
 ## Mumble Link en v2
 
-H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo y no
-empaquetado para validar la lectura en CrossOver, pero **no implementa todavía el helper ni el IPC
-runtime del plugin**. H8.3 elige provisionalmente la forma del helper y H8.4 fija su protocolo sin
-añadir runtime. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
+H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo para
+validar la lectura en CrossOver; H8.3 elige la forma, H8.4 fija el protocolo y H8.5 implementa solo
+el helper/servidor Rust. El plugin aún no tiene launcher, cliente, settings ni UI. Mumble Link solo
+puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
 enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
 el enlace no está disponible.
@@ -119,8 +119,15 @@ exige nonce nuevo desde secuencia cero. `helper_exited` desde cualquier estado n
 programa el próximo slot desde now y no hace catch-up/replay. Si la ausencia alcanza los 2.000 ms,
 falla exactamente con `heartbeat_timeout`; un sleep de 60 s no reproduce una ráfaga. EOF de stdin invalida credenciales, apaga el helper y cierra
 listener, conexión pendiente y autenticada. Los errores de canal cerrados viven en el modelo y en
-[ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Los framer/validators/relojes son solo referencia de
-test: H8.4 no añade helper, socket, timer, proceso ni adapter productivo.
+[ADR 0002](adr/0002-h8-4-local-ipc-protocol.md).
+
+H8.5 implementa el servidor con un watchdog stdin y un event loop acotado, sin thread por conexión.
+Cada slot de 500 ms reintenta el mapping read-only y emite exactamente un record: fuente válida tras
+warm-up produce sample; ausencia, layout incompatible, muestra inestable o inválida produce el
+heartbeat exacto; la primera lectura válida tras inicio/recuperación produce `warming_up`. Cualquier
+discontinuidad reinicia el historial de actividad y sleep no hace catch-up. El adapter usa solo
+`FILE_MAP_READ`, cuatro campos y ocho pares. No hay launcher/cliente/plugin/settings/UI, red externa,
+logs ni persistencia.
 
 Ni raw Mumble ni frames se persisten en settings, IndexedDB, Vault, logs o telemetría. La proyección
 válida vive solo en memoria el tiempo necesario para la comparación shadow o la propuesta futura.
@@ -163,7 +170,9 @@ release.
 
 La distribución futura será un ZIP separado del plugin con EXE, helper manifest, `SHA256SUMS`,
 licencia y avisos de terceros. La firma Authenticode está pendiente y ningún helper unsigned está
-autorizado para release. H8.3 no añade build, package, CI ni artefactos; el contrato exacto está en
+autorizado para release. H8.5 añade build y CI de verificación, pero no package productivo: CI solo
+puede subir durante un día el marker `UNSIGNED-NOT-FOR-RELEASE`, nunca el EXE ni un ZIP release. La
+matriz completa continúa `qa=pending`; el contrato exacto H8.3 está en
 [ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
 <!-- h8.3-platform-authority:end -->
 

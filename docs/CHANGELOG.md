@@ -75,6 +75,23 @@
 - Quedan pendientes compilar el PE y demostrar lectura estable en una sesión real. El spike no se
   importa desde `src`, no entra en el release y no relaja el scanner productivo.
 
+## H8.5 — Helper/servidor Mumble nativo
+
+- Añadido el crate Rust único `native/mumble-helper`, toolchain 1.85.1, target
+  `x86_64-pc-windows-msvc` y CRT estático, sin Tokio ni `build.rs` propio.
+- Implementados framing big-endian 1..512, JSON exacto con duplicados escapados, token bootstrap
+  comparado constant-time y zeroized, nonce por conexión y secuencia heartbeat/sample conjunta.
+- Portado el reader H8.2: exactamente cuatro words, ocho pares estables y adapter Win32
+  `OpenFileMappingW`/`MapViewOfFile` solo `FILE_MAP_READ`.
+- El servidor inicia el primer slot a 500 ms y emite exactamente un record por slot: primera lectura
+  válida `warming_up` sin historia, la siguiente abre época/sample advancing; ausencia/layout/
+  tearing/invalidez producen heartbeat y reinician la actividad. Tick igual cambia en 1.499/1.500
+  ms, una llamada tardía agenda desde `now+500` y 2 s sin record cierran sin catch-up.
+- Añadidos lifecycle tests de EOF, slowloris, cliente extra, auth y reconnect, guard positivo,
+  supply-chain/staging sintético y CI Windows para PE x64/static CRT/reproducibilidad.
+- CI solo conserva el marker corto `UNSIGNED-NOT-FOR-RELEASE`; el ZIP del plugin sigue con tres
+  ficheros. Authenticode, publicación, launcher/cliente del plugin, firma y QA real siguen pendientes.
+
 ## H8.3 — ADR del helper nativo Mumble
 
 - Comparados Rust y C# NativeAOT; ambos pueden producir una aplicación nativa self-contained y

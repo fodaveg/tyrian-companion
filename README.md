@@ -9,11 +9,10 @@ secondary, and Windows support is beta. Mumble Link is not part of the MVP; it i
 optional v2 map/activity IPC helper under the documented no-injection and no-automation boundary.
 H8.1 fixes that future contract and its guards. H8.2 adds only a non-production, read-only CrossOver
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
-H8.3 provisionally accepts Rust for implementation,
-targeting only `x86_64-pc-windows-msvc` with a static CRT and one `tyrian-mumble-helper.exe`; no
-helper or IPC runtime is implemented. H8.4 fixes the executable local IPC protocol contract —framing,
-bootstrap/discovery, authentication, sequencing, heartbeat and recovery deadlines— without adding
-any product socket, process, timer or adapter.
+H8.3 provisionally accepts Rust and H8.4 fixes the executable local IPC protocol. H8.5 implements
+the isolated helper/server under `native/mumble-helper`: portable framing/auth/source logic, the
+read-only Win32 mapping adapter and the loopback server. The plugin still has no launcher, client,
+settings or UI integration; the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
 > `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
@@ -213,6 +212,13 @@ The current `0.1.0` vertical provides:
   simultaneously regardless of input chunk size. Its validators
   and fake clock exist only as test references; product remains API-authoritative,
   shadow, human-confirmed and non-persistent with no helper/runtime/socket/timer/process/adapter.
+- H8.5 implements only the Rust helper/server projection of that protocol. Every 500 ms it emits
+  exactly one shared-sequence record: a stable warmed source produces `sample`; unavailable,
+  unsupported, unstable or invalid source produces the exact heartbeat status; the first valid
+  read after start/recovery produces `warming_up` without retaining tick history, and the next valid
+  read establishes the activity epoch. Late calls schedule from now, never catch up, and 2 s without
+  an emitted record closes the channel before emitting. It reads only the four H8.2 fields through
+  `FILE_MAP_READ`, and has no plugin client, launcher, persistence, logs or external network.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately
@@ -229,6 +235,8 @@ detection** actions; it describes observed storage, not total account wealth.
 - Node.js `22.20.0` or newer within the Node 22 line, or Node.js `24.12.0` or newer. This matches the engines declared by the locked toolchain.
 - A C11 host compiler for the development-only H8.2 spike lane included in `npm run check`; it is
   not a runtime or installation dependency of the plugin.
+- Rust 1.85.1 for the H8.5 helper development gate. End users do not need Rust, and no signed helper
+  is currently published.
 
 ## Development
 
@@ -242,6 +250,12 @@ Run the complete local gate with:
 ```sh
 npm run check
 ```
+
+The native focal gate runs from `native/mumble-helper` with `cargo fmt --all -- --check`,
+`cargo test --all-targets --locked`, `cargo clippy --all-targets --all-features --locked -- -D warnings`
+and `cargo metadata --format-version 1 --locked`. Windows PE/static-CRT/reproducibility evidence is
+produced only by CI as a short-lived `UNSIGNED-NOT-FOR-RELEASE` marker, never a release ZIP.
+The only native build target is `x86_64-pc-windows-msvc` with the static CRT flag fixed in Cargo config.
 
 Create a reproducible local candidate with:
 

@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos declarativos H8.1/H8.4: implementados. H8.2 aporta un spike técnico aislado y H8.3 está `accepted_for_implementation` de forma provisional; no se ha implementado ningún helper/runtime productivo y su QA real sigue pendiente.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, H8.3 la decisión y H8.5 el helper/servidor Rust aislado; cliente/plugin, firma, publicación y QA real siguen pendientes.**
 
 **H7.4 está implementado técnicamente y H7.5 preparado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -60,19 +60,32 @@ instalado nada, copiado nada a la botella, abierto CrossOver/GW2 ni ejecutado un
 permanece en curso: la lectura estable durante una sesión real y las transiciones/reinicios son QA
 humana pendiente.
 
-**H8.3: ADR de lenguaje/artefacto cerrado para implementación, sin código nativo.** Se elige Rust
+**H8.5: helper/servidor Rust implementado, sin integración del plugin ni publicación.** El crate
+`native/mumble-helper` implementa framing/JSON estricto, auth constant-time + zeroize, nonce y
+secuencia compartida, proyección de cadence y adapter Win32 read-only de cuatro campos/ocho pares.
+Un watchdog stdin y event loop acotado prueban EOF, slowloris, cliente extra, reconnect con token del
+mismo proceso y nonce/secuencia nuevos. Cargo host está verde; CI Windows debe confirmar PE x64,
+CRT estático y reproducibilidad y solo puede conservar un marker `UNSIGNED-NOT-FOR-RELEASE` por un
+día. Windows, Proton y CrossOver siguen `QA=pending`; Authenticode, package productivo, launcher,
+cliente, settings y UI siguen pendientes. Por tanto H8.5 está implementado, pero no cerrado para release.
+
+La cadencia servidor consume raw tick/map/status: primer slot a 500 ms, warm-up sin historia,
+segundo válido abre época advancing, stalled exacto a 1.500 ms, lateness reprogramada desde now y
+`heartbeat_timeout` exacto a 2.000 ms sin emitir ni recuperar slots perdidos.
+
+**H8.3: ADR de lenguaje/artefacto que autorizó la implementación.** Se elige Rust
 provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuente futura
 `native/mumble-helper` y un único `tyrian-mumble-helper.exe`. El ZIP será separado del plugin y
 llevará manifest, checksums y licencias. Linux/Steam/Proton primaria, macOS/CrossOver secundaria y
 Windows x64 beta siguen `QA=pending`; ejecución nativa Linux/macOS, Windows x86/ARM64, móvil y Wine
 fuera de Steam/Proton/CrossOver quedan unsupported. Authenticode sigue pendiente y bloquea release.
-El guard v11 y sus sabotajes mantienen este lote solo documental mediante censo positivo. Fuera de
+El guard v12 y sus sabotajes mantienen un censo positivo. Fuera de
 docs/examples/fixtures/tests, fuente Rust/C#, configuración Cargo/toolchain exacta y señales de
 prefijo Mumble Link por path o contenido quedan censadas globalmente; outputs
 EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA y symlinks relevantes siempre fallan.
 Un `bridge` genérico continúa permitido. El bloque JSON, el ADR y `PLATFORM_POLICY.md` completo tienen
 parsing/hash canónicos, de modo que `QA completada` tampoco puede añadirse al final del documento.
-No hay helper/runtime, wiring ni CI productivo.
+H8.5 ya aporta helper/runtime servidor y CI de verificación, pero no wiring del plugin ni artefacto publicable.
 
 **H8.4: protocolo IPC local cerrado y ejecutable solo como referencia de tests.** Helper servidor y
 plugin cliente quedan fijados a TCP IPv4 `127.0.0.1`, bind port `0`, bootstrap/ready por
@@ -129,10 +142,10 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 100 ficheros y 1391 tests verdes, incluidos 63 tests H8.1/H8.4 dirigidos, más la
-  lane C H8.2 normal/ASan/UBSan,
-  syntax-check del wrapper y cinco sabotajes causales.
-- `npm run test:security-scan` y `npm run security:scan`: scanner v4 y sabotajes verdes.
+- `npm run test`: 101 ficheros y 1393 tests verdes, incluidos 63 tests H8.1/H8.4 dirigidos y el
+  verifier de supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan, syntax-check del
+  wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
+- `npm run test:security-scan` y `npm run security:scan`: scanner v5 y sabotajes verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
 - `npm run bench:h6-performance` y su sabotaje de heap: verdes en Node 24.19.0.

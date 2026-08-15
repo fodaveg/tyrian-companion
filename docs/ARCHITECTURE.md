@@ -192,8 +192,9 @@ reproducible o cubrir la matriz con menos riesgo que C# NativeAOT.
 El helper tendrá un ZIP separado, nunca el ZIP BRAT del plugin. El paquete futuro contendrá
 exactamente `tyrian-mumble-helper.exe`, `helper-manifest.json`, `SHA256SUMS`, `LICENSE` y
 `THIRD-PARTY-LICENSES.txt`; manifest y checksums deberán ligar el mismo build/target. La firma
-Authenticode y todo el empaquetado productivo siguen pendientes. El guard H8.3 mantiene este lote
-solo documental: todavía no permite `Cargo.toml`, `.csproj`, EXE, DLL ni ningún fichero bajo la raíz nativa.
+Authenticode y todo el empaquetado productivo siguen pendientes. H8.5 transforma el guard H8.3 en
+un censo positivo de la raíz Rust, toolchain, dependencias, única isla `unsafe`, APIs Win32 y tests;
+continúa rechazando EXE/DLL/PDB y cualquier raíz nativa alternativa.
 La decisión completa y sus triggers viven en
 [ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
 
@@ -249,9 +250,17 @@ record actual y fija el siguiente deadline en `now+500`, sin catch-up ni replay.
 ms desde el último record válido, falla una vez con `heartbeat_timeout`; un sleep de 60 s no genera
 una ráfaga. EOF de stdin apaga el helper, invalida credenciales y cierra listener y conexiones. Los errores exactos
 son `discovery_timeout|discovery_invalid|connect_timeout|auth_rejected|version_unsupported|frame_length|frame_utf8|frame_json|frame_schema|nonce_mismatch|sequence_mismatch|heartbeat_timeout|peer_closed|helper_exited`.
-El contrato completo parseable vive en [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Framer,
-validators, secuenciador y fake clock son referencias `*.test.ts`; no se importan, empaquetan ni
-convierten H8.4 en socket, scheduler, proceso, helper o adapter productivo.
+El contrato completo parseable vive en [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md).
+
+H8.5 implementa solo el lado helper/servidor, no los estados, deadlines ni backoff del futuro cliente
+del plugin. Un watchdog bloqueante observa stdin y el event loop acotado no crea threads por conexión:
+rechaza clientes adicionales, limita slowloris de hello a 2.000 ms y termina al recibir EOF. Cada slot
+de 500 ms reabre el mapping `MumbleLink` con `FILE_MAP_READ` y emite exactamente un record secuenciado.
+Fuente ausente/incompatible/inestable/inválida produce su heartbeat exacto; la primera lectura válida
+tras inicio o discontinuidad produce `warming_up`, y solo la siguiente produce sample. La discontinuidad
+reinicia la historia de actividad; no hay catch-up tras sleep. El núcleo portable conserva framing,
+JSON estricto con duplicados escapados, auth constant-time + zeroize, nonce/secuencia y los cuatro
+words/ocho pares de H8.2. No existe launcher, cliente, settings, UI, persistencia ni red externa.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 

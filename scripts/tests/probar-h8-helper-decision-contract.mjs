@@ -15,6 +15,18 @@ const trackedFiles = [
 	'docs/PLATFORM_POLICY.md',
 	'docs/THREAT-MODEL.md',
 	'docs/adr/0001-h8-3-native-mumble-helper.md',
+	'docs/adr/0003-h8-5-native-helper-runtime.md',
+	'native/mumble-helper/.cargo/config.toml',
+	'native/mumble-helper/Cargo.lock',
+	'native/mumble-helper/Cargo.toml',
+	'native/mumble-helper/rust-toolchain.toml',
+	'native/mumble-helper/src/framing.rs',
+	'native/mumble-helper/src/lib.rs',
+	'native/mumble-helper/src/main.rs',
+	'native/mumble-helper/src/protocol.rs',
+	'native/mumble-helper/src/source.rs',
+	'native/mumble-helper/src/win32.rs',
+	'native/mumble-helper/tests/server_lifecycle.rs',
 ];
 const files = new Map(trackedFiles.map((path) => [path, readFileSync(resolve(root, path), 'utf8')]));
 
@@ -23,11 +35,28 @@ try {
 	testDecisionSabotages();
 	testBlockSabotages();
 	testDocumentationSabotage();
+	testRuntimeAdrSabotages();
 	testImplementationSabotages();
+	testImplementedHelperSabotages();
 	testSymlinkSabotages();
 	testLegitimateFilesOutsideScope();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
+}
+
+function testRuntimeAdrSabotages() {
+	const path = 'docs/adr/0003-h8-5-native-helper-runtime.md';
+	const source = files.get(path);
+	expectFinding(
+		'runtime-adr-role',
+		new Map([[path, source.replace('"role": "helper_server_only"', '"role": "plugin_client"')]]),
+		'runtime-adr-value',
+	);
+	expectFinding(
+		'runtime-adr-free-claim',
+		new Map([[path, `${source}QA real completada.\n`]]),
+		'runtime-adr-document-hash',
+	);
 }
 
 if (failures.length > 0) {
@@ -130,7 +159,6 @@ function testImplementationSabotages() {
 		['rust-toolchain-toml', 'native/rust-toolchain.toml'],
 		['alternative-native-tree', 'native/mumble_helper/main.ts'],
 		['native-csharp-source', 'native/MumbleHelper.cs'],
-		['extensionless-native-helper', 'native/mumble-helper'],
 		['alternative-helper-path', 'tools/mumble_helper/main.ts'],
 		['alternative-helper-name', 'src/platform/MumbleHelper.ts'],
 		['root-extensionless-helper', 'mumble-helper'],
@@ -174,9 +202,76 @@ function testImplementationSabotages() {
 	}
 }
 
+function testImplementedHelperSabotages() {
+	for (const [name, path, before, after, finding] of [
+		['dependency-pin', 'native/mumble-helper/Cargo.toml', 'getrandom = "=0.3.4"', 'getrandom = "=0.4.3"', 'native-manifest-term:getrandom = "=0.3.4"'],
+		['toolchain-target', 'native/mumble-helper/rust-toolchain.toml', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc', 'native-toolchain-value'],
+		['crt-static', 'native/mumble-helper/.cargo/config.toml', '+crt-static', '-crt-static', 'native-cargo-config-value'],
+		['constant-time', 'native/mumble-helper/src/protocol.rs', 'ConstantTimeEq', 'ordinaryEquality', 'native-protocol-term:ConstantTimeEq'],
+		['parsed-string-zeroize', 'native/mumble-helper/src/protocol.rs', 'impl Drop for SecretString', 'impl SecretString', 'native-protocol-term:impl Drop for SecretString'],
+		['decoded-zeroize', 'native/mumble-helper/src/protocol.rs', 'accumulator.zeroize()', 'let _ = accumulator', 'native-protocol-term:accumulator.zeroize()'],
+		['invalid-frame-zeroize', 'native/mumble-helper/src/framing.rs', 'payload.zeroize()', 'payload.clear()', 'native-framing-term:payload.zeroize()'],
+		['partial-frame-zeroize', 'native/mumble-helper/src/framing.rs', 'if let Err(error) = read_exact_classified(reader, &mut payload)', 'read_exact_classified(reader, &mut payload)?;', 'native-framing-term:if let Err(error) = read_exact_classified(reader, &mut payload)'],
+		['raw-bootstrap-zeroize', 'native/mumble-helper/src/main.rs', 'bootstrap_frame.zeroize()', 'bootstrap_frame.clear()', 'native-server-term:bootstrap_frame.zeroize()'],
+		['partial-tcp-zeroize', 'native/mumble-helper/src/main.rs', 'read_until(listener, stream, &mut payload, deadline, shutdown).is_err()', 'read_until(listener, stream, &mut payload, deadline, shutdown).is_ok()', 'native-server-term:read_until(listener, stream, &mut payload, deadline, shutdown).is_err()'],
+		['heartbeat-timeout', 'native/mumble-helper/src/protocol.rs', 'HEARTBEAT_TIMEOUT_MS', 'HEARTBEAT_DISABLED_MS', 'native-protocol-term:HEARTBEAT_TIMEOUT_MS'],
+		['cadence-scheduler', 'native/mumble-helper/src/source.rs', 'CadenceSchedule', 'CatchUpSchedule', 'native-cadence-term:CadenceSchedule'],
+		['cadence-timeout-route', 'native/mumble-helper/src/source.rs', 'CadenceDecision::HeartbeatTimeout', 'CadenceDecision::Due', 'native-cadence-term:CadenceDecision::HeartbeatTimeout'],
+		['cadence-record-refresh', 'native/mumble-helper/src/main.rs', 'cadence.record_emitted', 'cadence.next_slot_at', 'native-server-term:cadence.record_emitted'],
+		['active-pending', 'native/mumble-helper/src/main.rs', 'maintain_pending_connection', 'reject_additional_connections', 'native-server-term:maintain_pending_connection'],
+		['read-only', 'native/mumble-helper/src/win32.rs', 'FILE_MAP_READ', 'FILE_MAP_WRITE', 'native-win32-term:FILE_MAP_READ'],
+		['loopback', 'native/mumble-helper/src/main.rs', 'Ipv4Addr::LOCALHOST', '"8.8.8.8"', 'native-server-term:Ipv4Addr::LOCALHOST'],
+		['unsafe-scope', 'native/mumble-helper/src/main.rs', 'fn main() {', 'fn main() { unsafe {}', 'native-unsafe-scope:native/mumble-helper/src/main.rs'],
+		['pid-surface', 'native/mumble-helper/src/main.rs', 'fn main() {', 'fn main() { let pid = 7;', 'native-prohibited-surface:native/mumble-helper/src/main.rs'],
+	]) {
+		const source = files.get(path);
+		assert(source.includes(before), `${name} fixture marker is missing`);
+		expectFinding(name, new Map([[path, source.replaceAll(before, after)]]), finding);
+	}
+	const manifest = files.get('native/mumble-helper/Cargo.toml');
+	expectFinding(
+		'extra-dependency',
+		new Map([['native/mumble-helper/Cargo.toml', manifest.replace('[dependencies]', '[dependencies]\nserde = "1"')]]),
+		'native-manifest-hash',
+	);
+	expectFinding(
+		'unreviewed-native-module',
+		new Map([['native/mumble-helper/src/identity.rs', 'pub const IDENTITY: bool = true;\n']]),
+		'forbidden-product-artifact:native/mumble-helper/src/identity.rs',
+	);
+	expectFinding(
+		'tracked-target-artifact',
+		new Map([['native/mumble-helper/target/release/rogue.exe', 'MZ']]),
+		'forbidden-product-artifact:native/mumble-helper/target/release/rogue.exe',
+	);
+	const main = files.get('native/mumble-helper/src/main.rs');
+	expectFinding(
+		'production-after-cfg-test',
+		new Map([['native/mumble-helper/src/main.rs', `${main}\nfn rogue() { TcpStream::connect("8.8.8.8:80"); }\n`]]),
+		'native-external-address:native/mumble-helper/src/main.rs',
+	);
+	const lifecycle = files.get('native/mumble-helper/tests/server_lifecycle.rs');
+	expectFinding(
+		'active-pending-third-test',
+		new Map([['native/mumble-helper/tests/server_lifecycle.rs', lifecycle.replace(
+			'one_authenticated_and_one_pending_are_kept_while_a_third_is_rejected',
+			'active_only',
+		)]]),
+		'native-lifecycle-term:active-pending-third',
+	);
+	expectFinding(
+		'rejected-payloads-test',
+		new Map([['native/mumble-helper/tests/server_lifecycle.rs', lifecycle.replace(
+			'truncated_bom_and_invalid_utf8_hello_payloads_fail_closed',
+			'rejected_payloads_removed',
+		)]]),
+		'native-lifecycle-term:rejected-payloads',
+	);
+}
+
 function testSymlinkSabotages() {
 	for (const [name, path, target] of [
-		['native-helper-symlink', 'native/mumble-helper', '../controlled-target.txt'],
+		['native-helper-symlink', 'native/other-mumble-helper', '../controlled-target.txt'],
 		['native-output-symlink', 'artifacts/tyrian-mumble-helper.exe', '../controlled-target.txt'],
 		['hidden-rust-target', 'links/helper-source', '../controlled-target.rs'],
 		['example-source-symlink', 'docs/examples/helper.rs', '../../controlled-target.txt'],

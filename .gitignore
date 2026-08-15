@@ -6,3 +6,5 @@ main.js
 .vscode/
 coverage/
 .release/
+/native/mumble-helper/target/
+/native/mumble-helper/UNSIGNED-NOT-FOR-RELEASE.txt

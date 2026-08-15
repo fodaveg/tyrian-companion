@@ -4,7 +4,7 @@ import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** Textual, dependency-free baseline for credential and telemetry boundary regressions. */
-export const SECURITY_SCANNER_VERSION = 4;
+export const SECURITY_SCANNER_VERSION = 5;
 
 const RELEASE_ARTIFACT_FILES = new Set([
 	'main.js',
@@ -39,6 +39,12 @@ const LOGGER_CALL_PATTERN = /\b(?:logger|telemetry)\s*(?:\?\.)?\s*(?:\.|\[)/iu;
 const MUMBLE_HELPER_PATTERN = /mumble/iu;
 const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
 	'src/platform/mumble-v2-contract.ts',
+	'native/mumble-helper/src/framing.rs',
+	'native/mumble-helper/src/lib.rs',
+	'native/mumble-helper/src/main.rs',
+	'native/mumble-helper/src/protocol.rs',
+	'native/mumble-helper/src/source.rs',
+	'native/mumble-helper/src/win32.rs',
 ]);
 const MUMBLE_CONTRACT_PROHIBITED_PATTERNS = [
 	/\b(?:inject|injection|dllInject|hookProcess)\b/iu,
@@ -52,6 +58,14 @@ const MUMBLE_CONTRACT_PROHIBITED_PATTERNS = [
 	/\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|node:net|node:http)\b/u,
 	/\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
 	/\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u,
+];
+const NATIVE_MUMBLE_PROHIBITED_PATTERNS = [
+	/\b(?:inject|injection|dllInject|hookProcess)\b/iu,
+	/\b(?:processId|enumerateProcesses|openProcess|OpenProcess|ReadProcessMemory|ptrace)\b/u,
+	/\b(?:console|logger|telemetry|readGameLog|logReader|eprintln|println)\b/u,
+	/\b(?:SendInput|simulateInput|keybd_event|mouse_event)\b/u,
+	/\b(?:identity|characterName|fAvatarPosition|fCameraPosition|playerX|playerY|processId|pid)\b/iu,
+	/\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
 ];
 
 /** Scans tracked and untracked non-ignored repository text without returning matched values. */
@@ -120,8 +134,77 @@ export function scanReleaseArtifacts(root, relativePaths) {
 }
 
 function isReviewedMumbleContract(path, source) {
-	return REVIEWED_MUMBLE_CONTRACT_FILES.has(normalizeRepositoryPath(path))
-		&& !MUMBLE_CONTRACT_PROHIBITED_PATTERNS.some((pattern) => pattern.test(source));
+	const normalized = normalizeRepositoryPath(path);
+	if (!REVIEWED_MUMBLE_CONTRACT_FILES.has(normalized)) return false;
+	const inspected = normalized.startsWith('native/mumble-helper/src/')
+		? stripRustCfgTestModules(source)
+		: source;
+	const patterns = normalized.startsWith('native/mumble-helper/src/')
+		? NATIVE_MUMBLE_PROHIBITED_PATTERNS
+		: MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
+	if (patterns.some((pattern) => pattern.test(inspected))) return false;
+	return ![...inspected.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/gu)]
+		.some((match) => match[0] !== '127.0.0.1');
+}
+
+function stripRustCfgTestModules(source) {
+	const marker = '#[cfg(test)]';
+	let cursor = 0;
+	let output = '';
+	while (true) {
+		const start = source.indexOf(marker, cursor);
+		if (start < 0) return output + source.slice(cursor);
+		const opening = source.indexOf('{', start + marker.length);
+		if (opening < 0 || !/^\s*mod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/u.test(source.slice(start + marker.length, opening + 1))) {
+			output += source.slice(cursor, start + marker.length);
+			cursor = start + marker.length;
+			continue;
+		}
+		const closing = matchingRustBrace(source, opening);
+		if (closing < 0) return output + source.slice(cursor);
+		output += source.slice(cursor, start);
+		cursor = closing + 1;
+	}
+}
+
+function matchingRustBrace(source, opening) {
+	let depth = 0;
+	let index = opening;
+	while (index < source.length) {
+		if (source.startsWith('//', index)) {
+			index = source.indexOf('\n', index + 2);
+			if (index < 0) return -1;
+			continue;
+		}
+		if (source.startsWith('/*', index)) {
+			let comments = 1;
+			index += 2;
+			while (comments > 0 && index < source.length) {
+				if (source.startsWith('/*', index)) { comments += 1; index += 2; }
+				else if (source.startsWith('*/', index)) { comments -= 1; index += 2; }
+				else index += 1;
+			}
+			continue;
+		}
+		const raw = source.slice(index).match(/^r(#+)?"/u);
+		if (raw !== null) {
+			const hashes = raw[1] ?? '';
+			const end = source.indexOf(`"${hashes}`, index + raw[0].length);
+			if (end < 0) return -1;
+			index = end + hashes.length + 1;
+			continue;
+		}
+		if (source[index] === '"') {
+			index += 1;
+			while (index < source.length && source[index] !== '"') index += source[index] === '\\' ? 2 : 1;
+			index += 1;
+			continue;
+		}
+		if (source[index] === '{') depth += 1;
+		if (source[index] === '}' && --depth === 0) return index;
+		index += 1;
+	}
+	return -1;
 }
 
 function detectSecretRules(source) {
@@ -262,6 +345,7 @@ function isTestSource(path) {
 function isProductionSource(path) {
 	const normalized = normalizeRepositoryPath(path);
 	return (normalized.startsWith('src/') && !isTestSource(normalized) && !isFixture(normalized)) ||
+		(normalized.startsWith('native/mumble-helper/src/') && normalized.endsWith('.rs')) ||
 		normalized === 'package.json' || normalized === 'manifest.json';
 }
 
