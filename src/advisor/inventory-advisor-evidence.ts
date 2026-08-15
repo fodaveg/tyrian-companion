@@ -1,7 +1,11 @@
-import { isComparableStorageSnapshot } from '../account/storage-delta';
+import { inventoryAdvisorStorageSnapshotFailure } from '../account/storage-delta';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { allowsEndpoint } from '../account/storage-snapshot-service';
-import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	PINNED_SCHEMA,
+	type SourceCoverage,
+	type StorageSnapshot,
+} from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
@@ -17,12 +21,14 @@ import {
 } from './inventory-advisor-model';
 import {
 	INVENTORY_ADVISOR_EVIDENCE_VERSION,
+	type InventoryAdvisorCaptureReceiptSink,
+	type InventoryAdvisorCaptureReceiptV1,
 	type InventoryAdvisorEvidenceCapture,
 	type InventoryAdvisorEvidenceCaptureResultV1,
 	type InventoryAdvisorEvidenceCoverageV1,
 	type InventoryAdvisorEvidenceV1,
 } from './inventory-advisor-evidence-model';
-import { isInventoryAdvisorEvidence } from './inventory-advisor-evidence-contract';
+import { inventoryAdvisorEvidenceValidationFailure } from './inventory-advisor-evidence-contract';
 import { sha256CanonicalValue } from './inventory-advisor-contract';
 import {
 	isInventoryContainerPriceEvidence,
@@ -44,15 +50,21 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 	private readonly inFlight = new Map<string, Promise<InventoryAdvisorEvidenceCaptureResultV1>>();
 	constructor(
 		private readonly client: InventoryAdvisorEvidenceClient,
-		private readonly snapshots: Pick<StorageSnapshotService, 'captureWithOperation'>,
+		private readonly snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
 		private readonly catalog: Pick<PublicCatalogService, 'resolve'>,
 		private readonly publicGateway: PublicCatalogGateway,
 		private readonly now: () => number = Date.now,
+		private readonly captureReceipt: InventoryAdvisorCaptureReceiptSink = () => undefined,
 	) {}
 
 	capture(locale: CatalogLocale, containerPriceItemIds: readonly number[] = []): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		const ids = normalizeSupplementalIds(containerPriceItemIds);
-		if (ids === null) return Promise.resolve({ status: 'invalid', evidence: null, containerPrices: null });
+		if (ids === null) {
+			return this.finishCapture(
+				{ status: 'invalid', evidence: null, containerPrices: null },
+				null,
+			);
+		}
 		const key = `${locale}:${ids.join(',')}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
@@ -62,23 +74,37 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 	}
 
 	private async captureInternal(locale: CatalogLocale, containerPriceItemIds: number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+		let snapshot: StorageSnapshot | null = null;
 		let operation: GuildWars2Operation;
 		try {
 			operation = this.client.beginOperation();
 		} catch (error) {
-			return error instanceof MissingApiKeyError
+			return await this.finishCapture(error instanceof MissingApiKeyError
 				? { status: 'unavailable', evidence: null, failure: 'missing_key' }
-				: { status: 'unavailable', evidence: null };
+				: { status: 'unavailable', evidence: null }, snapshot);
 		}
 		try {
-			let snapshot = await this.snapshots.captureWithOperation(operation);
+			snapshot = await this.snapshots.captureInventoryWithOperation(operation);
 			if (shouldRetryTransientSnapshot(snapshot)) {
-				snapshot = await this.snapshots.captureWithOperation(operation);
+				snapshot = await this.snapshots.captureInventoryWithOperation(operation);
 			}
-			if (!isComparableStorageSnapshot(snapshot)) return { status: 'invalid', evidence: null };
+			const snapshotFailure = inventoryAdvisorStorageSnapshotFailure(snapshot);
+			if (snapshotFailure !== null) {
+				return await this.finishCapture(
+					{ status: 'invalid', evidence: null, failure: snapshotFailure },
+					snapshot,
+				);
+			}
 			const context = await verifiedContext(operation, snapshot.accountId);
-			if (context.status === 'unavailable') return { status: 'unavailable', evidence: null };
-			if (context.status === 'identity_mismatch') return { status: 'invalid', evidence: null };
+			if (context.status === 'unavailable') {
+				return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot);
+			}
+			if (context.status === 'identity_mismatch') {
+				return await this.finishCapture(
+					{ status: 'invalid', evidence: null, failure: 'identity_mismatch' },
+					snapshot,
+				);
+			}
 			const [catalog, prices, accountSignals, containerPrices] = await Promise.all([
 				this.captureCatalog(snapshot, locale, this.now()),
 				captureInventoryPrices(snapshot, this.publicGateway, this.now()),
@@ -100,22 +126,114 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				ttl: { snapshotMs: SNAPSHOT_TTL_MS, catalogMs: CATALOG_TTL_MS, pricesMs: PRICE_TTL_MS, accountSignalsMs: ACCOUNT_SIGNALS_TTL_MS },
 				coverage, catalog, prices, accountSignals,
 			};
-			if (!isInventoryAdvisorEvidence(evidence)) return { status: 'invalid', evidence: null };
-			return coverage.catalog === 'unavailable' && coverage.prices === 'unavailable'
+			const validationFailure = inventoryAdvisorEvidenceValidationFailure(evidence);
+			if (validationFailure !== null) {
+				return await this.finishCapture(
+					{ status: 'invalid', evidence: null, failure: validationFailure },
+					snapshot,
+				);
+			}
+			const result: InventoryAdvisorEvidenceCaptureResultV1 =
+				coverage.catalog === 'unavailable' && coverage.prices === 'unavailable'
 				&& coverage.accountSignals === 'unavailable'
 				? { status: 'unavailable', evidence: null }
 			: { status: coverage.snapshot === 'complete' && coverage.catalog === 'complete' && coverage.prices === 'complete'
 					&& coverage.accountSignals === 'complete' && (containerPrices === null || containerPrices.status === 'complete')
 					? 'complete' : 'partial', evidence, containerPrices };
+			return await this.finishCapture(result, snapshot);
 		} catch {
-			return { status: 'unavailable', evidence: null };
+			return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot);
 		}
+	}
+
+	private async finishCapture(
+		result: InventoryAdvisorEvidenceCaptureResultV1,
+		snapshot: StorageSnapshot | null,
+	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+		try {
+			await this.captureReceipt(captureReceiptFor(result, snapshot, this.now()));
+		} catch {
+			// A local diagnostic receipt must never become an advisor dependency.
+		}
+		return result;
 	}
 
 	private async captureCatalog(snapshot: StorageSnapshot, locale: CatalogLocale, capturedAt: number): Promise<CatalogResolution> {
 		try { return await this.catalog.resolve(snapshot, locale); }
 		catch { return unavailableCatalog(snapshot, locale, capturedAt); }
 	}
+}
+
+function captureReceiptFor(
+	result: InventoryAdvisorEvidenceCaptureResultV1,
+	snapshot: StorageSnapshot | null,
+	recordedAt: number,
+): InventoryAdvisorCaptureReceiptV1 {
+	return {
+		version: 1,
+		recordedAt: new Date(recordedAt).toISOString(),
+		status: result.status,
+		failure: 'failure' in result ? result.failure ?? null : null,
+		evidenceCoverage: result.evidence === null
+			? null
+			: structuredClone(result.evidence.coverage),
+		evidenceDetails: result.evidence === null ? null : evidenceDetails(result.evidence),
+		containerPrices: result.containerPrices?.status ?? 'not_requested',
+		workflow: null,
+		snapshot: snapshot === null ? null : {
+			quality: snapshot.quality,
+			passes: snapshot.passes,
+			durationMs: Math.max(0, Date.parse(snapshot.completedAt) - Date.parse(snapshot.startedAt)),
+			roster: structuredClone(snapshot.coverage.sources.characters),
+			sharedInventory: structuredClone(snapshot.coverage.sources.shared_inventory),
+			characterInventories: uniqueCoverage(Object.values(snapshot.coverage.characters)),
+			attempts: snapshot.passCoverages.map((coverage) => ({
+				roster: structuredClone(coverage.sources.characters),
+				sharedInventory: structuredClone(coverage.sources.shared_inventory),
+				characterInventories: uniqueCoverage(Object.values(coverage.characters)),
+			})),
+		},
+	};
+}
+
+function evidenceDetails(
+	evidence: InventoryAdvisorEvidenceV1,
+): NonNullable<InventoryAdvisorCaptureReceiptV1['evidenceDetails']> {
+	const catalogCoverage = Object.values(evidence.catalog.coverage.items);
+	return {
+		catalog: {
+			requested: Object.keys(evidence.snapshot.ownedByItem).length,
+			resolved: catalogCoverage.filter((entry) => entry.status === 'resolved'
+				&& entry.source !== 'cache_stale').length,
+			stale: catalogCoverage.filter((entry) => entry.status === 'resolved'
+				&& entry.source === 'cache_stale').length,
+			unavailable: catalogCoverage.filter((entry) => entry.status === 'unavailable').length,
+		},
+		prices: {
+			requested: evidence.prices.requestedItemIds.length,
+			captured: evidence.prices.items.length,
+			missing: evidence.prices.missingItemIds.length,
+		},
+	};
+}
+
+function uniqueCoverage(entries: readonly SourceCoverage[]): SourceCoverage[] {
+	const unique = new Map<string, SourceCoverage>();
+	for (const entry of entries) {
+		const copy: SourceCoverage = structuredClone(entry);
+		const diagnostic = copy.diagnostic;
+		unique.set([
+			copy.status,
+			copy.reason ?? '',
+			diagnostic?.kind ?? '',
+			diagnostic?.status ?? '',
+			diagnostic?.retryAfterMs ?? '',
+		].join(':'), copy);
+	}
+	return [...unique.values()].sort((left, right) =>
+		left.status.localeCompare(right.status)
+		|| (left.reason ?? '').localeCompare(right.reason ?? ''),
+	);
 }
 
 async function verifiedContext(operation: GuildWars2Operation, expectedAccountId: string): Promise<
@@ -281,7 +399,7 @@ function snapshotCoverage(snapshot: StorageSnapshot): InventoryAdvisorEvidenceCo
 	return snapshot.quality === 'stable' && Object.values(snapshot.coverage.sources).every((entry) => entry.status === 'complete') ? 'complete' : 'partial';
 }
 function hasTransientSnapshotFailure(snapshot: StorageSnapshot): boolean {
-	if (snapshot.quality === 'unstable') return true;
+	if (snapshot.quality === 'unstable') return false;
 	return [...Object.values(snapshot.coverage.sources), ...Object.values(snapshot.coverage.characters)]
 		.some((entry) => entry.status === 'partial' && (entry.reason === 'partial_response' || entry.reason === 'unavailable'));
 }

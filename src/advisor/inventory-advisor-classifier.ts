@@ -1,4 +1,4 @@
-import { buildReservationBalance, createReservationPlan } from '../economy/reservation';
+import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorInput, sha256CanonicalValue } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
@@ -28,7 +28,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const engine = classifyInventoryAdvisorEngine(value);
 		if (engine.status === 'invalid' || engine.report === null) return publicInvalid();
 		const { input } = value;
-		const balance = buildReservationBalance(input.snapshot);
+		const balance = buildInventoryAdvisorReservationBalance(input.snapshot);
 		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
 		if (plan.status !== 'ok') return publicInvalid();
 		const publicLines = engine.report.lines.map((line) => publicLine(line, input, plan.plan));
@@ -53,14 +53,22 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 	try {
 		if (!isEngineInput(value)) return invalid();
 		const { input, knowledgePack } = value;
-		const balance = buildReservationBalance(input.snapshot);
+		const balance = buildInventoryAdvisorReservationBalance(input.snapshot);
 		const plan = balance.status === 'ok' ? createReservationPlan({ goals: input.goals, balance: balance.balance }) : { status: 'invalid' as const };
 		if (plan.status !== 'ok') return invalid();
+		const itemIds = ids(input);
 		const inputRulesFresh = rulePackFresh(input);
-		const complete = evidenceComplete(input, plan.plan) && knowledgeFresh(knowledgePack, input);
-		const lines = ids(input).map((itemId) => classifyLine(input, knowledgePack, itemId,
-			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0, complete,
-			inputRulesFresh ? 'evidence_incomplete' : 'rule_stale', value.containerEconomy));
+		const knowledgeReady = knowledgeFresh(knowledgePack, input);
+		const itemEvidence = new Map(itemIds.map((itemId) => [
+			itemId,
+			recommendationEvidenceReady(input, plan.plan, itemId),
+		]));
+		const complete = input.prices.status === 'complete'
+			&& itemIds.every((itemId) => itemEvidence.get(itemId) === true)
+			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
+		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
+			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
+			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
 			knowledgePack: { id: knowledgePack.id, version: knowledgePack.version, sha256: knowledgePack.sha256 }, lines };
@@ -105,7 +113,7 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 }
 
 function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number,
-	evidenceReady: boolean, incompleteReason: string, economy: EngineInput['containerEconomy']): InventoryAdvisorEngineLineV1 {
+	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
@@ -137,9 +145,16 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	if (freeQuantity === 0) return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 		ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	const route = chooseRoute(input, knowledge, itemId, freeQuantity);
-	if (route.action === 'review' || !evidenceReady) {
+	const routeEvidenceReady = evidenceReady && (route.action === 'market' || curatedKnowledgeReady);
+	if (route.action === 'review' || !routeEvidenceReady) {
 		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0,
-			route.action === 'review' ? route.reason : incompleteReason);
+			route.action === 'review' ? route.reason : 'evidence_incomplete');
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
+	if (input.snapshot.quality !== 'stable'
+		&& (route.action === 'economy' || route.action === 'use' || route.action === 'open' || route.action === 'salvage')) {
+		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0, 'evidence_incomplete');
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
@@ -222,11 +237,14 @@ function publicCoverage(input: InventoryAdvisorInputV1, itemId: number, reservat
 	const catalogCoverage = input.catalog.coverage.items[String(itemId)];
 	const catalog = catalogCoverage?.status === 'resolved' && ['network', 'cache_fresh'].includes(catalogCoverage.source)
 		&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs);
-	const prices = input.prices.status === 'complete' && fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs);
+	const prices = input.prices.requestedItemIds.includes(itemId)
+		&& (input.prices.items.some((entry) => entry.itemId === itemId)
+			|| input.prices.missingItemIds.includes(itemId))
+		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs);
 	const signalsFresh = fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs);
 	const signals = signalsFresh && input.accountSignals.unlockCoverage === 'complete' && input.accountSignals.achievementCoverage === 'complete' && input.accountSignals.tradingPostAccess !== 'unknown';
 	const rules = rulePackFresh(input);
-	const snapshot = input.snapshot.quality === 'stable' && Object.values(input.snapshot.coverage.sources).every((entry) => entry.status === 'complete');
+	const snapshot = input.snapshot.quality === 'stable' && inventorySnapshotCoverageComplete(input);
 	return {
 		snapshot: snapshot ? 'complete' : 'limited', inventory: reservation === 'complete' ? 'complete' : reservation === 'limited' ? 'limited' : 'unknown',
 		catalog: catalog ? 'complete' : catalogCoverage ? 'limited' : 'unknown', prices: prices ? 'complete' : input.prices.status === 'partial' ? 'limited' : 'unknown',
@@ -254,7 +272,6 @@ function uniqueReasons<T extends { itemId: number | null; code: string; goalId: 
 function publicInvalid(): InventoryAdvisorResultV1 { return { status: 'invalid', reasons: [{ code: 'snapshot_invalid', itemId: null, goalId: null, ruleId: null }], report: null, envelope: null }; }
 
 function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
-	if (!rulePackUsableForCapability(input)) return { action: 'review', reason: 'rule_stale', ruleId: null };
 	/* An absent curated entry withholds irreversible/use/open/salvage advice. It
 	 * may fall through to the independently reproduced liquid route only when
 	 * the rule pack has no applicable curated capability for this item. */
@@ -273,6 +290,9 @@ function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowled
 			return { action: 'review', reason: 'rule_conflict', ruleId: null };
 		}
 		if (claim.status === 'not_applicable') continue;
+		if (!rulePackUsableForCapability(input)) {
+			return { action: 'review', reason: 'rule_stale', ruleId: null };
+		}
 		if (action === 'salvage' && input.catalog.items[String(itemId)]?.flags.includes('NoSalvage')) {
 			return { action: 'review', reason: 'no_salvage', ruleId: null };
 		}
@@ -377,18 +397,29 @@ function unlocked(input: InventoryAdvisorInputV1, claim: Extract<InventoryRouteC
 	if (claim.target.kind === 'achievement') { const target = claim.target; const progress = input.accountSignals.achievementProgress?.find((entry) => entry.achievementId === target.achievementId); return progress?.done === true || (target.bit !== null && progress?.bits?.includes(target.bit) === true); }
 	return false;
 }
-function evidenceComplete(input: InventoryAdvisorInputV1, plan: { coverage: string }): boolean {
-	const catalog = Object.values(input.catalog.coverage.items).every((entry) => entry.status === 'resolved'
-		&& (entry.source === 'network' || entry.source === 'cache_fresh'));
-	return input.prices.status === 'complete' && catalog && input.snapshot.quality === 'stable'
-		&& Object.values(input.snapshot.coverage.sources).every((entry) => entry.status === 'complete')
+function recommendationEvidenceReady(
+	input: InventoryAdvisorInputV1,
+	plan: { coverage: string },
+	itemId: number,
+): boolean {
+	const catalogEntry = input.catalog.coverage.items[String(itemId)];
+	const catalog = catalogEntry?.status === 'resolved'
+		&& (catalogEntry.source === 'network' || catalogEntry.source === 'cache_fresh');
+	const priceAccounted = input.prices.requestedItemIds.includes(itemId)
+		&& (input.prices.items.some((entry) => entry.itemId === itemId)
+			|| input.prices.missingItemIds.includes(itemId));
+	return priceAccounted && catalog && inventorySnapshotCoverageComplete(input)
+		&& ['stable', 'stable_owned_placement_changed', 'unstable'].includes(input.snapshot.quality)
 		&& plan.coverage === 'complete' && input.accountSignals.unlockCoverage === 'complete'
 		&& input.accountSignals.achievementCoverage === 'complete'
 		&& Object.values(input.accountSignals.endpointCoverage).every((entry) => entry.status === 'complete')
 		&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)
 		&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
-		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs)
-		&& rulePackFresh(input);
+		&& fresh(input.accountSignals.capturedAt, input.asOf, input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs);
+}
+function inventorySnapshotCoverageComplete(input: InventoryAdvisorInputV1): boolean {
+	return input.snapshot.coverage.sources.characters.status === 'complete'
+		&& input.snapshot.coverage.sources.shared_inventory.status === 'complete';
 }
 function rulePackFresh(input: InventoryAdvisorInputV1): boolean {
 	const pack = input.rulePack;

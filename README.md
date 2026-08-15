@@ -71,7 +71,10 @@ Run **Open inventory advisor**, then use **Refresh inventory** to make the one e
 capture. Opening the view never reads the GW2 account; visible catalog icons may load from ArenaNet's
 official `https://render.guildwars2.com` CDN. Filters and explanations help
 review owned positions, reservations, keep exceptions, evidence coverage, and any supported manual
-route.
+route. The default surface leads with **What to do now**, shows only direct actions ordered by the
+prepared value ranking, and formats their value as gold, silver, and copper. **Items to keep** and
+**Pending without recommendation** remain available as explicit context toggles instead of diluting
+the actionable queue.
 
 Coverage is deliberately conservative. A row can remain **Review** because prices, unlock evidence,
 binding, a curated rule, or an economic comparison is incomplete. `discard_review` is never an
@@ -170,8 +173,10 @@ The current `0.1.0` vertical provides:
   available item receives one fresh public price result, while TP/unlock/recipe/skin/mini/achievement
   signals retain identity, coverage and TTL facts without adding UI, persistence or recommendations.
 - H4.15 pure Inventory Advisor classification: every owned physical position is partitioned once,
-	with reservations and keep exceptions first, non-loose positions reviewed, and only fresh complete
-	evidence permitting curated use/open/salvage or conservative vendor/TP routes.
+	with reservations and keep exceptions first and non-loose positions reviewed. Fresh complete
+	character/shared-inventory, catalog, price, reservation and account evidence can still show manual
+	vendor/TP routes when the latest fully covered pass is changing; curated use/open/salvage remains
+	review-only until the snapshot is stable and its exact rule authority is available.
 - H4.16 pure discard allowlist: it canonically reproduces the H4.15 producer result before changing
 	only a demonstrated `keep/no_supported_route` into review-only `discard_candidate`, with cited rule
 	and knowledge sources; it has no executor, I/O, persistence, or UI.
@@ -183,8 +188,11 @@ The current `0.1.0` vertical provides:
   outcomes and a 10% manual open-versus-sell/vendor comparison. Items without curated use/open/salvage
   knowledge can still show their independently reproduced manual liquid route (instant sell, listing or
   vendor); the built-in 36038 activation remains pending human review and cannot activate opening or discard.
-  The view defaults to character bags plus shared inventory, makes bank/materials/delivery and plain review
-  rows opt-in, and renders trusted official catalog icons. At the bundle's exclusive expiry,
+	The view captures character bags plus shared inventory independently in one bounded pass per attempt;
+	a transient partial pass can trigger one retry, and each explicit Refresh request has a 30-second timeout.
+	Bank/materials/delivery remain visible
+	as disabled future scopes, while plain review rows are opt-in; item rows render trusted official catalog icons.
+	At the bundle's exclusive expiry,
   Refresh fails closed with
   `missing_rules` before any API request.
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
@@ -309,7 +317,13 @@ session**, **Stop session**, **Arm assisted detection**, or an enabled **Refresh
 is explicitly selected. Loading the plugin or opening a non-inventory view reads only local recovery
 state and does not make network requests. The Inventory Advisor may load visible public item icons
 from the exact official `https://render.guildwars2.com` origin; no API key, account identifier or
-inventory quantity is sent. Assisted
+inventory quantity is sent. Each explicit Refresh also replaces one local
+`<config-dir>/plugins/tyrian-companion/inventory-advisor-capture-receipt.json` diagnostic receipt.
+For unavailable snapshot sources it records only the transport class, HTTP status and bounded retry
+delay; it never records the credential, account, character, item, URL or response body.
+It contains only closed outcome/coverage codes, duration, quality and per-pass source summaries;
+it never contains the API key, account/snapshot identifiers, character names, item data, URLs or
+response bodies, and it is never uploaded. Assisted
 detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
 without confirmation.
 At **Stop session**, the plugin sends only gained numeric item IDs to the official public

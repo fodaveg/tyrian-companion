@@ -46,6 +46,7 @@ export interface InventoryAdvisorViewFilters {
 	readonly includeBank?: boolean;
 	readonly includeMaterials?: boolean;
 	readonly includeDelivery?: boolean;
+	readonly showKeep?: boolean;
 	readonly showReview?: boolean;
 }
 
@@ -95,7 +96,8 @@ export function filterInventoryAdvisorRows(
 		ownedQuantity: ownedByItem.get(row.itemId) ?? row.quantity,
 		availableQuantity: availableByItem.get(row.itemId) ?? 0,
 	})).filter((row) => (filters.action === 'all' || row.action === filters.action)
-		&& (filters.showReview === true || row.action !== 'review')
+		&& (filters.showKeep === true || row.action !== 'keep')
+		&& (filters.showReview === true || (row.action !== 'review' && row.action !== 'discard_review'))
 		&& (query.length === 0 || row.name.toLocaleLowerCase().includes(query) || String(row.itemId).includes(query)));
 }
 
@@ -145,7 +147,7 @@ function mountInventoryAdvisorView(
 ): MountedInventoryAdvisorView {
 	let model = initialModel;
 	let translator = initialTranslator;
-	let filters = { includeBank: false, includeMaterials: false, includeDelivery: false, showReview: false, ...initialFilters };
+	let filters = { includeBank: false, includeMaterials: false, includeDelivery: false, showKeep: false, showReview: false, ...initialFilters };
 	let interactions = initialInteractions;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
@@ -193,14 +195,16 @@ function mountInventoryAdvisorView(
 	sourceFieldset.className = 'tyrian-inventory-advisor__scope';
 	const sourceLegend = createEl('legend');
 	sourceFieldset.append(sourceLegend);
-	const sourceControls = new Map<'bank' | 'materials' | 'delivery' | 'review', { input: HTMLInputElement; text: HTMLSpanElement }>();
-	for (const candidate of ['bank', 'materials', 'delivery', 'review'] as const) {
+	const sourceControls = new Map<'bank' | 'materials' | 'delivery' | 'keep' | 'review', { input: HTMLInputElement; text: HTMLSpanElement }>();
+	for (const candidate of ['bank', 'materials', 'delivery', 'keep', 'review'] as const) {
 		const label = createEl('label');
 		const input = createEl('input');
 		input.type = 'checkbox';
+		input.disabled = candidate === 'bank' || candidate === 'materials' || candidate === 'delivery';
 		input.checked = candidate === 'bank' ? filters.includeBank === true
 			: candidate === 'materials' ? filters.includeMaterials === true
-				: candidate === 'delivery' ? filters.includeDelivery === true : filters.showReview === true;
+				: candidate === 'delivery' ? filters.includeDelivery === true
+					: candidate === 'keep' ? filters.showKeep === true : filters.showReview === true;
 		const text = createSpan();
 		label.append(input, text);
 		sourceFieldset.append(label);
@@ -214,10 +218,21 @@ function mountInventoryAdvisorView(
 	let refreshButton: HTMLButtonElement | null = null;
 	const refreshResults = (): void => {
 		const visible = model.status === 'ready' || model.status === 'limited';
-		const rows = visible ? filterInventoryAdvisorRows(flattenInventoryAdvisorRows(model.groups), filters) : [];
+		const allRows = visible ? flattenInventoryAdvisorRows(model.groups) : [];
+		const rows = visible ? filterInventoryAdvisorRows(allRows, filters) : [];
+		const directRows = visible ? filterInventoryAdvisorRows(allRows, {
+			...filters, action: 'all', showKeep: false, showReview: false,
+		}) : [];
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
-		if (visible) results.append(renderResults(rows, filters.groupBy, translator, !filteredEmpty));
+		if (visible) results.append(renderResults(
+			rows, directRows, filters.groupBy, filters.action, translator, !filteredEmpty,
+			(nextAction) => {
+				action.value = filters.action === nextAction ? 'all' : nextAction;
+				updateFilters();
+				action.focus();
+			},
+		));
 		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty')
 			: interactions.refreshing === true ? translator.t('advisor.view.refreshProgress') : stateLabel(model, translator);
 	};
@@ -229,6 +244,7 @@ function mountInventoryAdvisorView(
 			includeBank: sourceControls.get('bank')!.input.checked,
 			includeMaterials: sourceControls.get('materials')!.input.checked,
 			includeDelivery: sourceControls.get('delivery')!.input.checked,
+			showKeep: sourceControls.get('keep')!.input.checked,
 			showReview: sourceControls.get('review')!.input.checked,
 		};
 		refreshResults();
@@ -300,16 +316,21 @@ export function renderInventoryAdvisorViewFromPort(
 
 function renderResults(
 	rows: readonly InventoryAdvisorViewRow[],
+	directRows: readonly InventoryAdvisorViewRow[],
 	groupBy: InventoryAdvisorViewGroupBy,
+	selectedAction: InventoryAdvisorViewFilters['action'],
 	translator: Translator,
 	showEmptyMessage: boolean,
+	onSelectAction: (action: DirectInventoryAdvisorAction) => void,
 ): HTMLElement {
 	const content = createDiv();
 	content.className = 'tyrian-inventory-advisor__results-content';
+	if (directRows.length > 0) content.append(renderRecommendationSummary(directRows, selectedAction, translator, onSelectAction));
 	if (rows.length === 0) {
 		if (showEmptyMessage) {
 			const empty = createEl('p');
-			empty.textContent = translator.t('advisor.view.noResults');
+			empty.textContent = directRows.length === 0
+				? translator.t('advisor.view.noDirectResults') : translator.t('advisor.view.noResults');
 			content.append(empty);
 		}
 		return content;
@@ -318,6 +339,52 @@ function renderResults(
 	content.append(renderTable(groups, groupBy, translator));
 	content.append(renderCards(groups, groupBy, translator));
 	return content;
+}
+
+type DirectInventoryAdvisorAction = Exclude<InventoryAdvisorViewFilterAction, 'keep' | 'review'>;
+
+const DIRECT_INVENTORY_ACTIONS: readonly DirectInventoryAdvisorAction[] = ['sell', 'list', 'vendor', 'salvage', 'use', 'open'];
+
+function renderRecommendationSummary(
+	rows: readonly InventoryAdvisorViewRow[],
+	selectedAction: InventoryAdvisorViewFilters['action'],
+	translator: Translator,
+	onSelectAction: (action: DirectInventoryAdvisorAction) => void,
+): HTMLElement {
+	const summary = createEl('section');
+	summary.className = 'tyrian-inventory-advisor__recommendation-summary';
+	summary.setAttribute('aria-label', translator.t('advisor.view.recommendationTitle'));
+	const heading = createEl('h3');
+	heading.textContent = translator.t('advisor.view.recommendationTitle');
+	const uniqueItems = new Set(rows.map((row) => row.itemId)).size;
+	const intro = createEl('p');
+	intro.textContent = translator.t('advisor.view.recommendationIntro', {
+		items: uniqueItems,
+		value: aggregateInventoryAdvisorValue(rows, translator),
+	});
+	const actions = createDiv();
+	actions.className = 'tyrian-inventory-advisor__recommendation-actions';
+	for (const action of DIRECT_INVENTORY_ACTIONS) {
+		const actionRows = rows.filter((row) => row.action === action);
+		if (actionRows.length === 0) continue;
+		const button = createEl('button');
+		button.type = 'button';
+		button.className = 'tyrian-inventory-advisor__recommendation-action';
+		button.setAttribute('aria-pressed', String(selectedAction === action));
+		const label = createEl('strong');
+		label.textContent = actionLabelFor(action, translator);
+		const detail = createSpan();
+		const itemCount = new Set(actionRows.map((row) => row.itemId)).size;
+		const quantity = actionRows.reduce((total, row) => total + row.quantity, 0);
+		detail.textContent = translator.t('advisor.view.recommendationAction', {
+			items: itemCount, quantity, value: aggregateInventoryAdvisorValue(actionRows, translator),
+		});
+		button.append(label, detail);
+		button.addEventListener('click', () => onSelectAction(action));
+		actions.append(button);
+	}
+	summary.append(heading, intro, actions);
+	return summary;
 }
 
 function renderTable(
@@ -367,7 +434,7 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	appendCell(tableRow, String(row.availableQuantity), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, String(row.quantity));
 	appendCell(tableRow, allocationLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
-	appendCell(tableRow, decisionLabel(row, translator));
+	appendCell(tableRow, decisionLabel(row, translator), 'tyrian-inventory-advisor__decision');
 	appendCell(tableRow, valueLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, evidenceLabel(row.coverage, translator), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, explanationLabel(row, translator), 'tyrian-inventory-advisor__wide-only');
@@ -388,16 +455,17 @@ function renderCards(
 		for (const row of group.rows) {
 			const article = createEl('article');
 			article.className = 'tyrian-inventory-advisor__card';
+			const recommendation = createEl('p');
+			recommendation.className = 'tyrian-inventory-advisor__card-decision';
+			recommendation.textContent = `${decisionLabel(row, translator)} · ${valueLabel(row, translator)}`;
 			const heading = createEl('h4');
 			appendItemIdentity(heading, row);
-			article.append(heading);
+			article.append(recommendation, heading);
 			const list = createEl('dl');
 			addDefinition(list, translator.t('advisor.view.owned'), String(row.ownedQuantity));
 			addDefinition(list, translator.t('advisor.view.available'), String(row.availableQuantity));
 			addDefinition(list, translator.t('advisor.view.quantity'), String(row.quantity));
 			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
-			addDefinition(list, translator.t('advisor.view.action'), decisionLabel(row, translator));
-			addDefinition(list, translator.t('advisor.view.value'), valueLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
 			addDefinition(list, translator.t('advisor.view.explanation'), explanationLabel(row, translator));
 			article.append(list);
@@ -534,8 +602,22 @@ function assertNeverLocation(value: never): never {
 }
 
 function valueLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
-	if (row.value.status === 'available') return translator.t('advisor.view.valueCopper', { copper: row.value.copper });
+	if (row.value.status === 'available') return formatInventoryAdvisorCopper(row.value.copper, translator);
 	return translator.t(`advisor.view.value.${row.value.status}`);
+}
+
+function formatInventoryAdvisorCopper(copper: number, translator: Translator): string {
+	return translator.t('advisor.view.valueCoins', {
+		gold: Math.floor(copper / 10_000),
+		silver: Math.floor(copper / 100) % 100,
+		copper: copper % 100,
+	});
+}
+
+function aggregateInventoryAdvisorValue(rows: readonly InventoryAdvisorViewRow[], translator: Translator): string {
+	const available = rows.filter((row) => row.value.status === 'available');
+	if (available.length === 0) return translator.t('advisor.view.value.unavailable');
+	return formatInventoryAdvisorCopper(available.reduce((total, row) => total + (row.value.status === 'available' ? row.value.copper : 0), 0), translator);
 }
 
 function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
@@ -578,7 +660,7 @@ function evidenceLabelForGroup(group: string, translator: Translator): string {
 }
 
 function inventoryActions(): readonly InventoryAdvisorViewFilterAction[] {
-	return ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'];
+	return DIRECT_INVENTORY_ACTIONS;
 }
 
 function selectedFilterAction(value: string): InventoryAdvisorViewFilters['action'] {

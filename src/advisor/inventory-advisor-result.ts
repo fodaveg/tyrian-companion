@@ -18,7 +18,7 @@ import type {
 	InventoryAdvisorResultV1,
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
-import { buildReservationBalance, createReservationPlan } from '../economy/reservation';
+import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
 import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
@@ -75,7 +75,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 	const report = value.report;
 	if (report.accountId !== input.snapshot.accountId || report.snapshotId !== input.snapshot.snapshotId
 		|| report.asOf !== input.asOf || canonical(report.rulePack) !== canonical(input.rulePack)) return false;
-	const balanceResult = buildReservationBalance(input.snapshot);
+	const balanceResult = buildInventoryAdvisorReservationBalance(input.snapshot);
 	if (balanceResult.status !== 'ok') return false;
 	const planResult = createReservationPlan({ goals: input.goals, balance: balanceResult.balance });
 	if (planResult.status !== 'ok') return false;
@@ -120,8 +120,11 @@ function isInventoryAdvisorResultForInputUnsafe(
 		const catalogComplete = catalogCoverage?.status === 'resolved'
 			&& ['network', 'cache_fresh'].includes(catalogCoverage.source)
 			&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs);
-		const pricesComplete = input.prices.status === 'complete'
-			&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs);
+		const pricesComplete = input.prices.requestedItemIds.includes(line.itemId)
+			&& (input.prices.items.some((entry) => entry.itemId === line.itemId)
+				|| input.prices.missingItemIds.includes(line.itemId))
+			&& fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+				input.policy.maxFutureSkewMs);
 		const signalsFresh = fresh(input.accountSignals.capturedAt, input.asOf,
 			input.policy.maxAccountSignalsAgeMs, input.policy.maxFutureSkewMs);
 		const signalsComplete = signalsFresh && input.accountSignals.unlockCoverage === 'complete'
@@ -188,6 +191,7 @@ function validEconomicDecisionAgainstInput(
 	explanations: InventoryAdvisorExplanationV1[],
 ): boolean {
 	if (!economy || !knowledgePack || input.rulePack.schemaVersion !== 2
+		|| !snapshotComplete(input.snapshot)
 		|| !['open', 'sell', 'vendor'].includes(decision.action)
 		|| economy.pack.model.containerItemId !== line.itemId) return false;
 	const economicDecisions = line.decisions.filter((candidate) => !['keep', 'review'].includes(candidate.action));
@@ -293,7 +297,7 @@ function validDecisionAgainstInput(
 		return validDiscardAgainstInput(decision, line, input, reserved, exceptionQuantity);
 	}
 	if (decision.action === 'sell' || decision.action === 'list') {
-		if (!price || input.prices.status !== 'complete'
+		if (!price || !input.prices.requestedItemIds.includes(line.itemId)
 			|| !fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs)
 			|| input.accountSignals.tradingPostAccess === 'unknown'
 			|| (input.accountSignals.tradingPostAccess === 'free_to_play' && !price.whitelisted)) return false;
@@ -310,6 +314,10 @@ function validDecisionAgainstInput(
 		return selection.action === decision.action && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
 	if (decision.action === 'vendor') {
+		if (!input.prices.requestedItemIds.includes(line.itemId)
+			|| (!price && !input.prices.missingItemIds.includes(line.itemId))
+			|| !fresh(input.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+				input.policy.maxFutureSkewMs)) return false;
 		if (!holdings.every((holding) => {
 			const result = classifyItemLiquidity(holding, item, 'unavailable');
 			return result.status === 'ok' && result.classification.vendor.status === 'eligible';
@@ -321,7 +329,7 @@ function validDecisionAgainstInput(
 			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
-	if (!rulePackFresh(input)) return false;
+	if (!snapshotComplete(input.snapshot) || !rulePackFresh(input)) return false;
 	const matchingRules = input.rulePack.rules.filter((rule) => rule.ruleId === decision.ruleId
 		&& rule.itemId === line.itemId && rule.action === decision.action
 		&& isEnabledApplicableRule(input.rulePack, rule));
@@ -384,8 +392,9 @@ function fresh(evidenceAt: string, asOf: string, maxAgeMs: number, maxFutureSkew
 }
 
 function snapshotComplete(snapshot: InventoryAdvisorInputV1['snapshot']): boolean {
-	return snapshot.quality === 'stable' && Object.values(snapshot.coverage.sources)
-		.every((coverage) => coverage.status === 'complete');
+	return snapshot.quality === 'stable'
+		&& snapshot.coverage.sources.characters.status === 'complete'
+		&& snapshot.coverage.sources.shared_inventory.status === 'complete';
 }
 
 function sameRulePack(

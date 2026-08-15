@@ -1,4 +1,8 @@
-import { isComparableStorageSnapshot } from '../account/storage-delta';
+import {
+	isComparableStorageSnapshot,
+	isInventoryAdvisorStorageSnapshot,
+} from '../account/storage-delta';
+import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { isStorageDelta } from '../account/contamination';
 import { isSessionValuation, isSessionValuationRecord } from './session-valuation';
 import {
@@ -107,7 +111,17 @@ export function createReservationPlan(input: unknown): ReservationPlanResult {
 
 export function buildReservationBalance(snapshot: unknown): ReservationBalanceResult {
 	if (!isComparableStorageSnapshot(snapshot)) return { status: 'invalid', reason: 'invalid_snapshot' };
-	const itemCoverage = snapshot.coverage.sources.commerce_delivery.status === 'complete' ? 'complete' : 'limited';
+	return buildValidatedReservationBalance(snapshot,
+		snapshot.coverage.sources.commerce_delivery.status === 'complete' ? 'complete' : 'limited');
+}
+
+/** Builds balances from the narrower Inventory Advisor capture contract. */
+export function buildInventoryAdvisorReservationBalance(snapshot: unknown): ReservationBalanceResult {
+	if (!isInventoryAdvisorStorageSnapshot(snapshot)) return { status: 'invalid', reason: 'invalid_snapshot' };
+	return buildValidatedReservationBalance(snapshot, 'complete');
+}
+
+function buildValidatedReservationBalance(snapshot: StorageSnapshot, itemCoverage: 'complete' | 'limited'): ReservationBalanceResult {
 	const walletComplete = snapshot.coverage.sources.wallet.status === 'complete';
 	const currencyCoverage = !walletComplete ? 'unknown'
 		: snapshot.coverage.sources.commerce_delivery.status === 'complete' ? 'complete' : 'limited';

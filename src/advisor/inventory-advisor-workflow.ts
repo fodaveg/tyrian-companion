@@ -44,6 +44,19 @@ export type InventoryAdvisorWorkflowBlockedReason =
 	| 'credential_unavailable'
 	| 'capture_unavailable'
 	| 'capture_invalid'
+	| 'capture_snapshot_invalid'
+	| 'capture_snapshot_coverage_incomplete'
+	| 'capture_snapshot_structure_invalid'
+	| 'capture_identity_mismatch'
+	| 'capture_catalog_invalid'
+	| 'capture_prices_invalid'
+	| 'capture_account_signals_invalid'
+	| 'capture_cross_reference_invalid'
+	| 'capture_snapshot_fingerprint_invalid'
+	| 'capture_timestamps_invalid'
+	| 'capture_coverage_invalid'
+	| 'capture_wrapper_shape'
+	| 'capture_serialization_invalid'
 	| 'preferences_corrupt'
 	| 'preferences_future'
 	| 'preferences_unavailable'
@@ -69,7 +82,7 @@ export class InventoryAdvisorWorkflow {
 		if (capture.evidence === null) {
 			return { status: 'blocked', reason: capture.failure === 'missing_key'
 				? 'credential_unavailable'
-				: capture.status === 'invalid' ? 'capture_invalid' : 'capture_unavailable' };
+				: capture.status === 'invalid' ? captureBlockedReason(capture.failure) : 'capture_unavailable' };
 		}
 		const preferences = await this.ports.preferences.load(capture);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
@@ -176,4 +189,23 @@ function fresh(evidence: InventoryAdvisorEvidenceV1, asOf: string, policy: Inven
 		const capturedAt = Date.parse(value);
 		return Number.isFinite(capturedAt) && capturedAt <= now + policy.maxFutureSkewMs && now - capturedAt <= limits[index]!;
 	});
+}
+
+type CaptureFailure = NonNullable<Extract<InventoryAdvisorEvidenceCaptureResultV1, { evidence: null }>['failure']>;
+
+function captureBlockedReason(failure: CaptureFailure | undefined): InventoryAdvisorWorkflowBlockedReason {
+	if (failure === 'identity_mismatch') return 'capture_identity_mismatch';
+	if (failure === 'snapshot_invalid') return 'capture_snapshot_invalid';
+	if (failure === 'snapshot_coverage_incomplete') return 'capture_snapshot_coverage_incomplete';
+	if (failure === 'snapshot_structure_invalid') return 'capture_snapshot_structure_invalid';
+	if (failure === 'catalog_invalid') return 'capture_catalog_invalid';
+	if (failure === 'prices_invalid') return 'capture_prices_invalid';
+	if (failure === 'account_signals_invalid') return 'capture_account_signals_invalid';
+	if (failure === 'cross_reference_invalid') return 'capture_cross_reference_invalid';
+	if (failure === 'snapshot_fingerprint_invalid') return 'capture_snapshot_fingerprint_invalid';
+	if (failure === 'timestamps_invalid') return 'capture_timestamps_invalid';
+	if (failure === 'coverage_invalid') return 'capture_coverage_invalid';
+	if (failure === 'wrapper_shape') return 'capture_wrapper_shape';
+	if (failure === 'serialization_invalid') return 'capture_serialization_invalid';
+	return 'capture_invalid';
 }

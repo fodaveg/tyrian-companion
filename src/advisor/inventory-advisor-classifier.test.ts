@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
+import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
 import {
 	classifyInventoryAdvisor, isInventoryAdvisorEngineResult,
 	isInventoryKnowledgePack, sha256InventoryKnowledgePack,
 } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
-import { sha256InventoryRulePack } from './inventory-advisor-contract';
+import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 
@@ -17,6 +17,74 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(result).toMatchObject({ status: 'ready', envelope: { execution: 'manual_in_game', sideEffects: 'none', requiresUserAction: true } });
 		expect(result.report?.lines[0]?.decisions).toMatchObject([{ action: 'sell', quantity: 2, allocations: [{ positionRef: '#/positions/10/0', quantity: 2 }] }]);
 		expect(isInventoryAdvisorResultForInput(result, input.input)).toBe(true);
+	});
+
+	it('keeps scoped inventory recommendations visible when optional account stores are skipped', () => {
+		const stable = scopedInventoryFixture('stable');
+		const stableResult = classifyInventoryAdvisor(stable);
+		expect(stableResult).toMatchObject({ status: 'ready' });
+		expect(stableResult.report?.lines[0]).toMatchObject({
+			coverage: { snapshot: 'complete' },
+			decisions: [{ action: 'sell', quantity: 2 }],
+		});
+
+		const changing = scopedInventoryFixture('unstable');
+		expect(isInventoryAdvisorInput(changing.input)).toBe(true);
+		const changingResult = classifyInventoryAdvisor(changing);
+		expect(changingResult).toMatchObject({ status: 'limited' });
+		expect(changingResult.report?.lines[0]).toMatchObject({
+			coverage: { snapshot: 'limited' },
+			decisions: [{ action: 'sell', quantity: 2 }],
+		});
+		expect(changingResult.report?.lines[0]?.decisions.every((decision) => decision.action !== 'review')).toBe(true);
+		expect(isInventoryAdvisorResultForInput(changingResult, changing.input)).toBe(true);
+	});
+
+	it('classifies each item independently when the commerce batch is partial', () => {
+		const partial = scopedInventoryFixture('unstable');
+		partial.input.snapshot.holdings.push({
+			kind: 'item', itemId: 11, quantity: 1, state: 'loose',
+			location: { source: 'shared_inventory', slot: 1 }, metadata: {},
+		});
+		partial.input.snapshot.availableByItem = { '10': 2, '11': 1 };
+		partial.input.snapshot.ownedByItem = { '10': 2, '11': 1 };
+		partial.input.catalog.items['11'] = {
+			...partial.input.catalog.items['10']!, id: 11, name: 'Item sin precio TP', vendorValue: 5,
+		};
+		partial.input.catalog.coverage.items['11'] = { status: 'resolved', source: 'network' };
+		partial.input.prices = {
+			...partial.input.prices,
+			status: 'partial',
+			requestedItemIds: [10, 11],
+			missingItemIds: [11],
+		};
+
+		const result = classifyInventoryAdvisor(partial);
+
+		expect(result).toMatchObject({ status: 'limited' });
+		expect(result.report?.lines.find((line) => line.itemId === 10)?.decisions[0])
+			.toMatchObject({ action: 'sell' });
+		expect(result.report?.lines.find((line) => line.itemId === 11)?.decisions[0])
+			.toMatchObject({ action: 'vendor' });
+		expect(isInventoryAdvisorResultForInput(result, partial.input)).toBe(true);
+	});
+
+	it('keeps curated irreversible routes in review when scoped quantities are still changing', () => {
+		const changing = scopedInventoryFixture('unstable');
+		changing.input.rulePack.rules = [rule('use-10', 'approved')];
+		changing.input.rulePack.sha256 = sha256InventoryRulePack(changing.input.rulePack);
+		changing.knowledgePack.entries[0]!.use = {
+			status: 'applicable', ruleId: 'use-10', sourceIds: ['source'],
+		};
+		changing.knowledgePack.sha256 = sha256InventoryKnowledgePack(changing.knowledgePack);
+
+		const result = classifyInventoryAdvisor(changing);
+		expect(result).toMatchObject({ status: 'limited' });
+		expect(result.report?.lines[0]?.decisions).toEqual([
+			expect.objectContaining({ action: 'review', quantity: 2 }),
+		]);
+		expect(result.report?.lines.flatMap((line) => line.decisions)
+			.some((decision) => decision.action === 'use')).toBe(false);
 	});
 
 	it('uses the independently validated manual market route when curation is absent and still reviews non-loose positions', () => {
@@ -132,7 +200,7 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(classifyInventoryAdvisor(f2p).report?.lines[0]?.decisions[0]?.action).not.toBe('review');
 	});
 
-	it('keeps instant sell when an ask does not clear the 10% listing margin, and marks a stale input rule pack', () => {
+	it('keeps independent market routes visible while stale rules still block applicable curated routes', () => {
 		const market = fixture();
 		market.input.prices.items[0] = { itemId: 10, whitelisted: true, bid: { unitCopper: 100, quantity: 2 }, ask: { unitCopper: 105, quantity: 2 } };
 		expect(classifyInventoryAdvisor(market).report?.lines[0]?.decisions[0]).toMatchObject({ action: 'sell' });
@@ -142,7 +210,23 @@ describe('H4.15 inventory advisor classifier', () => {
 		staleRules.input.rulePack.sha256 = sha256InventoryRulePack(staleRules.input.rulePack);
 		const result = classifyInventoryAdvisor(staleRules);
 		expect(result).toMatchObject({ status: 'limited' });
-		expect(result.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_stale' }));
+		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'sell' });
+
+		const curatedStale = fixture();
+		const curatedStalePack = curatedStale.input.rulePack;
+		if (curatedStalePack.schemaVersion !== 1) throw new Error('expected V1 fixture');
+		curatedStalePack.publishedAt = '2025-01-01T00:00:00.000Z';
+		curatedStalePack.reviewedAt = '2025-01-02T00:00:00.000Z';
+		curatedStalePack.rules = [rule('use-10', 'approved')];
+		curatedStalePack.sha256 = sha256InventoryRulePack(curatedStalePack);
+		curatedStale.knowledgePack.entries[0]!.use = {
+			status: 'applicable', ruleId: 'use-10', sourceIds: ['source'],
+		};
+		curatedStale.knowledgePack.sha256 = sha256InventoryKnowledgePack(curatedStale.knowledgePack);
+		const curatedResult = classifyInventoryAdvisor(curatedStale);
+		expect(curatedResult.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
+		expect(curatedResult.report?.lines[0]?.reasons)
+			.toContainEqual(expect.objectContaining({ code: 'rule_stale' }));
 	});
 
 	it('requires an approved applicable V1 assertion for use and treats revoked or conflicting claims as review', () => {
@@ -229,5 +313,27 @@ function fixture(): InventoryAdvisorEngineInputV1 {
 	knowledge.sha256 = sha256InventoryKnowledgePack(knowledge);
 	return { input: { version: 1, asOf: '2026-08-14T12:00:00.000Z', snapshot, catalog: { snapshotId: 'snapshot-1', locale: 'es', schemaVersion: PINNED_SCHEMA, resolvedAt: '2026-08-14T12:00:00.000Z', items: { '10': { kind: 'item', id: 10, name: 'Item', type: 'Trophy', rarity: 'Basic', level: 0, vendorValue: 1, flags: [], gameTypes: [], restrictions: [] } }, currencies: {}, materials: {}, warnings: [], coverage: { items: { '10': { status: 'resolved', source: 'network' } }, currencies: {}, materials: {} } }, prices: { version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', capturedAt: '2026-08-14T12:00:00.000Z', source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA, requestedItemIds: [10], status: 'complete', items: [{ itemId: 10, whitelisted: true, bid: { unitCopper: 20, quantity: 2 }, ask: { unitCopper: 21, quantity: 2 } }], missingItemIds: [] }, goals: [], keepExceptions: [], accountSignals: { version: 1, source: 'gw2-account-api', accountId: 'account-1', capturedAt: '2026-08-14T12:00:00.000Z', schemaVersion: PINNED_SCHEMA, tradingPostAccess: 'full', endpointCoverage: { account: evidence(), recipes: evidence(), skins: evidence(), minis: evidence(), achievements: evidence() }, unlockCoverage: 'complete', unlockedRecipes: [], unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {}, achievementProgress: [] }, rulePack, policy: { version: 1, maxSnapshotAgeMs: 900_000, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000, maxAccountSignalsAgeMs: 86_400_000, maxRulePackAgeMs: 15_552_000_000, maxFutureSkewMs: 300_000, listingMinimumAdvantageBps: 1_000 } }, knowledgePack: knowledge };
 }
-function coverage() { return { sources: { characters: { status: 'complete' as const }, shared_inventory: { status: 'complete' as const }, bank: { status: 'complete' as const }, materials: { status: 'complete' as const }, wallet: { status: 'complete' as const }, commerce_delivery: { status: 'complete' as const } }, characters: {} }; }
+function scopedInventoryFixture(quality: 'stable' | 'unstable'): InventoryAdvisorEngineInputV1 {
+	const value = fixture();
+	const scopedCoverage = coverage();
+	scopedCoverage.sources.bank = { status: 'skipped', reason: 'not_requested' };
+	scopedCoverage.sources.materials = { status: 'skipped', reason: 'not_requested' };
+	scopedCoverage.sources.wallet = { status: 'skipped', reason: 'not_requested' };
+	scopedCoverage.sources.commerce_delivery = { status: 'skipped', reason: 'not_requested' };
+	value.input.snapshot = {
+		...value.input.snapshot,
+		quality,
+		passes: quality === 'unstable' ? 3 : 2,
+		holdings: [{
+			...value.input.snapshot.holdings[0]!,
+			location: { source: 'shared_inventory', slot: 0 },
+		}],
+		coverage: scopedCoverage,
+		passCoverages: quality === 'unstable'
+			? [structuredClone(scopedCoverage), structuredClone(scopedCoverage), structuredClone(scopedCoverage)]
+			: [structuredClone(scopedCoverage), structuredClone(scopedCoverage)],
+	};
+	return value;
+}
+function coverage(): SnapshotCoverage { return { sources: { characters: { status: 'complete' }, shared_inventory: { status: 'complete' }, bank: { status: 'complete' }, materials: { status: 'complete' }, wallet: { status: 'complete' }, commerce_delivery: { status: 'complete' } }, characters: {} }; }
 function evidence() { return { status: 'complete' as const, capturedAt: '2026-08-14T12:00:00.000Z', reason: null }; }

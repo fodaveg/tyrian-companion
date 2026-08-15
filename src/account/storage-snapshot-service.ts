@@ -33,6 +33,8 @@ interface VerifiedSnapshotContext {
 	key: string;
 }
 
+export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
+
 const REQUIRED_SCOPES = ['account', 'characters', 'inventories'] as const;
 
 /** Captures a consistency-qualified storage snapshot without writing or valuing assets. */
@@ -40,6 +42,7 @@ export class StorageSnapshotService {
 	private readonly inFlight = new Map<string, Promise<StorageSnapshot>>();
 	private readonly globalLimit = createLimiter(6);
 	private readonly characterLimit = createLimiter(4);
+	private readonly inventoryAdvisorCharacterLimit = createLimiter(1);
 
 	constructor(private readonly client: Pick<GuildWars2Client, 'beginOperation'>) {}
 
@@ -50,24 +53,51 @@ export class StorageSnapshotService {
 
 	/** Reuses an already pinned credential for a larger atomic workflow. */
 	async captureWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
+		return this.captureScopedWithOperation(operation, 'complete');
+	}
+
+	/** Captures only character bags and shared inventory for the Inventory Advisor. */
+	async captureInventoryWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
+		return this.captureScopedWithOperation(operation, 'inventory_advisor');
+	}
+
+	private async captureScopedWithOperation(
+		operation: GuildWars2Operation,
+		scope: StorageSnapshotCaptureScope,
+	): Promise<StorageSnapshot> {
 		const context = await verifySnapshotContext(operation, this.globalLimit);
-		const existing = this.inFlight.get(context.key);
+		const key = `${context.key}:${scope}`;
+		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(operation, context).finally(() => {
-			if (this.inFlight.get(context.key) === promise) this.inFlight.delete(context.key);
+		const promise = this.captureInternal(operation, context, scope).finally(() => {
+			if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
 		});
-		this.inFlight.set(context.key, promise);
+		this.inFlight.set(key, promise);
 		return promise;
 	}
 
 	private async captureInternal(
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
+		scope: StorageSnapshotCaptureScope,
 	): Promise<StorageSnapshot> {
 		const startedAt = new Date().toISOString();
 		const snapshotId = crypto.randomUUID();
-		const first = await this.capturePass(operation, context);
-		const second = await this.capturePass(operation, context);
+		const first = await this.capturePass(operation, context, scope);
+		if (scope === 'inventory_advisor') {
+			return finalizeStorageSnapshot({
+				pass: first,
+				quality: advisorPassComplete(first.coverage) ? 'unstable' : 'partial',
+				coveragePasses: [first],
+				passes: [first],
+			}, {
+				accountId: context.accountId,
+				snapshotId,
+				startedAt,
+				completedAt: new Date().toISOString(),
+			});
+		}
+		const second = await this.capturePass(operation, context, scope);
 		const pair = qualifyStorageSnapshotPair(first, second);
 		if (pair.status === 'qualified') {
 			return finalizeStorageSnapshot(pair.value, {
@@ -78,7 +108,7 @@ export class StorageSnapshotService {
 			});
 		}
 
-		const third = await this.capturePass(operation, context);
+		const third = await this.capturePass(operation, context, scope);
 		return finalizeStorageSnapshot(qualifyStorageSnapshotTriple(first, second, third), {
 			accountId: context.accountId,
 			snapshotId,
@@ -90,8 +120,9 @@ export class StorageSnapshotService {
 	private async capturePass(
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
+		scope: StorageSnapshotCaptureScope,
 	): Promise<StorageSnapshotPass> {
-		const coverage = emptyCoverage(context.permissions, context.urls);
+		const coverage = emptyCoverage(context.permissions, context.urls, scope);
 		const holdings: StorageSnapshotPass['holdings'] = [];
 		const currencies: StorageSnapshotPass['currencies'] = [];
 
@@ -109,7 +140,7 @@ export class StorageSnapshotService {
 			if (unavailable.length > 0) throw new SnapshotCapabilityError(unavailable.map((url) => `url:${url}`));
 		}
 
-		const accountTasks = [
+		const accountTasks: Array<Promise<void>> = [
 			this.captureItems(
 				operation,
 				this.globalLimit,
@@ -119,6 +150,8 @@ export class StorageSnapshotService {
 				'account/inventory',
 				(value) => parseSlotArray(value, 'shared_inventory'),
 			),
+		];
+		if (scope === 'complete') accountTasks.push(
 			this.captureItems(
 				operation,
 				this.globalLimit,
@@ -137,22 +170,25 @@ export class StorageSnapshotService {
 				'account/materials',
 				parseMaterials,
 			),
-		];
+		);
 
 		const optionalTasks: Array<Promise<void>> = [];
-		if (coverage.sources.wallet.status === 'complete') {
+		if (scope === 'complete' && coverage.sources.wallet.status === 'complete') {
 			optionalTasks.push(
 				this.captureCurrencies(operation, this.globalLimit, coverage, currencies, 'wallet', 'account/wallet'),
 			);
 		}
-		if (coverage.sources.commerce_delivery.status === 'complete') {
+		if (scope === 'complete' && coverage.sources.commerce_delivery.status === 'complete') {
 			optionalTasks.push(
 				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies),
 			);
 		}
 
+		const characterLimit = scope === 'inventory_advisor'
+			? this.inventoryAdvisorCharacterLimit
+			: this.characterLimit;
 		const characterTasks = roster.map((character) =>
-			this.characterLimit(() =>
+			characterLimit(() =>
 				this.globalLimit(async () => {
 					const result = await captureSource(
 						() => operation.requestDetailed(withSchema(`characters/${encodeURIComponent(character)}/inventory`)),
@@ -236,6 +272,12 @@ export class StorageSnapshotService {
 	}
 }
 
+function advisorPassComplete(coverage: SnapshotCoverage): boolean {
+	return coverage.sources.characters.status === 'complete'
+		&& coverage.sources.shared_inventory.status === 'complete'
+		&& Object.values(coverage.characters).every((entry) => entry.status === 'complete');
+}
+
 function withSchema(path: string): string {
 	return `${path}?v=${encodeURIComponent(PINNED_SCHEMA)}`;
 }
@@ -252,7 +294,11 @@ async function captureSource<T>(
 			value,
 			coverage:
 				response.status === 206
-					? { status: 'partial', reason: 'partial_response' }
+					? {
+						status: 'partial',
+						reason: 'partial_response',
+						diagnostic: { kind: 'http', status: 206, retryAfterMs: null },
+					}
 					: { status: 'complete' },
 		};
 	} catch (error) {
@@ -263,6 +309,11 @@ async function captureSource<T>(
 			coverage: {
 				status: 'partial',
 				reason: isCharacter && error.status === 404 ? 'missing_character' : 'unavailable',
+				diagnostic: {
+					kind: error.kind,
+					status: error.status,
+					retryAfterMs: error.retryAfterMs,
+				},
 			},
 		};
 	}
@@ -271,6 +322,7 @@ async function captureSource<T>(
 function emptyCoverage(
 	permissions: ReadonlySet<string>,
 	urls: readonly string[],
+	scope: StorageSnapshotCaptureScope,
 ): SnapshotCoverage {
 	const complete = (): SourceCoverage => ({ status: 'complete' });
 	const source = (scope: string, endpoint: string, required: boolean): SourceCoverage => {
@@ -285,10 +337,10 @@ function emptyCoverage(
 		sources: {
 			characters: complete(),
 			shared_inventory: source('inventories', '/v2/account/inventory', true),
-			bank: source('inventories', '/v2/account/bank', true),
-			materials: source('inventories', '/v2/account/materials', true),
-			wallet: source('wallet', '/v2/account/wallet', false),
-			commerce_delivery: source('tradingpost', '/v2/commerce/delivery', false),
+			bank: scope === 'complete' ? source('inventories', '/v2/account/bank', true) : { status: 'skipped', reason: 'not_requested' },
+			materials: scope === 'complete' ? source('inventories', '/v2/account/materials', true) : { status: 'skipped', reason: 'not_requested' },
+			wallet: scope === 'complete' ? source('wallet', '/v2/account/wallet', false) : { status: 'skipped', reason: 'not_requested' },
+			commerce_delivery: scope === 'complete' ? source('tradingpost', '/v2/commerce/delivery', false) : { status: 'skipped', reason: 'not_requested' },
 		},
 		characters: {},
 	};

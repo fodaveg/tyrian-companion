@@ -1,9 +1,21 @@
-import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import type { SourceCoverage, StorageSnapshot } from '../account/storage-snapshot-model';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
+
+export type InventoryAdvisorEvidenceValidationFailure =
+	| 'wrapper_shape'
+	| 'snapshot_invalid'
+	| 'catalog_invalid'
+	| 'prices_invalid'
+	| 'account_signals_invalid'
+	| 'cross_reference_invalid'
+	| 'snapshot_fingerprint_invalid'
+	| 'timestamps_invalid'
+	| 'coverage_invalid'
+	| 'serialization_invalid';
 
 export type InventoryAdvisorEvidenceStatus = 'complete' | 'partial' | 'unavailable' | 'invalid';
 
@@ -41,10 +53,73 @@ export interface InventoryAdvisorEvidenceV1 {
 	accountSignals: AccountSignalsV1;
 }
 
+export type InventoryAdvisorEvidenceFailure =
+	| 'missing_key'
+	| 'identity_mismatch'
+	| 'snapshot_coverage_incomplete'
+	| 'snapshot_structure_invalid'
+	| InventoryAdvisorEvidenceValidationFailure;
+
+/**
+ * One bounded, local-only refresh receipt. It deliberately excludes credentials,
+ * account and character identifiers, inventory contents, URLs and response bodies.
+ */
+export interface InventoryAdvisorCaptureReceiptV1 {
+	version: 1;
+	recordedAt: string;
+	status: InventoryAdvisorEvidenceStatus;
+	failure: InventoryAdvisorEvidenceFailure | null;
+	evidenceCoverage: InventoryAdvisorEvidenceCoverageV1 | null;
+	evidenceDetails: {
+		catalog: { requested: number; resolved: number; stale: number; unavailable: number };
+		prices: { requested: number; captured: number; missing: number };
+	} | null;
+	containerPrices: 'complete' | 'partial' | 'unavailable' | 'not_requested';
+	workflow: {
+		status: 'progress';
+		stage: 'preferences' | 'classification';
+		elapsedMs: number;
+	} | {
+		status: 'failed';
+		stage: 'capture' | 'preferences' | 'classification';
+		reason: 'input_invalid' | 'unexpected_failure';
+		elapsedMs: number;
+	} | {
+		status: 'blocked';
+		reason: string;
+	} | {
+		status: 'ready';
+		resultStatus: 'ready' | 'limited' | 'blocked' | 'invalid';
+		lineCount: number;
+		decisionCount: number;
+		defaultVisibleDecisionCount: number;
+		actionCounts: Array<{ action: string; count: number }>;
+		reasonCounts: Array<{ reason: string; count: number }>;
+	} | null;
+	snapshot: {
+		quality: StorageSnapshot['quality'];
+		passes: StorageSnapshot['passes'];
+		durationMs: number;
+		roster: SourceCoverage;
+		sharedInventory: SourceCoverage;
+		characterInventories: SourceCoverage[];
+		attempts: Array<{
+			roster: SourceCoverage;
+			sharedInventory: SourceCoverage;
+			characterInventories: SourceCoverage[];
+		}>;
+	} | null;
+}
+
+export type InventoryAdvisorCaptureReceiptSink = (
+	receipt: InventoryAdvisorCaptureReceiptV1,
+) => void | Promise<void>;
+
 export type InventoryAdvisorEvidenceCaptureResultV1 =
 	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1;
 		containerPrices?: InventoryContainerPriceEvidenceV1 | null }
-	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null; failure?: 'missing_key' };
+	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null;
+		failure?: InventoryAdvisorEvidenceFailure };
 
 export interface InventoryAdvisorEvidenceCapture {
 	capture(locale: CatalogLocale, containerPriceItemIds?: readonly number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1>;

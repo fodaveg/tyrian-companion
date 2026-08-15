@@ -1,4 +1,4 @@
-import { isComparableStorageSnapshot } from '../account/storage-delta';
+import { isInventoryAdvisorStorageSnapshot } from '../account/storage-delta';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { canonicalJson, sha256CanonicalValue as standardSha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
@@ -102,7 +102,7 @@ function isInventoryAdvisorInputUnsafe(value: unknown): value is InventoryAdviso
 		'version', 'asOf', 'snapshot', 'catalog', 'prices', 'goals', 'keepExceptions',
 		'accountSignals', 'rulePack', 'policy',
 	]) || value.version !== INVENTORY_ADVISOR_VERSION || !iso(value.asOf)
-		|| !isComparableStorageSnapshot(value.snapshot) || !isCatalogResolution(value.catalog)
+		|| !isInventoryAdvisorStorageSnapshot(value.snapshot) || !isCatalogResolution(value.catalog)
 		|| !isInventoryPriceSnapshot(value.prices) || !Array.isArray(value.goals)
 		|| !value.goals.every(isReservationGoal) || !unique(value.goals.map((goal) => goal.goalId))
 		|| !Array.isArray(value.keepExceptions) || !value.keepExceptions.every(isKeepException)
@@ -355,7 +355,8 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 		else {
 			actioned += decision.quantity;
 			if (selected.some((position) => position!.state !== 'loose')) return false;
-			if (!coverageComplete(value.coverage)) return false;
+			if (!coverageComplete(value.coverage)
+				&& !(isManualMarketAction(decision.action) && coverageSupportsManualMarket(value.coverage))) return false;
 		}
 	}
 	return [...positions.values()].every((position) => allocatedByPosition.get(position.ref) === position.quantity)
@@ -380,6 +381,16 @@ function isCoverage(value: unknown): value is InventoryAdvisorCoverageV1 {
 
 function coverageComplete(value: InventoryAdvisorCoverageV1): boolean {
 	return Object.values(value).every((entry) => entry === 'complete');
+}
+
+function coverageSupportsManualMarket(value: InventoryAdvisorCoverageV1): boolean {
+	return value.inventory === 'complete' && value.catalog === 'complete' && value.prices === 'complete'
+		&& value.reservations === 'complete' && value.accountSignals === 'complete'
+		&& value.snapshot !== 'unknown' && value.rules !== 'unknown';
+}
+
+function isManualMarketAction(action: InventoryRecommendationAction): boolean {
+	return action === 'sell' || action === 'list' || action === 'vendor';
 }
 
 function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 {

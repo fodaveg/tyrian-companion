@@ -10,7 +10,9 @@ import {
 export interface QualifiedStorageSnapshotPasses {
 	pass: StorageSnapshotPass;
 	quality: SnapshotQuality;
+	coveragePasses: StorageSnapshotPass[];
 	passes:
+		| [StorageSnapshotPass]
 		| [StorageSnapshotPass, StorageSnapshotPass]
 		| [StorageSnapshotPass, StorageSnapshotPass, StorageSnapshotPass];
 }
@@ -64,12 +66,15 @@ export function qualifyStorageSnapshotPair(
 	first: StorageSnapshotPass,
 	second: StorageSnapshotPass,
 ): StorageSnapshotPairQualification {
-	if (!sameOwnership(first, second)) return { status: 'needs_third_pass' };
+	if (isPartial(first.coverage) || isPartial(second.coverage) || !sameOwnership(first, second)) {
+		return { status: 'needs_third_pass' };
+	}
 	return {
 		status: 'qualified',
 		value: {
 			pass: second,
 			quality: classifyConsecutive(first, second),
+			coveragePasses: [first, second],
 			passes: [first, second],
 		},
 	};
@@ -81,14 +86,30 @@ export function qualifyStorageSnapshotTriple(
 	second: StorageSnapshotPass,
 	third: StorageSnapshotPass,
 ): QualifiedStorageSnapshotPasses {
+	const recentPairComplete = !isPartial(second.coverage) && !isPartial(third.coverage);
+	if (recentPairComplete) {
+		return {
+			pass: third,
+			quality: sameOwnership(second, third)
+				? classifyConsecutive(second, third)
+				: 'unstable',
+			coveragePasses: [second, third],
+			passes: [first, second, third],
+		};
+	}
+	const fallback = [third, second, first].find((entry) => !isPartial(entry.coverage));
+	if (fallback) {
+		return {
+			pass: fallback,
+			quality: 'unstable',
+			coveragePasses: [fallback],
+			passes: [first, second, third],
+		};
+	}
 	return {
 		pass: third,
-		quality:
-			isPartial(first.coverage) || isPartial(second.coverage) || isPartial(third.coverage)
-				? 'partial'
-				: sameOwnership(second, third)
-					? classifyConsecutive(second, third)
-					: 'unstable',
+		quality: 'partial',
+		coveragePasses: [second, third],
 		passes: [first, second, third],
 	};
 }
@@ -99,7 +120,7 @@ export function finalizeStorageSnapshot(
 ): StorageSnapshot {
 	return {
 		...qualified.pass,
-		coverage: mergeCoverages(qualified.passes.map((entry) => entry.coverage)),
+		coverage: mergeCoverages(qualified.coveragePasses.map((entry) => entry.coverage)),
 		snapshotId: identity.snapshotId,
 		accountId: identity.accountId,
 		startedAt: identity.startedAt,

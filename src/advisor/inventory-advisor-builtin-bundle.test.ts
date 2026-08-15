@@ -30,6 +30,7 @@ import {
 	sha256InventoryContainerEconomyPack,
 	type InventoryContainerPriceEvidenceV1,
 } from './inventory-container-economy';
+import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
 
 const BEFORE_EXPIRY = '2026-11-11T23:59:59.999Z';
 
@@ -112,6 +113,42 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(finalActions).toEqual(['review']);
 		expect(finalActions).not.toContain('discard_candidate');
 		expect(finalActions.some((action) => ['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(action))).toBe(false);
+	});
+
+	it('does not let the pending curated pack hide independent market routes for other items', () => {
+		const asOf = '2026-08-14T20:31:00.000Z';
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf);
+		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
+		const input = advisorInput(loaded.bundle, asOf, 10);
+		input.snapshot.quality = 'unstable';
+		input.snapshot.passes = 1;
+		input.snapshot.passCoverages = [input.snapshot.coverage];
+		input.snapshot.holdings.push({
+			kind: 'item', itemId: 11, quantity: 1, state: 'loose',
+			location: { source: 'shared_inventory', slot: 1 }, metadata: {},
+		});
+		input.snapshot.availableByItem['11'] = 1;
+		input.snapshot.ownedByItem['11'] = 1;
+		input.catalog.items['11'] = {
+			...input.catalog.items['10']!, id: 11, name: 'Objeto sin precio TP', vendorValue: 5,
+		};
+		input.catalog.coverage.items['11'] = { status: 'resolved', source: 'network' };
+		input.prices.status = 'partial';
+		input.prices.requestedItemIds = [10, 11];
+		input.prices.missingItemIds = [11];
+
+		const result = classifyInventoryAdvisor({ input, knowledgePack: loaded.bundle.knowledgePack });
+
+		expect(result).toMatchObject({ status: 'limited' });
+		expect(result.report?.lines.find((line) => line.itemId === 10)?.decisions[0])
+			.toMatchObject({ action: 'list' });
+		expect(result.report?.lines.find((line) => line.itemId === 11)?.decisions[0])
+			.toMatchObject({ action: 'vendor' });
+		expect(result.report?.lines.find((line) => line.itemId === 10)?.reasons)
+			.toContainEqual(expect.objectContaining({ code: 'alternative_route_exists' }));
+		expect(result.report?.lines.flatMap((line) => line.decisions)
+			.every((decision) => decision.action !== 'review')).toBe(true);
+		expect(isInventoryAdvisorResultForInput(result, input, loaded.bundle.knowledgePack)).toBe(true);
 	});
 
 	it('routes an explicitly human-enabled clone through the H4.19 kernel and reproduces its result', () => {
@@ -357,7 +394,11 @@ function deepFreeze<T>(value: T): T {
 const _bundleShape: InventoryAdvisorBuiltinBundleV2 | null = null;
 void _bundleShape;
 
-function advisorInput(bundle: InventoryAdvisorBuiltinBundleV2, asOf: string, itemId = 10) {
+function advisorInput(
+	bundle: InventoryAdvisorBuiltinBundleV2,
+	asOf: string,
+	itemId = 10,
+): InventoryAdvisorInputV1 {
 	const capturedAt = asOf;
 	const snapshot: StorageSnapshot = {
 		snapshotId: 'snapshot-builtin', accountId: 'account-builtin',

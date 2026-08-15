@@ -19,10 +19,12 @@ import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
+import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
 	InventoryAdvisorWorkflow,
+	type InventoryAdvisorWorkflowResult,
 } from './advisor/inventory-advisor-workflow';
 import { IndexedDbInventoryPreferencesStore } from './advisor/inventory-preferences-store';
 import { InventoryPreferencesService } from './advisor/inventory-preferences-service';
@@ -188,14 +190,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const transport = new ObsidianRequestTransport();
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
+		const inventoryTransport = new ObsidianRequestTransport({ timeoutMs: 30_000 });
+		const inventoryClient = new GuildWars2Client(inventoryTransport, apiKeyProvider);
+		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
 		const snapshots = new StorageSnapshotService(client);
+		const inventorySnapshots = new StorageSnapshotService(inventoryClient);
 		this.inventoryPreferences = new InventoryPreferencesRuntime(
 			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(window.indexedDB)), vaultId,
 		);
 		this.inventoryAdvisor = createInventoryAdvisorRuntime(
-			client, publicClient, snapshots, () => this.settings.language, this.inventoryPreferences,
+			inventoryClient, inventoryPublicClient, inventorySnapshots,
+			() => this.settings.language, this.inventoryPreferences,
+			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 		);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
@@ -419,6 +427,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async refreshInventoryAdvisor(): Promise<void> {
 		await this.inventoryAdvisor.refresh();
 		this.renderInventoryAdvisorViews();
+	}
+
+	private async writeInventoryAdvisorCaptureReceipt(
+		receipt: InventoryAdvisorCaptureReceiptV1,
+	): Promise<void> {
+		const path = `${this.app.vault.configDir}/plugins/${this.manifest.id}/inventory-advisor-capture-receipt.json`;
+		await this.app.vault.adapter.write(path, `${JSON.stringify(receipt, null, '\t')}\n`);
 	}
 
 	async loadInventoryPreferences(): Promise<void> {
@@ -1242,26 +1257,137 @@ function createInventoryAdvisorRuntime(
 	snapshots: StorageSnapshotService,
 	locale: () => Locale,
 	preferences: InventoryPreferencesRuntime,
+	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
+	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
+	let workflowStartedAt = 0;
+	let workflowStage: 'capture' | 'preferences' | 'classification' = 'capture';
+	const writeWorkflowReceipt = async (
+		workflow: NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>,
+	): Promise<void> => {
+		const receipt = latestCaptureReceipt ?? emptyInventoryAdvisorCaptureReceipt();
+		try { await writeCaptureReceipt({ ...receipt, workflow }); }
+		catch { /* Local diagnostics must never become an advisor dependency. */ }
+	};
 	const inventoryWorkflow = new InventoryAdvisorWorkflow({
 		capture: { capture: async (captureLocale, expectedPriceItemIds) => {
 			if (inventoryEvidence === null) {
 				const catalogCache = await createCatalogCacheAdapter();
 				inventoryEvidence = new InventoryAdvisorEvidenceService(
 					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
+					Date.now, async (receipt) => {
+						latestCaptureReceipt = structuredClone(receipt);
+						await writeCaptureReceipt(receipt);
+					},
 				);
 			}
 			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds);
 		} },
-		preferences,
+		preferences: { load: async (capture) => {
+			workflowStage = 'preferences';
+			await writeWorkflowReceipt({
+				status: 'progress', stage: workflowStage,
+				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
+			});
+			const loaded = await preferences.load(capture);
+			workflowStage = 'classification';
+			await writeWorkflowReceipt({
+				status: 'progress', stage: workflowStage,
+				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
+			});
+			return loaded;
+		} },
 		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
 	});
 	return new InventoryAdvisorPresentationController({
-		load: () => inventoryWorkflow.refresh(locale()),
+		load: async () => {
+			latestCaptureReceipt = null;
+			workflowStartedAt = Date.now();
+			workflowStage = 'capture';
+			try {
+				const result = await inventoryWorkflow.refresh(locale());
+				await writeWorkflowReceipt(inventoryAdvisorWorkflowReceipt(result));
+				return result;
+			} catch (error) {
+				await writeWorkflowReceipt(inventoryAdvisorWorkflowFailureReceipt(
+					error, workflowStage, Math.max(0, Date.now() - workflowStartedAt),
+				));
+				throw error;
+			}
+		},
 		reclassify: () => inventoryWorkflow.reclassify(),
 		invalidate: () => inventoryWorkflow.invalidate(),
 	});
+}
+
+export function inventoryAdvisorWorkflowFailureReceipt(
+	error: unknown,
+	stage: 'capture' | 'preferences' | 'classification',
+	elapsedMs: number,
+): Extract<NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>, { status: 'failed' }> {
+	return {
+		status: 'failed',
+		stage,
+		reason: error instanceof Error && error.message === 'inventory_advisor_input_invalid'
+			? 'input_invalid' : 'unexpected_failure',
+		elapsedMs: Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : 0,
+	};
+}
+
+function emptyInventoryAdvisorCaptureReceipt(): InventoryAdvisorCaptureReceiptV1 {
+	return {
+		version: 1,
+		recordedAt: new Date().toISOString(),
+		status: 'unavailable',
+		failure: null,
+		evidenceCoverage: null,
+		evidenceDetails: null,
+		containerPrices: 'not_requested',
+		workflow: null,
+		snapshot: null,
+	};
+}
+
+export function inventoryAdvisorWorkflowReceipt(
+	result: InventoryAdvisorWorkflowResult,
+): NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']> {
+	if (result.status === 'blocked') return { status: 'blocked', reason: result.reason };
+	const report = result.source.result.report;
+	if (report === null) {
+		return {
+			status: 'ready',
+			resultStatus: result.source.result.status,
+			lineCount: 0,
+			decisionCount: 0,
+			defaultVisibleDecisionCount: 0,
+			actionCounts: [],
+			reasonCounts: [],
+		};
+	}
+	const decisions = report.lines.flatMap((line) => line.decisions);
+	return {
+		status: 'ready',
+		resultStatus: result.source.result.status,
+		lineCount: report.lines.length,
+		decisionCount: decisions.length,
+		defaultVisibleDecisionCount: decisions.filter((decision) => decision.action !== 'review').length,
+		actionCounts: counts(decisions.map((decision) => decision.action), 'action'),
+		reasonCounts: counts(
+			report.explanations.flatMap((explanation) => explanation.reasonCodes),
+			'reason',
+		),
+	};
+}
+
+function counts<Key extends 'action' | 'reason'>(
+	values: readonly string[],
+	key: Key,
+): Array<Record<Key, string> & { count: number }> {
+	const totals = new Map<string, number>();
+	for (const value of values) totals.set(value, (totals.get(value) ?? 0) + 1);
+	return [...totals].sort(([left], [right]) => left.localeCompare(right))
+		.map(([value, count]) => ({ [key]: value, count }) as Record<Key, string> & { count: number });
 }
 
 function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {

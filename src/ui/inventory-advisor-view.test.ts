@@ -60,7 +60,7 @@ describe('Inventory Advisor view', () => {
 		const before = structuredClone(model);
 		const rows = model.groups.flatMap((group) => group.rows);
 		expect(filterInventoryAdvisorRows(rows, { query: 'mat', action: 'all', groupBy: 'action' }).map((row) => row.itemId)).toEqual([100]);
-		expect(filterInventoryAdvisorRows(rows, { query: '200', action: 'all', groupBy: 'action' }).map((row) => row.itemId)).toEqual([200]);
+		expect(filterInventoryAdvisorRows(rows, { query: '200', action: 'all', groupBy: 'action', showReview: true }).map((row) => row.itemId)).toEqual([200]);
 		expect(groupInventoryAdvisorRows(rows, 'evidence').map((group) => group.key)).toEqual(['complete', 'limited']);
 		expect(model).toEqual(before);
 	});
@@ -94,7 +94,7 @@ describe('Inventory Advisor view', () => {
 		expect(mount.document.activeElement).toBe(group);
 		expect(search.value).toBe('material');
 		expect(group.value).toBe('evidence');
-		expect(state.textContent).toBe('Recomendaciones preparadas para revisión manual.');
+		expect(state.textContent).toBe('Estas son las mejores acciones conocidas. Nada se ejecuta automáticamente.');
 		expect(text(mount.elements())).toContain('Completa');
 		expect(text(mount.elements())).not.toContain('Resto sin valor');
 	});
@@ -103,24 +103,31 @@ describe('Inventory Advisor view', () => {
 		const mount = render(readyModel());
 		const action = find(mount.elements(), 'select')[0];
 		if (!action) throw new Error('Expected an action filter.');
-		expect(action.children.map((option) => option.value)).not.toContain('discard_review');
+		expect(action.children.map((option) => option.value)).not.toEqual(expect.arrayContaining(['keep', 'review', 'discard_review']));
+		expect(text(mount.elements())).not.toContain('⚠ Revisión irreversible');
+		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
+		if (review === undefined) throw new Error('Expected the review visibility option.');
+		review.checked = true;
+		review.dispatch('change');
 		expect(text(mount.elements())).toContain('⚠ Revisión irreversible');
 		expect(find(mount.elements(), 'th').filter((element) => element.scope === 'rowgroup')
 		.map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
 		expect(find(mount.elements(), 'h3').map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
-		expect(find(mount.elements(), 'button')).toEqual([]);
+		expect(find(mount.elements(), 'button').some((button) => walk(button).some((element) => element.textContent?.includes('irreversible') === true))).toBe(false);
 		expect(find(mount.elements(), 'dialog')).toEqual([]);
 	});
 
 	it('renders semantic tables, cards, and long content without raw action or coverage enums in Spanish and English', () => {
 		for (const locale of ['es', 'en'] as const) {
 			const mount = render(allStatesAndActionsModel(), locale);
+			const context = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(-2);
+			for (const input of context) { input.checked = true; input.dispatch('change'); }
 			const allText = text(mount.elements());
 			expect(find(mount.elements(), 'caption')).toHaveLength(1);
 			expect(find(mount.elements(), 'th').some((element) => element.scope === 'col')).toBe(true);
 			expect(find(mount.elements(), 'th').some((element) => element.scope === 'row')).toBe(true);
-			expect(find(mount.elements(), 'article')).toHaveLength(7);
-			expect(find(mount.elements(), 'dl')).toHaveLength(7);
+			expect(find(mount.elements(), 'article')).toHaveLength(8);
+			expect(find(mount.elements(), 'dl')).toHaveLength(8);
 			expect(allText).toContain('x'.repeat(320));
 			expect(allText).not.toContain('discard_candidate');
 			for (const action of ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'] as const) {
@@ -162,17 +169,56 @@ describe('Inventory Advisor view', () => {
 		expect(mixed).toEqual(before);
 	});
 
-	it('keeps bank, materials, delivery, and plain review rows opt-in in the rendered controls', () => {
+	it('shows direct actions by default and keeps preserve/review context explicitly opt-in', () => {
 		const mount = render(allStatesAndActionsModel());
 		const options = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox');
-		expect(options).toHaveLength(4);
+		expect(options).toHaveLength(5);
 		expect(options.every((input) => input.checked === false)).toBe(true);
+		expect(options.slice(0, 3).every((input) => input.disabled)).toBe(true);
+		expect(options.slice(3).every((input) => !input.disabled)).toBe(true);
+		expect(find(mount.elements(), 'article')).toHaveLength(6);
+		const keep = options[3];
+		if (keep === undefined) throw new Error('Expected the keep visibility option.');
+		keep.checked = true;
+		keep.dispatch('change');
 		expect(find(mount.elements(), 'article')).toHaveLength(7);
-		const review = options[3];
+		const review = options[4];
 		if (review === undefined) throw new Error('Expected the review visibility option.');
 		review.checked = true;
 		review.dispatch('change');
 		expect(find(mount.elements(), 'article')).toHaveLength(8);
+	});
+
+	it('leads with an imperative action queue and lets its buttons drive the stable filter', () => {
+		const model: InventoryAdvisorViewModel = {
+			status: 'limited', title: 'inventory_advisor.title', detail: 'inventory_advisor.limited',
+			groups: [{ key: 'market', rows: [
+				row({ itemId: 1, name: 'Sell first', action: 'sell', value: { status: 'available', route: 'instant_sell', copper: 12_345 } }),
+				row({ itemId: 2, name: 'List second', action: 'list', value: { status: 'available', route: 'listing', copper: 25_000 } }),
+				row({ itemId: 3, name: 'Vendor third', action: 'vendor', value: { status: 'available', route: 'vendor', copper: 99 } }),
+				row({ itemId: 4, name: 'Context only', action: 'keep' }),
+			] }],
+		};
+		const mount = render(model);
+		const allText = text(mount.elements());
+		expect(allText).toContain('Qué hacer ahora');
+		expect(allText).toContain('Objetos distintos: 3 · Valor conocido: 3 oro · 74 plata · 44 cobre');
+		expect(allText).toContain('Vender ya');
+		expect(allText).toContain('Publicar en el bazar');
+		expect(allText).toContain('Vender al mercader');
+		expect(allText).not.toContain('Context only');
+		const summaryButtons = byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action');
+		expect(summaryButtons).toHaveLength(3);
+		const sell = only(summaryButtons.filter((button) => walk(button).some((element) => element.textContent === 'Vender ya')));
+		sell.dispatch('click');
+		const action = find(mount.elements(), 'select')[0];
+		if (action === undefined) throw new Error('Expected the action filter.');
+		expect(action.value).toBe('sell');
+		expect(mount.document.activeElement).toBe(action);
+		expect(find(mount.elements(), 'article')).toHaveLength(1);
+		const pressed = only(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action')
+			.filter((button) => button.attributes.get('aria-pressed') === 'true'));
+		expect(walk(pressed).some((element) => element.textContent === 'Vender ya')).toBe(true);
 	});
 
 	it('renders only trusted GW2 item icons and an honest indeterminate refresh state', () => {
@@ -196,6 +242,8 @@ describe('Inventory Advisor view', () => {
 		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.'],
 		['capture_unavailable', 'No se pudo leer la cuenta de Guild Wars 2. Comprueba la clave seleccionada y vuelve a actualizar.'],
 		['capture_invalid', 'La captura de la cuenta no superó la validación de seguridad.'],
+		['capture_snapshot_coverage_incomplete', 'No se pudo leer por completo el inventario de todos los personajes o el inventario compartido. Código seguro: snapshot_coverage_incomplete.'],
+		['capture_snapshot_structure_invalid', 'La respuesta del inventario no tiene una estructura segura para analizar. Código seguro: snapshot_structure_invalid.'],
 		['preferences_unavailable', 'Las preferencias locales del inventario no están disponibles.'],
 		['unexpected_failure', 'La actualización del inventario falló de forma inesperada.'],
 	] as const)('shows the safe actionable reason %s instead of the generic message', (blockedReason, expected) => {

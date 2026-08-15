@@ -56,6 +56,20 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(preferences).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		['snapshot_coverage_incomplete', 'capture_snapshot_coverage_incomplete'],
+		['snapshot_structure_invalid', 'capture_snapshot_structure_invalid'],
+	] as const)('preserves the safe snapshot failure %s', async (failure, reason) => {
+		const preferences = vi.fn();
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: async () => ({ status: 'invalid', evidence: null, failure }) },
+			preferences: { load: preferences },
+			rules: { current: () => ({ status: 'available', value: {} as never }) },
+		});
+		await expect(workflow.refresh('es')).resolves.toEqual({ status: 'blocked', reason });
+		expect(preferences).not.toHaveBeenCalled();
+	});
+
 	it('preserves a missing SecretStorage selection as a safe credential reason', async () => {
 		const preferences = vi.fn();
 		const workflow = new InventoryAdvisorWorkflow({
@@ -66,7 +80,7 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(preferences).not.toHaveBeenCalled();
 	});
 
-	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {
+	it('loads the built-in bundle before expiry without activating curated economic actions', async () => {
 		const fixture = reviewedDiscardFixture();
 		rebaseEvidence(fixture.evidence, '2026-08-14T20:30:30.000Z');
 		const expectedPriceItemIds = [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002];
@@ -98,14 +112,14 @@ describe('H5.11 inventory advisor workflow', () => {
 			.flatMap((line) => line.decisions.map((decision) => decision.action)) ?? [];
 		const finalActions = result.source.result.report?.lines
 			.flatMap((line) => line.decisions.map((decision) => decision.action)) ?? [];
-		expect(producerActions).toEqual(['review']);
-		expect(finalActions).toEqual(['review']);
+		expect(producerActions).toEqual(['keep']);
+		expect(finalActions).toEqual(['keep']);
 		expect(result.source.result.proofs).toEqual([]);
 		const presentation = buildInventoryAdvisorPresentation(result.source);
 		expect(presentation.status).toBe('limited');
 		if (presentation.status !== 'limited') throw new Error('Expected limited review-only presentation.');
 		expect(presentation.discardReview).toEqual({ status: 'unavailable' });
-		expect(presentation.groups.flatMap((group) => group.rows.map((row) => row.action))).toEqual(['review']);
+		expect(presentation.groups.flatMap((group) => group.rows.map((row) => row.action))).toEqual(['keep']);
 		expect(JSON.stringify(presentation)).not.toMatch(/"(?:sell|list|vendor|salvage|use|open|discard_review|discard_candidate)"/u);
 	});
 

@@ -19,6 +19,16 @@ import {
 } from './storage-delta-model';
 
 const CORE_SOURCES = ['characters', 'shared_inventory', 'bank', 'materials'] as const;
+const INVENTORY_ADVISOR_SOURCES = ['characters', 'shared_inventory'] as const;
+const INVENTORY_ADVISOR_QUALITIES: ReadonlySet<StorageSnapshot['quality']> = new Set([
+	'stable',
+	'stable_owned_placement_changed',
+	'unstable',
+]);
+
+export type InventoryAdvisorStorageSnapshotFailure =
+	| 'snapshot_coverage_incomplete'
+	| 'snapshot_structure_invalid';
 
 interface Projection {
 	owned: Map<number, number>;
@@ -148,6 +158,33 @@ export function isComparableStorageSnapshot(value: unknown): value is StorageSna
 	return validateSnapshot(value, 'before', reasons) && !hasInvalidReason(reasons);
 }
 
+/** Validates the deliberately narrower character/shared-inventory advisor capture. */
+export function isInventoryAdvisorStorageSnapshot(value: unknown): value is StorageSnapshot {
+	return inventoryAdvisorStorageSnapshotFailure(value) === null;
+}
+
+/** Returns a closed, non-sensitive reason for a rejected advisor snapshot. */
+export function inventoryAdvisorStorageSnapshotFailure(
+	value: unknown,
+): InventoryAdvisorStorageSnapshotFailure | null {
+	const reasons: StorageDeltaReason[] = [];
+	const valid = validateSnapshot(
+		value,
+		'before',
+		reasons,
+		INVENTORY_ADVISOR_SOURCES,
+		INVENTORY_ADVISOR_QUALITIES,
+	);
+	if (valid && !hasInvalidReason(reasons)) return null;
+	return reasons.some((reason) =>
+		reason.code === 'core_coverage_incomplete'
+		|| reason.code === 'character_coverage_incomplete'
+		|| reason.code === 'unsupported_quality'
+	)
+		? 'snapshot_coverage_incomplete'
+		: 'snapshot_structure_invalid';
+}
+
 function validatePair(before: unknown, after: unknown): Validation {
 	const reasons: StorageDeltaReason[] = [];
 	const beforeValid = validateSnapshot(before, 'before', reasons);
@@ -180,6 +217,8 @@ function validateSnapshot(
 	value: unknown,
 	which: 'before' | 'after',
 	reasons: StorageDeltaReason[],
+	requiredSources: readonly (typeof CORE_SOURCES)[number][] = CORE_SOURCES,
+	allowedQualities: ReadonlySet<StorageSnapshot['quality']> = COMPARABLE_SNAPSHOT_QUALITIES,
 ): value is StorageSnapshot {
 	if (!isSnapshotShell(value)) {
 		reasons.push({ code: 'invalid_snapshot', snapshot: which });
@@ -191,9 +230,9 @@ function validateSnapshot(
 		valid = false;
 	};
 	if (value.schemaVersion !== PINNED_SCHEMA) invalidate('schema_mismatch');
-	if (!COMPARABLE_SNAPSHOT_QUALITIES.has(value.quality)) invalidate('unsupported_quality');
+	if (!allowedQualities.has(value.quality)) invalidate('unsupported_quality');
 	if (!validWindow(value.startedAt, value.completedAt)) invalidate('invalid_window');
-	if (!validateCoverage(value.coverage, value.roster, which, reasons)) valid = false;
+	if (!validateCoverage(value.coverage, value.roster, which, reasons, requiredSources)) valid = false;
 	try {
 		validateHoldings(value.holdings);
 		validateHoldingRelationships(value.holdings, value.roster, value.coverage);
@@ -215,9 +254,10 @@ function validateCoverage(
 	roster: string[],
 	which: 'before' | 'after',
 	reasons: StorageDeltaReason[],
+	requiredSources: readonly (typeof CORE_SOURCES)[number][],
 ): boolean {
 	let valid = true;
-	for (const source of CORE_SOURCES) {
+	for (const source of requiredSources) {
 		if (coverage.sources[source].status !== 'complete') {
 			reasons.push({ code: 'core_coverage_incomplete', snapshot: which, detail: source });
 			valid = false;

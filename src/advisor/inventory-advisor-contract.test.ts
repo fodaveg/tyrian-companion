@@ -33,6 +33,28 @@ describe('inventory advisor H4.13 contract', () => {
 		expect(isInventoryAdvisorRulePack(input.rulePack)).toBe(true);
 	});
 
+	it('accepts a character/shared-only snapshot while the full-account validator remains strict', () => {
+		const input = inputFixture();
+		const coverage: SnapshotCoverage = {
+			sources: {
+				characters: { status: 'complete' },
+				shared_inventory: { status: 'complete' },
+				bank: { status: 'skipped', reason: 'not_requested' },
+				materials: { status: 'skipped', reason: 'not_requested' },
+				wallet: { status: 'skipped', reason: 'not_requested' },
+				commerce_delivery: { status: 'skipped', reason: 'not_requested' },
+			},
+			characters: {},
+		};
+		const snapshot: StorageSnapshot = {
+			...input.snapshot,
+			holdings: [{ ...input.snapshot.holdings[0]!, location: { source: 'shared_inventory', slot: 0 } }],
+			coverage,
+			passCoverages: [coverage, coverage],
+		};
+		expect(isInventoryAdvisorInput({ ...input, snapshot })).toBe(true);
+	});
+
 	it('keeps a frozen V1 rule-pack digest valid without silently migrating it', () => {
 		const legacy = {
 			schemaVersion: 1 as const, id: 'legacy-rules', version: 1,

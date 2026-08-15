@@ -2,12 +2,39 @@
 
 ## Hotfix — Inventory Advisor con datos reales
 
+- La clasificación deja de usar la completitud global de catálogo/precios como interruptor para todas
+  las filas. Con un batch 206 parcial, cada objeto con catálogo resuelto y precio presente u omisión
+  demostrada puede mostrar su ruta manual de listing, venta o mercader. El pack curado pendiente solo
+  retiene sus propias capacidades; ya no convierte en `rule_stale` las rutas líquidas independientes.
+- Añadido un recibo diagnóstico local reemplazable por Refresh con resultado, duración y cobertura
+  por pasada/fuente. Permite diagnosticar el fallo real sin capturas de pantalla ni consola y excluye
+  secretos, identidad, personajes, objetos, URLs y cuerpos de respuesta. Las fuentes no disponibles
+  conservan únicamente clase de transporte, código HTTP y espera acotada para distinguir 429/5xx,
+  timeout y red.
+- El Advisor deja de intentar estabilizar el inventario mediante tres lecturas completas. Cada intento
+  realiza una sola pasada acotada y una pasada completamente cubierta se conserva como evidencia
+  `unstable/limited`: puede mostrar rutas manuales líquidas, pero no autoriza uso, apertura, reciclaje
+  ni acciones irreversibles. Solo una pasada parcial transitoria provoca un segundo intento completo.
+- Refresh usa un transporte separado con timeout de 30 segundos por petición; las capturas completas de
+  sesión conservan el transporte y la estabilización de dos/tres pasadas originales.
+- Las lecturas de inventario de personajes del Advisor se serializan para evitar que varios personajes
+  compitan por el transporte de Obsidian y agoten simultáneamente el timeout. Las capturas completas de
+  sesión conservan su límite de concurrencia independiente.
+- Refresh deja de depender del snapshot account-wide: captura y estabiliza exclusivamente inventarios
+  de personaje + compartido. Banco, materiales, wallet y delivery quedan `not_requested`, no pueden
+  invalidar el inventario básico y sus controles permanecen deshabilitados hasta una captura separada.
 - La vista deja de ser un volcado account-wide de filas sin acción: por defecto enseña bolsas de
-  personaje e inventario compartido, oculta las filas `review` y deja banco, materiales, delivery
-  y pendientes como opciones desmarcadas. Cada fila puede mostrar el icono oficial del catálogo.
+	personaje e inventario compartido y prioriza una cola «Qué hacer ahora» con verbos directos,
+	cantidades y valor en oro/plata/cobre. Las filas `keep|review|discard_review` quedan como contexto
+	opt-in; banco, materiales y delivery siguen como ámbitos futuros deshabilitados. Cada fila puede
+	mostrar el icono oficial del catálogo.
 - Los items sin conocimiento curado pueden comparar de forma manual venta instantánea, listing y
   mercader con evidencia completa; uso, apertura y reciclaje siguen retenidos hasta tener regla
   curada. La explicación declara que no se ejecuta ni compara esas rutas.
+- La cobertura del Advisor ya se calcula sobre sus fuentes reales —personajes + inventario compartido—,
+  no sobre los ámbitos opcionales. Si una lectura completa cambia entre pasadas, conserva el estado
+  `limited` pero puede mostrar rutas manuales de venta/mercader sobre la última pasada; usar, abrir y
+  reciclar continúan en revisión hasta obtener una lectura estable.
 - Refresh muestra progreso indeterminado honesto, reintenta una vez una captura parcial transitoria
   y conserva el último resultado válido con aviso saneado solo si un Refresh devuelve
   `capture_unavailable`; identidad, preferencias y reclassify fallan cerrados.

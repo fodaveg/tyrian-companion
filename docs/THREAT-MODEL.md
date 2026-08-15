@@ -23,6 +23,11 @@ ya comprometida, un reporte humano que ignore la redacción ni un paquete de des
 - No hay endpoints del proyecto, subida de diagnósticos, analítica remota ni tráfico Mumble activo
   desde el plugin. H8.5/H8.6 implementan servidor y cliente core en aislamiento sobre el canal H8.4,
   pero no existe adapter ni composición que abra proceso o socket. Cablearlo exige nueva revisión y QA real.
+- Cada Refresh del Inventory Advisor reemplaza un único recibo diagnóstico local dentro de la carpeta
+  del plugin; una fuente fallida expone como máximo `http|timeout|network`, estado HTTP y espera acotada,
+  y su contrato cerrado conserva resultado, duración, calidad y coberturas por pasada/fuente;
+  excluye clave, identificadores de cuenta/snapshot, nombres de personaje, objetos, URLs y cuerpos HTTP.
+  No es un log acumulativo, no sale del vault y un fallo al escribirlo no altera la recomendación.
 - El formulario de bugs es una superficie humana de GitHub, no un uploader del plugin. Solicita solo
   versión, plataforma, modo/fase y reproducción redactada; una confirmación obligatoria prohíbe clave,
   identidad, ruta local, inventario/snapshot crudo, IndexedDB, notas y salida sin redactar.

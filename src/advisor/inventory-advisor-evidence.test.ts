@@ -117,26 +117,150 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		transient.quality = 'partial';
 		transient.coverage.sources.bank = { status: 'partial', reason: 'partial_response' };
 		const stable = snapshotFixture([10]);
-		const captureWithOperation = vi.fn()
+		const captureInventoryWithOperation = vi.fn()
 			.mockResolvedValueOnce(transient)
 			.mockResolvedValueOnce(stable);
 		const service = new InventoryAdvisorEvidenceService(
 			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
-			{ captureWithOperation }, { resolve: async () => catalogFor(stable) },
+			{ captureInventoryWithOperation }, { resolve: async () => catalogFor(stable) },
 			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
 		);
 		expect(await service.capture('es')).toMatchObject({ status: 'complete', evidence: { snapshot: { quality: 'stable' } } });
-		expect(captureWithOperation).toHaveBeenCalledTimes(2);
+		expect(captureInventoryWithOperation).toHaveBeenCalledTimes(2);
 
 		const limited = snapshotFixture([10]);
 		limited.coverage.sources.bank = { status: 'skipped', reason: 'missing_scope' };
 		const limitedCapture = vi.fn(async () => limited);
 		await new InventoryAdvisorEvidenceService(
 			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
-			{ captureWithOperation: limitedCapture }, { resolve: async () => catalogFor(limited) },
+			{ captureInventoryWithOperation: limitedCapture }, { resolve: async () => catalogFor(limited) },
 			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
 		).capture('es');
 		expect(limitedCapture).toHaveBeenCalledOnce();
+	});
+
+	it('uses the latest fully covered unstable pass as limited manual evidence', async () => {
+		const unstable = snapshotFixture([10]);
+		unstable.quality = 'unstable';
+		unstable.passes = 3;
+		unstable.passCoverages = [unstable.coverage, unstable.coverage, unstable.coverage];
+		const captureInventoryWithOperation = vi.fn(async () => unstable);
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			{ captureInventoryWithOperation }, { resolve: async () => catalogFor(unstable) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+		);
+
+		await expect(service.capture('es')).resolves.toMatchObject({
+			status: 'partial',
+			evidence: { snapshot: { quality: 'unstable' }, coverage: { snapshot: 'partial' } },
+		});
+		expect(captureInventoryWithOperation).toHaveBeenCalledOnce();
+	});
+
+	it('reports incomplete coverage separately from a malformed snapshot', async () => {
+		const incomplete = snapshotFixture([10]);
+		incomplete.quality = 'partial';
+		incomplete.coverage.sources.characters = {
+			status: 'partial',
+			reason: 'unavailable',
+			diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
+		};
+		incomplete.coverage.characters = {
+			'Private Character Name': {
+				status: 'partial',
+				reason: 'missing_character',
+				diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+			},
+		};
+		incomplete.roster = ['Private Character Name'];
+		incomplete.passCoverages = [
+			structuredClone(incomplete.coverage),
+			structuredClone(incomplete.coverage),
+		];
+		const incompleteCapture = vi.fn(async () => incomplete);
+		const receipt = vi.fn();
+		const incompleteService = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			{ captureInventoryWithOperation: incompleteCapture }, { resolve: async () => catalogFor(incomplete) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW, receipt,
+		);
+		await expect(incompleteService.capture('es')).resolves.toEqual({
+			status: 'invalid', evidence: null, failure: 'snapshot_coverage_incomplete',
+		});
+		expect(receipt).toHaveBeenCalledOnce();
+		expect(receipt).toHaveBeenCalledWith({
+			version: 1,
+			recordedAt: '2026-08-14T12:00:00.000Z',
+			status: 'invalid',
+			failure: 'snapshot_coverage_incomplete',
+			evidenceCoverage: null,
+			evidenceDetails: null,
+			containerPrices: 'not_requested',
+			workflow: null,
+			snapshot: {
+				quality: 'partial',
+				passes: 2,
+				durationMs: 1_000,
+				roster: {
+					status: 'partial', reason: 'unavailable',
+					diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
+				},
+				sharedInventory: { status: 'complete' },
+				characterInventories: [{
+					status: 'partial', reason: 'missing_character',
+					diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+				}],
+				attempts: [
+					{
+						roster: {
+							status: 'partial', reason: 'unavailable',
+							diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
+						},
+						sharedInventory: { status: 'complete' },
+						characterInventories: [{
+							status: 'partial', reason: 'missing_character',
+							diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+						}],
+					},
+					{
+						roster: {
+							status: 'partial', reason: 'unavailable',
+							diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
+						},
+						sharedInventory: { status: 'complete' },
+						characterInventories: [{
+							status: 'partial', reason: 'missing_character',
+							diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+						}],
+					},
+				],
+			},
+		});
+		const serializedReceipt = JSON.stringify(receipt.mock.calls);
+		expect(serializedReceipt).not.toMatch(/account-1|Private Character Name|snapshot-1|Item 10/u);
+
+		const malformed = snapshotFixture([10]);
+		malformed.holdings = [];
+		const malformedService = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			snapshotCapture(malformed), { resolve: async () => catalogFor(malformed) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+		);
+		await expect(malformedService.capture('es')).resolves.toEqual({
+			status: 'invalid', evidence: null, failure: 'snapshot_structure_invalid',
+		});
+	});
+
+	it('does not let a failed local receipt write block or alter capture', async () => {
+		const snapshot = snapshotFixture([10]);
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+			async () => { throw new Error('local receipt unavailable'); },
+		);
+		await expect(service.capture('es')).resolves.toMatchObject({ status: 'complete' });
 	});
 
 	it('keeps missing scopes and URL-restricted signals null without calling their endpoints', async () => {
@@ -162,7 +286,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			: { id: 'other-account', name: 'Account', world: 1, created: '2020-01-01T00:00:00.000Z', access: [], commander: false };
 		const identityOperation = { request: identityRequest, requestDetailed: async (path: string) => ({ status: 200, headers: {}, body: await identityRequest(path) }) };
 		const mismatch = new InventoryAdvisorEvidenceService({ beginOperation: () => identityOperation }, snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
-		expect(await mismatch.capture('es')).toEqual({ status: 'invalid', evidence: null });
+		expect(await mismatch.capture('es')).toEqual({ status: 'invalid', evidence: null, failure: 'identity_mismatch' });
 		const unavailable = new InventoryAdvisorEvidenceService({ beginOperation: () => ({ request: async () => { throw new Error('offline'); }, requestDetailed: async () => { throw new Error('unused'); } }) }, snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
 		expect(await unavailable.capture('es')).toEqual({ status: 'unavailable', evidence: null });
 	});
@@ -248,14 +372,14 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 	it('fails closed when a catalog port returns a mismatched locale, identity or coverage', async () => {
 		const snapshot = snapshotFixture([10]);
 		const validCatalog = catalogFor(snapshot);
-		const corruptions: CatalogResolution[] = [
-			{ ...validCatalog, locale: 'en' },
-			{ ...validCatalog, snapshotId: 'other-snapshot' },
-			{ ...validCatalog, coverage: { ...validCatalog.coverage, items: {} } },
-			{ ...validCatalog, items: {} },
+		const corruptions: Array<[CatalogResolution, string]> = [
+			[{ ...validCatalog, locale: 'en' }, 'cross_reference_invalid'],
+			[{ ...validCatalog, snapshotId: 'other-snapshot' }, 'cross_reference_invalid'],
+			[{ ...validCatalog, coverage: { ...validCatalog.coverage, items: {} } }, 'catalog_invalid'],
+			[{ ...validCatalog, items: {} }, 'catalog_invalid'],
 		];
-		for (const corrupt of corruptions) {
-			expect(await new InventoryAdvisorEvidenceService(clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }), snapshotCapture(snapshot), { resolve: async () => corrupt }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW).capture('es')).toEqual({ status: 'invalid', evidence: null });
+		for (const [corrupt, failure] of corruptions) {
+			expect(await new InventoryAdvisorEvidenceService(clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }), snapshotCapture(snapshot), { resolve: async () => corrupt }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW).capture('es')).toEqual({ status: 'invalid', evidence: null, failure });
 		}
 	});
 
@@ -297,7 +421,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		const hostile = new Proxy({}, { getPrototypeOf: () => { throw new Error('hostile'); } }) as StorageSnapshot;
 		const service = new InventoryAdvisorEvidenceService({ beginOperation }, snapshotCapture(hostile), catalog, gateway, () => NOW);
 
-		await expect(service.capture('es')).resolves.toEqual({ status: 'invalid', evidence: null });
+		await expect(service.capture('es')).resolves.toEqual({ status: 'invalid', evidence: null, failure: 'snapshot_structure_invalid' });
 		expect(beginOperation).toHaveBeenCalledTimes(1);
 		expect(catalog.resolve).not.toHaveBeenCalled();
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Vitest mock assertion.
@@ -310,7 +434,7 @@ function serviceFor(snapshot: StorageSnapshot, catalog: CatalogResolution, gatew
 		{ resolve: async () => catalog }, gateway, () => NOW);
 }
 
-function snapshotCapture(snapshot: StorageSnapshot) { return { captureWithOperation: async () => snapshot }; }
+function snapshotCapture(snapshot: StorageSnapshot) { return { captureInventoryWithOperation: async () => snapshot }; }
 
 function clientFor(options: { permissions: string[]; urls: string[] | undefined; access?: string[] }) {
 	return {

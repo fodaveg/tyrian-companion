@@ -21,9 +21,15 @@ export interface SourceCoverage {
 	reason?:
 		| 'missing_scope'
 		| 'url_restricted'
+		| 'not_requested'
 		| 'missing_character'
 		| 'partial_response'
 		| 'unavailable';
+	diagnostic?: {
+		kind: 'http' | 'timeout' | 'network';
+		status: number | null;
+		retryAfterMs: number | null;
+	};
 }
 
 export interface SnapshotCoverage {
@@ -94,7 +100,7 @@ export interface StorageSnapshot extends StorageSnapshotPass {
 	completedAt: string;
 	passCoverages: SnapshotCoverage[];
 	quality: SnapshotQuality;
-	passes: 2 | 3;
+	passes: 1 | 2 | 3;
 	schemaVersion: typeof PINNED_SCHEMA;
 }
 

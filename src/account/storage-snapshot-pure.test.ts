@@ -67,7 +67,55 @@ describe('pure storage snapshot production path', () => {
 		expect(qualifyStorageSnapshotTriple(first, second, third)).toMatchObject({
 			pass: third,
 			quality: 'stable_owned_placement_changed',
+			coveragePasses: [second, third],
 			passes: [first, second, third],
 		});
+	});
+
+	it('recovers from a transient partial first pass after two complete consecutive passes', () => {
+		const first = pass(0, 1);
+		first.coverage.sources.characters = { status: 'partial', reason: 'unavailable' };
+		const second = pass(0, 2);
+		const third = pass(0, 2);
+		const qualified = qualifyStorageSnapshotTriple(first, second, third);
+		const snapshot = finalizeStorageSnapshot(qualified, {
+			accountId: 'account',
+			snapshotId: 'snapshot',
+			startedAt: '2026-08-15T07:00:00.000Z',
+			completedAt: '2026-08-15T07:00:01.000Z',
+		});
+
+		expect(snapshot).toMatchObject({
+			quality: 'stable',
+			passes: 3,
+			coverage: { sources: { characters: { status: 'complete' } } },
+		});
+		expect(snapshot.passCoverages).toEqual([
+			first.coverage,
+			second.coverage,
+			third.coverage,
+		]);
+	});
+
+	it('uses the last complete pass as limited unstable evidence when later reads time out', () => {
+		const first = pass(0, 2);
+		const second = pass(0, 2);
+		second.coverage.sources.characters = {
+			status: 'partial', reason: 'unavailable',
+			diagnostic: { kind: 'timeout', status: null, retryAfterMs: null },
+		};
+		const third = structuredClone(second);
+		const qualified = qualifyStorageSnapshotTriple(first, second, third);
+		const snapshot = finalizeStorageSnapshot(qualified, {
+			accountId: 'account', snapshotId: 'snapshot',
+			startedAt: '2026-08-15T07:00:00.000Z', completedAt: '2026-08-15T07:00:40.000Z',
+		});
+
+		expect(snapshot).toMatchObject({
+			quality: 'unstable', passes: 3,
+			coverage: { sources: { characters: { status: 'complete' } } },
+		});
+		expect(qualified.pass).toBe(first);
+		expect(snapshot.passCoverages).toEqual([first.coverage, second.coverage, third.coverage]);
 	});
 });

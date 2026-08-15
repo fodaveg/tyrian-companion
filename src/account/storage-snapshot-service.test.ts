@@ -12,7 +12,11 @@ import {
 	SnapshotCapabilityError,
 	type ItemHolding,
 } from './storage-snapshot-model';
-import { compareStorageSnapshots } from './storage-delta';
+import {
+	compareStorageSnapshots,
+	isComparableStorageSnapshot,
+	isInventoryAdvisorStorageSnapshot,
+} from './storage-delta';
 import { StorageSnapshotService } from './storage-snapshot-service';
 
 type PassFixture = Record<string, unknown>;
@@ -116,6 +120,84 @@ function passWith(overrides: PassFixture = {}): PassFixture {
 }
 
 describe('StorageSnapshotService', () => {
+	it('captures only character and shared inventory for the advisor without requiring bank or materials', async () => {
+		const seen: string[] = [];
+		const fixture = clientFor([passWith()], { seen });
+		const operation = fixture.client.beginOperation();
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(operation);
+
+		expect(seen.map((path) => path.split('?')[0])).toEqual([
+			'characters',
+			'account/inventory',
+			`characters/${encodeURIComponent(characterName)}/inventory`,
+		]);
+		expect(snapshot).toMatchObject({
+			quality: 'unstable',
+			passes: 1,
+			coverage: {
+				sources: {
+					characters: { status: 'complete' },
+					shared_inventory: { status: 'complete' },
+					bank: { status: 'skipped', reason: 'not_requested' },
+					materials: { status: 'skipped', reason: 'not_requested' },
+					wallet: { status: 'skipped', reason: 'not_requested' },
+					commerce_delivery: { status: 'skipped', reason: 'not_requested' },
+				},
+			},
+		});
+		expect(snapshot.holdings.every(({ location }) =>
+			location.source === 'character' || location.source === 'shared_inventory')).toBe(true);
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+	});
+
+	it('serializes character inventory requests only for the advisor scope', async () => {
+		const secondCharacter = 'Boreal Dos';
+		const inventoryPath = `characters/${encodeURIComponent(secondCharacter)}/inventory`;
+		const inventory = { bags: [{ id: 9_001, inventory: [] }] };
+		let activeCharacters = 0;
+		let maxActiveCharacters = 0;
+		const fixture = clientFor([
+			passWith({ characters: [characterName, secondCharacter], [inventoryPath]: inventory }),
+			passWith({ characters: [characterName, secondCharacter], [inventoryPath]: inventory }),
+		], {
+			onRequest: async (path) => {
+				if (!path.startsWith('characters/') || !path.includes('/inventory')) return;
+				activeCharacters += 1;
+				maxActiveCharacters = Math.max(maxActiveCharacters, activeCharacters);
+				await Promise.resolve();
+				activeCharacters -= 1;
+			},
+		});
+
+		await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+		expect(maxActiveCharacters).toBe(1);
+	});
+
+	it('keeps a fully covered changing inventory usable as limited advisor evidence', async () => {
+		const changing = [1].map((count) => passWith({
+			'account/inventory': [{ id: 2_002, count }],
+		}));
+		const operationFixture = clientFor(changing);
+		const operation = operationFixture.client.beginOperation();
+		const snapshot = await new StorageSnapshotService(operationFixture.client)
+			.captureInventoryWithOperation(operation);
+
+		expect(snapshot).toMatchObject({
+			quality: 'unstable',
+			passes: 1,
+			availableByItem: { '2002': 1 },
+			coverage: { sources: {
+				characters: { status: 'complete' },
+				shared_inventory: { status: 'complete' },
+			} },
+		});
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+	});
+
 	it.each([
 		['character to bank', 'character', 'bank'],
 		['character to materials', 'character', 'materials'],
@@ -298,7 +380,7 @@ describe('StorageSnapshotService', () => {
 		).resolves.toMatchObject({ quality: 'stable', passes: 2 });
 	});
 
-	it('never reports stable for 206 or missing character coverage', async () => {
+	it('keeps repeated partial coverage blocked but recovers after two complete consecutive passes', async () => {
 		const partial = passWith({ 'account/bank': response(206, bankFixture) });
 		await expect(
 			new StorageSnapshotService(clientFor([partial, partial]).client).capture(),
@@ -316,9 +398,9 @@ describe('StorageSnapshotService', () => {
 				clientFor([changedPartial, laterComplete, laterComplete]).client,
 			).capture(),
 		).resolves.toMatchObject({
-			quality: 'partial',
+			quality: 'stable',
 			passes: 3,
-			coverage: { sources: { bank: { status: 'partial', reason: 'partial_response' } } },
+			coverage: { sources: { bank: { status: 'complete' } } },
 		});
 
 		const missingCharacter = passWith({
@@ -335,6 +417,49 @@ describe('StorageSnapshotService', () => {
 			quality: 'partial',
 			coverage: { sources: { characters: { status: 'partial', reason: 'missing_character' } } },
 		});
+	});
+
+	it('returns one bounded partial advisor pass when the roster is unavailable', async () => {
+		const unavailableRoster = passWith({
+			characters: new HttpTransportError('http', 500, null, 'Unavailable.'),
+		});
+		const fixture = clientFor([unavailableRoster]);
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({
+			quality: 'partial',
+			passes: 1,
+			coverage: {
+				sources: { characters: { status: 'partial', reason: 'unavailable' } },
+				characters: {},
+			},
+		});
+		expect(snapshot.passCoverages.map((coverage) => coverage.sources.characters)).toEqual([
+			{
+				status: 'partial',
+				reason: 'unavailable',
+				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
+			},
+		]);
+	});
+
+	it('does not repeat a complete advisor pass only to claim stability', async () => {
+		const seen: string[] = [];
+		const fixture = clientFor([passWith()], { seen });
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({
+			quality: 'unstable',
+			passes: 1,
+			coverage: {
+				sources: { characters: { status: 'complete' }, shared_inventory: { status: 'complete' } },
+				characters: { [characterName]: { status: 'complete' } },
+			},
+		});
+		expect(snapshot.passCoverages).toHaveLength(1);
+		expect(seen).toHaveLength(3);
 	});
 
 	it('rejects duplicate roster entries instead of double-counting a character', async () => {
@@ -512,7 +637,11 @@ describe('StorageSnapshotService', () => {
 			).capture(),
 		).resolves.toMatchObject({
 			quality: 'partial',
-			coverage: { sources: { characters: { status: 'partial', reason: 'unavailable' } } },
+			coverage: { sources: { characters: {
+				status: 'partial',
+				reason: 'unavailable',
+				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
+			} } },
 		});
 	});
 });

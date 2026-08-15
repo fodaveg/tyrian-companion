@@ -1,4 +1,4 @@
-import { isComparableStorageSnapshot } from '../account/storage-delta';
+import { isInventoryAdvisorStorageSnapshot } from '../account/storage-delta';
 import {
 	isAccountSignals,
 	isCatalogResolution,
@@ -15,27 +15,40 @@ import type {
 import type { ReservationGoal } from '../economy/reservation-model';
 import {
 	INVENTORY_ADVISOR_EVIDENCE_VERSION,
+	type InventoryAdvisorEvidenceValidationFailure,
 	type InventoryAdvisorEvidenceV1,
 } from './inventory-advisor-evidence-model';
 
 /** Strictly validates the H4.14 wrapper before it is composed into the H4.13 input contract. */
 export function isInventoryAdvisorEvidence(value: unknown): value is InventoryAdvisorEvidenceV1 {
+	return inventoryAdvisorEvidenceValidationFailure(value) === null;
+}
+
+/** Returns only a closed, non-sensitive contract stage; never account or item data. */
+export function inventoryAdvisorEvidenceValidationFailure(value: unknown): InventoryAdvisorEvidenceValidationFailure | null {
 	try {
 		if (!record(value) || !exactKeys(value, [
 			'version', 'scope', 'accountId', 'snapshotId', 'schemaVersion', 'capturedAt', 'finishedAt', 'locale',
 			'snapshot', 'snapshotFingerprint', 'ttl', 'coverage', 'catalog', 'prices', 'accountSignals',
 		]) || value.version !== INVENTORY_ADVISOR_EVIDENCE_VERSION || value.scope !== 'supported_storage_v1'
 			|| !text(value.accountId) || !text(value.snapshotId) || !text(value.schemaVersion) || !iso(value.capturedAt) || !iso(value.finishedAt)
-			|| (value.locale !== 'es' && value.locale !== 'en') || !ttl(value.ttl) || !coverage(value.coverage)
-			|| !isComparableStorageSnapshot(value.snapshot) || !isCatalogResolution(value.catalog) || !isInventoryPriceSnapshot(value.prices) || !isAccountSignals(value.accountSignals)) return false;
-		return value.catalog.snapshotId === value.snapshotId && value.catalog.schemaVersion === value.schemaVersion && value.catalog.locale === value.locale
-			&& value.snapshot.accountId === value.accountId && value.snapshot.snapshotId === value.snapshotId && value.snapshot.schemaVersion === value.schemaVersion && sha(value.snapshotFingerprint) && value.snapshotFingerprint === sha256CanonicalValue(value.snapshot)
-			&& value.prices.accountId === value.accountId && value.prices.snapshotId === value.snapshotId
-			&& value.prices.schemaVersion === value.schemaVersion && value.accountSignals.accountId === value.accountId
-			&& timestamps(value as unknown as InventoryAdvisorEvidenceV1)
-			&& exactCoverage(value as unknown as InventoryAdvisorEvidenceV1)
-			&& JSON.parse(JSON.stringify(value)) !== undefined;
-	} catch { return false; }
+			|| (value.locale !== 'es' && value.locale !== 'en') || !ttl(value.ttl) || !coverage(value.coverage)) return 'wrapper_shape';
+		if (!isInventoryAdvisorStorageSnapshot(value.snapshot)) return 'snapshot_invalid';
+		if (!isCatalogResolution(value.catalog)) return 'catalog_invalid';
+		if (!isInventoryPriceSnapshot(value.prices)) return 'prices_invalid';
+		if (!isAccountSignals(value.accountSignals)) return 'account_signals_invalid';
+		const evidence = value as unknown as InventoryAdvisorEvidenceV1;
+		if (evidence.catalog.snapshotId !== evidence.snapshotId || evidence.catalog.schemaVersion !== evidence.schemaVersion
+			|| evidence.catalog.locale !== evidence.locale || evidence.snapshot.accountId !== evidence.accountId
+			|| evidence.snapshot.snapshotId !== evidence.snapshotId || evidence.snapshot.schemaVersion !== evidence.schemaVersion
+			|| evidence.prices.accountId !== evidence.accountId || evidence.prices.snapshotId !== evidence.snapshotId
+			|| evidence.prices.schemaVersion !== evidence.schemaVersion || evidence.accountSignals.accountId !== evidence.accountId) return 'cross_reference_invalid';
+		if (!sha(evidence.snapshotFingerprint) || evidence.snapshotFingerprint !== sha256CanonicalValue(evidence.snapshot)) return 'snapshot_fingerprint_invalid';
+		if (!timestamps(evidence)) return 'timestamps_invalid';
+		if (!exactCoverage(evidence)) return 'coverage_invalid';
+		if (JSON.parse(JSON.stringify(evidence)) === undefined) return 'serialization_invalid';
+		return null;
+	} catch { return 'serialization_invalid'; }
 }
 
 /** Composes capture evidence into the already strict H4.13 input; no classification occurs here. */
