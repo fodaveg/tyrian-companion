@@ -2,9 +2,10 @@ import { spawnSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as ts from 'typescript';
 
-/** Textual, dependency-free baseline for credential and telemetry boundary regressions. */
-export const SECURITY_SCANNER_VERSION = 5;
+/** Textual baseline with AST-closed TypeScript import boundaries. */
+export const SECURITY_SCANNER_VERSION = 7;
 
 const RELEASE_ARTIFACT_FILES = new Set([
 	'main.js',
@@ -38,13 +39,23 @@ const CONSOLE_REFERENCE_PATTERN = /\bconsole\b/u;
 const LOGGER_CALL_PATTERN = /\b(?:logger|telemetry)\s*(?:\?\.)?\s*(?:\.|\[)/iu;
 const MUMBLE_HELPER_PATTERN = /mumble/iu;
 const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
+	'src/platform/mumble-v2-client.ts',
+	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
+	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-observation.ts',
 	'native/mumble-helper/src/framing.rs',
 	'native/mumble-helper/src/lib.rs',
 	'native/mumble-helper/src/main.rs',
 	'native/mumble-helper/src/protocol.rs',
 	'native/mumble-helper/src/source.rs',
 	'native/mumble-helper/src/win32.rs',
+]);
+const REVIEWED_MUMBLE_CORE_IMPORTS = new Map([
+	['src/platform/mumble-v2-client.ts', ['./mumble-v2-contract', './mumble-v2-codec']],
+	['src/platform/mumble-v2-codec.ts', ['./mumble-v2-contract']],
+	['src/platform/mumble-v2-health.ts', ['./mumble-v2-contract']],
+	['src/platform/mumble-v2-observation.ts', ['./mumble-v2-contract']],
 ]);
 const MUMBLE_CONTRACT_PROHIBITED_PATTERNS = [
 	/\b(?:inject|injection|dllInject|hookProcess)\b/iu,
@@ -66,6 +77,14 @@ const NATIVE_MUMBLE_PROHIBITED_PATTERNS = [
 	/\b(?:SendInput|simulateInput|keybd_event|mouse_event)\b/u,
 	/\b(?:identity|characterName|fAvatarPosition|fCameraPosition|playerX|playerY|processId|pid)\b/iu,
 	/\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
+];
+const MUMBLE_CORE_PROHIBITED_PATTERNS = [
+	/\b(?:inject|injection|dllInject|hookProcess|ReadProcessMemory|ptrace|processMemory)\b/iu,
+	/\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|indexedDB|localStorage|sessionStorage)\b/u,
+	/\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\s*\(/u,
+	/\b(?:console|logger|telemetry)\b/iu,
+	/\b(?:onStart|onStop|proposal|capture|persist|SessionService|SessionStore)\b/iu,
+	/\b(?:import\s*\(|require\s*\()/u,
 ];
 
 /** Scans tracked and untracked non-ignored repository text without returning matched values. */
@@ -136,15 +155,47 @@ export function scanReleaseArtifacts(root, relativePaths) {
 function isReviewedMumbleContract(path, source) {
 	const normalized = normalizeRepositoryPath(path);
 	if (!REVIEWED_MUMBLE_CONTRACT_FILES.has(normalized)) return false;
-	const inspected = normalized.startsWith('native/mumble-helper/src/')
+	const native = normalized.startsWith('native/mumble-helper/src/');
+	const core = REVIEWED_MUMBLE_CORE_IMPORTS.has(normalized);
+	const inspected = native
 		? stripRustCfgTestModules(source)
 		: source;
-	const patterns = normalized.startsWith('native/mumble-helper/src/')
+	const patterns = native
 		? NATIVE_MUMBLE_PROHIBITED_PATTERNS
-		: MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
+		: core ? MUMBLE_CORE_PROHIBITED_PATTERNS : MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
 	if (patterns.some((pattern) => pattern.test(inspected))) return false;
+	if (core && !hasExactMumbleCoreImports(normalized, inspected)) return false;
 	return ![...inspected.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/gu)]
 		.some((match) => match[0] !== '127.0.0.1');
+}
+
+function hasExactMumbleCoreImports(path, source) {
+	const expected = REVIEWED_MUMBLE_CORE_IMPORTS.get(path) ?? [];
+	const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const actual = [];
+	let unsupportedDependency = false;
+	const visit = (node) => {
+		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+			&& node.moduleSpecifier !== undefined) {
+			if (ts.isStringLiteralLike(node.moduleSpecifier)) actual.push(node.moduleSpecifier.text);
+			else unsupportedDependency = true;
+		} else if (ts.isImportEqualsDeclaration(node)) {
+			const reference = node.moduleReference;
+			if (ts.isExternalModuleReference(reference) && reference.expression !== undefined
+				&& ts.isStringLiteralLike(reference.expression)) actual.push(reference.expression.text);
+			else unsupportedDependency = true;
+		} else if (ts.isCallExpression(node)
+			&& (node.expression.kind === ts.SyntaxKind.ImportKeyword
+				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) {
+			unsupportedDependency = true;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	actual.sort();
+	const reviewed = [...expected].sort();
+	return !unsupportedDependency && actual.length === reviewed.length
+		&& actual.every((specifier, index) => specifier === reviewed[index]);
 }
 
 function stripRustCfgTestModules(source) {

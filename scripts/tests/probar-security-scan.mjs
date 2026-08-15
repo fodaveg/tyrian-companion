@@ -68,6 +68,55 @@ function testMumbleContractAllowlist() {
 	write(allowed, 'docs/THREAT-MODEL.md', 'Mumble Link contract documentation only.');
 	assert(scanSecurityBoundaries(allowed).length === 0, 'exact declarative Mumble contract was not allowlisted');
 
+	const core = isolatedRoot('mumble-core-allowed');
+	write(core, 'src/platform/mumble-v2-contract.ts', 'export interface MumbleV2IpcFrameV1 {}');
+	write(core, 'src/platform/mumble-v2-codec.ts', [
+		"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+		'export function decode(): MumbleV2IpcFrameV1 { return {}; }',
+	].join('\n'));
+	write(core, 'src/platform/mumble-v2-client.ts', [
+		"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+		"import { decode } from './mumble-v2-codec';",
+		'export class MumbleV2Client { read(): MumbleV2IpcFrameV1 { return decode(); } }',
+	].join('\n'));
+	write(core, 'src/platform/mumble-v2-health.ts', [
+		"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+		'export type MumbleHealth = MumbleV2IpcFrameV1;',
+	].join('\n'));
+	write(core, 'src/platform/mumble-v2-observation.ts', [
+		"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+		'export type MumbleObservation = MumbleV2IpcFrameV1;',
+	].join('\n'));
+	assert(scanSecurityBoundaries(core).length === 0, 'exact pure Mumble core was not allowlisted');
+
+	for (const [capability, source] of [
+		['fs-import', "import { readFile } from 'node:fs';"],
+		['fs-side-effect-import', "import 'node:fs';"],
+		['fs-commented-side-effect-import', "import /*x*/ 'node:fs';"],
+		['fs-commented-from-import', "import { readFile } from/*x*/ 'node:fs';"],
+		['fs-commented-export-from', "export { readFile } from/*x*/ 'node:fs';"],
+		['fs-commented-import-equals', "import fs = require/*x*/('node:fs');"],
+		['net-import', "import { connect } from 'node:net';"],
+		['dynamic-import', "void import/*x*/('node:fs');"],
+		['require-call', "require/*x*/('node:fs');"],
+		['session-import', "import { SessionService } from '../sessions/session-service';"],
+		['capture', 'export const capture = () => undefined;'],
+		['store-import', "import { SessionStore } from '../sessions/session-store';"],
+		['logger', "logger.info('mumble');"],
+		['global-timer', 'setTimeout(run, 500);'],
+	]) {
+		const root = isolatedRoot(`mumble-core-capability-${capability}`);
+		write(root, 'src/platform/mumble-v2-client.ts', [
+			"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+			"import { decode } from './mumble-v2-codec';",
+			source,
+		].join('\n'));
+		assert(
+			scanSecurityBoundaries(root).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+			`${capability} bypassed the pure Mumble core allowlist`,
+		);
+	}
+
 	for (const path of [
 		'src/platform/mumble-v2-contract-helper.ts',
 		'src/platform/mumble-v2-runtime.ts',

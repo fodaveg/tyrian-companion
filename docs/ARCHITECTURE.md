@@ -11,7 +11,7 @@
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
-- `platform`: contratos declarativos para integraciones opcionales; H8.1/H8.4 no contienen adapters ni I/O.
+- `platform`: contrato H8.1/H8.4 y núcleo H8.6 puro para integraciones opcionales; no contiene adapters ni I/O ambiente.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
@@ -65,7 +65,7 @@ sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 
-H8.1/H8.4 contract -/-> spike H8.2 aislado -/-> plugin, IPC o release
+H8.1/H8.4 contract -> H8.5 helper aislado + H8.6 client core aislado -/-> main, plugin o release
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -91,14 +91,13 @@ ningún adapter conoce ni inspecciona el proceso del juego. Linux es la platafor
 la secundaria y Windows permanece en beta. La matriz de validación y los umbrales del piloto viven
 en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Mumble Link no forma parte del grafo de dependencias de v1. H8.1 añade únicamente el modelo
-declarativo `src/platform/mumble-v2-contract.ts`: no lo importa `main`, no existe helper, IPC,
-scheduler, listener, proceso hijo ni adapter de runtime. El scanner v4 permite la palabra Mumble
-en ese único artefacto contractual y en tests/docs; cualquier sibling, importador o helper fuera del
-censo vuelve a fallar. Un guard AST de allowlist recursiva exige cero imports, asignaciones,
-updates, tagged templates, llamadas, clases o funciones y un censo exacto de exports, además de
-sabotajes causales contra inyección, procesos, memoria, logs, tráfico,
-entrada, automatización, red, persistencia y temporizadores.
+Mumble Link no forma parte del grafo de dependencias de v1. H8.1 añade el modelo declarativo
+`src/platform/mumble-v2-contract.ts`. H8.5 implementa el helper nativo y H8.6 el codec, cliente,
+salud y observación shadow como dos islas no compuestas. El scanner v7 permite exactamente el
+contrato, los cuatro módulos TS puros H8.6 y los seis módulos Rust del helper; censos positivos
+rechazan cualquier otro archivo, helper o importador bajo `src`. H8.2 permanece fuera de `src`.
+No hay scheduler global, launcher, adapter nativo ni wiring desde `main`: la frontera está
+implementada en aislamiento, no activada.
 
 El contrato futuro es opt-in. Sus defaults iniciales recomendados —y marcados explícitamente como
 revisables— son `enabled:false`, `shadow`, `on_when_armed` y retención `none`. Incluso tras habilitarlo,
@@ -255,15 +254,31 @@ una ráfaga. EOF de stdin apaga el helper, invalida credenciales y cierra listen
 son `discovery_timeout|discovery_invalid|connect_timeout|auth_rejected|version_unsupported|frame_length|frame_utf8|frame_json|frame_schema|nonce_mismatch|sequence_mismatch|heartbeat_timeout|peer_closed|helper_exited`.
 El contrato completo parseable vive en [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md).
 
-H8.5 implementa solo el lado helper/servidor, no los estados, deadlines ni backoff del futuro cliente
-del plugin. Un watchdog bloqueante observa stdin y el event loop acotado no crea threads por conexión:
+H8.5 implementa solo el lado helper/servidor. Un watchdog bloqueante observa stdin y el event loop acotado no crea threads por conexión:
 rechaza clientes adicionales, limita slowloris de hello a 2.000 ms y termina al recibir EOF. Cada slot
 de 500 ms reabre el mapping `MumbleLink` con `FILE_MAP_READ` y emite exactamente un record secuenciado.
 Fuente ausente/incompatible/inestable/inválida produce su heartbeat exacto; la primera lectura válida
 tras inicio o discontinuidad produce `warming_up`, y solo la siguiente produce sample. La discontinuidad
 reinicia la historia de actividad; no hay catch-up tras sleep. El núcleo portable conserva framing,
 JSON estricto con duplicados escapados, auth constant-time + zeroize, nonce/secuencia y los cuatro
-words/ocho pares de H8.2. No existe launcher, cliente, settings, UI, persistencia ni red externa.
+words/ocho pares de H8.2. H8.5 no contiene launcher, settings, UI, persistencia ni red externa.
+
+H8.6 implementa el lado cliente como núcleo TypeScript puro y aislado en
+`mumble-v2-codec.ts`, `mumble-v2-client.ts`, `mumble-v2-health.ts` y
+`mumble-v2-observation.ts`. El codec incremental aplica framing `uint32` big-endian, UTF-8 fatal,
+JSON cerrado y high-water máximo 516. El cliente solo conoce puertos inyectados de proceso, TCP,
+reloj y CSPRNG: token nuevo por proceso, nonce nuevo por conexión, secuencia `0,+1`, deadlines y
+generaciones descartan callbacks stale. `restart_wait` y `reconnect_wait` comparten el backoff
+saturado `[250,500,1000,2000,5000]`; ready/connect/hello/welcome no lo reinician y solo `healthy`
+vuelve a 250. La entrega de `onState`/`onError` aísla throws y reentrada para que `shutdown` no pueda
+revivir una generación ni quede un estado running sin proceso.
+
+La salud conserva tres ejes independientes —canal, fuente y actividad— y no colapsa
+`link_stalled` en indisponibilidad de fuente. La observación shadow retiene únicamente `mapId` y
+actividad en memoria cuando `enabled && armed`; no expone callbacks de sesión, propuesta, captura o
+persistencia. Ninguno de los cuatro módulos importa Node, sesiones, stores, red, filesystem,
+logging ni timers globales. Aún no existen launcher, adapters reales, composición en `main`,
+settings/UI, packaging ni QA de plataforma para H8.6.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 

@@ -11,8 +11,10 @@ H8.1 fixes that future contract and its guards. H8.2 adds only a non-production,
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
 H8.3 provisionally accepts Rust and H8.4 fixes the executable local IPC protocol. H8.5 implements
 the isolated helper/server under `native/mumble-helper`: portable framing/auth/source logic, the
-read-only Win32 mapping adapter and the loopback server. The plugin still has no launcher, client,
-settings or UI integration; the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
+read-only Win32 mapping adapter and the loopback server. H8.6 adds an isolated, port-injected
+TypeScript client core, strict codec, health projection and memory-only shadow observation. The
+plugin still has no launcher, native adapter, composition, settings or UI integration; neither side
+is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
 > `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
@@ -85,8 +87,9 @@ executor. Check every action in Guild Wars 2 yourself.
   fees, not proof that an item sold at that price.
 - Assisted detection is a polling heuristic. Offline periods, sleep, API cooldowns, and activity
   between polls widen uncertainty; no background signal is accepted silently.
-- The MVP has no Mumble Link helper, game-process inspection, input automation, automatic account
-  operation, or unattended session finalization.
+- The installed MVP has no active or packaged Mumble Link integration, game-process inspection,
+  input automation, automatic account operation, or unattended session finalization. The repository
+  contains only the isolated H8.5/H8.6 server and client-core implementations for future v2 wiring.
 
 For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md). Never include an API
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
@@ -192,10 +195,11 @@ The current `0.1.0` vertical provides:
   renders one minimal frame;
   the Windows probe opens only the existing named mapping read-only. It is not imported, packaged
   or connected to the plugin, and real-session QA remains pending.
-- H8.3 records an `accepted_for_implementation`, provisional Rust decision for a future single x64
-  Windows PE. Its source will live under `native/mumble-helper`; a separate ZIP will carry the EXE,
-  manifest, checksums and licenses. Linux/Steam/Proton, macOS/CrossOver and Windows x64 QA, plus
-  Authenticode signing, remain pending; this repository still contains no native helper or wiring.
+- H8.3 records the `accepted_for_implementation`, provisional Rust decision for one x64 Windows PE.
+  H8.5 now implements its source under `native/mumble-helper`; a future separate ZIP will carry the
+  EXE, manifest, checksums and licenses. Linux/Steam/Proton, macOS/CrossOver and Windows x64 QA, plus
+  Authenticode signing, remain pending; the repository contains the native helper but no release
+  package, launcher or plugin wiring.
 - H8.4 closes the protocol to TCP IPv4 `127.0.0.1` with bind port `0`, framed JSON records shared by
   stdin/stdout/TCP, a 32-byte per-process token and 16-byte per-connection nonce, exact
   bootstrap/ready/hello/welcome, shared heartbeat/sample sequencing and fail-closed deadlines. Its
@@ -209,16 +213,25 @@ The current `0.1.0` vertical provides:
   restarts discovery after any pre-ready/helper-exit failure, and reconnects in-process only after a
   valid ready port. Sequenced records refresh health/reset backoff, stdin EOF is terminal, and its
   incremental framer transfers payload ownership before callbacks and retains at most 516 bytes
-  simultaneously regardless of input chunk size. Its validators
-  and fake clock exist only as test references; product remains API-authoritative,
-  shadow, human-confirmed and non-persistent with no helper/runtime/socket/timer/process/adapter.
+  simultaneously regardless of input chunk size. Product remains API-authoritative, shadow,
+  human-confirmed and non-persistent. H8.5/H8.6 implement the two sides in isolation, without
+  launcher, native client adapters, plugin composition or release packaging.
 - H8.5 implements only the Rust helper/server projection of that protocol. Every 500 ms it emits
   exactly one shared-sequence record: a stable warmed source produces `sample`; unavailable,
   unsupported, unstable or invalid source produces the exact heartbeat status; the first valid
   read after start/recovery produces `warming_up` without retaining tick history, and the next valid
   read establishes the activity epoch. Late calls schedule from now, never catch up, and 2 s without
   an emitted record closes the channel before emitting. It reads only the four H8.2 fields through
-  `FILE_MAP_READ`, and has no plugin client, launcher, persistence, logs or external network.
+  `FILE_MAP_READ`, and has no plugin launcher, persistence, logs or external network.
+- H8.6 implements the isolated TypeScript client core with injected process, TCP, clock and CSPRNG
+  ports and no productive Node imports or ambient I/O. Its incremental codec enforces the same
+  `uint32` big-endian + fatal UTF-8/closed JSON boundary and 516-byte high-water mark; lifecycle
+  state rotates a process token and connection nonce, enforces exact sequence/deadlines and uses
+  the same saturated `[250,500,1000,2000,5000]` restart/reconnect backoff, reset only after
+  `healthy`. Health keeps channel, source and activity as three independent axes. Shadow observation
+  retains only `mapId` and activity in memory behind `enabled + armed`, with no session, proposal,
+  capture or persistence callback. There is still no launcher, real process/TCP adapter, wiring,
+  settings, UI, packaging or platform QA.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately

@@ -1,5 +1,22 @@
 # Changelog
 
+## H8.6 — Núcleo aislado del cliente Mumble
+
+- Añadidos `mumble-v2-codec.ts`, `mumble-v2-client.ts`, `mumble-v2-health.ts` y
+  `mumble-v2-observation.ts` como módulos TS puros, sin imports Node ni I/O ambiente.
+- El codec incremental aplica `uint32` big-endian + UTF-8 fatal + JSON cerrado 1..512, high-water
+  máximo 516, schemas exactos, duplicados escapados, BOM/trailing y secretos base64url canónicos.
+- El cliente usa puertos fakeables de proceso, TCP, reloj y CSPRNG; rota token por proceso y nonce
+  por conexión, exige secuencia `0,+1`, deadlines y generaciones, y aísla throws/reentrada de
+  callbacks externos. Restart y reconnect comparten `[250,500,1000,2000,5000]`, con reset solo al
+  alcanzar `healthy`.
+- Salud mantiene canal, fuente y actividad como tres ejes; la observación shadow retiene solo
+  `mapId + activity` en memoria bajo `enabled && armed`, sin callbacks de sesión, propuesta, captura
+  o persistencia.
+- Añadidas 42 pruebas H8.6 —33 funcionales y nueve de arquitectura— y guardas dinámicos con allowlist exacta y sabotajes de módulo,
+  helper, imports `fs`/`net`, sesión, captura, store, logger, timers globales y scanner always-green.
+  No hay launcher, adapters reales, wiring en `main`, settings/UI, packaging ni QA de plataforma.
+
 ## H8.4 — Protocolo IPC local cerrado
 
 - Fijados helper servidor/plugin cliente sobre TCP IPv4 `127.0.0.1`, bind port `0`, bootstrap por
@@ -26,8 +43,8 @@
   humana y retención `none`.
 - Añadido ADR 0002 con bloque JSON de igualdad completa, orden y hashes cerrados; lifecycle de fases,
   deadlines, EOF y reconnect determinista; y tests causales para framing, validators, secuencia,
-  fake clock, reset healthy, token constant-time y vectores. Todo helper/runtime/socket/timer/process/adapter/Cargo/packaging
-  productivo sigue ausente; el censo conserva un único artefacto Mumble productivo declarativo.
+  fake clock, reset healthy, token constant-time y vectores. H8.5/H8.6 implementan después los dos
+  lados en aislamiento; launcher, adapters del cliente, composición y packaging siguen ausentes.
 - Endurecido el contrato tras revisión: hello queda ligado al token capturado de bootstrap; reconnect
   del mismo proceso lo conserva, mientras fallo pre-ready, `helper_exited`, restart y EOF lo invalidan.
   Solo post-ready permite volver a conectar; cada conexión rota nonce y reinicia secuencia en cero.
@@ -96,7 +113,8 @@
 - Añadidos lifecycle tests de EOF, slowloris, cliente extra, auth y reconnect, guard positivo,
   supply-chain/staging sintético y CI Windows para PE x64/static CRT/reproducibilidad.
 - CI solo conserva el marker corto `UNSIGNED-NOT-FOR-RELEASE`; el ZIP del plugin sigue con tres
-  ficheros. Authenticode, publicación, launcher/cliente del plugin, firma y QA real siguen pendientes.
+  ficheros. H8.6 añade el cliente core aislado, pero Authenticode, publicación, launcher/wiring del
+  plugin, firma y QA real siguen pendientes.
 
 ## H8.3 — ADR del helper nativo Mumble
 

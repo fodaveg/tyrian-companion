@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'n
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const H8_HELPER_DECISION_CONTRACT_VERSION = 15;
+export const H8_HELPER_DECISION_CONTRACT_VERSION = 16;
 
 const ADR_PATH = 'docs/adr/0001-h8-3-native-mumble-helper.md';
 const RUNTIME_ADR_PATH = 'docs/adr/0003-h8-5-native-helper-runtime.md';
@@ -23,7 +23,7 @@ const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de 
 const EXPECTED_DECISION_SHA256 = 'e1646dd526ddb0bc038e7f2aa261151a4aeb3248109befa644c85e3ee32314e7';
 const ADR_AUTHORITY_SHA256 = 'c2fcb0960da3077e342b9e6c07408fc80eca7069005f7da8e10e8aef8fbb2220';
 const PLATFORM_AUTHORITY_SHA256 = '761564594340cf5984f4ccecaa2bc3a10a0b59b11c52e4fc50c2dcb456858e1b';
-const PLATFORM_DOCUMENT_SHA256 = '46ca8c3c53b2150a7bc96c8718f69569ef808e9dca2b4e5d32a1d1123aaa1d84';
+const PLATFORM_DOCUMENT_SHA256 = '4a6ca5eef6735f12df4d81bcbaa5e0602b8b7a4bf94ef1dcccf3df66b0473fb3';
 const NATIVE_MANIFEST_SHA256 = 'cd7aa03197262d1e3e71868f24b2204a0a00855c70cbb38e0ad7727368b8aa7b';
 const NATIVE_LOCK_SHA256 = '59bfcbfa38ae0ffe6b8454da70238d9ac490de07479ac6c0a0161b69725e83bf';
 const NATIVE_WIN32_SHA256 = '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977';
@@ -40,7 +40,11 @@ const NATIVE_SOURCE_SHA256 = new Map([
 const IGNORED_DIRECTORIES = new Set(['.git', 'coverage', 'node_modules', 'target']);
 const NON_PRODUCT_SOURCE_SCOPE = /(?:^|\/)(?:docs|examples|fixtures|test|tests|__fixtures__|__tests__)(?:\/|$)|\.(?:spec|test)\.[^/]+$/u;
 const REVIEWED_PRODUCT_PATHS = new Set([
+	'src/platform/mumble-v2-client.ts',
+	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
+	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-observation.ts',
 ]);
 const NATIVE_ROOT = 'native/mumble-helper/';
 const REVIEWED_NATIVE_PATHS = new Set([

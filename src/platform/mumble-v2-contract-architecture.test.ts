@@ -6,6 +6,13 @@ import { describe, expect, it } from 'vitest';
 const CONTRACT_PATH = 'src/platform/mumble-v2-contract.ts';
 const CONTRACT_SOURCE = readFileSync(CONTRACT_PATH, 'utf8');
 const PRODUCTION_FILES = sourceFiles('src');
+const REVIEWED_MUMBLE_PRODUCTION_FILES = [
+	'src/platform/mumble-v2-client.ts',
+	'src/platform/mumble-v2-codec.ts',
+	'src/platform/mumble-v2-contract.ts',
+	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-observation.ts',
+] as const;
 const EXPECTED_FRAME_FIELDS = ['version', 'nonce', 'sequence', 'tick', 'mapId', 'activity'] as const;
 const EXPECTED_MESSAGE_FIELDS = {
 	MumbleV2BootstrapRecordV1: ['kind', 'version', 'token'],
@@ -123,10 +130,10 @@ const REVIEWED_DECLARATIVE_KINDS = new Set<ts.SyntaxKind>([
 ]);
 
 describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
-	it('censuses exactly one contractual production artifact', () => {
+	it('censuses exactly the declarative contract and four reviewed H8.6 core modules', () => {
 		const discovered = PRODUCTION_FILES.filter(({ path, source }) => isMumbleArtifact(path, source))
 			.map(({ path }) => path);
-		expect(discovered).toEqual([CONTRACT_PATH]);
+		expect(discovered).toEqual(REVIEWED_MUMBLE_PRODUCTION_FILES);
 	});
 
 	it('keeps the reviewed artifact declarative and export-exact', () => {
@@ -144,7 +151,7 @@ describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
 			['src/mumble.ts', 'export const adapter = true;'],
 		] as const) {
 			expect(isMumbleArtifact(path, source)).toBe(true);
-			expect(path).not.toBe(CONTRACT_PATH);
+			expect(REVIEWED_MUMBLE_PRODUCTION_FILES).not.toContain(path);
 		}
 	});
 

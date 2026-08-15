@@ -32,7 +32,9 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 
 H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo para
 validar la lectura en CrossOver; H8.3 elige la forma, H8.4 fija el protocolo y H8.5 implementa solo
-el helper/servidor Rust. El plugin aún no tiene launcher, cliente, settings ni UI. Mumble Link solo
+el helper/servidor Rust. H8.6 implementa un cliente TypeScript puro, salud y observación shadow como
+núcleo aislado con puertos inyectados. El plugin aún no tiene launcher, adapters reales, composición,
+settings ni UI. Mumble Link solo
 puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
 enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
@@ -126,8 +128,17 @@ Cada slot de 500 ms reintenta el mapping read-only y emite exactamente un record
 warm-up produce sample; ausencia, layout incompatible, muestra inestable o inválida produce el
 heartbeat exacto; la primera lectura válida tras inicio/recuperación produce `warming_up`. Cualquier
 discontinuidad reinicia el historial de actividad y sleep no hace catch-up. El adapter usa solo
-`FILE_MAP_READ`, cuatro campos y ocho pares. No hay launcher/cliente/plugin/settings/UI, red externa,
-logs ni persistencia.
+`FILE_MAP_READ`, cuatro campos y ocho pares. No hay launcher/plugin/settings/UI, red externa, logs ni
+persistencia.
+
+H8.6 implementa el cliente como cuatro módulos TS puros sin imports Node ni capacidades ambiente.
+Proceso, TCP, reloj y CSPRNG son puertos inyectados; el token cambia por proceso, el nonce por
+conexión y los callbacks stale quedan cercados por generación. El codec aplica la frontera H8.4
+incremental y cerrada. `restart_wait` y `reconnect_wait` usan el mismo backoff saturado
+`[250,500,1000,2000,5000]`, que solo vuelve a 250 tras `healthy`, nunca por ready/connect/hello/
+welcome. Salud conserva por separado canal, fuente y actividad. La observación shadow guarda solo
+`mapId + activity` en memoria bajo `enabled && armed`, sin callbacks de sesión, propuesta, captura o
+persistencia. No hay launcher, adapters de proceso/TCP, wiring, settings, UI ni QA real.
 
 Ni raw Mumble ni frames se persisten en settings, IndexedDB, Vault, logs o telemetría. La proyección
 válida vive solo en memoria el tiempo necesario para la comparación shadow o la propuesta futura.
