@@ -107,7 +107,10 @@ La versión `0.1.0` valida la base técnica:
   conserva candidatos review-only cuando reproduce exactamente el productor H4.15 y prueba ausencia
   de rutas, reservas y excepciones. H5.11 presenta rutas líquidas manuales respaldadas para items sin una
   capacidad curada, mientras reserva uso/abrir/reciclar para reglas curadas. Por defecto muestra únicamente
-  bolsas de personaje e inventario compartido; banco, materiales, delivery y pendientes son opt-in.
+  bolsas de personaje e inventario compartido; banco, materiales, delivery y pendientes son opt-in reales:
+  la captura los lee como fuentes opcionales que nunca invalidan el inventario básico. Un filtro de personaje
+  acota la vista a las bolsas de un personaje observado y declara ese alcance; el orden visible se aplica
+  después de acotar, y los objetos sin precio demostrado se cuentan aparte en vez de sumarse como cero.
   H5.12 ya aporta edición local explícita con CAS. H4.19 ya implementa la comparación económica de 36038,
   pero el pack built-in permanece `pending_human_review`: no activa abrir el saco hasta que David apruebe
   humanamente el pack y su economía.

@@ -120,18 +120,21 @@ function passWith(overrides: PassFixture = {}): PassFixture {
 }
 
 describe('StorageSnapshotService', () => {
-	it('captures only character and shared inventory for the advisor without requiring bank or materials', async () => {
+	it('captures every item store for the advisor without requiring bank or materials and without the wallet', async () => {
 		const seen: string[] = [];
 		const fixture = clientFor([passWith()], { seen });
 		const operation = fixture.client.beginOperation();
 		const snapshot = await new StorageSnapshotService(fixture.client)
 			.captureInventoryWithOperation(operation);
 
-		expect(seen.map((path) => path.split('?')[0])).toEqual([
+		expect(new Set(seen.map((path) => path.split('?')[0]))).toEqual(new Set([
 			'characters',
 			'account/inventory',
+			'account/bank',
+			'account/materials',
 			`characters/${encodeURIComponent(characterName)}/inventory`,
-		]);
+		]));
+		expect(seen.map((path) => path.split('?')[0])).not.toContain('account/wallet');
 		expect(snapshot).toMatchObject({
 			quality: 'unstable',
 			passes: 1,
@@ -139,17 +142,33 @@ describe('StorageSnapshotService', () => {
 				sources: {
 					characters: { status: 'complete' },
 					shared_inventory: { status: 'complete' },
-					bank: { status: 'skipped', reason: 'not_requested' },
-					materials: { status: 'skipped', reason: 'not_requested' },
+					bank: { status: 'complete' },
+					materials: { status: 'complete' },
 					wallet: { status: 'skipped', reason: 'not_requested' },
-					commerce_delivery: { status: 'skipped', reason: 'not_requested' },
 				},
 			},
 		});
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+	});
+
+	it('keeps an advisor capture usable when only the optional stores fail', async () => {
+		const fixture = clientFor([passWith()], {
+			onRequest: async (path) => {
+				if (path.startsWith('account/bank') || path.startsWith('account/materials')) {
+					throw new HttpTransportError('http', 503, null, 'Request failed with status 503.');
+				}
+			},
+		});
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot.coverage.sources.bank.status).not.toBe('complete');
+		expect(snapshot.coverage.sources.materials.status).not.toBe('complete');
+		expect(snapshot.quality).toBe('unstable');
 		expect(snapshot.holdings.every(({ location }) =>
 			location.source === 'character' || location.source === 'shared_inventory')).toBe(true);
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
-		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
 	});
 
 	it('serializes character inventory requests only for the advisor scope', async () => {
@@ -459,7 +478,7 @@ describe('StorageSnapshotService', () => {
 			},
 		});
 		expect(snapshot.passCoverages).toHaveLength(1);
-		expect(seen).toHaveLength(3);
+		expect(seen).toHaveLength(5);
 	});
 
 	it('rejects duplicate roster entries instead of double-counting a character', async () => {

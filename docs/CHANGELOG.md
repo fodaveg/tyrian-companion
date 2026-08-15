@@ -1,5 +1,25 @@
 # Changelog
 
+## Inventory Advisor — alcance por personaje y lectura honesta del valor
+
+- La captura del Advisor vuelve a leer banco, materiales y entrega del bazar, pero como fuentes
+  **opcionales**: su permiso ausente, URL restringida o fallo degrada solo su propia cobertura y nunca
+  invalida bolsas ni inventario compartido. La cartera sigue fuera del Advisor. Los tres controles
+  «Incluir además» dejan de estar deshabilitados y muestran datos reales.
+- Nuevo filtro de **Personaje**: acota la vista a las bolsas de un personaje concreto, con la lista
+  derivada de lo observado en la captura. Mientras hay un personaje seleccionado, banco, materiales y
+  entrega quedan fuera del alcance y sus casillas se deshabilitan; un personaje que ya no aparece en la
+  captura vuelve automáticamente a «Todas las bolsas y compartido». La vista declara ese alcance en
+  texto en lugar de dejarlo implícito.
+- Nuevo control de **Orden** (valor, cantidad o nombre) aplicado *después* de acotar, para que el orden
+  visible corresponda a las cantidades y valores visibles y no al ranking previo al filtro.
+- El resumen «Qué hacer ahora» separa unidades y pilas de los objetos distintos, y declara cuántos
+  objetos **no tienen precio demostrado** en lugar de sumarlos como cero al valor conocido. Cada botón
+  de acción arrastra su propio recuento sin precio.
+- La tabla añade **Pilas** y **Valor por unidad**, cierra cada grupo con un subtotal exacto de sus
+  filas y colorea la acción y el nivel de evidencia. La evidencia deja de resumirse en una palabra:
+  nombra los ejes concretos que no están completos, por ejemplo «Limitada (precios, reglas)».
+
 ## Hotfix — Inventory Advisor con datos reales
 
 - La clasificación deja de usar la completitud global de catálogo/precios como interruptor para todas

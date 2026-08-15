@@ -514,6 +514,16 @@
 	margin-block: 0 var(--size-4-2);
 }
 
+.tyrian-inventory-advisor__recommendation-value {
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__recommendation-coverage,
+.tyrian-inventory-advisor__recommendation-unpriced {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
 .tyrian-inventory-advisor__recommendation-actions {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
@@ -621,10 +631,46 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-inventory-advisor__table td:nth-child(2),
-.tyrian-inventory-advisor__table td:nth-child(3) {
+.tyrian-inventory-advisor__numeric {
 	text-align: end;
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.tyrian-inventory-advisor__table thead th {
+	position: sticky;
+	inset-block-start: 0;
+	background: var(--background-primary);
+	z-index: 1;
+}
+
+.tyrian-inventory-advisor__table tbody tr:hover td {
+	background: var(--background-modifier-hover);
+}
+
+.tyrian-inventory-advisor__subtotal th,
+.tyrian-inventory-advisor__subtotal td {
+	border-block-start: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__badge {
+	display: inline-block;
+	padding-inline: var(--size-4-2);
+	border: 1px solid currentcolor;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__evidence--complete {
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__evidence--limited,
+.tyrian-inventory-advisor__evidence--review {
+	color: var(--text-warning);
 }
 
 .tyrian-inventory-advisor__group-heading {
@@ -643,6 +689,33 @@
 .tyrian-inventory-advisor__card-decision {
 	margin-block: 0 var(--size-4-2);
 	color: var(--text-accent);
+}
+
+.tyrian-inventory-advisor__badge--sell,
+.tyrian-inventory-advisor__badge--list {
+	color: var(--color-green);
+}
+
+.tyrian-inventory-advisor__badge--vendor {
+	color: var(--color-yellow);
+}
+
+.tyrian-inventory-advisor__badge--salvage {
+	color: var(--color-blue);
+}
+
+.tyrian-inventory-advisor__badge--use,
+.tyrian-inventory-advisor__badge--open {
+	color: var(--color-purple);
+}
+
+.tyrian-inventory-advisor__badge--keep {
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__badge--review,
+.tyrian-inventory-advisor__badge--discard_review {
+	color: var(--text-warning);
 }
 
 .tyrian-inventory-advisor__cards {

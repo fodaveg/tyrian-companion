@@ -76,6 +76,13 @@ prepared value ranking, and formats their value as gold, silver, and copper. **I
 **Pending without recommendation** remain available as explicit context toggles instead of diluting
 the actionable queue.
 
+The scope starts at carried bags plus the shared inventory. **Character** narrows the view to one
+character's bags, and **Bank**, **Materials** and **Trading Post delivery** add those stores when you
+ask for them; the capture reads all of them, but a failure there degrades only that store and never
+the basic inventory. **Sort by** reorders what you are actually looking at, each group closes with its
+own subtotal, and items without a demonstrated price are counted apart instead of being added to the
+known value as if they were worth zero.
+
 Coverage is deliberately conservative. A row can remain **Review** because prices, unlock evidence,
 binding, a curated rule, or an economic comparison is incomplete. `discard_review` is never an
 instruction to destroy an item, and the plugin has no sell, vendor, salvage, open, use, or destroy

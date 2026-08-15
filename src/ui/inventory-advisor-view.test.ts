@@ -7,9 +7,12 @@ import {
 	filterInventoryAdvisorRows,
 	formatInventoryAdvisorLocation,
 	groupInventoryAdvisorRows,
+	inventoryAdvisorCharacters,
 	inventoryAdvisorViewLayout,
 	renderInventoryAdvisorView,
 	renderInventoryAdvisorViewFromPort,
+	sortInventoryAdvisorRows,
+	summarizeInventoryAdvisorRows,
 	type InventoryAdvisorViewAction,
 	type InventoryAdvisorViewCoverage,
 	type InventoryAdvisorViewCoverageState,
@@ -169,13 +172,115 @@ describe('Inventory Advisor view', () => {
 		expect(mixed).toEqual(before);
 	});
 
+	it('scopes rows to one character, ignores every other store and rescales its value', () => {
+		const rows = deepFreeze([row({
+			itemId: 42, name: 'Mixed', action: 'sell', quantity: 10, ownedQuantity: 10, availableQuantity: 10,
+			value: { status: 'available', route: 'instant_sell', copper: 1_000 },
+			allocations: [
+				{ positionRef: '#/positions/42/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } },
+				{ positionRef: '#/positions/42/1', quantity: 3, location: { source: 'character', character: 'Borja', container: 'bag', bagIndex: 0, slot: 1 } },
+				{ positionRef: '#/positions/42/2', quantity: 1, location: { source: 'shared_inventory', slot: 0 } },
+				{ positionRef: '#/positions/42/3', quantity: 4, location: { source: 'bank', slot: 0 } },
+			],
+		})]);
+		expect(inventoryAdvisorCharacters(rows, 'es')).toEqual(['Astra', 'Borja']);
+		const everything = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'all' });
+		expect(everything[0]).toMatchObject({ quantity: 6, value: { copper: 600 } });
+		const astra = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Astra' });
+		expect(astra[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2, value: { copper: 200 } });
+		expect(astra[0]?.allocations).toHaveLength(1);
+		const withBankAndCharacter = filterInventoryAdvisorRows(rows, {
+			query: '', action: 'all', groupBy: 'action', character: 'Borja', includeBank: true,
+		});
+		expect(withBankAndCharacter[0]).toMatchObject({ quantity: 3, value: { copper: 300 } });
+		expect(filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Unknown' })).toEqual([]);
+	});
+
+	it('offers the observed roster, disables the extra stores while one character is scoped and resets an absent one', () => {
+		const mount = render(twoCharacterModel());
+		const characterSelect = find(mount.elements(), 'select')[2];
+		if (characterSelect === undefined) throw new Error('Expected the character filter.');
+		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Astra', 'Borja']);
+		expect(text(mount.elements())).toContain('Todas las bolsas y compartido');
+		const stores = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
+		expect(stores.every((input) => !input.disabled)).toBe(true);
+		characterSelect.value = 'Astra';
+		characterSelect.dispatch('change');
+		expect(stores.every((input) => input.disabled)).toBe(true);
+		expect(text(mount.elements())).toContain('Solo de Astra');
+		expect(text(mount.elements())).not.toContain('Solo de Borja');
+		const withoutAstra: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'market', rows: [row({ itemId: 11, name: 'De Borja', action: 'sell',
+				allocations: [{ positionRef: '#/positions/11/0', quantity: 3, location: { source: 'character', character: 'Borja', container: 'bag', bagIndex: 0, slot: 0 } }] })] }],
+		};
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, withoutAstra, createTranslator('es'));
+		expect(characterSelect.value).toBe('all');
+		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Borja']);
+		expect(text(mount.elements())).not.toContain('Solo de Astra');
+	});
+
+	it('counts unpriced items apart instead of folding them into the known value', () => {
+		const rows = [
+			row({ itemId: 1, quantity: 2, action: 'sell', allocations: [allocation('#/positions/1/0', 2)], value: { status: 'available', route: 'instant_sell', copper: 500 } }),
+			row({ itemId: 2, quantity: 3, action: 'sell', allocations: [allocation('#/positions/2/0', 3)], value: { status: 'unavailable', route: null } }),
+			row({ itemId: 3, quantity: 1, action: 'sell', allocations: [allocation('#/positions/3/0', 1)], value: { status: 'not_applicable', route: null } }),
+		];
+		expect(summarizeInventoryAdvisorRows(rows)).toEqual({
+			items: 3, units: 6, stacks: 3, knownCopper: 500, pricedItems: 1, unpricedItems: 2,
+		});
+		expect(summarizeInventoryAdvisorRows([
+			row({ itemId: 4, quantity: 1, action: 'sell', allocations: [allocation('#/positions/4/0', 1)] }),
+			row({ itemId: 4, quantity: 2, action: 'keep', allocations: [allocation('#/positions/4/0', 2)] }),
+		]).stacks).toBe(1);
+		expect(summarizeInventoryAdvisorRows([])).toMatchObject({ items: 0, knownCopper: 0, unpricedItems: 0 });
+		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
+		expect(text(mount.elements())).toContain('Sin precio demostrado: 2 objetos.');
+		expect(text(mount.elements())).toContain('2 sin precio');
+	});
+
+	it('orders visible rows by the selected criterion and closes each group with its exact subtotal', () => {
+		const rows = [
+			row({ id: '#/explanations/1/0', itemId: 1, name: 'Bajo valor', action: 'sell', quantity: 9,
+				allocations: [{ positionRef: '#/positions/1/0', quantity: 9, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }],
+				value: { status: 'available', route: 'instant_sell', copper: 100 } }),
+			row({ id: '#/explanations/2/0', itemId: 2, name: 'Alto valor', action: 'sell', quantity: 1,
+				allocations: [{ positionRef: '#/positions/2/0', quantity: 1, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 1 } }],
+				value: { status: 'available', route: 'instant_sell', copper: 900 } }),
+		];
+		expect(sortInventoryAdvisorRows(rows, 'value_desc', 'es').map((entry) => entry.itemId)).toEqual([2, 1]);
+		expect(sortInventoryAdvisorRows(rows, 'quantity_desc', 'es').map((entry) => entry.itemId)).toEqual([1, 2]);
+		expect(sortInventoryAdvisorRows(rows, 'name_asc', 'es').map((entry) => entry.name)).toEqual(['Alto valor', 'Bajo valor']);
+		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
+		const subtotal = only(byClass(mount.elements(), 'tyrian-inventory-advisor__subtotal'));
+		expect(walk(subtotal).map((cell) => cell.textContent)).toEqual(
+			expect.arrayContaining(['Subtotal · 2 objetos', '10', '2', '0 oro · 10 plata · 0 cobre']),
+		);
+		const sortSelect = find(mount.elements(), 'select')[3];
+		if (sortSelect === undefined) throw new Error('Expected the sort control.');
+		sortSelect.value = 'quantity_desc';
+		sortSelect.dispatch('change');
+		expect(find(mount.elements(), 'article').map((card) => walk(card).some((element) => element.textContent === 'Bajo valor')))
+			.toEqual([true, false]);
+	});
+
+	it('names the exact coverage axes that are not complete', () => {
+		const mount = render({
+			...readyModel(),
+			groups: [{ key: 'market', rows: [row({
+				itemId: 7, name: 'Parcial', action: 'sell',
+				coverage: { ...coverage('complete'), prices: 'limited', rules: 'unknown' },
+			})] }],
+		});
+		expect(text(mount.elements())).toContain('Limitada (precios, reglas)');
+	});
+
 	it('shows direct actions by default and keeps preserve/review context explicitly opt-in', () => {
 		const mount = render(allStatesAndActionsModel());
 		const options = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox');
 		expect(options).toHaveLength(5);
 		expect(options.every((input) => input.checked === false)).toBe(true);
-		expect(options.slice(0, 3).every((input) => input.disabled)).toBe(true);
-		expect(options.slice(3).every((input) => !input.disabled)).toBe(true);
+		expect(options.every((input) => !input.disabled)).toBe(true);
 		expect(find(mount.elements(), 'article')).toHaveLength(6);
 		const keep = options[3];
 		if (keep === undefined) throw new Error('Expected the keep visibility option.');
@@ -202,7 +307,9 @@ describe('Inventory Advisor view', () => {
 		const mount = render(model);
 		const allText = text(mount.elements());
 		expect(allText).toContain('Qué hacer ahora');
-		expect(allText).toContain('Objetos distintos: 3 · Valor conocido: 3 oro · 74 plata · 44 cobre');
+		expect(allText).toContain('Objetos distintos: 3 · Unidades: 9 · Pilas: 3');
+		expect(allText).toContain('Valor conocido: 3 oro · 74 plata · 44 cobre');
+		expect(allText).toContain('Todos los objetos visibles tienen precio demostrado.');
 		expect(allText).toContain('Vender ya');
 		expect(allText).toContain('Publicar en el bazar');
 		expect(allText).toContain('Vender al mercader');
@@ -376,6 +483,18 @@ function readyModel(): InventoryAdvisorViewModel {
 	};
 }
 
+function twoCharacterModel(): InventoryAdvisorViewModel {
+	return {
+		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		groups: [{ key: 'market', rows: [
+			row({ id: '#/explanations/10/0', itemId: 10, name: 'De Astra', action: 'sell', quantity: 2,
+				allocations: [{ positionRef: '#/positions/10/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }] }),
+			row({ id: '#/explanations/11/0', itemId: 11, name: 'De Borja', action: 'sell', quantity: 4,
+				allocations: [{ positionRef: '#/positions/11/0', quantity: 4, location: { source: 'character', character: 'Borja', container: 'bag', bagIndex: 1, slot: 2 } }] }),
+		] }],
+	};
+}
+
 function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 	const actions: readonly InventoryAdvisorViewAction[] = ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'];
 	return {
@@ -390,14 +509,19 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 }
 
 function row(overrides: Partial<InventoryAdvisorViewRow>): InventoryAdvisorViewRow {
+	const itemId = overrides.itemId ?? 1;
 	return {
-		id: '#/explanations/1/0', itemId: 1, name: 'Object', icon: null, ownedQuantity: 5, availableQuantity: 3,
+		id: '#/explanations/1/0', itemId, name: 'Object', icon: null, ownedQuantity: 5, availableQuantity: 3,
 		action: 'review', quantity: 3,
-		allocations: [{ positionRef: '#/positions/1/0', quantity: 3, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }],
+		allocations: [allocation(`#/positions/${String(itemId)}/0`, 3)],
 		reasonCodes: ['rule_missing'], value: { status: 'unavailable', route: null },
 		coverage: coverage('complete'), irreversibleReviewOnly: false, discardProof: null,
 		...overrides,
 	};
+}
+
+function allocation(positionRef: string, quantity: number): InventoryAdvisorViewRow['allocations'][number] {
+	return { positionRef, quantity, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } };
 }
 
 function coverage(state: InventoryAdvisorViewCoverageState): InventoryAdvisorViewCoverage {

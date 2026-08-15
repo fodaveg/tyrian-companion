@@ -151,7 +151,7 @@ export class StorageSnapshotService {
 				(value) => parseSlotArray(value, 'shared_inventory'),
 			),
 		];
-		if (scope === 'complete') accountTasks.push(
+		if (coverage.sources.bank.status === 'complete') accountTasks.push(
 			this.captureItems(
 				operation,
 				this.globalLimit,
@@ -161,6 +161,8 @@ export class StorageSnapshotService {
 				'account/bank',
 				(value) => parseSlotArray(value, 'bank'),
 			),
+		);
+		if (coverage.sources.materials.status === 'complete') accountTasks.push(
 			this.captureItems(
 				operation,
 				this.globalLimit,
@@ -178,7 +180,7 @@ export class StorageSnapshotService {
 				this.captureCurrencies(operation, this.globalLimit, coverage, currencies, 'wallet', 'account/wallet'),
 			);
 		}
-		if (scope === 'complete' && coverage.sources.commerce_delivery.status === 'complete') {
+		if (coverage.sources.commerce_delivery.status === 'complete') {
 			optionalTasks.push(
 				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies),
 			);
@@ -337,10 +339,12 @@ function emptyCoverage(
 		sources: {
 			characters: complete(),
 			shared_inventory: source('inventories', '/v2/account/inventory', true),
-			bank: scope === 'complete' ? source('inventories', '/v2/account/bank', true) : { status: 'skipped', reason: 'not_requested' },
-			materials: scope === 'complete' ? source('inventories', '/v2/account/materials', true) : { status: 'skipped', reason: 'not_requested' },
+			// The advisor reads the optional stores too, but never as a requirement: a missing
+			// scope, a restricted URL or a failure degrades only its own coverage.
+			bank: source('inventories', '/v2/account/bank', scope === 'complete'),
+			materials: source('inventories', '/v2/account/materials', scope === 'complete'),
 			wallet: scope === 'complete' ? source('wallet', '/v2/account/wallet', false) : { status: 'skipped', reason: 'not_requested' },
-			commerce_delivery: scope === 'complete' ? source('tradingpost', '/v2/commerce/delivery', false) : { status: 'skipped', reason: 'not_requested' },
+			commerce_delivery: source('tradingpost', '/v2/commerce/delivery', false),
 		},
 		characters: {},
 	};
