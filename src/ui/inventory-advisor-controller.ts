@@ -20,6 +20,7 @@ export class InventoryAdvisorPresentationController {
 	private cached: InventoryAdvisorWorkflowResult | null = null;
 	private flight: { generation: number; kind: 'refresh' | 'reclassify'; promise: Promise<void> } | null = null;
 	private failed = false;
+	private refreshWarning: InventoryAdvisorViewModel['refreshWarning'];
 	private generation = 0;
 	private disposed = false;
 
@@ -40,7 +41,10 @@ export class InventoryAdvisorPresentationController {
 				}),
 				blockedReason: this.cached.reason,
 			});
-			return clone(buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)));
+			return clone({
+				...buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)),
+				...(this.refreshWarning === undefined ? {} : { refreshWarning: this.refreshWarning }),
+			});
 		}
 		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null);
 		return clone(this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model);
@@ -74,6 +78,7 @@ export class InventoryAdvisorPresentationController {
 		this.cached = null;
 		this.flight = null;
 		this.failed = false;
+		this.refreshWarning = undefined;
 	}
 
 	/** Blocks the visible projection after a local preference integrity failure without starting capture. */
@@ -84,6 +89,7 @@ export class InventoryAdvisorPresentationController {
 		this.cached = { status: 'blocked', reason: 'preferences_unavailable' };
 		this.flight = null;
 		this.failed = false;
+		this.refreshWarning = undefined;
 	}
 
 	/** Permanently rejects later loads and prevents an outstanding flight from repopulating memory. */
@@ -93,6 +99,7 @@ export class InventoryAdvisorPresentationController {
 		this.cached = null;
 		this.flight = null;
 		this.failed = false;
+		this.refreshWarning = undefined;
 		this.disposed = true;
 	}
 
@@ -110,11 +117,19 @@ export class InventoryAdvisorPresentationController {
 			if (source === null) return;
 			const safe = clone(source);
 			if (this.generation !== generation) return;
+			if (kind === 'refresh' && safe.status === 'blocked' && safe.reason === 'capture_unavailable'
+				&& this.cached?.status === 'ready') {
+				this.refreshWarning = safe.reason;
+				this.failed = false;
+				return;
+			}
 			this.cached = safe;
+			this.refreshWarning = undefined;
 			this.failed = false;
 		}).catch(() => {
 			if (this.generation !== generation) return;
 			this.cached = null;
+			this.refreshWarning = undefined;
 			this.failed = true;
 		}).finally(() => {
 			if (this.flight?.promise === promise) this.flight = null;

@@ -68,7 +68,8 @@ stops a session automatically.
 ## Inventory advisor
 
 Run **Open inventory advisor**, then use **Refresh inventory** to make the one explicit account
-capture. Opening the view alone is local and makes no network request. Filters and explanations help
+capture. Opening the view never reads the GW2 account; visible catalog icons may load from ArenaNet's
+official `https://render.guildwars2.com` CDN. Filters and explanations help
 review owned positions, reservations, keep exceptions, evidence coverage, and any supported manual
 route.
 
@@ -179,8 +180,11 @@ The current `0.1.0` vertical provides:
   through a latest-wins single-flight cache. H4.18 supplies an immutable, source-backed built-in v2 bundle
   with one curated capability for item 36038 (**Trick-or-Treat Bag**): `open` is known, while `use` and
   `salvage` are explicitly not applicable. H4.19 adds a fresh sibling batch for the bag plus its eight liquid
-  outcomes and a 10% manual open-versus-sell/vendor comparison. The built-in activation remains pending
-  human review, so every result remains `review`, never active economy or discard; at its exclusive expiry,
+  outcomes and a 10% manual open-versus-sell/vendor comparison. Items without curated use/open/salvage
+  knowledge can still show their independently reproduced manual liquid route (instant sell, listing or
+  vendor); the built-in 36038 activation remains pending human review and cannot activate opening or discard.
+  The view defaults to character bags plus shared inventory, makes bank/materials/delivery and plain review
+  rows opt-in, and renders trusted official catalog icons. At the bundle's exclusive expiry,
   Refresh fails closed with
   `missing_rules` before any API request.
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
@@ -302,8 +306,10 @@ Plugin settings store only the selected Obsidian secret name. Recoverable sessio
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
 session**, **Stop session**, **Arm assisted detection**, or an enabled **Refresh inventory advisor**
-is explicitly selected. Loading the plugin
-or opening its view reads only local recovery state and does not make network requests. Assisted
+is explicitly selected. Loading the plugin or opening a non-inventory view reads only local recovery
+state and does not make network requests. The Inventory Advisor may load visible public item icons
+from the exact official `https://render.guildwars2.com` origin; no API key, account identifier or
+inventory quantity is sent. Assisted
 detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
 without confirmation.
 At **Stop session**, the plugin sends only gained numeric item IDs to the official public

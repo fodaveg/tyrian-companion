@@ -7,6 +7,7 @@ export interface InventoryAdvisorViewRow {
 	id: string;
 	itemId: number;
 	name: string;
+	icon: string | null;
 	ownedQuantity: number;
 	availableQuantity: number;
 	action: InventoryAdvisorPresentationRow['action'];
@@ -25,6 +26,8 @@ export interface InventoryAdvisorViewModel {
 	detail: string;
 	/** Safe, closed diagnostic enum. It never contains account-bound values. */
 	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
+	/** A failed refresh did not replace the last valid in-memory result. */
+	refreshWarning?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
 	groups: InventoryAdvisorViewModelGroup[];
 }
 
@@ -44,7 +47,7 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 			key: group.group,
 			rows: group.rows.map((row) => ({
 				id: row.id,
-				itemId: row.itemId, name: row.name, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
+				itemId: row.itemId, name: row.name, icon: row.icon, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
 				action: row.action, quantity: row.quantity, allocations: structuredClone(row.allocations),
 				reasonCodes: [...row.reasonCodes], value: { ...row.value }, coverage: { ...row.coverage },
 				irreversibleReviewOnly: row.irreversibleReviewOnly,

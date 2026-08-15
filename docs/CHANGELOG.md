@@ -2,6 +2,15 @@
 
 ## Hotfix — Inventory Advisor con datos reales
 
+- La vista deja de ser un volcado account-wide de filas sin acción: por defecto enseña bolsas de
+  personaje e inventario compartido, oculta las filas `review` y deja banco, materiales, delivery
+  y pendientes como opciones desmarcadas. Cada fila puede mostrar el icono oficial del catálogo.
+- Los items sin conocimiento curado pueden comparar de forma manual venta instantánea, listing y
+  mercader con evidencia completa; uso, apertura y reciclaje siguen retenidos hasta tener regla
+  curada. La explicación declara que no se ejecuta ni compara esas rutas.
+- Refresh muestra progreso indeterminado honesto, reintenta una vez una captura parcial transitoria
+  y conserva el último resultado válido con aviso saneado solo si un Refresh devuelve
+  `capture_unavailable`; identidad, preferencias y reclassify fallan cerrados.
 - La captura `unavailable|invalid` deja de alcanzar composición o preferencias y devuelve un
   motivo bloqueado cerrado. El controlador conserva ese enum hasta la vista, que distingue de forma
   segura clave ausente, captura no disponible/no válida, almacenamiento local, reglas y fallo inesperado

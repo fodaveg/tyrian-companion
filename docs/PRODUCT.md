@@ -105,10 +105,12 @@ La versión `0.1.0` valida la base técnica:
   reserva y excepciones preceden a cualquier ruta, lo no suelto se revisa, y uso/abrir/reciclar/mercader/TP
   solo salen con evidencia completa y fresca. H4.16 ya añade una allowlist excepcional y pura: solo
   conserva candidatos review-only cuando reproduce exactamente el productor H4.15 y prueba ausencia
-  de rutas, reservas y excepciones. H5.11 ya presenta el resultado manual en el modo H4.17 solo revisión;
+  de rutas, reservas y excepciones. H5.11 presenta rutas líquidas manuales respaldadas para items sin una
+  capacidad curada, mientras reserva uso/abrir/reciclar para reglas curadas. Por defecto muestra únicamente
+  bolsas de personaje e inventario compartido; banco, materiales, delivery y pendientes son opt-in.
   H5.12 ya aporta edición local explícita con CAS. H4.19 ya implementa la comparación económica de 36038,
-  pero el pack built-in permanece `pending_human_review`: no hay ninguna recomendación activa hasta que
-  David apruebe humanamente el pack y su economía.
+  pero el pack built-in permanece `pending_human_review`: no activa abrir el saco hasta que David apruebe
+  humanamente el pack y su economía.
 - H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas.
 - H5.9 permite usar ajustes, Companion, confirmaciones, menús, modales, notas de sesión, botín y Bases en español o inglés sin cambiar los datos que consultan Bases ni los identificadores de acciones. El cambio de idioma refresca las superficies abiertas y selecciona el bundle localizado; la paleta de comandos de Obsidian puede conservar el nombre registrado hasta recargar el plugin.
 - H5.10 permite exportar manualmente el historial durable validado como JSON y CSV. El export no recorre el vault hasta que el usuario lo pide, no acepta esquemas futuros, referencias duplicadas ni bloques alterados, y no incluye IDs crudos, rutas, nombres de personaje/build ni notas humanas.

@@ -19,13 +19,22 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(isInventoryAdvisorResultForInput(result, input.input)).toBe(true);
 	});
 
-	it('never infers a missing route and sends non-loose positions to review', () => {
+	it('uses the independently validated manual market route when curation is absent and still reviews non-loose positions', () => {
 		const input = fixture();
 		input.knowledgePack.entries = [];
 		input.knowledgePack.sha256 = sha256InventoryKnowledgePack(input.knowledgePack);
 		const missing = classifyInventoryAdvisor(input);
-		expect(missing.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
-		expect(missing.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_missing' }));
+		expect(missing.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'sell' });
+		expect(missing.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'alternative_route_exists' }));
+		expect(isInventoryAdvisorResultForInput(missing, input.input)).toBe(true);
+		const omittedCuratedKnowledge = fixture();
+		omittedCuratedKnowledge.input.rulePack.rules = [rule('use-10', 'approved')];
+		omittedCuratedKnowledge.input.rulePack.sha256 = sha256InventoryRulePack(omittedCuratedKnowledge.input.rulePack);
+		omittedCuratedKnowledge.knowledgePack.entries = [];
+		omittedCuratedKnowledge.knowledgePack.sha256 = sha256InventoryKnowledgePack(omittedCuratedKnowledge.knowledgePack);
+		const omittedResult = classifyInventoryAdvisor(omittedCuratedKnowledge);
+		expect(omittedResult.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
+		expect(omittedResult.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_missing' }));
 		const embedded = fixture();
 		embedded.input.snapshot.holdings[0] = {
 			...embedded.input.snapshot.holdings[0]!, quantity: 1, state: 'embedded_upgrade',

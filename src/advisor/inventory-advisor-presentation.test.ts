@@ -111,13 +111,21 @@ describe('H5.11 inventory advisor presentation', () => {
 		expect(limitedRow?.reasonCodes).toEqual(limitedResult.report?.explanations[0]?.reasonCodes);
 
 		const localized = source();
-		localized.input.catalog.items['10'] = { ...localized.input.catalog.items['10']!, name: 'Zorro' };
+		localized.input.catalog.items['10'] = {
+			...localized.input.catalog.items['10']!,
+			name: 'Zorro',
+			icon: 'https://render.guildwars2.com/file/item-10.png',
+		};
 		addVendorLine(localized);
 		localized.input.catalog.items['11'] = { ...localized.input.catalog.items['11']!, name: 'Árbol' };
 		const names = buildInventoryAdvisorPresentation(
 			{ input: localized.input, result: classifyInventoryAdvisor(localized) }, { sort: 'name_asc' },
 		).groups[0]?.rows.map((entry) => entry.name);
 		expect(names).toEqual(['Árbol', 'Zorro']);
+		const iconRow = buildInventoryAdvisorPresentation(
+			{ input: localized.input, result: classifyInventoryAdvisor(localized) }, { sort: 'name_asc' },
+		).groups[0]?.rows.find((entry) => entry.itemId === 10);
+		expect(iconRow?.icon).toBe('https://render.guildwars2.com/file/item-10.png');
 	});
 
 	it('fails closed for mismatched identity or position references and keeps H4.16 unavailable', () => {

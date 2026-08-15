@@ -23,9 +23,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
 	it.each([
-		['es', 'Cobertura curada limitada: se conoce una ruta de apertura, pero su comparación económica sigue pendiente. Todas las decisiones permanecen en revisión manual.'],
-		['en', 'Curated coverage is limited: one opening route is known, but its economic comparison is still pending. Every decision remains under manual review.'],
-	] as const)('shows the honest review-only banner in %s', (locale, expected) => {
+		['es', 'Compara venta instantánea, publicación y mercader con precios actuales.'],
+		['en', 'Compares instant sell, listing and vendor routes with current prices.'],
+	] as const)('shows the honest liquid-route banner in %s', (locale, expected) => {
 		const mount = render(readyModel(), locale);
 		expect(text(mount.elements())).toContain(expected);
 	});
@@ -67,7 +67,7 @@ describe('Inventory Advisor view', () => {
 
 	it('keeps controls, focus, and the live region stable through consecutive search and select events', () => {
 		const mount = render(readyModel());
-		const search = only(find(mount.elements(), 'input'));
+		const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
 		const [action, group] = find(mount.elements(), 'select');
 		if (!action || !group) throw new Error('Expected Inventory Advisor filter controls.');
 		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
@@ -76,7 +76,7 @@ describe('Inventory Advisor view', () => {
 		search.value = 'does-not-exist';
 		search.dispatch('input');
 		expect(mount.document.activeElement).toBe(search);
-		expect(only(find(mount.elements(), 'input'))).toBe(search);
+		expect(only(find(mount.elements(), 'input').filter((input) => input.type === 'search'))).toBe(search);
 		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'))).toBe(state);
 		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__results'))).toBe(results);
 		expect(state.textContent).toBe('Ningún objeto coincide con los filtros actuales.');
@@ -119,8 +119,8 @@ describe('Inventory Advisor view', () => {
 			expect(find(mount.elements(), 'caption')).toHaveLength(1);
 			expect(find(mount.elements(), 'th').some((element) => element.scope === 'col')).toBe(true);
 			expect(find(mount.elements(), 'th').some((element) => element.scope === 'row')).toBe(true);
-			expect(find(mount.elements(), 'article')).toHaveLength(8);
-			expect(find(mount.elements(), 'dl')).toHaveLength(8);
+			expect(find(mount.elements(), 'article')).toHaveLength(7);
+			expect(find(mount.elements(), 'dl')).toHaveLength(7);
 			expect(allText).toContain('x'.repeat(320));
 			expect(allText).not.toContain('discard_candidate');
 			for (const action of ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'] as const) {
@@ -137,11 +137,59 @@ describe('Inventory Advisor view', () => {
 			const mount = render({ ...readyModel(), status, groups: status === 'ready' || status === 'limited' ? readyModel().groups : [] });
 			const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
 			expect(state.attributes.get('aria-live')).toBe('polite');
-			expect(mount.section.attributes.get('aria-busy')).toBe(String(status === 'loading'));
+			expect(mount.section.attributes.get('aria-busy')).toBe('false');
 			if (status === 'blocked' || status === 'invalid') expect(state.attributes.get('role')).toBe('alert');
 			else expect(state.attributes.has('role')).toBe(false);
 			expect(mount.elements().every((element) => !element.attributes.has('tabindex'))).toBe(true);
 		}
+	});
+
+	it('defaults to bags and shared inventory, keeps optional stores off, and rescales mixed rows without mutation', () => {
+		const mixed = deepFreeze([row({
+			itemId: 42, name: 'Mixed', action: 'sell', quantity: 5, ownedQuantity: 5, availableQuantity: 5,
+			value: { status: 'available', route: 'instant_sell', copper: 500 },
+			allocations: [
+				{ positionRef: '#/positions/42/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } },
+				{ positionRef: '#/positions/42/1', quantity: 3, location: { source: 'bank', slot: 0 } },
+			],
+		})]);
+		const before = structuredClone(mixed);
+		const base = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action' });
+		expect(base[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2, value: { copper: 200 } });
+		expect(base[0]?.allocations).toHaveLength(1);
+		const withBank = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action', includeBank: true });
+		expect(withBank[0]).toMatchObject({ quantity: 5, ownedQuantity: 5, availableQuantity: 5, value: { copper: 500 } });
+		expect(mixed).toEqual(before);
+	});
+
+	it('keeps bank, materials, delivery, and plain review rows opt-in in the rendered controls', () => {
+		const mount = render(allStatesAndActionsModel());
+		const options = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox');
+		expect(options).toHaveLength(4);
+		expect(options.every((input) => input.checked === false)).toBe(true);
+		expect(find(mount.elements(), 'article')).toHaveLength(7);
+		const review = options[3];
+		if (review === undefined) throw new Error('Expected the review visibility option.');
+		review.checked = true;
+		review.dispatch('change');
+		expect(find(mount.elements(), 'article')).toHaveLength(8);
+	});
+
+	it('renders only trusted GW2 item icons and an honest indeterminate refresh state', () => {
+		const model = allStatesAndActionsModel();
+		model.groups[0]!.rows[0]!.icon = 'https://render.guildwars2.com/file/abc.png';
+		model.groups[0]!.rows[1]!.icon = 'https://render.guildwars2.com:444/file/port.png';
+		model.groups[0]!.rows[2]!.icon = 'https://user@render.guildwars2.com/file/credentials.png';
+		const mount = render(model, 'es', { refreshing: true });
+		const images = find(mount.elements(), 'img');
+		expect(images).toHaveLength(2);
+		expect(new Set(images.map((image) => image.attributes.get('src')))).toEqual(new Set(['https://render.guildwars2.com/file/abc.png']));
+		expect(images.every((image) => image.attributes.get('alt') === '')).toBe(true);
+		const progress = only(find(mount.elements(), 'progress'));
+		expect(progress.attributes.has('value')).toBe(false);
+		expect(mount.section.attributes.get('aria-busy')).toBe('true');
+		expect(text(mount.elements())).toContain('Puede tardar cerca de un minuto.');
+		expect(text(mount.elements())).toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
 	});
 
 	it.each([
@@ -295,9 +343,9 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 
 function row(overrides: Partial<InventoryAdvisorViewRow>): InventoryAdvisorViewRow {
 	return {
-		id: '#/explanations/1/0', itemId: 1, name: 'Object', ownedQuantity: 5, availableQuantity: 3,
+		id: '#/explanations/1/0', itemId: 1, name: 'Object', icon: null, ownedQuantity: 5, availableQuantity: 3,
 		action: 'review', quantity: 3,
-		allocations: [{ positionRef: '#/positions/1/0', quantity: 3, location: { source: 'bank', slot: 0 } }],
+		allocations: [{ positionRef: '#/positions/1/0', quantity: 3, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }],
 		reasonCodes: ['rule_missing'], value: { status: 'unavailable', route: null },
 		coverage: coverage('complete'), irreversibleReviewOnly: false, discardProof: null,
 		...overrides,
@@ -364,6 +412,8 @@ class FakeElement {
 	disabled = false;
 	required = false;
 	selected = false;
+	checked = false;
+	hidden = false;
 
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
 	append(...children: FakeElement[]): void { this.children.push(...children); }

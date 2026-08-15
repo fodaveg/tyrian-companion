@@ -89,9 +89,9 @@ function readyModel(): InventoryAdvisorViewModel {
 
 function row(): InventoryAdvisorViewRow {
 	return {
-		id: '#/explanations/10/0', itemId: 10, name: 'Material', ownedQuantity: 2, availableQuantity: 2,
+		id: '#/explanations/10/0', itemId: 10, name: 'Material', icon: null, ownedQuantity: 2, availableQuantity: 2,
 		action: 'sell', quantity: 2,
-		allocations: [{ positionRef: '#/positions/10/0', quantity: 2, location: { source: 'bank', slot: 0 } }],
+		allocations: [{ positionRef: '#/positions/10/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }],
 		reasonCodes: ['rule_missing'], value: { status: 'available', route: 'instant_sell', copper: 170 },
 		coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete', reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
 		irreversibleReviewOnly: false, discardProof: null,

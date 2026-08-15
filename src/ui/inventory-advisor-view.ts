@@ -43,6 +43,10 @@ export interface InventoryAdvisorViewFilters {
 	readonly query: string;
 	readonly action: InventoryAdvisorViewFilterAction | 'all';
 	readonly groupBy: InventoryAdvisorViewGroupBy;
+	readonly includeBank?: boolean;
+	readonly includeMaterials?: boolean;
+	readonly includeDelivery?: boolean;
+	readonly showReview?: boolean;
 }
 
 export interface InventoryAdvisorViewGroup {
@@ -75,7 +79,23 @@ export function filterInventoryAdvisorRows(
 	filters: InventoryAdvisorViewFilters,
 ): InventoryAdvisorViewRow[] {
 	const query = filters.query.trim().toLocaleLowerCase();
-	return rows.filter((row) => (filters.action === 'all' || row.action === filters.action)
+	const scoped = rows.map((row) => scopeRow(row, filters)).filter((row): row is InventoryAdvisorViewRow => row !== null);
+	const ownedByItem = scoped.reduce((totals, row) => {
+		totals.set(row.itemId, (totals.get(row.itemId) ?? 0) + row.quantity);
+		return totals;
+	}, new Map<number, number>());
+	const availableByItem = scoped.reduce((totals, row) => {
+		if (!row.reasonCodes.includes('position_not_actionable')) {
+			totals.set(row.itemId, (totals.get(row.itemId) ?? 0) + row.quantity);
+		}
+		return totals;
+	}, new Map<number, number>());
+	return scoped.map((row) => ({
+		...row,
+		ownedQuantity: ownedByItem.get(row.itemId) ?? row.quantity,
+		availableQuantity: availableByItem.get(row.itemId) ?? 0,
+	})).filter((row) => (filters.action === 'all' || row.action === filters.action)
+		&& (filters.showReview === true || row.action !== 'review')
 		&& (query.length === 0 || row.name.toLocaleLowerCase().includes(query) || String(row.itemId).includes(query)));
 }
 
@@ -125,13 +145,15 @@ function mountInventoryAdvisorView(
 ): MountedInventoryAdvisorView {
 	let model = initialModel;
 	let translator = initialTranslator;
-	let filters = { ...initialFilters };
+	let filters = { includeBank: false, includeMaterials: false, includeDelivery: false, showReview: false, ...initialFilters };
 	let interactions = initialInteractions;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
 	const heading = createEl('h2');
 	const intro = createEl('p');
 	intro.className = 'tyrian-inventory-advisor__intro';
+	const iconDisclosure = createEl('p');
+	iconDisclosure.className = 'tyrian-inventory-advisor__icon-disclosure';
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
@@ -167,7 +189,28 @@ function mountInventoryAdvisorView(
 	}
 	group.value = filters.groupBy;
 	groupLabelElement.append(groupLabelText, group);
-	controls.append(searchLabel, actionLabel, groupLabelElement);
+	const sourceFieldset = createEl('fieldset');
+	sourceFieldset.className = 'tyrian-inventory-advisor__scope';
+	const sourceLegend = createEl('legend');
+	sourceFieldset.append(sourceLegend);
+	const sourceControls = new Map<'bank' | 'materials' | 'delivery' | 'review', { input: HTMLInputElement; text: HTMLSpanElement }>();
+	for (const candidate of ['bank', 'materials', 'delivery', 'review'] as const) {
+		const label = createEl('label');
+		const input = createEl('input');
+		input.type = 'checkbox';
+		input.checked = candidate === 'bank' ? filters.includeBank === true
+			: candidate === 'materials' ? filters.includeMaterials === true
+				: candidate === 'delivery' ? filters.includeDelivery === true : filters.showReview === true;
+		const text = createSpan();
+		label.append(input, text);
+		sourceFieldset.append(label);
+		sourceControls.set(candidate, { input, text });
+	}
+	controls.append(searchLabel, actionLabel, groupLabelElement, sourceFieldset);
+	const progress = createEl('progress');
+	progress.className = 'tyrian-inventory-advisor__progress';
+	progress.removeAttribute('value');
+	progress.hidden = true;
 	let refreshButton: HTMLButtonElement | null = null;
 	const refreshResults = (): void => {
 		const visible = model.status === 'ready' || model.status === 'limited';
@@ -175,20 +218,26 @@ function mountInventoryAdvisorView(
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (visible) results.append(renderResults(rows, filters.groupBy, translator, !filteredEmpty));
-		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
+		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty')
+			: interactions.refreshing === true ? translator.t('advisor.view.refreshProgress') : stateLabel(model, translator);
 	};
 	const updateFilters = (): void => {
 		filters = {
 			query: search.value,
 			action: selectedFilterAction(action.value),
 			groupBy: selectedGroup(group.value),
+			includeBank: sourceControls.get('bank')!.input.checked,
+			includeMaterials: sourceControls.get('materials')!.input.checked,
+			includeDelivery: sourceControls.get('delivery')!.input.checked,
+			showReview: sourceControls.get('review')!.input.checked,
 		};
 		refreshResults();
 	};
 	search.addEventListener('input', updateFilters);
 	action.addEventListener('change', updateFilters);
 	group.addEventListener('change', updateFilters);
-	section.append(heading, intro, controls, state);
+	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
+	section.append(heading, intro, iconDisclosure, controls, progress, state);
 	if (preferencesEditor !== null) section.append(preferencesEditor.element);
 	section.append(results);
 	container.replaceChildren(section);
@@ -201,6 +250,7 @@ function mountInventoryAdvisorView(
 		section.setAttribute('aria-busy', String(model.status === 'loading'));
 		heading.textContent = translator.t('advisor.view.title');
 		intro.textContent = translator.t('advisor.view.intro');
+		iconDisclosure.textContent = translator.t('advisor.view.iconDisclosure');
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));
@@ -210,9 +260,16 @@ function mountInventoryAdvisorView(
 		groupLabelText.textContent = translator.t('advisor.view.group');
 		groupOptions.get('action')!.textContent = translator.t('advisor.view.groupAction');
 		groupOptions.get('evidence')!.textContent = translator.t('advisor.view.groupEvidence');
+		sourceLegend.textContent = translator.t('advisor.view.include');
+		for (const [candidate, control] of sourceControls) {
+			control.text.textContent = translator.t(`advisor.view.include.${candidate}`);
+		}
 		if (model.status === 'loading') controls.setAttribute('aria-disabled', 'true');
 		else controls.removeAttribute('aria-disabled');
-		if (model.status === 'blocked' || model.status === 'invalid') state.setAttribute('role', 'alert');
+		progress.hidden = interactions.refreshing !== true;
+		progress.setAttribute('aria-label', translator.t('advisor.view.refreshProgress'));
+		section.setAttribute('aria-busy', String(interactions.refreshing === true));
+		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
 		if (interactions.onRefresh !== undefined && refreshButton === null) {
 			refreshButton = createEl('button');
@@ -304,7 +361,7 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	const tableRow = createEl('tr');
 	const item = createEl('th');
 	item.scope = 'row';
-	item.textContent = row.name;
+	appendItemIdentity(item, row);
 	tableRow.append(item);
 	appendCell(tableRow, String(row.ownedQuantity), 'tyrian-inventory-advisor__wide-only');
 	appendCell(tableRow, String(row.availableQuantity), 'tyrian-inventory-advisor__wide-only');
@@ -332,7 +389,7 @@ function renderCards(
 			const article = createEl('article');
 			article.className = 'tyrian-inventory-advisor__card';
 			const heading = createEl('h4');
-			heading.textContent = row.name;
+			appendItemIdentity(heading, row);
 			article.append(heading);
 			const list = createEl('dl');
 			addDefinition(list, translator.t('advisor.view.owned'), String(row.ownedQuantity));
@@ -379,9 +436,60 @@ function flattenInventoryAdvisorRows(groups: readonly InventoryAdvisorViewModelG
 }
 
 function stateLabel(model: InventoryAdvisorViewModel, translator: Translator): string {
+	if (model.refreshWarning !== undefined) return translator.t('advisor.view.refreshWarning', {
+		reason: translator.t(`advisor.view.blockedReason.${model.refreshWarning}`),
+	});
 	return model.blockedReason === undefined
 		? translator.t(`advisor.view.state.${model.status}`)
 		: translator.t(`advisor.view.blockedReason.${model.blockedReason}`);
+}
+
+function scopeRow(row: InventoryAdvisorViewRow, filters: InventoryAdvisorViewFilters): InventoryAdvisorViewRow | null {
+	const allocations = row.allocations.filter(({ location }) => location.source === 'character'
+		|| location.source === 'shared_inventory'
+		|| (location.source === 'bank' && filters.includeBank === true)
+		|| (location.source === 'materials' && filters.includeMaterials === true)
+		|| (location.source === 'commerce_delivery' && filters.includeDelivery === true));
+	const quantity = allocations.reduce((total, allocation) => total + allocation.quantity, 0);
+	if (quantity === 0) return null;
+	return {
+		...row,
+		quantity,
+		allocations: structuredClone(allocations),
+		value: row.value.status === 'available' && row.quantity > 0
+			? { ...row.value, copper: Math.floor(row.value.copper * quantity / row.quantity) }
+			: { ...row.value },
+	};
+}
+
+function appendItemIdentity(container: HTMLElement, row: InventoryAdvisorViewRow): void {
+	const icon = safeItemIcon(row.icon);
+	if (icon !== null) {
+		const image = createEl('img');
+		image.className = 'tyrian-inventory-advisor__item-icon';
+		image.setAttribute('src', icon);
+		image.setAttribute('alt', '');
+		image.setAttribute('width', '32');
+		image.setAttribute('height', '32');
+		image.setAttribute('loading', 'lazy');
+		image.setAttribute('decoding', 'async');
+		image.setAttribute('referrerpolicy', 'no-referrer');
+		container.append(image);
+	}
+	const name = createSpan();
+	name.textContent = row.name;
+	container.append(name);
+}
+
+function safeItemIcon(value: string | null): string | null {
+	if (value === null) return null;
+	try {
+		const url = new URL(value);
+		return url.origin === 'https://render.guildwars2.com' && url.username === '' && url.password === ''
+			? url.href : null;
+	} catch {
+		return null;
+	}
 }
 
 function actionLabelFor(action: InventoryAdvisorViewAction, translator: Translator): string {

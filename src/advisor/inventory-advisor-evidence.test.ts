@@ -112,6 +112,33 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(beginOperation).toHaveBeenCalledTimes(2);
 	});
 
+	it('retries one transient partial snapshot before any catalog or price work, but not a capability limitation', async () => {
+		const transient = snapshotFixture([10]);
+		transient.quality = 'partial';
+		transient.coverage.sources.bank = { status: 'partial', reason: 'partial_response' };
+		const stable = snapshotFixture([10]);
+		const captureWithOperation = vi.fn()
+			.mockResolvedValueOnce(transient)
+			.mockResolvedValueOnce(stable);
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			{ captureWithOperation }, { resolve: async () => catalogFor(stable) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+		);
+		expect(await service.capture('es')).toMatchObject({ status: 'complete', evidence: { snapshot: { quality: 'stable' } } });
+		expect(captureWithOperation).toHaveBeenCalledTimes(2);
+
+		const limited = snapshotFixture([10]);
+		limited.coverage.sources.bank = { status: 'skipped', reason: 'missing_scope' };
+		const limitedCapture = vi.fn(async () => limited);
+		await new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			{ captureWithOperation: limitedCapture }, { resolve: async () => catalogFor(limited) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+		).capture('es');
+		expect(limitedCapture).toHaveBeenCalledOnce();
+	});
+
 	it('keeps missing scopes and URL-restricted signals null without calling their endpoints', async () => {
 		const snapshot = snapshotFixture([10]);
 		const request = vi.fn(async (path: string): Promise<unknown> => {

@@ -71,7 +71,10 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				: { status: 'unavailable', evidence: null };
 		}
 		try {
-			const snapshot = await this.snapshots.captureWithOperation(operation);
+			let snapshot = await this.snapshots.captureWithOperation(operation);
+			if (shouldRetryTransientSnapshot(snapshot)) {
+				snapshot = await this.snapshots.captureWithOperation(operation);
+			}
 			if (!isComparableStorageSnapshot(snapshot)) return { status: 'invalid', evidence: null };
 			const context = await verifiedContext(operation, snapshot.accountId);
 			if (context.status === 'unavailable') return { status: 'unavailable', evidence: null };
@@ -276,6 +279,18 @@ function catalogCoverage(catalog: CatalogResolution, snapshot: StorageSnapshot):
 }
 function snapshotCoverage(snapshot: StorageSnapshot): InventoryAdvisorEvidenceCoverageV1['snapshot'] {
 	return snapshot.quality === 'stable' && Object.values(snapshot.coverage.sources).every((entry) => entry.status === 'complete') ? 'complete' : 'partial';
+}
+function hasTransientSnapshotFailure(snapshot: StorageSnapshot): boolean {
+	if (snapshot.quality === 'unstable') return true;
+	return [...Object.values(snapshot.coverage.sources), ...Object.values(snapshot.coverage.characters)]
+		.some((entry) => entry.status === 'partial' && (entry.reason === 'partial_response' || entry.reason === 'unavailable'));
+}
+function shouldRetryTransientSnapshot(snapshot: StorageSnapshot): boolean {
+	try {
+		return hasTransientSnapshotFailure(snapshot);
+	} catch {
+		return false;
+	}
 }
 function priceCoverage(prices: InventoryPriceSnapshotV1): InventoryAdvisorEvidenceCoverageV1['prices'] { return prices.status; }
 function signalCoverage(signals: AccountSignalsV1): InventoryAdvisorEvidenceCoverageV1['accountSignals'] {

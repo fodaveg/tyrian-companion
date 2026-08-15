@@ -31,9 +31,10 @@ describe('i18n catalogue', () => {
 });
 
 const H5_11_KEYS = [
-	'advisor.view.title', 'advisor.view.intro', 'advisor.view.search', 'advisor.view.searchPlaceholder',
+	'advisor.view.title', 'advisor.view.intro', 'advisor.view.iconDisclosure', 'advisor.view.search', 'advisor.view.searchPlaceholder',
 	'advisor.view.filter', 'advisor.view.allActions', 'advisor.view.group', 'advisor.view.groupAction',
-	'advisor.view.groupEvidence',
+	'advisor.view.groupEvidence', 'advisor.view.include', 'advisor.view.include.bank',
+	'advisor.view.include.materials', 'advisor.view.include.delivery', 'advisor.view.include.review',
 	'advisor.view.state.empty', 'advisor.view.state.loading', 'advisor.view.state.ready',
 	'advisor.view.state.limited', 'advisor.view.state.blocked', 'advisor.view.state.invalid',
 	'advisor.view.blockedReason.missing_rules', 'advisor.view.blockedReason.credential_unavailable',
@@ -45,6 +46,7 @@ const H5_11_KEYS = [
 	'advisor.view.item', 'advisor.view.owned', 'advisor.view.available', 'advisor.view.quantity',
 	'advisor.view.location', 'advisor.view.value', 'advisor.view.explanation', 'advisor.view.action',
 	'advisor.view.evidence', 'advisor.view.refresh', 'advisor.view.refreshing',
+	'advisor.view.refreshProgress', 'advisor.view.refreshWarning',
 	'advisor.view.action.sell', 'advisor.view.action.list', 'advisor.view.action.vendor',
 	'advisor.view.action.salvage', 'advisor.view.action.use', 'advisor.view.action.open',
 	'advisor.view.action.keep', 'advisor.view.action.review', 'advisor.view.action.discard_review',

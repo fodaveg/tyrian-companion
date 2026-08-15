@@ -63,6 +63,7 @@ export function buildInventoryAdvisorPresentation(
 				id: decision.explanationRef,
 				itemId: line.itemId,
 				name: line.name,
+				icon: source.input.catalog.items[String(line.itemId)]?.icon ?? null,
 				ownedQuantity: line.ownedQuantity,
 				availableQuantity: line.availableQuantity,
 				action: presentationAction,

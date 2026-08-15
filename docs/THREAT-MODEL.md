@@ -16,6 +16,10 @@ ya comprometida, un reporte humano que ignore la redacción ni un paquete de des
 - Toda petición autenticada construida por `GuildWars2Client` va exclusivamente a `https://api.guildwars2.com/v2/...`. El constructor no permite sustituir ese host. La cabecera de autorización se añade después de validar que la ruta es relativa.
 - La validación consulta `/v2/tokeninfo`; su identificador, nombre y scopes se materializan transitoriamente al parsear la respuesta. El estado de conexión expuesto al resto del plugin conserva nombre y scopes, pero no el identificador del token ni el token crudo.
 - Catálogos y precios públicos también proceden de la API oficial de GW2 y no llevan la cabecera de autorización.
+- Los iconos visibles del Inventory Advisor pueden solicitarse al origen exacto
+  `https://render.guildwars2.com`. La URL procede del catálogo público y se rechaza si contiene
+  credenciales, puerto alternativo u otro origen; la petición no lleva clave, cuenta ni cantidad,
+  pero el CDN sí observa la conexión de red del cliente.
 - No hay endpoints del proyecto, subida de diagnósticos, analítica remota ni tráfico Mumble activo
   desde el plugin. H8.5/H8.6 implementan servidor y cliente core en aislamiento sobre el canal H8.4,
   pero no existe adapter ni composición que abra proceso o socket. Cablearlo exige nueva revisión y QA real.

@@ -125,6 +125,38 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		}
 	});
 
+	it('keeps the last valid result only when a later refresh has an explicitly transient capture failure', async () => {
+		const ports = { load: vi.fn()
+			.mockResolvedValueOnce(sourceNamed('Last good'))
+			.mockResolvedValueOnce({ status: 'blocked', reason: 'capture_unavailable' } as const)
+			.mockResolvedValueOnce({ status: 'blocked', reason: 'capture_invalid' } as const) } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		expect(firstRowName(await controller.refresh())).toBe('Last good');
+		const blocked = await controller.refresh();
+		expect(blocked).toMatchObject({ status: 'ready', refreshWarning: 'capture_unavailable' });
+		expect(firstRowName(blocked)).toBe('Last good');
+		await expect(controller.refresh()).resolves.toMatchObject({ status: 'blocked', blockedReason: 'capture_invalid', groups: [] });
+	});
+
+	it('never preserves a result across preference reclassification failure or an unexpected rejection', async () => {
+		const ports = {
+			load: vi.fn(async () => sourceNamed('Last good')),
+			reclassify: vi.fn(async () => ({ status: 'blocked', reason: 'preferences_unavailable' } as const)),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		expect(firstRowName(await controller.refresh())).toBe('Last good');
+		await expect(controller.reclassify()).resolves.toMatchObject({
+			status: 'blocked', blockedReason: 'preferences_unavailable', groups: [],
+		});
+		const rejected = new InventoryAdvisorPresentationController({
+			load: vi.fn().mockResolvedValueOnce(sourceNamed('Old')).mockRejectedValueOnce(new Error('secret account detail')),
+		});
+		await rejected.refresh();
+		const failed = await rejected.refresh();
+		expect(failed).toMatchObject({ status: 'invalid', blockedReason: 'unexpected_failure', groups: [] });
+		expect(JSON.stringify(failed)).not.toContain('secret account detail');
+	});
+
 	it('makes New win when Old completes after the newer explicit refresh', async () => {
 		const a = deferred<InventoryAdvisorWorkflowResult>();
 		const b = deferred<InventoryAdvisorWorkflowResult>();
@@ -184,7 +216,7 @@ function namedPresentation(name: string) {
 	return {
 		version: 1 as const, status: 'ready' as const, discardReview: { status: 'unavailable' as const },
 		groups: [{ group: 'review' as const, rows: [{
-			id: `#/fixtures/${name}`, itemId: 10, name, ownedQuantity: 1, availableQuantity: 1,
+			id: `#/fixtures/${name}`, itemId: 10, name, icon: null, ownedQuantity: 1, availableQuantity: 1,
 			action: 'review' as const, quantity: 1,
 			allocations: [{ positionRef: '#/positions/10/0', quantity: 1, location: { source: 'bank' as const, slot: 0 } }],
 			reasonCodes: [], coverage: { snapshot: 'complete' as const, inventory: 'complete' as const,

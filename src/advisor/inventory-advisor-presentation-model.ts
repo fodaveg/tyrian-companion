@@ -36,6 +36,7 @@ export interface InventoryAdvisorPresentationRow {
 	id: string;
 	itemId: number;
 	name: string;
+	icon: string | null;
 	ownedQuantity: number;
 	availableQuantity: number;
 	action: InventoryAdvisorPresentationAction;
