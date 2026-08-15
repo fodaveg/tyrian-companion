@@ -78,9 +78,11 @@ describe('H8.5 helper supply chain and test-only staging', () => {
 			]));
 			expect(stageFindings(directory)).toEqual([]);
 
-			writeFileSync(join(directory, 'helper.dll'), 'sabotage\n');
-			expect(stageFindings(directory)).toContain('stage-file-set');
-			rmSync(join(directory, 'helper.dll'));
+			for (const output of ['helper.dll', 'helper.pdb', 'helper.lib', 'helper.obj', 'helper.rlib']) {
+				writeFileSync(join(directory, output), 'sabotage\n');
+				expect(stageFindings(directory), output).toContain('stage-file-set');
+				rmSync(join(directory, output));
+			}
 			writeFileSync(join(directory, 'helper-manifest.json'), manifest(executable).replace('UNSIGNED-NOT-FOR-RELEASE', 'release'));
 			expect(stageFindings(directory)).toContain('manifest-authority');
 
@@ -120,7 +122,50 @@ describe('H8.5 helper supply chain and test-only staging', () => {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
+
+	it('keeps CI artifact staging marker-only while allowing compiler byproducts under target', () => {
+		const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+		expect(ciArtifactStageFindings(['UNSIGNED-NOT-FOR-RELEASE.txt'])).toEqual([]);
+		expect(ciArtifactStageFindings(['UNSIGNED-NOT-FOR-RELEASE.txt', 'helper.pdb']))
+			.toEqual(['artifact-file-set', 'artifact-native-output']);
+		expect(ciArtifactFindings(workflow)).toEqual([]);
+		expect(ciArtifactFindings(workflow.replace("'.pdb', ", ''))).toContain('artifact-forbidden-extensions');
+		expect(ciArtifactFindings(workflow.replace(
+			'if ($artifactFiles.Count -ne 1',
+			'if ($artifactFiles.Count -lt 1',
+		))).toContain('artifact-file-set');
+		expect(ciArtifactFindings(workflow.replace(
+			'path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt',
+			'path: native/mumble-helper/target/repro-b/',
+		))).toContain('artifact-upload-path');
+		expect(ciArtifactFindings(workflow.replace('retention-days: 1', 'retention-days: 2')))
+			.toContain('artifact-retention');
+		expect(workflow).not.toContain('unexpected DLL/PDB output');
+	});
 });
+
+function ciArtifactStageFindings(files: readonly string[]): string[] {
+	const findings: string[] = [];
+	if (files.length !== 1 || files[0] !== 'UNSIGNED-NOT-FOR-RELEASE.txt') findings.push('artifact-file-set');
+	if (files.some((path) => /\.(?:exe|dll|pdb|lib|obj|rlib|rmeta)$/iu.test(path))) {
+		findings.push('artifact-native-output');
+	}
+	return findings.sort();
+}
+
+function ciArtifactFindings(source: string): string[] {
+	const findings: string[] = [];
+	for (const extension of ['.exe', '.dll', '.pdb', '.lib', '.obj', '.rlib', '.rmeta']) {
+		if (!source.includes(`'${extension}'`)) findings.push('artifact-forbidden-extensions');
+	}
+	if (!source.includes('if ($artifactFiles.Count -ne 1')) findings.push('artifact-file-set');
+	if (!source.includes('path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt')) {
+		findings.push('artifact-upload-path');
+	}
+	if ((source.match(/^\s*retention-days: 1\s*$/gmu)?.length ?? 0) !== 1) findings.push('artifact-retention');
+	if (source.includes('unexpected DLL/PDB output')) findings.push('target-byproduct-rejected');
+	return [...new Set(findings)].sort();
+}
 
 function supplyChainFindings(
 	manifest: string,

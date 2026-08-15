@@ -4,10 +4,11 @@ import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'n
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const H8_HELPER_DECISION_CONTRACT_VERSION = 14;
+export const H8_HELPER_DECISION_CONTRACT_VERSION = 15;
 
 const ADR_PATH = 'docs/adr/0001-h8-3-native-mumble-helper.md';
 const RUNTIME_ADR_PATH = 'docs/adr/0003-h8-5-native-helper-runtime.md';
+const CI_WORKFLOW_PATH = '.github/workflows/ci.yml';
 const RUNTIME_BLOCK_START = '<!-- h8.5-runtime:start -->\n```json\n';
 const RUNTIME_BLOCK_END = '\n```\n<!-- h8.5-runtime:end -->';
 const BLOCK_START = '<!-- h8.3-decision:start -->\n```json\n';
@@ -20,13 +21,13 @@ const ADR_AUTHORITY_PREFIX = `# ADR 0001 — Lenguaje y distribución del helper
 const PLATFORM_AUTHORITY_PREFIX = `### Decisión de implementación H8.3\n\n${PLATFORM_AUTHORITY_START}`;
 const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de terceros y operaciones`;
 const EXPECTED_DECISION_SHA256 = 'e1646dd526ddb0bc038e7f2aa261151a4aeb3248109befa644c85e3ee32314e7';
-const ADR_AUTHORITY_SHA256 = '6d5c2ad3e72f4350f62ed222d5f100c78cde1fa694a6c537a984bd44f14f0474';
-const PLATFORM_AUTHORITY_SHA256 = '76be86bc1de54079df8bc33024cc2b3f8d5541d16f007b57ba3559d36186cd60';
-const PLATFORM_DOCUMENT_SHA256 = 'eefb8af6b751c8d9162f876ee8d63e54e7f6ea48ed5d20ef861df05500ba3a50';
+const ADR_AUTHORITY_SHA256 = 'c2fcb0960da3077e342b9e6c07408fc80eca7069005f7da8e10e8aef8fbb2220';
+const PLATFORM_AUTHORITY_SHA256 = '761564594340cf5984f4ccecaa2bc3a10a0b59b11c52e4fc50c2dcb456858e1b';
+const PLATFORM_DOCUMENT_SHA256 = '46ca8c3c53b2150a7bc96c8718f69569ef808e9dca2b4e5d32a1d1123aaa1d84';
 const NATIVE_MANIFEST_SHA256 = 'cd7aa03197262d1e3e71868f24b2204a0a00855c70cbb38e0ad7727368b8aa7b';
 const NATIVE_LOCK_SHA256 = '59bfcbfa38ae0ffe6b8454da70238d9ac490de07479ac6c0a0161b69725e83bf';
 const NATIVE_WIN32_SHA256 = '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977';
-const RUNTIME_ADR_DOCUMENT_SHA256 = 'b4af4eec0be6a39d71277927af94e66f8045a53a1a1256057cdcbc7b94af626d';
+const RUNTIME_ADR_DOCUMENT_SHA256 = 'aa8a04e6540c1e114fe91279391b7acced353ba6f59a6b33afc9814140ef720c';
 const RUNTIME_BLOCK_SHA256 = 'eb8cced7b9035ecb7b06ee7e37a70e26b5035da673da9880580239603799f340';
 const NATIVE_SOURCE_SHA256 = new Map([
 	['native/mumble-helper/src/framing.rs', '8996af14503a161af83305a9426ad2a1149a51ab1eae321bb0462ae1401e88cd'],
@@ -151,6 +152,7 @@ export function validateH8HelperDecisionContract(root = process.cwd()) {
 	validateDecisionBlock(adr, findings);
 	validateGovernedAuthority(absoluteRoot, adr, findings);
 	validateRuntimeAdr(absoluteRoot, findings);
+	validateCiArtifact(absoluteRoot, findings);
 	validateDocumentation(absoluteRoot, findings);
 	validateDocsOnlyScope(absoluteRoot, findings);
 	validateNativeImplementation(absoluteRoot, findings);
@@ -158,6 +160,22 @@ export function validateH8HelperDecisionContract(root = process.cwd()) {
 		version: H8_HELPER_DECISION_CONTRACT_VERSION,
 		findings: [...new Set(findings)].sort(),
 	};
+}
+
+function validateCiArtifact(root, findings) {
+	const source = readText(root, CI_WORKFLOW_PATH, 'ci-workflow', findings);
+	for (const term of [
+		"$artifactStage = 'artifact-upload'",
+		"$forbiddenExtensions = @('.exe', '.dll', '.pdb', '.lib', '.obj', '.rlib', '.rmeta')",
+		'if ($artifactFiles.Count -ne 1',
+		'path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt',
+	]) {
+		if (!source.includes(term)) findings.push(`ci-artifact-term:${term}`);
+	}
+	if ((source.match(/^\s*retention-days: 1\s*$/gmu)?.length ?? 0) !== 1) {
+		findings.push('ci-artifact-retention');
+	}
+	if (source.includes('unexpected DLL/PDB output')) findings.push('ci-target-pdb-rejection');
 }
 
 function validateRuntimeAdr(root, findings) {

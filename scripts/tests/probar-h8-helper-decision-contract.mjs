@@ -8,6 +8,7 @@ const root = process.cwd();
 const testRoot = mkdtempSync(join(tmpdir(), 'tyrian-h8-helper-decision-'));
 const failures = [];
 const trackedFiles = [
+	'.github/workflows/ci.yml',
 	'README.md',
 	'docs/ARCHITECTURE.md',
 	'docs/CHANGELOG.md',
@@ -38,10 +39,33 @@ try {
 	testRuntimeAdrSabotages();
 	testImplementationSabotages();
 	testImplementedHelperSabotages();
+	testCiArtifactSabotages();
 	testSymlinkSabotages();
 	testLegitimateFilesOutsideScope();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
+}
+
+function testCiArtifactSabotages() {
+	const path = '.github/workflows/ci.yml';
+	const source = files.get(path);
+	for (const [name, before, after, finding] of [
+		['pdb-in-artifact', "'.pdb', ", '', "ci-artifact-term:$forbiddenExtensions = @('.exe', '.dll', '.pdb', '.lib', '.obj', '.rlib', '.rmeta')"],
+		['artifact-file-set', 'if ($artifactFiles.Count -ne 1', 'if ($artifactFiles.Count -lt 1', 'ci-artifact-term:if ($artifactFiles.Count -ne 1'],
+		['artifact-upload-path', 'path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt', 'path: native/mumble-helper/target/repro-b/', 'ci-artifact-term:path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt'],
+		['artifact-retention', 'retention-days: 1', 'retention-days: 2', 'ci-artifact-retention'],
+	]) {
+		assert(source.includes(before), `${name} fixture marker is missing`);
+		expectFinding(name, new Map([[path, source.replace(before, after)]]), finding);
+	}
+	expectFinding(
+		'target-pdb-rejected',
+		new Map([[path, source.replace(
+			"$artifactStage = 'artifact-upload'",
+			"$unexpected = Get-ChildItem target -Filter *.pdb`n          if ($unexpected) { throw 'unexpected DLL/PDB output' }`n          $artifactStage = 'artifact-upload'",
+		)]]),
+		'ci-target-pdb-rejection',
+	);
 }
 
 function testRuntimeAdrSabotages() {

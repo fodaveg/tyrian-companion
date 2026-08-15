@@ -72,13 +72,21 @@ jobs:
           $secondExe = 'target/repro-b/x86_64-pc-windows-msvc/release/tyrian-mumble-helper.exe'
           $second = (Get-FileHash -Algorithm SHA256 $secondExe).Hash
           if ($first -ne $second) { throw 'non-reproducible helper bytes' }
-          $unexpected = Get-ChildItem 'target/repro-b/x86_64-pc-windows-msvc/release' -File | Where-Object { $_.Extension -in '.dll','.pdb' }
-          if ($unexpected) { throw 'unexpected DLL/PDB output' }
-          Set-Content -NoNewline -Encoding ascii UNSIGNED-NOT-FOR-RELEASE.txt "UNSIGNED-NOT-FOR-RELEASE`nsha256=$second`n"
+          $artifactStage = 'artifact-upload'
+          $marker = "$artifactStage/UNSIGNED-NOT-FOR-RELEASE.txt"
+          New-Item -ItemType Directory -Force $artifactStage | Out-Null
+          Set-Content -NoNewline -Encoding ascii $marker "UNSIGNED-NOT-FOR-RELEASE`nsha256=$second`n"
+          $artifactFiles = @(Get-ChildItem $artifactStage -File -Recurse)
+          $forbiddenExtensions = @('.exe', '.dll', '.pdb', '.lib', '.obj', '.rlib', '.rmeta')
+          $forbiddenArtifact = @($artifactFiles | Where-Object { $_.Extension -in $forbiddenExtensions })
+          if ($forbiddenArtifact.Count -ne 0) { throw 'native output entered CI artifact staging' }
+          if ($artifactFiles.Count -ne 1 -or $artifactFiles[0].FullName -ne (Resolve-Path $marker).Path) {
+            throw 'CI artifact staging is not marker-only'
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: H8.5-UNSIGNED-NOT-FOR-RELEASE-${{ github.sha }}
-          path: native/mumble-helper/UNSIGNED-NOT-FOR-RELEASE.txt
+          path: native/mumble-helper/artifact-upload/UNSIGNED-NOT-FOR-RELEASE.txt
           if-no-files-found: error
           retention-days: 1
 

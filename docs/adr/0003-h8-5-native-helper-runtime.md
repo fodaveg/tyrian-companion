@@ -109,3 +109,5 @@ del mismo proceso conserva el token bootstrap, rota nonce y reinicia secuencia.
 
 El gate local no sustituye la CI Windows ni la QA real. Hasta que el mismo PE pase inspección,
 reproducibilidad, firma y matriz, no existe helper publicable ni soporte declarado.
+MSVC puede dejar un PDB efímero bajo `target`; CI no lo trata como fallo de compilación, pero el
+stage futuro y el artefacto subido lo rechazan. El único artefacto H8.5 retenido es el marker exacto.

@@ -195,7 +195,9 @@ exactamente `tyrian-mumble-helper.exe`, `helper-manifest.json`, `SHA256SUMS`, `L
 `THIRD-PARTY-LICENSES.txt`; manifest y checksums deberán ligar el mismo build/target. La firma
 Authenticode y todo el empaquetado productivo siguen pendientes. H8.5 transforma el guard H8.3 en
 un censo positivo de la raíz Rust, toolchain, dependencias, única isla `unsafe`, APIs Win32 y tests;
-continúa rechazando EXE/DLL/PDB y cualquier raíz nativa alternativa.
+continúa rechazando outputs nativos tracked/no ignorados y cualquier raíz nativa alternativa. Un
+PDB efímero generado por MSVC puede vivir solo bajo el `target` ignorado de compilación; nunca entra
+en staging, paquete ni artefacto CI.
 La decisión completa y sus triggers viven en
 [ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
 

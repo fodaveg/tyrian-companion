@@ -256,6 +256,7 @@ The native focal gate runs from `native/mumble-helper` with `cargo fmt --all -- 
 and `cargo metadata --format-version 1 --locked`. Windows PE/static-CRT/reproducibility evidence is
 produced only by CI as a short-lived `UNSIGNED-NOT-FOR-RELEASE` marker, never a release ZIP.
 The only native build target is `x86_64-pc-windows-msvc` with the static CRT flag fixed in Cargo config.
+MSVC may leave an ephemeral PDB under `target`; staging and uploaded artifacts remain marker-only.
 
 Create a reproducible local candidate with:
 

@@ -80,6 +80,9 @@
 - El verifier de supply-chain lee `Cargo.toml`/`Cargo.lock` directamente y ya no invoca Cargo ni
   instala toolchains desde jobs Node. El target MSVC añade `/Brepro` para eliminar metadata variable
   del linker entre los dos builds de reproducibilidad, conservando CRT estático.
+- CI permite el PDB efímero que MSVC deja bajo `target`, pero construye un stage de artifact cerrado
+  que admite solo el marker durante un día; tests causales rechazan PDB/DLL/LIB/OBJ/RLIB en el stage
+  futuro del helper y cualquier output nativo en el artifact CI.
 - Añadido el crate Rust único `native/mumble-helper`, toolchain 1.85.1, target
   `x86_64-pc-windows-msvc` y CRT estático, sin Tokio ni `build.rs` propio.
 - Implementados framing big-endian 1..512, JSON exacto con duplicados escapados, token bootstrap

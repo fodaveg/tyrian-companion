@@ -131,6 +131,10 @@ El futuro código vivirá solo bajo `native/mumble-helper`. Su único target aut
 runtime redistribuible adicional. H8.3 no crea todavía `Cargo.toml`, `.csproj`, EXE, DLL, código
 nativo, wiring, listener, CI de producto ni packaging real.
 
+MSVC puede generar un PDB como subproducto dentro del `target` efímero de compilación. Ese fichero
+no es una segunda salida de producto: nunca entra en staging, paquete ni artefacto CI. El censo del
+repositorio sigue rechazando cualquier PDB tracked o no ignorado fuera de ese `target` regenerable.
+
 El ZIP del helper será un artefacto separado del ZIP de instalación del plugin. Incluirá exactamente
 el EXE, un manifest del helper, `SHA256SUMS`, la licencia del proyecto y los avisos de terceros. El
 manifest deberá ligar versión, target y hashes al mismo build; `SHA256SUMS` cubrirá todos los ficheros

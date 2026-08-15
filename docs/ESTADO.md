@@ -79,10 +79,11 @@ provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuen
 llevará manifest, checksums y licencias. Linux/Steam/Proton primaria, macOS/CrossOver secundaria y
 Windows x64 beta siguen `QA=pending`; ejecución nativa Linux/macOS, Windows x86/ARM64, móvil y Wine
 fuera de Steam/Proton/CrossOver quedan unsupported. Authenticode sigue pendiente y bloquea release.
-El guard v12 y sus sabotajes mantienen un censo positivo. Fuera de
+El guard v15 y sus sabotajes mantienen un censo positivo. Fuera de
 docs/examples/fixtures/tests, fuente Rust/C#, configuración Cargo/toolchain exacta y señales de
 prefijo Mumble Link por path o contenido quedan censadas globalmente; outputs
-EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA y symlinks relevantes siempre fallan.
+EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA tracked/no ignorados y symlinks relevantes siempre fallan. Un PDB
+efímero de MSVC se permite únicamente bajo `target`; staging, paquete y artefacto CI lo rechazan.
 Un `bridge` genérico continúa permitido. El bloque JSON, el ADR y `PLATFORM_POLICY.md` completo tienen
 parsing/hash canónicos, de modo que `QA completada` tampoco puede añadirse al final del documento.
 H8.5 ya aporta helper/runtime servidor y CI de verificación, pero no wiring del plugin ni artefacto publicable.

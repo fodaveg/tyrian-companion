@@ -173,6 +173,8 @@ La distribución futura será un ZIP separado del plugin con EXE, helper manifes
 licencia y avisos de terceros. La firma Authenticode está pendiente y ningún helper unsigned está
 autorizado para release. H8.5 añade build y CI de verificación, pero no package productivo: CI solo
 puede subir durante un día el marker `UNSIGNED-NOT-FOR-RELEASE`, nunca el EXE ni un ZIP release. La
+generación efímera de un PDB por MSVC bajo `target` está permitida; staging, paquete y artifact CI
+lo rechazan junto con DLL/LIB/OBJ/RLIB/RMETA. La
 matriz completa continúa `qa=pending`; el contrato exacto H8.3 está en
 [ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
 <!-- h8.3-platform-authority:end -->
