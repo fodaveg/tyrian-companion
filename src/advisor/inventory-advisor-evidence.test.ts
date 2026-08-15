@@ -159,6 +159,21 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(result.evidence?.prices).toMatchObject({ status: 'complete', missingItemIds: [], items: [{ bid: null, ask: { unitCopper: 12 } }] });
 	});
 
+	it('accepts a 206 price batch and marks only omitted non-tradeable items missing', async () => {
+		const snapshot = snapshotFixture([10, 11]);
+		const gateway: PublicCatalogGateway = {
+			requestDetailed: async () => ({ status: 206, headers: {}, body: [pricePayload(10)] }),
+		};
+
+		const result = await serviceFor(snapshot, catalogFor(snapshot), gateway).capture('es');
+
+		expect(result.evidence?.prices).toMatchObject({
+			status: 'partial',
+			items: [{ itemId: 10 }],
+			missingItemIds: [11],
+		});
+	});
+
 	it('builds the H4.13 input from captured evidence without an external snapshot', async () => {
 		const snapshot = snapshotFixture([10]);
 		const evidence = (await serviceFor(snapshot, catalogFor(snapshot), publicGateway((ids) => ids.map((id) => pricePayload(id)))).capture('es')).evidence!;

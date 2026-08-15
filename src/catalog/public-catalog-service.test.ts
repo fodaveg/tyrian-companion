@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
+import { isCatalogResolution } from '../advisor/inventory-advisor-contract';
 import { HttpTransportError, type HttpResponse } from '../core/http';
 import {
 	currencyPayload,
@@ -63,6 +64,20 @@ function snapshotWithItems(ids: number[]): StorageSnapshot {
 }
 
 describe('PublicCatalogService', () => {
+	it('keeps a real API item without description inside the strict JSON-safe catalog contract', async () => {
+		const api = gateway((path) => {
+			const payloads = idsFrom(path).map(itemPayload);
+			for (const payload of payloads) delete payload.description;
+			return http(200, payloads);
+		});
+
+		const resolution = await new PublicCatalogService(api, new MemoryCatalogCache(), () => NOW)
+			.resolve(snapshotWithItems([10, 11]), 'es');
+
+		expect(isCatalogResolution(resolution)).toBe(true);
+		expect(JSON.parse(JSON.stringify(resolution))).toStrictEqual(resolution);
+	});
+
 	it('resolves all public namespaces without mutating the snapshot', async () => {
 		const snapshot = storageSnapshotFixture();
 		const before = structuredClone(snapshot);

@@ -3,6 +3,7 @@ import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelop
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
 import { classifyInventoryAdvisor, isInventoryKnowledgePack } from './inventory-advisor-classifier';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
 import type { InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
 import {
@@ -130,8 +131,14 @@ function isInventoryDiscardAllowlistResultShape(value: unknown): value is Invent
 }
 
 function isInput(value: unknown): value is InventoryDiscardAllowlistInputV1 {
-	return record(value) && keys(value, ['engineInput', 'producerResult']) && record(value.engineInput)
-		&& keys(value.engineInput, ['input', 'knowledgePack']) && isInventoryKnowledgePack(value.engineInput.knowledgePack);
+	if (!record(value) || !keys(value, ['engineInput', 'producerResult']) || !record(value.engineInput)
+		|| !isInventoryKnowledgePack(value.engineInput.knowledgePack)) return false;
+	if (keys(value.engineInput, ['input', 'knowledgePack'])) return true;
+	return keys(value.engineInput, ['containerEconomy', 'input', 'knowledgePack'])
+		&& record(value.engineInput.containerEconomy)
+		&& keys(value.engineInput.containerEconomy, ['pack', 'prices'])
+		&& isInventoryContainerEconomyPack(value.engineInput.containerEconomy.pack)
+		&& isInventoryContainerPriceEvidence(value.engineInput.containerEconomy.prices);
 }
 
 function allowlistProof(engineInput: InventoryDiscardAllowlistInputV1['engineInput'], line: InventoryAdvisorLineV1, decision: InventoryRecommendationDecisionV1, producerResultSha256: string): InventoryDiscardAllowlistProofV1 | null {

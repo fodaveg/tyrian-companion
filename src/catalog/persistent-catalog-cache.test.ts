@@ -176,6 +176,21 @@ describe('PersistentCatalogCache', () => {
 		expect(store.records.has(catalogCacheStorageKey(key))).toBe(false);
 	});
 
+	it('removes cached items whose names are not report-safe', async () => {
+		for (const name of ['', ' Objeto 10', 'Objeto 10 ', 'x'.repeat(257)]) {
+			const store = new SharedRecordStore();
+			const cache = new PersistentCatalogCache(store);
+			const key = itemKey('es', 10);
+			store.records.set(
+				catalogCacheStorageKey(key),
+				JSON.stringify({ key, record: record({ ...normalizedItem(10), name }) }),
+			);
+
+			await expect(cache.get(key)).resolves.toBeUndefined();
+			expect(store.records.has(catalogCacheStorageKey(key))).toBe(false);
+		}
+	});
+
 	it.each([
 		['timestamp', { storedAt: 'now' }],
 		['schema record', { schemaVersion: 'other-schema' }],

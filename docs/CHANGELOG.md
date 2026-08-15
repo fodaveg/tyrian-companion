@@ -1,5 +1,17 @@
 # Changelog
 
+## Hotfix — Inventory Advisor con datos reales
+
+- El catálogo omite propiedades opcionales ausentes, invalida nombres que no pueden entrar en el
+  contrato de presentación y sube su versión de normalización para no reutilizar caché antigua.
+- La captura de precios acepta la respuesta parcial HTTP 206 de la API oficial y conserva los
+  precios presentes, marcando únicamente los IDs omitidos como no disponibles.
+- El runtime transmite al capture los nueve IDs económicos pedidos por el bundle H4.19 y la capa
+  de allowlist acepta y valida ese contexto económico opcional en vez de invalidar el informe.
+- Verificación de solo lectura contra la cuenta real: snapshot estable, seis fuentes de almacenamiento
+  completas, 1.206 objetos/1.701 posiciones y presentación `limited` con 1.701 filas de revisión;
+  ninguna acción automática, económica o irreversible queda habilitada.
+
 ## H8.6 — Núcleo aislado del cliente Mumble
 
 - Añadidos `mumble-v2-codec.ts`, `mumble-v2-client.ts`, `mumble-v2-health.ts` y

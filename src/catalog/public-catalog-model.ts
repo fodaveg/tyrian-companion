@@ -2,7 +2,7 @@ import type { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 
 export type CatalogLocale = 'es' | 'en';
 export type CatalogKind = 'items' | 'currencies' | 'materials';
-export const CATALOG_NORMALIZER_VERSION = 1;
+export const CATALOG_NORMALIZER_VERSION = 2;
 
 export type CatalogUnknownValue =
 	| null

@@ -172,7 +172,10 @@ async function capturePriceItems(
 	for (const batch of chunks(requestedItemIds, BATCH_SIZE)) {
 		try {
 			const response = await gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}&v=${encodeURIComponent(PINNED_SCHEMA)}`);
-			if (response.status !== 200) { batch.forEach((id) => missing.add(id)); continue; }
+			if (response.status !== 200 && response.status !== 206) {
+				batch.forEach((id) => missing.add(id));
+				continue;
+			}
 			if (hasUnexpectedPriceId(response.body, new Set(batch))) { batch.forEach((id) => missing.add(id)); continue; }
 			const parsed = parsePublicTradingPostPriceBatch(response.body, new Set(batch));
 			items.push(...parsed.items);

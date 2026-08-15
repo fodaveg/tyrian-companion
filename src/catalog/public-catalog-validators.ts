@@ -63,7 +63,7 @@ export function isNormalizedCatalogItem(value: unknown): value is CatalogItem {
 	return (
 		value.kind === 'item' &&
 		isPositiveId(value.id) &&
-		typeof value.name === 'string' &&
+		isReportSafeCatalogItemName(value.name) &&
 		isOptionalString(value.description) &&
 		isOptionalString(value.icon) &&
 		isOptionalString(value.chatLink) &&
@@ -78,6 +78,15 @@ export function isNormalizedCatalogItem(value: unknown): value is CatalogItem {
 		(value.details === undefined
 			? value.subtype === undefined
 			: value.subtype === details?.subtype)
+	);
+}
+
+export function isReportSafeCatalogItemName(value: unknown): value is string {
+	return (
+		typeof value === 'string' &&
+		value.length > 0 &&
+		value.length <= 256 &&
+		value.trim() === value
 	);
 }
 

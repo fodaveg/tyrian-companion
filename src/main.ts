@@ -1245,14 +1245,14 @@ function createInventoryAdvisorRuntime(
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
 	const inventoryWorkflow = new InventoryAdvisorWorkflow({
-		capture: { capture: async (captureLocale) => {
+		capture: { capture: async (captureLocale, expectedPriceItemIds) => {
 			if (inventoryEvidence === null) {
 				const catalogCache = await createCatalogCacheAdapter();
 				inventoryEvidence = new InventoryAdvisorEvidenceService(
 					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
 				);
 			}
-			return await inventoryEvidence.capture(captureLocale);
+			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds);
 		} },
 		preferences,
 		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),

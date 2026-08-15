@@ -6,6 +6,7 @@ import {
 	type CatalogMaterialCategory,
 	type CatalogUnknownValue,
 } from './public-catalog-model';
+import { isReportSafeCatalogItemName } from './public-catalog-validators';
 
 export function parseCatalogItems(value: unknown): CatalogItem[] {
 	if (!Array.isArray(value)) throw new InvalidCatalogPayloadError('items');
@@ -28,10 +29,10 @@ export function parseCatalogItem(value: unknown): CatalogItem {
 	return {
 		kind: 'item',
 		id: positiveId(record.id, 'items'),
-		name: string(record.name, 'items'),
-		description: optionalString(record.description, 'items'),
-		icon: optionalString(record.icon, 'items'),
-		chatLink: optionalString(record.chat_link, 'items'),
+		name: nonEmptyString(record.name, 'items'),
+		...optionalProperty('description', optionalString(record.description, 'items')),
+		...optionalProperty('icon', optionalString(record.icon, 'items')),
+		...optionalProperty('chatLink', optionalString(record.chat_link, 'items')),
 		type: string(record.type, 'items'),
 		...(details?.subtype === undefined ? {} : { subtype: details.subtype }),
 		rarity: string(record.rarity, 'items'),
@@ -42,6 +43,10 @@ export function parseCatalogItem(value: unknown): CatalogItem {
 		restrictions: stringArray(record.restrictions, 'items'),
 		...(details === undefined ? {} : { details }),
 	};
+}
+
+function optionalProperty<K extends string>(key: K, value: string | undefined): Partial<Record<K, string>> {
+	return value === undefined ? {} : { [key]: value } as Record<K, string>;
 }
 
 export function parseCatalogCurrency(value: unknown): CatalogCurrency {
@@ -169,6 +174,12 @@ function nonNegativeInteger(value: unknown, kind: 'items' | 'currencies' | 'mate
 function string(value: unknown, kind: 'items' | 'currencies' | 'materials'): string {
 	if (typeof value !== 'string') throw new InvalidCatalogPayloadError(kind);
 	return value;
+}
+
+function nonEmptyString(value: unknown, kind: 'items' | 'currencies' | 'materials'): string {
+	const parsed = string(value, kind);
+	if (!isReportSafeCatalogItemName(parsed)) throw new InvalidCatalogPayloadError(kind);
+	return parsed;
 }
 
 function optionalString(

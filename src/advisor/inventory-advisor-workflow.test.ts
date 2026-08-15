@@ -9,6 +9,7 @@ import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-mo
 import type { InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
+import { INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION } from './inventory-container-economy';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
@@ -48,7 +49,19 @@ describe('H5.11 inventory advisor workflow', () => {
 	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {
 		const fixture = reviewedDiscardFixture();
 		rebaseEvidence(fixture.evidence, '2026-08-14T20:30:30.000Z');
-		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));
+		const expectedPriceItemIds = [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002];
+		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence, containerPrices: {
+			version: INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION,
+			accountId: fixture.evidence.accountId,
+			snapshotId: fixture.evidence.snapshotId,
+			schemaVersion: fixture.evidence.schemaVersion,
+			capturedAt: '2026-08-14T20:30:30.000Z',
+			source: 'gw2-commerce-prices' as const,
+			requestedItemIds: expectedPriceItemIds,
+			status: 'unavailable' as const,
+			items: [],
+			missingItemIds: expectedPriceItemIds,
+		} }));
 		const workflow = new InventoryAdvisorWorkflow({
 			capture: { capture },
 			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
@@ -57,7 +70,7 @@ describe('H5.11 inventory advisor workflow', () => {
 		});
 		const result = await workflow.refresh('es');
 		expect(capture).toHaveBeenCalledOnce();
-		expect(capture).toHaveBeenCalledWith('es', [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002]);
+		expect(capture).toHaveBeenCalledWith('es', expectedPriceItemIds);
 		expect(result.status).toBe('ready');
 		if (result.status !== 'ready' || !('discardContext' in result.source)) throw new Error('Expected contextual workflow result.');
 		expect(result.source.input).toMatchObject({ goals: [], keepExceptions: [] });

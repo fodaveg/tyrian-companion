@@ -30,6 +30,20 @@ describe('public catalog parsers', () => {
 		]);
 	});
 
+	it('omits absent optional item strings so normalized catalog data round-trips through JSON', () => {
+		const payload = itemPayload(10);
+		delete payload.description;
+		delete payload.icon;
+		delete payload.chat_link;
+
+		const item = parseCatalogItems([payload])[0];
+
+		expect(item).not.toHaveProperty('description');
+		expect(item).not.toHaveProperty('icon');
+		expect(item).not.toHaveProperty('chatLink');
+		expect(JSON.parse(JSON.stringify(item))).toStrictEqual(item);
+	});
+
 	it('normalizes bag and consumable details while retaining validated unknown data', () => {
 		const bag = itemPayload(20);
 		bag.details = {
@@ -115,6 +129,9 @@ describe('public catalog parsers', () => {
 
 	it.each([
 		['zero item id', [{ ...itemPayload(10), id: 0 }], parseCatalogItems],
+		['blank item name', [{ ...itemPayload(10), name: '' }], parseCatalogItems],
+		['untrimmed item name', [{ ...itemPayload(10), name: ' Objeto 10' }], parseCatalogItems],
+		['oversized item name', [{ ...itemPayload(10), name: 'x'.repeat(257) }], parseCatalogItems],
 		['unsafe item value', [{ ...itemPayload(10), vendor_value: Number.MAX_SAFE_INTEGER + 1 }], parseCatalogItems],
 		['negative currency order', [{ ...currencyPayload(1), order: -1 }], parseCatalogCurrencies],
 		['zero material member id', [{ ...materialPayload(7), items: [0] }], parseCatalogMaterials],
