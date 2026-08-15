@@ -19,10 +19,10 @@ const PLATFORM_AUTHORITY_END = '\n<!-- h8.3-platform-authority:end -->';
 const ADR_AUTHORITY_PREFIX = `# ADR 0001 — Lenguaje y distribución del helper Mumble H8.3\n\n${ADR_AUTHORITY_START}`;
 const PLATFORM_AUTHORITY_PREFIX = `### Decisión de implementación H8.3\n\n${PLATFORM_AUTHORITY_START}`;
 const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de terceros y operaciones`;
-const EXPECTED_DECISION_SHA256 = 'cca16e7829bc82825bcc9e182f6a08be00b3f4353b26d1225002b3fef0127bb8';
-const ADR_AUTHORITY_SHA256 = '7148a229b490f30d94085a9ae3b77921d1d4e654428a787e9740ba0b2743e246';
-const PLATFORM_AUTHORITY_SHA256 = '84df5cad83df02edf14bda5d9ede4fd5446501ecec99d7f63664913c9948ef98';
-const PLATFORM_DOCUMENT_SHA256 = '7064a16e6a9b16626b333437b0af296a1379fa8d2c03c4673d963e8acdb57adf';
+const EXPECTED_DECISION_SHA256 = 'e1646dd526ddb0bc038e7f2aa261151a4aeb3248109befa644c85e3ee32314e7';
+const ADR_AUTHORITY_SHA256 = '6d5c2ad3e72f4350f62ed222d5f100c78cde1fa694a6c537a984bd44f14f0474';
+const PLATFORM_AUTHORITY_SHA256 = '76be86bc1de54079df8bc33024cc2b3f8d5541d16f007b57ba3559d36186cd60';
+const PLATFORM_DOCUMENT_SHA256 = 'eefb8af6b751c8d9162f876ee8d63e54e7f6ea48ed5d20ef861df05500ba3a50';
 const NATIVE_MANIFEST_SHA256 = 'cd7aa03197262d1e3e71868f24b2204a0a00855c70cbb38e0ad7727368b8aa7b';
 const NATIVE_LOCK_SHA256 = '59bfcbfa38ae0ffe6b8454da70238d9ac490de07479ac6c0a0161b69725e83bf';
 const NATIVE_WIN32_SHA256 = '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977';
@@ -84,7 +84,7 @@ const EXPECTED_DECISION = {
 	sourceRoot: 'native/mumble-helper',
 	build: {
 		target: 'x86_64-pc-windows-msvc',
-		rustFlags: ['-C target-feature=+crt-static'],
+		rustFlags: ['-C target-feature=+crt-static', '-C link-arg=/Brepro'],
 		peOutputs: ['tyrian-mumble-helper.exe'],
 	},
 	package: {
@@ -316,7 +316,7 @@ function validateNativeImplementation(root, findings) {
 		findings.push('native-toolchain-value');
 	}
 	const config = readText(root, `${NATIVE_ROOT}.cargo/config.toml`, 'native-cargo-config', findings);
-	if (config !== '[target.x86_64-pc-windows-msvc]\nrustflags = ["-C", "target-feature=+crt-static"]\n') {
+	if (config !== '[target.x86_64-pc-windows-msvc]\nrustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/Brepro"]\n') {
 		findings.push('native-cargo-config-value');
 	}
 

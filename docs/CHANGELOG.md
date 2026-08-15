@@ -77,6 +77,9 @@
 
 ## H8.5 — Helper/servidor Mumble nativo
 
+- El verifier de supply-chain lee `Cargo.toml`/`Cargo.lock` directamente y ya no invoca Cargo ni
+  instala toolchains desde jobs Node. El target MSVC añade `/Brepro` para eliminar metadata variable
+  del linker entre los dos builds de reproducibilidad, conservando CRT estático.
 - Añadido el crate Rust único `native/mumble-helper`, toolchain 1.85.1, target
   `x86_64-pc-windows-msvc` y CRT estático, sin Tokio ni `build.rs` propio.
 - Implementados framing big-endian 1..512, JSON exacto con duplicados escapados, token bootstrap

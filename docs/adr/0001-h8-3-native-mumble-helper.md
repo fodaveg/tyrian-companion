@@ -55,7 +55,8 @@ guard.
   "build": {
     "target": "x86_64-pc-windows-msvc",
     "rustFlags": [
-      "-C target-feature=+crt-static"
+      "-C target-feature=+crt-static",
+      "-C link-arg=/Brepro"
     ],
     "peOutputs": [
       "tyrian-mumble-helper.exe"
@@ -125,7 +126,7 @@ guard.
 ## Consecuencias
 
 El futuro código vivirá solo bajo `native/mumble-helper`. Su único target autorizado es
-`x86_64-pc-windows-msvc` con `-C target-feature=+crt-static`, y su única salida PE de producto será
+`x86_64-pc-windows-msvc` con `-C target-feature=+crt-static` y `-C link-arg=/Brepro`, y su única salida PE de producto será
 `tyrian-mumble-helper.exe`. La implementación deberá demostrar que no necesita DLL de aplicación ni
 runtime redistribuible adicional. H8.3 no crea todavía `Cargo.toml`, `.csproj`, EXE, DLL, código
 nativo, wiring, listener, CI de producto ni packaging real.

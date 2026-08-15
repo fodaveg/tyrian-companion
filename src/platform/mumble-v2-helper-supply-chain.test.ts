@@ -1,8 +1,7 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -19,45 +18,45 @@ const DIRECT = new Map([
 	['windows-sys', '=0.59.0'],
 	['zeroize', '=1.9.0'],
 ]);
-const REVIEWED_CUSTOM_BUILDS = new Set([
-	'getrandom@0.3.4', 'libc@0.2.189', 'windows_aarch64_gnullvm@0.52.6',
-	'windows_aarch64_msvc@0.52.6', 'windows_i686_gnu@0.52.6',
-	'windows_i686_gnullvm@0.52.6', 'windows_i686_msvc@0.52.6',
-	'windows_x86_64_gnu@0.52.6', 'windows_x86_64_gnullvm@0.52.6',
-	'windows_x86_64_msvc@0.52.6', 'wit-bindgen@0.57.1',
+const PACKAGE_REVIEWS = new Map<string, PackageReview>([
+	['cfg-if@1.0.4', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'test'] }],
+	['getrandom@0.3.4', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'test', 'bench', 'custom-build'] }],
+	['libc@0.2.189', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'test', 'custom-build'] }],
+	['r-efi@5.3.0', { license: 'MIT OR Apache-2.0 OR LGPL-2.1-or-later', targetKinds: ['lib', 'example'] }],
+	['subtle@2.6.1', { license: 'BSD-3-Clause', targetKinds: ['lib', 'test'] }],
+	['wasip2@1.0.4+wasi-0.2.12', { license: 'Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT', targetKinds: ['lib', 'example'] }],
+	['windows-sys@0.59.0', { license: 'MIT OR Apache-2.0', targetKinds: ['lib'] }],
+	['windows-targets@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib'] }],
+	['windows_aarch64_gnullvm@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_aarch64_msvc@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_i686_gnu@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_i686_gnullvm@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_i686_msvc@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_x86_64_gnu@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_x86_64_gnullvm@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['windows_x86_64_msvc@0.52.6', { license: 'MIT OR Apache-2.0', targetKinds: ['lib', 'custom-build'] }],
+	['wit-bindgen@0.57.1', { license: 'Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT', targetKinds: ['lib', 'custom-build'] }],
+	['zeroize@1.9.0', { license: 'Apache-2.0 OR MIT', targetKinds: ['lib', 'test'] }],
 ]);
 
-interface CargoTarget { kind?: string[] }
-interface CargoDependency { name?: string; req?: string }
-interface CargoPackage {
-	name?: string;
-	version?: string;
-	license?: string | null;
-	source?: string | null;
-	dependencies?: CargoDependency[];
-	targets?: CargoTarget[];
-}
-interface CargoMetadata { packages?: CargoPackage[] }
+interface PackageReview { license: string | null; targetKinds: string[] }
+interface LockedPackage { name: string; version: string; source: string | null; checksum: string | null }
 
 describe('H8.5 helper supply chain and test-only staging', () => {
 	it('closes direct dependencies, licenses, sources and executable build surfaces', () => {
-		const cargo = process.env.CARGO ?? 'cargo';
-		const metadata = JSON.parse(execFileSync(cargo, ['metadata', '--format-version', '1', '--locked'], {
-			cwd: resolve('native/mumble-helper'), encoding: 'utf8',
-		})) as CargoMetadata;
-		expect(metadataFindings(metadata)).toEqual([]);
+		const manifest = readFileSync('native/mumble-helper/Cargo.toml', 'utf8');
+		const lock = readFileSync('native/mumble-helper/Cargo.lock', 'utf8');
+		expect(supplyChainFindings(manifest, lock, PACKAGE_REVIEWS)).toEqual([]);
 
-		const unknownLicense = structuredClone(metadata);
-		const dependency = unknownLicense.packages?.find((entry) => entry.name !== 'tyrian-mumble-helper');
-		if (dependency === undefined) throw new Error('dependency fixture missing');
-		dependency.license = null;
-		expect(metadataFindings(unknownLicense)).toContain(`license:${String(dependency.name)}`);
+		const first = PACKAGE_REVIEWS.keys().next().value;
+		if (first === undefined) throw new Error('dependency review fixture missing');
+		const unknownLicense = new Map(PACKAGE_REVIEWS);
+		unknownLicense.set(first, { ...PACKAGE_REVIEWS.get(first)!, license: null });
+		expect(supplyChainFindings(manifest, lock, unknownLicense)).toContain(`license:${first}`);
 
-		const procMacro = structuredClone(metadata);
-		const target = procMacro.packages?.find((entry) => entry.name !== 'tyrian-mumble-helper');
-		if (target === undefined) throw new Error('target fixture missing');
-		target.targets = [...(target.targets ?? []), { kind: ['proc-macro'] }];
-		expect(metadataFindings(procMacro)).toContain(`proc-macro:${String(target.name)}`);
+		const procMacro = new Map(PACKAGE_REVIEWS);
+		procMacro.set(first, { ...PACKAGE_REVIEWS.get(first)!, targetKinds: ['lib', 'proc-macro'] });
+		expect(supplyChainFindings(manifest, lock, procMacro)).toContain(`proc-macro:${first}`);
 	});
 
 	it('validates only the synthetic five-file unsigned stage and preserves the plugin ZIP census', () => {
@@ -123,25 +122,50 @@ describe('H8.5 helper supply chain and test-only staging', () => {
 	});
 });
 
-function metadataFindings(metadata: CargoMetadata): string[] {
+function supplyChainFindings(
+	manifest: string,
+	lock: string,
+	reviews: ReadonlyMap<string, PackageReview>,
+): string[] {
 	const findings: string[] = [];
-	const packages = metadata.packages ?? [];
-	const root = packages.find((entry) => entry.name === 'tyrian-mumble-helper');
-	if (root === undefined) return ['metadata-root'];
-	const direct = new Map((root.dependencies ?? []).map((entry) => [entry.name, entry.req]));
+	const direct = new Map([...manifest.matchAll(/^([a-z][a-z0-9-]*)\s*=\s*(?:"(=[^"]+)"|\{\s*version\s*=\s*"(=[^"]+)"[^}]*\})/gmu)]
+		.map((match) => [match[1]!, match[2] ?? match[3]!]));
 	if (direct.size !== DIRECT.size) findings.push('direct-set');
 	for (const [name, requirement] of DIRECT) if (direct.get(name) !== requirement) findings.push(`direct:${name}`);
-	for (const dependency of packages.filter((entry) => entry !== root)) {
-		const name = String(dependency.name);
-		if (!dependency.license) findings.push(`license:${name}`);
-		if (!dependency.source?.startsWith('registry+')) findings.push(`source:${name}`);
-		for (const target of dependency.targets ?? []) {
-			if (target.kind?.includes('proc-macro')) findings.push(`proc-macro:${name}`);
-			if (target.kind?.includes('custom-build')
-				&& !REVIEWED_CUSTOM_BUILDS.has(`${name}@${String(dependency.version)}`)) findings.push(`custom-build:${name}`);
+	if (/^[a-z][a-z0-9-]*\s*=\s*\{[^}\n]*\b(?:git|path)\s*=/gmu.test(manifest)
+		|| /^(?:build|proc-macro)\s*=/gmu.test(manifest)) findings.push('manifest-build-surface');
+	if (!manifest.includes('windows-sys = { version = "=0.59.0", features = [\n\t"Win32_Foundation",\n\t"Win32_System_Memory",\n] }')) {
+		findings.push('windows-features');
+	}
+
+	const packages = parseCargoLock(lock);
+	const root = packages.find((entry) => entry.name === 'tyrian-mumble-helper');
+	if (root?.version !== '0.1.0' || root.source !== null || root.checksum !== null) findings.push('lock-root');
+	const registry = packages.filter((entry) => entry.name !== 'tyrian-mumble-helper');
+	const actual = new Set(registry.map((entry) => `${entry.name}@${entry.version}`));
+	if (actual.size !== reviews.size || [...actual].some((key) => !reviews.has(key))) findings.push('package-set');
+	for (const dependency of registry) {
+		const key = `${dependency.name}@${dependency.version}`;
+		const review = reviews.get(key);
+		if (review === undefined) {
+			findings.push(`review:${key}`);
+			continue;
 		}
+		if (!review.license) findings.push(`license:${key}`);
+		if (review.targetKinds.includes('proc-macro')) findings.push(`proc-macro:${key}`);
+		if (dependency.source !== 'registry+https://github.com/rust-lang/crates.io-index') findings.push(`source:${key}`);
+		if (!/^[0-9a-f]{64}$/u.test(dependency.checksum ?? '')) findings.push(`checksum:${key}`);
 	}
 	return [...new Set(findings)].sort();
+}
+
+function parseCargoLock(source: string): LockedPackage[] {
+	return source.split('[[package]]').slice(1).map((block) => ({
+		name: /^name = "([^"]+)"$/mu.exec(block)?.[1] ?? '',
+		version: /^version = "([^"]+)"$/mu.exec(block)?.[1] ?? '',
+		source: /^source = "([^"]+)"$/mu.exec(block)?.[1] ?? null,
+		checksum: /^checksum = "([^"]+)"$/mu.exec(block)?.[1] ?? null,
+	}));
 }
 
 function manifest(executable: Buffer): string {

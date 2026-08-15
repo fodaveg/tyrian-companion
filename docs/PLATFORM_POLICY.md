@@ -153,7 +153,8 @@ y estabilidad durante cambios/reinicio sin datos adicionales.
 
 <!-- h8.3-platform-authority:start -->
 H8.3 queda `accepted_for_implementation` de forma provisional con Rust y un target único
-`x86_64-pc-windows-msvc` + CRT estático. La misma salida `tyrian-mumble-helper.exe` se validará como
+`x86_64-pc-windows-msvc` + CRT estático + linker MSVC `/Brepro`. La misma salida
+`tyrian-mumble-helper.exe` se validará como
 Windows PE bajo la siguiente matriz independiente de la matriz API-only del MVP:
 
 | Prioridad | Entorno del helper | Artefacto | Estado |

@@ -207,6 +207,7 @@ function testImplementedHelperSabotages() {
 		['dependency-pin', 'native/mumble-helper/Cargo.toml', 'getrandom = "=0.3.4"', 'getrandom = "=0.4.3"', 'native-manifest-term:getrandom = "=0.3.4"'],
 		['toolchain-target', 'native/mumble-helper/rust-toolchain.toml', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc', 'native-toolchain-value'],
 		['crt-static', 'native/mumble-helper/.cargo/config.toml', '+crt-static', '-crt-static', 'native-cargo-config-value'],
+		['reproducible-link', 'native/mumble-helper/.cargo/config.toml', 'link-arg=/Brepro', 'link-arg=/INCREMENTAL', 'native-cargo-config-value'],
 		['constant-time', 'native/mumble-helper/src/protocol.rs', 'ConstantTimeEq', 'ordinaryEquality', 'native-protocol-term:ConstantTimeEq'],
 		['parsed-string-zeroize', 'native/mumble-helper/src/protocol.rs', 'impl Drop for SecretString', 'impl SecretString', 'native-protocol-term:impl Drop for SecretString'],
 		['decoded-zeroize', 'native/mumble-helper/src/protocol.rs', 'accumulator.zeroize()', 'let _ = accumulator', 'native-protocol-term:accumulator.zeroize()'],

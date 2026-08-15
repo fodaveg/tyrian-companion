@@ -179,7 +179,8 @@ del bundle y de la allowlist productiva del scanner.
 
 H8.3 acepta de forma provisional Rust para el lote posterior de implementación. La única raíz futura
 es `native/mumble-helper`, el único target `x86_64-pc-windows-msvc` con
-`-C target-feature=+crt-static`, y la única salida PE `tyrian-mumble-helper.exe`. La intención es
+`-C target-feature=+crt-static` y `-C link-arg=/Brepro`, y la única salida PE
+`tyrian-mumble-helper.exe`. La intención es
 conservar una frontera revisable pequeña y un único binario Windows x64 para las tres plataformas,
 sin runtime del lenguaje ni DLL de aplicación distribuidos aparte. C# se conserva como alternativa:
 NativeAOT también puede producir una aplicación nativa self-contained y single-file sin runtime .NET
