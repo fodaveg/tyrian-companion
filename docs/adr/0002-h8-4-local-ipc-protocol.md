@@ -171,6 +171,33 @@ framing: longitud `uint32` big-endian de cuatro bytes seguida por 1–512 bytes 
     "rejectWrap": true,
     "resetOnNewNonce": true
   },
+  "cadence": {
+    "slotIntervalMs": 500,
+    "recordsPerSlot": 1,
+    "recordChoice": "valid_after_warming_sample_else_heartbeat",
+    "sampleReplacesHeartbeat": true,
+    "sampleSatisfiesLiveness": true,
+    "heartbeatIntervalMeaning": "maximum_interval_between_sequenced_records",
+    "heartbeatSourceStatusPolicy": "exact_source_status_only",
+    "heartbeatHealthyStatusAllowed": false,
+    "firstValidReadAfter": [
+      "start",
+      "recovery",
+      "discontinuity"
+    ],
+    "firstValidReadEmits": "heartbeat_warming_up",
+    "warmingUpValidReadCount": 1,
+    "warmingUpStoresSourceHistory": false,
+    "nextValidReadAction": "establish_epoch_and_emit_sample_advancing",
+    "sourceReadInput": "raw_tick_map_or_exact_status",
+    "sampleActivityDerivation": "internal_tick_history_and_elapsed_ms",
+    "heartbeatClearsSourceHistory": true,
+    "sourceHistoryOnDiscontinuity": "clear_tick_and_started_at",
+    "lateInvocationRecordMaximum": 1,
+    "missedSlotPolicy": "no_catch_up_no_replay",
+    "nextSlotAfterLateInvocation": "now_plus_interval",
+    "lateAfterHeartbeatTimeout": "channel_failure_heartbeat_timeout"
+  },
   "timingMs": {
     "heartbeatInterval": 500,
     "sourceStalledAfter": 1500,
@@ -206,8 +233,7 @@ framing: longitud `uint32` big-endian de cuatro bytes seguida por 1–512 bytes 
         "welcome"
       ],
       "awaiting_first_sequenced": [
-        "heartbeat",
-        "sample"
+        "heartbeat"
       ],
       "healthy": [
         "heartbeat",
@@ -246,11 +272,6 @@ framing: longitud `uint32` big-endian de cuatro bytes seguida por 1–512 bytes 
       {
         "from": "awaiting_first_sequenced",
         "event": "heartbeat_accepted",
-        "to": "healthy"
-      },
-      {
-        "from": "awaiting_first_sequenced",
-        "event": "sample_accepted",
         "to": "healthy"
       },
       {
@@ -553,16 +574,36 @@ regresión, entero inseguro o wrap invalidan el canal. Un nonce nuevo crea una s
 record del nonce anterior es stale. El rollover `uint32` de `tick` sí es válido y un cambio
 `4294967295 → 0` significa que el enlace avanzó.
 
-El heartbeat es control de canal/fuente y nunca sustituye un sample H8.1. `sourceStatus` expresa
-disponibilidad o validez de la fuente; `link_stalled` sigue siendo exclusivamente `sample.activity`
-tras 1.500 ms con el mismo tick. Son tres ejes distintos: lifecycle del canal, salud de la fuente y
-actividad derivada. Una pausa/sleep no reproduce heartbeats ni samples perdidos; al despertar, un
-deadline vencido cierra el canal y aplica el backoff desde el principio. Cada fase solo admite los
-records de `lifecycle.phaseRecords`; incluso un record bien formado en una fase incorrecta produce
-`frame_schema`. `hello_timeout` cubre desde TCP conectado hasta `welcome`; el primer record
-secuenciado y la salud del canal tienen deadlines propios. Tanto heartbeat como sample secuenciados
-válidos renuevan el deadline de salud. El backoff se resetea exclusivamente cuando un heartbeat o sample
-secuenciado válido deja el canal en `healthy`, nunca por TCP conectado, hello o welcome.
+Cada invocación debida del slot activo de 500 ms emite exactamente un record secuenciado mientras
+el deadline de salud siga vigente. Después del calentamiento, una lectura raw válida y estable de
+tick/map produce `sample`; ese sample sustituye al heartbeat del slot y satisface liveness. Sin
+lectura válida, se emite `heartbeat` con el `sourceStatus` exacto. El helper deriva `activity` de su
+propia historia de tick y del reloj; nunca la recibe ya calculada. `welcome.heartbeatIntervalMs=500`
+expresa el intervalo máximo entre records secuenciados, no una obligación de emitir heartbeat además
+de sample. No existe el estado `healthy` en el schema de heartbeat ni se inventa un heartbeat sano.
+
+La primera lectura válida después de start, recovery o una discontinuidad emite exactamente un
+heartbeat `warming_up`, sin guardar tick ni instante de inicio y sin fabricar sample. La siguiente
+lectura válida establece una época nueva y emite `sample.activity=link_advancing`. Solo lecturas
+posteriores con el mismo tick alcanzan `link_stalled` exactamente a los 1.500 ms de esa época;
+1.499 ms aún es `link_advancing`. `warming_up` no puede repetirse indefinidamente. Cualquier
+heartbeat de `sourceStatus` borra tick e instante de inicio, de modo que ni siquiera el mismo tick de
+una época anterior puede reaparecer como stalled tras recovery o discontinuidad.
+Por tanto, `awaiting_first_sequenced` admite solo heartbeat; un sample como primer record de la
+conexión falla con `frame_schema`.
+`sourceStatus` expresa disponibilidad o validez de la fuente; `link_stalled` sigue siendo
+exclusivamente `sample.activity` tras 1.500 ms con el mismo tick. Son tres ejes distintos: lifecycle
+del canal, salud de la fuente y actividad derivada.
+
+Una invocación tardía emite como máximo un record del estado actual y programa el siguiente slot en
+`now + 500 ms`; nunca itera slots perdidos, hace catch-up ni reproduce secuencias. Si desde el último
+record secuenciado válido han transcurrido 2.000 ms o más, no emite nada: falla el canal
+con `heartbeat_timeout`. Por tanto, un sleep de 60 s termina en ese fallo exacto, no en una ráfaga.
+Cada fase solo admite los records de `lifecycle.phaseRecords`; incluso un record bien formado en una
+fase incorrecta produce `frame_schema`. `hello_timeout` cubre desde TCP conectado hasta `welcome`;
+el primer record secuenciado y la salud del canal tienen deadlines propios. Tanto heartbeat como
+sample secuenciados válidos renuevan el deadline de salud. El backoff se resetea exclusivamente
+cuando uno de ellos deja el canal en `healthy`, nunca por TCP conectado, hello o welcome.
 
 EOF de stdin es una orden terminal: invalida token/nonce/secuencia, pasa a `shutdown` y cierra
 listener, conexión pendiente y conexión autenticada. Antes de aceptar `ready`, cualquier fallo

@@ -219,11 +219,21 @@ como máximo una conexión autenticada y otra pendiente.
 
 Heartbeat y sample comparten una única secuencia desde cero y cada record aumenta exactamente uno.
 Gap, replay, regresión, entero inseguro y wrap son `sequence_mismatch`; un nonce anterior es
-`nonce_mismatch`. El rollover `uint32` de tick sí es válido. El heartbeat de 500 ms es control y no
+`nonce_mismatch`. El rollover `uint32` de tick sí es válido. Cada invocación debida del slot activo
+de 500 ms emite exactamente un record secuenciado mientras el deadline siga vigente: tras warm-up,
+un sample derivado de tick/map raw sustituye al heartbeat y satisface liveness; sin lectura válida se
+emite heartbeat con el `sourceStatus` exacto. `activity` se deriva dentro de la referencia usando
+historia de tick y reloj, nunca llega precalculada. Por ello, `welcome.heartbeatIntervalMs=500` es el
+intervalo máximo entre records secuenciados, no una segunda emisión obligatoria. El heartbeat no es
 un sample vacío: su `sourceStatus` cerrado es
 `warming_up|mapping_unavailable|layout_unsupported|sample_unstable|sample_invalid`. La actividad
 `link_stalled` sigue perteneciendo al sample y aparece tras 1.500 ms sin avance de tick; lifecycle
-del canal, salud de fuente y stalled son ejes distintos.
+del canal, salud de fuente y stalled son ejes distintos. La primera lectura válida después de
+start, recovery o discontinuidad emite un único `warming_up` sin guardar tick/startedAt; la segunda
+establece una época nueva y emite `link_advancing`. Solo el mismo tick de esa época pasa de advancing
+a stalled exactamente en 1.500 ms. Cualquier heartbeat de source status borra ambos valores, por lo
+que un tick stale anterior nunca reaparece como stalled. `awaiting_first_sequenced` admite solo
+heartbeat y `healthy` no es un source status válido.
 
 Discovery vence a 5.000 ms. Connect, hello, primer record secuenciado y salud del canal vencen cada
 uno a 2.000 ms. El framer incremental retiene como máximo 516 bytes simultáneos aunque el chunk
@@ -234,8 +244,10 @@ que resetean el backoff al dejar el canal `healthy`. Tras cierre se reconecta co
 `[250,500,1000,2000,5000]` ms, saturando en 5.000. Antes de ready, cualquier fallo reinicia proceso,
 bootstrap y discovery; tras ready, el mismo helper conserva token pero rota nonce y reinicia secuencia.
 `helper_exited` desde cualquier estado no terminal, incluido `reconnect_wait`, invalida también el
-puerto e impide que `reconnect_due` use el helper muerto. Sleep no reproduce records perdidos y un deadline
-vencido invalida canal/nonce/secuencia. EOF de stdin apaga el helper, invalida credenciales y cierra listener y conexiones. Los errores exactos
+puerto e impide que `reconnect_due` use el helper muerto. Una llamada tardía emite como máximo un
+record actual y fija el siguiente deadline en `now+500`, sin catch-up ni replay. Si han pasado 2.000
+ms desde el último record válido, falla una vez con `heartbeat_timeout`; un sleep de 60 s no genera
+una ráfaga. EOF de stdin apaga el helper, invalida credenciales y cierra listener y conexiones. Los errores exactos
 son `discovery_timeout|discovery_invalid|connect_timeout|auth_rejected|version_unsupported|frame_length|frame_utf8|frame_json|frame_schema|nonce_mismatch|sequence_mismatch|heartbeat_timeout|peer_closed|helper_exited`.
 El contrato completo parseable vive en [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Framer,
 validators, secuenciador y fake clock son referencias `*.test.ts`; no se importan, empaquetan ni

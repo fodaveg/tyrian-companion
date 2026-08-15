@@ -93,8 +93,15 @@ welcome/heartbeat/sample. Solo se admiten una conexión autenticada y una pendie
 
 Heartbeat y sample comparten secuencia: `initialSequence:0`, incremento exacto `+1`, entero seguro
 y cero gaps, replay, regresiones o wrap. Un nonce stale también cierra el canal; el rollover
-`uint32` del tick sí es válido. El heartbeat de control sale cada 500 ms y no sustituye al sample.
-`sourceStatus` es exactamente
+`uint32` del tick sí es válido. Cada invocación debida del slot activo de 500 ms emite exactamente un
+record secuenciado mientras la salud siga vigente. Después del warm-up, el helper deriva activity de
+tick/map raw y de su reloj; el sample sustituye al heartbeat y satisface liveness. Sin lectura válida,
+sale un heartbeat con el estado de fuente exacto. `welcome.heartbeatIntervalMs=500` significa el
+máximo intervalo entre records secuenciados, no una cadencia adicional de heartbeat. La primera
+lectura válida tras start, recovery o discontinuidad emite un solo `warming_up` sin guardar
+tick/startedAt; la segunda establece una época nueva y emite advancing. Toda discontinuidad borra
+esa historia: el mismo tick stale no puede reaparecer stalled. `healthy` no es un estado de
+heartbeat; `awaiting_first_sequenced` admite solo heartbeat. `sourceStatus` es exactamente
 `warming_up|mapping_unavailable|layout_unsupported|sample_unstable|sample_invalid`; `link_stalled`
 pertenece solo a `sample.activity` tras 1.500 ms con tick estable. Canal, fuente y stalled no se
 colapsan en un único estado.
@@ -108,8 +115,9 @@ fallo exige reiniciar proceso/bootstrap/discovery y nunca conecta sin puerto vá
 fallo de canal puede reconectar al mismo helper reteniendo token, pero invalida nonce/secuencia y
 exige nonce nuevo desde secuencia cero. `helper_exited` desde cualquier estado no terminal —también
 `reconnect_wait`— invalida token, puerto, nonce y secuencia, fuerza proceso nuevo e impide que
-`reconnect_due` conecte al helper muerto.
-Sleep no reproduce records perdidos. EOF de stdin invalida credenciales, apaga el helper y cierra
+`reconnect_due` conecte al helper muerto. Una invocación tardía emite como máximo un record actual,
+programa el próximo slot desde now y no hace catch-up/replay. Si la ausencia alcanza los 2.000 ms,
+falla exactamente con `heartbeat_timeout`; un sleep de 60 s no reproduce una ráfaga. EOF de stdin invalida credenciales, apaga el helper y cierra
 listener, conexión pendiente y autenticada. Los errores de canal cerrados viven en el modelo y en
 [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Los framer/validators/relojes son solo referencia de
 test: H8.4 no añade helper, socket, timer, proceso ni adapter productivo.

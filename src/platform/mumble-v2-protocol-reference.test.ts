@@ -13,8 +13,10 @@ import {
 	MUMBLE_V2_SOURCE_STATUSES,
 	MUMBLE_V2_TRANSPORT_CONTRACT,
 	type MumbleV2ChannelError,
+	type MumbleV2DerivedActivity,
 	type MumbleV2LifecycleEvent,
 	type MumbleV2LifecycleState,
+	type MumbleV2SourceStatus,
 } from './mumble-v2-contract';
 
 const TOKEN = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
@@ -305,6 +307,166 @@ describe('H8.4 sequencing and liveness reference', () => {
 	});
 });
 
+describe('H8.4 exact sequenced cadence reference', () => {
+	it('derives records from raw tick/map/status with one record per due call', () => {
+		expect(MUMBLE_V2_TRANSPORT_CONTRACT).toMatchObject({
+			heartbeatIntervalMs: 500,
+			heartbeatIntervalMeaning: 'maximum_interval_between_sequenced_records',
+			sequencedSlotIntervalMs: 500,
+			sequencedRecordsPerSlot: 1,
+			sequencedRecordChoice: 'valid_after_warming_sample_else_heartbeat',
+			sampleReplacesHeartbeatInSlot: true,
+			sampleSatisfiesLiveness: true,
+			heartbeatSourceStatusPolicy: 'exact_source_status_only',
+			heartbeatHealthyStatusAllowed: false,
+			firstValidReadAfter: ['start', 'recovery', 'discontinuity'],
+			firstValidReadEmits: 'heartbeat_warming_up',
+			warmingUpValidReadCount: 1,
+			warmingUpStoresSourceHistory: false,
+			nextValidReadAction: 'establish_epoch_and_emit_sample_advancing',
+			sourceReadInput: 'raw_tick_map_or_exact_status',
+			sampleActivityDerivation: 'internal_tick_history_and_elapsed_ms',
+			heartbeatClearsSourceHistory: true,
+			sourceHistoryOnDiscontinuity: 'clear_tick_and_started_at',
+			lateInvocationRecordMaximum: 1,
+			missedSlotPolicy: 'no_catch_up_no_replay',
+			nextSlotAfterLateInvocation: 'now_plus_interval',
+			lateAfterHeartbeatTimeout: 'channel_failure_heartbeat_timeout',
+		});
+
+		const clock = new FakeClock();
+		const cadence = new ReferenceCadence(NONCE, clock);
+		const observations = [
+			pollAfter(clock, cadence, 500, validRead(10)),
+			pollAfter(clock, cadence, 500, validRead(11)),
+			pollAfter(clock, cadence, 500, statusRead('sample_unstable')),
+			pollAfter(clock, cadence, 500, validRead(12)),
+			pollAfter(clock, cadence, 500, validRead(13)),
+		];
+
+		expect(cadenceViolations(observations)).toEqual([]);
+		expect(observations.map((item) => recordKind(item.records[0] ?? {}))).toEqual([
+			'heartbeat', 'sample', 'heartbeat', 'heartbeat', 'sample',
+		]);
+		expect(observations.map((item) => item.records[0]?.sequence)).toEqual([0, 1, 2, 3, 4]);
+		expect(observations[1]?.records[0]?.activity).toBe('link_advancing');
+		expect(observations[4]?.records[0]?.activity).toBe('link_advancing');
+	});
+
+	it('derives same-tick activity at exactly 1499/1500 ms from its internal epoch', () => {
+		const beforeClock = new FakeClock();
+		const before = new ReferenceCadence(NONCE, beforeClock);
+		pollAfter(beforeClock, before, 500, validRead(7));
+		pollAfter(beforeClock, before, 500, validRead(7));
+		const at1499 = pollAfter(beforeClock, before, 1_499, validRead(7));
+		expect(at1499.records).toHaveLength(1);
+		expect(at1499.records[0]?.activity).toBe('link_advancing');
+		expect(at1499.nextSlotAtMs).toBe(beforeClock.now + 500);
+
+		const boundaryClock = new FakeClock();
+		const boundary = new ReferenceCadence(NONCE, boundaryClock);
+		pollAfter(boundaryClock, boundary, 500, validRead(7));
+		pollAfter(boundaryClock, boundary, 500, validRead(7));
+		const at1500 = pollAfter(boundaryClock, boundary, 1_500, validRead(7));
+		expect(at1500.records).toHaveLength(1);
+		expect(at1500.records[0]?.activity).toBe('link_stalled');
+	});
+
+	it('does not reuse a stale tick epoch after recovery', () => {
+		const clock = new FakeClock();
+		const beforeRecovery = new ReferenceCadence(NONCE, clock);
+		pollAfter(clock, beforeRecovery, 500, validRead(7));
+		pollAfter(clock, beforeRecovery, 500, validRead(7));
+		expect(pollAfter(clock, beforeRecovery, 1_500, validRead(7)).records[0]?.activity)
+			.toBe('link_stalled');
+
+		const recovered = new ReferenceCadence(OTHER_NONCE, clock);
+		const warming = pollAfter(clock, recovered, 500, validRead(7));
+		const freshEpoch = pollAfter(clock, recovered, 500, validRead(7));
+		expect(recordKind(warming.records[0] ?? {})).toBe('heartbeat');
+		expect(warming.records[0]?.sourceStatus).toBe('warming_up');
+		expect(freshEpoch.records[0]?.activity).toBe('link_advancing');
+	});
+
+	it('clears tick and startedAt after every source-status heartbeat', () => {
+		const clock = new FakeClock();
+		const cadence = new ReferenceCadence(NONCE, clock);
+		pollAfter(clock, cadence, 500, validRead(7));
+		pollAfter(clock, cadence, 500, validRead(7));
+		expect(pollAfter(clock, cadence, 1_500, validRead(7)).records[0]?.activity)
+			.toBe('link_stalled');
+		expect(pollAfter(clock, cadence, 500, statusRead('sample_unstable')).records[0]?.sourceStatus)
+			.toBe('sample_unstable');
+		expect(pollAfter(clock, cadence, 500, validRead(7)).records[0]?.sourceStatus)
+			.toBe('warming_up');
+		expect(pollAfter(clock, cadence, 500, validRead(7)).records[0]?.activity)
+			.toBe('link_advancing');
+	});
+
+	it('emits at most one current record when late and advances the deadline from now', () => {
+		const clock = new FakeClock();
+		const cadence = new ReferenceCadence(NONCE, clock);
+		const late = pollAfter(clock, cadence, 1_999, validRead(10));
+		expect(late.error).toBeNull();
+		expect(late.records).toHaveLength(1);
+		expect(late.nextSlotAtMs).toBe(2_499);
+		expect(cadenceViolations([late])).toEqual([]);
+	});
+
+	it('fails with heartbeat_timeout after a 60 second sleep and never catches up', () => {
+		const clock = new FakeClock();
+		const cadence = new ReferenceCadence(NONCE, clock);
+		const afterSleep = pollAfter(clock, cadence, 60_000, validRead(10));
+		expect(afterSleep).toMatchObject({ records: [], error: 'heartbeat_timeout' });
+		expect(cadenceViolations([afterSleep])).toEqual([]);
+	});
+
+	it('turns red for a catch-up loop after lateness', () => {
+		const sabotage = cadenceObservation(60_000, validRead(10), {
+			records: [
+				heartbeatRecord(NONCE, 0),
+				heartbeatRecord(NONCE, 1),
+				heartbeatRecord(NONCE, 2),
+			],
+			error: null,
+			nextSlotAtMs: 60_500,
+		});
+		expect(cadenceViolations([sabotage])).toContain('catch_up');
+	});
+
+	it('turns red when one due call emits both sample and heartbeat or emits nothing', () => {
+		const both = cadenceProbeObservations();
+		both[1]!.records.push(heartbeatRecord(NONCE, 2));
+		expect(cadenceViolations(both)).toContain('slot_record_count');
+
+		const none = cadenceProbeObservations();
+		none[1]!.records = [];
+		expect(cadenceViolations(none)).toContain('slot_record_count');
+	});
+
+	it('turns red when warming_up repeats after the single valid warm-up read', () => {
+		const observations = cadenceProbeObservations();
+		observations[1]!.records = [heartbeatRecord(NONCE, 1)];
+		expect(cadenceViolations(observations)).toContain('warming_up_not_single');
+	});
+
+	it('turns red when a stable sample appears before warming_up', () => {
+		const observations = cadenceProbeObservations();
+		observations[0]!.records = [sampleRecord(NONCE, 0)];
+		expect(cadenceViolations(observations)).toContain('sample_before_warming_up');
+	});
+
+	it('rejects an invented healthy heartbeat as frame_schema', () => {
+		const healthy = {
+			kind: 'heartbeat', version: 1, nonce: NONCE, sequence: 0, sourceStatus: 'healthy',
+		};
+		expect(validateJson(healthy)).toBe('frame_schema');
+		const observations = cadenceProbeObservations();
+		observations[0]!.records = [healthy];
+		expect(cadenceViolations(observations)).toContain('frame_schema');
+	});
+});
+
 describe('H8.4 deterministic lifecycle reference', () => {
 	it('accepts each record only in its exact phase and rejects a valid record in every wrong phase', () => {
 		const vectors = protocolVectors();
@@ -314,7 +476,7 @@ describe('H8.4 deterministic lifecycle reference', () => {
 			['awaiting_hello'],
 			['awaiting_welcome'],
 			['awaiting_first_sequenced', 'healthy'],
-			['awaiting_first_sequenced', 'healthy'],
+			['healthy'],
 		] as const;
 		for (const [index, record] of vectors.entries()) {
 			for (const state of MUMBLE_V2_LIFECYCLE_STATES) {
@@ -388,7 +550,8 @@ describe('H8.4 deterministic lifecycle reference', () => {
 		expect(lifecycle.event('tcp_connected')).toBeNull();
 		expect(lifecycle.acceptRecord(protocolVectors()[2] ?? {})).toBeNull();
 		expect(lifecycle.acceptRecord(welcomeRecord('CCCCCCCCCCCCCCCCCCCCCC'))).toBeNull();
-		expect(lifecycle.acceptRecord(sampleRecord('CCCCCCCCCCCCCCCCCCCCCC', 0))).toBeNull();
+		expect(lifecycle.acceptRecord(heartbeatRecord('CCCCCCCCCCCCCCCCCCCCCC', 0))).toBeNull();
+		expect(lifecycle.acceptRecord(sampleRecord('CCCCCCCCCCCCCCCCCCCCCC', 1))).toBeNull();
 		expect(lifecycle.state).toBe('healthy');
 		expect(lifecycle.fail('peer_closed')).toBe(250);
 	});
@@ -478,13 +641,16 @@ describe('H8.4 deterministic lifecycle reference', () => {
 		expect(lifecycle.acceptRecord(welcomeRecord(NONCE), 1_000)).toBe('nonce_mismatch');
 		expect(lifecycle.healthDeadlineStartedAt).toBeNull();
 		expect(lifecycle.acceptRecord(welcomeRecord(OTHER_NONCE), 1_100)).toBeNull();
-		expect(lifecycle.acceptRecord(sampleRecord(NONCE, 0), 1_200)).toBe('nonce_mismatch');
+		expect(lifecycle.acceptRecord(sampleRecord(NONCE, 0), 1_200)).toBe('frame_schema');
 		expect(lifecycle.healthDeadlineStartedAt).toBe(1_100);
-		expect(lifecycle.acceptRecord(sampleRecord(OTHER_NONCE, 1), 1_300))
+		expect(lifecycle.acceptRecord(heartbeatRecord(NONCE, 0), 1_250)).toBe('nonce_mismatch');
+		expect(lifecycle.acceptRecord(heartbeatRecord(OTHER_NONCE, 1), 1_300))
 			.toBe('sequence_mismatch');
 		expect(lifecycle.healthDeadlineStartedAt).toBe(1_100);
-		expect(lifecycle.acceptRecord(sampleRecord(OTHER_NONCE, 0), 1_400)).toBeNull();
+		expect(lifecycle.acceptRecord(heartbeatRecord(OTHER_NONCE, 0), 1_400)).toBeNull();
 		expect(lifecycle.healthDeadlineStartedAt).toBe(1_400);
+		expect(lifecycle.acceptRecord(sampleRecord(OTHER_NONCE, 1), 1_500)).toBeNull();
+		expect(lifecycle.healthDeadlineStartedAt).toBe(1_500);
 	});
 
 	it('treats stdin EOF as terminal shutdown and invalidates process credentials', () => {
@@ -533,6 +699,98 @@ describe('H8.4 authority and negative capability boundary', () => {
 
 type JsonObject = Record<string, unknown>;
 type DecodeResult = { ok: true; value: JsonObject } | { ok: false; error: MumbleV2ChannelError };
+type ValidRawSourceRead = {
+	status: 'valid_stable';
+	tick: number;
+	mapId: number;
+};
+type StatusRawSourceRead = {
+	status: Exclude<MumbleV2SourceStatus, 'warming_up'>;
+};
+type RawSourceRead = ValidRawSourceRead | StatusRawSourceRead;
+type CadencePollResult = {
+	records: JsonObject[];
+	error: MumbleV2ChannelError | null;
+	nextSlotAtMs: number;
+};
+type CadenceObservation = CadencePollResult & { atMs: number; read: RawSourceRead };
+
+class ReferenceCadence {
+	private nextSequence = 0;
+	private nextSlotAtMs: number;
+	private lastSequencedAtMs: number;
+	private warmingComplete = false;
+	private previousTick: number | null = null;
+	private tickStartedAtMs: number | null = null;
+	private failed = false;
+
+	constructor(
+		private readonly nonce: string,
+		clock: FakeClock,
+	) {
+		this.lastSequencedAtMs = clock.now;
+		this.nextSlotAtMs = clock.now + MUMBLE_V2_TRANSPORT_CONTRACT.sequencedSlotIntervalMs;
+	}
+
+	poll(clock: FakeClock, read: RawSourceRead): CadencePollResult {
+		if (this.failed) {
+			return { records: [], error: 'heartbeat_timeout', nextSlotAtMs: this.nextSlotAtMs };
+		}
+		if (clock.now < this.nextSlotAtMs) {
+			return { records: [], error: null, nextSlotAtMs: this.nextSlotAtMs };
+		}
+		if (deadlineReached(
+			this.lastSequencedAtMs,
+			clock.now,
+			MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatTimeoutMs,
+		)) {
+			this.failed = true;
+			this.clearSourceHistory();
+			return { records: [], error: 'heartbeat_timeout', nextSlotAtMs: this.nextSlotAtMs };
+		}
+		this.nextSlotAtMs = clock.now + MUMBLE_V2_TRANSPORT_CONTRACT.sequencedSlotIntervalMs;
+		const sequence = this.nextSequence;
+		this.nextSequence += 1;
+		const record = this.recordFor(read, sequence, clock.now);
+		this.lastSequencedAtMs = clock.now;
+		return { records: [record], error: null, nextSlotAtMs: this.nextSlotAtMs };
+	}
+
+	private recordFor(read: RawSourceRead, sequence: number, now: number): JsonObject {
+		if (read.status !== 'valid_stable') {
+			this.clearSourceHistory();
+			return heartbeatRecord(this.nonce, sequence, read.status);
+		}
+		if (!this.warmingComplete) {
+			this.warmingComplete = true;
+			this.previousTick = null;
+			this.tickStartedAtMs = null;
+			return heartbeatRecord(this.nonce, sequence, 'warming_up');
+		}
+		let activity: MumbleV2DerivedActivity = 'link_advancing';
+		if (this.previousTick === null || this.tickStartedAtMs === null
+			|| this.previousTick !== read.tick) {
+			this.previousTick = read.tick;
+			this.tickStartedAtMs = now;
+		} else if (now - this.tickStartedAtMs >= MUMBLE_V2_TRANSPORT_CONTRACT.sourceStalledAfterMs) {
+			activity = 'link_stalled';
+		}
+		return {
+			version: 1,
+			nonce: this.nonce,
+			sequence,
+			tick: read.tick,
+			mapId: read.mapId,
+			activity,
+		};
+	}
+
+	private clearSourceHistory(): void {
+		this.warmingComplete = false;
+		this.previousTick = null;
+		this.tickStartedAtMs = null;
+	}
+}
 
 class ReferenceFramer {
 	private readonly header = Buffer.alloc(4);
@@ -741,8 +999,12 @@ function welcomeRecord(nonce: string): JsonObject {
 	return { kind: 'welcome', version: 1, nonce, heartbeatIntervalMs: 500 };
 }
 
-function heartbeatRecord(nonce: string, sequence: number): JsonObject {
-	return { kind: 'heartbeat', version: 1, nonce, sequence, sourceStatus: 'warming_up' };
+function heartbeatRecord(
+	nonce: string,
+	sequence: number,
+	sourceStatus: MumbleV2SourceStatus = 'warming_up',
+): JsonObject {
+	return { kind: 'heartbeat', version: 1, nonce, sequence, sourceStatus };
 }
 
 function sampleRecord(nonce: string, sequence: number): JsonObject {
@@ -766,6 +1028,125 @@ function connectedLifecycle(token: string, nonce: string): ReferenceLifecycle {
 		throw new Error('reference setup failed');
 	}
 	return lifecycle;
+}
+
+function validRead(tick: number, mapId = 866): ValidRawSourceRead {
+	return { status: 'valid_stable', tick, mapId };
+}
+
+function statusRead(
+	status: Exclude<MumbleV2SourceStatus, 'warming_up'>,
+): StatusRawSourceRead {
+	return { status };
+}
+
+function pollAfter(
+	clock: FakeClock,
+	cadence: ReferenceCadence,
+	milliseconds: number,
+	read: RawSourceRead,
+): CadenceObservation {
+	clock.advance(milliseconds);
+	return cadenceObservation(clock.now, read, cadence.poll(clock, read));
+}
+
+function cadenceObservation(
+	atMs: number,
+	read: RawSourceRead,
+	result: CadencePollResult,
+): CadenceObservation {
+	return { atMs, read, ...result };
+}
+
+function cadenceProbeObservations(): CadenceObservation[] {
+	const clock = new FakeClock();
+	const cadence = new ReferenceCadence(NONCE, clock);
+	return [
+		pollAfter(clock, cadence, 500, validRead(10)),
+		pollAfter(clock, cadence, 500, validRead(11)),
+	];
+}
+
+function cadenceViolations(observations: readonly CadenceObservation[]): string[] {
+	const findings = new Set<string>();
+	let nextSlotAtMs: number = MUMBLE_V2_TRANSPORT_CONTRACT.sequencedSlotIntervalMs;
+	let lastSequencedAtMs = 0;
+	let warmingComplete = false;
+	let previousTick: number | null = null;
+	let tickStartedAtMs: number | null = null;
+	for (const observation of observations) {
+		const lateByMs = observation.atMs - nextSlotAtMs;
+		if (observation.atMs < nextSlotAtMs) {
+			if (observation.records.length > 0 || observation.error !== null) {
+				findings.add('early_emission');
+			}
+			continue;
+		}
+		const heartbeatExpired = deadlineReached(
+			lastSequencedAtMs,
+			observation.atMs,
+			MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatTimeoutMs,
+		);
+		if (heartbeatExpired) {
+			if (observation.error !== 'heartbeat_timeout') findings.add('missing_heartbeat_timeout');
+			if (observation.records.length > 0) findings.add('record_after_heartbeat_timeout');
+			if (observation.records.length > 1) findings.add('catch_up');
+			continue;
+		}
+		if (observation.error !== null) findings.add('unexpected_channel_error');
+		if (lateByMs > 0 && observation.records.length > 1) findings.add('catch_up');
+		if (observation.records.length !== MUMBLE_V2_TRANSPORT_CONTRACT.sequencedRecordsPerSlot) {
+			findings.add('slot_record_count');
+			continue;
+		}
+		if (observation.nextSlotAtMs !== observation.atMs
+			+ MUMBLE_V2_TRANSPORT_CONTRACT.sequencedSlotIntervalMs) {
+			findings.add('deadline_not_from_now');
+		}
+		nextSlotAtMs = observation.nextSlotAtMs;
+		lastSequencedAtMs = observation.atMs;
+		const record = observation.records[0] ?? {};
+		const recordError = validateJson(record);
+		if (recordError !== null) findings.add(recordError);
+		const kind = recordKind(record);
+		if (observation.read.status !== 'valid_stable') {
+			warmingComplete = false;
+			previousTick = null;
+			tickStartedAtMs = null;
+			if (kind !== 'heartbeat' || record.sourceStatus !== observation.read.status) {
+				findings.add('heartbeat_status_mismatch');
+			}
+			continue;
+		}
+		if (!warmingComplete) {
+			if (kind === 'sample') findings.add('sample_before_warming_up');
+			else if (kind !== 'heartbeat' || record.sourceStatus !== 'warming_up') {
+				findings.add('warming_up_required');
+			}
+			warmingComplete = true;
+			previousTick = null;
+			tickStartedAtMs = null;
+			continue;
+		}
+		if (kind === 'heartbeat' && record.sourceStatus === 'warming_up') {
+			findings.add('warming_up_not_single');
+		} else if (kind !== 'sample') {
+			findings.add('valid_read_not_sample');
+		} else {
+			let expectedActivity: MumbleV2DerivedActivity = 'link_advancing';
+			if (previousTick === null || tickStartedAtMs === null
+				|| previousTick !== observation.read.tick) {
+				previousTick = observation.read.tick;
+				tickStartedAtMs = observation.atMs;
+			} else if (observation.atMs - tickStartedAtMs
+				>= MUMBLE_V2_TRANSPORT_CONTRACT.sourceStalledAfterMs) {
+				expectedActivity = 'link_stalled';
+			}
+			if (record.tick !== observation.read.tick || record.mapId !== observation.read.mapId
+				|| record.activity !== expectedActivity) findings.add('derived_sample_mismatch');
+		}
+	}
+	return [...findings].sort();
 }
 
 function frameJson(value: unknown): Buffer {

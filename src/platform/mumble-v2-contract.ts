@@ -235,6 +235,27 @@ export interface MumbleV2TransportContractV1 {
 	rejectSequenceWrap: true;
 	resetSequenceOnNewNonce: true;
 	heartbeatIntervalMs: 500;
+	heartbeatIntervalMeaning: 'maximum_interval_between_sequenced_records';
+	sequencedSlotIntervalMs: 500;
+	sequencedRecordsPerSlot: 1;
+	sequencedRecordChoice: 'valid_after_warming_sample_else_heartbeat';
+	sampleReplacesHeartbeatInSlot: true;
+	sampleSatisfiesLiveness: true;
+	heartbeatSourceStatusPolicy: 'exact_source_status_only';
+	heartbeatHealthyStatusAllowed: false;
+	firstValidReadAfter: readonly ['start', 'recovery', 'discontinuity'];
+	firstValidReadEmits: 'heartbeat_warming_up';
+	warmingUpValidReadCount: 1;
+	warmingUpStoresSourceHistory: false;
+	nextValidReadAction: 'establish_epoch_and_emit_sample_advancing';
+	sourceReadInput: 'raw_tick_map_or_exact_status';
+	sampleActivityDerivation: 'internal_tick_history_and_elapsed_ms';
+	heartbeatClearsSourceHistory: true;
+	sourceHistoryOnDiscontinuity: 'clear_tick_and_started_at';
+	lateInvocationRecordMaximum: 1;
+	missedSlotPolicy: 'no_catch_up_no_replay';
+	nextSlotAfterLateInvocation: 'now_plus_interval';
+	lateAfterHeartbeatTimeout: 'channel_failure_heartbeat_timeout';
 	sourceStalledAfterMs: 1_500;
 	discoveryTimeoutMs: 5_000;
 	connectTimeoutMs: 2_000;
@@ -310,6 +331,27 @@ export const MUMBLE_V2_TRANSPORT_CONTRACT: MumbleV2TransportContractV1 = {
 	rejectSequenceWrap: true,
 	resetSequenceOnNewNonce: true,
 	heartbeatIntervalMs: 500,
+	heartbeatIntervalMeaning: 'maximum_interval_between_sequenced_records',
+	sequencedSlotIntervalMs: 500,
+	sequencedRecordsPerSlot: 1,
+	sequencedRecordChoice: 'valid_after_warming_sample_else_heartbeat',
+	sampleReplacesHeartbeatInSlot: true,
+	sampleSatisfiesLiveness: true,
+	heartbeatSourceStatusPolicy: 'exact_source_status_only',
+	heartbeatHealthyStatusAllowed: false,
+	firstValidReadAfter: ['start', 'recovery', 'discontinuity'],
+	firstValidReadEmits: 'heartbeat_warming_up',
+	warmingUpValidReadCount: 1,
+	warmingUpStoresSourceHistory: false,
+	nextValidReadAction: 'establish_epoch_and_emit_sample_advancing',
+	sourceReadInput: 'raw_tick_map_or_exact_status',
+	sampleActivityDerivation: 'internal_tick_history_and_elapsed_ms',
+	heartbeatClearsSourceHistory: true,
+	sourceHistoryOnDiscontinuity: 'clear_tick_and_started_at',
+	lateInvocationRecordMaximum: 1,
+	missedSlotPolicy: 'no_catch_up_no_replay',
+	nextSlotAfterLateInvocation: 'now_plus_interval',
+	lateAfterHeartbeatTimeout: 'channel_failure_heartbeat_timeout',
 	sourceStalledAfterMs: 1_500,
 	discoveryTimeoutMs: 5_000,
 	connectTimeoutMs: 2_000,
@@ -360,7 +402,7 @@ export interface MumbleV2LifecycleContractV1 {
 		connecting: readonly [];
 		awaiting_hello: readonly ['hello'];
 		awaiting_welcome: readonly ['welcome'];
-		awaiting_first_sequenced: readonly ['heartbeat', 'sample'];
+		awaiting_first_sequenced: readonly ['heartbeat'];
 		healthy: readonly ['heartbeat', 'sample'];
 		reconnect_wait: readonly [];
 		restart_wait: readonly [];
@@ -395,7 +437,7 @@ export const MUMBLE_V2_LIFECYCLE_CONTRACT: MumbleV2LifecycleContractV1 = {
 		connecting: [],
 		awaiting_hello: ['hello'],
 		awaiting_welcome: ['welcome'],
-		awaiting_first_sequenced: ['heartbeat', 'sample'],
+		awaiting_first_sequenced: ['heartbeat'],
 		healthy: ['heartbeat', 'sample'],
 		reconnect_wait: [],
 		restart_wait: [],
@@ -408,7 +450,6 @@ export const MUMBLE_V2_LIFECYCLE_CONTRACT: MumbleV2LifecycleContractV1 = {
 		{ from: 'awaiting_hello', event: 'hello_accepted', to: 'awaiting_welcome' },
 		{ from: 'awaiting_welcome', event: 'welcome_accepted', to: 'awaiting_first_sequenced' },
 		{ from: 'awaiting_first_sequenced', event: 'heartbeat_accepted', to: 'healthy' },
-		{ from: 'awaiting_first_sequenced', event: 'sample_accepted', to: 'healthy' },
 		{ from: 'healthy', event: 'heartbeat_accepted', to: 'healthy' },
 		{ from: 'healthy', event: 'sample_accepted', to: 'healthy' },
 		{ from: 'reconnect_wait', event: 'reconnect_due', to: 'connecting' },

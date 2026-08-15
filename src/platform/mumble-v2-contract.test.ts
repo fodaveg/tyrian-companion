@@ -142,6 +142,27 @@ describe('H8.1 Mumble v2 declarative contract', () => {
 			rejectSequenceWrap: true,
 			resetSequenceOnNewNonce: true,
 			heartbeatIntervalMs: 500,
+			heartbeatIntervalMeaning: 'maximum_interval_between_sequenced_records',
+			sequencedSlotIntervalMs: 500,
+			sequencedRecordsPerSlot: 1,
+			sequencedRecordChoice: 'valid_after_warming_sample_else_heartbeat',
+			sampleReplacesHeartbeatInSlot: true,
+			sampleSatisfiesLiveness: true,
+			heartbeatSourceStatusPolicy: 'exact_source_status_only',
+			heartbeatHealthyStatusAllowed: false,
+			firstValidReadAfter: ['start', 'recovery', 'discontinuity'],
+			firstValidReadEmits: 'heartbeat_warming_up',
+			warmingUpValidReadCount: 1,
+			warmingUpStoresSourceHistory: false,
+			nextValidReadAction: 'establish_epoch_and_emit_sample_advancing',
+			sourceReadInput: 'raw_tick_map_or_exact_status',
+			sampleActivityDerivation: 'internal_tick_history_and_elapsed_ms',
+			heartbeatClearsSourceHistory: true,
+			sourceHistoryOnDiscontinuity: 'clear_tick_and_started_at',
+			lateInvocationRecordMaximum: 1,
+			missedSlotPolicy: 'no_catch_up_no_replay',
+			nextSlotAfterLateInvocation: 'now_plus_interval',
+			lateAfterHeartbeatTimeout: 'channel_failure_heartbeat_timeout',
 			sourceStalledAfterMs: 1_500,
 			discoveryTimeoutMs: 5_000,
 			connectTimeoutMs: 2_000,
@@ -177,6 +198,11 @@ describe('H8.1 Mumble v2 declarative contract', () => {
 			stdinEofAction: 'shutdown_helper',
 			stdinEofTo: 'shutdown',
 			stdinEofCloses: ['listener', 'pending_connection', 'authenticated_connection'],
+		});
+		expect(MUMBLE_V2_LIFECYCLE_CONTRACT.phaseRecords.awaiting_first_sequenced)
+			.toEqual(['heartbeat']);
+		expect(MUMBLE_V2_LIFECYCLE_CONTRACT.transitions).not.toContainEqual({
+			from: 'awaiting_first_sequenced', event: 'sample_accepted', to: 'healthy',
 		});
 		expect(MUMBLE_V2_LIFECYCLE_CONTRACT.timeouts).toEqual([
 			{ name: 'discovery_timeout', state: 'awaiting_ready', timeoutMs: 5_000, error: 'discovery_timeout', deadlineStartsAfter: 'bootstrap_accepted', deadlineRefreshesAfter: [] },

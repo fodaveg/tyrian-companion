@@ -14,8 +14,8 @@ import {
 const ADR_PATH = 'docs/adr/0002-h8-4-local-ipc-protocol.md';
 const BLOCK_START = '<!-- h8.4-protocol:start -->\n```json\n';
 const BLOCK_END = '\n```\n<!-- h8.4-protocol:end -->';
-const EXPECTED_SEMANTIC_SHA256 = 'a91c59182d31322c01f25d2587b6c61c2c67270f06f94f3c7f4a1e5c88a6dabc';
-const EXPECTED_DOCUMENT_SHA256 = '35c754aeb68d485b9caa4f4902f90a2e0e18cf74ebee1e3317ee3fe9bf3dccd8';
+const EXPECTED_SEMANTIC_SHA256 = '036bbbe7cf9e7d7a2449658932e5c42f6fb9bd3f0b49ca19a045fd66569c8e87';
+const EXPECTED_DOCUMENT_SHA256 = '16cc528757794a7f46cc8eccd65edeaca74b7132faff52df398b42fe1c561e7f';
 
 const EXPECTED_PROTOCOL_DECISION = {
 	schemaVersion: 1,
@@ -88,6 +88,30 @@ const EXPECTED_PROTOCOL_DECISION = {
 		rejectRegression: MUMBLE_V2_TRANSPORT_CONTRACT.rejectSequenceRegression,
 		rejectWrap: MUMBLE_V2_TRANSPORT_CONTRACT.rejectSequenceWrap,
 		resetOnNewNonce: MUMBLE_V2_TRANSPORT_CONTRACT.resetSequenceOnNewNonce,
+	},
+	cadence: {
+		slotIntervalMs: MUMBLE_V2_TRANSPORT_CONTRACT.sequencedSlotIntervalMs,
+		recordsPerSlot: MUMBLE_V2_TRANSPORT_CONTRACT.sequencedRecordsPerSlot,
+		recordChoice: MUMBLE_V2_TRANSPORT_CONTRACT.sequencedRecordChoice,
+		sampleReplacesHeartbeat: MUMBLE_V2_TRANSPORT_CONTRACT.sampleReplacesHeartbeatInSlot,
+		sampleSatisfiesLiveness: MUMBLE_V2_TRANSPORT_CONTRACT.sampleSatisfiesLiveness,
+		heartbeatIntervalMeaning: MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatIntervalMeaning,
+		heartbeatSourceStatusPolicy: MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatSourceStatusPolicy,
+		heartbeatHealthyStatusAllowed: MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatHealthyStatusAllowed,
+		firstValidReadAfter: MUMBLE_V2_TRANSPORT_CONTRACT.firstValidReadAfter,
+		firstValidReadEmits: MUMBLE_V2_TRANSPORT_CONTRACT.firstValidReadEmits,
+		warmingUpValidReadCount: MUMBLE_V2_TRANSPORT_CONTRACT.warmingUpValidReadCount,
+		warmingUpStoresSourceHistory: MUMBLE_V2_TRANSPORT_CONTRACT.warmingUpStoresSourceHistory,
+		nextValidReadAction: MUMBLE_V2_TRANSPORT_CONTRACT.nextValidReadAction,
+		sourceReadInput: MUMBLE_V2_TRANSPORT_CONTRACT.sourceReadInput,
+		sampleActivityDerivation: MUMBLE_V2_TRANSPORT_CONTRACT.sampleActivityDerivation,
+		heartbeatClearsSourceHistory: MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatClearsSourceHistory,
+		sourceHistoryOnDiscontinuity:
+			MUMBLE_V2_TRANSPORT_CONTRACT.sourceHistoryOnDiscontinuity,
+		lateInvocationRecordMaximum: MUMBLE_V2_TRANSPORT_CONTRACT.lateInvocationRecordMaximum,
+		missedSlotPolicy: MUMBLE_V2_TRANSPORT_CONTRACT.missedSlotPolicy,
+		nextSlotAfterLateInvocation: MUMBLE_V2_TRANSPORT_CONTRACT.nextSlotAfterLateInvocation,
+		lateAfterHeartbeatTimeout: MUMBLE_V2_TRANSPORT_CONTRACT.lateAfterHeartbeatTimeout,
 	},
 	timingMs: {
 		heartbeatInterval: MUMBLE_V2_TRANSPORT_CONTRACT.heartbeatIntervalMs,
@@ -190,12 +214,36 @@ describe('H8.4 parseable protocol ADR', () => {
 		const source = readFileSync(ADR_PATH, 'utf8');
 		const sabotages: Array<(decision: JsonObject) => void> = [
 			(decision) => lifecycle(decision).phaseRecords.healthy.push('welcome'),
+			(decision) => lifecycle(decision).phaseRecords.awaiting_first_sequenced.push('sample'),
 			(decision) => { lifecycle(decision).timeouts[2]!.error = 'peer_closed'; },
 			(decision) => lifecycle(decision).timeouts[5]!.deadlineRefreshesAfter.pop(),
 			(decision) => { lifecycle(decision).backoffResetState = 'awaiting_welcome'; },
 			(decision) => { lifecycle(decision).stdinEofAction = 'ignore'; },
 			(decision) => { lifecycle(decision).failureRoutes[0]!.to = 'reconnect_wait'; },
 			(decision) => lifecycle(decision).failureRoutes[2]!.fromStates.pop(),
+		];
+		for (const sabotage of sabotages) {
+			expect(protocolAdrViolations(rewriteDecision(source, sabotage)))
+				.toContain('semantic_contract');
+		}
+	});
+
+	it('turns red for any weakening of exact slot cadence, warm-up or sample liveness', () => {
+		const source = readFileSync(ADR_PATH, 'utf8');
+		const sabotages: Array<(decision: JsonObject) => void> = [
+			(decision) => { cadence(decision).recordsPerSlot = 2; },
+			(decision) => { cadence(decision).recordChoice = 'heartbeat_and_sample'; },
+			(decision) => { cadence(decision).sampleReplacesHeartbeat = false; },
+			(decision) => { cadence(decision).sampleSatisfiesLiveness = false; },
+			(decision) => { cadence(decision).heartbeatIntervalMeaning = 'heartbeat_only'; },
+			(decision) => { cadence(decision).heartbeatHealthyStatusAllowed = true; },
+			(decision) => { cadence(decision).warmingUpValidReadCount = 0; },
+			(decision) => { cadence(decision).sourceHistoryOnDiscontinuity = 'retain'; },
+			(decision) => { cadence(decision).sourceReadInput = 'activity_precomputed'; },
+			(decision) => { cadence(decision).lateInvocationRecordMaximum = 120; },
+			(decision) => { cadence(decision).missedSlotPolicy = 'catch_up'; },
+			(decision) => { cadence(decision).nextSlotAfterLateInvocation = 'previous_plus_interval'; },
+			(decision) => { cadence(decision).lateAfterHeartbeatTimeout = 'emit_anyway'; },
 		];
 		for (const sabotage of sabotages) {
 			expect(protocolAdrViolations(rewriteDecision(source, sabotage)))
@@ -281,6 +329,10 @@ function timing(decision: JsonObject): JsonObject {
 	return decision.timingMs as JsonObject;
 }
 
+function cadence(decision: JsonObject): JsonObject {
+	return decision.cadence as JsonObject;
+}
+
 function channelErrors(decision: JsonObject): unknown[] {
 	return decision.channelErrors as unknown[];
 }
@@ -297,14 +349,14 @@ function authority(decision: JsonObject): JsonObject {
 }
 
 function lifecycle(decision: JsonObject): {
-	phaseRecords: { healthy: unknown[] };
+	phaseRecords: { awaiting_first_sequenced: unknown[]; healthy: unknown[] };
 	timeouts: Array<JsonObject & { deadlineRefreshesAfter: unknown[] }>;
 	backoffResetState: string;
 	stdinEofAction: string;
 	failureRoutes: Array<{ to: string; fromStates: unknown[] }>;
 } {
 	return decision.lifecycle as {
-		phaseRecords: { healthy: unknown[] };
+		phaseRecords: { awaiting_first_sequenced: unknown[]; healthy: unknown[] };
 		timeouts: Array<JsonObject & { deadlineRefreshesAfter: unknown[] }>;
 		backoffResetState: string;
 		stdinEofAction: string;

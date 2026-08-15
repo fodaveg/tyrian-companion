@@ -200,6 +200,12 @@ The current `0.1.0` vertical provides:
 - H8.4 closes the protocol to TCP IPv4 `127.0.0.1` with bind port `0`, framed JSON records shared by
   stdin/stdout/TCP, a 32-byte per-process token and 16-byte per-connection nonce, exact
   bootstrap/ready/hello/welcome, shared heartbeat/sample sequencing and fail-closed deadlines. Its
+  due 500 ms cadence emits one sequenced record: after warm-up, a sample derived from raw tick/map
+  replaces that slot's heartbeat and satisfies liveness; otherwise the heartbeat carries the exact
+  source status. The first valid read after start, recovery or discontinuity emits one `warming_up`
+  without retaining a tick; the next establishes a fresh advancing epoch. A source-status heartbeat
+  clears tick/time history. Late calls emit at most once from current state and reschedule from now;
+  they never catch up missed slots, and 2 s without a valid record fails with `heartbeat_timeout`. Its
   exact lifecycle admits records only in their phase, binds hello to the process bootstrap token,
   restarts discovery after any pre-ready/helper-exit failure, and reconnects in-process only after a
   valid ready port. Sequenced records refresh health/reset backoff, stdin EOF is terminal, and its

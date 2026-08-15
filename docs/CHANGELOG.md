@@ -13,7 +13,12 @@
   telemetría; nonce CSPRNG por conexión de 16 bytes/22 caracteres desde welcome. Solo se admiten una
   conexión autenticada y una pendiente.
 - Heartbeat y sample comparten secuencia `0,+1` sin gaps, replay, regresión, overflow ni wrap. Tick
-  conserva rollover `uint32`; heartbeat 500 ms, stalled 1.500 ms, discovery 5.000 ms y
+  conserva rollover `uint32`; cada llamada debida de 500 ms emite un record y el sample derivado de
+  tick/map raw sustituye heartbeat y satisface liveness. El primer válido tras
+  start/recovery/discontinuidad emite `warming_up` sin historia; el segundo abre época advancing y
+  cualquier source-status borra tick/startedAt. 1.499/1.500 ms fijan advancing/stalled sin tick stale.
+  Lateness emite como máximo uno, agenda desde now y no hace catch-up; 2 s sin record válido fallan
+  `heartbeat_timeout`. Stalled 1.500 ms, discovery 5.000 ms y
   connect/hello/primer-secuenciado/heartbeat 2.000 ms quedan fijados junto al backoff
   `[250,500,1000,2000,5000]`.
 - Añadidos los cinco `sourceStatus` y catorce errores de canal exactos, separando lifecycle del canal,
@@ -31,6 +36,9 @@
 - Cerrada la ruta `helper_exited` para todos los estados no terminales, incluido `reconnect_wait`:
   invalida token/puerto/nonce/secuencia y bloquea `reconnect_due`. El framer mide memoria simultánea
   real y transfiere el payload tras liberar su referencia, sin duplicarlo durante el callback.
+- Añadida referencia de cadencia con fake clock, raw tick/map/status, recovery con tick stale,
+  umbral 1.499/1.500 ms y salto de 60 s; sabotajes causales cubren catch-up, dos records o ninguno,
+  `warming_up` infinito, sample sin calentamiento previo y heartbeat `healthy` inventado.
 
 ## H8.2 — Spike read-only dentro de CrossOver
 

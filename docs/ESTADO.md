@@ -79,13 +79,19 @@ plugin cliente quedan fijados a TCP IPv4 `127.0.0.1`, bind port `0`, bootstrap/r
 stdin/stdout y hello/welcome TCP. Todos los records usan `uint32` big-endian + JSON UTF-8 1..512 y
 buffer incremental máximo 516 incluso con chunks enormes; los seis schemas, credenciales base64url,
 binding bootstrap→hello y comparación constant-time, secuencia
-conjunta heartbeat+sample, heartbeat 500 ms, stalled 1.500 ms, deadlines 2.000/5.000 ms, lifecycle,
+conjunta heartbeat+sample, un único record por llamada debida de 500 ms —sample derivado de tick/map
+raw sustituye heartbeat y satisface liveness—, calentamiento sin retener tick, segunda lectura como
+nueva época advancing, borrado de tick/startedAt en source-status y primer record limitado a
+heartbeat, stalled exacto 1.499/1.500 ms, lateness sin catch-up y fallo `heartbeat_timeout`, deadlines
+2.000/5.000 ms, lifecycle,
 backoff y errores están cerrados en el modelo y ADR parseable con igualdad/orden/hashes completos.
 Los tests cubren framing fragmentado/coalescido/truncado, parser estricto, token/nonce y superficies,
 host/puerto/versión, replay/gap/regresión/overflow/stale nonce, tick rollover, fake clock/sleep,
 records fuera de fase, routing total de helper-exit —incluido reconnect—, token/puerto/nonce nuevos,
-samples que renuevan salud, reset solo healthy, reconnect/EOF, high-water simultáneo sin copia, source status y
-sabotajes de datos prohibidos. El censo conserva un único artefacto Mumble
+samples que renuevan salud, reset solo healthy, reconnect/EOF, high-water simultáneo sin copia,
+cadencia con fake clock, recovery con tick stale, salto de 60 s y sabotajes de catch-up,
+doble/ningún record, warm-up infinito, sample prematuro, heartbeat `healthy`, source status y datos
+prohibidos. El censo conserva un único artefacto Mumble
 productivo declarativo y cero importadores/runtime. No existen helper, socket, timer, process manager,
 adapter, Cargo o packaging productivo; API v1 sigue autoritativa, shadow, human-confirmed y sin
 persistencia.
@@ -123,7 +129,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 100 ficheros y 1379 tests verdes, incluidos 51 tests H8.1/H8.4 dirigidos, más la
+- `npm run test`: 100 ficheros y 1391 tests verdes, incluidos 63 tests H8.1/H8.4 dirigidos, más la
   lane C H8.2 normal/ASan/UBSan,
   syntax-check del wrapper y cinco sabotajes causales.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v4 y sabotajes verdes.
