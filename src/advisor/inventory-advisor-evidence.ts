@@ -3,7 +3,7 @@ import type { StorageSnapshotService } from '../account/storage-snapshot-service
 import { allowsEndpoint } from '../account/storage-snapshot-service';
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
-import type { GuildWars2Operation } from '../account/guild-wars-2-client';
+import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
@@ -65,8 +65,10 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		let operation: GuildWars2Operation;
 		try {
 			operation = this.client.beginOperation();
-		} catch {
-			return { status: 'unavailable', evidence: null };
+		} catch (error) {
+			return error instanceof MissingApiKeyError
+				? { status: 'unavailable', evidence: null, failure: 'missing_key' }
+				: { status: 'unavailable', evidence: null };
 		}
 		try {
 			const snapshot = await this.snapshots.captureWithOperation(operation);

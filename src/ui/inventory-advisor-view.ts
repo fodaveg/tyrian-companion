@@ -175,7 +175,7 @@ function mountInventoryAdvisorView(
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (visible) results.append(renderResults(rows, filters.groupBy, translator, !filteredEmpty));
-		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model.status, translator);
+		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
 	};
 	const updateFilters = (): void => {
 		filters = {
@@ -378,8 +378,10 @@ function flattenInventoryAdvisorRows(groups: readonly InventoryAdvisorViewModelG
 	return groups.flatMap((group) => group.rows);
 }
 
-function stateLabel(state: InventoryAdvisorViewState, translator: Translator): string {
-	return translator.t(`advisor.view.state.${state}`);
+function stateLabel(model: InventoryAdvisorViewModel, translator: Translator): string {
+	return model.blockedReason === undefined
+		? translator.t(`advisor.view.state.${model.status}`)
+		: translator.t(`advisor.view.blockedReason.${model.blockedReason}`);
 }
 
 function actionLabelFor(action: InventoryAdvisorViewAction, translator: Translator): string {

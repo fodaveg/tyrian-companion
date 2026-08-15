@@ -37,7 +37,17 @@ export type InventoryAdvisorRulesAvailability = { status: 'available'; value: In
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
 export type InventoryAdvisorWorkflowResult =
 	| { status: 'ready'; source: InventoryAdvisorPresentationSource }
-	| { status: 'blocked'; reason: 'missing_rules' | 'preferences_corrupt' | 'preferences_future' | 'preferences_unavailable' | 'stale_evidence' };
+	| { status: 'blocked'; reason: InventoryAdvisorWorkflowBlockedReason };
+
+export type InventoryAdvisorWorkflowBlockedReason =
+	| 'missing_rules'
+	| 'credential_unavailable'
+	| 'capture_unavailable'
+	| 'capture_invalid'
+	| 'preferences_corrupt'
+	| 'preferences_future'
+	| 'preferences_unavailable'
+	| 'stale_evidence';
 
 /** Explicit capture-to-presentation composition. Construction and reads perform no I/O. */
 export class InventoryAdvisorWorkflow {
@@ -56,6 +66,11 @@ export class InventoryAdvisorWorkflow {
 			? await this.ports.capture.capture(locale)
 			: await this.ports.capture.capture(locale, rules.value.containerEconomyPack.expectedPriceItemIds);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
+		if (capture.evidence === null) {
+			return { status: 'blocked', reason: capture.failure === 'missing_key'
+				? 'credential_unavailable'
+				: capture.status === 'invalid' ? 'capture_invalid' : 'capture_unavailable' };
+		}
 		const preferences = await this.ports.preferences.load(capture);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		if (preferences.status === 'blocked') return preferences;

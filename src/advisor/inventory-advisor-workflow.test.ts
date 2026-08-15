@@ -32,7 +32,7 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(preferences).not.toHaveBeenCalled();
 	});
 
-	it('captures exactly once per explicit workflow refresh and rejects unavailable evidence', async () => {
+	it('captures exactly once and preserves unavailable evidence before preference I/O', async () => {
 		const capture = vi.fn(async () => ({ status: 'unavailable' as const, evidence: null }));
 		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
 		const workflow = new InventoryAdvisorWorkflow({
@@ -40,10 +40,30 @@ describe('H5.11 inventory advisor workflow', () => {
 			preferences: { load: preferences },
 			rules: { current: () => ({ status: 'available', value: {} as never }) },
 		});
-		await expect(workflow.refresh('en')).rejects.toThrow('inventory_advisor_capture_unavailable');
+		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'capture_unavailable' });
 		expect(capture).toHaveBeenCalledOnce();
 		expect(capture).toHaveBeenCalledWith('en');
-		expect(preferences).toHaveBeenCalledOnce();
+		expect(preferences).not.toHaveBeenCalled();
+	});
+
+	it('distinguishes invalid capture evidence from local preference failures', async () => {
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: async () => ({ status: 'invalid', evidence: null }) }, preferences: { load: preferences },
+			rules: { current: () => ({ status: 'available', value: {} as never }) },
+		});
+		await expect(workflow.refresh('es')).resolves.toEqual({ status: 'blocked', reason: 'capture_invalid' });
+		expect(preferences).not.toHaveBeenCalled();
+	});
+
+	it('preserves a missing SecretStorage selection as a safe credential reason', async () => {
+		const preferences = vi.fn();
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: async () => ({ status: 'unavailable', evidence: null, failure: 'missing_key' }) },
+			preferences: { load: preferences }, rules: { current: () => ({ status: 'available', value: {} as never }) },
+		});
+		await expect(workflow.refresh('es')).resolves.toEqual({ status: 'blocked', reason: 'credential_unavailable' });
+		expect(preferences).not.toHaveBeenCalled();
 	});
 
 	it('loads the built-in bundle before expiry and keeps the complete workflow review-only', async () => {

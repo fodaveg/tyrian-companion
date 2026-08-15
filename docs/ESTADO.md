@@ -152,13 +152,17 @@ El hotfix de datos reales del Inventory Advisor alinea el catálogo JSON, respue
 la captura hermana H4.19 y la allowlist contextual. Una lectura real de solo lectura produjo snapshot
 estable con las seis fuentes completas y una presentación `limited` de 1.206 objetos/1.701 posiciones,
 todas en revisión manual; la clave y los endpoints requeridos respondieron correctamente.
+Tras la primera QA visual real, la pantalla siguió bloqueada y reveló una frontera que el diagnóstico
+externo no ejercitaba: los fallos de capture se confundían con preferencias y el controlador descartaba
+el motivo. El flujo ahora corta antes de IndexedDB/composición y presenta un enum seguro y accionable;
+queda pendiente repetir la QA dentro de Obsidian para conocer y cerrar el motivo real de esta instalación.
 
 Incluye scaffold oficial, selección segura y estable por operación, ajustes versionados, conexión explícita `tokeninfo → account`, validación runtime, concurrencia latest-wins, cooldown real, estados accesibles, transporte resiliente, límites modulares, tests y CI. H1.4 aporta coordinación fail-closed de una sola sesión activa por máquina mediante lease/fence en IndexedDB dedicada. H3.1 define el lifecycle puro `idle → starting → active → stopping → provisional → complete|error`. H3.2–H3.10 cubren captura manual, recovery durable, detección asistida explícita, revisión de contaminación y medición local de calidad. H4.1–H4.12 añaden valoración, reservas, intenciones y recomendaciones manuales puras; no operan sobre la cuenta. H5.12 persiste objetivos y excepciones locales con CAS explícito. No hay persistencia de recomendaciones, operación sobre la cuenta ni escritura libre en el vault: H5.4 solo genera notas completas con bloques gestionados, H5.6 solo modifica assets tras una operación explícita y H5.10 exporta o scrubbea únicamente mediante acciones explícitas. El panel/agregación del historial sigue pendiente.
 
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 106 ficheros y 1443 tests verdes, incluidas 42 pruebas H8.6 reportadas por Vitest
+- `npm run test`: 106 ficheros y 1452 tests verdes, incluidas 42 pruebas H8.6 reportadas por Vitest
   —33 funcionales y nueve de arquitectura—, los contratos H8.1/H8.4 y el verifier de
   supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan,
   syntax-check del wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.

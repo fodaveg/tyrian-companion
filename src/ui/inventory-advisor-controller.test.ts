@@ -112,8 +112,17 @@ describe('H5.11 inventory advisor presentation controller', () => {
 	it('projects the explicit missing-rules result as blocked without inventing rows', async () => {
 		const ports = { load: vi.fn(async () => ({ status: 'blocked', reason: 'missing_rules' } as const)) } satisfies InventoryAdvisorControllerPorts;
 		await expect(new InventoryAdvisorPresentationController(ports).refresh())
-			.resolves.toMatchObject({ status: 'blocked', groups: [] });
+			.resolves.toMatchObject({ status: 'blocked', blockedReason: 'missing_rules', groups: [] });
 		expect(ports.load).toHaveBeenCalledOnce();
+	});
+
+	it('preserves safe block reasons without account-bound data', async () => {
+		for (const reason of ['capture_unavailable', 'capture_invalid', 'preferences_unavailable'] as const) {
+			const controller = new InventoryAdvisorPresentationController({ load: async () => ({ status: 'blocked', reason }) });
+			const model = await controller.refresh();
+			expect(model).toMatchObject({ status: 'blocked', blockedReason: reason, groups: [] });
+			expect(JSON.stringify(model)).not.toMatch(/account|vault|token|secret/iu);
+		}
 	});
 
 	it('makes New win when Old completes after the newer explicit refresh', async () => {
@@ -144,7 +153,7 @@ describe('H5.11 inventory advisor presentation controller', () => {
 	it('fails closed on loader rejection and disposal prevents a late flight or later refresh from loading', async () => {
 		const rejected = { load: vi.fn(async () => { throw new Error('unavailable'); }) } satisfies InventoryAdvisorControllerPorts;
 		await expect(new InventoryAdvisorPresentationController(rejected).refresh())
-			.resolves.toMatchObject({ status: 'invalid', groups: [] });
+			.resolves.toMatchObject({ status: 'invalid', blockedReason: 'unexpected_failure', groups: [] });
 		const flight = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn(() => flight.promise) } satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);

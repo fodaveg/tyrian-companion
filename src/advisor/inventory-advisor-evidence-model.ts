@@ -44,7 +44,7 @@ export interface InventoryAdvisorEvidenceV1 {
 export type InventoryAdvisorEvidenceCaptureResultV1 =
 	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1;
 		containerPrices?: InventoryContainerPriceEvidenceV1 | null }
-	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null };
+	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null; failure?: 'missing_key' };
 
 export interface InventoryAdvisorEvidenceCapture {
 	capture(locale: CatalogLocale, containerPriceItemIds?: readonly number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1>;

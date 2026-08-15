@@ -144,6 +144,21 @@ describe('Inventory Advisor view', () => {
 		}
 	});
 
+	it.each([
+		['credential_unavailable', 'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.'],
+		['capture_unavailable', 'No se pudo leer la cuenta de Guild Wars 2. Comprueba la clave seleccionada y vuelve a actualizar.'],
+		['capture_invalid', 'La captura de la cuenta no superó la validación de seguridad.'],
+		['preferences_unavailable', 'Las preferencias locales del inventario no están disponibles.'],
+		['unexpected_failure', 'La actualización del inventario falló de forma inesperada.'],
+	] as const)('shows the safe actionable reason %s instead of the generic message', (blockedReason, expected) => {
+		const mount = render({
+			...readyModel(), status: blockedReason === 'unexpected_failure' ? 'invalid' : 'blocked', blockedReason, groups: [],
+		});
+		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
+		expect(state.textContent).toBe(expected);
+		expect(state.textContent).not.toContain('account-');
+	});
+
 	it('renders independent instances into disjoint nodes and reads a fixture port without changing it', () => {
 		const model = deepFreeze(readyModel());
 		const left = render(model, 'es');

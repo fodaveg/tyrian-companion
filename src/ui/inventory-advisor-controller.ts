@@ -34,12 +34,16 @@ export class InventoryAdvisorPresentationController {
 	current(options: InventoryAdvisorPresentationOptions = {}): InventoryAdvisorViewModel {
 		if (this.disposed) return clone(buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation()));
 		if (this.cached !== null) {
-			if (this.cached.status === 'blocked') return clone(buildInventoryAdvisorViewModel({
-				version: 1, status: 'blocked', groups: [], discardReview: { status: 'unavailable' },
-			}));
+			if (this.cached.status === 'blocked') return clone({
+				...buildInventoryAdvisorViewModel({
+					version: 1, status: 'blocked', groups: [], discardReview: { status: 'unavailable' },
+				}),
+				blockedReason: this.cached.reason,
+			});
 			return clone(buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)));
 		}
-		return clone(buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null));
+		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null);
+		return clone(this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model);
 	}
 
 	/** Explicitly captures fresh evidence. Only the newest refresh may update or answer from the cache. */

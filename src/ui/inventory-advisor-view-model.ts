@@ -1,4 +1,5 @@
 import type { InventoryAdvisorPresentation, InventoryAdvisorPresentationRow } from '../advisor/inventory-advisor-presentation-model';
+import type { InventoryAdvisorWorkflowBlockedReason } from '../advisor/inventory-advisor-workflow';
 
 export type InventoryAdvisorViewStatus = 'loading' | 'empty' | 'ready' | 'limited' | 'blocked' | 'invalid';
 
@@ -22,6 +23,8 @@ export interface InventoryAdvisorViewModel {
 	status: InventoryAdvisorViewStatus;
 	title: string;
 	detail: string;
+	/** Safe, closed diagnostic enum. It never contains account-bound values. */
+	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
 	groups: InventoryAdvisorViewModelGroup[];
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type SnapshotCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
+import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { InventoryAdvisorEvidenceService } from './inventory-advisor-evidence';
@@ -137,6 +138,15 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(await mismatch.capture('es')).toEqual({ status: 'invalid', evidence: null });
 		const unavailable = new InventoryAdvisorEvidenceService({ beginOperation: () => ({ request: async () => { throw new Error('offline'); }, requestDetailed: async () => { throw new Error('unused'); } }) }, snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
 		expect(await unavailable.capture('es')).toEqual({ status: 'unavailable', evidence: null });
+	});
+
+	it('reports a removed SecretStorage selection without exposing its name or value', async () => {
+		const snapshot = snapshotFixture([10]);
+		const service = new InventoryAdvisorEvidenceService(
+			{ beginOperation: () => { throw new MissingApiKeyError(); } }, snapshotCapture(snapshot),
+			{ resolve: async () => catalogFor(snapshot) }, publicGateway(() => []), () => NOW,
+		);
+		expect(await service.capture('es')).toEqual({ status: 'unavailable', evidence: null, failure: 'missing_key' });
 	});
 
 	it('keeps proven null bid/ask, reports partial coverage and never substitutes inaccessible signals with empty arrays', async () => {

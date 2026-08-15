@@ -2,6 +2,10 @@
 
 ## Hotfix — Inventory Advisor con datos reales
 
+- La captura `unavailable|invalid` deja de alcanzar composición o preferencias y devuelve un
+  motivo bloqueado cerrado. El controlador conserva ese enum hasta la vista, que distingue de forma
+  segura clave ausente, captura no disponible/no válida, almacenamiento local, reglas y fallo inesperado
+  sin mostrar token, identidad de cuenta, bóveda ni excepciones internas.
 - El catálogo omite propiedades opcionales ausentes, invalida nombres que no pueden entrar en el
   contrato de presentación y sube su versión de normalización para no reutilizar caché antigua.
 - La captura de precios acepta la respuesta parcial HTTP 206 de la API oficial y conserva los
@@ -11,6 +15,8 @@
 - Verificación de solo lectura contra la cuenta real: snapshot estable, seis fuentes de almacenamiento
   completas, 1.206 objetos/1.701 posiciones y presentación `limited` con 1.701 filas de revisión;
   ninguna acción automática, económica o irreversible queda habilitada.
+- La QA visual en Obsidian sigue siendo obligatoria: el diagnóstico externo no sustituye la ejecución
+  con SecretStorage e IndexedDB reales de la aplicación.
 
 ## H8.6 — Núcleo aislado del cliente Mumble
 
