@@ -1,5 +1,37 @@
 # Changelog
 
+## H8.4 — Protocolo IPC local cerrado
+
+- Fijados helper servidor/plugin cliente sobre TCP IPv4 `127.0.0.1`, bind port `0`, bootstrap por
+  stdin, discovery `ready` por stdout y handshake TCP `hello → welcome`; todos los records comparten
+  longitud `uint32` big-endian y JSON UTF-8 de 1–512 bytes.
+- Cerrados seis schemas exactos: bootstrap, ready, hello, welcome, heartbeat de control y el sample
+  H8.1 sin cambios. Longitud cero/513+, truncado, UTF-8 inválido, BOM, JSON inválido/no objeto,
+  duplicados, trailing y claves extra/missing fallan cerrados.
+- Fijados token CSPRNG por proceso de 32 bytes/43 caracteres solo stdin+hello, comparación en tiempo
+  constante y prohibición en argv/env/fichero/log/stdout/stderr/discovery/settings/IndexedDB/Vault/
+  telemetría; nonce CSPRNG por conexión de 16 bytes/22 caracteres desde welcome. Solo se admiten una
+  conexión autenticada y una pendiente.
+- Heartbeat y sample comparten secuencia `0,+1` sin gaps, replay, regresión, overflow ni wrap. Tick
+  conserva rollover `uint32`; heartbeat 500 ms, stalled 1.500 ms, discovery 5.000 ms y
+  connect/hello/primer-secuenciado/heartbeat 2.000 ms quedan fijados junto al backoff
+  `[250,500,1000,2000,5000]`.
+- Añadidos los cinco `sourceStatus` y catorce errores de canal exactos, separando lifecycle del canal,
+  salud de fuente y `link_stalled`. API v1 permanece autoritativa, rollout shadow, confirmación
+  humana y retención `none`.
+- Añadido ADR 0002 con bloque JSON de igualdad completa, orden y hashes cerrados; lifecycle de fases,
+  deadlines, EOF y reconnect determinista; y tests causales para framing, validators, secuencia,
+  fake clock, reset healthy, token constant-time y vectores. Todo helper/runtime/socket/timer/process/adapter/Cargo/packaging
+  productivo sigue ausente; el censo conserva un único artefacto Mumble productivo declarativo.
+- Endurecido el contrato tras revisión: hello queda ligado al token capturado de bootstrap; reconnect
+  del mismo proceso lo conserva, mientras fallo pre-ready, `helper_exited`, restart y EOF lo invalidan.
+  Solo post-ready permite volver a conectar; cada conexión rota nonce y reinicia secuencia en cero.
+  El framer test-only drena chunks coalesced arbitrarios con high-water máximo de 516 bytes y solo un
+  record completamente válido renueva el deadline.
+- Cerrada la ruta `helper_exited` para todos los estados no terminales, incluido `reconnect_wait`:
+  invalida token/puerto/nonce/secuencia y bloquea `reconnect_due`. El framer mide memoria simultánea
+  real y transfiere el payload tras liberar su referencia, sin duplicarlo durante el callback.
+
 ## H8.2 — Spike read-only dentro de CrossOver
 
 - Añadido bajo `spikes/` un decoder C portable del layout oficial y un wrapper Windows que abre

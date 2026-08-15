@@ -5,13 +5,30 @@ import {
 	MUMBLE_V2_FIXED_SOURCES,
 	MUMBLE_V2_IPC_FRAME_KEYS,
 	MUMBLE_V2_LABYRINTH_MAP,
+	MUMBLE_V2_LIFECYCLE_CONTRACT,
+	MUMBLE_V2_LIFECYCLE_EVENTS,
+	MUMBLE_V2_LIFECYCLE_STATES,
 	MUMBLE_V2_MAX_FRAME_BYTES,
+	MUMBLE_V2_MESSAGE_KEYS,
 	MUMBLE_V2_RECOMMENDED_DEFAULTS,
 	MUMBLE_V2_SOURCE_FIELDS,
 	MUMBLE_V2_SOURCE_LIMITS,
 	MUMBLE_V2_TRANSPORT_CONTRACT,
+	type MumbleV2BootstrapRecordV1,
+	type MumbleV2ChannelError,
+	type MumbleV2HeartbeatRecordV1,
 	type MumbleV2IpcFrameV1,
+	type MumbleV2LifecycleState,
+	type MumbleV2ProtocolRecordV1,
+	type MumbleV2ReadyRecordV1,
+	type MumbleV2WelcomeRecordV1,
 } from './mumble-v2-contract';
+
+function failureRoute(state: MumbleV2LifecycleState, error: MumbleV2ChannelError) {
+	return MUMBLE_V2_LIFECYCLE_CONTRACT.failureRoutes.find(
+		(route) => route.fromStates.includes(state) && route.errors.includes(error),
+	);
+}
 
 describe('H8.1 Mumble v2 declarative contract', () => {
 	it('fixes the minimum untrusted IPC projection without personal or spatial fields', () => {
@@ -45,21 +62,144 @@ describe('H8.1 Mumble v2 declarative contract', () => {
 		});
 	});
 
-	it('pins loopback framing, nonce strength, ordering and a bounded frame', () => {
+	it('pins the six exact record schemas without widening the H8.1 sample', () => {
+		const records: readonly MumbleV2ProtocolRecordV1[] = [
+			{ kind: 'bootstrap', version: 1, token: 'A'.repeat(43) } satisfies MumbleV2BootstrapRecordV1,
+			{ kind: 'ready', version: 1, host: '127.0.0.1', port: 49_152 } satisfies MumbleV2ReadyRecordV1,
+			{ kind: 'hello', version: 1, token: 'A'.repeat(43) },
+			{ kind: 'welcome', version: 1, nonce: 'B'.repeat(22), heartbeatIntervalMs: 500 } satisfies MumbleV2WelcomeRecordV1,
+			{ kind: 'heartbeat', version: 1, nonce: 'B'.repeat(22), sequence: 0, sourceStatus: 'warming_up' } satisfies MumbleV2HeartbeatRecordV1,
+			{ version: 1, nonce: 'B'.repeat(22), sequence: 1, tick: 42, mapId: 866, activity: 'link_advancing' },
+		];
+
+		expect(records.map((record) => Object.keys(record))).toEqual(Object.values(MUMBLE_V2_MESSAGE_KEYS));
+		expect(MUMBLE_V2_MESSAGE_KEYS.sample).toEqual(MUMBLE_V2_IPC_FRAME_KEYS);
+	});
+
+	it('pins loopback framing, credentials, sequencing and lifecycle deadlines', () => {
 		expect(MUMBLE_V2_TRANSPORT_CONTRACT).toEqual({
 			version: 1,
+			protocol: 'tcp_ipv4',
+			server: 'helper',
+			client: 'plugin',
 			host: '127.0.0.1',
-			port: 'ephemeral',
-			frameEncoding: 'utf8_json',
+			bindPort: 0,
+			discoveredPortMinimum: 1,
+			discoveredPortMaximum: 65_535,
+			bootstrapInput: 'stdin',
+			discoveryOutput: 'stdout',
+			recordLengthBytes: 4,
+			maximumBufferedRecordBytes: 516,
+			inputChunkRetention: 'none',
+			recordDelivery: 'incremental_ownership_transfer_before_callback',
+			recordLengthEncoding: 'uint32_big_endian',
+			payloadEncoding: 'utf8_json',
+			minimumFrameBytes: 1,
 			maxFrameBytes: MUMBLE_V2_MAX_FRAME_BYTES,
-			nonceEntropyBitsMinimum: 128,
+			rejectByteOrderMark: true,
+			rejectNonObjectJson: true,
+			rejectDuplicateKeys: true,
+			rejectTrailingContent: true,
+			rejectUnknownFields: true,
+			rejectMissingFields: true,
+			tokenEntropyBytes: 32,
+			tokenEncodedCharacters: 43,
+			tokenRandomness: 'csprng',
+			tokenEncoding: 'base64url_no_padding',
+			tokenScope: 'per_process',
+			tokenGeneratedBy: 'plugin',
+			tokenComparison: 'constant_time_exact_32_bytes',
+			tokenBinding: 'hello_equals_bootstrap_same_helper_process',
+			tokenRetainedAcrossSameProcessReconnect: true,
+			tokenInvalidatedOn: [
+				'helper_exited', 'process_restarted', 'stdin_eof', 'shutdown_requested',
+			],
+			tokenSurfaces: ['stdin_bootstrap', 'tcp_hello'],
+			tokenForbiddenSurfaces: [
+				'argv', 'env', 'file', 'log', 'stdout', 'stderr', 'discovery', 'settings',
+				'indexeddb', 'vault', 'telemetry',
+			],
+			nonceEntropyBytes: 16,
+			nonceEncodedCharacters: 22,
+			nonceRandomness: 'csprng',
+			nonceEncoding: 'base64url_no_padding',
+			nonceScope: 'per_connection',
+			nonceGeneratedBy: 'helper',
+			requireFreshNoncePerConnection: true,
+			nonceSurfaces: ['welcome', 'heartbeat', 'sample'],
+			authenticatedConnectionMaximum: 1,
+			pendingConnectionMaximum: 1,
+			rejectAdditionalConnections: true,
+			handshakeOrder: ['bootstrap', 'ready', 'hello', 'welcome'],
+			sequencedKinds: ['heartbeat', 'sample'],
 			initialSequence: 0,
+			sequenceStep: 1,
 			sequenceMinimum: 0,
 			sequenceMaximum: 9_007_199_254_740_991,
-			rejectUnknownFields: true,
-			rejectReplayOrReorder: true,
+			rejectSequenceGap: true,
+			rejectSequenceReplay: true,
+			rejectSequenceRegression: true,
+			rejectSequenceWrap: true,
+			resetSequenceOnNewNonce: true,
+			heartbeatIntervalMs: 500,
+			sourceStalledAfterMs: 1_500,
+			discoveryTimeoutMs: 5_000,
+			connectTimeoutMs: 2_000,
+			helloTimeoutMs: 2_000,
+			firstSequencedRecordTimeoutMs: 2_000,
+			heartbeatTimeoutMs: 2_000,
+			reconnectBackoffMs: [250, 500, 1_000, 2_000, 5_000],
+			channelAxis: 'transport_lifecycle',
+			sourceAxis: 'heartbeat_source_status',
+			stalledAxis: 'sample_activity',
 		});
 		expect(MUMBLE_V2_TRANSPORT_CONTRACT.initialSequence).toBe(0);
+	});
+
+	it('pins the deterministic phase, transition, timeout and shutdown lifecycle', () => {
+		expect(MUMBLE_V2_LIFECYCLE_STATES).toEqual([
+			'awaiting_bootstrap', 'awaiting_ready', 'connecting', 'awaiting_hello',
+			'awaiting_welcome', 'awaiting_first_sequenced', 'healthy', 'reconnect_wait',
+			'restart_wait', 'shutdown',
+		]);
+		expect(MUMBLE_V2_LIFECYCLE_EVENTS).toEqual([
+			'bootstrap_accepted', 'ready_accepted', 'tcp_connected', 'hello_accepted',
+			'welcome_accepted', 'heartbeat_accepted', 'sample_accepted', 'channel_failed',
+			'reconnect_due', 'process_restarted', 'stdin_eof', 'shutdown_requested',
+		]);
+		expect(MUMBLE_V2_LIFECYCLE_CONTRACT).toMatchObject({
+			initialState: 'awaiting_bootstrap',
+			terminalState: 'shutdown',
+			phaseRecordError: 'frame_schema',
+			backoffResetState: 'healthy',
+			backoffResetEvents: ['heartbeat_accepted', 'sample_accepted'],
+			backoffResetOnlyWhenHealthy: true,
+			stdinEofAction: 'shutdown_helper',
+			stdinEofTo: 'shutdown',
+			stdinEofCloses: ['listener', 'pending_connection', 'authenticated_connection'],
+		});
+		expect(MUMBLE_V2_LIFECYCLE_CONTRACT.timeouts).toEqual([
+			{ name: 'discovery_timeout', state: 'awaiting_ready', timeoutMs: 5_000, error: 'discovery_timeout', deadlineStartsAfter: 'bootstrap_accepted', deadlineRefreshesAfter: [] },
+			{ name: 'connect_timeout', state: 'connecting', timeoutMs: 2_000, error: 'connect_timeout', deadlineStartsAfter: 'ready_accepted', deadlineRefreshesAfter: [] },
+			{ name: 'hello_timeout', state: 'awaiting_hello', timeoutMs: 2_000, error: 'auth_rejected', deadlineStartsAfter: 'tcp_connected', deadlineRefreshesAfter: [] },
+			{ name: 'hello_timeout', state: 'awaiting_welcome', timeoutMs: 2_000, error: 'auth_rejected', deadlineStartsAfter: 'tcp_connected', deadlineRefreshesAfter: [] },
+			{ name: 'first_sequenced_record_timeout', state: 'awaiting_first_sequenced', timeoutMs: 2_000, error: 'heartbeat_timeout', deadlineStartsAfter: 'welcome_accepted', deadlineRefreshesAfter: [] },
+			{ name: 'heartbeat_timeout', state: 'healthy', timeoutMs: 2_000, error: 'heartbeat_timeout', deadlineStartsAfter: 'welcome_accepted', deadlineRefreshesAfter: ['heartbeat_accepted', 'sample_accepted'] },
+		]);
+		expect(MUMBLE_V2_LIFECYCLE_CONTRACT.failureRoutes).toHaveLength(7);
+		expect(failureRoute('awaiting_ready', 'discovery_timeout')).toMatchObject({
+			to: 'restart_wait', recoveryEvent: 'process_restarted', tokenDisposition: 'invalidate',
+			portDisposition: 'invalidate', sequenceDisposition: 'invalidate',
+		});
+		expect(failureRoute('healthy', 'helper_exited')).toMatchObject({
+			to: 'restart_wait', recoveryEvent: 'process_restarted', tokenDisposition: 'invalidate',
+			portDisposition: 'invalidate', sequenceDisposition: 'invalidate',
+		});
+		expect(failureRoute('healthy', 'heartbeat_timeout')).toMatchObject({
+			to: 'reconnect_wait', recoveryEvent: 'reconnect_due', tokenDisposition: 'retain',
+			portDisposition: 'retain', sequenceDisposition: 'invalidate',
+		});
+		expect(failureRoute('healthy', 'discovery_timeout')).toBeUndefined();
 	});
 
 	it('reads only the documented fields and bounds needed for map and liveness', () => {

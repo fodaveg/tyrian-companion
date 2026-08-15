@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contrato declarativo H8.1: implementados. H8.2 aporta un spike técnico aislado y H8.3 está `accepted_for_implementation` de forma provisional; no se ha implementado ningún helper/runtime productivo y su QA real sigue pendiente.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos declarativos H8.1/H8.4: implementados. H8.2 aporta un spike técnico aislado y H8.3 está `accepted_for_implementation` de forma provisional; no se ha implementado ningún helper/runtime productivo y su QA real sigue pendiente.**
 
 **H7.4 está implementado técnicamente y H7.5 preparado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -22,7 +22,7 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
-**H0.4, H0.6 y H8.1: política y contrato v2 documentados; helper/runtime, validación multiplataforma y piloto pendientes.** El MVP es
+**H0.4, H0.6, H8.1 y H8.4: política y contrato v2 documentados; helper/runtime, validación multiplataforma y piloto pendientes.** El MVP es
 API-only con Linux + Steam/Proton como plataforma primaria, macOS + CrossOver como secundaria y
 Windows en beta. H8.1 fija Mumble Link para v2 como helper IPC opt-in de mapa/actividad, sin
 implementarlo: defaults revisables deshabilitado/shadow/on-when-armed, API v1 autoritativa,
@@ -66,13 +66,29 @@ provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuen
 llevará manifest, checksums y licencias. Linux/Steam/Proton primaria, macOS/CrossOver secundaria y
 Windows x64 beta siguen `QA=pending`; ejecución nativa Linux/macOS, Windows x86/ARM64, móvil y Wine
 fuera de Steam/Proton/CrossOver quedan unsupported. Authenticode sigue pendiente y bloquea release.
-El guard v6 y sus sabotajes mantienen este lote solo documental mediante censo positivo. Fuera de
+El guard v11 y sus sabotajes mantienen este lote solo documental mediante censo positivo. Fuera de
 docs/examples/fixtures/tests, fuente Rust/C#, configuración Cargo/toolchain exacta y señales de
 prefijo Mumble Link por path o contenido quedan censadas globalmente; outputs
 EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA y symlinks relevantes siempre fallan.
 Un `bridge` genérico continúa permitido. El bloque JSON, el ADR y `PLATFORM_POLICY.md` completo tienen
 parsing/hash canónicos, de modo que `QA completada` tampoco puede añadirse al final del documento.
 No hay helper/runtime, wiring ni CI productivo.
+
+**H8.4: protocolo IPC local cerrado y ejecutable solo como referencia de tests.** Helper servidor y
+plugin cliente quedan fijados a TCP IPv4 `127.0.0.1`, bind port `0`, bootstrap/ready por
+stdin/stdout y hello/welcome TCP. Todos los records usan `uint32` big-endian + JSON UTF-8 1..512 y
+buffer incremental máximo 516 incluso con chunks enormes; los seis schemas, credenciales base64url,
+binding bootstrap→hello y comparación constant-time, secuencia
+conjunta heartbeat+sample, heartbeat 500 ms, stalled 1.500 ms, deadlines 2.000/5.000 ms, lifecycle,
+backoff y errores están cerrados en el modelo y ADR parseable con igualdad/orden/hashes completos.
+Los tests cubren framing fragmentado/coalescido/truncado, parser estricto, token/nonce y superficies,
+host/puerto/versión, replay/gap/regresión/overflow/stale nonce, tick rollover, fake clock/sleep,
+records fuera de fase, routing total de helper-exit —incluido reconnect—, token/puerto/nonce nuevos,
+samples que renuevan salud, reset solo healthy, reconnect/EOF, high-water simultáneo sin copia, source status y
+sabotajes de datos prohibidos. El censo conserva un único artefacto Mumble
+productivo declarativo y cero importadores/runtime. No existen helper, socket, timer, process manager,
+adapter, Cargo o packaging productivo; API v1 sigue autoritativa, shadow, human-confirmed y sin
+persistencia.
 
 H5.1 sustituye la portada de tarjetas por una bitácora compacta con fase y reloj de sesión, rail de detector/polling/calidad/cuenta, incidencia priorizada y detalles plegables; no añade red ni acciones automáticas.
 
@@ -107,7 +123,8 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 97 ficheros y 1339 tests verdes, más la lane C H8.2 normal/ASan/UBSan,
+- `npm run test`: 100 ficheros y 1379 tests verdes, incluidos 51 tests H8.1/H8.4 dirigidos, más la
+  lane C H8.2 normal/ASan/UBSan,
   syntax-check del wrapper y cinco sabotajes causales.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v4 y sabotajes verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
@@ -119,7 +136,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Pendientes de producto
 
-1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar el helper/IPC posterior bajo el ADR H8.3 solo tras revisar lifecycle/discovery, ejecutar QA separada en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
+1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar ambos extremos del contrato H8.4 bajo el ADR H8.3, ejecutar QA separada en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
 4. Revisar y aprobar humanamente el pack/economía H4.19 antes de activar la capacidad 36038; el built-in sigue pending/disabled y fail-closed.

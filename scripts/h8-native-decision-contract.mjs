@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, readlinkSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const H8_HELPER_DECISION_CONTRACT_VERSION = 7;
+export const H8_HELPER_DECISION_CONTRACT_VERSION = 11;
 
 const ADR_PATH = 'docs/adr/0001-h8-3-native-mumble-helper.md';
 const BLOCK_START = '<!-- h8.3-decision:start -->\n```json\n';
@@ -18,7 +18,7 @@ const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de 
 const EXPECTED_DECISION_SHA256 = 'cca16e7829bc82825bcc9e182f6a08be00b3f4353b26d1225002b3fef0127bb8';
 const ADR_AUTHORITY_SHA256 = '7148a229b490f30d94085a9ae3b77921d1d4e654428a787e9740ba0b2743e246';
 const PLATFORM_AUTHORITY_SHA256 = 'd869c5a3a7265666a901779b052f675a91fe3c20166cf03be5bdfb012b55392a';
-const PLATFORM_DOCUMENT_SHA256 = 'c839f64ef3d8830f60f40b03553c81be75af743fa6616857508097f3ee51f925';
+const PLATFORM_DOCUMENT_SHA256 = 'a939216c2f75125e731a25ca5b6a49529c912aecbf73db8f0c19720b425b8d9e';
 const IGNORED_DIRECTORIES = new Set(['.git', 'coverage', 'node_modules']);
 const NON_PRODUCT_SOURCE_SCOPE = /(?:^|\/)(?:docs|examples|fixtures|test|tests|__fixtures__|__tests__)(?:\/|$)|\.(?:spec|test)\.[^/]+$/u;
 const REVIEWED_PRODUCT_PATHS = new Set(['src/platform/mumble-v2-contract.ts']);

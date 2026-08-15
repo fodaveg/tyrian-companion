@@ -32,7 +32,8 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 
 H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo y no
 empaquetado para validar la lectura en CrossOver, pero **no implementa todavía el helper ni el IPC
-runtime del plugin**. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
+runtime del plugin**. H8.3 elige provisionalmente la forma del helper y H8.4 fija su protocolo sin
+añadir runtime. Mumble Link solo puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
 enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
 el enlace no está disponible.
@@ -69,14 +70,49 @@ Laberinto del Rey Loco**, tipo `Public`. El layout se fija a la revisión `30864
 
 ### Transporte, retención y fallo
 
-El frame v1 futuro contiene exactamente `version`, `nonce`, `sequence`, `tick`, `mapId` y
-`activity`. El transporte recomendado usa solo `127.0.0.1`, puerto efímero, JSON UTF-8 y frames de
-como máximo 512 bytes. El nonce debe aportar al menos 128 bits impredecibles y se verifica antes de
-usar un frame. Campos o versiones desconocidos, host no loopback, frame sobredimensionado, nonce
-incorrecto, secuencia repetida/regresiva, tick fuera de `uint32`, `mapId` no positivo, desconexión o
-layout incompatible fallan cerrados y no activan un fallback. `initialSequence:0` fija que
-`sequence` comienza en cero para un
-nonce nuevo, crece dentro del rango entero seguro de JSON y nunca sobrevive al reinicio del canal.
+H8.4 fija TCP IPv4 con helper servidor y plugin cliente. El helper hará bind solo a
+`127.0.0.1:0`. El plugin entregará `bootstrap` por stdin, leerá `ready` por stdout, conectará al
+puerto efectivo, enviará `hello` y exigirá `welcome`. Todas esas superficies y TCP usan records con
+longitud `uint32` big-endian de cuatro bytes seguida por 1–512 bytes de JSON UTF-8; el parser
+incremental retiene como máximo 516 bytes simultáneos incluso ante chunks coalesced arbitrariamente
+grandes; libera su referencia y transfiere el buffer antes del callback, sin copiar el payload. Se rechazan
+longitud cero/513+, truncado, UTF-8 inválido, BOM, JSON inválido/no objeto/con trailing, duplicados y
+claves extra o ausentes. Host distinto de `127.0.0.1`, puerto fuera de `1..65535` y versión distinta
+de `1` fallan cerrados.
+
+Los mensajes exactos son `bootstrap(kind,version,token)`, `ready(kind,version,host,port)`,
+`hello(kind,version,token)`, `welcome(kind,version,nonce,heartbeatIntervalMs)`,
+`heartbeat(kind,version,nonce,sequence,sourceStatus)` y el sample H8.1 sin cambios
+`(version,nonce,sequence,tick,mapId,activity)`. El token CSPRNG por proceso tiene 32 bytes y 43
+caracteres base64url sin padding. El helper captura el token de bootstrap y exige exactamente ese
+valor en hello mediante comparación en tiempo constante sobre sus 32 bytes; bootstrap solo valida
+forma y no se compara con una expectativa externa. El token solo
+entra por stdin/bootstrap y TCP/hello, y nunca argv, entorno, fichero, log, stdout, stderr, discovery,
+settings, IndexedDB, Vault o telemetría. El nonce CSPRNG del helper es por conexión, 16 bytes/22 caracteres, y solo aparece en
+welcome/heartbeat/sample. Solo se admiten una conexión autenticada y una pendiente.
+
+Heartbeat y sample comparten secuencia: `initialSequence:0`, incremento exacto `+1`, entero seguro
+y cero gaps, replay, regresiones o wrap. Un nonce stale también cierra el canal; el rollover
+`uint32` del tick sí es válido. El heartbeat de control sale cada 500 ms y no sustituye al sample.
+`sourceStatus` es exactamente
+`warming_up|mapping_unavailable|layout_unsupported|sample_unstable|sample_invalid`; `link_stalled`
+pertenece solo a `sample.activity` tras 1.500 ms con tick estable. Canal, fuente y stalled no se
+colapsan en un único estado.
+
+Discovery vence en 5.000 ms; connect, hello, primer record secuenciado y salud del canal, en 2.000 ms
+cada uno. El estado declarativo cierra qué record acepta cada fase; un record válido en la fase
+incorrecta falla con `frame_schema`. Heartbeat y sample secuenciados válidos renuevan el deadline de
+salud. El backoff es `[250,500,1000,2000,5000]` ms, satura en 5.000 y solo se resetea al alcanzar
+`healthy` con uno de esos records, no al conectar ni durante hello/welcome. Antes de ready, cualquier
+fallo exige reiniciar proceso/bootstrap/discovery y nunca conecta sin puerto válido. Tras ready, un
+fallo de canal puede reconectar al mismo helper reteniendo token, pero invalida nonce/secuencia y
+exige nonce nuevo desde secuencia cero. `helper_exited` desde cualquier estado no terminal —también
+`reconnect_wait`— invalida token, puerto, nonce y secuencia, fuerza proceso nuevo e impide que
+`reconnect_due` conecte al helper muerto.
+Sleep no reproduce records perdidos. EOF de stdin invalida credenciales, apaga el helper y cierra
+listener, conexión pendiente y autenticada. Los errores de canal cerrados viven en el modelo y en
+[ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Los framer/validators/relojes son solo referencia de
+test: H8.4 no añade helper, socket, timer, proceso ni adapter productivo.
 
 Ni raw Mumble ni frames se persisten en settings, IndexedDB, Vault, logs o telemetría. La proyección
 válida vive solo en memoria el tiempo necesario para la comparación shadow o la propuesta futura.

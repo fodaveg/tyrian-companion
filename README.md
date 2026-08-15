@@ -11,7 +11,9 @@ H8.1 fixes that future contract and its guards. H8.2 adds only a non-production,
 probe spike under `spikes/`; no helper, IPC runtime or plugin integration is shipped.
 H8.3 provisionally accepts Rust for implementation,
 targeting only `x86_64-pc-windows-msvc` with a static CRT and one `tyrian-mumble-helper.exe`; no
-helper or IPC runtime is implemented.
+helper or IPC runtime is implemented. H8.4 fixes the executable local IPC protocol contract —framing,
+bootstrap/discovery, authentication, sequencing, heartbeat and recovery deadlines— without adding
+any product socket, process, timer or adapter.
 
 > [!WARNING]
 > `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
@@ -195,6 +197,16 @@ The current `0.1.0` vertical provides:
   Windows PE. Its source will live under `native/mumble-helper`; a separate ZIP will carry the EXE,
   manifest, checksums and licenses. Linux/Steam/Proton, macOS/CrossOver and Windows x64 QA, plus
   Authenticode signing, remain pending; this repository still contains no native helper or wiring.
+- H8.4 closes the protocol to TCP IPv4 `127.0.0.1` with bind port `0`, framed JSON records shared by
+  stdin/stdout/TCP, a 32-byte per-process token and 16-byte per-connection nonce, exact
+  bootstrap/ready/hello/welcome, shared heartbeat/sample sequencing and fail-closed deadlines. Its
+  exact lifecycle admits records only in their phase, binds hello to the process bootstrap token,
+  restarts discovery after any pre-ready/helper-exit failure, and reconnects in-process only after a
+  valid ready port. Sequenced records refresh health/reset backoff, stdin EOF is terminal, and its
+  incremental framer transfers payload ownership before callbacks and retains at most 516 bytes
+  simultaneously regardless of input chunk size. Its validators
+  and fake clock exist only as test references; product remains API-authoritative,
+  shadow, human-confirmed and non-persistent with no helper/runtime/socket/timer/process/adapter.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is deliberately

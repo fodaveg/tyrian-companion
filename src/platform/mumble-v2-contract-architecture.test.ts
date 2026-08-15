@@ -7,25 +7,53 @@ const CONTRACT_PATH = 'src/platform/mumble-v2-contract.ts';
 const CONTRACT_SOURCE = readFileSync(CONTRACT_PATH, 'utf8');
 const PRODUCTION_FILES = sourceFiles('src');
 const EXPECTED_FRAME_FIELDS = ['version', 'nonce', 'sequence', 'tick', 'mapId', 'activity'] as const;
+const EXPECTED_MESSAGE_FIELDS = {
+	MumbleV2BootstrapRecordV1: ['kind', 'version', 'token'],
+	MumbleV2ReadyRecordV1: ['kind', 'version', 'host', 'port'],
+	MumbleV2HelloRecordV1: ['kind', 'version', 'token'],
+	MumbleV2WelcomeRecordV1: ['kind', 'version', 'nonce', 'heartbeatIntervalMs'],
+	MumbleV2HeartbeatRecordV1: ['kind', 'version', 'nonce', 'sequence', 'sourceStatus'],
+	MumbleV2IpcFrameV1: EXPECTED_FRAME_FIELDS,
+} as const;
 
 const EXPECTED_EXPORTS = [
+	'MUMBLE_V2_CHANNEL_ERRORS',
 	'MUMBLE_V2_CONTRACT_VERSION',
 	'MUMBLE_V2_FIXED_SOURCES',
 	'MUMBLE_V2_IPC_FRAME_KEYS',
 	'MUMBLE_V2_LABYRINTH_MAP',
+	'MUMBLE_V2_LIFECYCLE_CONTRACT',
+	'MUMBLE_V2_LIFECYCLE_EVENTS',
+	'MUMBLE_V2_LIFECYCLE_STATES',
 	'MUMBLE_V2_MAX_FRAME_BYTES',
+	'MUMBLE_V2_MESSAGE_KEYS',
 	'MUMBLE_V2_RECOMMENDED_DEFAULTS',
 	'MUMBLE_V2_SOURCE_FIELDS',
 	'MUMBLE_V2_SOURCE_LIMITS',
+	'MUMBLE_V2_SOURCE_STATUSES',
 	'MUMBLE_V2_TRANSPORT_CONTRACT',
+	'MumbleV2BootstrapRecordV1',
+	'MumbleV2ChannelError',
 	'MumbleV2DerivedActivity',
 	'MumbleV2FixedSourceV1',
+	'MumbleV2HeartbeatRecordV1',
+	'MumbleV2HelloRecordV1',
 	'MumbleV2IpcFrameV1',
 	'MumbleV2LabyrinthMapV1',
+	'MumbleV2LifecycleContractV1',
+	'MumbleV2LifecycleEvent',
+	'MumbleV2LifecycleFailureRouteV1',
+	'MumbleV2LifecycleState',
+	'MumbleV2LifecycleTimeoutV1',
+	'MumbleV2LifecycleTransitionV1',
+	'MumbleV2ProtocolRecordV1',
+	'MumbleV2ReadyRecordV1',
 	'MumbleV2RecommendedDefaultsV1',
 	'MumbleV2SourceField',
 	'MumbleV2SourceLimitsV1',
+	'MumbleV2SourceStatus',
 	'MumbleV2TransportContractV1',
+	'MumbleV2WelcomeRecordV1',
 ] as const;
 
 const FORBIDDEN_CAPABILITIES = {
@@ -36,8 +64,8 @@ const FORBIDDEN_CAPABILITIES = {
 	traffic: /\b(?:pcap|packetSniffer|interceptTraffic|proxyTraffic)\b/u,
 	input: /\b(?:SendInput|simulateInput|keybd_event|mouse_event)\b/u,
 	automation: /\b(?:bot|macro|automate|automation|executeGameAction)\b/iu,
-	privateData: /\b(?:identity|characterName|fAvatarPosition|fCameraPosition|playerX|playerY|processId|pid)\b/iu,
-	network: /\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|node:net|node:http)\b/u,
+	privateData: /\b(?:identity|characterName|character|personaje|fAvatarPosition|fCameraPosition|playerX|playerY|position|movement|combat|loot|processId|pid)\b/iu,
+	network: /\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|node:net|node:http|socket)\b/u,
 	persistence: /\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
 	timer: /\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u,
 } as const;
@@ -82,7 +110,9 @@ const REVIEWED_DECLARATIVE_KINDS = new Set<ts.SyntaxKind>([
 	ts.SyntaxKind.StringKeyword,
 	ts.SyntaxKind.StringLiteral,
 	ts.SyntaxKind.TrueKeyword,
+	ts.SyntaxKind.TupleType,
 	ts.SyntaxKind.TypeAliasDeclaration,
+	ts.SyntaxKind.TypeLiteral,
 	ts.SyntaxKind.TypeOperator,
 	ts.SyntaxKind.TypeQuery,
 	ts.SyntaxKind.TypeReference,
@@ -92,7 +122,7 @@ const REVIEWED_DECLARATIVE_KINDS = new Set<ts.SyntaxKind>([
 	ts.SyntaxKind.VariableStatement,
 ]);
 
-describe('H8.1 Mumble v2 contract architecture boundary', () => {
+describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
 	it('censuses exactly one contractual production artifact', () => {
 		const discovered = PRODUCTION_FILES.filter(({ path, source }) => isMumbleArtifact(path, source))
 			.map(({ path }) => path);
@@ -102,7 +132,9 @@ describe('H8.1 Mumble v2 contract architecture boundary', () => {
 	it('keeps the reviewed artifact declarative and export-exact', () => {
 		expect(contractViolations(CONTRACT_SOURCE)).toEqual([]);
 		expect(exportedNames(CONTRACT_SOURCE)).toEqual(EXPECTED_EXPORTS);
-		expect(interfacePropertyNames(CONTRACT_SOURCE, 'MumbleV2IpcFrameV1')).toEqual(EXPECTED_FRAME_FIELDS);
+		for (const [name, fields] of Object.entries(EXPECTED_MESSAGE_FIELDS)) {
+			expect(interfacePropertyNames(CONTRACT_SOURCE, name)).toEqual(fields);
+		}
 	});
 
 	it('rejects a helper outside the exact census even when its name looks contractual', () => {
@@ -132,7 +164,10 @@ describe('H8.1 Mumble v2 contract architecture boundary', () => {
 	});
 
 	it('turns red for personal, spatial or process identity fields in the frame contract', () => {
-		for (const field of ['identity', 'characterName', 'fAvatarPosition', 'playerX', 'processId', 'pid']) {
+		for (const field of [
+			'identity', 'characterName', 'personaje', 'fAvatarPosition', 'playerX', 'processId', 'pid',
+			'position', 'movement', 'combat', 'loot',
+		]) {
 			expect(contractViolations(`${field}: string;`)).toContain('privateData');
 		}
 		const expanded = 'export interface MumbleV2IpcFrameV1 { version: 1; identity?: string }';

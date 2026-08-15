@@ -11,7 +11,7 @@
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
-- `platform`: contratos declarativos para integraciones opcionales; H8.1 no contiene adapters ni I/O.
+- `platform`: contratos declarativos para integraciones opcionales; H8.1/H8.4 no contienen adapters ni I/O.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
@@ -65,7 +65,7 @@ sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 
-H8.1 contract -/-> spike H8.2 aislado -/-> plugin, IPC o release
+H8.1/H8.4 contract -/-> spike H8.2 aislado -/-> plugin, IPC o release
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -196,6 +196,50 @@ Authenticode y todo el empaquetado productivo siguen pendientes. El guard H8.3 m
 solo documental: todavía no permite `Cargo.toml`, `.csproj`, EXE, DLL ni ningún fichero bajo la raíz nativa.
 La decisión completa y sus triggers viven en
 [ADR 0001](adr/0001-h8-3-native-mumble-helper.md).
+
+H8.4 cierra el protocolo local sin crear su runtime. Helper y plugin tendrán roles fijos de servidor
+y cliente TCP IPv4, respectivamente. El servidor solo hará bind a `127.0.0.1:0`; el plugin entregará
+un `bootstrap` framed por stdin, leerá un `ready` framed por stdout, conectará al puerto efectivo,
+enviará `hello` y exigirá `welcome`. Stdin, stdout y TCP comparten el mismo record: cuatro bytes
+`uint32` big-endian de longitud y 1–512 bytes de JSON UTF-8, con buffer completo máximo de 516 bytes. UTF-8 inválido, BOM, longitud cero o
+mayor que 512, truncado, JSON inválido/no objeto/con trailing, claves duplicadas, extra o ausentes
+cierran el canal. No hay downgrade: `version` es exactamente `1`.
+
+Los seis mensajes tienen esquemas cerrados: `bootstrap(kind,version,token)`,
+`ready(kind,version,host,port)`, `hello(kind,version,token)`,
+`welcome(kind,version,nonce,heartbeatIntervalMs)`,
+`heartbeat(kind,version,nonce,sequence,sourceStatus)` y el sample H8.1 sin cambios
+`(version,nonce,sequence,tick,mapId,activity)`. El plugin genera con CSPRNG un token de 32 bytes,
+base64url sin padding de 43 caracteres, por proceso futuro del helper; se compara en tiempo constante
+sobre sus 32 bytes exactos: el helper captura bootstrap y exige exactamente ese token en hello.
+Bootstrap no se compara con una expectativa externa. Solo stdin/bootstrap y TCP/hello pueden transportarlo, nunca argv,
+entorno, fichero, log, stdout, stderr, discovery, settings, IndexedDB, Vault o telemetría. El helper genera por conexión
+un nonce CSPRNG de 16 bytes/22 caracteres y lo expone solo en welcome, heartbeat y sample. Se admite
+como máximo una conexión autenticada y otra pendiente.
+
+Heartbeat y sample comparten una única secuencia desde cero y cada record aumenta exactamente uno.
+Gap, replay, regresión, entero inseguro y wrap son `sequence_mismatch`; un nonce anterior es
+`nonce_mismatch`. El rollover `uint32` de tick sí es válido. El heartbeat de 500 ms es control y no
+un sample vacío: su `sourceStatus` cerrado es
+`warming_up|mapping_unavailable|layout_unsupported|sample_unstable|sample_invalid`. La actividad
+`link_stalled` sigue perteneciendo al sample y aparece tras 1.500 ms sin avance de tick; lifecycle
+del canal, salud de fuente y stalled son ejes distintos.
+
+Discovery vence a 5.000 ms. Connect, hello, primer record secuenciado y salud del canal vencen cada
+uno a 2.000 ms. El framer incremental retiene como máximo 516 bytes simultáneos aunque el chunk
+recibido contenga miles de records; transfiere el buffer después de liberar su referencia interna,
+sin copiar el payload durante el callback. Cada fase admite solo sus records exactos; un record correcto fuera de fase es
+`frame_schema`. Heartbeat y sample secuenciados válidos renuevan la salud y son los únicos eventos
+que resetean el backoff al dejar el canal `healthy`. Tras cierre se reconecta con
+`[250,500,1000,2000,5000]` ms, saturando en 5.000. Antes de ready, cualquier fallo reinicia proceso,
+bootstrap y discovery; tras ready, el mismo helper conserva token pero rota nonce y reinicia secuencia.
+`helper_exited` desde cualquier estado no terminal, incluido `reconnect_wait`, invalida también el
+puerto e impide que `reconnect_due` use el helper muerto. Sleep no reproduce records perdidos y un deadline
+vencido invalida canal/nonce/secuencia. EOF de stdin apaga el helper, invalida credenciales y cierra listener y conexiones. Los errores exactos
+son `discovery_timeout|discovery_invalid|connect_timeout|auth_rejected|version_unsupported|frame_length|frame_utf8|frame_json|frame_schema|nonce_mismatch|sequence_mismatch|heartbeat_timeout|peer_closed|helper_exited`.
+El contrato completo parseable vive en [ADR 0002](adr/0002-h8-4-local-ipc-protocol.md). Framer,
+validators, secuenciador y fake clock son referencias `*.test.ts`; no se importan, empaquetan ni
+convierten H8.4 en socket, scheduler, proceso, helper o adapter productivo.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 
