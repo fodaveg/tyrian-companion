@@ -238,6 +238,13 @@ function testImplementedHelperSabotages() {
 		['invalid-frame-zeroize', 'native/mumble-helper/src/framing.rs', 'payload.zeroize()', 'payload.clear()', 'native-framing-term:payload.zeroize()'],
 		['partial-frame-zeroize', 'native/mumble-helper/src/framing.rs', 'if let Err(error) = read_exact_classified(reader, &mut payload)', 'read_exact_classified(reader, &mut payload)?;', 'native-framing-term:if let Err(error) = read_exact_classified(reader, &mut payload)'],
 		['raw-bootstrap-zeroize', 'native/mumble-helper/src/main.rs', 'bootstrap_frame.zeroize()', 'bootstrap_frame.clear()', 'native-server-term:bootstrap_frame.zeroize()'],
+		[
+			'stdin-eof-publish-order',
+			'native/mumble-helper/src/main.rs',
+			'shutdown.store(true, Ordering::Release);\n        drop(sender);',
+			'drop(sender);\n        shutdown.store(true, Ordering::Release);',
+			'native-server-order:shutdown-before-disconnect',
+		],
 		['partial-tcp-zeroize', 'native/mumble-helper/src/main.rs', 'read_until(listener, stream, &mut payload, deadline, shutdown).is_err()', 'read_until(listener, stream, &mut payload, deadline, shutdown).is_ok()', 'native-server-term:read_until(listener, stream, &mut payload, deadline, shutdown).is_err()'],
 		['heartbeat-timeout', 'native/mumble-helper/src/protocol.rs', 'HEARTBEAT_TIMEOUT_MS', 'HEARTBEAT_DISABLED_MS', 'native-protocol-term:HEARTBEAT_TIMEOUT_MS'],
 		['cadence-scheduler', 'native/mumble-helper/src/source.rs', 'CadenceSchedule', 'CatchUpSchedule', 'native-cadence-term:CadenceSchedule'],

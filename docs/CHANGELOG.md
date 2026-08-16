@@ -209,6 +209,9 @@
   ms, una llamada tardía agenda desde `now+500` y 2 s sin record cierran sin catch-up.
 - Añadidos lifecycle tests de EOF, slowloris, cliente extra, auth y reconnect, guard positivo,
   supply-chain/staging sintético y CI Windows para PE x64/static CRT/reproducibilidad.
+- El EOF previo al bootstrap publica `shutdown` con orden Release antes de desconectar el canal;
+  el receptor Acquire ya no puede confundir un cierre limpio con un fallo según el scheduler de
+  Windows, y el guard v17 sabotea causalmente el orden inverso.
 - CI solo conserva el marker corto `UNSIGNED-NOT-FOR-RELEASE`; el ZIP del plugin sigue con tres
   ficheros. H8.6 añade el cliente core aislado, pero Authenticode, publicación, launcher/wiring del
   plugin, firma y QA real siguen pendientes.

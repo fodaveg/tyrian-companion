@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, readlinkSync, statSync } from 'n
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const H8_HELPER_DECISION_CONTRACT_VERSION = 16;
+export const H8_HELPER_DECISION_CONTRACT_VERSION = 17;
 
 const ADR_PATH = 'docs/adr/0001-h8-3-native-mumble-helper.md';
 const RUNTIME_ADR_PATH = 'docs/adr/0003-h8-5-native-helper-runtime.md';
@@ -32,7 +32,7 @@ const RUNTIME_BLOCK_SHA256 = 'eb8cced7b9035ecb7b06ee7e37a70e26b5035da673da988058
 const NATIVE_SOURCE_SHA256 = new Map([
 	['native/mumble-helper/src/framing.rs', '8996af14503a161af83305a9426ad2a1149a51ab1eae321bb0462ae1401e88cd'],
 	['native/mumble-helper/src/lib.rs', '0dc14b618c62dda5082f72810d62fae0beb812f73a8d7bf369b488cf049f26c1'],
-	['native/mumble-helper/src/main.rs', 'c58ec63be4d9c7ed1b5a391a0fbcf338e6980fc85dd64d3fada6bca8cca11cdf'],
+	['native/mumble-helper/src/main.rs', '8199d36848c37848f6ab6d482ccaff1dc56c50a77e6199ab8aa017d1c7dcef5e'],
 	['native/mumble-helper/src/protocol.rs', '98a73fddc63fd023ad4f7cad2a52b06a7ed1d906c9da4c5388a0a5a0df789ac9'],
 	['native/mumble-helper/src/source.rs', '008997c8d34672bb351b021b57d609f4db76e2092189b561ded69a927c415c09'],
 	['native/mumble-helper/src/win32.rs', '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977'],
@@ -389,6 +389,9 @@ function validateNativeImplementation(root, findings) {
 		'error.into_bytes()',
 	]) {
 		if (!main.includes(term)) findings.push(`native-server-term:${term}`);
+	}
+	if (!main.includes('shutdown.store(true, Ordering::Release);\n        drop(sender);')) {
+		findings.push('native-server-order:shutdown-before-disconnect');
 	}
 	const framing = production.find(([path]) => path.endsWith('/framing.rs'))?.[1] ?? '';
 	for (const term of [

@@ -115,8 +115,8 @@ fn stdin_task(sender: mpsc::SyncSender<String>, shutdown: Arc<AtomicBool>) {
     if let Ok(frame) = read_frame(&mut input) {
         let _ = sender.send(frame);
     } else {
-        drop(sender);
         shutdown.store(true, Ordering::Release);
+        drop(sender);
         return;
     }
     let mut byte = [0_u8; 1];

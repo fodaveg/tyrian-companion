@@ -103,7 +103,8 @@ provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuen
 llevará manifest, checksums y licencias. Linux/Steam/Proton primaria, macOS/CrossOver secundaria y
 Windows x64 beta siguen `QA=pending`; ejecución nativa Linux/macOS, Windows x86/ARM64, móvil y Wine
 fuera de Steam/Proton/CrossOver quedan unsupported. Authenticode sigue pendiente y bloquea release.
-El guard v16 y sus sabotajes mantienen un censo positivo. Fuera de
+El guard v17 y sus sabotajes mantienen un censo positivo, incluido el orden causal que publica
+shutdown antes de desconectar stdin para que EOF previo al bootstrap sea limpio también en Windows. Fuera de
 docs/examples/fixtures/tests, fuente Rust/C#, configuración Cargo/toolchain exacta y señales de
 prefijo Mumble Link por path o contenido quedan censadas globalmente; outputs
 EXE/DLL/PDB/LIB/OBJ/RLIB/RMETA tracked/no ignorados y symlinks relevantes siempre fallan. Un PDB
