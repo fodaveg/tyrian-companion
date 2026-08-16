@@ -125,7 +125,8 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		const pack = input.economyPack;
 		if (pack.activation.status === 'pending_human_review') return review('activation_pending');
 		if (pack.activation.status === 'revoked') return review('activation_revoked');
-		if (Date.parse(input.asOf) < Date.parse(pack.publishedAt)
+		if (Date.parse(input.asOf) < Date.parse(pack.activation.activatedAt)
+			|| Date.parse(input.asOf) < Date.parse(pack.publishedAt)
 			|| Date.parse(input.asOf) >= Date.parse(pack.validUntil)) return review('activation_expired');
 		if (!ruleBinding(input)) return review('rule_incoherent');
 		if (!modelBinding(pack)) return review('model_incoherent');
@@ -235,18 +236,37 @@ export function isInventoryContainerPriceEvidence(value: unknown): value is Inve
 	} catch { return false; }
 }
 
-/** Pending built-in candidate: technical capability exists, human activation does not. */
-export function pendingHalloweenContainerEconomyPack(binding: {
+type HalloweenContainerEconomyBinding = {
 	rulePack: { id: string; version: number; sha256: string; ruleId: string };
 	knowledgePackSha256: string;
-}): InventoryContainerEconomyPackV1 {
+};
+
+/** Pending candidate retained for fail-closed tests and future review workflows. */
+export function pendingHalloweenContainerEconomyPack(
+	binding: HalloweenContainerEconomyBinding,
+): InventoryContainerEconomyPackV1 {
+	return halloweenContainerEconomyPack(binding, { status: 'pending_human_review', activatedAt: null });
+}
+
+/** Human-reviewed built-in pack. Decisions remain manual and evidence-gated. */
+export function enabledHalloweenContainerEconomyPack(
+	binding: HalloweenContainerEconomyBinding,
+	activatedAt: string,
+): InventoryContainerEconomyPackV1 {
+	return halloweenContainerEconomyPack(binding, { status: 'enabled', activatedAt });
+}
+
+function halloweenContainerEconomyPack(
+	binding: HalloweenContainerEconomyBinding,
+	activation: InventoryContainerEconomyActivation,
+): InventoryContainerEconomyPackV1 {
 	const model = halloweenTrickOrTreatBagModel();
 	const candidate: InventoryContainerEconomyPackV1 = {
 		version: 1,
 		packId: 'tc.inventory-container-economy.halloween-v1',
 		publishedAt: '2026-08-14T20:30:00.000Z',
 		validUntil: '2026-11-12T18:04:33.000Z',
-		activation: { status: 'pending_human_review', activatedAt: null },
+		activation: structuredClone(activation),
 		rulePack: structuredClone(binding.rulePack),
 		knowledgePackSha256: binding.knowledgePackSha256,
 		modelFingerprint: sha256StandardCanonicalValue(model),
@@ -267,7 +287,7 @@ export function pendingHalloweenContainerEconomyPack(binding: {
 		sha256: '',
 	};
 	candidate.sha256 = sha256InventoryContainerEconomyPack(candidate);
-	if (!isInventoryContainerEconomyPack(candidate)) throw new Error('Invalid pending container economy pack.');
+	if (!isInventoryContainerEconomyPack(candidate)) throw new Error('Invalid container economy pack.');
 	return structuredClone(candidate);
 }
 

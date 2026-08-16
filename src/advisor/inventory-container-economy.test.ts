@@ -13,13 +13,20 @@ import {
 	type InventoryContainerEconomyInputV1,
 } from './inventory-container-economy';
 
-const AS_OF = '2026-08-14T20:31:00.000Z';
+const AS_OF = '2026-08-16T05:23:00.000Z';
 
 describe('H4.19 inventory container economy', () => {
-	it('ships the complete model and nine-id price request behind a disabled human gate', () => {
+	it('retains a complete pending fixture that fails closed before human activation', () => {
 		const value = fixture('open');
-		value.economyPack.activation = { status: 'pending_human_review', activatedAt: null };
-		value.economyPack.sha256 = sha256InventoryContainerEconomyPack(value.economyPack);
+		value.economyPack = pendingHalloweenContainerEconomyPack({
+			rulePack: {
+				id: value.rulePack.id,
+				version: value.rulePack.version,
+				sha256: value.rulePack.sha256,
+				ruleId: value.rulePack.rules[0]!.ruleId,
+			},
+			knowledgePackSha256: value.rulePack.knowledgePackSha256,
+		});
 		expect(isInventoryContainerEconomyPack(value.economyPack)).toBe(true);
 		expect(value.economyPack.expectedPriceItemIds).toEqual([
 			36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002,
@@ -42,6 +49,16 @@ describe('H4.19 inventory container economy', () => {
 		expect(result.explanation.threshold).toMatchObject({ marginBps: 1_000 });
 		expect(result.explanation.comparison.rule).toBe('open_at_or_above_threshold');
 		expect(JSON.stringify(result.decision)).not.toMatch(/listing|executor|background|discard/u);
+	});
+
+	it('makes human activation effective at its exact timestamp, never before it', () => {
+		const before = fixture('open');
+		before.asOf = '2026-08-16T05:22:23.999Z';
+		expect(evaluateInventoryContainerEconomy(before)).toEqual({ status: 'review', reason: 'activation_expired' });
+		const exact = fixture('open');
+		exact.asOf = '2026-08-16T05:22:24.000Z';
+		exact.prices.capturedAt = exact.asOf;
+		expect(evaluateInventoryContainerEconomy(exact)).toMatchObject({ status: 'ready', decision: { action: 'open' } });
 	});
 
 	it('keeps reservations and exceptions outside the economic quantity', () => {
@@ -109,24 +126,10 @@ describe('H4.19 inventory container economy', () => {
 });
 
 function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyInputV1 {
-	const loaded = createInventoryAdvisorBuiltinBundleProvider().load('2026-08-14T20:31:00.000Z');
+	const loaded = createInventoryAdvisorBuiltinBundleProvider().load(AS_OF);
 	if (loaded.status !== 'available') throw new Error('Expected built-in bundle.');
 	const rulePack = structuredClone(loaded.bundle.rulePack);
-	rulePack.reviewStatus = 'human_reviewed';
-	rulePack.reviewedAt = '2026-08-14T20:30:00.000Z';
-	rulePack.rules[0]!.recommendation = { status: 'enabled' };
-	rulePack.sha256 = sha256InventoryRulePack(rulePack);
-	const economyPack = pendingHalloweenContainerEconomyPack({
-		rulePack: {
-			id: rulePack.id,
-			version: rulePack.version,
-			sha256: rulePack.sha256,
-			ruleId: rulePack.rules[0]!.ruleId,
-		},
-		knowledgePackSha256: rulePack.knowledgePackSha256,
-	});
-	economyPack.activation = { status: 'enabled', activatedAt: '2026-08-14T20:30:30.000Z' };
-	economyPack.sha256 = sha256InventoryContainerEconomyPack(economyPack);
+	const economyPack = structuredClone(loaded.bundle.economyPack);
 	const outcomeBid = route === 'open' ? 100 : 1;
 	const sackBid = route === 'open' ? 1 : route === 'sell' ? 10_000 : 1;
 	const items = economyPack.expectedPriceItemIds.map((itemId) => ({
@@ -160,7 +163,7 @@ function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyIn
 			accountId: 'account-1',
 			snapshotId: 'snapshot-1',
 			schemaVersion: '2024-07-20T01:00:00.000Z',
-			capturedAt: '2026-08-14T20:30:30.000Z',
+			capturedAt: '2026-08-16T05:22:30.000Z',
 			source: 'gw2-commerce-prices',
 			requestedItemIds: structuredClone(economyPack.expectedPriceItemIds),
 			status: 'complete',

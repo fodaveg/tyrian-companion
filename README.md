@@ -194,7 +194,9 @@ The current `0.1.0` vertical provides:
   `salvage` are explicitly not applicable. H4.19 adds a fresh sibling batch for the bag plus its eight liquid
   outcomes and a 10% manual open-versus-sell/vendor comparison. Items without curated use/open/salvage
   knowledge can still show their independently reproduced manual liquid route (instant sell, listing or
-  vendor); the built-in 36038 activation remains pending human review and cannot activate opening or discard.
+  vendor). David approved the source-backed rule and economic pack on 2026-08-16: complete fresh evidence
+  can now recommend manual `open`, `sell` or `vendor` for 36038 with the fixed 10% margin. Partial or
+  incoherent evidence still returns review, and discard remains unavailable.
 	The view captures character bags plus shared inventory independently in one bounded pass per attempt;
 	a transient partial pass can trigger one retry, and each explicit Refresh request has a 30-second timeout.
 	Bank, materials and Trading Post delivery are captured as optional stores and remain unchecked by
@@ -255,8 +257,8 @@ The current `0.1.0` vertical provides:
   settings, UI, packaging or platform QA.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
-account operations are intentionally not implemented. The sole curated capability is deliberately
-review-only until its H4.19 pack and economics are human-approved. Vault writes are
+account operations are intentionally not implemented. The sole curated capability is human-reviewed
+and may emit only a manual recommendation when its H4.19 evidence is complete and fresh. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
 JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
@@ -520,7 +522,7 @@ For H4.19, the same explicit Refresh may additionally capture one identity-bound
 exactly `36038, 36041, 36059, 36060, 36061, 79673, 79677, 79679, 89002`. The advisor validates exact
 coverage, TTL, hashes, rule/model bindings, reservations and keep exceptions before calling the kernel.
 Complete evidence and a 10% margin can produce only manual `open`, `sell` or `vendor`; partial, revoked,
-expired or incoherent evidence produces `review`. The shipped pack is pending/disabled by default.
+expired or incoherent evidence produces `review`. The shipped pack was human-approved on 2026-08-16.
 
 `ActiveSessionLeaseCoordinator` lazily opens `tyrian-companion-coordination`, outside vault notes,
 settings, `data.json`, and `SecretStorage`. Acquire is single-flight and idempotent for the same

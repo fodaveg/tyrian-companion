@@ -80,16 +80,16 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(preferences).not.toHaveBeenCalled();
 	});
 
-	it('loads the built-in bundle before expiry without activating curated economic actions', async () => {
+	it('loads the human-reviewed bundle but invents no action when economic evidence is unavailable', async () => {
 		const fixture = reviewedDiscardFixture();
-		rebaseEvidence(fixture.evidence, '2026-08-14T20:30:30.000Z');
+		rebaseEvidence(fixture.evidence, '2026-08-16T05:22:30.000Z');
 		const expectedPriceItemIds = [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002];
 		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence, containerPrices: {
 			version: INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION,
 			accountId: fixture.evidence.accountId,
 			snapshotId: fixture.evidence.snapshotId,
 			schemaVersion: fixture.evidence.schemaVersion,
-			capturedAt: '2026-08-14T20:30:30.000Z',
+			capturedAt: '2026-08-16T05:22:30.000Z',
 			source: 'gw2-commerce-prices' as const,
 			requestedItemIds: expectedPriceItemIds,
 			status: 'unavailable' as const,
@@ -100,7 +100,7 @@ describe('H5.11 inventory advisor workflow', () => {
 			capture: { capture },
 			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-			now: () => Date.parse('2026-08-14T20:31:00.000Z'),
+			now: () => Date.parse('2026-08-16T05:23:00.000Z'),
 		});
 		const result = await workflow.refresh('es');
 		expect(capture).toHaveBeenCalledOnce();
@@ -116,8 +116,8 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(finalActions).toEqual(['keep']);
 		expect(result.source.result.proofs).toEqual([]);
 		const presentation = buildInventoryAdvisorPresentation(result.source);
-		expect(presentation.status).toBe('limited');
-		if (presentation.status !== 'limited') throw new Error('Expected limited review-only presentation.');
+		expect(presentation.status).toBe('ready');
+		if (presentation.status !== 'ready') throw new Error('Expected ready no-action presentation.');
 		expect(presentation.discardReview).toEqual({ status: 'unavailable' });
 		expect(presentation.groups.flatMap((group) => group.rows.map((row) => row.action))).toEqual(['keep']);
 		expect(JSON.stringify(presentation)).not.toMatch(/"(?:sell|list|vendor|salvage|use|open|discard_review|discard_candidate)"/u);

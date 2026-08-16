@@ -34,7 +34,7 @@ import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
 
 const BEFORE_EXPIRY = '2026-11-11T23:59:59.999Z';
 
-describe('inventory advisor H4.18 built-in curated review bundle', () => {
+describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	it('loads the exact deterministic policy and source-backed curated packs', () => {
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
 		expect(result.status).toBe('available');
@@ -44,16 +44,14 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 			policy: { version: 1, maxPriceAgeMs: 900_000, listingMinimumAdvantageBps: 1_000 },
 			rulePack: {
 				id: 'tc.inventory-rules.curated-v2', version: 2,
-				reviewStatus: 'pending_human_review', reviewedAt: null,
-				sha256: '1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681',
-				rules: [{ ruleId: 'open-36038-capability-v1', recommendation: {
-					status: 'review_only', reason: 'economic_activation_pending',
-				} }],
+				reviewStatus: 'human_reviewed', reviewedAt: '2026-08-16T05:22:24.000Z',
+				sha256: 'dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c',
+				rules: [{ ruleId: 'open-36038-capability-v1', recommendation: { status: 'enabled' } }],
 			},
 			knowledgePack: { id: 'tc.inventory-knowledge.curated-v2', version: 2 },
 			economyPack: {
 				packId: 'tc.inventory-container-economy.halloween-v1',
-				activation: { status: 'pending_human_review', activatedAt: null },
+				activation: { status: 'enabled', activatedAt: '2026-08-16T05:22:24.000Z' },
 				expectedPriceItemIds: [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002],
 				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate' },
 			},
@@ -73,7 +71,7 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(sha256InventoryKnowledgePack(result.bundle.knowledgePack)).toBe(result.bundle.knowledgePack.sha256);
 		expect(sha256InventoryContainerEconomyPack(result.bundle.economyPack)).toBe(result.bundle.economyPack.sha256);
 		expect(result.bundle.rulePack).toMatchObject({
-			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: null, reviewStatus: 'pending_human_review',
+			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-16T05:22:24.000Z', reviewStatus: 'human_reviewed',
 			validUntil: '2026-11-12T18:04:33.000Z',
 		});
 		expect(result.bundle.knowledgePack).toMatchObject({
@@ -90,8 +88,8 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(sha256StandardCanonicalValue(content)).toBe(createHash('sha256').update(canonical(content)).digest('hex'));
 	});
 
-	it('keeps the curated open capability under review until its human economic activation exists', () => {
-		const asOf = '2026-08-14T20:31:00.000Z';
+	it('keeps the activated capability under review when its economic evidence is absent', () => {
+		const asOf = '2026-08-16T05:23:00.000Z';
 		const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf);
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const input = advisorInput(loaded.bundle, asOf, 36038);
@@ -99,15 +97,15 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 
 		const engineInput = { input, knowledgePack: loaded.bundle.knowledgePack };
 		const producerResult = classifyInventoryAdvisor(engineInput);
-		expect(producerResult.status).toBe('limited');
+		expect(producerResult.status).toBe('ready');
 		expect(isInventoryAdvisorResultForInput(producerResult, input, loaded.bundle.knowledgePack)).toBe(true);
 		const producerDecisions = producerResult.report?.lines.flatMap((line) => line.decisions) ?? [];
 		expect(producerDecisions.length).toBeGreaterThan(0);
 		expect(producerDecisions).toEqual([expect.objectContaining({ action: 'review', ruleId: null })]);
-		expect(producerResult.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'economic_activation_pending' }));
+		expect(producerResult.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'price_partial' }));
 
 		const allowlistResult = applyInventoryDiscardAllowlist({ engineInput, producerResult });
-		expect(allowlistResult.status).toBe('limited');
+		expect(allowlistResult.status).toBe('ready');
 		expect(isInventoryDiscardAllowlistResultForInput(allowlistResult, { engineInput, producerResult })).toBe(true);
 		const finalActions = allowlistResult.report?.lines.flatMap((line) => line.decisions.map((decision) => decision.action)) ?? [];
 		expect(finalActions).toEqual(['review']);
@@ -115,8 +113,8 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(finalActions.some((action) => ['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(action))).toBe(false);
 	});
 
-	it('does not let the pending curated pack hide independent market routes for other items', () => {
-		const asOf = '2026-08-14T20:31:00.000Z';
+	it('does not let the curated pack hide independent market routes for other items', () => {
+		const asOf = '2026-08-16T05:23:00.000Z';
 		const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf);
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const input = advisorInput(loaded.bundle, asOf, 10);
@@ -151,24 +149,17 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		expect(isInventoryAdvisorResultForInput(result, input, loaded.bundle.knowledgePack)).toBe(true);
 	});
 
-	it('routes an explicitly human-enabled clone through the H4.19 kernel and reproduces its result', () => {
-		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:31:00.000Z');
+	it('routes the human-enabled built-in through the H4.19 kernel and reproduces its result', () => {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:23:00.000Z');
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const bundle = structuredClone(loaded.bundle);
-		bundle.rulePack.reviewStatus = 'human_reviewed';
-		bundle.rulePack.reviewedAt = '2026-08-14T20:30:00.000Z';
-		bundle.rulePack.rules[0]!.recommendation = { status: 'enabled' };
-		bundle.rulePack.sha256 = sha256InventoryRulePack(bundle.rulePack);
-		bundle.economyPack.rulePack.sha256 = bundle.rulePack.sha256;
-		bundle.economyPack.activation = { status: 'enabled', activatedAt: '2026-08-14T20:30:30.000Z' };
-		bundle.economyPack.sha256 = sha256InventoryContainerEconomyPack(bundle.economyPack);
-		const input = advisorInput(bundle, '2026-08-14T20:31:00.000Z', 36_038);
+		const input = advisorInput(bundle, '2026-08-16T05:23:00.000Z', 36_038);
 		const prices: InventoryContainerPriceEvidenceV1 = {
 			version: 1 as const,
 			accountId: input.snapshot.accountId,
 			snapshotId: input.snapshot.snapshotId,
 			schemaVersion: PINNED_SCHEMA,
-			capturedAt: '2026-08-14T20:30:30.000Z',
+			capturedAt: '2026-08-16T05:22:30.000Z',
 			source: 'gw2-commerce-prices' as const,
 			requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
 			status: 'complete' as const,
@@ -203,7 +194,7 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 			expect(isInventoryAdvisorResultForInput(routedResult, input, bundle.knowledgePack)).toBe(false);
 		}
 		const revokedEconomy = structuredClone(engineInput.containerEconomy);
-		revokedEconomy.pack.activation = { status: 'revoked', activatedAt: '2026-08-14T20:30:30.000Z' };
+		revokedEconomy.pack.activation = { status: 'revoked', activatedAt: '2026-08-16T05:22:24.000Z' };
 		revokedEconomy.pack.sha256 = sha256InventoryContainerEconomyPack(revokedEconomy.pack);
 		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack, revokedEconomy)).toBe(false);
 		const revokedResult = classifyInventoryAdvisor({ ...engineInput, containerEconomy: revokedEconomy });
@@ -225,9 +216,9 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const beforeExpiry = rebaseInput(advisorInput(loaded.bundle, '2026-11-12T18:04:32.999Z', 36038), '2026-11-12T18:04:32.999Z');
 		const beforeEngine = { input: beforeExpiry, knowledgePack: loaded.bundle.knowledgePack };
 		const beforeResult = classifyInventoryAdvisor(beforeEngine);
-		expect(beforeResult.status).toBe('limited');
+		expect(beforeResult.status).toBe('ready');
 		expect(isInventoryAdvisorResultForInput(beforeResult, beforeExpiry, loaded.bundle.knowledgePack)).toBe(true);
-		expect(applyInventoryDiscardAllowlist({ engineInput: beforeEngine, producerResult: beforeResult }).status).toBe('limited');
+		expect(applyInventoryDiscardAllowlist({ engineInput: beforeEngine, producerResult: beforeResult }).status).toBe('ready');
 
 		const atExpiry = rebaseInput(advisorInput(loaded.bundle, '2026-11-12T18:04:33.000Z', 36038), '2026-11-12T18:04:33.000Z');
 		const atExpiryEngine = { input: atExpiry, knowledgePack: loaded.bundle.knowledgePack };
@@ -250,13 +241,13 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 	});
 
 	it('rejects a forged economic reason when duplicate V2 capabilities conflict', () => {
-		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:31:00.000Z');
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:23:00.000Z');
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const bundle = structuredClone(loaded.bundle);
 		bundle.rulePack.rules.push({ ...bundle.rulePack.rules[0]!, ruleId: 'open-36038-capability-duplicate-v1' });
 		bundle.rulePack.rules.sort((left, right) => left.itemId - right.itemId || left.action.localeCompare(right.action) || left.ruleId.localeCompare(right.ruleId));
 		bundle.rulePack.sha256 = sha256InventoryRulePack(bundle.rulePack);
-		const input = advisorInput(bundle, '2026-08-14T20:31:00.000Z', 36038);
+		const input = advisorInput(bundle, '2026-08-16T05:23:00.000Z', 36038);
 		const engineInput = { input, knowledgePack: bundle.knowledgePack };
 		const producer = classifyInventoryAdvisor(engineInput);
 		expect(producer.report?.lines[0]?.reasons).toContainEqual(expect.objectContaining({ code: 'rule_conflict' }));
@@ -318,13 +309,13 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const result = createInventoryAdvisorBuiltinBundleProvider().load(BEFORE_EXPIRY);
 		if (result.status !== 'available') throw new Error(`expected bundle for ${locale}`);
 		expect(JSON.stringify(result.bundle)).not.toContain('locale');
-		expect(result.bundle.rulePack.sha256).toBe('1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681');
+		expect(result.bundle.rulePack.sha256).toBe('dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c');
 		expect(result.bundle.knowledgePack.sha256).toBe('505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686');
 	});
 
-	it('treats validUntil as an exclusive boundary and rejects invalid clocks', () => {
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:29:59.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-14T20:30:00.000Z').status).toBe('available');
+	it('treats human activation as inclusive and validUntil as exclusive', () => {
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:23.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:24.000Z').status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY).status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-12T18:04:33.000Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
@@ -346,6 +337,19 @@ describe('inventory advisor H4.18 built-in curated review bundle', () => {
 		const alteredHash = structuredClone(loaded.bundle);
 		alteredHash.rulePack.sha256 = '0'.repeat(64);
 		expect(createInventoryAdvisorBuiltinBundleProvider(alteredHash).load(BEFORE_EXPIRY)).toEqual({
+			status: 'unavailable', reason: 'invalid', bundle: null,
+		});
+		const approvalRemoved = structuredClone(loaded.bundle);
+		approvalRemoved.rulePack.reviewStatus = 'pending_human_review';
+		approvalRemoved.rulePack.reviewedAt = null;
+		approvalRemoved.rulePack.rules[0]!.recommendation = {
+			status: 'review_only', reason: 'economic_activation_pending',
+		};
+		approvalRemoved.rulePack.sha256 = sha256InventoryRulePack(approvalRemoved.rulePack);
+		approvalRemoved.economyPack.rulePack.sha256 = approvalRemoved.rulePack.sha256;
+		approvalRemoved.economyPack.activation = { status: 'pending_human_review', activatedAt: null };
+		approvalRemoved.economyPack.sha256 = sha256InventoryContainerEconomyPack(approvalRemoved.economyPack);
+		expect(createInventoryAdvisorBuiltinBundleProvider(approvalRemoved).load(BEFORE_EXPIRY)).toEqual({
 			status: 'unavailable', reason: 'invalid', bundle: null,
 		});
 		const extraField = { ...loaded.bundle, executor: 'forbidden' };

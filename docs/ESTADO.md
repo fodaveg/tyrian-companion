@@ -144,7 +144,7 @@ H6.3 fija que jackpots excluidos no alteran el EV ni la decisión y que un preci
 
 H6.6 añade un benchmark reproducible de cuenta grande, aislado de I/O: fuerza una primera pasada divergente y dos convergentes mediante la ruta pura productiva, finaliza snapshots estables, los compara, clasifica la frontera y valora 4.840 ganancias. Sus 21 muestras fijan mediana/p95 y la retención acumulada contra un baseline único post-warmup; CI prueba verde y sabotaje de heap explícito en Node 22 y 24, sin usar la duración de Vitest como evidencia.
 
-H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038. H4.19 extrae el kernel económico H4.10 independiente de sesión, captura en Refresh el saco y sus ocho outcomes líquidos y liga modelo/regla/knowledge/TTL/cobertura/binding/reservas/excepciones. El built-in continúa `pending_human_review`, por lo que hoy no activa abrir 36038 ni descarte; los demás items pueden mostrar la mejor salida líquida manual respaldada sin habilitar uso/abrir/reciclar. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las capas con single-flight/latest-wins. La vista captura en una sola pasada acotada bolsas de personaje+compartido como núcleo, y banco, materiales y delivery como ámbitos opcionales desmarcados por defecto. Cada control muestra cobertura saneada y se deshabilita si su fuente no fue leída; un 403 opcional no bloquea el núcleo y un 401 conserva el fallo global de credencial. Añade icono oficial, progreso indeterminado, un único reintento de pasada parcial y conserva el último resultado solo ante `capture_unavailable`. H5.12 añade el editor plegable local de objetivos y excepciones. H6.11 está cerrado por auditoría automatizada; siguen pendientes la QA visual/manual ES/EN y la aprobación humana del pack/economía H4.19.
+H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038. H4.19 extrae el kernel económico H4.10 independiente de sesión, captura en Refresh el saco y sus ocho outcomes líquidos y liga modelo/regla/knowledge/TTL/cobertura/binding/reservas/excepciones. David aprobó regla y economía el 2026-08-16: evidencia completa y fresca puede recomendar manualmente `open|sell|vendor` para 36038 con margen fijo del 10%; evidencia parcial o incoherente sigue en revisión y descarte continúa deshabilitado. Los demás items pueden mostrar la mejor salida líquida manual respaldada sin habilitar uso/abrir/reciclar. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las capas con single-flight/latest-wins. La vista captura en una sola pasada acotada bolsas de personaje+compartido como núcleo, y banco, materiales y delivery como ámbitos opcionales desmarcados por defecto. Cada control muestra cobertura saneada y se deshabilita si su fuente no fue leída; un 403 opcional no bloquea el núcleo y un 401 conserva el fallo global de credencial. Añade icono oficial, progreso indeterminado, un único reintento de pasada parcial y conserva el último resultado solo ante `capture_unavailable`. H5.12 añade el editor plegable local de objetivos y excepciones. H6.11 está cerrado por auditoría automatizada; sigue pendiente la QA visual/manual ES/EN de la ruta activada.
 
 H4.19 añade el kernel económico independiente de sesión, el adapter/pack de economía del Advisor, captura hermana de precios, integración contextual y guards causales. Gate completo verificado: lint, 94 ficheros/1315 tests, release-preflight, scanner de seguridad y build en verde.
 
@@ -162,8 +162,8 @@ estabilidad: una única pasada completa se conserva como `unstable/limited`, mue
 manuales y retiene usar/abrir/reciclar. Cada intento consulta una vez roster, inventario compartido y
 personajes serializados con timeout de 30 segundos; solo una pasada parcial transitoria repite el
 conjunto. El clasificador evalúa catálogo/precio por objeto: un batch TP parcial no oculta las filas
-con precio presente ni las rutas de mercader con omisión demostrada, y el pack pendiente solo retiene
-sus capacidades curadas. La vista prioriza ahora una cola directa «Qué hacer ahora» y relega
+con precio presente ni las rutas de mercader con omisión demostrada; en esa QA, el pack todavía pendiente
+retenía sus capacidades curadas. La vista prioriza ahora una cola directa «Qué hacer ahora» y relega
 `keep|review|discard_review` a controles de contexto. Gate: 106 ficheros/1481 tests en
 verde; queda pendiente repetir
 la QA manual del plugin instalado y confirmar filas reales visibles.
@@ -173,7 +173,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 106 ficheros y 1493 tests verdes, incluidas 42 pruebas H8.6 reportadas por Vitest
+- `npm run test`: 106 ficheros y 1494 tests verdes, incluidas 42 pruebas H8.6 reportadas por Vitest
   —33 funcionales y nueve de arquitectura—, los contratos H8.1/H8.4 y el verifier de
   supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan,
   syntax-check del wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
@@ -190,7 +190,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar launcher/adapters y composición de los extremos H8.5/H8.6, ejecutar QA separada en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
-4. Revisar y aprobar humanamente el pack/economía H4.19 antes de activar la capacidad 36038; el built-in sigue pending/disabled y fail-closed.
+4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
 5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
 6. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.

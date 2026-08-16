@@ -12,7 +12,7 @@ import type {
 } from './inventory-advisor-model';
 import {
 	isInventoryContainerEconomyPack,
-	pendingHalloweenContainerEconomyPack,
+	enabledHalloweenContainerEconomyPack,
 	type InventoryContainerEconomyPackV1,
 } from './inventory-container-economy';
 
@@ -32,14 +32,15 @@ export type InventoryAdvisorBuiltinBundleLoadResult =
 	| { status: 'available'; bundle: InventoryAdvisorBuiltinBundleV3 }
 	| { status: 'unavailable'; reason: 'invalid' | 'expired'; bundle: null };
 
-/** Pure, replaceable boundary used by UI wiring to obtain the curated review-only data. */
+/** Pure, replaceable boundary used by UI wiring to obtain the curated data. */
 export interface InventoryAdvisorBuiltinBundleProvider {
 	load(asOf: string): InventoryAdvisorBuiltinBundleLoadResult;
 }
 
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
+const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
 const VALID_UNTIL = '2026-11-12T18:04:33.000Z';
-const RULE_PACK_SHA256 = '1273c6f015f59bd41549b815a6f01266740f3b0ea7bd93f82230bf9847867681';
+const RULE_PACK_SHA256 = 'dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c';
 const KNOWLEDGE_PACK_SHA256 = '505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686';
 
 const SOURCES = [
@@ -53,15 +54,15 @@ const BUILTIN_RULE_PACK: InventoryAdvisorRulePackV2 = {
 	id: 'tc.inventory-rules.curated-v2',
 	version: 2,
 	publishedAt: PUBLISHED_AT,
-	reviewedAt: null,
-	reviewStatus: 'pending_human_review',
+	reviewedAt: HUMAN_REVIEWED_AT,
+	reviewStatus: 'human_reviewed',
 	knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
 	validUntil: VALID_UNTIL,
 	sha256: RULE_PACK_SHA256,
 	sources: SOURCES.map((source) => ({ ...source })),
 	rules: [{
 		ruleId: 'open-36038-capability-v1', itemId: 36038, action: 'open', status: 'approved', capability: 'applicable',
-		recommendation: { status: 'review_only', reason: 'economic_activation_pending' },
+		recommendation: { status: 'enabled' },
 		reason: 'curated_open', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'],
 	}],
 };
@@ -96,7 +97,7 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 			salvage: { status: 'not_applicable', assertionId: 'no-salvage-36038-v1', sourceIds: ['gw2-api-item-36038', 'gw2-api-items-v2', 'gw2-wiki-trick-or-treat-bag'] },
 		}],
 	},
-	economyPack: pendingHalloweenContainerEconomyPack({
+	economyPack: enabledHalloweenContainerEconomyPack({
 		rulePack: {
 			id: BUILTIN_RULE_PACK.id,
 			version: BUILTIN_RULE_PACK.version,
@@ -104,7 +105,7 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 			ruleId: BUILTIN_RULE_PACK.rules[0]!.ruleId,
 		},
 		knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
-	}),
+	}, HUMAN_REVIEWED_AT),
 };
 
 /**
@@ -121,8 +122,13 @@ export function createInventoryAdvisorBuiltinBundleProvider(
 			try {
 				const bundle = clone(captured);
 				if (!isBuiltinBundle(bundle) || !validTimestamp(asOf)) return unavailable('invalid');
-				const published = Math.max(Date.parse(bundle.rulePack.publishedAt), Date.parse(bundle.economyPack.publishedAt));
-				if (Date.parse(asOf) < published) return unavailable('invalid');
+				const effectiveFrom = Math.max(
+					Date.parse(bundle.rulePack.publishedAt),
+					Date.parse(bundle.economyPack.publishedAt),
+					Date.parse(bundle.rulePack.reviewedAt ?? ''),
+					Date.parse(bundle.economyPack.activation.activatedAt ?? ''),
+				);
+				if (!Number.isFinite(effectiveFrom) || Date.parse(asOf) < effectiveFrom) return unavailable('invalid');
 				const expiry = Math.min(Date.parse(bundle.rulePack.validUntil), Date.parse(bundle.knowledgePack.validUntil));
 				if (Date.parse(asOf) >= expiry) return unavailable('expired');
 				return { status: 'available', bundle };
@@ -148,8 +154,8 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.rulePack.version === 2
 		&& bundle.rulePack.schemaVersion === 2
 		&& bundle.rulePack.publishedAt === PUBLISHED_AT
-		&& bundle.rulePack.reviewedAt === null
-		&& bundle.rulePack.reviewStatus === 'pending_human_review'
+		&& bundle.rulePack.reviewedAt === HUMAN_REVIEWED_AT
+		&& bundle.rulePack.reviewStatus === 'human_reviewed'
 		&& bundle.rulePack.knowledgePackSha256 === KNOWLEDGE_PACK_SHA256
 		&& bundle.rulePack.validUntil === VALID_UNTIL
 		&& bundle.rulePack.sha256 === RULE_PACK_SHA256
@@ -164,8 +170,8 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.knowledgePack.sha256 === KNOWLEDGE_PACK_SHA256
 		&& canonical(bundle.knowledgePack.sources) === canonical(SOURCES)
 		&& canonical(bundle.knowledgePack.entries) === canonical(BUILTIN_BUNDLE.knowledgePack.entries)
-		&& bundle.economyPack.activation.status === 'pending_human_review'
-		&& bundle.economyPack.activation.activatedAt === null
+		&& bundle.economyPack.activation.status === 'enabled'
+		&& bundle.economyPack.activation.activatedAt === HUMAN_REVIEWED_AT
 		&& bundle.economyPack.rulePack.sha256 === RULE_PACK_SHA256
 		&& bundle.economyPack.knowledgePackSha256 === KNOWLEDGE_PACK_SHA256
 		&& canonical(bundle.economyPack) === canonical(BUILTIN_BUNDLE.economyPack);

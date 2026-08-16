@@ -1,5 +1,11 @@
 # Changelog
 
+## H4.18/H4.19 — Activación humana de la recomendación para 36038
+
+- David aprobó el `2026-08-16T05:22:24.000Z` la regla source-backed de apertura y el pack económico de **Trick-or-Treat Bag**. RulePack V2 pasa a `human_reviewed`, la capability `open` queda habilitada y el pack H4.19 usa activación `enabled` ligada al nuevo SHA-256.
+- Con el batch completo y fresco del saco y sus ocho outcomes, el kernel puede recomendar manualmente `open`, `sell` o `vendor` aplicando el margen mínimo fijo del 10%. Evidencia parcial, stale, incoherente, revocada o fuera de la ventana temporal sigue devolviendo revisión.
+- El instante de aprobación es el límite inferior inclusivo del provider y de la evaluación económica; `validUntil` sigue siendo exclusivo. No se añadió executor, background, listing automático ni descarte.
+
 ## Inventory Advisor — alcance por personaje y lectura honesta del valor
 
 - Un 403 específico de banco, materiales o delivery ya no derriba la captura del Advisor: conserva
