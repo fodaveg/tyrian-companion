@@ -15,7 +15,9 @@ read-only Win32 mapping adapter and the loopback server. H8.6 adds an isolated, 
 TypeScript client core, strict codec, health projection and memory-only shadow observation. The
 H8.7 safe-launch island adds closed platform routes, strict ephemeral paths, an injected process
 adapter and an unsigned integrity gate, but no host executor. The plugin still has no real launcher,
-composition, settings or UI integration; neither side
+composition, settings or UI integration. H8.8 adds only an isolated pure shadow policy for the
+target map and an ephemeral, human-reviewed proposal DTO; it is not connected to the product
+proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
@@ -281,6 +283,14 @@ The current `0.1.0` vertical provides:
   fails closed. This proves only `integrity_checked` /
   `unsigned_qa_only`, never authenticity: no Node executor or real spawn exists, and future
   execution must require a release trust anchor plus immediate revalidation. H8.7 remains `@wip`.
+- H8.8 adds an isolated pure shadow policy for map `866`: five seconds of accepted presence credit
+  while idle or sixty seconds of accepted absence credit during a bound session can latch at most
+  one ephemeral DTO per latch. Its evidence remains `limited` and its review `human_required`. Gaps, heartbeat/source
+  degradation, `link_stalled` and channel recovery reset or degrade the current window rather than
+  inventing evidence. Its ephemeral context binds the signal to `accountId`; an account change
+  resets the latch instead of reattributing prior evidence. The DTO is not enqueued, persisted,
+  displayed or allowed to start/stop a session; API evidence remains authoritative. Composition and
+  human QA are still pending.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is human-reviewed

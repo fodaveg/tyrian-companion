@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import * as ts from 'typescript';
 
 /** Textual baseline with AST-closed TypeScript import boundaries. */
-export const SECURITY_SCANNER_VERSION = 13;
+export const SECURITY_SCANNER_VERSION = 14;
 
 const MUMBLE_V2_SPAWN_CAPABILITY_SHA256 = 'a12bff26711472e5637bd2a8e9205ccc16a6b76e7f08b7cc7668d83dc070f77d';
 const MUMBLE_V2_PROCESS_ADAPTER_SOURCE_SHA256 = '72f4dfc5052f386a75aa321305936f1223e6e94fd6c9454ba047b0b2097775f6';
@@ -50,7 +50,9 @@ const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
 	'src/platform/mumble-v2-launch-contract.ts',
 	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-presence-policy.ts',
 	'src/platform/mumble-v2-process-adapter.ts',
+	'src/sessions/mumble-v2-shadow-proposal.ts',
 	'native/mumble-helper/src/framing.rs',
 	'native/mumble-helper/src/lib.rs',
 	'native/mumble-helper/src/main.rs',
@@ -67,6 +69,14 @@ const REVIEWED_MUMBLE_CORE_IMPORTS = new Map([
 	['src/platform/mumble-v2-observation.ts', ['./mumble-v2-contract']],
 	['src/platform/mumble-v2-process-adapter.ts', [
 		'./mumble-v2-client', './mumble-v2-launch-contract', './mumble-v2-launch-plan',
+	]],
+]);
+const REVIEWED_MUMBLE_SHADOW_IMPORTS = new Map([
+	['src/platform/mumble-v2-presence-policy.ts', [
+		'./mumble-v2-contract', './mumble-v2-contract',
+	]],
+	['src/sessions/mumble-v2-shadow-proposal.ts', [
+		'../platform/mumble-v2-contract', '../platform/mumble-v2-presence-policy',
 	]],
 ]);
 const REVIEWED_MUMBLE_LAUNCH_FILES = new Set([
@@ -101,6 +111,16 @@ const MUMBLE_CORE_PROHIBITED_PATTERNS = [
 	/\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\s*\(/u,
 	/\b(?:console|logger|telemetry)\b/iu,
 	/\b(?:onStart|onStop|proposal|capture|persist|SessionService|SessionStore)\b/iu,
+	/\b(?:import\s*\(|require\s*\()/u,
+];
+const MUMBLE_SHADOW_PROHIBITED_PATTERNS = [
+	/\b(?:inject|injection|dllInject|hookProcess|ReadProcessMemory|ptrace|processMemory)\b/iu,
+	/\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|indexedDB|localStorage|sessionStorage)\b/u,
+	/\b(?:readFile|readFileSync|writeFile|writeFileSync|saveData)\b/u,
+	/\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u,
+	/\b(?:console|logger|telemetry)\b/iu,
+	/\b(?:ManualSessionStartService|PendingProposalService|SessionService|TyrianCompanionPlugin|transitionSession)\b/u,
+	/\b(?:MumbleV2BootstrapRecordV1|MumbleV2HeartbeatRecordV1|MumbleV2HelloRecordV1|MumbleV2IpcFrameV1|MumbleV2ReadyRecordV1|MumbleV2WelcomeRecordV1)\b/u,
 	/\b(?:import\s*\(|require\s*\()/u,
 ];
 
@@ -174,14 +194,18 @@ function isReviewedMumbleContract(path, source) {
 	if (!REVIEWED_MUMBLE_CONTRACT_FILES.has(normalized)) return false;
 	const native = normalized.startsWith('native/mumble-helper/src/');
 	const core = REVIEWED_MUMBLE_CORE_IMPORTS.has(normalized);
+	const shadow = REVIEWED_MUMBLE_SHADOW_IMPORTS.has(normalized);
 	const inspected = native
 		? stripRustCfgTestModules(source)
 		: source;
 	const patterns = native
 		? NATIVE_MUMBLE_PROHIBITED_PATTERNS
-		: core ? MUMBLE_CORE_PROHIBITED_PATTERNS : MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
+		: shadow ? MUMBLE_SHADOW_PROHIBITED_PATTERNS
+			: core ? MUMBLE_CORE_PROHIBITED_PATTERNS : MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
 	if (patterns.some((pattern) => pattern.test(inspected))) return false;
 	if (core && !hasExactMumbleCoreImports(normalized, inspected)) return false;
+	if (shadow && (!hasExactMumbleShadowImports(normalized, inspected)
+		|| !hasSafeMumbleShadowSurface(normalized, inspected))) return false;
 	if (REVIEWED_MUMBLE_LAUNCH_FILES.has(normalized)
 		&& !hasSafeMumbleLaunchSurface(normalized, inspected)) return false;
 	return ![...inspected.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/gu)]
@@ -360,7 +384,15 @@ function propertyName(name) {
 }
 
 function hasExactMumbleCoreImports(path, source) {
-	const expected = REVIEWED_MUMBLE_CORE_IMPORTS.get(path) ?? [];
+	return hasExactMumbleImports(path, source, REVIEWED_MUMBLE_CORE_IMPORTS);
+}
+
+function hasExactMumbleShadowImports(path, source) {
+	return hasExactMumbleImports(path, source, REVIEWED_MUMBLE_SHADOW_IMPORTS);
+}
+
+function hasExactMumbleImports(path, source, reviewedImports) {
+	const expected = reviewedImports.get(path) ?? [];
 	const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 	const actual = [];
 	let unsupportedDependency = false;
@@ -386,6 +418,92 @@ function hasExactMumbleCoreImports(path, source) {
 	const reviewed = [...expected].sort();
 	return !unsupportedDependency && actual.length === reviewed.length
 		&& actual.every((specifier, index) => specifier === reviewed[index]);
+}
+
+function hasSafeMumbleShadowSurface(path, source) {
+	const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const expectedInterfaces = new Map([
+		['MumbleV2PresenceContext', ['enabled', 'armed', 'recoveryPending', 'authority']],
+		['MumbleV2PresenceSignal', [
+			'version', 'phase', 'targetMapId', 'thresholdMs', 'window', 'continuity', 'binding',
+		]],
+		['MumbleV2PresencePolicyState', [
+			'version', 'context', 'channelState', 'phase', 'startedAtMs', 'lastRecordAtMs',
+			'stalledSinceMs', 'creditedMs', 'continuity', 'startLatched', 'stopLatchedBinding',
+		]],
+		['MumbleV2ShadowProposalV1', [
+			'version', 'source', 'phase', 'proposalId', 'accountId', 'targetMapId', 'binding',
+			'window', 'thresholdMs', 'detectedAt', 'continuity', 'evidenceQuality', 'rollout', 'retention',
+			'review', 'effect',
+		]],
+		['MumbleV2ShadowProposalFactory', ['createProposalId']],
+	]);
+	const rawNames = new Set([
+		'MumbleV2BootstrapRecordV1', 'MumbleV2HeartbeatRecordV1', 'MumbleV2HelloRecordV1',
+		'MumbleV2IpcFrameV1', 'MumbleV2ReadyRecordV1', 'MumbleV2WelcomeRecordV1',
+		'frame', 'heartbeatIntervalMs', 'host', 'nonce', 'port', 'raw', 'record', 'sequence', 'tick', 'token',
+	]);
+	const timerNames = new Set(['queueMicrotask', 'requestAnimationFrame', 'setInterval', 'setTimeout']);
+	const ioNames = new Set([
+		'WebSocket', 'XMLHttpRequest', 'console', 'fetch', 'logger', 'readFile', 'readFileSync',
+		'requestUrl', 'telemetry', 'writeFile', 'writeFileSync',
+	]);
+	const persistenceNames = new Set([
+		'IDBDatabase', 'IDBFactory', 'SessionNoteVault', 'indexedDB', 'localStorage', 'saveData',
+		'sessionStorage',
+	]);
+	const lifecycleNames = new Set([
+		'ManualSessionStartService', 'SessionService', 'TyrianCompanionPlugin', 'start',
+		'startManualSession', 'stop', 'stopManualSession', 'transitionSession',
+	]);
+	const queueNames = new Set(['PendingProposalService', 'accept', 'claim', 'dismiss', 'enqueue', 'reconcile']);
+	const seen = new Map();
+	let safe = true;
+	const visit = (node) => {
+		const name = syntaxName(node);
+		if (name !== null) {
+			if (rawNames.has(name) || timerNames.has(name) || ioNames.has(name) || persistenceNames.has(name)) {
+				safe = false;
+			}
+			if ((lifecycleNames.has(name) || queueNames.has(name)) && isCallOrTypeReference(node)) safe = false;
+		}
+		if (ts.isInterfaceDeclaration(node) && expectedInterfaces.has(node.name.text)) {
+			seen.set(node.name.text, node.members.flatMap((member) => {
+				const field = member.name === undefined ? null : propertyName(member.name);
+				return field === null ? [] : [field];
+			}));
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	for (const [name, fields] of expectedInterfaces) {
+		const belongsHere = name.startsWith('MumbleV2Presence')
+			? path.endsWith('mumble-v2-presence-policy.ts')
+			: path.endsWith('mumble-v2-shadow-proposal.ts');
+		if (belongsHere && !sameStringList(seen.get(name) ?? [], fields)) safe = false;
+	}
+	return safe;
+}
+
+function syntaxName(node) {
+	if (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) return node.text;
+	if (ts.isPropertyAccessExpression(node)) return node.name.text;
+	if (ts.isElementAccessExpression(node) && node.argumentExpression !== undefined
+		&& ts.isStringLiteralLike(node.argumentExpression)) return node.argumentExpression.text;
+	if ((ts.isPropertySignature(node) || ts.isPropertyDeclaration(node) || ts.isPropertyAssignment(node)
+		|| ts.isMethodSignature(node) || ts.isMethodDeclaration(node)) && node.name !== undefined) {
+		return propertyName(node.name);
+	}
+	return null;
+}
+
+function isCallOrTypeReference(node) {
+	if (ts.isTypeReferenceNode(node.parent) || ts.isExpressionWithTypeArguments(node.parent)) return true;
+	if (ts.isCallExpression(node.parent)) return node.parent.expression === node;
+	if (ts.isPropertyAccessExpression(node.parent) || ts.isElementAccessExpression(node.parent)) {
+		return ts.isCallExpression(node.parent.parent) && node.parent.parent.expression === node.parent;
+	}
+	return false;
 }
 
 function stripRustCfgTestModules(source) {
@@ -524,12 +642,16 @@ function readRepositoryText(path) {
 	if (bytes[0] === 0xfe && bytes[1] === 0xff) return decodeUtf16Be(bytes.subarray(2));
 	const guessedUtf16 = decodeBomlessUtf16(bytes);
 	if (guessedUtf16 !== null) return guessedUtf16;
-	if (bytes.includes(0)) return null;
+	if (bytes.includes(0) && !isTypeScriptSourcePath(path)) return null;
 	try {
 		return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 	} catch {
 		return isProbablySingleByteText(bytes) ? bytes.toString('latin1') : null;
 	}
+}
+
+function isTypeScriptSourcePath(path) {
+	return /\.(?:c|m)?tsx?$/iu.test(path);
 }
 
 function decodeBomlessUtf16(bytes) {

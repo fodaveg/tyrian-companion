@@ -27,6 +27,7 @@ try {
 	testCurrentGithubTokenFormats();
 	testMumbleVariants();
 	testMumbleContractAllowlist();
+	testMumbleShadowAllowlist();
 	testRepositoryCorpusAndEncodings();
 	testFalsePositiveControls();
 	testCliRedaction();
@@ -241,6 +242,86 @@ function testMumbleContractAllowlist() {
 	assert(
 		scanSecurityBoundaries(afterTests).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
 		'native production code after a cfg(test) module bypassed the scanner',
+	);
+}
+
+function testMumbleShadowAllowlist() {
+	const productFiles = [
+		'src/platform/mumble-v2-presence-policy.ts',
+		'src/sessions/mumble-v2-shadow-proposal.ts',
+	];
+	const allowed = isolatedRoot('mumble-shadow-allowed');
+	for (const path of productFiles) write(allowed, path, readFileSync(path, 'utf8'));
+	assert(scanSecurityBoundaries(allowed).length === 0, 'exact H8.8 shadow boundary was not allowlisted');
+
+	for (const [capability, path, source] of [
+		['fs-import', productFiles[0], "import { readFile } from 'node:fs';"],
+		['network', productFiles[0], 'fetch("https://example.invalid");'],
+		['computed-timer', productFiles[0], 'globalThis["setTimeout"](() => undefined, 1);'],
+		['persistence', productFiles[1], 'indexedDB.open("mumble-shadow");'],
+		['save-data', productFiles[1], 'saveData({ projection: true });'],
+		['raw-nonce', productFiles[1], 'interface LeakedFrame { nonce: string }'],
+		['raw-frame-type', productFiles[1], 'interface LeakedFrame { frame: MumbleV2IpcFrameV1 }'],
+		['lifecycle-transition', productFiles[1], 'transitionSession(state, event);'],
+		['computed-lifecycle', productFiles[1], 'runtime["start"]();'],
+		['pending-service', productFiles[1], 'const queue: PendingProposalService = pending;'],
+		['pending-enqueue', productFiles[1], 'pending.enqueue(candidate);'],
+	]) {
+		const root = isolatedRoot(`mumble-shadow-capability-${capability}`);
+		for (const reviewedPath of productFiles) {
+			write(root, reviewedPath, readFileSync(reviewedPath, 'utf8'));
+		}
+		write(root, path, `${readFileSync(join(root, path), 'utf8')}\n${source}`);
+		const findings = scanSecurityBoundaries(root);
+		assert(
+			findings.some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+			`${capability} bypassed the H8.8 shadow boundary: ${JSON.stringify(findings)}`,
+		);
+	}
+
+	const shape = isolatedRoot('mumble-shadow-proposal-shape');
+	for (const path of productFiles) write(shape, path, readFileSync(path, 'utf8'));
+	const proposalPath = join(shape, productFiles[1]);
+	writeFileSync(proposalPath, readFileSync(proposalPath, 'utf8').replace(
+		"\treadonly effect: 'proposal_only';",
+		"\treadonly effect: 'proposal_only';\n\treadonly automatic: boolean;",
+	));
+	assert(
+		scanSecurityBoundaries(shape).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+		'expanded shadow proposal shape bypassed the H8.8 boundary',
+	);
+
+	for (const [name, needle, replacement] of [
+		[
+			'presence-context',
+			'\treadonly authority: MumbleV2PresenceAuthority;',
+			'\treadonly authority: MumbleV2PresenceAuthority;\n\treadonly persisted: boolean;',
+		],
+		[
+			'presence-state',
+			'\treadonly stopLatchedBinding: string | null;',
+			'\treadonly stopLatchedBinding: string | null;\n\treadonly queueDepth: number;',
+		],
+	]) {
+		const presenceShape = isolatedRoot(`mumble-shadow-${name}-shape`);
+		for (const path of productFiles) write(presenceShape, path, readFileSync(path, 'utf8'));
+		const presencePath = join(presenceShape, productFiles[0]);
+		writeFileSync(presencePath, readFileSync(presencePath, 'utf8').replace(needle, replacement));
+		assert(
+			scanSecurityBoundaries(presenceShape).some((finding) =>
+				finding.rule === 'unauthorized-mumble-helper'),
+			`expanded ${name} shape bypassed the H8.8 boundary`,
+		);
+	}
+
+	const third = isolatedRoot('mumble-shadow-third-module');
+	for (const path of productFiles) write(third, path, readFileSync(path, 'utf8'));
+	write(third, 'src/platform/mumble-v2-shadow-runtime.ts', 'export const runtime = true;');
+	assert(
+		scanSecurityBoundaries(third).some((finding) =>
+			finding.path === 'src/platform/mumble-v2-shadow-runtime.ts' &&
+			finding.rule === 'unauthorized-mumble-helper'),
+		'third H8.8 shadow module bypassed the exact scanner census',
 	);
 }
 

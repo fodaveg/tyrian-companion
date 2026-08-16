@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS y H8.7 una frontera safe-launch sin executor; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7 permanece `@wip`.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
 
 **H7.4 está implementado técnicamente y H7.5 dispone de un canal manual guardado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -35,7 +35,7 @@ explícitamente el cambio de visibilidad y la release.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
-**H0.4, H0.6, H8.1 y H8.4: política y contrato v2 documentados; H8.5/H8.6 implementan ambos extremos y H8.7 prepara el lanzamiento sin executor, pero integración, validación multiplataforma y piloto siguen pendientes.** El MVP es
+**H0.4, H0.6, H8.1 y H8.4: política y contrato v2 documentados; H8.5/H8.6 implementan ambos extremos, H8.7 prepara el lanzamiento sin executor y H8.8 añade la política shadow aislada, pero integración, validación multiplataforma y piloto siguen pendientes.** El MVP es
 API-only con Linux + Steam/Proton como plataforma primaria, macOS + CrossOver como secundaria y
 Windows en beta. H8.1 fija Mumble Link para v2 como helper IPC opt-in de mapa/actividad: defaults
 revisables deshabilitado/shadow/on-when-armed, API v1 autoritativa,
@@ -45,7 +45,7 @@ temporal tienen definición, muestra mínima y umbrales verificables en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
 El contrato H8.1 permanece declarativo bajo allowlist AST recursiva. El censo productivo permite
-exactamente ese contrato, los cuatro módulos TS puros H8.6, los tres módulos H8.7 y los seis módulos Rust H8.5; scanner v13
+exactamente ese contrato, los módulos TS puros H8.6/H8.7/H8.8 y los seis módulos Rust H8.5; el scanner
 y sabotajes mantienen en rojo cualquier módulo/helper adicional o capacidad de sesión, store, red,
 filesystem, logging o timer global. La API oficial confirmó el mapa `866` como **Mad King's
 Labyrinth / Laberinto del Rey Loco**. No existe executor host, composición, setting ni conexión
@@ -114,6 +114,17 @@ paquete compartido H8.5, artefactos corruptos, capability/TOCTOU, stderr/stop, c
 de capacidades, incluido un único call-site de capability dentro del método hasheado y hash del adaptador completo; scanner v13 y
 guard v17 mantienen el censo exacto.
 
+**H8.8: política shadow de presencia/ausencia implementada en aislamiento, todavía `@wip`.** El
+reducer puro solo acepta el mapa objetivo `866`: fija presencia tras 5.000 ms de crédito y ausencia
+tras 60.000 ms de crédito. La primera solo acumula en idle y la segunda durante una sesión
+ligada; cada record aporta como máximo 500 ms. Gaps, heartbeat/source degradation, `link_stalled`, caída de canal y
+recovery reinician o degradan la ventana y nunca se interpretan como ausencia. Cada latch produce
+como máximo un DTO efímero con evidencia `limited` y review `human_required`; muestras posteriores
+del mismo estado no lo reemiten. La señal liga `accountId` dentro de su contexto efímero en idle y
+sesión; un cambio de cuenta reinicia ventana y latch. El DTO no entra en la cola H5.3, no persiste,
+no llega a UI y no invoca captura ni lifecycle. La API sigue siendo autoritativa. Faltan composición, métricas
+comparativas y QA humana en Windows, Linux/Steam/Proton y macOS/CrossOver.
+
 **H8.3: ADR de lenguaje/artefacto que autorizó la implementación.** Se elige Rust
 provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuente futura
 `native/mumble-helper` y un único `tyrian-mumble-helper.exe`. El ZIP será separado del plugin y
@@ -147,7 +158,7 @@ records fuera de fase, routing total de helper-exit —incluido reconnect—, to
 samples que renuevan salud, reset solo healthy, reconnect/EOF, high-water simultáneo sin copia,
 cadencia con fake clock, recovery con tick stale, salto de 60 s y sabotajes de catch-up,
 doble/ningún record, warm-up infinito, sample prematuro, heartbeat `healthy`, source status y datos
-prohibidos. El censo conserva el contrato y los módulos H8.5/H8.6/H8.7 exactos, sin importadores desde
+prohibidos. El censo conserva el contrato y los módulos H8.5/H8.6/H8.7/H8.8 exactos, sin importadores desde
 `main`. No existen executor host, composición, settings/UI o packaging productivo; API
 v1 sigue autoritativa, shadow, human-confirmed y sin persistencia.
 
@@ -204,11 +215,12 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 110 ficheros y 1.519 tests verdes, incluidas 42 pruebas H8.6 —33 funcionales y nueve
-  de arquitectura— y 25 H8.7 —16 funcionales y nueve de arquitectura—, los contratos H8.1/H8.4 y el
+- `npm run test`: 113 ficheros y 1.544 tests verdes, incluidas 42 pruebas H8.6 —33 funcionales y nueve
+  de arquitectura—, 25 H8.7 —16 funcionales y nueve de arquitectura— y 25 H8.8 —17 funcionales y
+  ocho de arquitectura—, los contratos H8.1/H8.4 y el
   verifier de supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan, syntax-check del
   wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
-- `npm run test:security-scan` y `npm run security:scan`: scanner v13 y sabotajes verdes.
+- `npm run test:security-scan` y `npm run security:scan`: scanner v14 y sabotajes verdes.
 - `npm run test:release-identity-contract`: identidad H7.1 y veinticuatro sabotajes causales verdes.
 - `npm run test:beta-channel`: instalación, actualización, exclusión mutua, rollback y matrices
   causales de ZIP, rutas, symlinks, TOCTOU, CLI, staging y artifact CI verdes; no sustituye la QA
@@ -222,7 +234,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Pendientes de producto
 
-1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7, ejecutar QA separada en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
+1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.

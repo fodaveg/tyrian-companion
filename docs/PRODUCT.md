@@ -48,9 +48,10 @@ Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones
 
 La integración futura nace deshabilitada y requiere opt-in. Los defaults iniciales recomendados son
 revisables: rollout `shadow`, observación solo `on_when_armed`, proyección no persistente de
-`mapId + link_advancing|link_stalled` y API v1 como autoridad. Shadow no altera propuestas,
-sesiones, notas ni métricas durables; sirve únicamente para contrastar en memoria si una señal local
-podría acotar una ventana. Salir de shadow exige una decisión humana posterior y evidencia de QA.
+`mapId + link_advancing|link_stalled` y API v1 como autoridad. H8.8 permite que shadow materialice
+solo un DTO comparativo efímero —no una propuesta H5.3— con evidencia `limited` y confirmación
+`human_required`: no entra en colas, no persiste, no se muestra y no altera sesiones, notas ni
+métricas durables. Salir de shadow exige una decisión humana posterior y evidencia de QA.
 
 El helper futuro solo podrá leer los campos documentados necesarios para validar el layout, obtener
 el mapa y detectar avance del tick. El frame no puede contener identidad, nombre, coordenadas,
@@ -63,6 +64,22 @@ Cada dato local se trata como no confiable, se valida con versionado, nonce, ord
 y cada canal empieza con `initialSequence:0`; se descarta ante cualquier duda. No hay persistencia raw ni fallback por memoria del proceso,
 inyección, logs, interceptación de tráfico o automatización. Incluso en una fase posterior, el dato
 solo podrá mejorar evidencia o proponer revisión: **Start/Stop siempre requiere confirmación humana**.
+
+### Política shadow H8.8
+
+La política pura se limita al mapa objetivo exacto `866`. En idle, una presencia requiere acumular
+cinco segundos de crédito de muestras aceptadas en ese mapa; durante una sesión ligada, una ausencia
+requiere sesenta segundos de crédito aceptado fuera de él. Cada record puede aportar como máximo los
+500 ms nominales de H8.4. Cada latch puede producir como máximo un DTO efímero y no vuelve a emitir
+por repetir el mismo estado. Gaps, heartbeats de fuente, `link_stalled`, pérdida del canal y recovery
+rompen o degradan la ventana: nunca se convierten por sí mismos en tiempo de presencia o ausencia ni
+se rellenan tras sleep. La señal incluye `accountId` dentro de su contexto efímero;
+cambiar de cuenta reinicia la ventana y el latch para impedir atribuir evidencia anterior a otra.
+
+H8.8 sigue siendo shadow y no cableado. No llama a la cola de confirmación, captura, persistencia,
+UI ni lifecycle de sesión; la evidencia API continúa siendo la única autoridad productiva. Falta
+componer la isla y ejecutar QA humana en Windows, Linux/Steam/Proton y macOS/CrossOver antes de
+valorar cualquier salida de shadow.
 
 ## Vertical actual
 

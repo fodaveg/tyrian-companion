@@ -35,7 +35,8 @@ validar la lectura en CrossOver; H8.3 elige la forma, H8.4 fija el protocolo y H
 el helper/servidor Rust. H8.6 implementa un cliente TypeScript puro, salud y observación shadow como
 núcleo aislado con puertos inyectados. H8.7 añade contratos/planes cerrados y un adapter de proceso
 inyectado, pero ningún executor host. El plugin aún no tiene launcher real, composición,
-settings ni UI. Mumble Link solo
+settings ni UI. H8.8 añade únicamente la política pura de presencia/ausencia y un DTO shadow
+efímero, sin cablearlos al producto. Mumble Link solo
 puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
 enumerar o controlar procesos del juego, leer su memoria privada ni usar técnicas alternativas si
@@ -45,7 +46,8 @@ La instalación y la activación requieren opt-in. Los defaults recomendados par
 `enabled:false`; una vez habilitado, rollout `shadow`, observación `on_when_armed`, proyección
 `mapId + actividad derivada` y retención `none`. Están marcados `recommended_revisable`: no se
 cambiarán silenciosamente y salir de shadow exige decisión humana, revisión del threat model y QA
-real. Shadow no altera propuestas ni sesiones; solo permite comparar datos en memoria.
+real. Shadow puede crear un DTO comparativo interno H8.8, pero no una propuesta H5.3: no lo encola,
+persiste, muestra ni deja que altere una sesión.
 
 La API-only v1 sigue siendo autoritativa. El dato local no puede corregir por sí solo un snapshot,
 declarar un evento, iniciar/parar una sesión ni resolver una discrepancia. Como máximo, después de
@@ -140,6 +142,22 @@ incremental y cerrada. `restart_wait` y `reconnect_wait` usan el mismo backoff s
 welcome. Salud conserva por separado canal, fuente y actividad. La observación shadow guarda solo
 `mapId + activity` en memoria bajo `enabled && armed`, sin callbacks de sesión, propuesta, captura o
 persistencia. No hay launcher, adapters de proceso/TCP, wiring, settings, UI ni QA real.
+
+H8.8 aplica una política cerrada solo al mapa objetivo `866`. En idle, 5.000 ms de crédito aceptado
+en el objetivo pueden fijar presencia; durante una sesión ligada, 60.000 ms de crédito aceptado
+fuera del objetivo pueden fijar ausencia. Cada record aporta como máximo los 500 ms nominales y no permite
+rellenar slots: gaps, heartbeat/source unavailable, `link_stalled`, pérdida de canal o recovery
+reinician o degradan la evidencia y nunca cuentan como ausencia. Cada latch produce como máximo un
+DTO efímero con calidad `limited` y review `human_required`; nuevas muestras del mismo estado no
+lo reemiten. El contexto de la señal incluye `accountId`; cambiar de cuenta reinicia ventana y latch
+en lugar de atribuir a la cuenta nueva evidencia observada para la anterior.
+
+Ese DTO no entra en `tyrian-companion-confirmation-queue`, no se persiste en settings/IndexedDB/Vault,
+no llega a UI y no invoca captura ni transiciones de sesión. El `accountId` efímero tampoco crea
+retención durable. La API v1 sigue siendo autoritativa y una discrepancia local solo degrada el
+contraste shadow. H8.8 no habilita composición, autoarranque
+ni influencia sobre H3.8/H5.3. La QA humana del comportamiento real —incluidos gaps, stalled,
+heartbeats, recovery y falsos positivos/negativos— está pendiente en las tres plataformas.
 
 H8.7 valida package/bottle/compat-data efímeros y construye planes exactos para Windows nativo,
 CrossOver `wine` y Steam/Proton `/usr/bin/protontricks-launch --appid 1284210`. AppID y mapping

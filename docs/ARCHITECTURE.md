@@ -11,7 +11,7 @@
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
-- `platform`: contrato H8.1/H8.4, núcleo H8.6 y frontera H8.7 pura con puertos inyectados; no contiene I/O ambiente ni executor host.
+- `platform`: contrato H8.1/H8.4, núcleo H8.6, frontera H8.7 y política shadow H8.8 puras con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
@@ -82,7 +82,7 @@ sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 
-H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch aislados -/-> main, plugin o release
+H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch + H8.8 shadow policy aislados -/-> main, plugin o release
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -111,8 +111,9 @@ en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 Mumble Link no forma parte del grafo de dependencias de v1. H8.1 añade el modelo declarativo
 `src/platform/mumble-v2-contract.ts`. H8.5 implementa el helper nativo y H8.6 el codec, cliente,
 salud y observación shadow como dos islas no compuestas. H8.7 añade contrato/plan/adapter de proceso
-inyectado, todavía sin executor host. El scanner v13 permite exactamente el contrato, los cuatro
-módulos TS puros H8.6, los tres módulos H8.7 y los seis módulos Rust del helper; censos positivos
+inyectado, todavía sin executor host. H8.8 añade un reducer puro de presencia/ausencia y un builder
+de DTO shadow efímero, también sin composición. El censo de arquitectura permite solo el contrato,
+los módulos TS puros H8.6/H8.7/H8.8 y los seis módulos Rust del helper; censos positivos
 rechazan cualquier otro archivo, helper o importador bajo `src` y exigen un único call-site de la
 capability dentro del método hasheado, además del hash canónico del adaptador completo. H8.2
 permanece fuera de `src`.
@@ -121,7 +122,8 @@ implementada en aislamiento, no activada.
 
 El contrato futuro es opt-in. Sus defaults iniciales recomendados —y marcados explícitamente como
 revisables— son `enabled:false`, `shadow`, `on_when_armed` y retención `none`. Incluso tras habilitarlo,
-shadow solo compara señales en memoria: no crea ni modifica propuestas y no alimenta el lifecycle.
+shadow solo compara señales en memoria. H8.8 puede materializar un DTO interno `limited` y
+`human_required`, pero no una propuesta H5.3: no lo encola, persiste, muestra ni alimenta el lifecycle.
 La v1 API-only sigue siendo la autoridad; una discrepancia local degrada o se presenta para revisión,
 nunca sustituye un snapshot. Todo inicio/parada sigue requiriendo la confirmación humana H3.8/H5.3.
 
@@ -299,6 +301,23 @@ actividad en memoria cuando `enabled && armed`; no expone callbacks de sesión, 
 persistencia. Ninguno de los cuatro módulos importa Node, sesiones, stores, red, filesystem,
 logging ni timers globales. Aún no existen launcher real, composición en `main`, settings/UI,
 packaging ni QA de plataforma.
+
+H8.8 añade `mumble-v2-presence-policy.ts` como reducer puro sobre observaciones ya aceptadas. Solo
+el mapa objetivo fijo `866` puede acumular 5.000 ms de crédito de presencia mientras la autoridad
+está idle; la ausencia acumula 60.000 ms fuera del objetivo solo para una sesión ligada. Cada record
+aporta como máximo 500 ms y no autoriza catch-up: gaps, heartbeat/source unavailable,
+`link_stalled`, pérdida de canal o recovery rompen o
+degradan la ventana en curso. Esos eventos no cuentan como ausencia. Cada latch puede producir como
+máximo un DTO mediante `mumble-v2-shadow-proposal.ts`; repetir el mismo estado no lo reemite. El
+contexto de entrada liga la señal a `accountId` tanto en idle como durante una sesión; un cambio de
+cuenta resetea ventana y latch antes de aceptar nueva evidencia.
+
+El DTO es efímero, de evidencia `limited` y review `human_required`. No contiene una capability
+ni activa callbacks de cola, captura, persistencia, UI o sesión. `accountId` permanece solo en ese
+contexto/DTO efímero y no crea retención durable. La API continúa siendo autoritativa y este grafo
+sigue cortado de `main`, `AssistedDetectionService` y H5.3. La composición futura, las métricas
+comparativas y la QA humana en las tres plataformas permanecen pendientes;
+[ADR 0005](adr/0005-h8-8-shadow-presence-policy.md) fija el límite de esta fase.
 
 H8.7 fija configuración, rutas y diagnósticos cerrados para Windows nativo, CrossOver `wine` y
 Steam/Proton `protontricks-launch`. AppID `1284210`, `MumbleLink` y ambos launchers son constantes;

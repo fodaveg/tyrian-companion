@@ -1,5 +1,22 @@
 # Changelog
 
+## H8.8 — Política shadow de presencia y ausencia
+
+- Añadida una política pura y aislada para el mapa objetivo fijo `866`: 5.000 ms de crédito de
+  presencia en idle y 60.000 ms de crédito de ausencia durante una sesión ligada, con un máximo de
+  500 ms aportado por record.
+- Gaps, heartbeat/source unavailable, `link_stalled`, caída de canal y recovery reinician o degradan
+  la ventana; no cuentan como ausencia ni permiten catch-up tras sleep.
+- Cada latch puede producir como máximo un DTO efímero con evidencia `limited` y review
+  `human_required`. Repetir el mismo estado no reemite el DTO; cambiar el `accountId` del contexto
+  efímero reinicia ventana y latch para evitar atribuciones cruzadas.
+- Shadow no encola una propuesta H5.3, no persiste, no muestra UI y no modifica captura ni lifecycle
+  de sesión. La API continúa autoritativa y no se han tocado `main`, settings ni composición.
+- Añadidas 25 pruebas H8.8 —17 funcionales y ocho arquitectónicas—; el gate completo combinado queda
+  en 113 ficheros y 1.544 tests Vitest, además de lanes C/Rust/release/scanner y build.
+- H8.8 permanece `@wip`: faltan integración con el runtime, métricas comparativas y QA humana en
+  Windows, Linux/Steam/Proton y macOS/CrossOver.
+
 ## H8.7 — Frontera segura de lanzamiento sin executor
 
 - Añadidos contrato, builder de plan y adapter inyectado para las rutas cerradas Windows nativo,

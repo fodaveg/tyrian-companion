@@ -16,7 +16,9 @@ const REVIEWED_MUMBLE_FILES = [
 	'src/platform/mumble-v2-launch-contract.ts',
 	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-presence-policy.ts',
 	'src/platform/mumble-v2-process-adapter.ts',
+	'src/sessions/mumble-v2-shadow-proposal.ts',
 ] as const;
 const ALLOWED_IMPORTS: Record<(typeof PRODUCT_FILES)[number], readonly string[]> = {
 	'src/platform/mumble-v2-client.ts': ['./mumble-v2-contract', './mumble-v2-codec'],
@@ -33,7 +35,7 @@ const FORBIDDEN_CAPABILITIES = {
 } as const;
 
 describe('H8.6 isolated core boundary', () => {
-	it('discovers exactly the contract, four core modules and three safe-launch modules', () => {
+	it('discovers exactly the reviewed H8.1/H8.4/H8.6/H8.7/H8.8 modules', () => {
 		expect(coreBoundaryViolations(productionSources())).toEqual([]);
 	});
 

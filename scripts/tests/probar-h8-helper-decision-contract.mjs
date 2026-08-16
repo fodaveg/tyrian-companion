@@ -28,6 +28,8 @@ const trackedFiles = [
 	'native/mumble-helper/src/source.rs',
 	'native/mumble-helper/src/win32.rs',
 	'native/mumble-helper/tests/server_lifecycle.rs',
+	'src/platform/mumble-v2-presence-policy.ts',
+	'src/sessions/mumble-v2-shadow-proposal.ts',
 ];
 const files = new Map(trackedFiles.map((path) => [path, readFileSync(resolve(root, path), 'utf8')]));
 
@@ -38,6 +40,7 @@ try {
 	testDocumentationSabotage();
 	testRuntimeAdrSabotages();
 	testImplementationSabotages();
+	testH8_8ProductSabotages();
 	testImplementedHelperSabotages();
 	testCiArtifactSabotages();
 	testSymlinkSabotages();
@@ -170,6 +173,33 @@ function testDocumentationSabotage() {
 		'platform-qa-at-document-end',
 		new Map([[path, `${source}QA completada para H8.3.\n`]]),
 		'platform-document-hash',
+	);
+	expectFinding(
+		'h8.8-product-claim-outside-reviewed-document',
+		new Map([[path, `${source}H8.8 encola propuestas y altera sesiones automáticamente.\n`]]),
+		'platform-document-hash',
+	);
+}
+
+function testH8_8ProductSabotages() {
+	for (const [name, path, marker] of [
+		['presence-policy-mutated', 'src/platform/mumble-v2-presence-policy.ts',
+			'export const MUMBLE_V2_PRESENCE_THRESHOLD_MS = 5_000 as const;'],
+		['shadow-proposal-mutated', 'src/sessions/mumble-v2-shadow-proposal.ts',
+			"\treadonly rollout: 'shadow';"],
+	]) {
+		const source = files.get(path);
+		assert(source.includes(marker), `${name} fixture marker is missing`);
+		expectFinding(
+			name,
+			new Map([[path, source.replace(marker, `${marker} `)]]),
+			`h8.8-product-hash:${path}`,
+		);
+	}
+	expectFinding(
+		'h8.8-third-product-module',
+		new Map([['src/platform/mumble-v2-shadow-runtime.ts', 'export const runtime = true;\n']]),
+		'forbidden-product-artifact:src/platform/mumble-v2-shadow-runtime.ts',
 	);
 }
 
