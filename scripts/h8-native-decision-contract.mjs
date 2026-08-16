@@ -23,7 +23,7 @@ const PLATFORM_AUTHORITY_SUFFIX = `${PLATFORM_AUTHORITY_END}\n\n## Política de 
 const EXPECTED_DECISION_SHA256 = 'e1646dd526ddb0bc038e7f2aa261151a4aeb3248109befa644c85e3ee32314e7';
 const ADR_AUTHORITY_SHA256 = 'c2fcb0960da3077e342b9e6c07408fc80eca7069005f7da8e10e8aef8fbb2220';
 const PLATFORM_AUTHORITY_SHA256 = '761564594340cf5984f4ccecaa2bc3a10a0b59b11c52e4fc50c2dcb456858e1b';
-const PLATFORM_DOCUMENT_SHA256 = '4a6ca5eef6735f12df4d81bcbaa5e0602b8b7a4bf94ef1dcccf3df66b0473fb3';
+const PLATFORM_DOCUMENT_SHA256 = '44651f35882fa0bca22f3223ae7e2e2bcc6c38b997ceaab292e21b7e9c07f630';
 const NATIVE_MANIFEST_SHA256 = 'cd7aa03197262d1e3e71868f24b2204a0a00855c70cbb38e0ad7727368b8aa7b';
 const NATIVE_LOCK_SHA256 = '59bfcbfa38ae0ffe6b8454da70238d9ac490de07479ac6c0a0161b69725e83bf';
 const NATIVE_WIN32_SHA256 = '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977';
@@ -44,7 +44,10 @@ const REVIEWED_PRODUCT_PATHS = new Set([
 	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
 	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-launch-contract.ts',
+	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-process-adapter.ts',
 ]);
 const NATIVE_ROOT = 'native/mumble-helper/';
 const REVIEWED_NATIVE_PATHS = new Set([

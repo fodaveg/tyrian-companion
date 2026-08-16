@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -88,6 +88,84 @@ function testMumbleContractAllowlist() {
 		'export type MumbleObservation = MumbleV2IpcFrameV1;',
 	].join('\n'));
 	assert(scanSecurityBoundaries(core).length === 0, 'exact pure Mumble core was not allowlisted');
+
+	const launch = isolatedRoot('mumble-launch-allowed');
+	write(launch, 'src/platform/mumble-v2-launch-contract.ts', [
+		'export interface MumbleV2WindowsLaunchConfigV1 { version: 1; platform: "windows_native"; helperPackageDirectory: string }',
+		'export interface MumbleV2LaunchDiagnosticV1 { version: 1; stage: "spawn"; code: "spawn_failed"; retryable: boolean; artifactIntegrity: "integrity_checked"; artifactTrust: "unsigned_qa_only" }',
+	].join('\n'));
+	write(launch, 'src/platform/mumble-v2-launch-plan.ts', [
+		"import type { MumbleV2WindowsLaunchConfigV1 } from './mumble-v2-launch-contract';",
+		'export const plan = (config: MumbleV2WindowsLaunchConfigV1) => ({ config, shell: false });',
+	].join('\n'));
+	write(launch, 'src/platform/mumble-v2-process-adapter.ts',
+		readFileSync('src/platform/mumble-v2-process-adapter.ts', 'utf8'));
+	assert(scanSecurityBoundaries(launch).length === 0, 'exact safe Mumble launch boundary was not allowlisted');
+
+	for (const [capability, path, source] of [
+		['shell-true', 'src/platform/mumble-v2-launch-plan.ts', 'const unsafe = { shell: true };'],
+		['shell-indirect', 'src/platform/mumble-v2-launch-plan.ts', 'const value = true; const unsafe = { shell: value };'],
+		['shell-shorthand', 'src/platform/mumble-v2-launch-plan.ts', 'const shell = true; const unsafe = { shell };'],
+		['mapping-config', 'src/platform/mumble-v2-launch-contract.ts', 'export interface MumbleV2LaunchConfig { mapping: string }'],
+		['free-args', 'src/platform/mumble-v2-launch-contract.ts', 'export interface MumbleV2LaunchConfig { args: string[] }'],
+		['free-env', 'src/platform/mumble-v2-launch-contract.ts', 'export interface MumbleV2LaunchConfig { env: object }'],
+		['path-diagnostic', 'src/platform/mumble-v2-launch-contract.ts', 'export interface MumbleV2LaunchDiagnostic { path: string }'],
+		['pid-diagnostic', 'src/platform/mumble-v2-launch-contract.ts', 'export interface MumbleV2LaunchDiagnostic { pid: number }'],
+		['sync-callback', 'src/platform/mumble-v2-process-adapter.ts', 'callbacks.stdout(chunk);'],
+		['builtin-process', 'src/platform/mumble-v2-process-adapter.ts', "process.getBuiltinModule('node:child_process');"],
+		['computed-process', 'src/platform/mumble-v2-process-adapter.ts', "process['getBuiltinModule']('node:child_process');"],
+		['global-process', 'src/platform/mumble-v2-process-adapter.ts', "globalThis.process.getBuiltinModule('node:child_process');"],
+		['computed-global-process', 'src/platform/mumble-v2-process-adapter.ts', "globalThis['process']['getBuiltinModule']('node:child_process');"],
+		['aliased-process', 'src/platform/mumble-v2-process-adapter.ts', "const hostProcess = process; hostProcess.getBuiltinModule('node:child_process');"],
+		['global-alias-process', 'src/platform/mumble-v2-process-adapter.ts', "const hostProcess = global.process; hostProcess.getBuiltinModule('node:child_process').spawn('x');"],
+		['global-this-global-process', 'src/platform/mumble-v2-process-adapter.ts', "const hostProcess = globalThis.global.process; hostProcess['getBuiltinModule']('node:child_process');"],
+		['eval-process', 'src/platform/mumble-v2-process-adapter.ts', "const hostProcess = (0, eval)('process'); hostProcess.getBuiltinModule('node:child_process');"],
+		['function-process', 'src/platform/mumble-v2-process-adapter.ts', "const hostProcess = Function('return process')(); hostProcess.getBuiltinModule('node:child_process');"],
+		['any-get-builtin-module', 'src/platform/mumble-v2-process-adapter.ts', "hostAuthority['getBuiltinModule']('node:child_process');"],
+		['indirect-require-child-process', 'src/platform/mumble-v2-process-adapter.ts', "(0, require)('node:child_process').spawn('x');"],
+		['module-constructor-load', 'src/platform/mumble-v2-process-adapter.ts', "module.constructor._load('node:child_process').spawn('x');"],
+		['inline-deliver', 'src/platform/mumble-v2-process-adapter.ts', 'const deliver = (callback) => callback();'],
+		['second-spawn-route', 'src/platform/mumble-v2-process-adapter.ts', 'export function unsafeSpawn(port, plan, capability, callbacks) { return port.spawnIntegrityChecked(plan, capability, callbacks); }'],
+		['reflective-spawn-route', 'src/platform/mumble-v2-process-adapter.ts', 'export function unsafeReflect(port, plan, capability, callbacks) { const run = Reflect.get(port, "spawnIntegrityChecked"); return run(plan, capability, callbacks); }'],
+		['host-pid', 'src/platform/mumble-v2-process-adapter.ts', 'interface MumbleV2HostUnsafe { pid: number }'],
+		['host-path', 'src/platform/mumble-v2-process-adapter.ts', 'interface MumbleV2HostUnsafe { path: string }'],
+		['host-token', 'src/platform/mumble-v2-process-adapter.ts', 'interface MumbleV2HostUnsafe { token: string }'],
+	]) {
+		const root = isolatedRoot(`mumble-launch-capability-${capability}`);
+		for (const allowedPath of [
+			'src/platform/mumble-v2-launch-contract.ts',
+			'src/platform/mumble-v2-launch-plan.ts',
+			'src/platform/mumble-v2-process-adapter.ts',
+		]) {
+			write(root, allowedPath, readFileSync(join(launch, allowedPath), 'utf8'));
+		}
+		write(root, path, `${readFileSync(join(root, path), 'utf8')}\n${source}`);
+		assert(
+			scanSecurityBoundaries(root).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+			`${capability} bypassed the safe Mumble launch allowlist`,
+		);
+	}
+
+	const deliveryRoot = isolatedRoot('mumble-launch-delivery-shape');
+	for (const allowedPath of [
+		'src/platform/mumble-v2-launch-contract.ts',
+		'src/platform/mumble-v2-launch-plan.ts',
+		'src/platform/mumble-v2-process-adapter.ts',
+	]) {
+		write(deliveryRoot, allowedPath, readFileSync(join(launch, allowedPath), 'utf8'));
+	}
+	const adapterPath = join(deliveryRoot, 'src/platform/mumble-v2-process-adapter.ts');
+	const adapterSource = readFileSync(adapterPath, 'utf8');
+	const reviewedDelivery = "\t\t\t\tif (prematureFailure) {\n\t\t\t\t\tcloseAfterReturn();";
+	assert(adapterSource.includes(reviewedDelivery), 'reviewed deferred delivery shape was not found');
+	writeFileSync(adapterPath, adapterSource.replace(
+		reviewedDelivery,
+		"\t\t\t\tif (false) {\n\t\t\t\t\tcloseAfterReturn();",
+	));
+	assert(
+		scanSecurityBoundaries(deliveryRoot).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+		'deferred delivery mutation bypassed the safe Mumble launch allowlist',
+	);
 
 	for (const [capability, source] of [
 		['fs-import', "import { readFile } from 'node:fs';"],

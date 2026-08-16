@@ -1,11 +1,15 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as ts from 'typescript';
 
 /** Textual baseline with AST-closed TypeScript import boundaries. */
-export const SECURITY_SCANNER_VERSION = 7;
+export const SECURITY_SCANNER_VERSION = 13;
+
+const MUMBLE_V2_SPAWN_CAPABILITY_SHA256 = 'a12bff26711472e5637bd2a8e9205ccc16a6b76e7f08b7cc7668d83dc070f77d';
+const MUMBLE_V2_PROCESS_ADAPTER_SOURCE_SHA256 = '72f4dfc5052f386a75aa321305936f1223e6e94fd6c9454ba047b0b2097775f6';
 
 const RELEASE_ARTIFACT_FILES = new Set([
 	'main.js',
@@ -43,7 +47,10 @@ const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
 	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
 	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-launch-contract.ts',
+	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-process-adapter.ts',
 	'native/mumble-helper/src/framing.rs',
 	'native/mumble-helper/src/lib.rs',
 	'native/mumble-helper/src/main.rs',
@@ -55,7 +62,17 @@ const REVIEWED_MUMBLE_CORE_IMPORTS = new Map([
 	['src/platform/mumble-v2-client.ts', ['./mumble-v2-contract', './mumble-v2-codec']],
 	['src/platform/mumble-v2-codec.ts', ['./mumble-v2-contract']],
 	['src/platform/mumble-v2-health.ts', ['./mumble-v2-contract']],
+	['src/platform/mumble-v2-launch-contract.ts', []],
+	['src/platform/mumble-v2-launch-plan.ts', ['./mumble-v2-launch-contract']],
 	['src/platform/mumble-v2-observation.ts', ['./mumble-v2-contract']],
+	['src/platform/mumble-v2-process-adapter.ts', [
+		'./mumble-v2-client', './mumble-v2-launch-contract', './mumble-v2-launch-plan',
+	]],
+]);
+const REVIEWED_MUMBLE_LAUNCH_FILES = new Set([
+	'src/platform/mumble-v2-launch-contract.ts',
+	'src/platform/mumble-v2-launch-plan.ts',
+	'src/platform/mumble-v2-process-adapter.ts',
 ]);
 const MUMBLE_CONTRACT_PROHIBITED_PATTERNS = [
 	/\b(?:inject|injection|dllInject|hookProcess)\b/iu,
@@ -165,8 +182,181 @@ function isReviewedMumbleContract(path, source) {
 		: core ? MUMBLE_CORE_PROHIBITED_PATTERNS : MUMBLE_CONTRACT_PROHIBITED_PATTERNS;
 	if (patterns.some((pattern) => pattern.test(inspected))) return false;
 	if (core && !hasExactMumbleCoreImports(normalized, inspected)) return false;
+	if (REVIEWED_MUMBLE_LAUNCH_FILES.has(normalized)
+		&& !hasSafeMumbleLaunchSurface(normalized, inspected)) return false;
 	return ![...inspected.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/gu)]
 		.some((match) => match[0] !== '127.0.0.1');
+}
+
+function hasSafeMumbleLaunchSurface(path, source) {
+	const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+	const configFields = new Set([
+		'version', 'platform', 'helperPackageDirectory', 'bottleName', 'steamCompatDataDirectory',
+	]);
+	const routeFields = new Set(['version', 'platform', 'runtime']);
+	const diagnosticFields = new Set([
+		'version', 'stage', 'code', 'retryable', 'artifactIntegrity', 'artifactTrust',
+	]);
+	const rawDiagnosticFields = new Set([
+		'token', 'nonce', 'frame', 'identity', 'pid', 'processId', 'exitCode', 'path', 'bottle', 'os',
+	]);
+	const hostInterfaceFields = new Map([
+		['MumbleV2ArtifactEntry', ['name', 'bytes']],
+		['MumbleV2OpenedArtifactPackage', ['entries', 'opaqueAuthority']],
+		['MumbleV2ArtifactPort', ['openPackage', 'sha256']],
+		['MumbleV2HostProcessCallbacks', ['stdout', 'stderr', 'exited']],
+		['MumbleV2HostProcessHandle', ['writeStdin', 'stop']],
+		['MumbleV2IntegrityCheckedArtifactCapability', [
+			'kind', 'integrity', 'trust', 'executableSha256', 'manifestSha256', 'opaqueAuthority',
+		]],
+		['MumbleV2HostProcessPort', ['spawnIntegrityChecked']],
+		['MumbleV2ProcessAdapterPorts', ['artifacts', 'process', 'defer', 'onDiagnostic']],
+	]);
+	const seenHostInterfaces = [];
+	const spawnCapabilityHashes = [];
+	let spawnIntegrityCheckedReferences = 0;
+	let safe = !/\b(?:trusted|verified)(?:_|\b)/iu.test(source);
+	const visit = (node) => {
+		if (ts.isObjectLiteralExpression(node)) {
+			for (const member of node.properties) {
+				if (!('name' in member) || propertyName(member.name) !== 'shell') continue;
+				if (!ts.isPropertyAssignment(member)
+					|| member.initializer.kind !== ts.SyntaxKind.FalseKeyword) safe = false;
+			}
+		}
+		if (isAmbientProcessReference(node)) safe = false;
+		if (path.endsWith('mumble-v2-process-adapter.ts') && ts.isMethodDeclaration(node)
+			&& node.name !== undefined && propertyName(node.name) === 'spawnCapability') {
+			spawnCapabilityHashes.push(hashCanonicalNode(node, file));
+		}
+		if (path.endsWith('mumble-v2-process-adapter.ts') && isSpawnIntegrityCheckedAccess(node)) {
+			spawnIntegrityCheckedReferences += 1;
+			if (!ts.isCallExpression(node.parent) || node.parent.expression !== node
+				|| !isInsideMethod(node, 'spawnCapability')) safe = false;
+		}
+		if (path.endsWith('mumble-v2-process-adapter.ts') && ts.isBindingElement(node)
+			&& propertyName(node.propertyName ?? node.name) === 'spawnIntegrityChecked') safe = false;
+		if (ts.isInterfaceDeclaration(node)) {
+			let allowed;
+			if (/LaunchConfig/u.test(node.name.text)) allowed = configFields;
+			else if (/LaunchRoute/u.test(node.name.text)) allowed = routeFields;
+			else if (/LaunchDiagnostic/u.test(node.name.text)) allowed = diagnosticFields;
+			if (allowed !== undefined) {
+				for (const member of node.members) {
+					if (!ts.isPropertySignature(member)) { safe = false; continue; }
+					const name = propertyName(member.name);
+					if (name === null || !allowed.has(name)
+						|| (/LaunchDiagnostic/u.test(node.name.text) && rawDiagnosticFields.has(name))) safe = false;
+				}
+			}
+			if (path.endsWith('mumble-v2-process-adapter.ts')
+				&& /(?:Host|Artifact|ProcessAdapterPorts)/u.test(node.name.text)) {
+				const expected = hostInterfaceFields.get(node.name.text);
+				const actual = node.members.flatMap((member) => member.name === undefined
+					? [] : [propertyName(member.name)]).filter((name) => name !== null).sort();
+				if (expected === undefined || !sameStringList(actual, [...expected].sort())) safe = false;
+				seenHostInterfaces.push(node.name.text);
+			}
+		}
+		if (path.endsWith('mumble-v2-process-adapter.ts') && isCoreCallbackCall(node)
+			&& !isReviewedCallbackLocation(node)) safe = false;
+		if (path.endsWith('mumble-v2-process-adapter.ts')
+			&& (ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node))
+			&& node.name !== undefined && propertyName(node.name) === 'deliver') safe = false;
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	if (path.endsWith('mumble-v2-process-adapter.ts')) {
+		if (hashCanonicalSource(source) !== MUMBLE_V2_PROCESS_ADAPTER_SOURCE_SHA256) safe = false;
+		if ((source.match(/this\.ports\.defer\s*\(/gu)?.length ?? 0) !== 1) safe = false;
+		if (!sameStringList(seenHostInterfaces.sort(), [...hostInterfaceFields.keys()].sort())) safe = false;
+		if (!sameStringList(spawnCapabilityHashes, [MUMBLE_V2_SPAWN_CAPABILITY_SHA256])) safe = false;
+		if (spawnIntegrityCheckedReferences !== 1) safe = false;
+	}
+	return safe;
+}
+
+function isSpawnIntegrityCheckedAccess(node) {
+	if (ts.isPropertyAccessExpression(node)) return node.name.text === 'spawnIntegrityChecked';
+	return ts.isElementAccessExpression(node) && node.argumentExpression !== undefined
+		&& ts.isStringLiteralLike(node.argumentExpression)
+		&& node.argumentExpression.text === 'spawnIntegrityChecked';
+}
+
+function isInsideMethod(node, methodName) {
+	let current = node.parent;
+	while (current !== undefined && !ts.isSourceFile(current)) {
+		if (ts.isMethodDeclaration(current)) {
+			return current.name !== undefined && propertyName(current.name) === methodName;
+		}
+		if (ts.isFunctionDeclaration(current)) return false;
+		current = current.parent;
+	}
+	return false;
+}
+
+function isAmbientProcessReference(node) {
+	if (ts.isStringLiteralLike(node)
+		&& (node.text === 'node:child_process' || node.text === 'child_process')) return true;
+	if ((ts.isIdentifier(node) || ts.isStringLiteralLike(node))
+		&& node.text === 'getBuiltinModule') return true;
+	if (!ts.isIdentifier(node)) return false;
+	if (node.text === 'globalThis' || node.text === 'global'
+		|| node.text === 'eval' || node.text === 'Function'
+		|| node.text === 'require' || node.text === 'module') return true;
+	if (node.text !== 'process') return false;
+	const parent = node.parent;
+	if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
+	if ((ts.isPropertySignature(parent) || ts.isMethodSignature(parent)
+		|| ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent))
+		&& parent.name === node) return false;
+	return true;
+}
+
+function hashCanonicalNode(node, file) {
+	const canonical = node.getText(file).normalize('NFC').replace(/\r\n?/gu, '\n');
+	return createHash('sha256').update(canonical).digest('hex');
+}
+
+function hashCanonicalSource(source) {
+	const canonical = source.normalize('NFC').replace(/\r\n?/gu, '\n');
+	return createHash('sha256').update(canonical).digest('hex');
+}
+
+function isCoreCallbackCall(node) {
+	return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+		&& ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'callbacks'
+		&& (node.expression.name.text === 'stdout' || node.expression.name.text === 'exited');
+}
+
+function isReviewedCallbackLocation(node) {
+	let current = node.parent;
+	while (current !== undefined && !ts.isSourceFile(current)) {
+		if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+			if (ts.isCallExpression(current.parent) && current.parent.arguments.includes(current)
+				&& ts.isPropertyAccessExpression(current.parent.expression)
+				&& current.parent.expression.name.text === 'defer') return true;
+			if (ts.isPropertyAssignment(current.parent)) {
+				const name = propertyName(current.parent.name);
+				return name === 'stdout' || name === 'exited';
+			}
+		}
+		if (ts.isMethodDeclaration(current)) {
+			return current.name !== undefined && propertyName(current.name) === 'spawnCapability';
+		}
+		if (ts.isFunctionDeclaration(current)) return false;
+		current = current.parent;
+	}
+	return false;
+}
+
+function sameStringList(actual, expected) {
+	return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+function propertyName(name) {
+	return ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)
+		? name.text : null;
 }
 
 function hasExactMumbleCoreImports(path, source) {

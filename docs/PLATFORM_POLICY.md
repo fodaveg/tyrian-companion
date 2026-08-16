@@ -33,7 +33,8 @@ cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera
 H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo para
 validar la lectura en CrossOver; H8.3 elige la forma, H8.4 fija el protocolo y H8.5 implementa solo
 el helper/servidor Rust. H8.6 implementa un cliente TypeScript puro, salud y observación shadow como
-núcleo aislado con puertos inyectados. El plugin aún no tiene launcher, adapters reales, composición,
+núcleo aislado con puertos inyectados. H8.7 añade contratos/planes cerrados y un adapter de proceso
+inyectado, pero ningún executor host. El plugin aún no tiene launcher real, composición,
 settings ni UI. Mumble Link solo
 puede entrar en una v2 como componente local opcional, separado del
 proceso de Obsidian. Su única entrada será la interfaz documentada; no podrá inyectar código,
@@ -139,6 +140,20 @@ incremental y cerrada. `restart_wait` y `reconnect_wait` usan el mismo backoff s
 welcome. Salud conserva por separado canal, fuente y actividad. La observación shadow guarda solo
 `mapId + activity` en memoria bajo `enabled && armed`, sin callbacks de sesión, propuesta, captura o
 persistencia. No hay launcher, adapters de proceso/TCP, wiring, settings, UI ni QA real.
+
+H8.7 valida package/bottle/compat-data efímeros y construye planes exactos para Windows nativo,
+CrossOver `wine` y Steam/Proton `/usr/bin/protontricks-launch --appid 1284210`. AppID y mapping
+`MumbleLink` son fijos, no existen args/env/shell/command/mapping libres; Proton recibe únicamente
+`STEAM_COMPAT_DATA_PATH` explícito, `shell:false` y stdin/stdout/stderr quedan como pipes. Antes de
+cada delegación se abre el paquete H8.5 exacto de cinco ficheros, se validan manifest canónico y
+cuatro checksums no circulares, y el proceso recibe solo una capability opaca ligada a bytes/digests,
+nunca el package/helper path. Stderr se drena, stop es idempotente y solo un stdout prematuro de 516
+bytes puede aplazarse. Antes de abrir delivery se revalida la carrera de microtasks; overflow,
+segundo evento, exit temprano o aplazamiento inline cierran una vez y notifican exit a H8.6. El resultado solo puede
+nombrarse `integrity_checked` y `unsigned_qa_only`: no
+autentica el origen. Sigue prohibido ejecutar hasta que un executor separado exija digest aprobado
+por release o Authenticode, revalide justo antes de cada spawn/restart y pase QA real. No hay Node,
+spawn real, persistencia de paths, settings/UI, `main` ni autoarranque.
 
 Ni raw Mumble ni frames se persisten en settings, IndexedDB, Vault, logs o telemetría. La proyección
 válida vive solo en memoria el tiempo necesario para la comparación shadow o la propuesta futura.

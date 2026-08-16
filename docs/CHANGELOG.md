@@ -1,5 +1,27 @@
 # Changelog
 
+## H8.7 — Frontera segura de lanzamiento sin executor
+
+- Añadidos contrato, builder de plan y adapter inyectado para las rutas cerradas Windows nativo,
+  macOS/CrossOver y Linux/Steam/Proton. AppID `1284210` y `MumbleLink` son fijos; no se admiten
+  `args`, `env`, `shell`, `command` ni `mapping` configurables.
+- Package/bottle/compat-data estrictos y efímeros producen CrossOver `wine` y Proton
+  `protontricks-launch` con argv/env exactos, `shell:false` y tres pipes. No se han tocado
+  settings, UI, `main` ni `onload`, y no existe import Node, executor host, spawn real o autoarranque.
+- El adapter abre el paquete H8.5 canónico de cinco ficheros antes de cada intento, valida manifest
+  y cuatro checksums, y delega solo una capability opaca ligada a bytes/digests, nunca un helper path.
+  Drena stderr, limita el callback prematuro a un chunk de 516 bytes y falla ante overflow/segundo/exit;
+  stop es idempotente. El gate prueba solo `integrity_checked` /
+  `unsigned_qa_only`, no autenticidad; el executor futuro exige trust anchor y revalidación inmediata.
+- Diagnósticos cerrados omiten secretos, frames, identidad, PID, exit code, paths, botella y SO raw.
+  Guards/scanner v13 incluyen sabotajes de shell indirecto, `process` directo/computed/global/alias,
+  delivery canónica, único call-site de capability, hash canónico del adaptador completo,
+  host PID/path/token, mapping, args/env,
+  diagnóstico raw, segundo módulo, onload y trust overclaim. H8.7 sigue `@wip`: faltan executor,
+  composición, firma/publicación y QA real.
+- Añadidas 25 pruebas H8.7 —16 funcionales y nueve arquitectónicas—; el gate completo combinado queda
+  en 110 ficheros y 1.519 tests Vitest, además de lanes C/Rust/release/scanner y build.
+
 ## H7.1 — Identidad de release
 
 - Fijados `tyrian-companion`, **Tyrian Companion**, autor público **David**, repositorio

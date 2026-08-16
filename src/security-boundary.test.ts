@@ -23,7 +23,10 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
 	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-launch-contract.ts',
+	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-process-adapter.ts',
 ];
 const REVIEWED_REQUEST_URL_FILES = ['src/core/obsidian-http.ts'];
 const REVIEWED_FETCH_FILES: readonly string[] = [];

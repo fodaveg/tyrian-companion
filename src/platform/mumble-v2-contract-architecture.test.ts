@@ -11,7 +11,10 @@ const REVIEWED_MUMBLE_PRODUCTION_FILES = [
 	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
 	'src/platform/mumble-v2-health.ts',
+	'src/platform/mumble-v2-launch-contract.ts',
+	'src/platform/mumble-v2-launch-plan.ts',
 	'src/platform/mumble-v2-observation.ts',
+	'src/platform/mumble-v2-process-adapter.ts',
 ] as const;
 const EXPECTED_FRAME_FIELDS = ['version', 'nonce', 'sequence', 'tick', 'mapId', 'activity'] as const;
 const EXPECTED_MESSAGE_FIELDS = {
@@ -130,7 +133,7 @@ const REVIEWED_DECLARATIVE_KINDS = new Set<ts.SyntaxKind>([
 ]);
 
 describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
-	it('censuses exactly the declarative contract and four reviewed H8.6 core modules', () => {
+	it('censuses exactly the contract, H8.6 core and H8.7 safe-launch modules', () => {
 		const discovered = PRODUCTION_FILES.filter(({ path, source }) => isMumbleArtifact(path, source))
 			.map(({ path }) => path);
 		expect(discovered).toEqual(REVIEWED_MUMBLE_PRODUCTION_FILES);

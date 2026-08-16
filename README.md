@@ -13,7 +13,9 @@ H8.3 provisionally accepts Rust and H8.4 fixes the executable local IPC protocol
 the isolated helper/server under `native/mumble-helper`: portable framing/auth/source logic, the
 read-only Win32 mapping adapter and the loopback server. H8.6 adds an isolated, port-injected
 TypeScript client core, strict codec, health projection and memory-only shadow observation. The
-plugin still has no launcher, native adapter, composition, settings or UI integration; neither side
+H8.7 safe-launch island adds closed platform routes, strict ephemeral paths, an injected process
+adapter and an unsigned integrity gate, but no host executor. The plugin still has no real launcher,
+composition, settings or UI integration; neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
@@ -114,7 +116,7 @@ executor. Check every action in Guild Wars 2 yourself.
   between polls widen uncertainty; no background signal is accepted silently.
 - The installed MVP has no active or packaged Mumble Link integration, game-process inspection,
   input automation, automatic account operation, or unattended session finalization. The repository
-  contains only the isolated H8.5/H8.6 server and client-core implementations for future v2 wiring.
+  contains only the isolated H8.5/H8.6 server/client core and H8.7 safe-launch plan for future v2 wiring.
 
 For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md). Never include an API
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
@@ -251,8 +253,8 @@ The current `0.1.0` vertical provides:
   valid ready port. Sequenced records refresh health/reset backoff, stdin EOF is terminal, and its
   incremental framer transfers payload ownership before callbacks and retains at most 516 bytes
   simultaneously regardless of input chunk size. Product remains API-authoritative, shadow,
-  human-confirmed and non-persistent. H8.5/H8.6 implement the two sides in isolation, without
-  launcher, native client adapters, plugin composition or release packaging.
+  human-confirmed and non-persistent. H8.5/H8.6 implement the two sides in isolation and H8.7 the
+  closed launch plan/adapter without a host executor, plugin composition or release packaging.
 - H8.5 implements only the Rust helper/server projection of that protocol. Every 500 ms it emits
   exactly one shared-sequence record: a stable warmed source produces `sample`; unavailable,
   unsupported, unstable or invalid source produces the exact heartbeat status; the first valid
@@ -269,6 +271,16 @@ The current `0.1.0` vertical provides:
   retains only `mapId` and activity in memory behind `enabled + armed`, with no session, proposal,
   capture or persistence callback. There is still no launcher, real process/TCP adapter, wiring,
   settings, UI, packaging or platform QA.
+- H8.7 adds closed launch config/route/diagnostic contracts and exact plans for native Windows,
+  CrossOver `wine` and Steam/Proton `protontricks-launch`. AppID `1284210`, `MumbleLink` and launcher
+  authorities are fixed; package/compat paths are strict and ephemeral, `shell:false`, stdio is
+  piped and there are no free command/args/env/mapping fields. An injected adapter opens the exact
+  H8.5 five-file package before every attempt, checks the canonical manifest plus four non-circular
+  checksum entries and delegates only a byte-bound opaque capability—never a re-resolvable helper
+  path. Premature stdout is limited to one 516-byte chunk; overflow, a second event or early exit
+  fails closed. This proves only `integrity_checked` /
+  `unsigned_qa_only`, never authenticity: no Node executor or real spawn exists, and future
+  execution must require a release trust anchor plus immediate revalidation. H8.7 remains `@wip`.
 
 Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
 account operations are intentionally not implemented. The sole curated capability is human-reviewed

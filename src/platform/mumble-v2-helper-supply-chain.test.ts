@@ -1,17 +1,17 @@
-import { createHash } from 'node:crypto';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const HELPER_FILES = [
-	'tyrian-mumble-helper.exe',
-	'helper-manifest.json',
-	'SHA256SUMS',
-	'LICENSE',
-	'THIRD-PARTY-LICENSES.txt',
-] as const;
+import {
+	CANONICAL_MUMBLE_HELPER_FILES,
+	canonicalMumbleHelperManifest,
+	createCanonicalMumbleHelperPackage,
+	sha256,
+} from './test/mumble-v2-helper-package-fixture';
+
+const HELPER_FILES = CANONICAL_MUMBLE_HELPER_FILES;
 const DIRECT = new Map([
 	['getrandom', '=0.3.4'],
 	['subtle', '=2.6.1'],
@@ -65,17 +65,13 @@ describe('H8.5 helper supply chain and test-only staging', () => {
 			const executable = Buffer.from('synthetic PE fixture only\n');
 			const license = readFileSync('LICENSE');
 			const thirdParty = Buffer.from('reviewed synthetic fixture\n');
-			const helperManifest = Buffer.from(manifest(executable));
-			writeFileSync(join(directory, 'tyrian-mumble-helper.exe'), executable);
-			writeFileSync(join(directory, 'helper-manifest.json'), helperManifest);
-			writeFileSync(join(directory, 'LICENSE'), license);
-			writeFileSync(join(directory, 'THIRD-PARTY-LICENSES.txt'), thirdParty);
-			writeFileSync(join(directory, 'SHA256SUMS'), checksumFile([
-				['tyrian-mumble-helper.exe', executable],
-				['helper-manifest.json', helperManifest],
-				['LICENSE', license],
-				['THIRD-PARTY-LICENSES.txt', thirdParty],
-			]));
+			const fixture = createCanonicalMumbleHelperPackage(executable, license, thirdParty);
+			const helperManifest = Buffer.from(fixture.manifest);
+			writeFileSync(join(directory, 'tyrian-mumble-helper.exe'), fixture.executable);
+			writeFileSync(join(directory, 'helper-manifest.json'), fixture.manifest);
+			writeFileSync(join(directory, 'LICENSE'), fixture.license);
+			writeFileSync(join(directory, 'THIRD-PARTY-LICENSES.txt'), fixture.thirdPartyLicenses);
+			writeFileSync(join(directory, 'SHA256SUMS'), fixture.checksums);
 			expect(stageFindings(directory)).toEqual([]);
 
 			for (const output of ['helper.dll', 'helper.pdb', 'helper.lib', 'helper.obj', 'helper.rlib']) {
@@ -214,7 +210,7 @@ function parseCargoLock(source: string): LockedPackage[] {
 }
 
 function manifest(executable: Buffer): string {
-	return `${JSON.stringify({ schemaVersion: 1, name: 'tyrian-mumble-helper', version: '0.1.0', target: 'x86_64-pc-windows-msvc', status: 'UNSIGNED-NOT-FOR-RELEASE', releaseAllowed: false, files: { 'tyrian-mumble-helper.exe': sha256(executable) } }, null, 2)}\n`;
+	return new TextDecoder().decode(canonicalMumbleHelperManifest(executable));
 }
 
 function checksumFile(entries: ReadonlyArray<readonly [string, Uint8Array]>): string {
@@ -247,8 +243,4 @@ function stageFindings(directory: string): string[] {
 		findings.push('checksums-value');
 	}
 	return findings.sort();
-}
-
-function sha256(bytes: Uint8Array): string {
-	return createHash('sha256').update(bytes).digest('hex');
 }

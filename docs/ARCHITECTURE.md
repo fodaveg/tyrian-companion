@@ -11,7 +11,7 @@
 - `advisor`: preparación y contratos puros del Inventory Advisor; captura, clasificación y UI siguen separadas.
 - `sessions`: coordinación cercada, máquina de estados pura y persistencia local de runtime recuperable.
 - `objectives`: modelo y contrato de persistencia de objetivos.
-- `platform`: contrato H8.1/H8.4 y núcleo H8.6 puro para integraciones opcionales; no contiene adapters ni I/O ambiente.
+- `platform`: contrato H8.1/H8.4, núcleo H8.6 y frontera H8.7 pura con puertos inyectados; no contiene I/O ambiente ni executor host.
 - `spikes/h8-mumble-crossover`: prototipo C no productivo y no empaquetado para validar H8.2.
 - `ui`: vista y pestaña de ajustes de Obsidian.
 
@@ -82,7 +82,7 @@ sessions ----> coordinación local + contratos puros
          \---> scheduler API explícito (sin red/timers al construir)
 objectives --> contratos puros
 
-H8.1/H8.4 contract -> H8.5 helper aislado + H8.6 client core aislado -/-> main, plugin o release
+H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch aislados -/-> main, plugin o release
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
@@ -110,9 +110,12 @@ en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
 Mumble Link no forma parte del grafo de dependencias de v1. H8.1 añade el modelo declarativo
 `src/platform/mumble-v2-contract.ts`. H8.5 implementa el helper nativo y H8.6 el codec, cliente,
-salud y observación shadow como dos islas no compuestas. El scanner v7 permite exactamente el
-contrato, los cuatro módulos TS puros H8.6 y los seis módulos Rust del helper; censos positivos
-rechazan cualquier otro archivo, helper o importador bajo `src`. H8.2 permanece fuera de `src`.
+salud y observación shadow como dos islas no compuestas. H8.7 añade contrato/plan/adapter de proceso
+inyectado, todavía sin executor host. El scanner v13 permite exactamente el contrato, los cuatro
+módulos TS puros H8.6, los tres módulos H8.7 y los seis módulos Rust del helper; censos positivos
+rechazan cualquier otro archivo, helper o importador bajo `src` y exigen un único call-site de la
+capability dentro del método hasheado, además del hash canónico del adaptador completo. H8.2
+permanece fuera de `src`.
 No hay scheduler global, launcher, adapter nativo ni wiring desde `main`: la frontera está
 implementada en aislamiento, no activada.
 
@@ -294,8 +297,20 @@ La salud conserva tres ejes independientes —canal, fuente y actividad— y no 
 `link_stalled` en indisponibilidad de fuente. La observación shadow retiene únicamente `mapId` y
 actividad en memoria cuando `enabled && armed`; no expone callbacks de sesión, propuesta, captura o
 persistencia. Ninguno de los cuatro módulos importa Node, sesiones, stores, red, filesystem,
-logging ni timers globales. Aún no existen launcher, adapters reales, composición en `main`,
-settings/UI, packaging ni QA de plataforma para H8.6.
+logging ni timers globales. Aún no existen launcher real, composición en `main`, settings/UI,
+packaging ni QA de plataforma.
+
+H8.7 fija configuración, rutas y diagnósticos cerrados para Windows nativo, CrossOver `wine` y
+Steam/Proton `protontricks-launch`. AppID `1284210`, `MumbleLink` y ambos launchers son constantes;
+package/bottle/compat-data son efímeros y estrictos. El plan usa argv/env exactos, `shell:false` y
+tres pipes. El adapter abre en cada intento el paquete H8.5 exacto de cinco ficheros, valida manifest
+canónico y cuatro checksums no circulares, y entrega al puerto de proceso solo una capability opaca
+ligada al snapshot y sus digests: nunca el package path ni un helper path re-resoluble. Drena stderr,
+aplaza un único stdout prematuro de máximo 516 bytes y revalida el estado antes de abrir delivery,
+incluida la carrera de microtasks tras retornar el host. Overflow, segundo evento, exit temprano o
+un scheduler que invoque inline cierran una vez y notifican exit a H8.6. Stop es idempotente. Esta comprobación significa `integrity_checked` y
+`unsigned_qa_only`, no autenticidad. No hay import Node ni proceso real; un executor futuro deberá
+exigir digest de release o Authenticode como trust anchor y revalidar en cada arranque/restart.
 
 `RelevantItemStartDetector` es el consumidor puro H3.6. Recibe deltas H2.6 como datos no confiables y una regla inmutable `{id, version, itemIds}` ordenada; la relevancia nunca se deduce del nombre localizado, rareza o descripción. Un delta inválido o sin ganancias relevantes corta la racha. Dos señales positivas deben compartir cuenta y el mismo snapshot fronterizo; sus ventanas pueden contener el tiempo real de captura, pero no solaparse ni invertirse. Solo entonces publica una propuesta estable con ambas evidencias, calidad `complete|limited` y `possibleStart.from|to|uncertaintyMs` derivados del primer intervalo. Redelivery exacto es idempotente; evidencia distinta que reutiliza IDs de snapshot no se considera duplicada. La propuesta no transiciona H3.1 ni llama a red: H3.8 controla armado y confirmación, y los knowledge packs aportarán más listas relevantes.
 
