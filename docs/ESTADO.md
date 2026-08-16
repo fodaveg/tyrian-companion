@@ -20,6 +20,13 @@ issue form cerrado con versión, plataforma, origen, detección, fase y reproduc
 identidad, rutas, inventario/snapshots, IndexedDB y salida sin redactar. El contrato ejecutable y sus
 sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 
+**H7.1 fija la identidad de release, sin publicar.** El ID `tyrian-companion`, el nombre
+**Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
+licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
+2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
+El repositorio sigue privado: H7.9 debe repetir el censo, auditar el historial y autorizar
+explícitamente el cambio de visibilidad y la release.
+
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
 **H0.4, H0.6, H8.1 y H8.4: política y contrato v2 documentados; H8.5/H8.6 implementan ambos extremos en aislamiento, pero integración, validación multiplataforma y piloto siguen pendientes.** El MVP es
@@ -178,6 +185,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
   supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan,
   syntax-check del wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v7 y sabotajes verdes.
+- `npm run test:release-identity-contract`: identidad H7.1 y veinticuatro sabotajes causales verdes.
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
 - `npm run bench:h6-performance` y su sabotaje de heap: verdes en Node 24.19.0.

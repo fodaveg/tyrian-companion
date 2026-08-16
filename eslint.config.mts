@@ -7,17 +7,19 @@ export const defaultProjectFiles = [
 	'manifest.json',
 	'scripts/release-preflight.mjs',
 	'scripts/release-package.mjs',
+	'scripts/release-identity-contract.mjs',
 	'scripts/security-scan.mjs',
 	'scripts/support-contract.mjs',
 	'scripts/h8-native-decision-contract.mjs',
 	'scripts/tests/probar-release-package.mjs',
+	'scripts/tests/probar-release-identity-contract.mjs',
 	'scripts/tests/probar-h8-helper-decision-contract.mjs',
 	'scripts/tests/probar-security-scan.mjs',
 	'scripts/tests/probar-support-contract.mjs',
 	'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
 ] as const;
 
-export const defaultProjectCapacity = 16;
+export const defaultProjectCapacity = 18;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(

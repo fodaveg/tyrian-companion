@@ -21,6 +21,10 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 > Install only an artifact supplied for a named commit, and use a disposable vault until the manual
 > platform matrix is complete.
 
+The fixed plugin name, ID, author, repository and MIT license are recorded in the
+[Release identity](docs/IDENTITY.md). The repository remains private until the explicit publication
+gate; the current decision does not create a GitHub Release or activate BRAT.
+
 ## Install a beta candidate
 
 Requirements: desktop Obsidian `1.11.4` or newer and the ZIP plus `.sha256` file from the same CI

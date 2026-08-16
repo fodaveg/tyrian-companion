@@ -1,5 +1,15 @@
 # Changelog
 
+## H7.1 — Identidad de release
+
+- Fijados `tyrian-companion`, **Tyrian Companion**, autor público **David**, repositorio
+  `fodaveg/tyrian-companion` y licencia MIT como identidad estable del MVP.
+- La comprobación case-insensitive contra revisiones fijas de los registros oficial activo y retirado
+  de Obsidian devuelve cero colisiones; deberá repetirse antes de publicar porque no reserva el nombre.
+- Añadido contrato ejecutable con veinticuatro sabotajes para impedir deriva silenciosa entre manifest, paquete,
+  repositorio, licencia, README y evidencia de identidad. El repo permanece privado y no se creó
+  release, tag ni canal BRAT.
+
 ## H4.18/H4.19 — Activación humana de la recomendación para 36038
 
 - David aprobó el `2026-08-16T05:22:24.000Z` la regla source-backed de apertura y el pack económico de **Trick-or-Treat Bag**. RulePack V2 pasa a `human_reviewed`, la capability `open` queda habilitada y el pack H4.19 usa activación `enabled` ligada al nuevo SHA-256.

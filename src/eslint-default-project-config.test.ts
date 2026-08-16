@@ -10,14 +10,14 @@ describe('ESLint default-project capacity', () => {
 	});
 
 	it('accepts the exact reviewed boundary', () => {
-		expect(runConfigCheck(12, 16, 4)).toMatchObject({ status: 0, stderr: '' });
+		expect(runConfigCheck(14, 18, 4)).toMatchObject({ status: 0, stderr: '' });
 	});
 
 	it('turns red before the reserved headroom is consumed', () => {
-		const result = runConfigCheck(13, 16, 4);
+		const result = runConfigCheck(15, 18, 4);
 		expect(result.status).not.toBe(0);
 		expect(result.stderr).toContain(
-			'allowDefaultProject lists 13 files and reserves 4 slots, but its explicit capacity is 16',
+			'allowDefaultProject lists 15 files and reserves 4 slots, but its explicit capacity is 18',
 		);
 	});
 });

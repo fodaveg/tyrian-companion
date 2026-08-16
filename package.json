@@ -1,6 +1,7 @@
 {
 	"name": "tyrian-companion",
 	"version": "0.1.0",
+	"private": true,
 	"description": "An Obsidian desktop companion for Guild Wars 2 account context and planning.",
 	"main": "main.js",
 	"type": "module",
@@ -8,20 +9,22 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
-		"test": "vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:support-contract && npm run test:h8-helper-decision-contract",
+		"test": "vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:support-contract && npm run test:h8-helper-decision-contract",
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",
 		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
 		"test:bench:h6-performance-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-performance-red.ts",
 		"test:release-preflight": "bash scripts/tests/probar-release-preflight.sh",
 		"test:security-scan": "node scripts/tests/probar-security-scan.mjs",
 		"test:release-package": "node scripts/tests/probar-release-package.mjs",
+		"test:release-identity-contract": "node scripts/tests/probar-release-identity-contract.mjs",
 		"test:support-contract": "node scripts/tests/probar-support-contract.mjs",
 		"test:h8-helper-decision-contract": "node scripts/tests/probar-h8-helper-decision-contract.mjs",
 		"security:scan": "node scripts/security-scan.mjs",
 		"h8:helper-decision-contract": "node scripts/h8-native-decision-contract.mjs",
 		"check": "npm run lint && npm run test && npm run security:scan && npm run build",
 		"release:preflight": "node scripts/release-preflight.mjs",
-		"release:package": "node scripts/release-package.mjs",
+		"release:identity-contract": "node scripts/release-identity-contract.mjs",
+		"release:package": "npm run release:identity-contract && node scripts/release-package.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
@@ -30,6 +33,10 @@
 	],
 	"author": "David",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/fodaveg/tyrian-companion.git"
+	},
 	"engines": {
 		"node": "^22.20.0 || >=24.12.0"
 	},
