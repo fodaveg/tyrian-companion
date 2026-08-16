@@ -32,6 +32,9 @@ describe('H5.11 inventory advisor presentation', () => {
 		addVendorLine(value);
 		const all = project(value);
 		expect(all.status).toBe('ready');
+		expect(all.optionalSources).toEqual({
+			bank: { status: 'complete' }, materials: { status: 'complete' }, delivery: { status: 'complete' },
+		});
 		expect(all.groups.map((group) => group.group)).toEqual(['market']);
 		expect(all.groups[0]?.rows.map((row) => row.itemId)).toEqual([11, 10]);
 

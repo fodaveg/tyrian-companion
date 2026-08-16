@@ -17,6 +17,7 @@ describe('H5.11 inventory advisor view model', () => {
 			reasonCodes: ['alternative_route_exists', 'rule_missing'],
 			value: { status: 'available', copper: 85, route: 'instant_sell' }, irreversibleReviewOnly: false,
 		}] }] });
+		expect(model.optionalSources).toBeNull();
 	});
 
 	it.each(['limited', 'blocked'] as const)('keeps the %s safety state even with no visible groups', (status) => {

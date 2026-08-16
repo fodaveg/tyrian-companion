@@ -89,6 +89,11 @@ export function buildInventoryAdvisorPresentation(
 			version: INVENTORY_ADVISOR_PRESENTATION_VERSION,
 			status: groups.length === 0 && result.status === 'ready' ? 'empty' : result.status,
 			groups,
+			optionalSources: {
+				bank: structuredClone(source.input.snapshot.coverage.sources.bank),
+				materials: structuredClone(source.input.snapshot.coverage.sources.materials),
+				delivery: structuredClone(source.input.snapshot.coverage.sources.commerce_delivery),
+			},
 			discardReview: contextual && source.result.proofs.length > 0
 				? { status: 'review_only', proofs: structuredClone(source.result.proofs) }
 				: { status: 'unavailable' },

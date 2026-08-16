@@ -171,6 +171,44 @@ describe('StorageSnapshotService', () => {
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
 	});
 
+	it.each([
+		['account/bank', 'bank'],
+		['account/materials', 'materials'],
+		['commerce/delivery', 'commerce_delivery'],
+	] as const)('degrades an advisor %s 403 without discarding bags and shared inventory', async (path, source) => {
+		const fixture = clientFor([passWith()], {
+			permissions: allPermissions,
+			onRequest: async (requested) => {
+				if (requested.startsWith(path)) {
+					throw new HttpTransportError('http', 403, null, 'Forbidden.');
+				}
+			},
+		});
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot.coverage.sources[source]).toEqual({
+			status: 'partial', reason: 'unavailable',
+			diagnostic: { kind: 'http', status: 403, retryAfterMs: null },
+		});
+		expect(snapshot.coverage.sources.shared_inventory).toEqual({ status: 'complete' });
+		expect(snapshot.coverage.sources.characters).toEqual({ status: 'complete' });
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+	});
+
+	it('still rejects a 401 from an optional advisor store because the pinned credential is invalid', async () => {
+		const fixture = clientFor([passWith()], {
+			onRequest: async (path) => {
+				if (path.startsWith('account/bank')) {
+					throw new HttpTransportError('http', 401, null, 'Unauthorized.');
+				}
+			},
+		});
+		await expect(new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation()))
+			.rejects.toMatchObject({ status: 401 });
+	});
+
 	it('serializes character inventory requests only for the advisor scope', async () => {
 		const secondCharacter = 'Boreal Dos';
 		const inventoryPath = `characters/${encodeURIComponent(secondCharacter)}/inventory`;

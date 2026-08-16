@@ -2,6 +2,13 @@
 
 ## Inventory Advisor — alcance por personaje y lectura honesta del valor
 
+- Un 403 específico de banco, materiales o delivery ya no derriba la captura del Advisor: conserva
+  bolsas y compartido y marca únicamente esa fuente como parcial. Un 401 sigue fallando globalmente.
+  La cobertura saneada llega al recibo y a la vista; cada checkbox opcional indica «Leído», permiso
+  ausente, restricción, lectura parcial o indisponibilidad, y no confunde una fuente inaccesible con
+  una fuente leída sin objetos.
+- Un mismo objeto con una ruta valorada y otra sin precio conserva el subtotal conocido, pero cuenta
+  como no valorado; el resumen ya no puede afirmar que todos sus objetos tienen precio.
 - La captura del Advisor vuelve a leer banco, materiales y entrega del bazar, pero como fuentes
   **opcionales**: su permiso ausente, URL restringida o fallo degrada solo su propia cobertura y nunca
   invalida bolsas ni inventario compartido. La cartera sigue fuera del Advisor. Los tres controles

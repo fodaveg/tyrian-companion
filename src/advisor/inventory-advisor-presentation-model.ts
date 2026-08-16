@@ -1,4 +1,4 @@
-import type { ItemLocation } from '../account/storage-snapshot-model';
+import type { ItemLocation, SourceCoverage } from '../account/storage-snapshot-model';
 import type { InventoryAdvisorCoverageV1, InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
 import type { InventoryDiscardAllowlistProofV1 } from './inventory-advisor-discard-model';
 
@@ -59,6 +59,12 @@ export interface InventoryAdvisorPresentation {
 	version: typeof INVENTORY_ADVISOR_PRESENTATION_VERSION;
 	status: InventoryAdvisorPresentationStatus;
 	groups: InventoryAdvisorPresentationSection[];
+	/** Redacted capture coverage for optional stores; omitted only by legacy/test fixtures. */
+	optionalSources?: {
+		bank: SourceCoverage;
+		materials: SourceCoverage;
+		delivery: SourceCoverage;
+	};
 	discardReview:
 		| { status: 'unavailable' }
 		| { status: 'review_only'; proofs: InventoryDiscardAllowlistProofV1[] };

@@ -6,6 +6,7 @@ import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { InventoryAdvisorEvidenceService } from './inventory-advisor-evidence';
 import { createInventoryAdvisorInputFromEvidence, isInventoryAdvisorEvidence } from './inventory-advisor-evidence-contract';
+import type { InventoryAdvisorCaptureReceiptV1 } from './inventory-advisor-evidence-model';
 import { isAccountSignals, sha256InventoryRulePack } from './inventory-advisor-contract';
 
 const NOW = Date.parse('2026-08-14T12:00:00.000Z');
@@ -179,7 +180,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			structuredClone(incomplete.coverage),
 		];
 		const incompleteCapture = vi.fn(async () => incomplete);
-		const receipt = vi.fn();
+		const receipt = vi.fn<(value: InventoryAdvisorCaptureReceiptV1) => void>();
 		const incompleteService = new InventoryAdvisorEvidenceService(
 			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
 			{ captureInventoryWithOperation: incompleteCapture }, { resolve: async () => catalogFor(incomplete) },
@@ -207,6 +208,9 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 					diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
 				},
 				sharedInventory: { status: 'complete' },
+				bank: { status: 'complete' },
+				materials: { status: 'complete' },
+				commerceDelivery: { status: 'complete' },
 				characterInventories: [{
 					status: 'partial', reason: 'missing_character',
 					diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
@@ -218,6 +222,9 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 							diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
 						},
 						sharedInventory: { status: 'complete' },
+						bank: { status: 'complete' },
+						materials: { status: 'complete' },
+						commerceDelivery: { status: 'complete' },
 						characterInventories: [{
 							status: 'partial', reason: 'missing_character',
 							diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
@@ -229,6 +236,9 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 							diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
 						},
 						sharedInventory: { status: 'complete' },
+						bank: { status: 'complete' },
+						materials: { status: 'complete' },
+						commerceDelivery: { status: 'complete' },
 						characterInventories: [{
 							status: 'partial', reason: 'missing_character',
 							diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
@@ -261,6 +271,39 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			async () => { throw new Error('local receipt unavailable'); },
 		);
 		await expect(service.capture('es')).resolves.toMatchObject({ status: 'complete' });
+	});
+
+	it('records optional-store coverage without account, item, character, URL, or response data', async () => {
+		const snapshot = snapshotFixture([10]);
+		snapshot.coverage.sources.bank = {
+			status: 'partial', reason: 'unavailable',
+			diagnostic: { kind: 'http', status: 403, retryAfterMs: null },
+		};
+		snapshot.coverage.sources.materials = { status: 'skipped', reason: 'missing_scope' };
+		snapshot.coverage.sources.commerce_delivery = { status: 'skipped', reason: 'url_restricted' };
+		snapshot.passCoverages = [structuredClone(snapshot.coverage)];
+		const receipt = vi.fn<(value: InventoryAdvisorCaptureReceiptV1) => void>();
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW, receipt,
+		);
+
+		await service.capture('es');
+
+		expect(receipt.mock.calls[0]?.[0]).toMatchObject({
+			snapshot: {
+				bank: { status: 'partial', reason: 'unavailable', diagnostic: { kind: 'http', status: 403, retryAfterMs: null } },
+				materials: { status: 'skipped', reason: 'missing_scope' },
+				commerceDelivery: { status: 'skipped', reason: 'url_restricted' },
+				attempts: [{
+					bank: { status: 'partial', reason: 'unavailable', diagnostic: { kind: 'http', status: 403, retryAfterMs: null } },
+					materials: { status: 'skipped', reason: 'missing_scope' },
+					commerceDelivery: { status: 'skipped', reason: 'url_restricted' },
+				}],
+			},
+		});
+		expect(JSON.stringify(receipt.mock.calls)).not.toMatch(/account-1|Item 10|Private Character Name|\/v2\//u);
 	});
 
 	it('keeps missing scopes and URL-restricted signals null without calling their endpoints', async () => {

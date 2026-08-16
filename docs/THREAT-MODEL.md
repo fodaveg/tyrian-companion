@@ -25,7 +25,8 @@ ya comprometida, un reporte humano que ignore la redacción ni un paquete de des
   pero no existe adapter ni composición que abra proceso o socket. Cablearlo exige nueva revisión y QA real.
 - Cada Refresh del Inventory Advisor reemplaza un único recibo diagnóstico local dentro de la carpeta
   del plugin; una fuente fallida expone como máximo `http|timeout|network`, estado HTTP y espera acotada,
-  y su contrato cerrado conserva resultado, duración, calidad y coberturas por pasada/fuente;
+  y su contrato cerrado conserva resultado, duración, calidad y coberturas por pasada/fuente —incluidos
+  banco, materiales y delivery separados del núcleo de bolsas y compartido—;
   excluye clave, identificadores de cuenta/snapshot, nombres de personaje, objetos, URLs y cuerpos HTTP.
   No es un log acumulativo, no sale del vault y un fallo al escribirlo no altera la recomendación.
 - El formulario de bugs es una superficie humana de GitHub, no un uploader del plugin. Solicita solo

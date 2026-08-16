@@ -130,6 +130,7 @@ export class StorageSnapshotService {
 			() => this.globalLimit(() => operation.requestDetailed(withSchema('characters'))),
 			parseRoster,
 			false,
+			true,
 		);
 		coverage.sources.characters = rosterResult.coverage;
 		const roster = rosterResult.value ?? [];
@@ -149,6 +150,7 @@ export class StorageSnapshotService {
 				'shared_inventory',
 				'account/inventory',
 				(value) => parseSlotArray(value, 'shared_inventory'),
+				true,
 			),
 		];
 		if (coverage.sources.bank.status === 'complete') accountTasks.push(
@@ -160,6 +162,7 @@ export class StorageSnapshotService {
 				'bank',
 				'account/bank',
 				(value) => parseSlotArray(value, 'bank'),
+				scope === 'complete',
 			),
 		);
 		if (coverage.sources.materials.status === 'complete') accountTasks.push(
@@ -171,6 +174,7 @@ export class StorageSnapshotService {
 				'materials',
 				'account/materials',
 				parseMaterials,
+				scope === 'complete',
 			),
 		);
 
@@ -195,6 +199,7 @@ export class StorageSnapshotService {
 					const result = await captureSource(
 						() => operation.requestDetailed(withSchema(`characters/${encodeURIComponent(character)}/inventory`)),
 						(value) => parseCharacterInventory(value, character),
+						true,
 						true,
 					);
 					coverage.characters[character] = result.coverage;
@@ -227,11 +232,13 @@ export class StorageSnapshotService {
 		source: 'shared_inventory' | 'bank' | 'materials',
 		path: string,
 		parser: (value: unknown) => StorageSnapshotPass['holdings'],
+		forbiddenIsFatal: boolean,
 	): Promise<void> {
 		const result = await captureSource(
 			() => limit(() => operation.requestDetailed(withSchema(path))),
 			parser,
 			false,
+			forbiddenIsFatal,
 		);
 		coverage.sources[source] = result.coverage;
 		if (result.value) holdings.push(...result.value);
@@ -249,6 +256,7 @@ export class StorageSnapshotService {
 			() => limit(() => operation.requestDetailed(withSchema(path))),
 			parseWallet,
 			false,
+			true,
 		);
 		coverage.sources[source] = result.coverage;
 		if (result.value) currencies.push(...result.value);
@@ -264,6 +272,7 @@ export class StorageSnapshotService {
 		const result = await captureSource(
 			() => limit(() => operation.requestDetailed(withSchema('commerce/delivery'))),
 			parseDelivery,
+			false,
 			false,
 		);
 		coverage.sources.commerce_delivery = result.coverage;
@@ -288,6 +297,7 @@ async function captureSource<T>(
 	request: () => Promise<{ status: number; body: unknown }>,
 	parse: (value: unknown) => T,
 	isCharacter: boolean,
+	forbiddenIsFatal: boolean,
 ): Promise<{ value: T | null; coverage: SourceCoverage }> {
 	try {
 		const response = await request();
@@ -305,7 +315,10 @@ async function captureSource<T>(
 		};
 	} catch (error) {
 		if (!(error instanceof HttpTransportError)) throw error;
-		if (error.status === 401 || error.status === 403) throw error;
+		// A 401 invalidates the pinned credential for the whole capture. A 403 is
+		// fatal only for required sources; optional stores retain the core snapshot
+		// and expose their own redacted partial coverage instead.
+		if (error.status === 401 || (error.status === 403 && forbiddenIsFatal)) throw error;
 		return {
 			value: null,
 			coverage: {

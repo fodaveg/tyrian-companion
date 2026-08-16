@@ -28,6 +28,8 @@ export interface InventoryAdvisorViewModel {
 	blockedReason?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
 	/** A failed refresh did not replace the last valid in-memory result. */
 	refreshWarning?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
+	/** Redacted availability of opt-in stores; null until a trusted capture exists. */
+	optionalSources?: InventoryAdvisorPresentation['optionalSources'] | null;
 	groups: InventoryAdvisorViewModelGroup[];
 }
 
@@ -38,11 +40,12 @@ export interface InventoryAdvisorViewModelGroup {
 
 /** Converts the data-only advisor presentation into a UI-neutral render model. */
 export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPresentation | null): InventoryAdvisorViewModel {
-	if (presentation === null) return { status: 'loading', title: 'Inventory advisor', detail: 'Loading review-only recommendations.', groups: [] };
+	if (presentation === null) return { status: 'loading', title: 'Inventory advisor', detail: 'Loading review-only recommendations.', optionalSources: null, groups: [] };
 	return {
 		status: presentation.status,
 		title: 'Inventory advisor',
 		detail: detailFor(presentation.status),
+		optionalSources: presentation.optionalSources === undefined ? null : structuredClone(presentation.optionalSources),
 		groups: presentation.groups.map((group) => ({
 			key: group.group,
 			rows: group.rows.map((row) => ({

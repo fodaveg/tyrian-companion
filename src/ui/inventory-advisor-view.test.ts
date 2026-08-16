@@ -234,9 +234,29 @@ describe('Inventory Advisor view', () => {
 			row({ itemId: 4, quantity: 2, action: 'keep', allocations: [allocation('#/positions/4/0', 2)] }),
 		]).stacks).toBe(1);
 		expect(summarizeInventoryAdvisorRows([])).toMatchObject({ items: 0, knownCopper: 0, unpricedItems: 0 });
+		expect(summarizeInventoryAdvisorRows([
+			row({ itemId: 5, action: 'sell', quantity: 1, allocations: [allocation('#/positions/5/0', 1)], value: { status: 'available', route: 'instant_sell', copper: 100 } }),
+			row({ itemId: 5, action: 'list', quantity: 1, allocations: [allocation('#/positions/5/1', 1)], value: { status: 'unavailable', route: null } }),
+		])).toMatchObject({ items: 1, pricedItems: 0, unpricedItems: 1, knownCopper: 100 });
 		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
 		expect(text(mount.elements())).toContain('Sin precio demostrado: 2 objetos.');
 		expect(text(mount.elements())).toContain('2 sin precio');
+	});
+
+	it('distinguishes a read empty optional store from unavailable or restricted stores', () => {
+		const model = readyModel();
+		model.groups = [];
+		model.optionalSources = {
+			bank: { status: 'complete' },
+			materials: { status: 'partial', reason: 'unavailable', diagnostic: { kind: 'http', status: 403, retryAfterMs: null } },
+			delivery: { status: 'skipped', reason: 'url_restricted' },
+		};
+		const mount = render(model);
+		const stores = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
+		expect(stores.map((input) => input.disabled)).toEqual([false, true, true]);
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__source-status').map((entry) => entry.textContent))
+			.toEqual([' · Leído', ' · No disponible', ' · Restringido por la clave', null, null]);
+		expect(text(mount.elements())).not.toContain('403');
 	});
 
 	it('orders visible rows by the selected criterion and closes each group with its exact subtotal', () => {
@@ -475,6 +495,9 @@ function createMount(): { container: FakeElement; document: FakeDocument } {
 function readyModel(): InventoryAdvisorViewModel {
 	return {
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		optionalSources: {
+			bank: { status: 'complete' }, materials: { status: 'complete' }, delivery: { status: 'complete' },
+		},
 		groups: [{ key: 'review', rows: [
 			row({ itemId: 100, name: 'Material seguro', action: 'sell' }),
 			row({ itemId: 200, name: 'Resto sin valor', action: 'discard_review', coverage: coverage('limited'), irreversibleReviewOnly: true,
@@ -486,6 +509,9 @@ function readyModel(): InventoryAdvisorViewModel {
 function twoCharacterModel(): InventoryAdvisorViewModel {
 	return {
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		optionalSources: {
+			bank: { status: 'complete' }, materials: { status: 'complete' }, delivery: { status: 'complete' },
+		},
 		groups: [{ key: 'market', rows: [
 			row({ id: '#/explanations/10/0', itemId: 10, name: 'De Astra', action: 'sell', quantity: 2,
 				allocations: [{ positionRef: '#/positions/10/0', quantity: 2, location: { source: 'character', character: 'Astra', container: 'bag', bagIndex: 0, slot: 0 } }] }),
@@ -499,6 +525,9 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 	const actions: readonly InventoryAdvisorViewAction[] = ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'];
 	return {
 		status: 'limited', title: 'inventory_advisor.title', detail: 'inventory_advisor.limited',
+		optionalSources: {
+			bank: { status: 'complete' }, materials: { status: 'complete' }, delivery: { status: 'complete' },
+		},
 		groups: [{ key: 'review', rows: actions.map((action, index) => row({
 			itemId: index + 1,
 			name: index === 0 ? `Objeto extenso ${'x'.repeat(320)}` : `Objeto ${String(index + 1)}`,

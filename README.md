@@ -197,8 +197,10 @@ The current `0.1.0` vertical provides:
   vendor); the built-in 36038 activation remains pending human review and cannot activate opening or discard.
 	The view captures character bags plus shared inventory independently in one bounded pass per attempt;
 	a transient partial pass can trigger one retry, and each explicit Refresh request has a 30-second timeout.
-	Bank/materials/delivery remain visible
-	as disabled future scopes, while plain review rows are opt-in; item rows render trusted official catalog icons.
+	Bank, materials and Trading Post delivery are captured as optional stores and remain unchecked by
+	default. Each control reports whether its source was read, restricted, missing permission, partial or
+	unavailable; a source-specific 403 degrades only that store, while a 401 still rejects the pinned
+	credential. Plain review rows are opt-in; item rows render trusted official catalog icons.
 	At the bundle's exclusive expiry,
   Refresh fails closed with
   `missing_rules` before any API request.

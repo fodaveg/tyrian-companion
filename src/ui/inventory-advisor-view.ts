@@ -76,6 +76,7 @@ export const INVENTORY_ADVISOR_VIEW_FIXTURE: InventoryAdvisorViewModel = {
 	status: 'empty',
 	title: 'inventory_advisor.title',
 	detail: 'inventory_advisor.empty',
+	optionalSources: null,
 	groups: [],
 };
 
@@ -170,7 +171,9 @@ export function summarizeInventoryAdvisorRows(rows: readonly InventoryAdvisorVie
 			unpriced.add(row.itemId);
 		}
 	}
-	for (const itemId of priced) unpriced.delete(itemId);
+	// An item is fully priced only if every visible decision row has a value.
+	// Mixed routes retain their known subtotal but remain explicitly unpriced.
+	for (const itemId of unpriced) priced.delete(itemId);
 	return {
 		items: new Set(rows.map((row) => row.itemId)).size,
 		units, stacks: positions.size, knownCopper,
@@ -296,7 +299,9 @@ function mountInventoryAdvisorView(
 	sourceFieldset.className = 'tyrian-inventory-advisor__scope';
 	const sourceLegend = createEl('legend');
 	sourceFieldset.append(sourceLegend);
-	const sourceControls = new Map<'bank' | 'materials' | 'delivery' | 'keep' | 'review', { input: HTMLInputElement; text: HTMLSpanElement }>();
+	const sourceControls = new Map<'bank' | 'materials' | 'delivery' | 'keep' | 'review', {
+		input: HTMLInputElement; text: HTMLSpanElement; status: HTMLSpanElement;
+	}>();
 	for (const candidate of ['bank', 'materials', 'delivery', 'keep', 'review'] as const) {
 		const label = createEl('label');
 		const input = createEl('input');
@@ -306,9 +311,11 @@ function mountInventoryAdvisorView(
 				: candidate === 'delivery' ? filters.includeDelivery === true
 					: candidate === 'keep' ? filters.showKeep === true : filters.showReview === true;
 		const text = createSpan();
-		label.append(input, text);
+		const status = createSpan();
+		status.className = 'tyrian-inventory-advisor__source-status';
+		label.append(input, text, status);
 		sourceFieldset.append(label);
-		sourceControls.set(candidate, { input, text });
+		sourceControls.set(candidate, { input, text, status });
 	}
 	controls.append(searchLabel, actionLabel, groupLabelElement, characterLabel, sortLabelElement, sourceFieldset);
 	const progress = createEl('progress');
@@ -317,6 +324,25 @@ function mountInventoryAdvisorView(
 	progress.hidden = true;
 	let refreshButton: HTMLButtonElement | null = null;
 	const refreshResults = (): void => {
+		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
+		let sourceSelectionChanged = false;
+		for (const key of ['bank', 'materials', 'delivery'] as const) {
+			const control = sourceControls.get(key)!;
+			const coverage = model.optionalSources?.[key] ?? null;
+			const available = coverage?.status === 'complete';
+			control.input.disabled = scopedToCharacter || !available;
+			control.status.textContent = ` · ${optionalSourceCoverageLabel(coverage, translator)}`;
+			if (!available && control.input.checked) {
+				control.input.checked = false;
+				sourceSelectionChanged = true;
+			}
+		}
+		if (sourceSelectionChanged) filters = {
+			...filters,
+			includeBank: sourceControls.get('bank')!.input.checked,
+			includeMaterials: sourceControls.get('materials')!.input.checked,
+			includeDelivery: sourceControls.get('delivery')!.input.checked,
+		};
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const allRows = visible ? flattenInventoryAdvisorRows(model.groups) : [];
 		const order = filters.sort ?? 'value_desc';
@@ -324,10 +350,6 @@ function mountInventoryAdvisorView(
 		const directRows = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, {
 			...filters, action: 'all', showKeep: false, showReview: false,
 		}), order, translator.locale) : [];
-		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
-		for (const key of ['bank', 'materials', 'delivery'] as const) {
-			sourceControls.get(key)!.input.disabled = scopedToCharacter;
-		}
 		const filteredEmpty = visible && rows.length === 0 && hasActiveFilter(filters);
 		results.replaceChildren();
 		if (visible) results.append(renderResults(
@@ -433,6 +455,22 @@ function mountInventoryAdvisorView(
 	};
 	update(model, translator, interactions);
 	return { update };
+}
+
+function optionalSourceCoverageLabel(
+	coverage: NonNullable<InventoryAdvisorViewModel['optionalSources']>[keyof NonNullable<InventoryAdvisorViewModel['optionalSources']>] | null,
+	translator: Translator,
+): string {
+	if (coverage === null) return translator.t('advisor.view.source.unknown');
+	if (coverage.status === 'complete') return translator.t('advisor.view.source.complete');
+	switch (coverage.reason) {
+		case 'missing_scope': return translator.t('advisor.view.source.missingScope');
+		case 'url_restricted': return translator.t('advisor.view.source.urlRestricted');
+		case 'partial_response': return translator.t('advisor.view.source.partial');
+		case 'unavailable': return translator.t('advisor.view.source.unavailable');
+		case 'not_requested': return translator.t('advisor.view.source.notRequested');
+		default: return translator.t('advisor.view.source.unavailable');
+	}
 }
 
 /** Reads a prepared local model once and delegates all rendering to the DOM adapter. */

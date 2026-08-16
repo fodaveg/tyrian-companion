@@ -102,10 +102,16 @@ export interface InventoryAdvisorCaptureReceiptV1 {
 		durationMs: number;
 		roster: SourceCoverage;
 		sharedInventory: SourceCoverage;
+		bank: SourceCoverage;
+		materials: SourceCoverage;
+		commerceDelivery: SourceCoverage;
 		characterInventories: SourceCoverage[];
 		attempts: Array<{
 			roster: SourceCoverage;
 			sharedInventory: SourceCoverage;
+			bank: SourceCoverage;
+			materials: SourceCoverage;
+			commerceDelivery: SourceCoverage;
 			characterInventories: SourceCoverage[];
 		}>;
 	} | null;
