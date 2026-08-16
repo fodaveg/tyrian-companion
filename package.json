@@ -9,7 +9,7 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
-		"test": "vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:support-contract && npm run test:h8-helper-decision-contract",
+		"test": "vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:beta-channel && npm run test:support-contract && npm run test:h8-helper-decision-contract",
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",
 		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
 		"test:bench:h6-performance-red": "node node_modules/jiti/lib/jiti-cli.mjs scripts/test-h6-performance-red.ts",
@@ -17,6 +17,7 @@
 		"test:security-scan": "node scripts/tests/probar-security-scan.mjs",
 		"test:release-package": "node scripts/tests/probar-release-package.mjs",
 		"test:release-identity-contract": "node scripts/tests/probar-release-identity-contract.mjs",
+		"test:beta-channel": "node scripts/tests/probar-beta-channel.mjs",
 		"test:support-contract": "node scripts/tests/probar-support-contract.mjs",
 		"test:h8-helper-decision-contract": "node scripts/tests/probar-h8-helper-decision-contract.mjs",
 		"security:scan": "node scripts/security-scan.mjs",
@@ -25,6 +26,8 @@
 		"release:preflight": "node scripts/release-preflight.mjs",
 		"release:identity-contract": "node scripts/release-identity-contract.mjs",
 		"release:package": "npm run release:identity-contract && node scripts/release-package.mjs",
+		"beta:artifact": "node scripts/prepare-beta-artifact.mjs",
+		"beta:install": "node scripts/install-beta.mjs install",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

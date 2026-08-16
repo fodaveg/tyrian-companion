@@ -35,6 +35,23 @@ temporal tanto para ramas como para tags. En tags, `GITHUB_REF_NAME` debe ser id
 crear una release o activar BRAT. Esos actos y la QA de instalación/actualización son fronteras humanas
 separadas descritas en [Canal beta y paquete de release](BETA.md).
 
+`scripts/install-beta.mjs` es la única frontera técnica H7.5 de instalación manual. Recibe una bóveda,
+un ZIP y la confirmación humana de que Obsidian está cerrado; no descubre bóvedas ni procesos. Relee
+ZIP y checksum como ficheros regulares no enlazados, reproduce el contrato ZIP cerrado, valida la
+identidad del manifest y exige una versión estrictamente mayor. Solo puede crear o sustituir los tres
+ficheros gestionados bajo `<config>/plugins/tyrian-companion`; `data.json`, ficheros desconocidos y el
+resto de la bóveda quedan fuera. El swap usa temporales exclusivos y backups por operación, pero la
+fuente de rollback son los bytes originales capturados e inmutables; un backup truncado, sustituido o
+enlazado no se restaura. Cualquier fallo anterior a retirar el lock revierte el conjunto completo
+mientras conserva la autoridad de ruta y no imprime la ruta de la bóveda. Si
+la identidad de un directorio cambia, se detiene sin operar sobre el sustituto. Un lock exclusivo cubre inspección,
+staging, swap y rollback; antes de cada operación se revalida `dev+ino` de la cadena de directorios y
+antes de cada rename se revalidan versión y hashes de origen/temporal. El checksum aporta integridad,
+no autenticidad: el artifact de un run/SHA identificado es el ancla humana. CI recrea
+`.beta-artifact`, copia allí exactamente ZIP/checksum/instalador, fija la identidad del directorio y
+relee los bytes persistidos antes de validar otra vez checksum→ZIP. El censo rechaza cualquier upload
+adicional o referencia distinta de la acción aprobada; nunca publica el stage interno de build.
+
 ## Flujo de dependencias
 
 ```text

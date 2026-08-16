@@ -4,12 +4,18 @@
 
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, H8.3 la decisión, H8.5 el helper/servidor Rust aislado y H8.6 el cliente core TS aislado; launcher, adapters, composición del plugin, firma, publicación y QA real siguen pendientes.**
 
-**H7.4 está implementado técnicamente y H7.5 preparado, sin publicación.** El release package parte de
+**H7.4 está implementado técnicamente y H7.5 dispone de un canal manual guardado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
 escanea los bytes staged y genera ZIP reproducible + SHA-256 con prueba causal. CI conserva permisos de
-solo lectura y sube el candidato como artifact de rama/tag tras el gate. No se ha creado tag ni GitHub
-Release, BRAT no está activo y la instalación/actualización real en Obsidian sigue pendiente de QA
-humana en las plataformas soportadas.
+solo lectura, recrea un staging enumerado y sube exactamente ZIP, checksum e instalador tras el gate.
+El instalador verifica de nuevo paquete e identidad, serializa instalaciones, revalida directorios y
+estado antes de operar, escribe solo los tres ficheros gestionados y revierte fallos bajo la misma
+autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
+en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
+y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
+ajeno. No se ha creado tag ni GitHub Release, BRAT no está
+activo y la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
+soportadas.
 
 **H7.2, H7.3 y H7.6 están implementados técnicamente, sin afirmar QA humana.** El README conduce desde
 un artifact verificado hasta la primera sesión, explica que **Open companion** abre la vista y que
@@ -186,6 +192,9 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
   syntax-check del wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v7 y sabotajes verdes.
 - `npm run test:release-identity-contract`: identidad H7.1 y veinticuatro sabotajes causales verdes.
+- `npm run test:beta-channel`: instalación, actualización, exclusión mutua, rollback y matrices
+  causales de ZIP, rutas, symlinks, TOCTOU, CLI, staging y artifact CI verdes; no sustituye la QA
+  dentro de Obsidian.
 - `npm run build`: TypeScript y bundle de producción verdes.
 - `npm run release:package`: paquete de tres archivos, checksum y segunda ejecución byte a byte reproducible en verde; debe regenerarse tras integrar cualquier otro lote.
 - `npm run bench:h6-performance` y su sabotaje de heap: verdes en Node 24.19.0.

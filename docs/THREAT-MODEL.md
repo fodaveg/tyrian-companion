@@ -32,6 +32,14 @@ ya comprometida, un reporte humano que ignore la redacción ni un paquete de des
 - El formulario de bugs es una superficie humana de GitHub, no un uploader del plugin. Solicita solo
   versión, plataforma, modo/fase y reproducción redactada; una confirmación obligatoria prohíbe clave,
   identidad, ruta local, inventario/snapshot crudo, IndexedDB, notas y salida sin redactar.
+- El instalador beta H7.5 es un script local explícito y no forma parte del runtime del plugin. Solo
+  acepta un vault/config elegidos, ZIP y checksum regulares sin symlinks; valida el paquete completo y
+  sustituye transaccionalmente los tres ficheros gestionados. Lock, identidad `dev+ino`, bytes
+  originales retenidos solo durante la operación y hashes detectan un segundo instalador, backups
+  alterados o sustituciones durante los hooks antes de operar. Un fallo de cierre revierte antes de
+  comunicar éxito. No enumera bóvedas,
+  no abre Obsidian, no modifica `data.json` ni imprime rutas. El checksum no autentica al productor: la
+  QA debe obtener los tres artefactos del run y SHA de CI señalado por el release owner.
 
 Los errores HTTP se reducen a estado y mensaje estable: no incluyen URL, cabeceras ni cuerpo remoto. La API de GW2 es entrada no confiable; sus respuestas se validan antes de convertirse en modelos o persistirse.
 

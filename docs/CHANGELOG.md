@@ -281,6 +281,14 @@
 - Añadidos ZIP determinista, SHA-256 y revalidación interna de cabeceras, orden, CRC y contenido; los sabotajes de build, secreto y bytes alterados prueban la vía roja.
 - El scanner v4 cubre también los bytes finales de release, incluido `main.js`, sin exponer valores encontrados.
 - CI genera un artifact temporal para pushes de rama o tag después del gate; mantiene permisos read-only y no publica releases.
+- CI recrea y enumera un staging separado con ZIP, checksum e instalador guardado; el upload
+  inmediatamente posterior nunca incluye el stage interno de build.
+- Añadido un instalador/actualizador manual transaccional: revalida checksum, ZIP, manifest, versión y
+  symlinks, usa lock e identidad de directorio/estado, sustituye únicamente los tres ficheros
+  gestionados, preserva datos locales y revierte desde bytes originales incluso si el backup o el
+  cierre del lock fallan. El staging vuelve a comparar los tres bytes persistidos y el contrato censa
+  cualquier variante adicional de upload. Su contrato estructural de CI y
+  matrices hostiles de ZIP, concurrencia, TOCTOU y staging quedan en el gate.
 - Documentado el procedimiento manual y la preparación BRAT fail-closed. Publicación, instalación y actualización reales quedan explícitamente pendientes de QA humana.
 
 ## H4.18 — Curación segura inicial del Inventory Advisor

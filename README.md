@@ -27,13 +27,23 @@ gate; the current decision does not create a GitHub Release or activate BRAT.
 
 ## Install a beta candidate
 
-Requirements: desktop Obsidian `1.11.4` or newer and the ZIP plus `.sha256` file from the same CI
-artifact. Node.js is needed only for development, not for manual installation.
+Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha256` and
+`install-beta.mjs` files from the same named CI artifact.
 
-1. Verify the checksum and extract the ZIP. It must contain exactly `manifest.json`, `main.js`, and
-   `styles.css`; see the [candidate verification commands](docs/BETA.md#qa-manual-desde-un-artifact-de-rama).
-2. Close Obsidian. Copy those three files to
-   `<vault>/.obsidian/plugins/tyrian-companion/`, keeping a recoverable copy of any previous version.
+1. Confirm the artifact belongs to the commit you intend to test. The checksum proves integrity, not
+   who produced the artifact.
+2. Close Obsidian and run the guarded installer from the extracted artifact directory:
+
+   ```sh
+   node install-beta.mjs install \
+     --vault "/path/to/disposable-vault" \
+     --archive "tyrian-companion-0.1.0.zip" \
+     --confirm-obsidian-closed
+   ```
+
+   It verifies the checksum, ZIP and manifest, writes only the three managed plugin files and rolls
+   back a detected write or swap failure. Use `--config-dir <name>` only when that vault deliberately
+   uses a non-default Obsidian config directory.
 3. Open Obsidian, go to **Settings → Community plugins**, enable Tyrian Companion, and then open its
    settings page.
 4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the

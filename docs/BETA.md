@@ -26,9 +26,13 @@ determinista con su fichero `.sha256`. Después vuelve a leer el ZIP y comprueba
 metadatos fijos, CRC y contenido exacto. `versions.json` permanece en la raíz del repositorio: Obsidian
 lo consulta para resolver compatibilidad histórica, pero BRAT no lo instala como asset de una release.
 
-En CI, todo push de rama o tag ejecuta primero el gate completo y después sube `.release/` como artifact
-temporal. Un tag solo es aceptado cuando coincide **exactamente** con `manifest.version`, sin prefijo
-`v`. La pipeline tiene permisos `contents: read` y no crea tags, GitHub Releases ni publicaciones.
+En CI, todo push de rama o tag ejecuta primero el gate completo, recrea un staging temporal exacto y
+después sube únicamente el ZIP, su `.sha256` e `install-beta.mjs`. El upload ocurre inmediatamente tras
+sellar y enumerar esos tres ficheros: identidad del directorio, bytes persistidos y pareja
+checksum/ZIP deben seguir coincidiendo con las fuentes capturadas. No se sube el directorio de build
+interno ni se admite otra variante de la acción de upload en ese job.
+Un tag solo es aceptado cuando coincide **exactamente** con `manifest.version`, sin prefijo `v`. La
+pipeline tiene permisos `contents: read` y no crea tags, GitHub Releases ni publicaciones.
 
 Referencias del contrato:
 
@@ -39,21 +43,31 @@ Referencias del contrato:
 ## QA manual desde un artifact de rama
 
 1. Descarga el artifact de CI correspondiente al SHA que se va a probar.
-2. Verifica el hash antes de extraer:
+2. Comprueba que el artifact contiene `tyrian-companion-<versión>.zip`, su `.sha256` e
+   `install-beta.mjs`. Con Obsidian completamente cerrado, ejecuta desde el directorio del
+   artifact:
 
    ```sh
-   cd <directorio-descargado-del-artifact>
-   shasum -a 256 -c tyrian-companion-0.1.0.zip.sha256
+   node install-beta.mjs install \
+     --vault "/ruta/a/una-bóveda-desechable" \
+     --archive "tyrian-companion-0.1.0.zip" \
+     --confirm-obsidian-closed
    ```
 
-   En GNU/Linux puede usarse `sha256sum -c`. En Windows, compara el valor de
-   `certutil -hashfile tyrian-companion-0.1.0.zip SHA256` con el fichero `.sha256`.
+   Node.js 22 solo es necesario para este instalador beta guardado. Si la bóveda usa deliberadamente
+   otro directorio de configuración, añade `--config-dir <nombre-seguro>`.
 
-3. Extrae el ZIP y confirma que contiene únicamente `manifest.json`, `main.js` y `styles.css`.
-4. Con Obsidian cerrado, copia esos tres archivos a
-   `<vault>/.obsidian/plugins/tyrian-companion/`; conserva una copia recuperable de cualquier versión
-   anterior.
-5. Abre Obsidian, activa el plugin y ejecuta la matriz manual aplicable. Registra por separado
+3. El instalador relee ZIP y checksum como ficheros regulares, verifica SHA-256, cabeceras, CRC,
+   nombres, manifest e identidad y rechaza una versión igual o anterior. Escribe únicamente
+   `manifest.json`, `main.js` y `styles.css` bajo el plugin; conserva `data.json`, otros ficheros del
+   plugin y el resto de la bóveda. Un lock exclusivo serializa instaladores cooperativos; antes de
+   cada swap se revalidan versión, hashes e identidad de directorios. Mientras la autoridad de ruta
+   permanece intacta, un fallo de escritura, swap o cierre del lock restaura la versión anterior desde
+   los bytes originales capturados —no desde un backup mutable— y limpia temporales; el éxito solo se
+   comunica después de cerrar la transacción y retirar el lock;
+   si cambia un directorio, se detiene sin tocar el sustituto y exige inspección manual. No acepta
+   symlinks en las fronteras administradas.
+4. Abre Obsidian, activa el plugin y ejecuta la matriz manual aplicable. Registra por separado
    instalación, carga, conexión, sesión, recovery, escritura segura y actualización.
 
 La evidencia de QA debe contener versión, SHA/checksum, plataforma, versión de Obsidian, origen de
@@ -61,8 +75,11 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
-Si el hash, el contenido o la versión no coinciden, no se instala el candidato. La QA debe usar una
-bóveda desechable; la bóveda canónica queda fuera de este procedimiento.
+El checksum evita una alteración accidental, pero no autentica el origen si alguien sustituye juntos
+ZIP y `.sha256`: el ancla de confianza es el artifact del run y SHA de CI que el release owner haya
+señalado. Si el origen, hash, contenido o versión no coinciden, no se instala el candidato. La QA debe
+usar una bóveda desechable; la bóveda canónica queda fuera de este procedimiento. El flag de cierre es
+una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Activación futura de BRAT
 
