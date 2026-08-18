@@ -5,8 +5,11 @@
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
 
 **H8 (Mumble v2) queda congelada por decisión de producto del 2026-08-18** hasta que cierre
-H8.2: compilar el PE del spike y leer MumbleLink dentro de la botella durante una sesión real,
-criterio que nunca se ha ejecutado. Congelar no cuesta nada al MVP: cero consumidores de
+H8.2, que tiene dos pasos: compilar el PE del spike y leer MumbleLink dentro de la botella
+durante una sesión real. El paso 1 cerró el 2026-08-18: el PE compila con `zig` como driver de
+C y su tabla de importación censada con `llvm-readobj` no trae ni `OpenProcess` ni
+`ReadProcessMemory`. El paso 2, ejecutarlo dentro de la botella con GW2 corriendo, sigue
+pendiente y es exclusivamente humano. Congelar no cuesta nada al MVP: cero consumidores de
 `src/platform/` fuera de sí mismo, y `esbuild.config.mjs` mantiene `treeShaking: true` al
 entrar por `src/main.ts`, así que nada de H8 viaja en el ZIP.
 
@@ -245,6 +248,10 @@ H6.3 fija que jackpots excluidos no alteran el EV ni la decisión y que un preci
 
 H6.6 añade un benchmark reproducible de cuenta grande, aislado de I/O: fuerza una primera pasada divergente y dos convergentes mediante la ruta pura productiva, finaliza snapshots estables, los compara, clasifica la frontera y valora 4.840 ganancias. Sus 21 muestras fijan mediana/p95 y la retención acumulada contra un baseline único post-warmup; CI prueba verde y sabotaje de heap explícito en Node 22 y 24, sin usar la duración de Vitest como evidencia.
 
+H6.13 (`abea4e1`) corrige la sesión cuando un personaje devuelve `404` entre la pasada base y la de cierre. El diagnóstico inicial era al revés: la clasificación salía `invalid` y se perdía el delta entero de la cuenta, y `manual-session-start-service.ts` exigía una referencia de snapshot estable antes de calcular el delta, así que el 404 dejaba el `stop()` colgado en `stopping`. Ahora una pasada cuyo único hueco es `missing_character` no se descalifica, el personaje ilegible se excluye de las dos proyecciones con el delta en `limited` y el aviso nuevo `character_unobserved`, que degrada la clasificación a `estimated` en vez de `contaminated`. Un `500` (`unavailable`) sigue invalidando el delta entero por decisión de producto asumida, pendiente de ratificar por David si el 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP.
+
+H6.16 sustituye cuatro suites de test de `src/advisor/` y `src/economy/` que leían el texto fuente con expresiones regulares por tests de comportamiento ejecutados, y añade `src/test/module-boundary.ts` y `src/test/ambient-capabilities.ts`. El sabotaje S14 (meter `this.ports.invalidate?.()` dentro de `current()` del controller del Inventory Advisor) probó que la regex conservada no se ponía roja y el test de comportamiento nuevo sí: los guardarraíles léxicos declaraban más cobertura de la que tenían.
+
 H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038. H4.19 extrae el kernel económico H4.10 independiente de sesión, captura en Refresh el saco y sus ocho outcomes líquidos y liga modelo/regla/knowledge/TTL/cobertura/binding/reservas/excepciones. David aprobó regla y economía el 2026-08-16: evidencia completa y fresca puede recomendar manualmente `open|sell|vendor` para 36038 con margen fijo del 10%; evidencia parcial o incoherente sigue en revisión y descarte continúa deshabilitado. Los demás items pueden mostrar la mejor salida líquida manual respaldada sin habilitar uso/abrir/reciclar. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las capas con single-flight/latest-wins. La vista captura en una sola pasada acotada bolsas de personaje+compartido como núcleo, y banco, materiales y delivery como ámbitos opcionales desmarcados por defecto. Cada control muestra cobertura saneada y se deshabilita si su fuente no fue leída; un 403 opcional no bloquea el núcleo y un 401 conserva el fallo global de credencial. Añade icono oficial, progreso indeterminado, un único reintento de pasada parcial y conserva el último resultado solo ante `capture_unavailable`. H5.12 añade el editor plegable local de objetivos y excepciones. H6.11 está cerrado por auditoría automatizada; sigue pendiente la QA visual/manual ES/EN de la ruta activada.
 
 El inventario durable está integrado en el Inventory Advisor como flujo manual independiente:
@@ -282,15 +289,16 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 115 ficheros y 1.562 tests verdes, incluidas las 2 pruebas nuevas del orden de
+- `npm run test`: 115 ficheros y 1.579 tests verdes (la sesión empezó en 1.562: sube con H6.13 y
+  con la poda de guardarraíles léxicos de H6.16), incluidas las 2 pruebas nuevas del orden de
   arranque diferido, las 13 del cooldown 429 compartido H6.12, 42 pruebas H8.6 —33 funcionales y nueve
   de arquitectura—, 25 H8.7 —16 funcionales y nueve de arquitectura— y 25 H8.8 —17 funcionales y
   ocho de arquitectura—, los contratos H8.1/H8.4 y el
   verifier de supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan, syntax-check del
   wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
 - `npm run check` (gate completo): vitest, eslint, `scripts/h8-native-decision-contract.mjs` y
-  `scripts/security-scan.mjs` excluyen los worktrees de agente bajo `.claude/`; exit code 0 en 45
-  segundos sobre el árbol final, 115 ficheros/1.562 tests más las ocho suites de scripts, el
+  `scripts/security-scan.mjs` excluyen los worktrees de agente bajo `.claude/`; exit code 0 en 42
+  segundos sobre el árbol final (`69dc795`), 115 ficheros/1.579 tests más las ocho suites de scripts, el
   scanner de seguridad y el build. `src/eslint-default-project-config.test.ts` y
   `src/platform/mumble-v2-shadow-architecture.test.ts` dejan de caer al azar por presupuesto de
   tiempo: presupuesto explícito de 30 s y lectura del árbol de `src/` memoizada con copia por
@@ -313,7 +321,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas. Ya tiene tarea en Lumbre: H9.7.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
-5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial. Ya tiene tarea en Lumbre: H6.13.
+5. Cerrado por H6.13 (`abea4e1`): un personaje que devuelve `404` (`missing_character`) entre pasada base y de cierre se excluye de las dos proyecciones y el delta pasa a `limited` con el aviso `character_unobserved`, en vez de invalidar el delta entero de la cuenta. Un `500` (`unavailable`) sigue invalidando el delta entero. Decisión de producto pendiente de ratificar por David: si ese criterio del 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP; hoy queda etiquetado `#v1` sin que él lo haya decidido.
 6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. Queda pendiente el copy de superficie por razón en `failureLabel()` de `src/ui/companion-status-model.ts` para los fallos de inicio y fin de sesión, que hoy leen el mensaje genérico: la conexión sí muestra el enfriamiento mientras corre. Va con la QA visual de H6.9.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9. Ya tiene tarea en Lumbre: H9.8.

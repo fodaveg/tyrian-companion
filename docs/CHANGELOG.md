@@ -44,6 +44,70 @@
   shadow, la API continúa autoritativa y no se ha tocado `src/`, el allowlist del scanner ni el
   paquete de release.
 
+## H6.16 — Guardarraíles léxicos de advisor/economy sustituidos por tests de comportamiento
+
+- Cuatro suites de test de `src/advisor/` y `src/economy/` leían el texto fuente con expresiones
+  regulares en vez de ejecutar el código: una regex que busca una palabra se rompe con su propio
+  comentario y nunca llega a afirmar la propiedad. Cada aserción se clasificó y se convirtió en
+  test de comportamiento, se descartó por redundante o se conservó cuando era genuinamente
+  estructural (fronteras de import, censos de módulo, allowlists de llamadas por puerto,
+  operaciones irreversibles y declaraciones de capacidad, ninguna observable en runtime).
+- Convertidas, cada una probada rompiendo producción y viendo el test nuevo ponerse rojo: la
+  ausencia de capacidades ambiente (`fetch`, timers, storage, globals del plugin) se afirma ahora
+  ejecutando presentación, view model, controller, renderer, `ItemView`, workflow y preferencias
+  bajo globals atrapados; los campos de entrada que portan capacidad se rechazan por los
+  validadores reales; `open()`/`current()` se mantienen memory-only con cada puerto cableado y
+  contado; las explicaciones se indexan una sola vez, contando lecturas reales, no un substring
+  del fuente.
+- Añadidos `src/test/module-boundary.ts` y `src/test/ambient-capabilities.ts`. Los ficheros de
+  test bajaron de 430 a 374 líneas; el recuento de tests de este árbol subió de 1.544 a 1.553.
+- Hallazgo: en el sabotaje S14 (meter `this.ports.invalidate?.()` dentro de `current()` del
+  controller del Inventory Advisor), la regex conservada no se puso roja y el test de
+  comportamiento nuevo sí. Es la prueba de que los guardarraíles léxicos declaraban más cobertura
+  de la que tenían.
+
+## H6.13 — Recuperación de sesión cuando un personaje devuelve 404 entre pasadas
+
+- El diagnóstico inicial era falso, y el fallo real era el contrario y más grave: un personaje que
+  devolvía `404` entre la pasada base y la de cierre clasificaba el resultado como `invalid` y
+  perdía el delta entero de la cuenta, justo lo que el criterio de cierre de H6.13 prohíbe.
+  `src/sessions/manual-session-start-service.ts` exigía además una referencia de snapshot estable
+  antes de calcular el delta, el 404 la marcaba `partial`, y `stop()` fallaba dejando la sesión
+  colgada en `stopping`.
+- `src/account/storage-snapshot-pure.ts`: una pasada cuyo único hueco es `missing_character` deja
+  de descalificarse, porque ningún reintento llena un 404.
+- `src/account/storage-delta.ts`: el personaje ilegible se excluye de las dos proyecciones y el
+  delta pasa a `limited` con el aviso nuevo `character_unobserved`, en vez de invalidarse.
+- `src/account/contamination.ts`: ese aviso degrada la clasificación a `estimated`, no a
+  `contaminated`. `src/core/i18n-runtime-catalog.ts` añade el motivo en ES y EN.
+- Tres sabotajes con su test en rojo nombrado, restaurados y verificados por hash.
+- Decisión de producto asumida: solo el 404 (`missing_character`) es excusable; un 500
+  (`unavailable`) sigue invalidando el delta entero, con test que lo fija. Pendiente de ratificar
+  por David si entra en el gate de v1 (H7.8) o se aparta a post-MVP.
+
+## H8.2 — Paso 1 de 2 cerrado: el PE del spike compila y su import census es limpio
+
+- Instalado `zig` 0.16.0 por Homebrew (arrastra `llvm@21` y `lld@21`, ~1,8 GB; se quita con
+  `brew uninstall zig llvm@21 lld@21`), usado como driver de C con `-target x86_64-windows-gnu`.
+- El PE compila a la primera con `-Werror` sin warnings: `PE32+ executable (console) x86-64`,
+  58.880 bytes, reproducible (dos builds, mismo SHA-256
+  `4de947c08c2ef31cd3fcd9430dda693852e1a53a25bdf788c4799110b4a898cc`).
+- Censo de la tabla de importación con `llvm-readobj --coff-imports`: de `KERNEL32` solo entran
+  `OpenFileMappingW`, `MapViewOfFile`, `UnmapViewOfFile` y `CloseHandle` para el trabajo del
+  probe, más arranque del runtime de C. Ni `OpenProcess`, ni `ReadProcessMemory`, ni Toolhelp, ni
+  `CreateFileW`, ni registro, ni sockets, ni input.
+- El binario vive en `/tmp/tyrian-h8-probe/tyrian-mumble-probe.exe`, fuera del repo a propósito:
+  `scripts/h8-native-decision-contract.mjs` rechaza cualquier `.exe` commiteado.
+- Fallo encontrado y corregido: el comando de QA del README pasaba una ruta Unix a `--cx-app`; el
+  wrapper `wine` de CrossOver solo reenvía valores que empiezan por letra de unidad y el resto los
+  busca dentro del `drive_c` de la botella. Ahora usa
+  `Z:\tmp\tyrian-h8-probe\tyrian-mumble-probe.exe`, que llega al mismo fichero sin copiar nada en
+  la botella.
+- No se lanzó CrossOver ni GW2 ni se modificó la botella. Paso 2 de 2, pendiente y exclusivamente
+  humano: con GW2 corriendo en la botella, ejecutar el comando corregido y demostrar lectura
+  estable de `mapId`, incluido el mapa 866 del Laberinto, en transiciones y tras reiniciar la
+  botella.
+
 ## H6.12 — Un solo enfriamiento 429 para todas las capturas
 
 - El transporte ya reintentaba un 429 por petición, pero no había estado compartido: un rate limit
