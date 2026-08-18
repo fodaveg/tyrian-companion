@@ -44,6 +44,54 @@
   shadow, la API continúa autoritativa y no se ha tocado `src/`, el allowlist del scanner ni el
   paquete de release.
 
+## Arranque del plugin diferido a `onLayoutReady`
+
+- `onload()` esperaba el bundle de assets gestionados, el hash del vaultId, varias aperturas
+  de IndexedDB, `sessions.initialize()` y `refreshLootPresentation()` antes de llegar a
+  `registerView`. Un leaf guardado de tipo `tyrian-companion-*` podía restaurarse contra un
+  view type todavía sin registrar, y todo eso bloqueaba el arranque de Obsidian.
+- Dividido el arranque en dos fases: `onload()` carga los ajustes y, antes de cualquier otro
+  `await`, registra las dos vistas, el setting tab, los cinco comandos, los comandos de sesión
+  y los listeners de DOM, y termina con `workspace.onLayoutReady`. El resto se movió sin
+  cambiar el orden a `initializeRuntime()`.
+- Entre ambas fases, una guarda `runtimeReady` hace que cada getter devuelva un valor neutro
+  con la misma forma que el estado recién construido de su servicio, y que cada acción salga
+  sin efecto mostrando el aviso nuevo `notices.pluginStarting` (ES y EN, en
+  `src/core/i18n-runtime-catalog.ts`). `onunload()` marca `unloaded` antes que nada e
+  `initializeRuntime()` lo comprueba antes de repintar.
+- Añadido test de la propiedad de orden, verificado en rojo con sabotaje moviendo las llamadas
+  de `registerView` de vuelta a la fase diferida.
+
+## Worktrees de agente fuera del gate del repo
+
+- Un worktree de agente colgando de `.claude/` dentro del repo es una segunda copia entera de
+  `src/`. Medido con uno presente: `vitest list --filesOnly` devolvía 226 ficheros de test,
+  113 de ellos bajo `.claude/`; tras el cambio devuelve 113 y ninguno bajo `.claude/`. `eslint .`
+  lintaba esa copia también.
+- `scripts/h8-native-decision-contract.mjs`, que recorre el sistema de ficheros y por eso no lo
+  tapaba `.gitignore`, ponía `npm run check` en rojo con 20 hallazgos
+  `forbidden-product-artifact`, todos dentro de `.claude/worktrees/`.
+- Excluido `.claude` en `vitest.config.mts`, `eslint.config.mts`,
+  `scripts/h8-native-decision-contract.mjs` y `scripts/security-scan.mjs`, más
+  `/.claude/worktrees/` en `.gitignore`. Verificado que el contrato sigue mordiendo: una copia
+  no revisada de un fichero de producto bajo `src/platform/` lo pone en rojo nombrándola, y
+  quitarla lo vuelve a poner en verde.
+
+## `tsconfig.json` — resolución de módulos `bundler`
+
+- `moduleResolution` pasa de `node` (modo node10 retirado) a `bundler`. TypeScript 5.9.3, la
+  versión fijada aquí, todavía acepta el valor viejo, pero un `tsc` más nuevo rechaza la config
+  con `TS5108` antes de compilar nada; el build ya pasa por esbuild, así que `bundler` es el
+  modo que corresponde a cómo se construye el plugin de verdad.
+
+## Recuperado el protocolo de QA manual del MVP
+
+- `docs/QA-MVP.md`, escrito el 14 de agosto de 2026 dentro del worktree `test/h6-manual-qa`
+  para H6.8/H6.9, nunca llegó a un commit del repo. Recuperado a `main` tal cual salvo la
+  cabecera de alcance: se quitan las cifras de gate del 14 de agosto, que hay que volver a
+  medir sobre el candidato instalado de verdad, y se apunta la instalación/actualización a
+  H7.5 y `docs/BETA.md` en vez de la fila Updater/reopen.
+
 ## H8.8 — Política shadow de presencia y ausencia
 
 - Añadida una política pura y aislada para el mapa objetivo fijo `866`: 5.000 ms de crédito de

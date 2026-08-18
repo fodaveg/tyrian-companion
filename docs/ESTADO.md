@@ -4,6 +4,33 @@
 
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
 
+**H8 (Mumble v2) queda congelada por decisión de producto del 2026-08-18** hasta que cierre
+H8.2: compilar el PE del spike y leer MumbleLink dentro de la botella durante una sesión real,
+criterio que nunca se ha ejecutado. Congelar no cuesta nada al MVP: cero consumidores de
+`src/platform/` fuera de sí mismo, y `esbuild.config.mjs` mantiene `treeShaking: true` al
+entrar por `src/main.ts`, así que nada de H8 viaja en el ZIP.
+
+**Arranque del plugin diferido a `onLayoutReady`.** `onload()` esperaba el bundle de assets
+gestionados, el hash del vaultId, varias aperturas de IndexedDB, `sessions.initialize()` y
+`refreshLootPresentation()` antes de registrar las vistas; un leaf `tyrian-companion-*`
+guardado podía restaurarse contra un view type todavía sin registrar y bloquear el arranque de
+Obsidian. Ahora `onload()` registra las dos vistas, el setting tab, los cinco comandos, los
+comandos de sesión y los listeners de DOM antes de cualquier otro `await`, y termina con
+`workspace.onLayoutReady`; el resto se movió sin cambiar el orden a `initializeRuntime()`. Entre
+ambas fases una guarda `runtimeReady` da valores neutros y el aviso `notices.pluginStarting`
+(ES/EN); `onunload()` marca `unloaded` antes que nada. Test de la propiedad de orden,
+verificado en rojo con sabotaje.
+
+**Gate del repo aislado de los worktrees de agente.** Un worktree de agente bajo `.claude/`
+es una segunda copia entera de `src/`: medido con uno presente, `vitest list --filesOnly`
+devolvía 226 ficheros de test (113 bajo `.claude/`) y `scripts/h8-native-decision-contract.mjs`
+ponía `npm run check` en rojo con 20 hallazgos `forbidden-product-artifact`, todos dentro de
+`.claude/worktrees/`. Excluido en `vitest.config.mts`, `eslint.config.mts`,
+`scripts/h8-native-decision-contract.mjs`, `scripts/security-scan.mjs` y `.gitignore`;
+verificado que el contrato sigue mordiendo con una copia no revisada real. `tsconfig.json`
+pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
+al build vía esbuild.
+
 **H7.4 está implementado técnicamente y H7.5 dispone de un canal manual guardado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
 escanea los bytes staged y genera ZIP reproducible + SHA-256 con prueba causal. CI conserva permisos de
@@ -255,11 +282,16 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 113 ficheros y 1.544 tests verdes, incluidas 42 pruebas H8.6 —33 funcionales y nueve
+- `npm run test`: 113 ficheros y 1.546 tests verdes, incluidas las 2 pruebas nuevas del orden de
+  arranque diferido, 42 pruebas H8.6 —33 funcionales y nueve
   de arquitectura—, 25 H8.7 —16 funcionales y nueve de arquitectura— y 25 H8.8 —17 funcionales y
   ocho de arquitectura—, los contratos H8.1/H8.4 y el
   verifier de supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan, syntax-check del
   wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
+- `npm run check` (gate completo): vitest, eslint, `scripts/h8-native-decision-contract.mjs` y
+  `scripts/security-scan.mjs` excluyen los worktrees de agente bajo `.claude/`; exit code 0 sobre
+  el árbol final, 113 ficheros/1.546 tests más las ocho suites de scripts, el scanner de seguridad
+  y el build.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v14 y sabotajes verdes.
 - `npm run test:release-identity-contract`: identidad H7.1 y veinticuatro sabotajes causales verdes.
 - `npm run test:beta-channel`: instalación, actualización, exclusión mutua, rollback y matrices
@@ -276,11 +308,12 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
-3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
+3. Diseñar el panel/agregación del historial durable de sesiones finalizadas. Ya tiene tarea en Lumbre: H9.7.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
-5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial.
-6. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.
+5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial. Ya tiene tarea en Lumbre: H6.13.
+6. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte. Ya tiene tarea en Lumbre: H6.12.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
-8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9.
+8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9. Ya tiene tarea en Lumbre: H9.8.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
 10. Descargar el artifact del SHA integrado, verificar el checksum e instalar/actualizar el plugin en una bóveda desechable por plataforma; solo después podrá el release owner publicar la release y activar BRAT.
+11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
