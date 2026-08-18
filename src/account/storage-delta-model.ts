@@ -30,6 +30,8 @@ export interface StorageDeltaWarning {
 		| 'wallet_coverage_asymmetric'
 		| 'placement_changed_during_capture'
 		| 'roster_changed'
+		/** One character answered 404 on a pass, so both sides drop it and the rest survives. */
+		| 'character_unobserved'
 		| 'surface_excludes_equipment_mail_guild_and_active_tp'
 		| 'net_only_gross_turnover_unknown';
 	before?: string;

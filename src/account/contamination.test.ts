@@ -7,7 +7,7 @@ import {
 	deliveryEvidenceFixtures,
 	exactContext,
 } from './__fixtures__/contamination';
-import { afterSnapshot, deliveryCurrency, deliveryHolding, embeddedHolding, looseHolding, storageDeltaSnapshot, walletCurrency, withoutDelivery } from './__fixtures__/storage-delta';
+import { afterSnapshot, deliveryCurrency, deliveryHolding, embeddedHolding, looseHolding, storageDeltaSnapshot, twoCharacterSnapshot, unobservedCharacterSnapshot, walletCurrency, withoutDelivery } from './__fixtures__/storage-delta';
 import { buildBoundaryEvidence, classifySessionDelta, isSessionDeltaClassification } from './contamination';
 import type { DeclaredActivity, SessionClassificationContext } from './contamination-model';
 import { compareStorageSnapshots } from './storage-delta';
@@ -390,6 +390,52 @@ describe('classifySessionDelta', () => {
 		const delta = structuredClone(cleanDelta());
 		delta.warnings.push({ code: 'roster_changed' });
 		expect(classifySessionDelta(delta, exactContext()).status).toBe('contaminated');
+	});
+
+	it('classifies a character leaving the roster as contaminated from the snapshots', () => {
+		const before = twoCharacterSnapshot();
+		const after = afterSnapshot({
+			roster: ['Astra Uno'],
+			holdings: [looseHolding(100, 7, { source: 'bank', slot: 0 })],
+			coverage: {
+				...storageDeltaSnapshot().coverage,
+				characters: { 'Astra Uno': { status: 'complete' } },
+			},
+		});
+		const delta = compareStorageSnapshots(before, after);
+
+		const result = classifySessionDelta(
+			delta,
+			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
+		);
+
+		expect(delta.warnings).toContainEqual({ code: 'roster_changed' });
+		expect(result).toMatchObject({
+			status: 'contaminated',
+			permissions: { showNet: true, valueNet: false },
+		});
+		expect(result.reasons).toContainEqual({ code: 'roster_changed' });
+	});
+
+	it('degrades to estimated when a character answers 404 between passes', () => {
+		const before = twoCharacterSnapshot();
+		const after = unobservedCharacterSnapshot();
+		const delta = compareStorageSnapshots(before, after);
+		const result = classifySessionDelta(
+			delta,
+			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
+		);
+
+		// Incomplete reading is not external movement: the account keeps its delta and
+		// only the confidence drops.
+		expect(result).toMatchObject({
+			status: 'estimated',
+			reviewRequests: [{ code: 'review_limited_surface' }],
+			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
+		});
+		expect(result.reasons).toContainEqual({ code: 'character_unobserved' });
+		expect(delta.itemChanges).toEqual([{ id: 100, before: 2, after: 7, delta: 5 }]);
+		expect(isSessionDeltaClassification(result)).toBe(true);
 	});
 
 	it.each<DeclaredActivity>([

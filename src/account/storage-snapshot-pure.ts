@@ -177,8 +177,11 @@ function placementFingerprint(pass: StorageSnapshotPass): string {
 }
 
 function isPartial(coverage: SnapshotCoverage): boolean {
+	// A character that answers 404 is a hole no extra pass can fill, and the coverage keeps
+	// the evidence for the delta. Retrying only for it would burn passes and leave the
+	// capture unusable as a session boundary, so it does not disqualify the pass.
 	return [...Object.values(coverage.sources), ...Object.values(coverage.characters)].some(
-		(entry) => entry.status === 'partial',
+		(entry) => entry.status === 'partial' && entry.reason !== 'missing_character',
 	);
 }
 

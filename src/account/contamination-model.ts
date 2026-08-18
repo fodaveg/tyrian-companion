@@ -105,6 +105,7 @@ export type SessionClassificationReasonCode =
 	| 'wallet_increased_ambiguous'
 	| 'wallet_increase_clean_confirmation_used'
 	| 'roster_changed'
+	| 'character_unobserved'
 	| 'activity_declared'
 	| 'clean_declaration_conflicts_with_evidence'
 	| 'delta_limited'

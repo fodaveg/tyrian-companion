@@ -5,6 +5,8 @@ import {
 	afterSnapshot,
 	looseHolding,
 	storageDeltaSnapshot,
+	twoCharacterSnapshot,
+	unobservedCharacterSnapshot,
 } from '../account/__fixtures__/storage-delta';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionContaminationAnswers } from './session-contamination-review';
@@ -419,6 +421,43 @@ describe('ManualSessionStartService', () => {
 		});
 		expect(service.getState().status).toBe('stopping');
 		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	it('finalizes as estimated when a character answers 404 at the final pass', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => ({ ...structuredClone(captured), snapshot: twoCharacterSnapshot() })),
+				captureFinal: vi.fn(async () => unobservedCharacterSnapshot()),
+			},
+			serviceOptions({ runtimeStore }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		const stopped = await service.stop();
+
+		// The bank gain of the rest of the account survives the unreadable character.
+		expect(stopped).toMatchObject({
+			status: 'stopped',
+			state: { status: 'provisional' },
+			delta: { status: 'limited', itemChanges: [{ id: 100, before: 2, after: 7, delta: 5 }] },
+		});
+		expect(service.getProvisionalDelta()?.warnings).toContainEqual({ code: 'character_unobserved' });
+
+		const reviewed = await service.reviewContamination(reviewAnswers());
+
+		expect(reviewed).toMatchObject({
+			status: 'finalized',
+			review: { classification: { status: 'estimated' } },
+			state: { status: 'complete', classification: 'estimated' },
+		});
+		expect(service.getContaminationReview()?.classification.reasons)
+			.toContainEqual({ code: 'character_unobserved' });
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded',
+			record: { state: { status: 'complete' }, review: { classification: { status: 'estimated' } } },
+		});
 	});
 
 	it('never commits provisional after losing the fence at the final boundary', async () => {

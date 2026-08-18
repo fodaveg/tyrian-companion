@@ -53,6 +53,71 @@ export function afterSnapshot(overrides: Partial<StorageSnapshot> = {}): Storage
 	});
 }
 
+/** The second rostered character used by the H6.13 unreadable-character fixtures. */
+export const UNOBSERVED_CHARACTER = 'Astra Dos';
+
+/** Exactly what the capture records when a character inventory answers 404. */
+export const UNOBSERVED_CHARACTER_COVERAGE: SourceCoverage = {
+	status: 'partial',
+	reason: 'missing_character',
+	diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+};
+
+/** Baseline of a two-character account where the second one holds its own stock. */
+export function twoCharacterSnapshot(overrides: Partial<StorageSnapshot> = {}): StorageSnapshot {
+	return storageDeltaSnapshot({
+		roster: ['Astra Uno', UNOBSERVED_CHARACTER],
+		holdings: [
+			looseHolding(100, 2, { source: 'bank', slot: 0 }),
+			looseHolding(200, 5, {
+				source: 'character',
+				character: UNOBSERVED_CHARACTER,
+				container: 'bag',
+				bagIndex: 0,
+				slot: 0,
+			}),
+		],
+		coverage: coverageFor({ 'Astra Uno': { status: 'complete' }, [UNOBSERVED_CHARACTER]: { status: 'complete' } }),
+		...overrides,
+	});
+}
+
+/** Closing pass of the same account after that character answered 404. */
+export function unobservedCharacterSnapshot(
+	overrides: Partial<StorageSnapshot> = {},
+): StorageSnapshot {
+	return afterSnapshot({
+		roster: ['Astra Uno', UNOBSERVED_CHARACTER],
+		holdings: [looseHolding(100, 7, { source: 'bank', slot: 0 })],
+		coverage: {
+			...coverageFor({
+				'Astra Uno': { status: 'complete' },
+				[UNOBSERVED_CHARACTER]: UNOBSERVED_CHARACTER_COVERAGE,
+			}),
+			sources: {
+				...coverageFor({}).sources,
+				characters: UNOBSERVED_CHARACTER_COVERAGE,
+			},
+		},
+		...overrides,
+	});
+}
+
+function coverageFor(characters: StorageSnapshot['coverage']['characters']): StorageSnapshot['coverage'] {
+	const complete: SourceCoverage = { status: 'complete' };
+	return {
+		sources: {
+			characters: complete,
+			shared_inventory: complete,
+			bank: complete,
+			materials: complete,
+			wallet: complete,
+			commerce_delivery: complete,
+		},
+		characters,
+	};
+}
+
 export function looseHolding(
 	itemId: number,
 	quantity: number,

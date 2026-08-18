@@ -7,6 +7,9 @@ import {
 	embeddedHolding,
 	looseHolding,
 	storageDeltaSnapshot,
+	twoCharacterSnapshot,
+	UNOBSERVED_CHARACTER,
+	unobservedCharacterSnapshot,
 	walletCurrency,
 	withoutDelivery,
 } from './__fixtures__/storage-delta';
@@ -252,6 +255,56 @@ describe('comparable surfaces', () => {
 					after: 'partial:none',
 				},
 			]),
+		);
+	});
+
+	it('keeps the rest of the account when a character answers 404 between passes', () => {
+		const result = compareStorageSnapshots(twoCharacterSnapshot(), unobservedCharacterSnapshot());
+
+		expect(result).toMatchObject({
+			status: 'limited',
+			surface: 'core_and_delivery',
+			currencySurface: 'wallet_and_delivery',
+			reasons: [],
+			// The bank gain survives and the unreadable character never shows up as a loss.
+			itemChanges: [{ id: 100, before: 2, after: 7, delta: 5 }],
+		});
+		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
+		expect(result.itemChanges.map((change) => change.id)).not.toContain(200);
+		expect(result.availabilityChanges.map((change) => change.id)).not.toContain(200);
+		expect(result.compositionChanges.map((change) => change.id)).not.toContain(200);
+	});
+
+	it('drops an unreadable character from both sides even when only the baseline read it', () => {
+		const result = compareStorageSnapshots(
+			twoCharacterSnapshot(),
+			unobservedCharacterSnapshot({ holdings: [looseHolding(100, 2, { source: 'bank', slot: 0 })] }),
+		);
+
+		expect(result).toMatchObject({ status: 'limited', itemChanges: [], compositionChanges: [] });
+		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
+	});
+
+	it('keeps a character hole with any other reason invalidating', () => {
+		const unavailable = unobservedCharacterSnapshot({
+			coverage: {
+				...unobservedCharacterSnapshot().coverage,
+				characters: {
+					'Astra Uno': { status: 'complete' },
+					[UNOBSERVED_CHARACTER]: {
+						status: 'partial',
+						reason: 'unavailable',
+						diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
+					},
+				},
+			},
+		});
+
+		const result = compareStorageSnapshots(twoCharacterSnapshot(), unavailable);
+
+		expect(result.status).toBe('invalid');
+		expect(result.reasons).toEqual(
+			expect.arrayContaining([expect.objectContaining({ code: 'character_coverage_incomplete' })]),
 		);
 	});
 

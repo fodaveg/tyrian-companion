@@ -70,6 +70,24 @@ describe('session note model and renderer', () => {
 		}
 	});
 
+	it('traces an unreadable character to the note without naming it', async () => {
+		for (const [locale, expected] of [
+			['es', 'No se pudo leer el inventario de un personaje; queda fuera del delta.'],
+			['en', 'One character inventory could not be read and is out of the delta.'],
+		] as const) {
+			const input = sessionInput('exact', locale);
+			const prepared = prepareSessionNote(input);
+			if (prepared.status !== 'ok') throw new Error('Invalid prepared fixture.');
+			prepared.note.runtime.review.classification.reasons = [{ code: 'character_unobserved' }];
+			const result = await renderSessionNote(prepared.note);
+			if (result.status !== 'ok') throw new Error('Render failed.');
+
+			expect(result.note.content).toContain(expected);
+			expect(result.note.content).not.toContain('character_unobserved');
+			expect(result.note.content).not.toContain('Astra Dos');
+		}
+	});
+
 	it('records only an explicit validated event and never infers it from session evidence', async () => {
 		const plain = sessionInput();
 		expect((await rendered(plain)).frontmatter.tc_event).toBeNull();

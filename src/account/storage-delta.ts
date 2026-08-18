@@ -89,6 +89,13 @@ export function compareStorageSnapshots(before: unknown, after: unknown): Storag
 	if (canonical([...before.roster].sort()) !== canonical([...after.roster].sort())) {
 		warnings.push({ code: 'roster_changed' });
 	}
+	// A character that answered 404 on one side is dropped from both projections: the
+	// account keeps its own delta and only the confidence degrades.
+	const excludedCharacters = new Set([
+		...unobservedCharacters(before),
+		...unobservedCharacters(after),
+	]);
+	if (excludedCharacters.size > 0) warnings.push({ code: 'character_unobserved' });
 	warnings.push(
 		{ code: 'surface_excludes_equipment_mail_guild_and_active_tp' },
 		{ code: 'net_only_gross_turnover_unknown' },
@@ -97,8 +104,8 @@ export function compareStorageSnapshots(before: unknown, after: unknown): Storag
 	let beforeProjection: Projection;
 	let afterProjection: Projection;
 	try {
-		beforeProjection = project(before, includeDelivery, includeWallet, includeCurrencyDelivery);
-		afterProjection = project(after, includeDelivery, includeWallet, includeCurrencyDelivery);
+		beforeProjection = project(before, includeDelivery, includeWallet, includeCurrencyDelivery, excludedCharacters);
+		afterProjection = project(after, includeDelivery, includeWallet, includeCurrencyDelivery, excludedCharacters);
 	} catch (error) {
 		return invalidDelta(before, after, [
 			...reasons.filter((reason) => reason.code !== 'delivery_excluded'),
@@ -132,7 +139,9 @@ export function compareStorageSnapshots(before: unknown, after: unknown): Storag
 
 	return {
 		version: STORAGE_DELTA_VERSION,
-		status: itemSurfaceFull && currencySurfaceFull ? 'comparable' : 'limited',
+		status: itemSurfaceFull && currencySurfaceFull && excludedCharacters.size === 0
+			? 'comparable'
+			: 'limited',
 		accountId: before.accountId,
 		beforeSnapshotId: before.snapshotId,
 		afterSnapshotId: after.snapshotId,
@@ -174,6 +183,7 @@ export function inventoryAdvisorStorageSnapshotFailure(
 		reasons,
 		INVENTORY_ADVISOR_SOURCES,
 		INVENTORY_ADVISOR_QUALITIES,
+		false,
 	);
 	if (valid && !hasInvalidReason(reasons)) return null;
 	return reasons.some((reason) =>
@@ -219,6 +229,7 @@ function validateSnapshot(
 	reasons: StorageDeltaReason[],
 	requiredSources: readonly (typeof CORE_SOURCES)[number][] = CORE_SOURCES,
 	allowedQualities: ReadonlySet<StorageSnapshot['quality']> = COMPARABLE_SNAPSHOT_QUALITIES,
+	allowUnobservedCharacters = true,
 ): value is StorageSnapshot {
 	if (!isSnapshotShell(value)) {
 		reasons.push({ code: 'invalid_snapshot', snapshot: which });
@@ -232,7 +243,14 @@ function validateSnapshot(
 	if (value.schemaVersion !== PINNED_SCHEMA) invalidate('schema_mismatch');
 	if (!allowedQualities.has(value.quality)) invalidate('unsupported_quality');
 	if (!validWindow(value.startedAt, value.completedAt)) invalidate('invalid_window');
-	if (!validateCoverage(value.coverage, value.roster, which, reasons, requiredSources)) valid = false;
+	if (!validateCoverage(
+		value.coverage,
+		value.roster,
+		which,
+		reasons,
+		requiredSources,
+		allowUnobservedCharacters,
+	)) valid = false;
 	try {
 		validateHoldings(value.holdings);
 		validateHoldingRelationships(value.holdings, value.roster, value.coverage);
@@ -255,21 +273,36 @@ function validateCoverage(
 	which: 'before' | 'after',
 	reasons: StorageDeltaReason[],
 	requiredSources: readonly (typeof CORE_SOURCES)[number][],
+	allowUnobservedCharacters: boolean,
 ): boolean {
 	let valid = true;
 	for (const source of requiredSources) {
-		if (coverage.sources[source].status !== 'complete') {
-			reasons.push({ code: 'core_coverage_incomplete', snapshot: which, detail: source });
-			valid = false;
+		if (coverage.sources[source].status === 'complete') continue;
+		// The capture mirrors a character 404 on the aggregate source; the per-character
+		// entries hold the evidence and the delta drops those characters instead.
+		if (allowUnobservedCharacters && source === 'characters' && unobserved(coverage.sources[source])) {
+			continue;
 		}
+		reasons.push({ code: 'core_coverage_incomplete', snapshot: which, detail: source });
+		valid = false;
 	}
 	for (const character of roster) {
-		if (coverage.characters[character]?.status !== 'complete') {
-			reasons.push({ code: 'character_coverage_incomplete', snapshot: which, detail: character });
-			valid = false;
-		}
+		const entry = coverage.characters[character];
+		if (entry?.status === 'complete') continue;
+		if (allowUnobservedCharacters && unobserved(entry)) continue;
+		reasons.push({ code: 'character_coverage_incomplete', snapshot: which, detail: character });
+		valid = false;
 	}
 	return valid;
+}
+
+/** A 404 on one character is a bounded hole, not an unusable snapshot. */
+function unobserved(coverage: SourceCoverage | undefined): boolean {
+	return coverage?.status === 'partial' && coverage.reason === 'missing_character';
+}
+
+function unobservedCharacters(snapshot: StorageSnapshot): string[] {
+	return snapshot.roster.filter((character) => unobserved(snapshot.coverage.characters[character]));
 }
 
 function project(
@@ -277,6 +310,7 @@ function project(
 	includeItemDelivery: boolean,
 	includeWallet: boolean,
 	includeCurrencyDelivery: boolean,
+	excludedCharacters: ReadonlySet<string>,
 ): Projection {
 	const owned = new Map<number, number>();
 	const available = new Map<number, number>();
@@ -285,6 +319,10 @@ function project(
 	const currencyComposition = new Map<number, CurrencyCompositionPart[]>();
 	for (const holding of snapshot.holdings) {
 		if (!includeItemDelivery && holding.location.source === 'commerce_delivery') continue;
+		if (
+			holding.location.source === 'character'
+			&& excludedCharacters.has(holding.location.character)
+		) continue;
 		add(owned, holding.itemId, holding.quantity);
 		if (holding.state === 'loose' || holding.state === 'pending_claim') {
 			add(available, holding.itemId, holding.quantity);

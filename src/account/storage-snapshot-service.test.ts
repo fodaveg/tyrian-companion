@@ -461,6 +461,9 @@ describe('StorageSnapshotService', () => {
 			coverage: { sources: { bank: { status: 'complete' } } },
 		});
 
+	});
+
+	it('qualifies a capture whose only hole is a character answering 404', async () => {
 		const missingCharacter = passWith({
 			[`characters/${encodeURIComponent(characterName)}/inventory`]: new HttpTransportError(
 				'http',
@@ -469,11 +472,24 @@ describe('StorageSnapshotService', () => {
 				'Request failed with status 404.',
 			),
 		});
+
+		// No extra pass can fill a 404, so the capture stays usable as a session boundary
+		// and hands the hole to the delta as coverage evidence.
 		await expect(
 			new StorageSnapshotService(clientFor([missingCharacter, missingCharacter]).client).capture(),
 		).resolves.toMatchObject({
-			quality: 'partial',
-			coverage: { sources: { characters: { status: 'partial', reason: 'missing_character' } } },
+			quality: 'stable',
+			passes: 2,
+			coverage: {
+				sources: { characters: { status: 'partial', reason: 'missing_character' } },
+				characters: {
+					[characterName]: {
+						status: 'partial',
+						reason: 'missing_character',
+						diagnostic: { kind: 'http', status: 404, retryAfterMs: null },
+					},
+				},
+			},
 		});
 	});
 

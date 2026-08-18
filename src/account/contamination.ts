@@ -197,6 +197,12 @@ function classifyValidatedSessionDelta(
 		estimates.push({ code: 'delta_limited' });
 		reviews.push({ code: 'review_limited_surface' });
 	}
+	// An unreadable character is incomplete reading, not evidence of external movement:
+	// it degrades the session to estimated instead of contaminating or invalidating it.
+	if (delta.warnings.some((warning) => warning.code === 'character_unobserved')) {
+		estimates.push({ code: 'character_unobserved' });
+		reviews.push({ code: 'review_limited_surface' });
+	}
 	if (context.boundaryCertainty !== 'manual_confirmed') {
 		estimates.push({ code: 'boundary_not_manually_confirmed' });
 		reviews.push({ code: 'confirm_session_boundaries' });
@@ -288,7 +294,8 @@ const CLASSIFICATION_REASONS = new Set<string>([
 	'delta_arithmetic_invalid', 'classification_context_invalid', 'trading_post_evidence_invalid',
 	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
 	'wallet_decreased', 'wallet_increased_ambiguous', 'wallet_increase_clean_confirmation_used',
-	'roster_changed', 'activity_declared', 'clean_declaration_conflicts_with_evidence', 'delta_limited',
+	'roster_changed', 'character_unobserved', 'activity_declared',
+	'clean_declaration_conflicts_with_evidence', 'delta_limited',
 	'boundary_not_manually_confirmed', 'declaration_not_clean',
 	'trading_post_not_complete_clean_declaration_used',
 ]);
@@ -307,6 +314,7 @@ const CONTAMINATING_REASONS = new Set<string>([
 const ESTIMATE_REVIEW = new Map<string, string>([
 	['wallet_increased_ambiguous', 'review_wallet_increase'],
 	['delta_limited', 'review_limited_surface'],
+	['character_unobserved', 'review_limited_surface'],
 	['boundary_not_manually_confirmed', 'confirm_session_boundaries'],
 	['declaration_not_clean', 'confirm_session_cleanliness'],
 ]);
@@ -409,7 +417,12 @@ export function isStorageDelta(value: unknown): value is StorageDelta {
 		value.window === null || value.surface === null || value.currencySurface === null
 	) return false;
 	const full = value.surface === 'core_and_delivery' && value.currencySurface === 'wallet_and_delivery';
-	return value.status === 'comparable' ? full : !full;
+	if (value.status === 'comparable') return full;
+	// A full surface can still be limited, but only when the delta states which
+	// characters it had to drop; anything else keeps the surface/status invariant.
+	return !full || value.warnings.some(
+		(warning) => isRecord(warning) && warning.code === 'character_unobserved',
+	);
 }
 
 function isClassificationContext(value: unknown): value is SessionClassificationContext {
@@ -502,7 +515,7 @@ function isDeltaWarning(value: unknown): boolean {
 	return isRecord(value) && hasOnlyKeys(value, ['code', 'before', 'after']) &&
 		[
 			'delivery_coverage_asymmetric', 'wallet_unobserved', 'wallet_coverage_asymmetric',
-			'placement_changed_during_capture', 'roster_changed',
+			'placement_changed_during_capture', 'roster_changed', 'character_unobserved',
 			'surface_excludes_equipment_mail_guild_and_active_tp', 'net_only_gross_turnover_unknown',
 		].includes(String(value.code)) &&
 		(value.before === undefined || typeof value.before === 'string') &&
