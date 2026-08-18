@@ -16,7 +16,13 @@ describe('pending confirmation background boundary', () => {
 
 	it('routes detector background changes through the in-place status port', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		const detector = source.slice(source.indexOf('this.assistedDetection = new AssistedDetectionService'), source.indexOf('this.assistedDetection.setOnline'));
+		// `.setOnline(navigator.onLine)` is the unique initial call inside `initializeRuntime`;
+		// the deferred boot guard also references `.setOnline(true|false)` earlier, from the
+		// `online`/`offline` listeners registered synchronously in `onload`.
+		const detector = source.slice(
+			source.indexOf('this.assistedDetection = new AssistedDetectionService'),
+			source.indexOf('this.assistedDetection.setOnline(navigator.onLine)'),
+		);
 		expect(detector).toContain('onStateChange: () => this.refreshBackgroundIndicators()');
 		expect(detector).not.toContain('this.renderViews()');
 

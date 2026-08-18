@@ -51,7 +51,7 @@ import {
 import type { SessionContaminationAnswers } from './sessions/session-contamination-review';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
-import { DetectionQualityRecorder } from './sessions/session-detection-quality-recorder';
+import { DetectionQualityRecorder, type DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
 import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
 import { PendingProposalService, type ProposalQueueState } from './sessions/pending-proposal-service';
 import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
@@ -80,7 +80,7 @@ import {
 	type SessionStopFailure,
 } from './sessions/manual-session-start-service';
 import { IndexedDbSessionRuntimeStore, type SessionRuntimeRecord } from './sessions/session-runtime-store';
-import type { SessionState } from './sessions/session';
+import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
 import {
 	COMPANION_VIEW_TYPE,
@@ -106,7 +106,7 @@ import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
 import { InventoryAdvisorPresentationController } from './ui/inventory-advisor-controller';
-import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
+import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import {
 	INVENTORY_ADVISOR_VIEW_TYPE,
 	InventoryAdvisorItemView,
@@ -179,9 +179,114 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
 	private sessionHistoryScrubFlight: Promise<SessionHistoryScrubResult> | null = null;
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
+	/** False until `initializeRuntime` finishes constructing every runtime service. */
+	private runtimeReady = false;
+	/** True once `onunload` has run; guards the deferred boot tail against writing after teardown. */
+	private unloaded = false;
 
+	/**
+	 * Boot is split so that Obsidian can restore a saved `tyrian-companion-*` leaf
+	 * against an already-registered view type: everything a restored leaf or a
+	 * command palette entry can reach synchronously runs here, before any `await`.
+	 * The account/session/storage services that used to block startup are built
+	 * afterwards, off `workspace.onLayoutReady`, in `initializeRuntime`.
+	 */
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		this.registerView(
+			COMPANION_VIEW_TYPE,
+			(leaf) => new TyrianCompanionView(leaf, this),
+		);
+		this.registerView(
+			INVENTORY_ADVISOR_VIEW_TYPE,
+			(leaf) => new InventoryAdvisorItemView(leaf, this),
+		);
+		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
+		this.addSettingTab(this.settingTab);
+		const inventoryAdvisorCommands = this.inventoryAdvisorCommandCallbacks();
+		this.addCommand({
+			id: 'open-companion',
+			name: createTranslator(this.settings.language).t('commands.openCompanion'),
+			callback: () => {
+				void this.activateView();
+			},
+		});
+		this.addCommand({
+			id: 'open-inventory-advisor',
+			name: createTranslator(this.settings.language).t('commands.openInventoryAdvisor'),
+			callback: inventoryAdvisorCommands.open,
+		});
+		this.addCommand({
+			id: 'refresh-inventory-advisor',
+			name: createTranslator(this.settings.language).t('commands.refreshInventoryAdvisor'),
+			callback: inventoryAdvisorCommands.refresh,
+		});
+		this.addCommand({
+			id: 'preview-inventory-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.previewInventoryVault'),
+			callback: () => { void this.previewInventoryVaultSync(true); },
+		});
+		this.addCommand({
+			id: 'apply-inventory-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.applyInventoryVault'),
+			checkCallback: (checking) => {
+				const available = this.inventoryVaultSync.canApply();
+				if (!checking && available) void this.applyInventoryVaultSync();
+				return available;
+			},
+		});
+		this.addCommand({
+			id: 'preview-wallet-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.previewWalletVault'),
+			callback: () => { void this.previewWalletVaultSync(); },
+		});
+		this.addCommand({
+			id: 'apply-wallet-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.applyWalletVault'),
+			checkCallback: (checking) => {
+				const available = this.walletVaultSync.canApply();
+				if (!checking && available) void this.applyWalletVaultSync();
+				return available;
+			},
+		});
+		this.addCommand({
+			id: 'arm-assisted-detection',
+			name: createTranslator(this.settings.language).t('commands.armDetection'),
+			callback: () => { void this.armAssistedDetection(); },
+		});
+		this.addCommand({
+			id: 'disarm-assisted-detection',
+			name: createTranslator(this.settings.language).t('commands.disarmDetection'),
+			callback: () => this.disarmAssistedDetection(),
+		});
+		this.setupSessionCommands();
+		this.registerDomEvent(window, 'online', () => {
+			if (!this.runtimeReady) return;
+			this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+		});
+		this.registerDomEvent(window, 'offline', () => {
+			if (!this.runtimeReady) return;
+			this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
+		});
+		this.registerDomEvent(document, 'visibilitychange', () => {
+			if (!this.runtimeReady || document.visibilityState !== 'visible') return;
+			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
+				void this.reconcilePendingProposals().then(() => this.renderViews());
+			}
+		});
+
+		this.app.workspace.onLayoutReady(() => { void this.initializeRuntime(); });
+	}
+
+	/**
+	 * Builds every account/session/storage service in the original order, then
+	 * flips `runtimeReady` and repaints. It runs after layout restore so a saved
+	 * leaf never renders against a half-built plugin; every getter and action
+	 * reachable before it resolves reads `runtimeReady` and answers with a
+	 * neutral value instead of touching an unassigned service.
+	 */
+	private async initializeRuntime(): Promise<void> {
 		this.managedAssets = new ManagedAssetsManager(
 			{
 				file: (path) => this.app.vault.getAbstractFileByPath(path),
@@ -407,88 +512,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		});
 		this.assistedDetection.setOnline(navigator.onLine);
-		this.registerDomEvent(window, 'online', () => {
-			this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
-		});
-		this.registerDomEvent(window, 'offline', () => {
-			this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
-		});
-		this.registerDomEvent(document, 'visibilitychange', () => {
-			if (document.visibilityState === 'visible' && this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
-				void this.reconcilePendingProposals().then(() => this.renderViews());
-			}
-		});
 
-		this.registerView(
-			COMPANION_VIEW_TYPE,
-			(leaf) => new TyrianCompanionView(leaf, this),
-		);
-		this.registerView(
-			INVENTORY_ADVISOR_VIEW_TYPE,
-			(leaf) => new InventoryAdvisorItemView(leaf, this),
-		);
-		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
-		this.addSettingTab(this.settingTab);
-		const inventoryAdvisorCommands = this.inventoryAdvisorCommandCallbacks();
-		this.addCommand({
-			id: 'open-companion',
-			name: createTranslator(this.settings.language).t('commands.openCompanion'),
-			callback: () => {
-				void this.activateView();
-			},
-		});
-		this.addCommand({
-			id: 'open-inventory-advisor',
-			name: createTranslator(this.settings.language).t('commands.openInventoryAdvisor'),
-			callback: inventoryAdvisorCommands.open,
-		});
-		this.addCommand({
-			id: 'refresh-inventory-advisor',
-			name: createTranslator(this.settings.language).t('commands.refreshInventoryAdvisor'),
-			callback: inventoryAdvisorCommands.refresh,
-		});
-		this.addCommand({
-			id: 'preview-inventory-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.previewInventoryVault'),
-			callback: () => { void this.previewInventoryVaultSync(true); },
-		});
-		this.addCommand({
-			id: 'apply-inventory-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.applyInventoryVault'),
-			checkCallback: (checking) => {
-				const available = this.inventoryVaultSync.canApply();
-				if (!checking && available) void this.applyInventoryVaultSync();
-				return available;
-			},
-		});
-		this.addCommand({
-			id: 'preview-wallet-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.previewWalletVault'),
-			callback: () => { void this.previewWalletVaultSync(); },
-		});
-		this.addCommand({
-			id: 'apply-wallet-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.applyWalletVault'),
-			checkCallback: (checking) => {
-				const available = this.walletVaultSync.canApply();
-				if (!checking && available) void this.applyWalletVaultSync();
-				return available;
-			},
-		});
-		this.addCommand({
-			id: 'arm-assisted-detection',
-			name: createTranslator(this.settings.language).t('commands.armDetection'),
-			callback: () => { void this.armAssistedDetection(); },
-		});
-		this.addCommand({
-			id: 'disarm-assisted-detection',
-			name: createTranslator(this.settings.language).t('commands.disarmDetection'),
-			callback: () => this.disarmAssistedDetection(),
-		});
-		this.setupSessionCommands();
+		if (this.unloaded) return;
+		this.runtimeReady = true;
+		this.renderViews();
 	}
 
 	onunload(): void {
+		this.unloaded = true;
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
@@ -509,10 +540,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getConnectionState(): ConnectionState {
-		return this.connection.getState();
+		return this.runtimeReady ? this.connection.getState() : { status: 'idle' };
 	}
 
 	async checkConnection(): Promise<ConnectionState> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return { status: 'idle' }; }
 		const check = this.connection.check();
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
@@ -524,7 +556,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getSessionState(): SessionState {
-		return this.sessions.getState();
+		return this.runtimeReady ? this.sessions.getState() : { version: SESSION_STATE_VERSION, status: 'idle' };
 	}
 
 	getDetectionMode(): DetectionMode {
@@ -540,15 +572,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
-		return this.inventoryAdvisor.open();
+		return this.runtimeReady ? this.inventoryAdvisor.open() : buildInventoryAdvisorViewModel(null);
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
-		return this.inventoryPreferences.current();
+		return this.runtimeReady ? this.inventoryPreferences.current() : structuredClone(IDLE_PREFERENCES_STATE);
 	}
 
 	/** Gives each ItemView an opaque CAS revision without placing it in its DOM. */
 	createInventoryPreferencesEditorSession(): InventoryPreferencesEditorSession {
+		if (!this.runtimeReady) return idleInventoryPreferencesEditorSession(() => this.notifyRuntimeStarting());
 		const session = this.inventoryPreferences.createEditorSession();
 		const after = async (state: InventoryPreferencesEditorState): Promise<InventoryPreferencesEditorState> => {
 			if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
@@ -566,6 +599,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async refreshInventoryAdvisor(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		await this.inventoryAdvisor.refresh();
 		this.renderInventoryAdvisorViews();
 	}
@@ -685,12 +719,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async loadInventoryPreferences(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.loadCached();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
 		this.renderInventoryAdvisorViews();
 	}
 
 	async upsertInventoryGoal(goal: ReservationGoal): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.upsertGoal(goal);
 		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
@@ -698,6 +734,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async removeInventoryGoal(goalId: string): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.removeGoal(goalId);
 		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
@@ -705,6 +742,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async upsertInventoryKeepException(keepException: KeepExceptionV1): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.upsertKeepException(keepException);
 		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
@@ -712,6 +750,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async removeInventoryKeepException(exceptionId: string): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const state = await this.inventoryPreferences.removeKeepException(exceptionId);
 		if (state.status === 'ready') await this.inventoryAdvisor.reclassify();
 		if (state.status === 'blocked' || state.status === 'conflict') this.inventoryAdvisor.block();
@@ -719,26 +758,27 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getAssistedDetectionState(): AssistedDetectionState {
-		return this.assistedDetection.getState();
+		return this.runtimeReady ? this.assistedDetection.getState() : structuredClone(IDLE_ASSISTED_DETECTION_STATE);
 	}
 
-	getDetectionQualityState() {
-		return this.detectionQuality.getState();
+	getDetectionQualityState(): DetectionQualityRecorderState {
+		return this.runtimeReady ? this.detectionQuality.getState() : { status: 'loading' };
 	}
 
 	getSessionDetectionQuality(sessionId: string) {
-		return this.detectionQuality.getSessionSummary(sessionId);
+		return this.runtimeReady ? this.detectionQuality.getSessionSummary(sessionId) : null;
 	}
 
 	getDetectionQualityStats() {
-		return this.detectionQuality.getStats();
+		return this.runtimeReady ? this.detectionQuality.getStats() : null;
 	}
 
 	getPendingProposalState(): ProposalQueueState {
-		return this.pendingProposals.getState();
+		return this.runtimeReady ? this.pendingProposals.getState() : { status: 'loading', pendingCount: 0, next: null };
 	}
 
 	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return false; }
 		try {
 			if (!await this.pendingProposals.acknowledge(intent)) {
 				new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'));
@@ -754,6 +794,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const claim = await this.acquirePendingIntent(intent);
 		try {
 			const sessionId = claim.proposal.phase === 'stop' ? claim.proposal.binding.sessionId : null;
@@ -768,6 +809,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	openPendingSessionStart(intent: PendingProposalIntent): void {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'start' || this.startModal) return;
 		this.startModal = new ManualSessionStartModal(
 			this.app,
@@ -780,11 +822,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async stopPendingSession(intent: PendingProposalIntent): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'stop') return;
 		await this.performStopManualSession(intent);
 	}
 
 	async armAssistedDetection(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return;
 		try {
@@ -804,6 +848,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	disarmAssistedDetection(): void {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		this.runRuntimeMutation(() => {
 			this.assistedDetection.disarm();
 			this.renderViews();
@@ -811,6 +856,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return;
 		try {
@@ -833,19 +879,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
-		return this.sessions.getLastFailure();
+		return this.runtimeReady ? this.sessions.getLastFailure() : null;
 	}
 
 	getSessionStopFailure(): SessionStopFailure | null {
-		return this.sessions.getLastStopFailure();
+		return this.runtimeReady ? this.sessions.getLastStopFailure() : null;
 	}
 
 	getProvisionalDelta(): StorageDelta | null {
-		return this.sessions.getProvisionalDelta();
+		return this.runtimeReady ? this.sessions.getProvisionalDelta() : null;
 	}
 
 	getContaminationReview() {
-		return this.sessions.getContaminationReview();
+		return this.runtimeReady ? this.sessions.getContaminationReview() : null;
 	}
 
 	getLootPresentation(): LootPresentationV1 | null {
@@ -857,6 +903,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
 
 	async exportSessionHistory(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		this.sessionHistoryView = { status: 'working', sessions: 0, erased: 0, alreadyAbsent: 0 };
 		this.settingTab.refreshSessionHistoryRow();
 		try {
@@ -868,6 +915,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	previewSessionHistoryScrub(): Promise<SessionHistoryScrubPreview> {
+		if (!this.runtimeReady) {
+			this.notifyRuntimeStarting();
+			return Promise.resolve({ status: 'unavailable', message: 'Tyrian Companion is still starting.' });
+		}
 		if (this.sessionHistoryPreviewFlight) return this.sessionHistoryPreviewFlight;
 		this.sessionHistoryView = { status: 'scrub_previewing', sessions: 0, erased: 0, alreadyAbsent: 0 };
 		this.settingTab.refreshSessionHistoryRow();
@@ -890,6 +941,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	cancelSessionHistoryScrubPreview(token: string): void {
+		if (!this.runtimeReady) return;
 		this.sessionHistory.revokeScrub(token);
 		if (this.sessionHistoryView.status !== 'scrub_ready') return;
 		this.sessionHistoryView = { status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
@@ -897,6 +949,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	scrubSessionHistory(token: string): Promise<SessionHistoryScrubResult> {
+		if (!this.runtimeReady) {
+			this.notifyRuntimeStarting();
+			return Promise.resolve({
+				status: 'unavailable', erased: 0, alreadyAbsent: 0,
+				message: 'Tyrian Companion is still starting.',
+			});
+		}
 		if (this.sessionHistoryScrubFlight) return this.sessionHistoryScrubFlight;
 		this.sessionHistoryView = {
 			status: 'scrubbing', sessions: this.sessionHistoryView.status === 'scrub_ready' ? this.sessionHistoryView.sessions : 0,
@@ -932,6 +991,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		};
 	}
 
+	/** Tells the user an action was ignored because `initializeRuntime` has not finished yet. */
+	private notifyRuntimeStarting(): void {
+		new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.pluginStarting'));
+	}
+
 	private runRuntimeMutation(operation: () => void): boolean {
 		const lease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (lease === null) return false;
@@ -950,6 +1014,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async previewManagedAssets(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_root_retained', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -967,6 +1032,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyManagedAssets(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -977,6 +1043,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async repairManagedAssets(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (this.settings.legacyManagedAssetsRoot !== null) {
 			this.managedAssetsView = { status: 'error', message: 'legacy_explicit_only', plan: null };
 			this.settingTab.refreshManagedAssetsRow();
@@ -987,6 +1054,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async relocateManagedAssets(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const destination = this.settings.outputFolder;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
@@ -997,6 +1065,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async removeManagedAssets(): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
 		if (!await this.ensureManagedAssetsAuthority()) return;
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
@@ -1060,7 +1129,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	getSessionRecoveryState(): SessionRecoveryState {
-		return this.sessions.getRecoveryState();
+		return this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' };
 	}
 
 	async recoverSession(): Promise<void> {
@@ -1164,6 +1233,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const previousSecret = this.settings.apiKeySecret;
 		const previousDetectionMode = this.settings.detectionMode;
 		const previousPollingInterval = this.settings.pollingIntervalMinutes;
@@ -1287,12 +1357,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private setupSessionCommands(): void {
 		this.sessionCommands = new SessionCommandController({
-			getContext: () => ({
-				state: this.sessions.getState(),
-				recovery: this.sessions.getRecoveryState(),
-				connection: this.connection.getState().status,
-				stopFailure: this.sessions.getLastStopFailure(),
-			}),
+			getContext: () => this.runtimeReady
+				? {
+					state: this.sessions.getState(),
+					recovery: this.sessions.getRecoveryState(),
+					connection: this.connection.getState().status,
+					stopFailure: this.sessions.getLastStopFailure(),
+				}
+				: {
+					state: { version: SESSION_STATE_VERSION, status: 'idle' },
+					recovery: { status: 'none' },
+					connection: 'idle',
+					stopFailure: null,
+				},
 			getLocale: () => this.settings.language,
 			prepare: (id) => this.prepareSessionCommand(id),
 			notify: (message) => { new Notice(message); },
@@ -1307,6 +1384,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			id: 'review-pending-farming-proposal',
 			name: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'),
 			checkCallback: (checking) => {
+				if (!this.runtimeReady) return false;
 				const state = this.pendingProposals.getState();
 				const available = projectPendingProposalUi(state, this.settings.language).commandAvailable;
 				if (!checking && available && state.next) void this.reviewPendingProposal(proposalIntent(state.next));
@@ -1320,6 +1398,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private openSessionCommandMenu(event: MouseEvent): void {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const menu = new Menu();
 		if (this.pendingProposals.getState().pendingCount > 0) {
 			const next = this.pendingProposals.getState().next;
@@ -1497,6 +1576,36 @@ export default class TyrianCompanionPlugin extends Plugin {
 			refresh: () => this.refreshInventoryAdvisor(),
 		});
 	}
+}
+
+/** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */
+const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
+	status: 'disarmed',
+	reason: 'initial',
+	scheduler: {
+		status: 'idle', intervalMs: null, nextRunAt: null,
+		lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+	},
+	lastSnapshotAt: null,
+};
+
+/** Identical to a brand-new editor session before its first `load()`. */
+const IDLE_PREFERENCES_STATE: InventoryPreferencesEditorState = { status: 'not_loaded', goals: [], keepExceptions: [] };
+
+/** Every action resolves without mutating anything and tells the caller the boot is still running. */
+function idleInventoryPreferencesEditorSession(notifyRuntimeStarting: () => void): InventoryPreferencesEditorSession {
+	const blocked = async (): Promise<InventoryPreferencesEditorState> => {
+		notifyRuntimeStarting();
+		return structuredClone(IDLE_PREFERENCES_STATE);
+	};
+	return Object.freeze({
+		current: () => structuredClone(IDLE_PREFERENCES_STATE),
+		load: blocked,
+		upsertGoal: blocked,
+		removeGoal: blocked,
+		upsertKeepException: blocked,
+		removeKeepException: blocked,
+	});
 }
 
 export function createInventoryAdvisorCommandCallbacks(actions: {

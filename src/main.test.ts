@@ -1,6 +1,11 @@
+import type { App, PluginManifest } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
 import TyrianCompanionPlugin from './main';
+import type { ConnectionState } from './account/connection-service';
+import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
+import { COMPANION_VIEW_TYPE } from './ui/companion-view';
+import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
@@ -155,3 +160,74 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 	const promise = new Promise<T>((done) => { resolve = done; });
 	return { promise, resolve };
 }
+
+interface RuntimeReadyHarness {
+	runtimeReady: boolean;
+}
+
+describe('deferred runtime boot guard', () => {
+	it('answers connection and session state neutrally instead of touching an unassigned service', () => {
+		const harness: RuntimeReadyHarness = { runtimeReady: false };
+		const getConnectionState = (TyrianCompanionPlugin.prototype as unknown as {
+			getConnectionState(this: RuntimeReadyHarness): ConnectionState;
+		}).getConnectionState.bind(harness);
+		const getSessionState = (TyrianCompanionPlugin.prototype as unknown as {
+			getSessionState(this: RuntimeReadyHarness): SessionState;
+		}).getSessionState.bind(harness);
+
+		// A harness with no `connection`/`sessions` field at all would throw if the
+		// getter ever touched them; reaching a neutral value instead proves the guard.
+		expect(getConnectionState()).toEqual({ status: 'idle' });
+		expect(getSessionState()).toEqual({ version: SESSION_STATE_VERSION, status: 'idle' });
+	});
+
+	it('registers both views and every startup command before the deferred boot ever runs', async () => {
+		let onLayoutReadyCallback: (() => void) | null = null;
+		const fakeRibbon = { setAttr: () => undefined, toggleClass: () => undefined } as unknown as HTMLElement;
+		const fakeApp = {
+			vault: { configDir: 'test-config-dir' },
+			workspace: { onLayoutReady: (callback: () => void) => { onLayoutReadyCallback = callback; } },
+		} as unknown as App;
+		const fakeManifest = { id: 'tyrian-companion' } as unknown as PluginManifest;
+
+		const plugin = new TyrianCompanionPlugin(fakeApp, fakeManifest);
+		// The obsidian-mock's `Plugin` base is empty; it never stores the constructor args.
+		plugin.app = fakeApp;
+		plugin.manifest = fakeManifest;
+		plugin.loadData = async () => undefined;
+		plugin.saveData = async () => undefined;
+		const registerView = vi.fn();
+		const addCommand = vi.fn((command: unknown) => command);
+		plugin.registerView = registerView;
+		plugin.addSettingTab = vi.fn();
+		plugin.addCommand = addCommand as unknown as typeof plugin.addCommand;
+		plugin.registerDomEvent = vi.fn();
+		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
+		// `registerDomEvent` is stubbed above; these only need to exist as references.
+		vi.stubGlobal('window', {});
+		vi.stubGlobal('document', {});
+
+		await plugin.onload();
+		vi.unstubAllGlobals();
+
+		// The saved-leaf restore this guards against races `onLayoutReady`, so the
+		// deferred boot must not have run yet when `onload` itself resolves.
+		expect(onLayoutReadyCallback).not.toBeNull();
+		expect(plugin.getConnectionState()).toEqual({ status: 'idle' });
+
+		const registeredViewTypes = registerView.mock.calls.map((call: unknown[]) => call[0]);
+		expect(registeredViewTypes).toEqual(expect.arrayContaining([COMPANION_VIEW_TYPE, INVENTORY_ADVISOR_VIEW_TYPE]));
+
+		const registeredCommandIds = addCommand.mock.calls.map((call) => (call[0] as { id: string }).id);
+		expect(registeredCommandIds).toEqual(expect.arrayContaining([
+			'open-companion', 'open-inventory-advisor', 'refresh-inventory-advisor',
+			'arm-assisted-detection', 'disarm-assisted-detection',
+		]));
+
+		// Session start/stop route through `SessionCommandController`, whose context is
+		// itself guarded: with `runtimeReady` still false every command reports
+		// unavailable, so these never reach the unassigned `sessions` service.
+		expect(() => plugin.openManualSessionStart()).not.toThrow();
+		await expect(plugin.stopManualSession()).resolves.toBeUndefined();
+	});
+});
