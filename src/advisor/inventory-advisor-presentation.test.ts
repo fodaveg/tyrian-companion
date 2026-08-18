@@ -6,6 +6,9 @@ import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './invent
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { sha256InventoryRulePack } from './inventory-advisor-contract';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
+import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import { buildInventoryAdvisorViewModel } from '../ui/inventory-advisor-view-model';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
 describe('H5.11 inventory advisor presentation', () => {
 	it('uses the H4.2 policy for minimum fees and half-up rounding instead of duplicating fees', () => {
@@ -175,6 +178,49 @@ describe('H5.11 inventory advisor presentation', () => {
 			.toMatchObject({ status: 'invalid', groups: [] });
 		expect(optionGetterRead).toBe(0);
 	});
+
+	it('classifies and projects a whole report without reaching for any ambient capability', async () => {
+		const projected: string[] = [];
+		const used = await ambientCapabilityUse(() => {
+			const value = source();
+			addVendorLine(value);
+			const presentation = buildInventoryAdvisorPresentation(
+				{ input: value.input, result: classifyInventoryAdvisor(value) },
+				{ sort: 'name_asc', filters: { groups: ['market', 'keep'] } },
+			);
+			projected.push(presentation.status, buildInventoryAdvisorViewModel(presentation).status);
+		});
+		expect(used).toEqual([]);
+		expect(projected).toEqual(['ready', 'ready']);
+	});
+
+	it('indexes explanations once instead of scanning them for every decision', () => {
+		const projectionReadsPerDecision = (lines: number): number => {
+			const value = source();
+			for (let index = 1; index < lines; index += 1) addItemLine(value, 10 + index);
+			value.knowledgePack.sha256 = sha256InventoryKnowledgePack(value.knowledgePack);
+			const result = classifyInventoryAdvisor(value);
+			if (result.status === 'invalid') throw new Error('Expected a valid multi-line fixture.');
+			let reads = 0;
+			const counted = () => ({
+				input: value.input,
+				result: { ...result, report: { ...result.report, explanations: new Proxy(result.report.explanations, {
+					get(target, key, receiver) {
+						if (typeof key === 'string' && /^\d+$/u.test(key)) reads += 1;
+						return Reflect.get(target, key, receiver) as unknown;
+					},
+				}) } },
+			});
+			const validated = counted();
+			expect(isInventoryAdvisorResultForInput(validated.result, validated.input)).toBe(true);
+			const validationReads = reads;
+			reads = 0;
+			const presentation = buildInventoryAdvisorPresentation(counted());
+			expect(presentation.groups[0]?.rows).toHaveLength(lines);
+			return (reads - validationReads) / lines;
+		};
+		expect(projectionReadsPerDecision(24)).toBeLessThanOrEqual(projectionReadsPerDecision(4));
+	});
 });
 
 function onlyRow(value: InventoryAdvisorEngineInputV1) {
@@ -187,6 +233,18 @@ function onlyRow(value: InventoryAdvisorEngineInputV1) {
 function project(value: InventoryAdvisorEngineInputV1) {
 	const result = classifyInventoryAdvisor(value);
 	return buildInventoryAdvisorPresentation({ input: value.input, result });
+}
+
+function addItemLine(value: InventoryAdvisorEngineInputV1, itemId: number): void {
+	const key = String(itemId);
+	value.input.snapshot.holdings.push({ kind: 'item', itemId, quantity: 1, state: 'loose', location: { source: 'bank', slot: itemId }, metadata: {} });
+	value.input.snapshot.ownedByItem[key] = 1;
+	value.input.snapshot.availableByItem[key] = 1;
+	value.input.catalog.items[key] = { ...value.input.catalog.items['10']!, id: itemId, name: `Item ${key}`, vendorValue: 100 };
+	value.input.catalog.coverage.items[key] = { status: 'resolved', source: 'network' };
+	value.input.prices.requestedItemIds.push(itemId);
+	value.input.prices.items.push({ itemId, whitelisted: true, bid: null, ask: null });
+	value.knowledgePack.entries.push({ itemId, use: { status: 'not_applicable', assertionId: `use-none-${key}`, sourceIds: ['source'] }, open: { status: 'not_applicable', assertionId: `open-none-${key}`, sourceIds: ['source'] }, salvage: { status: 'not_applicable', assertionId: `salvage-none-${key}`, sourceIds: ['source'] } });
 }
 
 function addVendorLine(value: InventoryAdvisorEngineInputV1): void {

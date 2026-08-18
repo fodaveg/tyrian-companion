@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { moduleSpecifiers } from '../test/module-boundary';
+
 const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
 	.filter((file) => file.startsWith('inventory-advisor-')
 		&& file.endsWith('.ts') && !file.endsWith('.test.ts'))
@@ -60,12 +62,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 ]);
 
-const FORBIDDEN_SOURCE = [
-	/\b(?:fetch|request|requestUrl)\s*\(/u,
-	/\b(?:indexedDB|localStorage|sessionStorage|readFileSync|writeFileSync)\b/u,
-	/\b(?:setTimeout|setInterval|requestAnimationFrame)\b/u,
-	/\b(?:destroyItem|deleteItem|salvageItem|openContainer)\s*\(/u,
-];
+const FORBIDDEN_ITEM_OPERATION = /\b(?:destroyItem|deleteItem|salvageItem|openContainer)\s*\(/u;
 
 const CAPABILITY_NAME = '(?:(?:executor|gateway|client|store|timer|capture)(?:[A-Z_$][\\w$]*)?|[\\w$]+(?:Executor|Gateway|Client|Store|Timer|Capture)(?:[A-Z_$][\\w$]*)?)';
 const FORBIDDEN_CAPABILITY = new RegExp(`^\\s*(?:(?:public|private|protected|readonly|static|declare|abstract|override|async)\\s+)*(?:get\\s+|set\\s+)?#?${CAPABILITY_NAME}\\s*(?:\\?|!)?\\s*(?::|\\(|=)`, 'mu');
@@ -98,26 +95,21 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			for (const specifier of moduleSpecifiers(source)) {
 				expect(forbiddenDependency(specifier), `${path} imports forbidden dependency ${specifier}`).toBe(false);
 			}
-			for (const forbidden of FORBIDDEN_SOURCE) expect(source).not.toMatch(forbidden);
+			expect(source, `${path} performs an irreversible item operation`).not.toMatch(FORBIDDEN_ITEM_OPERATION);
 			expect(source, `${path} declares a forbidden capability`).not.toMatch(FORBIDDEN_CAPABILITY);
 		}
 	});
 
-	it('censuses explicit integration capabilities and keeps open/current free of them', () => {
+	it('censuses the explicit integration capabilities the controller may reach for', () => {
 		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts')?.source ?? '';
 		expect([...new Set(boundaryPortCalls(controller))].sort()).toEqual(['ports.invalidate', 'ports.load', 'ports.reclassify']);
-		for (const method of ['open', 'current']) {
-			const body = controller.match(new RegExp(`${method}\\([^)]*\\)[^{]*\\{([\\s\\S]*?)\\n\\t\\}`, 'u'))?.[1] ?? '';
-			expect(body, `${method} must remain a memory-only projection`).not.toContain('this.ports.');
-		}
-		expect(controller).toContain('async refresh(');
 	});
 
 	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {
 		for (const [path, policy] of BOUNDARY_POLICIES) {
 			const source = readFileSync(path, 'utf8');
 			expect([...new Set(moduleSpecifiers(source))].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
-			for (const forbidden of FORBIDDEN_SOURCE) expect(source, `${path} forbidden source`).not.toMatch(forbidden);
+			expect(source, `${path} performs an irreversible item operation`).not.toMatch(FORBIDDEN_ITEM_OPERATION);
 			expect(boundaryPortCalls(source).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
 		}
 	});
@@ -143,15 +135,6 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		expect(boundaryPortCalls(poisoned).sort()).not.toEqual(BOUNDARY_POLICIES.get('src/ui/inventory-advisor-item-view.ts')!.portCalls.slice().sort());
 	});
 
-	it('indexes explanations and prices once after validation instead of scanning per decision', () => {
-		const presentation = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-presentation.ts')?.source ?? '';
-		expect(presentation).toContain('const explanationByRef = new Map(');
-		expect(presentation).toContain('const priceByItemId = new Map(');
-		expect(presentation).toContain('explanationByRef.get(decision.explanationRef)');
-		expect(presentation).toContain('priceByItemId.get(itemId)');
-		expect(presentation).not.toMatch(/explanations\.find|prices\.items\.find/u);
-	});
-
 	it.each([
 		[`import type { Client } from '../account/guild-wars-2-client';`, '../account/guild-wars-2-client'],
 		[`export { request } from '../core/http';`, '../core/http'],
@@ -168,13 +151,10 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		expect(forbiddenDependency(expected)).toBe(true);
 	});
 
-	it('turns red for network, capabilities, persistence, timers and irreversible operations', () => {
-		for (const source of [
-			`fetch('/v2/items');`, `requestUrl('/v2/items');`, `indexedDB.open('advisor');`,
-			`localStorage.setItem('key', 'value');`, `setTimeout(() => undefined, 1);`,
-			`destroyItem(10);`,
-		]) expect(FORBIDDEN_SOURCE.some((forbidden) => forbidden.test(source))).toBe(true);
-	});
+	it.each(['destroyItem(10);', 'deleteItem(10);', 'salvageItem(10);', 'openContainer(10);'])(
+		'turns red for the irreversible operation %s',
+		(source) => expect(FORBIDDEN_ITEM_OPERATION.test(source)).toBe(true),
+	);
 
 	it.each([
 		'private readonly executor?: Executor;',
@@ -187,16 +167,6 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		expect(FORBIDDEN_CAPABILITY.test(source)).toBe(true);
 	});
 });
-
-function moduleSpecifiers(source: string): string[] {
-	const patterns = [
-		/(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/gu,
-		/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-		/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-	];
-	return patterns.flatMap((pattern) => [...source.matchAll(pattern)]
-		.map((match) => match[1]).filter((value): value is string => value !== undefined));
-}
 
 function forbiddenDependency(specifier: string): boolean {
 	const forbiddenPackages = new Set([

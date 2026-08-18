@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InventoryVaultSyncLastRun } from '../core/settings';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { InventoryAdvisorItemView, type InventoryAdvisorViewActions } from './inventory-advisor-item-view';
 
 vi.mock('obsidian', () => ({
@@ -119,6 +120,28 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const remounted = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await remounted.onOpen();
 		expect(text(remounted.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+	});
+
+	it('opens, renders and syncs without reaching for a timer, network, storage or plugin global', async () => {
+		const rendered: string[] = [];
+		const used = await ambientCapabilityUse(async () => {
+			installDom();
+			const run = vi.fn(async () => undefined);
+			const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, run });
+			const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+			await view.onOpen();
+			view.render();
+			const button = find(view.contentEl as unknown as FakeElement, 'button')
+				.find((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario'));
+			if (!button) throw new Error('The single sync button was not mounted.');
+			button.dispatch('click');
+			await Promise.resolve();
+			await Promise.resolve();
+			rendered.push(String(run.mock.calls.length));
+			rendered.push(text(view.contentEl as unknown as FakeElement).includes('Material') ? 'rows' : 'empty');
+		});
+		expect(used).toEqual([]);
+		expect(rendered).toEqual(['1', 'rows']);
 	});
 });
 

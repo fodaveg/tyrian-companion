@@ -7,7 +7,10 @@ import {
 	INVENTORY_PREFERENCES_STORE_NAME,
 	type InventoryPreferenceScope,
 } from './inventory-preferences-model';
+import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-advisor-evidence-model';
+import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';
 import { InventoryPreferencesService } from './inventory-preferences-service';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
 
 const scope: InventoryPreferenceScope = { vaultId: 'vault-alpha', accountId: 'account-alpha' };
@@ -202,7 +205,34 @@ describe('inventory preferences persistence', () => {
 		preferences.dispose();
 		await expect(preferences.list(scope)).resolves.toEqual({ status: 'error', code: 'unavailable' });
 	});
+
+	it('never reaches for a timer, network, storage or plugin global across a full round trip', async () => {
+		const statuses: string[] = [];
+		const used = await ambientCapabilityUse(async () => {
+			const preferences = service(new IDBFactory(), databaseName('ambient'));
+			statuses.push((await preferences.replaceGoals(scope, 0, [validGoal('goal-a')])).status);
+			statuses.push((await preferences.upsertGoal(scope, 1, validGoal('goal-b'))).status);
+			statuses.push((await preferences.removeGoal(scope, 2, 'goal-b')).status);
+			statuses.push((await preferences.list(scope)).status);
+			const runtime = new InventoryPreferencesRuntime(preferences, scope.vaultId);
+			statuses.push(runtime.current().status);
+			statuses.push((await runtime.load(capture(scope.accountId))).status);
+			const session = runtime.createEditorSession();
+			await session.load();
+			statuses.push((await session.upsertGoal(validGoal('goal-c'))).status);
+			preferences.dispose();
+		});
+		expect(used).toEqual([]);
+		expect(statuses).toEqual(['ok', 'ok', 'ok', 'ok', 'not_loaded', 'ready', 'ready']);
+	});
 });
+
+function capture(accountId: string): InventoryAdvisorEvidenceCaptureResultV1 {
+	return {
+		status: 'complete',
+		evidence: { accountId, snapshot: { accountId }, prices: { accountId }, accountSignals: { accountId } },
+	} as unknown as InventoryAdvisorEvidenceCaptureResultV1;
+}
 
 function service(factory: IDBFactory, databaseName: string): InventoryPreferencesService {
 	return new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(factory, databaseName), now);

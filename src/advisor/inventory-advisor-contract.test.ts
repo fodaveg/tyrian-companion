@@ -267,6 +267,27 @@ describe('inventory advisor H4.13 contract', () => {
 			report: null, envelope: null,
 		})).toBe(true);
 	});
+
+	it('rejects every smuggled I/O capability field instead of admitting it as data', () => {
+		const input = inputFixture();
+		expect(isInventoryAdvisorInput(input)).toBe(true);
+		for (const capability of ['client', 'operation', 'http', 'secret', 'store', 'executor',
+			'callback', 'transport', 'gateway', 'requester']) {
+			expect(isInventoryAdvisorInput({ ...input, [capability]: () => undefined }),
+				`${capability} smuggled into the input`).toBe(false);
+			expect(isInventoryAdvisorInput({ ...input, prices: { ...input.prices, [capability]: 'x' } }),
+				`${capability} smuggled into the price snapshot`).toBe(false);
+		}
+		const report = reportFixture();
+		expect(isInventoryAdvisorReport(report)).toBe(true);
+		expect(isInventoryAdvisorReport({ ...report, executor: () => undefined })).toBe(false);
+		const line = report.lines[0]!;
+		expect(isInventoryAdvisorReport({ ...report, lines: [{ ...line, decisions: [
+			{ ...line.decisions[0]!, orderId: 'order-1' }, line.decisions[1]!,
+		] }] })).toBe(false);
+		const envelope = createInventoryRecommendationEnvelope(report);
+		expect(isInventoryRecommendationEnvelope({ ...envelope, executor: 'hidden' })).toBe(false);
+	});
 });
 
 function inputFixture(): InventoryAdvisorInputV1 {

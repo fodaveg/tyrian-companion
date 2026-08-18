@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InventoryAdvisorPresentationSource, InventoryAdvisorProducerPresentationSource } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { InventoryAdvisorPresentationController, type InventoryAdvisorControllerPorts } from './inventory-advisor-controller';
 
 vi.mock('../advisor/inventory-advisor-presentation', async (importOriginal) => {
@@ -216,6 +217,51 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		await expect(pending).resolves.toMatchObject({ status: 'invalid', groups: [] });
 		await expect(controller.refresh()).resolves.toMatchObject({ status: 'invalid', groups: [] });
 		expect(ports.load).toHaveBeenCalledOnce();
+	});
+
+	it('answers open and current from memory in every state without touching a single port', async () => {
+		const ports = {
+			load: vi.fn(async () => sourceNamed('Cached')),
+			reclassify: vi.fn(async () => sourceNamed('Reclassified')),
+			invalidate: vi.fn(),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const calls = () => [ports.load.mock.calls.length, ports.reclassify.mock.calls.length,
+			ports.invalidate.mock.calls.length];
+		controller.open();
+		controller.current({ sort: 'name_asc' });
+		expect(calls()).toEqual([0, 0, 0]);
+		expect(firstRowName(await controller.refresh())).toBe('Cached');
+		for (let repeat = 0; repeat < 3; repeat += 1) {
+			expect(firstRowName(controller.open())).toBe('Cached');
+			expect(firstRowName(controller.current({ filters: { groups: ['review'] } }))).toBe('Cached');
+		}
+		expect(calls()).toEqual([1, 0, 0]);
+		controller.dispose();
+		controller.open();
+		controller.current();
+		expect(calls()).toEqual([1, 0, 0]);
+	});
+
+	it('refreshes and reclassifies without reaching for any ambient capability', async () => {
+		const names: (string | undefined)[] = [];
+		const used = await ambientCapabilityUse(async () => {
+			const ports = {
+				load: vi.fn(async () => sourceNamed('Captured')),
+				reclassify: vi.fn(async () => sourceNamed('Reclassified')),
+				invalidate: vi.fn(),
+			} satisfies InventoryAdvisorControllerPorts;
+			const controller = new InventoryAdvisorPresentationController(ports);
+			names.push(firstRowName(await controller.refresh()));
+			names.push(firstRowName(await controller.reclassify()));
+			controller.invalidate();
+			names.push(firstRowName(controller.current()));
+			controller.block();
+			names.push(controller.current().blockedReason);
+			controller.dispose();
+		});
+		expect(used).toEqual([]);
+		expect(names).toEqual(['Captured', 'Reclassified', undefined, 'preferences_unavailable']);
 	});
 });
 

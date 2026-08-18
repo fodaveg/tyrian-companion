@@ -22,6 +22,7 @@ import {
 } from './inventory-advisor-view';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -101,6 +102,34 @@ describe('Inventory Advisor view', () => {
 		expect(state.textContent).toBe('Estas son las mejores acciones conocidas. Nada se ejecuta automáticamente.');
 		expect(text(mount.elements())).toContain('Completa');
 		expect(text(mount.elements())).not.toContain('Resto sin valor');
+	});
+
+	it('renders and drives its filters without reaching for a timer, network, storage or plugin global', async () => {
+		const observed: string[] = [];
+		const used = await ambientCapabilityUse(() => {
+			const mount = render(readyModel());
+			const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
+			const [action, group] = find(mount.elements(), 'select');
+			if (!action || !group) throw new Error('Expected Inventory Advisor filter controls.');
+			search.value = 'material';
+			search.dispatch('input');
+			action.value = 'sell';
+			action.dispatch('change');
+			group.value = 'evidence';
+			group.dispatch('change');
+			observed.push(only(byClass(mount.elements(), 'tyrian-inventory-advisor__state')).textContent ?? '');
+			const portMount = createMount();
+			renderInventoryAdvisorViewFromPort(
+				portMount.container as unknown as HTMLElement,
+				createInventoryAdvisorFixturePort(readyModel()),
+				createTranslator('en'),
+			);
+			observed.push(portMount.container.children[0]?.attributes.get('aria-label') ?? '');
+		});
+		expect(used).toEqual([]);
+		expect(observed).toEqual([
+			'Estas son las mejores acciones conocidas. Nada se ejecuta automáticamente.', 'Inventory advisor',
+		]);
 	});
 
 	it('keeps discard reviews out of the filter while rendering an explicit warning-only proof surface if wired', () => {
