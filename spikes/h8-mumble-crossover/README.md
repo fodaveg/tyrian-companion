@@ -88,10 +88,24 @@ fresh 128-bit nonce without saving it and execute the binary in the **same** bot
 probe_nonce=$(openssl rand -hex 16)
 '/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine' \
   --bottle 'Guild Wars 2' --no-update --no-gui --wait \
-  --cx-app /tmp/tyrian-h8-probe/tyrian-mumble-probe.exe \
+  --cx-app 'Z:\tmp\tyrian-h8-probe\tyrian-mumble-probe.exe' \
   --nonce "$probe_nonce"
 unset probe_nonce
 ```
+
+The `Z:` drive path is required, and an earlier revision of this file got it wrong. CrossOver's
+`wine` wrapper is a Perl script that accepts `--cx-app` in only two shapes: a value starting with a
+drive letter, which it passes straight through, or a bare name, which it globs inside the bottle's
+`drive_c` and rejects with `could not find '...' in '.../drive_c'. Is it installed?` when there is no
+match. A Unix absolute path such as `/tmp/tyrian-h8-probe/tyrian-mumble-probe.exe` takes the second
+branch and always fails, because the binary deliberately lives outside the bottle. This bottle maps
+`dosdevices/z:` to `/`, so `Z:\tmp\...` reaches the same file without copying anything into the
+bottle. Verified read-only on 2026-08-18; if a future bottle drops its `z:` mapping, check
+`dosdevices/` before assuming the command still resolves.
+
+The wrapper prepends the resolved application to the remaining arguments, so `--nonce <hex>` does
+reach the probe. The probe requires exactly that: it rejects any invocation whose argument count is
+not three or whose first argument is not `--nonce`.
 
 The expected success is exactly one JSON line with keys `version`, `nonce`, `sequence`, `tick`,
 `mapId` and `activity`; `sequence` is `0`, and `activity` is only `link_advancing` or
