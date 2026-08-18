@@ -41,12 +41,16 @@ const REVIEWED_WEB_SOCKET_FILES: readonly string[] = [];
 const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/account/account-service.ts',
 	'src/account/guild-wars-2-client.ts',
+	'src/account/rate-limited-storage-snapshot-service.ts',
 	'src/account/storage-snapshot-service.ts',
+	'src/advisor/inventory-advisor-evidence.ts',
 	'src/catalog/public-catalog-client.ts',
 	'src/catalog/public-catalog-service.ts',
 	'src/core/obsidian-http.ts',
 	'src/main.ts',
 	'src/sessions/api-poll-scheduler.ts',
+	'src/sessions/assisted-detection-service.ts',
+	'src/sessions/manual-session-start-service.ts',
 	'src/sessions/session-start-capture.ts',
 ];
 const REVIEWED_SECRET_PROVIDER_IMPORT_FILES = [

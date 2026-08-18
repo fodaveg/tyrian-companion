@@ -55,6 +55,7 @@ const H5_11_KEYS = [
 	'advisor.view.blockedReason.capture_coverage_invalid',
 	'advisor.view.blockedReason.capture_wrapper_shape',
 	'advisor.view.blockedReason.capture_serialization_invalid',
+	'advisor.view.blockedReason.capture_rate_limited',
 	'advisor.view.blockedReason.preferences_corrupt', 'advisor.view.blockedReason.preferences_future',
 	'advisor.view.blockedReason.preferences_unavailable', 'advisor.view.blockedReason.stale_evidence',
 	'advisor.view.blockedReason.unexpected_failure',

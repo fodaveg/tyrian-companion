@@ -4,6 +4,7 @@ import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
+import { RateLimitedStorageSnapshotService } from './account/rate-limited-storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import { PublicCatalogService } from './catalog/public-catalog-service';
 import { createCatalogCacheAdapter } from './catalog/persistent-catalog-cache';
@@ -14,6 +15,7 @@ import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './ass
 import type { ManagedAssetsMessageCode, ManagedAssetsView } from './assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { ObsidianRequestTransport } from './core/obsidian-http';
+import { RateLimitCoordinator } from './core/rate-limit-coordinator';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
@@ -329,8 +331,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
-		const snapshots = new StorageSnapshotService(client);
-		const inventorySnapshots = new StorageSnapshotService(inventoryClient);
+		// One shared cooldown: a 429 seen by the session capture, assisted detection, or the
+		// inventory advisor blocks the other two until the shared cooldown clears.
+		const rateLimitCoordinator = new RateLimitCoordinator();
+		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
+		const inventorySnapshots = new RateLimitedStorageSnapshotService(
+			new StorageSnapshotService(inventoryClient),
+			rateLimitCoordinator,
+		);
 		const inventoryVaultWriter = new InventoryVaultSyncService({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
 			markdownFiles: () => this.app.vault.getMarkdownFiles(),
@@ -1631,7 +1639,7 @@ interface InventoryAdvisorCaptureProgressListenerRef {
 function createInventoryAdvisorRuntime(
 	client: GuildWars2Client,
 	publicClient: GuildWars2PublicCatalogClient,
-	snapshots: StorageSnapshotService,
+	snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
 	locale: () => Locale,
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,

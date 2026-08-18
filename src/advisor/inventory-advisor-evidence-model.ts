@@ -59,6 +59,7 @@ export type InventoryAdvisorEvidenceFailure =
 	| 'identity_mismatch'
 	| 'snapshot_coverage_incomplete'
 	| 'snapshot_structure_invalid'
+	| 'rate_limited'
 	| InventoryAdvisorEvidenceValidationFailure;
 
 /**

@@ -42,6 +42,7 @@ export type InventoryAdvisorWorkflowResult =
 export type InventoryAdvisorWorkflowBlockedReason =
 	| 'missing_rules'
 	| 'credential_unavailable'
+	| 'capture_rate_limited'
 	| 'capture_unavailable'
 	| 'capture_invalid'
 	| 'capture_snapshot_invalid'
@@ -82,7 +83,9 @@ export class InventoryAdvisorWorkflow {
 		if (capture.evidence === null) {
 			return { status: 'blocked', reason: capture.failure === 'missing_key'
 				? 'credential_unavailable'
-				: capture.status === 'invalid' ? captureBlockedReason(capture.failure) : 'capture_unavailable' };
+				: capture.failure === 'rate_limited'
+					? 'capture_rate_limited'
+					: capture.status === 'invalid' ? captureBlockedReason(capture.failure) : 'capture_unavailable' };
 		}
 		const preferences = await this.ports.preferences.load(capture);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };

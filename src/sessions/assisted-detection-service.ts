@@ -2,6 +2,7 @@ import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
+import { HttpTransportError } from '../core/http';
 import {
 	ApiPollScheduler,
 	type ApiPollOutcome,
@@ -65,6 +66,8 @@ export type AssistedDetectionState =
 	| (AssistedDetectionBase & {
 		status: 'error';
 		message: string;
+		/** Set when the failure is a shared API rate limit, never a network or credential fault. */
+		code?: 'rate_limited';
 	});
 
 interface PollSchedulerPort {
@@ -252,8 +255,11 @@ export class AssistedDetectionService {
 			this.state.scheduler = { ...this.scheduler.getState() };
 			this.emit();
 			return this.getState();
-		} catch {
+		} catch (error) {
 			if (generation !== this.generation || this.disposed) return this.getState();
+			if (error instanceof HttpTransportError && error.status === 429) {
+				return this.fail('Assisted detection is waiting for a shared API rate limit to clear.', 'rate_limited');
+			}
 			return this.fail('The initial account snapshot could not be captured.');
 		}
 	}
@@ -372,12 +378,13 @@ export class AssistedDetectionService {
 		this.emit();
 	}
 
-	private fail(message: string): AssistedDetectionState {
+	private fail(message: string, code?: 'rate_limited'): AssistedDetectionState {
 		this.scheduler.stop();
 		this.resetEvidence();
 		this.state = {
 			status: 'error',
 			message,
+			code,
 			scheduler: { ...this.scheduler.getState() },
 			lastSnapshotAt: null,
 		};

@@ -1,6 +1,7 @@
 import { inventoryAdvisorStorageSnapshotFailure } from '../account/storage-delta';
 import type { StorageSnapshotCaptureProgress, StorageSnapshotService } from '../account/storage-snapshot-service';
 import { allowsEndpoint } from '../account/storage-snapshot-service';
+import { HttpTransportError } from '../core/http';
 import {
 	PINNED_SCHEMA,
 	type SourceCoverage,
@@ -170,7 +171,10 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 					&& coverage.accountSignals === 'complete' && (containerPrices === null || containerPrices.status === 'complete')
 					? 'complete' : 'partial', evidence, containerPrices };
 			return await this.finishCapture(result, snapshot);
-		} catch {
+		} catch (error) {
+			if (error instanceof HttpTransportError && error.status === 429) {
+				return await this.finishCapture({ status: 'unavailable', evidence: null, failure: 'rate_limited' }, snapshot);
+			}
 			return await this.finishCapture({ status: 'unavailable', evidence: null }, snapshot);
 		}
 	}

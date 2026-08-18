@@ -1,6 +1,7 @@
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import { HttpTransportError } from '../core/http';
 import {
 	unavailableSessionPriceSnapshot,
 	type SessionPriceCapture,
@@ -63,6 +64,7 @@ export interface SessionStartFailure {
 		| 'missing_capability'
 		| 'snapshot_failed'
 		| 'lease_lost'
+		| 'rate_limited'
 		| 'unexpected';
 	message: string;
 }
@@ -73,6 +75,7 @@ export interface SessionStopFailure {
 		| 'snapshot_failed'
 		| 'lease_lost'
 		| 'delta_invalid'
+		| 'rate_limited'
 		| 'unexpected';
 	message: string;
 }
@@ -907,6 +910,9 @@ function mapFailure(error: unknown): SessionStartFailure {
 		if (error.code === 'build_scope_missing') return failure('missing_capability', error.message);
 		return failure('snapshot_failed', error.message);
 	}
+	if (error instanceof HttpTransportError && error.status === 429) {
+		return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
+	}
 	return failure('unexpected', 'The farming session could not be started.');
 }
 
@@ -919,6 +925,12 @@ function mapStopFailure(error: unknown): SessionStopFailure {
 	}
 	if (error instanceof SessionStartCaptureError) {
 		return { code: 'snapshot_failed', message: error.message };
+	}
+	if (error instanceof HttpTransportError && error.status === 429) {
+		return {
+			code: 'rate_limited',
+			message: 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.',
+		};
 	}
 	return {
 		code: 'snapshot_failed',
