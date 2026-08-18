@@ -44,6 +44,43 @@
   shadow, la API continúa autoritativa y no se ha tocado `src/`, el allowlist del scanner ni el
   paquete de release.
 
+## H6.12 — Un solo enfriamiento 429 para todas las capturas
+
+- El transporte ya reintentaba un 429 por petición, pero no había estado compartido: un rate limit
+  visto por la detección asistida no frenaba la captura de sesión ni el Refresh del Inventory
+  Advisor, así que con la detección armada durante una sesión real el límite reaparecía en la
+  pasada siguiente y cada consumidor lo descubría por su cuenta.
+- `src/core/rate-limit-coordinator.ts` es una clase pura con reloj inyectado: registra el 429 con su
+  `Retry-After`, usa un respaldo acotado de 60 s cuando falta la cabecera y nunca acorta un
+  enfriamiento ya activo. `src/account/rate-limited-storage-snapshot-service.ts` envuelve los puntos
+  de captura y no llega a la red mientras el enfriamiento está activo. `src/main.ts` crea una sola
+  instancia dentro de `initializeRuntime` y envuelve los dos `StorageSnapshotService`.
+- Cada consumidor reporta una razón tipada para que un 429 no se lea como un 401: `rate_limited` en
+  el estado de error de la detección y en los fallos de inicio y fin de sesión,
+  `capture_rate_limited` en el workflow del Advisor, con copy ES y EN donde ya existía un mecanismo
+  por razón. Los reintentos por petición siguen siendo del transporte.
+- `captureSource()` solo relanza 401 y 403 de fuentes requeridas, así que un 429 de una fuente
+  opcional se convertía en cobertura parcial de una captura que resuelve y dejaba el enfriamiento
+  sin armar, que es el caso más probable en producción. Ahora se recorren `coverage.sources` y
+  `coverage.characters` tras cada captura resuelta y se arma el enfriamiento por cada 429, con el
+  más largo ganando. El snapshot que recibe el consumidor no cambia: la cobertura parcial sigue
+  siendo parcial, no un error.
+- Límite conocido: `failureLabel()` de `src/ui/companion-status-model.ts` sigue dando el mensaje
+  genérico para los fallos de inicio y fin de sesión, porque distinguir el 429 ahí pide una cuenta
+  atrás propia como la que ya tiene la conexión, no una etiqueta nueva. Va con la QA visual de H6.9.
+
+## Estabilidad del gate — presupuesto de tiempo en dos suites
+
+- `src/eslint-default-project-config.test.ts` lanza `node` importando `eslint.config.mts`, que
+  arrastra typescript-eslint y el plugin de Obsidian: su primer caso tarda 3,8 s contra el
+  presupuesto por defecto de 5.000 ms. `src/platform/mumble-v2-shadow-architecture.test.ts` releía
+  los 134 ficheros de producción de `src/` en cada caso y rehace el escaneo del árbol varias veces
+  por caso.
+- Las dos hacían caer `npm run check` al azar, en dos máquinas distintas, sin que cambiara ninguna
+  aserción. Se les fija un presupuesto explícito de 30 s y se memoiza la lectura del árbol con copia
+  por llamada, porque los casos mutan el mapa que reciben. Los controles negativos de ambas suites
+  siguen poniéndose en rojo.
+
 ## Arranque del plugin diferido a `onLayoutReady`
 
 - `onload()` esperaba el bundle de assets gestionados, el hash del vaultId, varias aperturas

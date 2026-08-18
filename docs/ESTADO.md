@@ -282,16 +282,19 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Evidencia de cierre
 
 - `npm run lint`: verde, sin errores ni avisos.
-- `npm run test`: 113 ficheros y 1.546 tests verdes, incluidas las 2 pruebas nuevas del orden de
-  arranque diferido, 42 pruebas H8.6 —33 funcionales y nueve
+- `npm run test`: 115 ficheros y 1.562 tests verdes, incluidas las 2 pruebas nuevas del orden de
+  arranque diferido, las 13 del cooldown 429 compartido H6.12, 42 pruebas H8.6 —33 funcionales y nueve
   de arquitectura—, 25 H8.7 —16 funcionales y nueve de arquitectura— y 25 H8.8 —17 funcionales y
   ocho de arquitectura—, los contratos H8.1/H8.4 y el
   verifier de supply-chain/staging H8.5, más la lane C H8.2 normal/ASan/UBSan, syntax-check del
   wrapper y cinco sabotajes causales. Rust añade 14 unitarios y ocho lifecycle verdes.
 - `npm run check` (gate completo): vitest, eslint, `scripts/h8-native-decision-contract.mjs` y
-  `scripts/security-scan.mjs` excluyen los worktrees de agente bajo `.claude/`; exit code 0 sobre
-  el árbol final, 113 ficheros/1.546 tests más las ocho suites de scripts, el scanner de seguridad
-  y el build.
+  `scripts/security-scan.mjs` excluyen los worktrees de agente bajo `.claude/`; exit code 0 en 45
+  segundos sobre el árbol final, 115 ficheros/1.562 tests más las ocho suites de scripts, el
+  scanner de seguridad y el build. `src/eslint-default-project-config.test.ts` y
+  `src/platform/mumble-v2-shadow-architecture.test.ts` dejan de caer al azar por presupuesto de
+  tiempo: presupuesto explícito de 30 s y lectura del árbol de `src/` memoizada con copia por
+  llamada. Ninguna aserción cambia y sus controles negativos siguen poniéndose en rojo.
 - `npm run test:security-scan` y `npm run security:scan`: scanner v14 y sabotajes verdes.
 - `npm run test:release-identity-contract`: identidad H7.1 y veinticuatro sabotajes causales verdes.
 - `npm run test:beta-channel`: instalación, actualización, exclusión mutua, rollback y matrices
@@ -311,7 +314,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas. Ya tiene tarea en Lumbre: H9.7.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
 5. Decidir recovery avanzado ante cambio de roster o `404` entre pasadas; hoy queda como cobertura parcial. Ya tiene tarea en Lumbre: H6.13.
-6. Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte. Ya tiene tarea en Lumbre: H6.12.
+6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. Queda pendiente el copy de superficie por razón en `failureLabel()` de `src/ui/companion-status-model.ts` para los fallos de inicio y fin de sesión, que hoy leen el mensaje genérico: la conexión sí muestra el enfriamiento mientras corre. Va con la QA visual de H6.9.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9. Ya tiene tarea en Lumbre: H9.8.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
