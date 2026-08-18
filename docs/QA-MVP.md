@@ -1,0 +1,116 @@
+# QA manual del MVP
+
+## Estado y alcance
+
+Este protocolo cubre H6.8/H6.9. La ejecución humana está **pendiente**: una guía
+preparada no acredita una prueba superada.
+
+Procedencia: se escribió el 14 de agosto de 2026 en el worktree `test/h6-manual-qa` y nunca
+llegó a un commit. Se recuperó a `main` el 18 de agosto de 2026 sin cambiar el protocolo. Las
+cifras de gate verde que citaba (1.085 tests el 14 de agosto) se han quitado a propósito: hay
+que volver a medirlas sobre el candidato que se pruebe de verdad, porque un número de hace
+cuatro días no acredita este binario.
+
+La instalación y la actualización desde el artifact beta son H7.5 y tienen su propio
+procedimiento en [la guía beta](BETA.md). La fila «Updater/reopen» de la matriz de abajo no la
+sustituye: comprueba que el plugin recarga, no que el instalador transaccional haga bien su
+trabajo.
+
+No se prueba Mumble Link, automatización del juego, H7 ni una actualización del plugin en
+esta ejecución. La comprobación de updater/reopen es una prueba separada del recovery de
+sesión.
+
+## Prerrequisitos y evidencia
+
+1. Crear una bóveda **desechable** nueva. No abrir, copiar ni modificar la bóveda canónica.
+2. Instalar el candidato y anotar versión de Tyrian Companion, SHA, versión de Obsidian,
+   sistema operativo y, cuando aplique, Steam/Proton o CrossOver.
+3. Crear en la bóveda desechable un secreto de Obsidian con una clave de pruebas con permisos
+   mínimos. No pegar el token, su ID ni el `accountId` en notas, logs, capturas o informes.
+4. Configurar una carpeta de salida portable, por ejemplo `Tyrian Companion QA`, y seleccionar
+   el secreto por su nombre no sensible.
+5. Registrar timestamps en UTC y conservar solo: ruta y SHA-256 de la nota generada, resultado
+   visible, versiones y capturas sin secretos. Recortar u ocultar nombre de cuenta, claves,
+   IDs y rutas personales antes de compartir una captura.
+
+Para cada fila, conservar una evidencia mínima y marcar `PASS` solo tras observar el resultado
+esperado. Si aparece un error saneado, un estado distinto o un control bloqueado fuera de lo
+previsto, marcar `FAIL`, anotar el paso y no forzar la operación.
+
+## Recorrido manual de sesión
+
+Ejecutar una sola sesión limpia en la bóveda desechable:
+
+1. En Ajustes, ejecutar **Check connection**. Debe quedar `connected` o `warning`; con ese
+   estado y runtime `idle` queda disponible **Iniciar sesión de farmeo**.
+2. Abrir **Iniciar sesión de farmeo**, completar el modal con personaje y Magic Find manual y
+   confirmar. Esperar a que la bitácora muestre `active`.
+3. Ejecutar **Finalizar sesión de farmeo**. Tras la captura final, esperar el estado
+   `provisional` y la disponibilidad de **Revisar sesión**.
+4. Abrir **Revisar sesión**, responder la declaración de actividad y confirmar. Una revisión
+   limpia confirmada debe llevar a `complete`; una declaración contaminada o dudosa puede
+   conservar el resultado provisional según la revisión visible.
+5. Ejecutar **Limpiar sesión completada** y confirmar. Debe generarse o reutilizarse una nota
+   completa antes de limpiar el runtime. Verificar que existe una única nota bajo
+   `Tyrian Companion QA/sessions/<año UTC>/`, calcular su SHA-256 y confirmar el retorno a
+   `idle`.
+6. Abrir `Tyrian Companion QA/Bases/Sessions.base`. Debe cargarse y mostrar solo sesiones que
+   cumplan sus filtros `tc_schema` y `tc_kind`; no editar sus consultas para hacer que pase.
+
+## Assets gestionados
+
+En Ajustes, usar **Preview** para la raíz de assets y comprobar que no crea ni modifica archivos.
+Después usar **Apply** una sola vez y verificar `Sessions.base` y el manifiesto bajo la raíz
+gestionada configurada. Si Preview informa conflicto, asset modificado/ajeno o formato futuro,
+el resultado esperado es bloqueo sin sobrescritura; no usar Repair, Move o Remove como atajo.
+
+## Recovery, concurrencia y sincronización
+
+### Cierre forzado y reinicio
+
+Con una sesión `active`, cerrar Obsidian de forma forzada y volver a abrir la misma bóveda
+desechable. Debe aparecer recovery y permitir recuperar o descartar explícitamente; no debe
+empezar, terminar ni borrar una sesión de forma automática. Repetir desde `stopping` o
+`provisional` si el entorno permite llegar a ellos, verificando que Recovery no recaptura la
+evidencia de frontera.
+
+### Dos ventanas del mismo dispositivo
+
+Abrir dos ventanas del mismo vault/origin. Iniciar desde una y pulsar el mismo inicio o un
+inicio competidor en la otra. Debe existir una única sesión activa: el lease/mutex bloquea o
+rechaza al competidor sin crear una segunda nota ni sobrescribir runtime. Repetir Preview/Apply
+de assets desde ambas ventanas: solo una operación puede quedar en curso.
+
+### Dos dispositivos: Linux y macOS
+
+Usar dos bóvedas locales desechables sincronizadas, una en Linux y otra en macOS. IndexedDB y
+SecretStorage son locales a cada dispositivo: seleccionar por separado un secreto de pruebas y
+no esperar que token, runtime o lease se sincronicen por el vault. Sincronizar únicamente los
+archivos de la bóveda y comprobar que las notas y assets portables convergen sin sobrescribir un
+archivo modificado o ajeno. No ejecutar sesiones simultáneas suponiendo exclusión entre
+dispositivos: el lease es por máquina.
+
+### Updater/reopen
+
+Con runtime `idle` y sin operación de assets en curso, actualizar o reinstalar el mismo
+candidato y reabrir Obsidian. Verificar por separado que el plugin carga y que la selección del
+secreto sigue siendo una referencia, no un valor visible. Esta fila no acredita recovery; el
+recovery se valida con el cierre forzado anterior.
+
+## Matriz de resultados
+
+| Caso | Criterio PASS | Evidencia mínima | Resultado (PASS/FAIL) |
+| --- | --- | --- | --- |
+| Conexión y start | `connected` o `warning` → modal → `active` | Timestamp UTC y captura saneada | PENDIENTE |
+| Finish, review y complete | `active` → `provisional` → revisión → `complete` cuando corresponda | Respuestas no sensibles y captura saneada | PENDIENTE |
+| Nota antes de clear | Nota única escrita/inalterada antes de `idle` | Ruta relativa y SHA-256 de la nota | PENDIENTE |
+| `Sessions.base` | Abre y filtra por `tc_schema` y `tc_kind` | Captura saneada de la Base | PENDIENTE |
+| Preview/Apply | Preview sin I/O; Apply instala assets gestionados | Ruta relativa, hash de `Sessions.base` y manifiesto | PENDIENTE |
+| Recovery | Recovery visible tras cierre forzado; decisión explícita | Timestamp, estado previo/posterior y captura saneada | PENDIENTE |
+| Dos ventanas | Un lease de sesión y una operación de assets; competidor bloqueado/rechazado | Timestamps de ambas ventanas y capturas saneadas | PENDIENTE |
+| Linux/macOS con Sync | Estado local no se comparte; vault converge sin sobrescritura | Versiones, hashes/rutas relativas y capturas saneadas | PENDIENTE |
+| Updater/reopen | Carga correcta y secreto nunca visible | Versiones, SHA y captura saneada | PENDIENTE |
+
+Al cerrar la ejecución, adjuntar el informe al candidato probado con la fecha absoluta de la
+prueba. No incluir tokens, `accountId` crudo, payloads de inventario, snapshots ni capturas que
+los contengan.
