@@ -40,21 +40,44 @@ same hybrid candidate twice. H8 remains shadow and API-authoritative. These test
 that CrossOver exposes the mapping during a real Guild Wars 2 session and do not open or modify a
 bottle.
 
-## Build prerequisite still missing on the inspected Mac
+## Build: the Windows PE now exists (2026-08-18)
 
-The inspected host has Apple Clang, but no existing MinGW/LLVM Windows cross-compiler. CrossOver
-26.3.0 and the existing 64-bit `Guild Wars 2` bottle were detected read-only. Do not install a
-toolchain or copy a binary into that bottle as part of this spike.
+An approved cross-compiler is installed on the inspected Mac: Zig 0.16.0 via Homebrew, used as a C
+driver. It ships its own MinGW-w64 headers and import libraries for the `x86_64-windows-gnu` target,
+so no separate MinGW install is needed. Apple Clang stays as the host compiler for `test-host.sh`.
 
-Once an approved x86-64 MinGW compiler is available, build outside the bottle:
+Build outside the bottle and outside this repository. The repository contract in
+`scripts/h8-native-decision-contract.mjs` rejects any committed `.exe`, so the artifact must never
+land in the working tree:
 
 ```sh
 mkdir -p /tmp/tyrian-h8-probe
-x86_64-w64-mingw32-gcc -std=c11 -Os -Wall -Wextra -Werror \
+zig cc -target x86_64-windows-gnu -std=c11 -Os -Wall -Wextra -Werror \
   spikes/h8-mumble-crossover/mumble_probe_core.c \
   spikes/h8-mumble-crossover/mumble_probe_windows.c \
   -o /tmp/tyrian-h8-probe/tyrian-mumble-probe.exe
 ```
+
+Measured on 2026-08-18:
+
+- Compiles clean at `-Werror`, no warnings.
+- Output is `PE32+ executable (console) x86-64, for MS Windows`, 58,880 bytes.
+- The build is reproducible: two consecutive builds produced the identical SHA-256
+  `4de947c08c2ef31cd3fcd9430dda693852e1a53a25bdf788c4799110b4a898cc`. Treat that digest as evidence
+  of this source revision, not as a pinned contract; it changes with the sources or the toolchain.
+
+The PE import table was censused with `llvm-readobj --coff-imports` and matches the declared
+capability surface. `KERNEL32.dll` contributes exactly `OpenFileMappingW`, `MapViewOfFile`,
+`UnmapViewOfFile` and `CloseHandle` for the probe's own work, plus `GetLastError`, `Sleep`,
+`SetUnhandledExceptionFilter`, `VirtualProtect`, `VirtualQuery`, `TlsGetValue` and the critical
+section calls that the C runtime start-up emits. The remaining imports are `api-ms-win-crt-*` for
+heap, stdio, string and process exit. There is no `OpenProcess`, `ReadProcessMemory`,
+`WriteProcessMemory`, `VirtualQueryEx`, Toolhelp snapshot, `CreateFileW`, registry, socket or input
+API in the table. Import absence is a static property of this binary; it is not a substitute for the
+runtime QA below.
+
+Nothing here opens, modifies or launches the CrossOver bottle. Building the PE is not permission to
+run it: that is the human step.
 
 ## Human QA command for a later real session
 
