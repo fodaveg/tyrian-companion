@@ -76,5 +76,42 @@ The expected success is exactly one JSON line with keys `version`, `nonce`, `seq
 coordinates, process identifiers or raw context is acceptable. A generic error or no mapping is a
 failed/inconclusive QA result, never permission to switch to process inspection.
 
-Real-session stability, repeated samples, game transitions and bottle restart behaviour remain H8.2
-human QA. This spike must not be wired to `src/`, the plugin scanner allowlist or release packaging.
+## Linux with Steam/Proton — executed 2026-08-19
+
+This is the primary platform and the spike has been run there. Build the PE on the host with
+`mingw64-gcc` and launch it from outside the prefix; nothing is installed into or copied inside the
+prefix:
+
+```sh
+mkdir -p /tmp/tyrian-h8-probe
+x86_64-w64-mingw32-gcc -std=c11 -Os -Wall -Wextra -Werror \
+  spikes/h8-mumble-crossover/mumble_probe_core.c \
+  spikes/h8-mumble-crossover/mumble_probe_windows.c \
+  -o /tmp/tyrian-h8-probe/tyrian-mumble-probe.exe
+
+probe_nonce=$(openssl rand -hex 16)
+STEAM_COMPAT_DATA_PATH="$HOME/.steam/steam/steamapps/compatdata/1284210" \
+  protontricks-launch --appid 1284210 \
+  /tmp/tyrian-h8-probe/tyrian-mumble-probe.exe --nonce "$probe_nonce"
+unset probe_nonce
+```
+
+Recorded result on Fedora Linux 44 with GE-Proton11-5: twenty samples across two runs, each with a
+distinct nonce echoed intact, `sequence` `0`, `activity` `link_advancing` and a strictly increasing
+`uiTick` with no repeated pair; `mapId` followed a zone change (`1442`→`1595`) and `uiTick` reset from
+16,962 to 572 across a game restart, which ties the signal to the live process. No frame carried
+identity, character, coordinates, process identifiers or raw context.
+
+The negative control passed. With the game closed, ten runs emitted no frame; this wrapper prints
+nothing on failure and reports only through its exit code, so one further run without a pipe and
+without suppressed stderr recorded that code: `exit=2`, `TC_MUMBLE_PROBE_VIEW_TOO_SMALL`, what the
+wrapper returns when `OpenFileMappingW` yields `NULL`. That run's stderr shows the wine loader
+starting, so the empty output is not a failed launch. Running the same PE with no arguments returned
+`exit=1` (`TC_MUMBLE_PROBE_INVALID_ARGUMENT`), which proves `protontricks-launch` propagates the PE's
+own exit code rather than substituting one of its own.
+
+Twenty clean samples do not refute the residual risk of two identical hybrid reads: it was not
+observed, which is not the same as being impossible.
+
+macOS/CrossOver, native Windows and stock Valve Proton remain unexecuted. This spike must not be
+wired to `src/`, the plugin scanner allowlist or release packaging.

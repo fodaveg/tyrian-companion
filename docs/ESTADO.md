@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
 
 **H7.4 está implementado técnicamente y H7.5 dispone de un canal manual guardado, sin publicación.** El release package parte de
 un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
@@ -66,12 +66,44 @@ argumentos expandidos `0x0004u`, `MumbleLink` y `5460u`; hashes exactos cubren w
 stub y validador. Redefiniciones desde headers, `%:` o continuaciones de línea quedan rojas por el
 resultado efectivo, no por una blacklist de grafías.
 No se presenta como seqlock ni como snapshot coherente: dos
-lecturas híbridas idénticas siguen siendo un riesgo residual y la señal permanece shadow. El host inspeccionado
-es macOS 26.6.1 ARM, con CrossOver 26.3.0, botella win64 `Guild Wars 2`, Apple Clang y CMake; no hay
-MinGW/LLVM Windows cross-compiler disponible. El test portable compila y queda verde, pero no se ha
-instalado nada, copiado nada a la botella, abierto CrossOver/GW2 ni ejecutado un PE. Por tanto H8.2
-permanece en curso: la lectura estable durante una sesión real y las transiciones/reinicios son QA
-humana pendiente.
+lecturas híbridas idénticas siguen siendo un riesgo residual y la señal permanece shadow. El primer host inspeccionado fue macOS 26.6.1 ARM,
+con CrossOver 26.3.0 y botella win64 `Guild Wars 2`, sin MinGW/LLVM Windows cross-compiler: allí el
+test portable quedó verde pero no se instaló nada, no se copió nada a la botella ni se ejecutó un PE.
+Esa sigue siendo la situación de macOS/CrossOver.
+
+**QA humana ejecutada el 2026-08-19 en Linux/Steam/Proton.** Host Fedora Linux 44, kernel
+`7.1.8-200.fc44`, `mingw64-gcc` 16.1.1 y `protontricks` 1.14.0; PE x86-64 compilado fuera del prefijo
+en `/tmp` y lanzado con `protontricks-launch --appid 1284210` y `STEAM_COMPAT_DATA_PATH` sobre el
+prefijo `compatdata/1284210`, que corre **GE-Proton11-5**, no Proton estable de Valve. No se instaló
+ni copió nada dentro del prefijo. Resultados:
+
+- **Muestras repetidas:** dos tandas de diez ejecuciones con el juego abierto y el personaje quieto.
+  Las veinte devolvieron una única línea JSON con `sequence:0` y `activity:"link_advancing"`, cada una
+  con su nonce de 128 bits distinto y correctamente devuelto, y con `uiTick` estrictamente creciente
+  (13.625→16.962 y 572→4.131, saltos de 353-405). No se observó ninguna pareja de lecturas idéntica.
+- **Transición de mapa:** `mapId` pasó de `1442` a `1595` al cambiar de zona, contrastados contra
+  `api.guildwars2.com/v2/maps` como Seitung Province y Shipwreck Strand.
+- **Reinicio del juego:** tras cerrar y reabrir GW2 el `uiTick` se reinició de 16.962 a 572 en el
+  mismo mapa, lo que ata la señal al proceso vivo y descarta que se estuviera leyendo un mapping
+  rancio superviviente.
+- **Contrato de payload:** ningún frame contuvo identidad, personaje, coordenadas, identificadores de
+  proceso ni contexto crudo.
+- **Control negativo:** con GW2 cerrado, diez ejecuciones consecutivas no emitieron frame. El wrapper
+  no imprime nada cuando falla y solo señala por código de salida, así que se repitió una corrida sin
+  tubería y sin silenciar stderr: devolvió `exit=2`, o sea `TC_MUMBLE_PROBE_VIEW_TOO_SMALL`, que es lo
+  que retorna el wrapper cuando `OpenFileMappingW` da `NULL`. El stderr de esa corrida trae
+  `ntsync: up and running` y los `loader_init` de wine-staging 11.0, de modo que el proceso Windows sí
+  arrancó y la salida vacía no se explica por un lanzamiento fallido.
+- **Propagación del código de salida:** para descartar que ese `2` lo produjera `protontricks-launch`
+  y no la sonda, se lanzó el mismo PE sin argumentos, que por su propio `main` debe devolver
+  `TC_MUMBLE_PROBE_INVALID_ARGUMENT`. Devolvió `exit=1`. El canal transmite el código del PE sin
+  alterarlo, así que el `2` del control negativo significa lo que dice.
+
+Por tanto la lectura estable durante una sesión real, las transiciones, el reinicio y la ausencia de
+mapping con el juego cerrado dejan de ser QA pendiente **en Linux/Steam/Proton bajo GE-Proton**;
+quedan abiertos Proton estable de Valve, macOS/CrossOver y Windows nativo. El riesgo residual de dos lecturas
+híbridas idénticas no queda refutado por estas veinte muestras: no se observó, que no es lo mismo que
+no poder ocurrir. La señal permanece shadow y la API sigue siendo autoritativa.
 
 **H8.5: helper/servidor Rust implementado, sin integración del plugin ni publicación.** El crate
 `native/mumble-helper` implementa framing/JSON estricto, auth constant-time + zeroize, nonce y
@@ -234,7 +266,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Pendientes de producto
 
-1. Compilar el PE del spike H8.2 con un toolchain Windows aprobado y ejecutar su comando documentado dentro de la botella durante una sesión real; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
+1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
 3. Diseñar el panel/agregación del historial durable de sesiones finalizadas.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.

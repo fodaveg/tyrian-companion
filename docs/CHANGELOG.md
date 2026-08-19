@@ -1,5 +1,26 @@
 # Changelog
 
+## H8.2 — QA humana del spike ejecutada en Linux/Steam/Proton
+
+- Ejecutado por primera vez el PE del spike durante una sesión real de Guild Wars 2 (2026-08-19).
+  Host Fedora Linux 44, `mingw64-gcc` 16.1.1, `protontricks` 1.14.0 y prefijo `compatdata/1284210`
+  sobre GE-Proton11-5. El binario se compiló y se lanzó desde `/tmp`, fuera del prefijo, sin instalar
+  ni copiar nada dentro de él.
+- Veinte muestras en dos tandas devolvieron una sola línea JSON con `sequence:0` y
+  `activity:"link_advancing"`, cada una con nonce distinto y devuelto intacto, y `uiTick`
+  estrictamente creciente sin ninguna pareja de lecturas idéntica.
+- `mapId` siguió el cambio de zona (`1442`→`1595`, Seitung Province y Shipwreck Strand contra la API
+  pública) y el `uiTick` se reinició de 16.962 a 572 al reabrir el juego, atando la señal al proceso
+  vivo. Ningún frame trajo identidad, personaje, coordenadas, PID ni contexto crudo.
+- Control negativo cerrado: con el juego cerrado, diez ejecuciones no emitieron frame y una corrida
+  con stderr y código de salida visibles devolvió `exit=2` (`TC_MUMBLE_PROBE_VIEW_TOO_SMALL`, el
+  retorno cuando `OpenFileMappingW` da `NULL`), con el loader de wine iniciado en esa misma salida.
+  El mismo PE lanzado sin argumentos devolvió `exit=1` (`TC_MUMBLE_PROBE_INVALID_ARGUMENT`), lo que
+  demuestra que `protontricks-launch` propaga el código del PE y que el `2` no es del lanzador.
+- macOS/CrossOver, Windows nativo y Proton estable siguen sin ejecución de PE. La señal permanece
+  shadow, la API continúa autoritativa y no se ha tocado `src/`, el allowlist del scanner ni el
+  paquete de release.
+
 ## H8.8 — Política shadow de presencia y ausencia
 
 - Añadida una política pura y aislada para el mapa objetivo fijo `866`: 5.000 ms de crédito de
