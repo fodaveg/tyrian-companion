@@ -11,19 +11,21 @@ export const defaultProjectFiles = [
 	'scripts/beta-channel-contract.mjs',
 	'scripts/install-beta.mjs',
 	'scripts/prepare-beta-artifact.mjs',
+	'scripts/verify-beta-runtime.mjs',
 	'scripts/security-scan.mjs',
 	'scripts/support-contract.mjs',
 	'scripts/h8-native-decision-contract.mjs',
 	'scripts/tests/probar-release-package.mjs',
 	'scripts/tests/probar-release-identity-contract.mjs',
 	'scripts/tests/probar-beta-channel.mjs',
+	'scripts/tests/probar-beta-runtime.mjs',
 	'scripts/tests/probar-h8-helper-decision-contract.mjs',
 	'scripts/tests/probar-security-scan.mjs',
 	'scripts/tests/probar-support-contract.mjs',
 	'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
 ] as const;
 
-export const defaultProjectCapacity = 22;
+export const defaultProjectCapacity = 24;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(

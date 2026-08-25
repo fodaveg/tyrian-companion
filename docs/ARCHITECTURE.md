@@ -52,6 +52,12 @@ no autenticidad: el artifact de un run/SHA identificado es el ancla humana. CI r
 `.beta-artifact`, copia allí exactamente ZIP/checksum/instalador, fija la identidad del directorio y
 relee los bytes persistidos antes de validar otra vez checksum→ZIP. El censo rechaza cualquier upload
 adicional o referencia distinta de la acción aprobada; nunca publica el stage interno de build.
+La aceptación manual de carga o actualización tiene otro preflight separado:
+`scripts/verify-beta-runtime.mjs` compara el `manifest.json` instalado con el manifest registrado y
+el objeto de plugin realmente cargado que devuelve `obsidian eval`, y además exige que la evidencia
+proceda de la misma ruta de bóveda. Un proceso vivo con una versión anterior falla aunque los tres
+ficheros en disco ya pertenezcan al candidato nuevo. La comprobación requiere Obsidian y su CLI vivos;
+no intenta inferir el runtime desde procesos ni desde el disco.
 
 ## Flujo de dependencias
 

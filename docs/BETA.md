@@ -70,6 +70,19 @@ Referencias del contrato:
 4. Abre Obsidian, activa el plugin y ejecuta la matriz manual aplicable. Registra por separado
    instalación, carga, conexión, sesión, recovery, escritura segura y actualización.
 
+   Antes de aceptar la carga o actualización, con la bóveda abierta y el plugin activado ejecuta:
+
+   ```sh
+   node scripts/verify-beta-runtime.mjs --vault "/ruta/a/la-bóveda-probada"
+   ```
+
+   El preflight lee `manifest.json` del plugin instalado y obtiene desde la instancia viva, mediante
+   `obsidian eval`, la bóveda efectiva, el estado activado, el manifest registrado y la versión del
+   objeto de plugin cargado. La QA de instalación o actualización no es válida sin `PASS`, incluso si
+   la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
+   reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del
+   script correspondiente al mismo commit; el script no forma parte de los tres assets del plugin.
+
 La evidencia de QA debe contener versión, SHA/checksum, plataforma, versión de Obsidian, origen de
 instalación, modo de detección, fase y resultado. No se adjuntan claves, identidad de cuenta o
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas

@@ -50,6 +50,10 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    uses a non-default Obsidian config directory.
 3. Open Obsidian, go to **Settings → Community plugins**, enable Tyrian Companion, and then open its
    settings page.
+   Before accepting install or update QA, run
+   `npm run beta:verify-runtime -- --vault "/path/to/disposable-vault"` from this checkout while
+   Obsidian and the plugin are running. The result must be `PASS`; the disk version alone is not
+   evidence that Obsidian loaded that version.
 4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the
    **API key** setting. Paste the value only into Obsidian Secret Storage; the plugin setting keeps
    only the secret name.
