@@ -118,6 +118,14 @@ import {
 	InventoryVaultSyncController,
 	type InventoryVaultSyncViewState,
 } from './ui/inventory-vault-sync-controller';
+import {
+	WalletVaultCaptureService,
+	WalletVaultSyncService,
+} from './wallet/wallet-vault-sync';
+import {
+	WalletVaultSyncController,
+	type WalletVaultSyncViewState,
+} from './ui/wallet-vault-sync-controller';
 
 export type SessionHistoryView =
 	| { status: 'idle' | 'working' | 'conflict' | 'invalid' | 'unavailable'; sessions: number; erased: number; alreadyAbsent: number }
@@ -140,6 +148,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private inventoryVaultSync!: InventoryVaultSyncController;
+	private walletVaultSync!: WalletVaultSyncController;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
@@ -184,7 +193,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 			this.app.vault.configDir,
-			{ bundleVersion: 5, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: 6, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
@@ -242,6 +251,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 				return await inventoryVaultWriter.preview(this.inventoryVaultRoot(), input);
 			},
 			apply: async (plan) => await inventoryVaultWriter.apply(plan),
+		});
+		const walletVaultWriter = new WalletVaultSyncService({
+			file: (path) => this.app.vault.getAbstractFileByPath(path),
+			markdownFiles: () => this.app.vault.getMarkdownFiles(),
+			read: async (file) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Wallet note is not a file.');
+				return await this.app.vault.read(target);
+			},
+			createFolder: async (path) => { await this.app.vault.createFolder(path); },
+			create: async (path, content) => await this.app.vault.create(path, content),
+			process: async (file, update) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Wallet note is not a file.');
+				return await this.app.vault.process(target, update);
+			},
+		}, this.app.vault.configDir);
+		const walletVaultCapture = new WalletVaultCaptureService(client, publicClient);
+		this.walletVaultSync = new WalletVaultSyncController({
+			disabledReason: () => {
+				if (this.settings.apiKeySecret.length === 0) return 'missing_key';
+				if (this.settings.legacyOutputFolder !== null || this.settings.legacyManagedAssetsRoot !== null) return 'legacy_root';
+				return null;
+			},
+			preview: async () => {
+				const input = await walletVaultCapture.capture(this.settings.language);
+				return await walletVaultWriter.preview(this.inventoryVaultRoot(), input);
+			},
+			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
 		this.inventoryPreferences = new InventoryPreferencesRuntime(
 			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(window.indexedDB)), vaultId,
@@ -398,6 +436,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		});
 		this.addCommand({
+			id: 'preview-wallet-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.previewWalletVault'),
+			callback: () => { void this.previewWalletVaultSync(); },
+		});
+		this.addCommand({
+			id: 'apply-wallet-vault-sync',
+			name: createTranslator(this.settings.language).t('commands.applyWalletVault'),
+			checkCallback: (checking) => {
+				const available = this.walletVaultSync.canApply();
+				if (!checking && available) void this.applyWalletVaultSync();
+				return available;
+			},
+		});
+		this.addCommand({
 			id: 'arm-assisted-detection',
 			name: createTranslator(this.settings.language).t('commands.armDetection'),
 			callback: () => { void this.armAssistedDetection(); },
@@ -414,6 +466,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
+		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
@@ -515,6 +568,50 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private inventoryVaultRoot(): string {
 		return this.settings.managedAssetsRoot ?? this.settings.outputFolder;
+	}
+
+	getWalletVaultSyncState(): WalletVaultSyncViewState {
+		return this.walletVaultSync.current();
+	}
+
+	canApplyWalletVaultSync(): boolean {
+		return this.walletVaultSync.canApply();
+	}
+
+	async previewWalletVaultSync(): Promise<void> {
+		const state = await this.walletVaultSync.preview();
+		new Notice(this.walletVaultSyncNoticeText(state));
+	}
+
+	async applyWalletVaultSync(): Promise<void> {
+		const state = await this.walletVaultSync.apply();
+		new Notice(this.walletVaultSyncNoticeText(state));
+	}
+
+	private walletVaultSyncNoticeText(state: WalletVaultSyncViewState): string {
+		const translator = createTranslator(this.settings.language);
+		switch (state.status) {
+			case 'disabled':
+				return translateRuntime(translator, state.reason === 'missing_key' ? 'notices.walletVaultMissingKey' : 'notices.walletVaultLegacyRoot');
+			case 'preview':
+				return translateRuntime(translator, 'notices.walletVaultPreviewReady', {
+					create: state.summary.create, update: state.summary.update,
+					deactivate: state.summary.deactivate, unchanged: state.summary.unchanged,
+				});
+			case 'success':
+				return state.result.status === 'applied'
+					? translateRuntime(translator, 'notices.walletVaultApplied', {
+						created: state.result.created, updated: state.result.updated, deactivated: state.result.deactivated,
+					})
+					: translateRuntime(translator, 'notices.walletVaultUnchanged');
+			case 'conflict':
+				return translateRuntime(translator, 'notices.walletVaultConflict');
+			case 'idle':
+			case 'loading':
+			case 'applying':
+			case 'error':
+				return translateRuntime(translator, 'notices.walletVaultError');
+		}
 	}
 
 	private async writeInventoryAdvisorCaptureReceipt(
@@ -1020,7 +1117,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// invalidates local advisor memory but never captures again implicitly.
 			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: 5, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: 6, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}
@@ -1040,7 +1137,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.saveData(this.settings);
 		if (previousLanguage !== this.settings.language || secretChanged || previousOutputFolder !== this.settings.outputFolder ||
 			previousManagedAssetsRoot !== this.settings.managedAssetsRoot || previousLegacyOutputFolder !== this.settings.legacyOutputFolder ||
-			previousLegacyManagedAssetsRoot !== this.settings.legacyManagedAssetsRoot) this.inventoryVaultSync.invalidate();
+			previousLegacyManagedAssetsRoot !== this.settings.legacyManagedAssetsRoot) {
+			this.inventoryVaultSync.invalidate();
+			this.walletVaultSync.invalidate();
+		}
 		if (previousLanguage !== this.settings.language || previousOutputFolder !== this.settings.outputFolder) {
 			await this.refreshLootPresentation();
 		}
