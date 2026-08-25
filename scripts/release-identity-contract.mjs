@@ -24,7 +24,7 @@ const IDENTITY = Object.freeze({
 });
 const LICENSE_SHA256 = 'e5f4bfdbaa06633c08616a2e4a361c620ac11b8b815af39a15c9269d404c9b31';
 const IDENTITY_DOCUMENT_SHA256 = '9931d916f05f88df5ad2ec83a140f7b1ce69a346ad0cc2732169f209bb8df01e';
-const TEST_SCRIPT = 'vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:beta-channel && npm run test:support-contract && npm run test:h8-helper-decision-contract';
+const TEST_SCRIPT = 'vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:beta-channel && npm run test:beta-runtime && npm run test:support-contract && npm run test:h8-helper-decision-contract';
 
 /** Validates the deliberately fixed H7.1 release identity without making a network request. */
 export function validateReleaseIdentityContract(root = process.cwd()) {

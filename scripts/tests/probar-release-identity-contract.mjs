@@ -106,6 +106,7 @@ function testTestRunnerBypass() {
 		['test-runner-ignore-failure', (source) => source.replace('npm run test:release-identity-contract', '(npm run test:release-identity-contract || true)')],
 		['test-runner-semicolon', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:release-identity-contract; true')],
 		['test-runner-substitution', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:support-contract')],
+		['test-runner-beta-runtime-missing', (source) => source.replace(' && npm run test:beta-runtime', '')],
 	]) {
 		const packageJson = parse('package.json');
 		packageJson.scripts.test = mutate(packageJson.scripts.test);
