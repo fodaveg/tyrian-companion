@@ -107,6 +107,19 @@ describe('durable inventory Vault commands', () => {
 	});
 });
 
+describe('configured notes root', () => {
+	it('always follows the explicit output folder, never the managed-assets pointer', () => {
+		const plugin = {
+			settings: { outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion', managedAssetsRoot: 'Tyrian Companion' },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const configuredNotesRoot = (TyrianCompanionPlugin.prototype as unknown as {
+			configuredNotesRoot(this: { settings: { outputFolder: string; managedAssetsRoot: string | null } }): string;
+		}).configuredNotesRoot;
+		expect(configuredNotesRoot.call(plugin)).toBe('02 - Áreas/Guild Wars 2/Tyrian Companion');
+	});
+});
+
 async function flush(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();

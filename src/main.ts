@@ -239,7 +239,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					);
 				}
 				const input = await inventoryVaultCapture.capture(this.settings.language);
-				return await inventoryVaultWriter.preview(this.inventoryVaultRoot(), input);
+				return await inventoryVaultWriter.preview(this.configuredNotesRoot(), input);
 			},
 			apply: async (plan) => await inventoryVaultWriter.apply(plan),
 		});
@@ -513,8 +513,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderInventoryAdvisorViews();
 	}
 
-	private inventoryVaultRoot(): string {
-		return this.settings.managedAssetsRoot ?? this.settings.outputFolder;
+	/** Every note this plugin writes follows the explicit output folder, never the managed-assets pointer. */
+	private configuredNotesRoot(): string {
+		return this.settings.outputFolder;
 	}
 
 	private async writeInventoryAdvisorCaptureReceipt(
