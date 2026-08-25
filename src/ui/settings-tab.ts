@@ -11,6 +11,7 @@ import {
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import {
 	projectManagedAssetsActions,
+	projectManagedAssetsRootDivergence,
 	runConfirmedManagedAssetsRemoval,
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
@@ -20,6 +21,7 @@ import type TyrianCompanionPlugin from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
+import { VaultFolderInputSuggest } from './vault-folder-suggest';
 
 type SettingRenderer = (setting: Setting) => void;
 
@@ -105,7 +107,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 
 	refreshManagedAssetsRow(): void {
 		const view = this.plugin.getManagedAssetsView();
-		this.managedAssetsSetting?.setDesc(projectManagedAssetsDescription(view, createTranslator(this.plugin.settings.language)));
+		this.managedAssetsSetting?.setDesc(
+			projectManagedAssetsDescription(view, createTranslator(this.plugin.settings.language), this.rootDivergence()),
+		);
 		const enabled = projectManagedAssetsActions({
 			working: view.status === 'working',
 			hasManagedRoot: this.plugin.hasManagedAssetsRoot(),
@@ -155,16 +159,18 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				desc: this.plugin.settings.legacyOutputFolder === null
 					? this.t('settings.output.desc') : this.t('settings.output.legacyDesc'),
 				render: (setting) => {
-					setting.addText((text) =>
+					const applyOutputFolder = async (outputFolder: string) => {
+						await this.plugin.updateSettings({
+							outputFolder: normalizeVaultFolder(outputFolder, this.app.vault.configDir),
+						});
+					};
+					setting.addText((text) => {
 						text
 							.setPlaceholder(this.t('settings.output.placeholder'))
 							.setValue(this.plugin.settings.outputFolder)
-							.onChange(async (outputFolder) => {
-								await this.plugin.updateSettings({
-									outputFolder: normalizeVaultFolder(outputFolder, this.app.vault.configDir),
-								});
-							}),
-					);
+							.onChange(applyOutputFolder);
+						new VaultFolderInputSuggest(this.app, text.inputEl, applyOutputFolder);
+					});
 				},
 			},
 			{
@@ -212,7 +218,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				name: this.t('settings.assets.name'),
-				desc: projectManagedAssetsDescription(this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language)),
+				desc: projectManagedAssetsDescription(
+					this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language), this.rootDivergence(),
+				),
 				render: (setting) => {
 					this.managedAssetsSetting = setting;
 					setting.addButton((button) => { this.managedAssetButtons.set('preview', button); button.setButtonText(this.t('settings.assets.preview')).onClick(async () => { await this.plugin.previewManagedAssets(); }); });
@@ -279,6 +287,10 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 
 	private t(key: TranslationKey, params?: TranslationParams): string {
 		return createTranslator(this.plugin.settings.language).t(key, params);
+	}
+
+	private rootDivergence() {
+		return projectManagedAssetsRootDivergence(this.plugin.settings);
 	}
 
 	private connectionDescription(state: ConnectionState): string {

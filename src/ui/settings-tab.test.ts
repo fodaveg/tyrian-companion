@@ -32,6 +32,24 @@ describe('Settings i18n projection', () => {
 			.toBe('Preview is blocked: Modified. Modified: Tyrian Companion/Bases/Sessions.base');
 	});
 
+	it('prefixes a clear divergence notice when the managed root left the output folder', () => {
+		const view: ManagedAssetsView = { status: 'ready', message: 'assets_ready', plan: null };
+		const divergence = { managedAssetsRoot: 'Tyrian Companion', outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion' };
+		expect(projectManagedAssetsDescription(view, createTranslator('es'), divergence)).toBe(
+			'Los assets gestionados siguen en «Tyrian Companion», no en la carpeta de salida «02 - Áreas/Guild Wars 2/Tyrian Companion». '
+			+ 'Usa Mover para llevarlos ahí. Los assets gestionados están listos.',
+		);
+		expect(projectManagedAssetsDescription(view, createTranslator('en'), divergence)).toBe(
+			'Managed assets still live in "Tyrian Companion", not in the output folder "02 - Áreas/Guild Wars 2/Tyrian Companion". '
+			+ 'Use Move to relocate them there. Managed assets are ready.',
+		);
+	});
+
+	it('omits the divergence notice once both roots match', () => {
+		const view: ManagedAssetsView = { status: 'ready', message: 'assets_ready', plan: null };
+		expect(projectManagedAssetsDescription(view, createTranslator('es'), null)).toBe('Los assets gestionados están listos.');
+	});
+
 
 	it.each([
 		['missing_key', 'Selecciona una clave API de Obsidian antes de comprobar la conexión.', 'Select an Obsidian API key before checking the connection.'],
