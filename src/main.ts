@@ -277,7 +277,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 			preview: async () => {
 				const input = await walletVaultCapture.capture(this.settings.language);
-				return await walletVaultWriter.preview(this.inventoryVaultRoot(), input);
+				return await walletVaultWriter.preview(this.configuredNotesRoot(), input);
 			},
 			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
