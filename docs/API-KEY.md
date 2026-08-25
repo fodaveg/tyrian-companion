@@ -34,7 +34,9 @@ endpoints está en [API:API key](https://wiki.guildwars2.com/wiki/API_key) y
 - `characters`: lista de personajes y lectura del personaje de la sesión.
 - `inventories`: inventario compartido, banco, materiales e inventarios/equipo de personajes.
 - `builds`: build activo al iniciar la sesión. Sin él, el inicio falla de forma explícita.
-- `wallet`: monedas de la cuenta; sin él, esa superficie queda no disponible.
+- `wallet`: monedas de la cuenta, usadas por la sincronización de cartera al vault (`Wallet.base`) y
+  por la comparación de snapshots; sin él, la captura de cartera falla de forma explícita y esa
+  superficie queda no disponible.
 - `tradingpost`: entregas pendientes y señal de acceso al bazar. Los precios públicos no usan clave.
 - `progression`: logros utilizados como evidencia opcional del Inventory Advisor.
 - `unlocks`: recetas, skins y minis como evidencia opcional del Inventory Advisor.

@@ -135,6 +135,11 @@ La versión `0.1.0` valida la base técnica:
   objeto, ubicación y personaje, con cantidad y precio de venta instantánea propios. Las Bases
   `Inventory.base` y `Materials.base` son assets ES/EN del mismo bundle y filtran claves estables.
   Las notas legacy `gw2_*` no se importan ni se borran; una nota ajena o modificada bloquea el plan.
+- La cartera durable sincroniza cada divisa de la cuenta con el mismo patrón de Preview y Apply,
+  reutilizando el permiso `wallet` ya declarado en la matriz de capacidades. Produce una fila por
+  divisa del catálogo público, con cantidad y orden del juego; una divisa que desaparece del catálogo
+  queda inactiva sin borrarse, conservando su último saldo conocido en vez de ponerlo a cero. La Base
+  `Wallet.base` es un asset ES/EN del mismo bundle gestionado.
 - H5.9 permite usar ajustes, Companion, confirmaciones, menús, modales, notas de sesión, botín y Bases en español o inglés sin cambiar los datos que consultan Bases ni los identificadores de acciones. El cambio de idioma refresca las superficies abiertas y selecciona el bundle localizado; la paleta de comandos de Obsidian puede conservar el nombre registrado hasta recargar el plugin.
 - H5.10 permite exportar manualmente el historial durable validado como JSON y CSV. El export no recorre el vault hasta que el usuario lo pide, no acepta esquemas futuros, referencias duplicadas ni bloques alterados, y no incluye IDs crudos, rutas, nombres de personaje/build ni notas humanas.
 - H5.10 ofrece también en Ajustes una eliminación conservadora con preview y confirmación explícita: conserva los archivos y todo contenido humano, quita únicamente `tc_*` y los seis bloques gestionados, no toca exports/configuración/assets/stores ni usa la papelera, y se bloquea mientras sesión, recovery o detector no estén en reposo.

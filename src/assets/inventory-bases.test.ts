@@ -110,6 +110,7 @@ describe('inventory Base assets', () => {
 			{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'update' },
 			{ id: 'materials-base', path: 'Tyrian Companion/Bases/Materials.base', status: 'update' },
 			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'unchanged' },
+			{ id: 'wallet-base', path: 'Tyrian Companion/Bases/Wallet.base', status: 'unchanged' },
 		]);
 		expect((await v5.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		const inspection = await v5.inspect('Tyrian Companion');
