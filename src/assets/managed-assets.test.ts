@@ -146,6 +146,63 @@ describe('ManagedAssetsManager', () => {
 		expect((await future.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 	});
 
+	it('resumes a progressed v1 install journal after adding assets before a registered missing Base', async () => {
+		const vault = new MemoryAssetVault();
+		const retained = await baseAsset('a-retained', 'Retained.base', 'filters:\n  and: [retained]\n');
+		const missing = await baseAsset('z-missing', 'Missing.base', 'filters:\n  and: [missing]\n');
+		const old = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 1, locale: 'es', assets: [retained, missing] });
+		expect((await old.apply('Tyrian Companion')).status).toBe('applied');
+		const manifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const legacyManifest = JSON.parse(vault.contents.get(manifestPath)!) as MutableJournal;
+		legacyManifest.schemaVersion = 1;
+		for (const entry of legacyManifest.assets) delete entry.installedSemanticHash;
+		vault.contents.set(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+		const retainedPath = 'Tyrian Companion/Bases/Retained.base';
+		vault.contents.set(retainedPath, stringifyYaml(parseYaml(vault.contents.get(retainedPath)!)));
+		vault.contents.delete('Tyrian Companion/Bases/Missing.base');
+
+		const addedB = await baseAsset('b-added', 'Added B.base', 'filters:\n  and: [added-b]\n');
+		const addedC = await baseAsset('c-added', 'Added C.base', 'filters:\n  and: [added-c]\n');
+		const upgraded = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 2, locale: 'es', assets: [retained, addedB, addedC, missing],
+		});
+		expect((await upgraded.preview('Tyrian Companion')).steps).toEqual([
+			{ id: 'a-retained', path: retainedPath, status: 'unchanged' },
+			{ id: 'b-added', path: 'Tyrian Companion/Bases/Added B.base', status: 'create' },
+			{ id: 'c-added', path: 'Tyrian Companion/Bases/Added C.base', status: 'create' },
+			{ id: 'z-missing', path: 'Tyrian Companion/Bases/Missing.base', status: 'missing' },
+		]);
+		vault.writeCount = 0;
+		vault.failAfterWrites = 5; // begin + create/mark-done for both added assets; fail before recreating missing
+		expect((await upgraded.apply('Tyrian Companion')).status).toBe('conflict');
+		expect(vault.contents.has('Tyrian Companion/Bases/Added B.base')).toBe(true);
+		expect(vault.contents.has('Tyrian Companion/Bases/Added C.base')).toBe(true);
+		const progressedLegacyJournal = JSON.parse(vault.contents.get(manifestPath)!) as MutableJournal;
+		const initialSteps = progressedLegacyJournal.pendingOperation.steps.map((step) => ({
+			...step, state: step.id === 'a-retained' ? 'done' as const : 'pending' as const,
+		}));
+		progressedLegacyJournal.pendingOperation.operationId = await legacyJournalOperationId(progressedLegacyJournal, initialSteps);
+		vault.contents.set(manifestPath, `${JSON.stringify(progressedLegacyJournal, null, 2)}\n`);
+		const interrupted = await upgraded.inspect('Tyrian Companion');
+		expect(interrupted.manifestStatus).toBe('applying');
+		expect(interrupted.manifest?.pendingOperation?.steps.map(({ id, state, beforeHash }) => ({ id, state, beforeHash }))).toEqual([
+			{ id: 'a-retained', state: 'done', beforeHash: retained.contentHash },
+			{ id: 'b-added', state: 'done', beforeHash: null },
+			{ id: 'c-added', state: 'done', beforeHash: null },
+			{ id: 'z-missing', state: 'pending', beforeHash: null },
+		]);
+
+		vault.failAfterWrites = null;
+		const resumed = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 2, locale: 'es', assets: [retained, addedB, addedC, missing],
+		});
+		expect((await resumed.apply('Tyrian Companion')).status).toBe('applied');
+		expect((await resumed.inspect('Tyrian Companion')).manifestStatus).toBe('ready');
+		expect(JSON.parse(vault.contents.get(manifestPath)!)).toMatchObject({ schemaVersion: 2, bundleVersion: 2, state: 'ready' });
+		expect(vault.contents.get(retainedPath)).not.toContain('tyrian-companion-managed');
+		expect(vault.contents.get('Tyrian Companion/Bases/Missing.base')).toBe(missing.bytes);
+	});
+
 	it('keeps future and malformed manifests read-only', async () => {
 		for (const manifest of [{ schemaVersion: 3 }, { schemaVersion: 1, pluginId: 'foreign' }]) {
 			const vault = new MemoryAssetVault();
@@ -397,6 +454,12 @@ async function managerWithAdditionalAsset(vault: MemoryAssetVault): Promise<Mana
 	return new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 2, locale: 'es', assets: [current, added] });
 }
 
+async function baseAsset(id: string, relativePath: string, body: string): Promise<PackagedAsset> {
+	const draft = { id, kind: 'base', contentVersion: 1, locale: 'neutral', relativePath } as const;
+	const bytes = `${managedAssetMarker(draft)}\n${body}`;
+	return { ...draft, bytes, contentHash: await sha256Text(bytes) };
+}
+
 function fixtureAsset() {
 	return { id: 'sessions-base', kind: 'base' as const, contentVersion: 1, locale: 'neutral' as const,
 		relativePath: 'Sessions.base', bytes: '# marker\n', contentHash: 'b'.repeat(64) };
@@ -468,6 +531,17 @@ async function journalOperationId(manifest: MutableJournal): Promise<string> {
 		manifest.pendingOperation.targetBundleVersion,
 		manifest.locale,
 		manifest.pendingOperation.kind,
-		manifest.pendingOperation.steps,
+		manifest.pendingOperation.steps.map(({ id, path, beforeHash, afterHash }) => ({ id, path, beforeHash, afterHash })),
+	]));
+}
+
+async function legacyJournalOperationId(manifest: MutableJournal, steps: MutableJournal['pendingOperation']['steps']): Promise<string> {
+	return await sha256Text(JSON.stringify([
+		manifest.root,
+		manifest.pendingOperation.fromGeneration,
+		manifest.pendingOperation.targetBundleVersion,
+		manifest.locale,
+		manifest.pendingOperation.kind,
+		steps,
 	]));
 }

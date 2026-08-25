@@ -249,7 +249,8 @@ export class ManagedAssetsManager {
 	private async operation(inspection: ManagedAssetsInspection, kind: 'install' | 'upgrade' | 'repair') {
 		const steps: ManagedOperationStep[] = inspection.assets.map((entry) => ({
 			id: entry.asset.id, path: entry.path,
-			beforeHash: entry.installedHash !== null && entry.currentHash !== entry.installedHash ? entry.installedHash : entry.currentHash,
+			beforeHash: entry.currentHash === null ? null
+				: entry.installedHash !== null && entry.currentHash !== entry.installedHash ? entry.installedHash : entry.currentHash,
 			afterHash: entry.asset.contentHash, state: entry.status === 'unchanged' ? 'done' : 'pending',
 		}));
 		const generation = inspection.manifest?.generation ?? 0;
@@ -478,7 +479,16 @@ export class ManagedAssetsManager {
 		}
 		if (operation.kind === 'uninstall' && operation.targetBundleVersion !== manifest.bundleVersion) return false;
 		if (operation.kind !== 'uninstall' && operation.targetBundleVersion !== this.bundle.bundleVersion) return false;
-		return operation.operationId === await operationId(root, operation.fromGeneration, operation.targetBundleVersion, manifest.locale, operation.kind, operation.steps);
+		if (operation.operationId === await operationId(root, operation.fromGeneration, operation.targetBundleVersion, manifest.locale, operation.kind, operation.steps)) return true;
+		const legacyInitialSteps = operation.steps.map((step): ManagedOperationStep => {
+			const registered = manifest.assets.find((entry) => entry.id === step.id);
+			const target = selectedAssetsForLocale(this.bundle, manifest.locale).find((asset) => asset.id === step.id);
+			const initiallyDone = operation.kind !== 'uninstall' && step.beforeHash !== null && registered !== undefined && target !== undefined &&
+				registered.contentVersion === target.contentVersion && (registered.kind === 'base' || step.beforeHash === step.afterHash);
+			return { ...step, state: initiallyDone ? 'done' : 'pending' };
+		});
+		return operation.operationId === await legacyOperationId(root, operation.fromGeneration, operation.targetBundleVersion,
+			manifest.locale, operation.kind, legacyInitialSteps);
 	}
 
 	private async hashAt(path: string): Promise<string | null> {
@@ -536,6 +546,10 @@ function validateBundle(bundle: ManagedAssetsBundle, root: string, configDir: st
 }
 function normalizeLf(value: string): string { return value.replace(/\r\n?/gu, '\n'); }
 async function operationId(root: string, generation: number, targetBundleVersion: number, locale: string, kind: ManagedOperationKind, steps: ManagedOperationStep[]): Promise<string> {
+	return await sha256Text(JSON.stringify([root, generation, targetBundleVersion, locale, kind,
+		steps.map(({ id, path, beforeHash, afterHash }) => ({ id, path, beforeHash, afterHash }))]));
+}
+async function legacyOperationId(root: string, generation: number, targetBundleVersion: number, locale: string, kind: ManagedOperationKind, steps: ManagedOperationStep[]): Promise<string> {
 	return await sha256Text(JSON.stringify([root, generation, targetBundleVersion, locale, kind, steps]));
 }
 function hasInstalledMarker(content: string, entry: ManagedAssetEntry): boolean {

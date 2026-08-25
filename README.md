@@ -21,7 +21,7 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.2` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
+> `0.1.3` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
 > Install only an artifact supplied for a named commit, and use a disposable vault until the manual
 > platform matrix is complete.
 
@@ -41,7 +41,7 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    ```sh
    node install-beta.mjs install \
      --vault "/path/to/disposable-vault" \
-     --archive "tyrian-companion-0.1.2.zip" \
+     --archive "tyrian-companion-0.1.3.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -135,7 +135,7 @@ For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.
 
-The current `0.1.2` vertical provides:
+The current `0.1.3` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
