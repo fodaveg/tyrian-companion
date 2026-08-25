@@ -50,7 +50,7 @@ Referencias del contrato:
    ```sh
    node install-beta.mjs install \
      --vault "/ruta/a/una-bóveda-desechable" \
-     --archive "tyrian-companion-0.1.0.zip" \
+     --archive "tyrian-companion-0.1.1.zip" \
      --confirm-obsidian-closed
    ```
 

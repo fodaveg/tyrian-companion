@@ -131,6 +131,10 @@ La versión `0.1.0` valida la base técnica:
   H5.12 ya aporta edición local explícita con CAS. David aprobó el 2026-08-16 la regla y comparación económica
   built-in de 36038: puede recomendar manualmente abrir, vender o llevar al mercader con evidencia completa.
 - H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas.
+- El inventario durable añade Preview y Apply dentro del Inventory Advisor. Produce una fila por
+  objeto, ubicación y personaje, con cantidad y precio de venta instantánea propios. Las Bases
+  `Inventory.base` y `Materials.base` son assets ES/EN del mismo bundle y filtran claves estables.
+  Las notas legacy `gw2_*` no se importan ni se borran; una nota ajena o modificada bloquea el plan.
 - H5.9 permite usar ajustes, Companion, confirmaciones, menús, modales, notas de sesión, botín y Bases en español o inglés sin cambiar los datos que consultan Bases ni los identificadores de acciones. El cambio de idioma refresca las superficies abiertas y selecciona el bundle localizado; la paleta de comandos de Obsidian puede conservar el nombre registrado hasta recargar el plugin.
 - H5.10 permite exportar manualmente el historial durable validado como JSON y CSV. El export no recorre el vault hasta que el usuario lo pide, no acepta esquemas futuros, referencias duplicadas ni bloques alterados, y no incluye IDs crudos, rutas, nombres de personaje/build ni notas humanas.
 - H5.10 ofrece también en Ajustes una eliminación conservadora con preview y confirmación explícita: conserva los archivos y todo contenido humano, quita únicamente `tc_*` y los seis bloques gestionados, no toca exports/configuración/assets/stores ni usa la papelera, y se bloquea mientras sesión, recovery o detector no estén en reposo.
@@ -145,10 +149,12 @@ La versión `0.1.0` valida la base técnica:
 ## Fuera de alcance de la vertical 0.1.0
 
 - Sincronización periódica independiente del armado o panel/agregación del historial durable de sesiones finalizadas.
-- Precios y cálculo de patrimonio total.
+- Cálculo agregado de patrimonio total; el inventario durable conserva únicamente el precio actual
+  de venta instantánea de cada fila.
 - Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
-- Escritura libre o automática de notas del vault; H5.4 solo escribe la nota completa con bloques gestionados tras completar la sesión y H5.6 solo modifica assets mediante una operación explícita.
+- Escritura libre o automática de notas del vault; las notas de sesión, assets, historial e inventario
+  solo cambian mediante sus operaciones explícitas y validadas.
 - Persistencia de preferencias/intenciones y ejecución de recomendaciones; H5.11 solo presenta decisiones manuales y no opera en el juego.
 - Inicio o cierre automático de sesiones sin confirmación.
 - Compatibilidad móvil.

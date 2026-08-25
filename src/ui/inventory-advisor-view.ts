@@ -1,4 +1,5 @@
 import type { Translator } from '../core/i18n';
+import type { InventoryVaultSyncViewState } from './inventory-vault-sync-controller';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -38,6 +39,13 @@ export interface InventoryAdvisorViewInteractions {
 	onRemoveGoal?: (goalId: string) => void | Promise<void>;
 	onUpsertKeepException?: (keepException: KeepExceptionV1) => void | Promise<void>;
 	onRemoveKeepException?: (exceptionId: string) => void | Promise<void>;
+	inventorySync?: {
+		state: InventoryVaultSyncViewState;
+		canApply: boolean;
+		assetsInstalled: boolean;
+		onPreview: () => void | Promise<void>;
+		onApply: () => void | Promise<void>;
+	};
 }
 
 export interface InventoryAdvisorViewFilters {
@@ -245,6 +253,25 @@ function mountInventoryAdvisorView(
 	intro.className = 'tyrian-inventory-advisor__intro';
 	const iconDisclosure = createEl('p');
 	iconDisclosure.className = 'tyrian-inventory-advisor__icon-disclosure';
+	const syncSection = createEl('section');
+	syncSection.className = 'tyrian-inventory-advisor__sync';
+	const syncHeading = createEl('h3');
+	const syncIntro = createEl('p');
+	const syncAssetsHint = createEl('p');
+	syncAssetsHint.className = 'tyrian-inventory-advisor__sync-hint';
+	const syncStatus = createEl('p');
+	syncStatus.className = 'tyrian-inventory-advisor__sync-status';
+	syncStatus.setAttribute('aria-live', 'polite');
+	const syncActions = createDiv();
+	syncActions.className = 'tyrian-inventory-advisor__sync-actions';
+	const syncPreview = createEl('button');
+	syncPreview.type = 'button';
+	syncPreview.addEventListener('click', () => { void interactions.inventorySync?.onPreview(); });
+	const syncApply = createEl('button');
+	syncApply.type = 'button';
+	syncApply.addEventListener('click', () => { void interactions.inventorySync?.onApply(); });
+	syncActions.append(syncPreview, syncApply);
+	syncSection.append(syncHeading, syncIntro, syncAssetsHint, syncStatus, syncActions);
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
@@ -385,7 +412,7 @@ function mountInventoryAdvisorView(
 	character.addEventListener('change', updateFilters);
 	sortSelect.addEventListener('change', updateFilters);
 	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
-	section.append(heading, intro, iconDisclosure, controls, progress, state);
+	section.append(heading, intro, iconDisclosure, controls, progress, state, syncSection);
 	if (preferencesEditor !== null) section.append(preferencesEditor.element);
 	section.append(results);
 	container.replaceChildren(section);
@@ -412,6 +439,26 @@ function mountInventoryAdvisorView(
 		heading.textContent = translator.t('advisor.view.title');
 		intro.textContent = translator.t('advisor.view.intro');
 		iconDisclosure.textContent = translator.t('advisor.view.iconDisclosure');
+		const sync = interactions.inventorySync;
+		syncSection.hidden = sync === undefined;
+		if (sync !== undefined) {
+			syncHeading.textContent = translator.t('advisor.sync.title');
+			syncIntro.textContent = translator.t('advisor.sync.intro');
+			syncAssetsHint.textContent = translator.t('advisor.sync.assetsHint');
+			syncAssetsHint.hidden = sync.assetsInstalled;
+			syncStatus.textContent = inventorySyncStateLabel(sync.state, translator);
+			const working = sync.state.status === 'loading' || sync.state.status === 'applying';
+			syncPreview.textContent = translator.t('advisor.sync.preview');
+			syncPreview.setAttribute('aria-label', translator.t('advisor.sync.preview'));
+			syncPreview.disabled = working || sync.state.status === 'disabled';
+			syncApply.textContent = translator.t('advisor.sync.apply');
+			syncApply.setAttribute('aria-label', translator.t('advisor.sync.apply'));
+			syncApply.disabled = working || !sync.canApply;
+			syncSection.setAttribute('aria-busy', String(working));
+			if (sync.state.status === 'conflict' || sync.state.status === 'error' || sync.state.status === 'disabled') {
+				syncStatus.setAttribute('role', 'alert');
+			} else syncStatus.removeAttribute('role');
+		}
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));
@@ -455,6 +502,25 @@ function mountInventoryAdvisorView(
 	};
 	update(model, translator, interactions);
 	return { update };
+}
+
+function inventorySyncStateLabel(state: InventoryVaultSyncViewState, translator: Translator): string {
+	if (state.status === 'disabled') return translator.t(`advisor.sync.state.disabled.${state.reason}`);
+	if (state.status === 'error') return translator.t(`advisor.sync.state.error.${state.reason}`);
+	if (state.status === 'preview') return translator.t('advisor.sync.state.preview', {
+		positions: state.summary.positions,
+		create: state.summary.create,
+		update: state.summary.update,
+		deactivate: state.summary.deactivate,
+	});
+	if (state.status === 'applying') return translator.t('advisor.sync.state.applying');
+	if (state.status === 'success') return translator.t('advisor.sync.state.success', {
+		created: state.result.created,
+		updated: state.result.updated,
+		deactivated: state.result.deactivated,
+	});
+	if (state.status === 'conflict') return translator.t('advisor.sync.state.conflict');
+	return translator.t(`advisor.sync.state.${state.status}`);
 }
 
 function optionalSourceCoverageLabel(

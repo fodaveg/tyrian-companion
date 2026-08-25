@@ -76,7 +76,7 @@ const EXPECTED_RUNTIME_HASHES = {
 	'mumble_probe_core.h': '25ffa18b9267d9ddaf07ed15a15f19bf63dc08363de00cc6a313d414e129ea36',
 	'mumble_probe_windows.c': 'e08d7e994d356639e12261373ead5e72f6395bc813b34e2e2ca8001c983137f2',
 	'test-support/windows.h': 'c96eae41e0c4f2ea2bc37d4d720a4106dd452384c99f78f15c663157a8121900',
-	'validate-preprocessed.mjs': '5e8355cd3ea323b6a57ac06919ac72140bcccc438e2314db2a84fed57e0d7602',
+	'validate-preprocessed.mjs': 'f91729ca7b190cc95a17dfca12fc76867654047530cf3167e398681066acb42c',
 } as const;
 const EXPECTED_WRAPPER_DIRECTIVES = [
 	'#define WIN32_LEAN_AND_MEAN',

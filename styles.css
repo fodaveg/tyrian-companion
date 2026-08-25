@@ -468,6 +468,40 @@
 	font-size: var(--font-ui-smaller);
 }
 
+.tyrian-inventory-advisor__sync {
+	margin-block: var(--size-4-4);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+}
+
+.tyrian-inventory-advisor__sync h3,
+.tyrian-inventory-advisor__sync p {
+	margin-block: 0 var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__sync-hint,
+.tyrian-inventory-advisor__sync-status {
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__sync-actions button {
+	min-height: 44px;
+}
+
+.tyrian-inventory-advisor__sync-actions button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
 .tyrian-inventory-advisor__scope legend {
 	padding-inline: var(--size-4-1);
 	color: var(--text-muted);
@@ -767,6 +801,10 @@
 	}
 
 	.tyrian-inventory-advisor__preference-form > * {
+		width: 100%;
+	}
+
+	.tyrian-inventory-advisor__sync-actions button {
 		width: 100%;
 	}
 }

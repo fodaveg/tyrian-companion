@@ -257,7 +257,8 @@ async function verifiedContext(operation: GuildWars2Operation, expectedAccountId
 	} catch { return { status: 'unavailable' }; }
 }
 
-async function captureInventoryPrices(
+/** Public-price batch shared by explicit Inventory Advisor and durable inventory captures. */
+export async function captureInventoryPrices(
 	snapshot: StorageSnapshot,
 	gateway: PublicCatalogGateway,
 	capturedAt: number,

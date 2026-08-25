@@ -63,7 +63,7 @@ describe('Halloween Base assets', () => {
 		}
 	});
 
-	it('upgrades bundle 1 to 3, locale-updates one path, and preserves human edits', async () => {
+	it('upgrades bundle 1 to 4, installs every current Base, locale-updates one path, and preserves human edits', async () => {
 		const vault = new MemoryVault();
 		const [currentSessions] = await genericManagedAssets();
 		if (!currentSessions) throw new Error('Missing Sessions.base fixture.');
@@ -77,24 +77,26 @@ describe('Halloween Base assets', () => {
 		expect((await v1.apply('Tyrian Companion')).status).toBe('applied');
 		const sessionsBefore = vault.contents.get('Tyrian Companion/Bases/Sessions.base');
 		const bundle = await managedAssetsBundle();
-		const v3 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 3, locale: 'es', assets: bundle });
-		const preview = await v3.preview('Tyrian Companion', 'upgrade');
+		const v4 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 4, locale: 'es', assets: bundle });
+		const preview = await v4.preview('Tyrian Companion', 'upgrade');
 		expect(preview.steps).toEqual([
 			{ id: 'halloween-base', path: 'Tyrian Companion/Bases/Halloween.base', status: 'create' },
+			{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'create' },
+			{ id: 'materials-base', path: 'Tyrian Companion/Bases/Materials.base', status: 'create' },
 			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'update' },
 		]);
-		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		expect((await v4.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		expect(vault.contents.get('Tyrian Companion/Bases/Sessions.base')).not.toBe(sessionsBefore);
 		const halloweenPath = 'Tyrian Companion/Bases/Halloween.base';
 		const spanish = vault.contents.get(halloweenPath)!;
-		v3.setBundle({ bundleVersion: 3, locale: 'en', assets: bundle });
-		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+		v4.setBundle({ bundleVersion: 4, locale: 'en', assets: bundle });
+		expect((await v4.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		expect(vault.contents.get(halloweenPath)).not.toBe(spanish);
 		expect(vault.contents.get(halloweenPath)).toContain('name: "Latest"');
 
 		vault.contents.set(halloweenPath, `${vault.contents.get(halloweenPath)!}# human\n`);
-		v3.setBundle({ bundleVersion: 3, locale: 'es', assets: bundle });
-		expect((await v3.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
+		v4.setBundle({ bundleVersion: 4, locale: 'es', assets: bundle });
+		expect((await v4.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
 		expect(vault.contents.get(halloweenPath)).toContain('# human');
 
 		const v2 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 2, locale: 'es', assets: bundle });

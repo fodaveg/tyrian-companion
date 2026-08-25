@@ -19,6 +19,7 @@ const HTTP_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s
 const SECRET_PROVIDER_IMPORT_PATTERN = /from\s+['"][^'"]*(?:^|\/)secret-provider['"]/u;
 const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|ObsidianApiKeyProvider|readSelectedApiKey|secretStorage)\b/u;
 const REVIEWED_FUTURE_OUTBOUND_FILES = [
+	'src/inventory/inventory-vault-sync.ts',
 	'src/platform/mumble-v2-client.ts',
 	'src/platform/mumble-v2-codec.ts',
 	'src/platform/mumble-v2-contract.ts',
@@ -29,6 +30,7 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/platform/mumble-v2-presence-policy.ts',
 	'src/platform/mumble-v2-process-adapter.ts',
 	'src/sessions/mumble-v2-shadow-proposal.ts',
+	'src/ui/inventory-vault-sync-controller.ts',
 ];
 const REVIEWED_REQUEST_URL_FILES = ['src/core/obsidian-http.ts'];
 const REVIEWED_FETCH_FILES: readonly string[] = [];

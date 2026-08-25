@@ -21,7 +21,7 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.0` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
+> `0.1.1` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
 > Install only an artifact supplied for a named commit, and use a disposable vault until the manual
 > platform matrix is complete.
 
@@ -41,7 +41,7 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    ```sh
    node install-beta.mjs install \
      --vault "/path/to/disposable-vault" \
-     --archive "tyrian-companion-0.1.0.zip" \
+     --archive "tyrian-companion-0.1.1.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -106,6 +106,17 @@ binding, a curated rule, or an economic comparison is incomplete. `discard_revie
 instruction to destroy an item, and the plugin has no sell, vendor, salvage, open, use, or destroy
 executor. Check every action in Guild Wars 2 yourself.
 
+### Durable inventory Bases
+
+The Inventory Advisor also exposes a separate explicit **Preview sync → Sync to Vault** flow. Preview
+captures a stable account-wide inventory, resolves catalog and current instant-sale prices, and builds
+a read-only plan. Sync rereads that plan and writes one managed note per item, location, and character
+below the configured portable output root. Opening the view performs neither action.
+
+Managed assets bundle v4 adds localized `Inventory.base` and `Materials.base`. Their filters use
+stable `tc_*` marker/schema keys instead of a folder predicate, and their value formula remains numeric
+so sorting is based on copper rather than formatted text. See the [activation and migration guide](docs/INVENTORY-VAULT-SYNC.md).
+
 ## What the result means
 
 - A session is an observed net change between stable account snapshots, not a drop log and not total
@@ -124,7 +135,7 @@ For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.
 
-The current `0.1.0` vertical provides:
+The current `0.1.1` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
@@ -292,11 +303,12 @@ The current `0.1.0` vertical provides:
   displayed or allowed to start/stop a session; API evidence remains authoritative. Composition and
   human QA are still pending.
 
-Automatic synchronization, persisted valuation/recommendation reports, unattended detection, and
-account operations are intentionally not implemented. The sole curated capability is human-reviewed
+Automatic or periodic inventory synchronization, persisted recommendation reports, unattended
+detection, and account operations are intentionally not implemented. The sole curated capability is
+human-reviewed
 and may emit only a manual recommendation when its H4.19 evidence is complete and fresh. Vault writes are
-limited to H5.4 completed-session notes, H5.6 explicit managed assets, and the explicit H5.10
-JSON/CSV history export and scrub workflow; no background or free-form vault write is performed.
+limited to H5.4 completed-session notes, H5.6 explicit managed assets, H5.10 explicit history export
+and scrub, and the explicit inventory preview/apply workflow; no background or free-form vault write is performed.
 Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
 detection** actions; it describes observed storage, not total account wealth.
 
@@ -360,7 +372,8 @@ remain human QA even when the package and CI gates are green.
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
-session**, **Stop session**, **Arm assisted detection**, or an enabled **Refresh inventory advisor**
+session**, **Stop session**, **Arm assisted detection**, **Refresh inventory advisor**, or
+**Preview inventory Vault sync**
 is explicitly selected. Loading the plugin or opening a non-inventory view reads only local recovery
 state and does not make network requests. The Inventory Advisor may load visible public item icons
 from the exact official `https://render.guildwars2.com` origin; no API key, account identifier or
@@ -401,8 +414,8 @@ opens a modal, shows a notice, reveals a leaf, focuses a control, or sends an OS
 
 Completed session notes are the generated H5.4 Vault notes in this vertical. They live below the
 configured output folder in `sessions/<UTC year>/`, use hashed identifiers, and update only `tc_*`
-frontmatter plus six hash-verified managed blocks. H5.6 managed assets and the explicit H5.10
-JSON/CSV exports and scrub are the only other allowed Vault writes. A collision uses the complete
+frontmatter plus six hash-verified managed blocks. H5.6 managed assets, H5.10 JSON/CSV exports and
+scrub, and explicit inventory sync are the only other allowed Vault writes. A collision uses the complete
 session hash; an ambiguous or human-modified managed region fails closed and leaves the completed
 runtime available.
 The configured folder and every managed asset path are NFC-relative paths with `/` separators and
@@ -417,8 +430,8 @@ in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write 
 read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
 files are preserved, and uninstall moves exact owned files through Obsidian's trash API. A lazy
 IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
-settings mirror only the last completed root. Bundle v2 keeps the generic `.base` and adds a
-localized `Halloween.base` through the same manifest/CAS path. It reads only session-note schema v2
+settings mirror only the last completed root. Bundle v4 keeps the generic `.base`, localized
+`Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path. The Halloween Base reads only session-note schema v2
 fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
 
 Durable-history export is an explicit Settings action. It considers only Markdown notes whose

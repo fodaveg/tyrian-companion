@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeSync } from 'node:fs';
 
 const sourcePath = process.argv[2];
 if (sourcePath === undefined) process.exit(2);
@@ -21,8 +21,8 @@ if (!containsSequence(tokens, [
 ])) failures.push('expanded mapping name differs');
 
 if (failures.length > 0) {
-	process.stderr.write(`h8 preprocessed wrapper: FAIL (${failures.join('; ')})\n`);
-	process.exit(1);
+	writeSync(process.stderr.fd, `h8 preprocessed wrapper: FAIL (${failures.join('; ')})\n`);
+	process.exitCode = 1;
 }
 process.stdout.write('h8 preprocessed wrapper: PASS\n');
 

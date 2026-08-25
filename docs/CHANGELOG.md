@@ -1,5 +1,20 @@
 # Changelog
 
+## Inventario durable y Bases gestionadas
+
+- Añadido un flujo explícito Preview/Apply dentro del Inventory Advisor. Abrir la vista permanece
+  inerte; Preview captura inventarios de personajes, compartido, banco y materiales, catálogo y
+  precios; Apply solo ejecuta el plan retenido tras releer el vault.
+- Cada nota representa un objeto, una ubicación y, cuando aplica, un personaje. Las pilas del mismo
+  personaje se agregan; el valor usa el bid unitario por la cantidad de esa fila. Filenames opacos y
+  portables no contienen cuenta ni personaje.
+- El writer Vault-only verifica marker/schema/hash y falla cerrado ante archivos ajenos, modificados,
+  duplicados o futuros. Las posiciones stale pasan a inactivas con cantidad cero, nunca se borran.
+- Bundle gestionado v4 con `Inventory.base` y `Materials.base` ES/EN. Las vistas Todos, Personajes,
+  Compartido, Banco y Materiales filtran claves estables y ordenan por valor numérico.
+- Añadida guía de activación y migración. Los scripts y notas `gw2_*` no se importan, adoptan ni
+  eliminan automáticamente.
+
 ## H8.2 — QA humana del spike ejecutada en Linux/Steam/Proton
 
 - Ejecutado por primera vez el PE del spike durante una sesión real de Guild Wars 2 (2026-08-19).

@@ -72,6 +72,37 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		await Promise.resolve();
 		expect(viewActions.refresh).toHaveBeenCalledOnce();
 	});
+
+	it('opens durable sync without I/O and forwards only explicit preview and apply clicks', async () => {
+		installDom();
+		const preview = vi.fn(async () => undefined);
+		const apply = vi.fn(async () => undefined);
+		const viewActions = actions(() => 'es');
+		const view = new InventoryAdvisorItemView({} as never, {
+			...viewActions.value,
+			getInventoryVaultSyncState: () => ({
+				status: 'preview',
+				summary: { positions: 1, create: 1, update: 0, unchanged: 0, deactivate: 0, conflicts: 0 },
+			}),
+			canApplyInventoryVaultSync: () => true,
+			hasManagedAssetsRoot: () => true,
+			previewInventoryVaultSync: preview,
+			applyInventoryVaultSync: apply,
+		});
+		await view.onOpen();
+		expect(preview).not.toHaveBeenCalled();
+		expect(apply).not.toHaveBeenCalled();
+		const buttons = find(view.contentEl as unknown as FakeElement, 'button');
+		const previewButton = buttons.find((button) => button.textContent === 'Previsualizar sincronización');
+		const applyButton = buttons.find((button) => button.textContent === 'Sincronizar con el vault');
+		if (!previewButton || !applyButton) throw new Error('Inventory sync buttons were not mounted.');
+		previewButton.dispatch('click');
+		applyButton.dispatch('click');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(preview).toHaveBeenCalledOnce();
+		expect(apply).toHaveBeenCalledOnce();
+	});
 });
 
 function actions(locale: () => 'es' | 'en'): { value: InventoryAdvisorViewActions; refresh: ReturnType<typeof vi.fn> } {

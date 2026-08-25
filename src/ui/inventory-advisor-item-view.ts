@@ -6,6 +6,7 @@ import type { InventoryPreferencesEditorSession } from '../advisor/inventory-pre
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
+import type { InventoryVaultSyncViewState } from './inventory-vault-sync-controller';
 
 export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 
@@ -19,6 +20,11 @@ export interface InventoryAdvisorViewActions {
 	removeInventoryGoal?(goalId: string): Promise<void>;
 	upsertInventoryKeepException?(keepException: KeepExceptionV1): Promise<void>;
 	removeInventoryKeepException?(exceptionId: string): Promise<void>;
+	getInventoryVaultSyncState?(): InventoryVaultSyncViewState;
+	canApplyInventoryVaultSync?(): boolean;
+	hasManagedAssetsRoot?(): boolean;
+	previewInventoryVaultSync?(): Promise<void>;
+	applyInventoryVaultSync?(): Promise<void>;
 }
 
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
@@ -55,8 +61,25 @@ export class InventoryAdvisorItemView extends ItemView {
 				onRemoveGoal: this.preferenceSession === undefined ? undefined : (goalId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeGoal(goalId); }),
 				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertKeepException(keepException); }),
 				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
+				inventorySync: this.actions.getInventoryVaultSyncState === undefined ||
+					this.actions.previewInventoryVaultSync === undefined || this.actions.applyInventoryVaultSync === undefined
+					? undefined
+					: {
+						state: this.actions.getInventoryVaultSyncState(),
+						canApply: this.actions.canApplyInventoryVaultSync?.() ?? false,
+						assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
+						onPreview: () => this.runInventorySyncAction(() => this.actions.previewInventoryVaultSync!()),
+						onApply: () => this.runInventorySyncAction(() => this.actions.applyInventoryVaultSync!()),
+					},
 			},
 		);
+	}
+
+	private async runInventorySyncAction(action: () => Promise<void>): Promise<void> {
+		if (this.closed) return;
+		this.render();
+		try { await action(); }
+		finally { this.render(); }
 	}
 
 	async refresh(): Promise<void> {

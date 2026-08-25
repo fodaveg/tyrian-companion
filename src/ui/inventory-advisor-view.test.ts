@@ -474,6 +474,57 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).toContain('Item ID 10');
 		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
 	});
+
+	it('renders durable inventory controls without capturing or applying until an explicit click', () => {
+		const preview = vi.fn();
+		const apply = vi.fn();
+		const mount = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'idle' }, canApply: false, assetsInstalled: false,
+				onPreview: preview, onApply: apply,
+			},
+		});
+		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+		const status = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
+		const [previewButton, applyButton] = find(walk(section), 'button');
+		expect(section.hidden).toBe(false);
+		expect(status.attributes.get('aria-live')).toBe('polite');
+		expect(text(walk(section))).toContain('Abrir esta vista no lee la cuenta ni escribe notas.');
+		expect(text(walk(section))).toContain('Instala o actualiza los assets gestionados');
+		expect(preview).not.toHaveBeenCalled();
+		expect(apply).not.toHaveBeenCalled();
+		previewButton!.dispatch('click');
+		expect(preview).toHaveBeenCalledOnce();
+		expect(applyButton!.disabled).toBe(true);
+		expect(apply).not.toHaveBeenCalled();
+	});
+
+	it('exposes loading, preview, applying, success, error, conflict and disabled sync states accessibly', () => {
+		const summary = { positions: 2, create: 1, update: 0, unchanged: 0, deactivate: 1, conflicts: 0 };
+		for (const [state, canApply, busy, alert, previewDisabled, applyDisabled] of [
+			[{ status: 'loading' }, false, true, false, true, true],
+			[{ status: 'preview', summary }, true, false, false, false, false],
+			[{ status: 'applying', summary }, false, true, false, true, true],
+			[{ status: 'success', summary, result: { status: 'applied', created: 1, updated: 0, deactivated: 1 } }, false, false, false, false, true],
+			[{ status: 'error', reason: 'capture_unavailable' }, false, false, true, false, true],
+			[{ status: 'conflict', summary }, false, false, true, false, true],
+			[{ status: 'disabled', reason: 'missing_key' }, false, false, true, true, true],
+		] as const) {
+			const mount = render(readyModel(), 'en', {
+				inventorySync: { state, canApply, assetsInstalled: true, onPreview: vi.fn(), onApply: vi.fn() },
+			});
+			const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+			const status = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
+			const [previewButton, applyButton] = find(walk(section), 'button');
+			expect(section.attributes.get('aria-busy')).toBe(String(busy));
+			expect(status.attributes.has('role')).toBe(alert);
+			expect(previewButton?.attributes.get('aria-label')).toBe('Preview sync');
+			expect(applyButton?.attributes.get('aria-label')).toBe('Sync to Vault');
+			expect(previewButton?.disabled).toBe(previewDisabled);
+			expect(applyButton?.disabled).toBe(applyDisabled);
+			expect(text(walk(section))).not.toMatch(/account-|token-|RAW_/u);
+		}
+	});
 });
 
 function render(model: InventoryAdvisorViewModel, locale: 'es' | 'en' = 'es', interactions: InventoryAdvisorViewInteractions = {}) {
