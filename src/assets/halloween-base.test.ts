@@ -84,6 +84,7 @@ describe('Halloween Base assets', () => {
 			{ id: 'inventory-base', path: 'Tyrian Companion/Bases/Inventory.base', status: 'create' },
 			{ id: 'materials-base', path: 'Tyrian Companion/Bases/Materials.base', status: 'create' },
 			{ id: 'sessions-base', path: 'Tyrian Companion/Bases/Sessions.base', status: 'update' },
+			{ id: 'wallet-base', path: 'Tyrian Companion/Bases/Wallet.base', status: 'create' },
 		]);
 		expect((await v5.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
 		expect(vault.contents.get('Tyrian Companion/Bases/Sessions.base')).not.toBe(sessionsBefore);

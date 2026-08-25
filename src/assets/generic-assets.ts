@@ -1,6 +1,7 @@
 import { managedAssetMarker, type PackagedAsset } from './managed-assets-model';
 import { halloweenManagedAssets } from './halloween-base';
 import { inventoryManagedAssets } from './inventory-bases';
+import { walletManagedAssets } from './wallet-base';
 import { sha256Text } from './managed-asset-hash';
 
 export { sha256Text } from './managed-asset-hash';
@@ -31,5 +32,10 @@ export async function genericManagedAssets(): Promise<PackagedAsset[]> {
 
 /** Complete H5.7 bundle; the manager selects neutral assets plus the active locale. */
 export async function managedAssetsBundle(): Promise<PackagedAsset[]> {
-	return [...await genericManagedAssets(), ...await halloweenManagedAssets(), ...await inventoryManagedAssets()];
+	return [
+		...await genericManagedAssets(),
+		...await halloweenManagedAssets(),
+		...await inventoryManagedAssets(),
+		...await walletManagedAssets(),
+	];
 }
