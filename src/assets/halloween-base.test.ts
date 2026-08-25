@@ -94,10 +94,10 @@ describe('Halloween Base assets', () => {
 		expect(vault.contents.get(halloweenPath)).not.toBe(spanish);
 		expect(vault.contents.get(halloweenPath)).toContain('name: "Latest"');
 
-		vault.contents.set(halloweenPath, `${vault.contents.get(halloweenPath)!}# human\n`);
+		vault.contents.set(halloweenPath, vault.contents.get(halloweenPath)!.replace('name: "Latest"', 'name: "Human latest"'));
 		v4.setBundle({ bundleVersion: 4, locale: 'es', assets: bundle });
 		expect((await v4.apply('Tyrian Companion', 'upgrade')).status).toBe('conflict');
-		expect(vault.contents.get(halloweenPath)).toContain('# human');
+		expect(vault.contents.get(halloweenPath)).toContain('name: "Human latest"');
 
 		const v2 = new ManagedAssetsManager(vault, '.config', { bundleVersion: 2, locale: 'es', assets: bundle });
 		expect((await v2.inspect('Tyrian Companion')).assets.every((asset) => asset.status === 'newer_than_plugin')).toBe(true);

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic-assets';
+import { halloweenManagedAssets } from './halloween-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { ManagedAssetsLifecycle } from './managed-assets-lifecycle';
 import { MANAGED_ASSETS_MANIFEST, managedAssetMarker, normalizeManagedAssetPath, planManagedAssets, type PackagedAsset } from './managed-assets-model';
@@ -20,7 +22,8 @@ describe('managed asset paths and planning', () => {
 		const inspection = {
 			root: 'Tyrian Companion', manifestPath: `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`,
 			manifest: null, manifestStatus: 'missing' as const, bundleVersion: 1, locale: 'es' as const,
-			assets: [{ asset: fixtureAsset(), path: 'Tyrian Companion/Bases/Sessions.base', status: 'occupied_unowned' as const, currentHash: 'a'.repeat(64), installedHash: null }],
+			assets: [{ asset: fixtureAsset(), path: 'Tyrian Companion/Bases/Sessions.base', status: 'occupied_unowned' as const,
+				currentHash: 'a'.repeat(64), currentSemanticHash: null, installedHash: null }],
 		};
 		expect(planManagedAssets(inspection, 'install')).toMatchObject({ canApply: false, reasons: ['occupied_unowned'] });
 	});
@@ -69,8 +72,82 @@ describe('ManagedAssetsManager', () => {
 		expect(vault.contents.get(path)).toContain('human edit');
 	});
 
+	it('accepts an Obsidian-reserialized Base when its YAML value is unchanged', async () => {
+		const vault = new MemoryAssetVault();
+		const [asset] = (await halloweenManagedAssets()).filter((candidate) => candidate.locale === 'es');
+		if (!asset) throw new Error('missing Halloween Base fixture');
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 2, locale: 'es', assets: [asset] });
+		await instance.apply('Tyrian Companion');
+		const path = 'Tyrian Companion/Bases/Halloween.base';
+		const reserialized = stringifyYaml(parseYaml(vault.contents.get(path)!));
+		expect(reserialized).not.toContain('tyrian-companion-managed');
+		expect(reserialized).not.toBe(asset.bytes);
+		vault.contents.set(path, reserialized);
+
+		expect((await instance.inspect('Tyrian Companion')).assets[0]?.status).toBe('unchanged');
+		expect((await instance.preview('Tyrian Companion')).canApply).toBe(true);
+		expect((await instance.uninstall('Tyrian Companion')).status).toBe('detached');
+		expect(vault.contents.has(path)).toBe(false);
+	});
+
+	it('keeps invalid YAML and semantic Base changes blocked after Obsidian serialization', async () => {
+		const vault = new MemoryAssetVault();
+		const [asset] = (await halloweenManagedAssets()).filter((candidate) => candidate.locale === 'es');
+		if (!asset) throw new Error('missing Halloween Base fixture');
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 2, locale: 'es', assets: [asset] });
+		await instance.apply('Tyrian Companion');
+		const path = 'Tyrian Companion/Bases/Halloween.base';
+		const changed = parseYaml(asset.bytes) as { filters: { and: string[] } };
+		changed.filters.and = changed.filters.and.filter((filter) => filter !== 'tc_kind == "gw2_farming_session"');
+		vault.contents.set(path, stringifyYaml(changed));
+		expect((await instance.inspect('Tyrian Companion')).assets[0]?.status).toBe('modified');
+		expect((await instance.apply('Tyrian Companion', 'repair')).status).toBe('conflict');
+
+		vault.contents.set(path, 'filters: [unterminated\n');
+		expect((await instance.inspect('Tyrian Companion')).assets[0]?.status).toBe('modified');
+		expect((await instance.uninstall('Tyrian Companion')).status).toBe('conflict');
+	});
+
+	it('keeps templates on exact bytes plus their marker', async () => {
+		const vault = new MemoryAssetVault();
+		const draft = { id: 'note-template', kind: 'template', contentVersion: 1, locale: 'neutral', relativePath: 'Note.md' } as const;
+		const bytes = `${managedAssetMarker(draft)}\n# Managed note\n`;
+		const asset: PackagedAsset = { ...draft, bytes, contentHash: await sha256Text(bytes) };
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 1, locale: 'es', assets: [asset] });
+		await instance.apply('Tyrian Companion');
+		const path = 'Tyrian Companion/Templates/Note.md';
+		vault.contents.set(path, '# Managed note\n');
+		expect((await instance.inspect('Tyrian Companion')).assets[0]?.status).toBe('modified');
+		expect((await instance.uninstall('Tyrian Companion')).status).toBe('conflict');
+	});
+
+	it('migrates an equivalent legacy v1 Base fingerprint before a future semantic upgrade', async () => {
+		const vault = new MemoryAssetVault();
+		const legacy = await manager(vault, 1);
+		await legacy.apply('Tyrian Companion');
+		const manifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const legacyManifest = JSON.parse(vault.contents.get(manifestPath)!) as MutableJournal;
+		legacyManifest.schemaVersion = 1;
+		for (const entry of legacyManifest.assets) delete entry.installedSemanticHash;
+		vault.contents.set(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+		const assetPath = 'Tyrian Companion/Bases/Sessions.base';
+		const reserialized = stringifyYaml(parseYaml(vault.contents.get(assetPath)!));
+		vault.contents.set(assetPath, reserialized);
+
+		expect((await legacy.inspect('Tyrian Companion')).assets[0]?.status).toBe('unchanged');
+		expect((await legacy.apply('Tyrian Companion')).status).toBe('applied');
+		expect(vault.contents.get(assetPath)).toBe(reserialized);
+		const migrated = JSON.parse(vault.contents.get(manifestPath)!) as MutableJournal;
+		expect(migrated.schemaVersion).toBe(2);
+		expect(migrated.assets[0]?.installedSemanticHash).toMatch(/^[a-f0-9]{64}$/u);
+
+		const future = await manager(vault, 2);
+		expect((await future.preview('Tyrian Companion', 'upgrade')).steps[0]?.status).toBe('update');
+		expect((await future.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+	});
+
 	it('keeps future and malformed manifests read-only', async () => {
-		for (const manifest of [{ schemaVersion: 2 }, { schemaVersion: 1, pluginId: 'foreign' }]) {
+		for (const manifest of [{ schemaVersion: 3 }, { schemaVersion: 1, pluginId: 'foreign' }]) {
 			const vault = new MemoryAssetVault();
 			vault.contents.set(`Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`, JSON.stringify(manifest));
 			const instance = await manager(vault, 1);
@@ -78,6 +155,18 @@ describe('ManagedAssetsManager', () => {
 			expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
 			expect(vault.contents.get(`Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`)).toBe(before);
 		}
+	});
+
+	it('rejects a schema v2 Base entry without its semantic ownership hash', async () => {
+		const vault = new MemoryAssetVault();
+		const instance = await manager(vault, 1);
+		await instance.apply('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const manifest = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		delete manifest.assets[0]!.installedSemanticHash;
+		vault.contents.set(path, `${JSON.stringify(manifest, null, 2)}\n`);
+		expect((await instance.inspect('Tyrian Companion')).manifestStatus).toBe('conflict');
+		expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
 	});
 
 	it('repairs a crash from the durable applying journal and rejects a different operation', async () => {
@@ -357,10 +446,11 @@ class ResponseLossPointer extends MemoryManagedAssetsPointerStore {
 }
 
 interface MutableJournal {
+	schemaVersion: 1 | 2;
 	root: string;
 	generation: number;
 	locale: 'es' | 'en';
-	assets: Array<{ id: string; kind: 'base' | 'template'; contentVersion: number; locale: 'neutral' | 'es' | 'en'; path: string; installedHash: string }>;
+	assets: Array<{ id: string; kind: 'base' | 'template'; contentVersion: number; locale: 'neutral' | 'es' | 'en'; path: string; installedHash: string; installedSemanticHash?: string }>;
 	pendingOperation: {
 		operationId: string;
 		kind: 'install' | 'upgrade' | 'repair' | 'relocate' | 'uninstall';

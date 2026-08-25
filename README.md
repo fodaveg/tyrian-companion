@@ -21,7 +21,7 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.1` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
+> `0.1.2` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
 > Install only an artifact supplied for a named commit, and use a disposable vault until the manual
 > platform matrix is complete.
 
@@ -41,7 +41,7 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    ```sh
    node install-beta.mjs install \
      --vault "/path/to/disposable-vault" \
-     --archive "tyrian-companion-0.1.1.zip" \
+     --archive "tyrian-companion-0.1.2.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -135,7 +135,7 @@ For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.
 
-The current `0.1.1` vertical provides:
+The current `0.1.2` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
@@ -428,7 +428,7 @@ alter the durable managed-assets pointer.
 Optional managed assets live below the configured output folder in `Bases/` with ownership recorded
 in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write them. Preview is
 read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
-files are preserved, and uninstall moves exact owned files through Obsidian's trash API. A lazy
+files are preserved, and uninstall moves byte-exact templates or semantically equivalent owned YAML Bases through Obsidian's trash API. A lazy
 IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
 settings mirror only the last completed root. Bundle v4 keeps the generic `.base`, localized
 `Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path. The Halloween Base reads only session-note schema v2

@@ -1,8 +1,11 @@
+import { parseDocument } from 'yaml';
+
 import { sha256Text } from './managed-asset-hash';
 import { legacyVaultFolder } from '../core/settings';
 import {
 	hasCompatibleMarker,
 	isManagedAssetsManifest,
+	MANAGED_ASSETS_SCHEMA_VERSION,
 	managedAssetPath,
 	manifestPath,
 	normalizeManagedAssetPath,
@@ -64,22 +67,27 @@ export class ManagedAssetsManager {
 		const assets: InspectedAsset[] = [];
 		for (const asset of selectedAssets(this.bundle)) {
 			if (await sha256Text(asset.bytes) !== asset.contentHash) throw new Error('invalid_bundle_hash');
+			const targetSemanticHash = asset.kind === 'base' ? await baseSemanticHash(asset.bytes) : null;
+			if (asset.kind === 'base' && targetSemanticHash === null) throw new Error('invalid_bundle_yaml');
 			const path = managedAssetPath(validatedRoot, asset);
 			if (!normalizeManagedAssetPath(path, this.configDir)) throw new Error('invalid_asset_path');
 			const file = this.vault.file(path);
 			const registered = manifest?.assets.find((entry) => entry.id === asset.id) ?? null;
 			if (!file) {
-				assets.push({ asset, path, status: registered ? 'missing' : 'create', currentHash: null, installedHash: registered?.installedHash ?? null });
+				assets.push({ asset, path, status: registered ? 'missing' : 'create', currentHash: null, currentSemanticHash: null, installedHash: registered?.installedHash ?? null });
 				continue;
 			}
 			const content = normalizeLf(await this.vault.read(file));
 			const currentHash = await sha256Text(content);
+			const currentSemanticHash = asset.kind === 'base' ? await baseSemanticHash(content) : null;
 			let status: InspectedAsset['status'];
 			if (!registered) status = currentHash === asset.contentHash && hasCompatibleMarker(content, asset) ? 'recoverable' : 'occupied_unowned';
 			else if (registered.contentVersion > asset.contentVersion || manifest!.bundleVersion > this.bundle.bundleVersion) status = 'newer_than_plugin';
-			else if (currentHash !== registered.installedHash || !hasInstalledMarker(content, registered)) status = 'modified';
-			else status = currentHash === asset.contentHash ? 'unchanged' : 'update';
-			assets.push({ asset, path, status, currentHash, installedHash: registered?.installedHash ?? null });
+			else if (!await this.matchesInstalledContent(content, currentHash, registered, asset, targetSemanticHash)) status = 'modified';
+			else status = currentHash === asset.contentHash ||
+				(asset.kind === 'base' && registered.contentVersion === asset.contentVersion && currentSemanticHash === targetSemanticHash)
+				? 'unchanged' : 'update';
+			assets.push({ asset, path, status, currentHash, currentSemanticHash, installedHash: registered?.installedHash ?? null });
 		}
 		const manifestStatus = manifestRead.status === 'missing' ? 'missing'
 			: manifestRead.status === 'unsupported' ? 'unsupported_manifest'
@@ -148,7 +156,8 @@ export class ManagedAssetsManager {
 					const step = journal.pendingOperation!.steps[index]!;
 					if (step.state === 'done') continue;
 					const asset = selectedAssets(this.bundle).find((candidate) => candidate.id === step.id);
-					if (!asset || !await this.writeAsset(step, asset)) return { status: 'conflict', message: 'A managed asset changed during recovery.' };
+					const registered = journal.assets.find((candidate) => candidate.id === step.id);
+					if (!asset || !await this.writeAsset(step, asset, registered)) return { status: 'conflict', message: 'A managed asset changed during recovery.' };
 					const updated = await this.markDone(journal, index);
 					if (!updated) {
 						const raced = await this.inspect(root);
@@ -157,12 +166,22 @@ export class ManagedAssetsManager {
 					}
 					journal = updated;
 				}
-				if (!await this.finalize(journal)) return { status: 'conflict', message: 'The recovered operation could not be finalized.' };
-				return { status: 'applied', inspection: await this.inspect(root), ownership: 'existing' };
+				const finalized = await this.finalize(journal);
+				if (!finalized) return { status: 'conflict', message: 'The recovered operation could not be finalized.' };
+				return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(root), ownership: 'existing' };
 			}
 			const plan = planManagedAssets(inspection, kind);
 			if (!plan.canApply) return { status: inspection.manifestStatus === 'applying' ? 'busy' : 'conflict', message: plan.reasons.join(', ') };
-			if (plan.steps.every((step) => step.status === 'unchanged')) return { status: 'unchanged', inspection, ownership: 'existing' };
+			if (plan.steps.every((step) => step.status === 'unchanged')) {
+				if (inspection.manifest?.schemaVersion === 1) {
+					const migrated = await this.migrateReadyManifest(inspection);
+					if (!migrated) return { status: 'conflict', message: 'The legacy managed-assets manifest changed.' };
+					inspection = await this.inspect(root);
+					if (inspection.assets.some((entry) => entry.status !== 'unchanged')) return { status: 'conflict', message: 'A managed asset changed during manifest migration.' };
+					return { status: 'applied', inspection, ownership: 'existing' };
+				}
+				return { status: 'unchanged', inspection, ownership: 'existing' };
+			}
 			const operation = await this.operation(inspection, kind);
 			let journal = await this.begin(inspection, operation);
 			if (!journal) {
@@ -174,7 +193,8 @@ export class ManagedAssetsManager {
 				const step = journal.pendingOperation!.steps[index]!;
 				if (step.state === 'done') continue;
 				const asset = selectedAssets(this.bundle).find((candidate) => candidate.id === step.id);
-				if (!asset || !await this.writeAsset(step, asset)) return { status: 'conflict', message: 'A managed asset changed during the operation.' };
+				const registered = journal.assets.find((candidate) => candidate.id === step.id);
+				if (!asset || !await this.writeAsset(step, asset, registered)) return { status: 'conflict', message: 'A managed asset changed during the operation.' };
 				journal = await this.markDone(journal, index);
 				if (!journal) {
 					const raced = await this.inspect(root);
@@ -185,7 +205,7 @@ export class ManagedAssetsManager {
 			const finalized = await this.finalize(journal);
 			if (!finalized) return { status: 'conflict', message: 'The operation could not be finalized.' };
 			inspection = await this.inspect(root);
-			return { status: plan.steps.every((step) => step.status === 'unchanged') ? 'unchanged' : 'applied', inspection, ownership };
+			return { status: finalized.changed ? 'applied' : 'unchanged', inspection, ownership };
 		} catch {
 			return { status: 'unavailable', message: 'Managed assets could not be updated safely.' };
 		}
@@ -197,7 +217,8 @@ export class ManagedAssetsManager {
 			return inspection.manifest.pendingOperation?.operationId === operation.operationId ? inspection.manifest : null;
 		}
 		const manifest: ManagedAssetsManifest = {
-			schemaVersion: 1, pluginId: 'tyrian-companion', root: inspection.root,
+			schemaVersion: inspection.manifest?.schemaVersion ?? MANAGED_ASSETS_SCHEMA_VERSION,
+			pluginId: 'tyrian-companion', root: inspection.root,
 			bundleVersion: inspection.manifest?.bundleVersion ?? this.bundle.bundleVersion,
 			generation: inspection.manifest?.generation ?? 0,
 			locale: operation.kind === 'uninstall' ? inspection.manifest?.locale ?? this.bundle.locale : this.bundle.locale,
@@ -227,7 +248,8 @@ export class ManagedAssetsManager {
 
 	private async operation(inspection: ManagedAssetsInspection, kind: 'install' | 'upgrade' | 'repair') {
 		const steps: ManagedOperationStep[] = inspection.assets.map((entry) => ({
-			id: entry.asset.id, path: entry.path, beforeHash: entry.currentHash,
+			id: entry.asset.id, path: entry.path,
+			beforeHash: entry.installedHash !== null && entry.currentHash !== entry.installedHash ? entry.installedHash : entry.currentHash,
 			afterHash: entry.asset.contentHash, state: entry.status === 'unchanged' ? 'done' : 'pending',
 		}));
 		const generation = inspection.manifest?.generation ?? 0;
@@ -235,7 +257,7 @@ export class ManagedAssetsManager {
 			kind, fromGeneration: generation, targetBundleVersion: this.bundle.bundleVersion, steps } as const;
 	}
 
-	private async writeAsset(step: ManagedOperationStep, asset: PackagedAsset): Promise<boolean> {
+	private async writeAsset(step: ManagedOperationStep, asset: PackagedAsset, registered?: ManagedAssetEntry): Promise<boolean> {
 		await ensureFolders(this.vault, step.path.slice(0, step.path.lastIndexOf('/')));
 		const file = this.vault.file(step.path);
 		if (!file) {
@@ -247,7 +269,7 @@ export class ManagedAssetsManager {
 		const expectedContent = normalizeLf(await this.vault.read(file));
 		const currentHash = await sha256Text(expectedContent);
 		if (currentHash === step.afterHash) return true;
-		if (currentHash !== step.beforeHash) return false;
+		if (currentHash !== step.beforeHash && (!registered || !await this.matchesInstalledContent(expectedContent, currentHash, registered, asset))) return false;
 		let applied = false;
 		await this.vault.process(file, (current) => {
 			if (normalizeLf(current) === expectedContent) { applied = true; return asset.bytes; }
@@ -265,18 +287,60 @@ export class ManagedAssetsManager {
 		return raced?.pendingOperation?.steps[index]?.state === 'done' ? raced : null;
 	}
 
-	private async finalize(manifest: ManagedAssetsManifest): Promise<ManagedAssetsManifest | null> {
-		const installed = selectedAssets(this.bundle).map((asset): ManagedAssetEntry => ({
-			id: asset.id, kind: asset.kind, contentVersion: asset.contentVersion, locale: asset.locale,
-			path: managedAssetPath(manifest.root, asset), installedHash: asset.contentHash,
-		}));
-		const next: ManagedAssetsManifest = { ...manifest, bundleVersion: this.bundle.bundleVersion,
+	private async migrateReadyManifest(inspection: ManagedAssetsInspection): Promise<ManagedAssetsManifest | null> {
+		const manifest = inspection.manifest;
+		if (!manifest || manifest.schemaVersion !== 1 || manifest.state !== 'ready') return null;
+		const installed: ManagedAssetEntry[] = [];
+		for (const inspected of inspection.assets) {
+			if (inspected.status !== 'unchanged' || inspected.currentHash === null) return null;
+			if (await this.hashAt(inspected.path) !== inspected.currentHash) return null;
+			const entry: ManagedAssetEntry = {
+				id: inspected.asset.id, kind: inspected.asset.kind, contentVersion: inspected.asset.contentVersion,
+				locale: inspected.asset.locale, path: inspected.path, installedHash: inspected.currentHash,
+			};
+			if (inspected.asset.kind === 'base') {
+				if (inspected.currentSemanticHash === null) return null;
+				entry.installedSemanticHash = inspected.currentSemanticHash;
+			}
+			installed.push(entry);
+		}
+		const next: ManagedAssetsManifest = {
+			...manifest, schemaVersion: MANAGED_ASSETS_SCHEMA_VERSION,
+			generation: manifest.generation + 1, assets: installed,
+		};
+		return await this.casManifest(manifest, next);
+	}
+
+	private async finalize(manifest: ManagedAssetsManifest): Promise<{ manifest: ManagedAssetsManifest; changed: boolean } | null> {
+		const installed: ManagedAssetEntry[] = [];
+		for (const asset of selectedAssets(this.bundle)) {
+			const path = managedAssetPath(manifest.root, asset);
+			const file = this.vault.file(path);
+			if (!file) return null;
+			const content = normalizeLf(await this.vault.read(file));
+			const installedHash = await sha256Text(content);
+			const entry: ManagedAssetEntry = {
+				id: asset.id, kind: asset.kind, contentVersion: asset.contentVersion, locale: asset.locale,
+				path, installedHash,
+			};
+			if (asset.kind === 'base') {
+				const [installedSemanticHash, packagedSemanticHash] = await Promise.all([
+					baseSemanticHash(content), baseSemanticHash(asset.bytes),
+				]);
+				if (installedSemanticHash === null || installedSemanticHash !== packagedSemanticHash) return null;
+				entry.installedSemanticHash = installedSemanticHash;
+			} else if (installedHash !== asset.contentHash || !hasCompatibleMarker(content, asset)) return null;
+			installed.push(entry);
+		}
+		const next: ManagedAssetsManifest = { ...manifest, schemaVersion: MANAGED_ASSETS_SCHEMA_VERSION,
+			bundleVersion: this.bundle.bundleVersion,
 			generation: manifest.generation + 1, locale: this.bundle.locale, state: 'ready', assets: installed };
 		delete next.pendingOperation;
 		const applied = await this.casManifest(manifest, next);
-		if (applied) return applied;
+		if (applied) return { manifest: applied, changed: true };
 		const raced = await this.exactManifest(manifestPath(manifest.root));
-		return raced?.state === 'ready' && raced.bundleVersion === this.bundle.bundleVersion && raced.locale === this.bundle.locale ? raced : null;
+		return raced?.state === 'ready' && raced.bundleVersion === this.bundle.bundleVersion && raced.locale === this.bundle.locale
+			? { manifest: raced, changed: false } : null;
 	}
 
 	private async uninstallInternal(root: string): Promise<ManagedAssetsResult> {
@@ -293,7 +357,9 @@ export class ManagedAssetsManager {
 					const file = this.vault.file(entry.path);
 					if (!file) continue;
 					const content = normalizeLf(await this.vault.read(file));
-					if (await sha256Text(content) !== entry.installedHash || !hasInstalledMarker(content, entry)) return { status: 'conflict', message: 'Modified managed assets are preserved.' };
+					const currentHash = await sha256Text(content);
+					const target = this.bundle.assets.find((asset) => asset.id === entry.id && asset.kind === entry.kind && asset.locale === entry.locale);
+					if (!await this.matchesInstalledContent(content, currentHash, entry, target)) return { status: 'conflict', message: 'Modified managed assets are preserved.' };
 				}
 				const steps: ManagedOperationStep[] = inspection.manifest.assets.map((entry) => ({
 					id: entry.id, path: entry.path, beforeHash: entry.installedHash, afterHash: null, state: 'pending',
@@ -314,7 +380,9 @@ export class ManagedAssetsManager {
 				if (file) {
 					const content = normalizeLf(await this.vault.read(file));
 					if (content !== tombstone) {
-						if (await sha256Text(content) !== entry.installedHash || !hasInstalledMarker(content, entry)) return { status: 'conflict', message: 'A managed asset changed before removal.' };
+						const currentHash = await sha256Text(content);
+						const target = this.bundle.assets.find((asset) => asset.id === entry.id && asset.kind === entry.kind && asset.locale === entry.locale);
+						if (!await this.matchesInstalledContent(content, currentHash, entry, target)) return { status: 'conflict', message: 'A managed asset changed before removal.' };
 						let applied = false;
 						await this.vault.process(file, (current) => { if (normalizeLf(current) === content) { applied = true; return tombstone; } return current; });
 						if (!applied || normalizeLf(await this.vault.read(file)) !== tombstone) return { status: 'conflict', message: 'A managed asset changed during removal.' };
@@ -359,7 +427,7 @@ export class ManagedAssetsManager {
 		try {
 			const raw: unknown = JSON.parse(await this.vault.read(file));
 			if (isManagedAssetsManifest(raw)) return { status: 'valid', manifest: raw };
-			if (typeof raw === 'object' && raw !== null && 'schemaVersion' in raw && Number(raw.schemaVersion) > 1) return { status: 'unsupported' };
+			if (typeof raw === 'object' && raw !== null && 'schemaVersion' in raw && Number(raw.schemaVersion) > MANAGED_ASSETS_SCHEMA_VERSION) return { status: 'unsupported' };
 			return { status: 'conflict' };
 		} catch { return { status: 'conflict' }; }
 	}
@@ -378,6 +446,8 @@ export class ManagedAssetsManager {
 			if (assetIds.has(entry.id) || assetPaths.has(folded) || !asset ||
 				(finalState && entry.locale !== 'neutral' && entry.locale !== manifest.locale) ||
 				!validManagedPath(entry.path, this.configDir, legacy) || !entry.path.startsWith(`${root}/`)) return false;
+			if (manifest.schemaVersion === 2 && entry.kind === 'base' && entry.contentVersion === asset.contentVersion &&
+				entry.installedSemanticHash !== await baseSemanticHash(asset.bytes)) return false;
 			assetIds.add(entry.id); assetPaths.add(folded);
 		}
 		if (finalState && manifest.bundleVersion === this.bundle.bundleVersion) {
@@ -414,6 +484,23 @@ export class ManagedAssetsManager {
 	private async hashAt(path: string): Promise<string | null> {
 		const file = this.vault.file(path);
 		return file ? await sha256Text(normalizeLf(await this.vault.read(file))) : null;
+	}
+
+	private async matchesInstalledContent(
+		content: string,
+		currentHash: string,
+		entry: ManagedAssetEntry,
+		target?: PackagedAsset,
+		targetSemanticHash?: string | null,
+	): Promise<boolean> {
+		if (currentHash === entry.installedHash && hasInstalledMarker(content, entry)) return true;
+		if (entry.kind !== 'base') return false;
+		const expectedSemanticHash = entry.installedSemanticHash ??
+			(target?.kind === 'base' && target.id === entry.id && target.contentVersion === entry.contentVersion && target.locale === entry.locale
+				? targetSemanticHash ?? await baseSemanticHash(target.bytes)
+				: null);
+		if (expectedSemanticHash === null) return false;
+		return await baseSemanticHash(content) === expectedSemanticHash;
 	}
 }
 
@@ -462,6 +549,44 @@ function tombstoneFor(kind: ManagedAssetEntry['kind'], operation: string): strin
 	return kind === 'base' ? `# ${marker}\n` : `<!-- ${marker} -->\n`;
 }
 function serializeManifest(value: ManagedAssetsManifest): string { return `${JSON.stringify(value, null, 2)}\n`; }
+
+async function baseSemanticHash(content: string): Promise<string | null> {
+	try {
+		const document = parseDocument(normalizeLf(content), { prettyErrors: false, uniqueKeys: true });
+		if (document.errors.length > 0 || document.warnings.length > 0) return null;
+		const value: unknown = document.toJS({ mapAsMap: true, maxAliasCount: 0 });
+		return await sha256Text(canonicalYamlValue(value, new Set<object>()));
+	} catch {
+		return null;
+	}
+}
+
+function canonicalYamlValue(value: unknown, ancestors: Set<object>): string {
+	if (value === null) return 'null';
+	if (typeof value === 'string') return `string:${JSON.stringify(value)}`;
+	if (typeof value === 'boolean') return value ? 'boolean:true' : 'boolean:false';
+	if (typeof value === 'number') {
+		if (!Number.isFinite(value)) throw new Error('non_finite_yaml_number');
+		return `number:${Object.is(value, -0) ? 0 : String(value)}`;
+	}
+	if (typeof value !== 'object') throw new Error('unsupported_yaml_value');
+	if (ancestors.has(value)) throw new Error('cyclic_yaml_value');
+	ancestors.add(value);
+	try {
+		if (Array.isArray(value)) return `array:[${value.map((entry) => canonicalYamlValue(entry, ancestors)).join(',')}]`;
+		if (value instanceof Map) {
+			const entries = [...value.entries()].map(([key, entry]) => {
+				if (typeof key !== 'string') throw new Error('non_string_yaml_key');
+				return [key, canonicalYamlValue(entry, ancestors)] as const;
+			}).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+			return `map:{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${entry}`).join(',')}}`;
+		}
+		throw new Error('unsupported_yaml_object');
+	} finally {
+		ancestors.delete(value);
+	}
+}
+
 async function ensureFolders(vault: ManagedAssetsVault, folder: string): Promise<void> {
 	let current = '';
 	for (const segment of folder.split('/')) {

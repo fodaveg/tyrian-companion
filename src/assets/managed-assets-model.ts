@@ -1,6 +1,7 @@
 import { normalizeVaultRelativePath } from '../core/vault-path';
 
-export const MANAGED_ASSETS_SCHEMA_VERSION = 1 as const;
+export const MANAGED_ASSETS_SCHEMA_VERSION = 2 as const;
+export const LEGACY_MANAGED_ASSETS_SCHEMA_VERSION = 1 as const;
 export const MANAGED_ASSETS_MANIFEST = 'Tyrian Companion Assets.json' as const;
 
 export type AssetLocale = 'neutral' | 'es' | 'en';
@@ -30,6 +31,8 @@ export interface ManagedAssetEntry {
 	locale: AssetLocale;
 	path: string;
 	installedHash: string;
+	/** Canonical parsed-YAML hash for Base assets. Absent only in legacy schema v1 manifests. */
+	installedSemanticHash?: string;
 }
 
 export interface ManagedOperationStep {
@@ -49,7 +52,7 @@ export interface PendingManagedOperation {
 }
 
 export interface ManagedAssetsManifest {
-	schemaVersion: typeof MANAGED_ASSETS_SCHEMA_VERSION;
+	schemaVersion: typeof LEGACY_MANAGED_ASSETS_SCHEMA_VERSION | typeof MANAGED_ASSETS_SCHEMA_VERSION;
 	pluginId: 'tyrian-companion';
 	root: string;
 	bundleVersion: number;
@@ -65,6 +68,7 @@ export interface InspectedAsset {
 	path: string;
 	status: ManagedAssetStatus;
 	currentHash: string | null;
+	currentSemanticHash: string | null;
 	installedHash: string | null;
 }
 
@@ -131,19 +135,23 @@ export function planManagedAssets(inspection: ManagedAssetsInspection, kind: Man
 }
 
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
-	if (!record(value) || value.schemaVersion !== 1 || value.pluginId !== 'tyrian-companion') return false;
+	if (!record(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) || value.pluginId !== 'tyrian-companion') return false;
+	const schemaVersion = value.schemaVersion;
 	if (!exactKeys(value, ['schemaVersion', 'pluginId', 'root', 'bundleVersion', 'generation', 'locale', 'state', 'assets'], ['pendingOperation'])) return false;
 	if (typeof value.root !== 'string' || !positiveInt(value.bundleVersion) || !nonNegativeInt(value.generation)) return false;
 	if ((value.locale !== 'es' && value.locale !== 'en') || !['ready', 'applying', 'detached'].includes(String(value.state)) || !Array.isArray(value.assets)) return false;
-	if (!value.assets.every(isAssetEntry)) return false;
+	if (!value.assets.every((entry) => isAssetEntry(entry, schemaVersion))) return false;
 	if (value.state === 'applying') return isPendingOperation(value.pendingOperation);
 	return value.pendingOperation === undefined;
 }
 
-function isAssetEntry(value: unknown): value is ManagedAssetEntry {
-	return record(value) && exactKeys(value, ['id', 'kind', 'contentVersion', 'locale', 'path', 'installedHash']) && typeof value.id === 'string' && value.id.length > 0 &&
-		(value.kind === 'base' || value.kind === 'template') && positiveInt(value.contentVersion) &&
-		['neutral', 'es', 'en'].includes(String(value.locale)) && typeof value.path === 'string' && isHash(value.installedHash);
+function isAssetEntry(value: unknown, schemaVersion: 1 | 2): value is ManagedAssetEntry {
+	if (!record(value) || !exactKeys(value, ['id', 'kind', 'contentVersion', 'locale', 'path', 'installedHash'], ['installedSemanticHash']) ||
+		typeof value.id !== 'string' || value.id.length === 0 || (value.kind !== 'base' && value.kind !== 'template') ||
+		!positiveInt(value.contentVersion) || !['neutral', 'es', 'en'].includes(String(value.locale)) ||
+		typeof value.path !== 'string' || !isHash(value.installedHash)) return false;
+	if (schemaVersion === 1) return value.installedSemanticHash === undefined;
+	return value.kind === 'base' ? isHash(value.installedSemanticHash) : value.installedSemanticHash === undefined;
 }
 
 function isPendingOperation(value: unknown): value is PendingManagedOperation {
