@@ -48,6 +48,7 @@ assertDefaultProjectCapacity(defaultProjectFiles, defaultProjectCapacity, defaul
 export default defineConfig(
 	globalIgnores([
 		'.beta-artifact',
+		'.claude/**',
 		'.release',
 		'node_modules',
 		'dist',
