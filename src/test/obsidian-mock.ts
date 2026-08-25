@@ -1,3 +1,28 @@
+export class AbstractInputSuggest<T> {
+	private selectCallback: ((value: T, evt: MouseEvent | KeyboardEvent) => void) | null = null;
+
+	constructor(_app: unknown, protected readonly textInputEl: HTMLInputElement | HTMLDivElement) {}
+
+	setValue(value: string): void {
+		if ('value' in this.textInputEl) this.textInputEl.value = value;
+	}
+
+	getValue(): string {
+		return 'value' in this.textInputEl ? this.textInputEl.value : '';
+	}
+
+	close(): void {}
+
+	onSelect(callback: (value: T, evt: MouseEvent | KeyboardEvent) => void): this {
+		this.selectCallback = callback;
+		return this;
+	}
+
+	selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void {
+		this.selectCallback?.(value, evt);
+	}
+}
+
 export class Modal {
 	contentEl = { empty: () => undefined };
 
