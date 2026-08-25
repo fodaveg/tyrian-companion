@@ -184,7 +184,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 			this.app.vault.configDir,
-			{ bundleVersion: 4, locale: this.settings.language, assets: await managedAssetsBundle() },
+			{ bundleVersion: 5, locale: this.settings.language, assets: await managedAssetsBundle() },
 		);
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
@@ -1020,7 +1020,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// invalidates local advisor memory but never captures again implicitly.
 			this.invalidateInventoryAdvisor();
 			if (this.managedAssets) {
-				this.managedAssets.setBundle({ bundleVersion: 4, locale: nextSettings.language, assets: await managedAssetsBundle() });
+				this.managedAssets.setBundle({ bundleVersion: 5, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
 		}

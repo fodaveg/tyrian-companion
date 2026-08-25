@@ -1,5 +1,13 @@
 # Changelog
 
+## Bundle gestionado v5
+
+- `Inventory.base` y `Materials.base` registran los nombres visibles de campos de frontmatter con
+  claves `properties.note.tc_*`, tal como las serializa Obsidian 1.13.7. Las claves `formula.*` se
+  conservan y filtros, orden y sort siguen usando los campos `tc_*` originales.
+- Ambos assets suben a contentVersion 2. Un manifiesto bundle v4 intacto los clasifica como `update`
+  y el upgrade termina en bundle v5 sin reemplazar otros Bases sin cambios.
+
 ## Inventario durable y Bases gestionadas
 
 - Añadido un flujo explícito Preview/Apply dentro del Inventory Advisor. Abrir la vista permanece

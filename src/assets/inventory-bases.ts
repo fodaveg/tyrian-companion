@@ -34,19 +34,19 @@ formulas:
 properties:
   formula.item_icon:
     displayName: "${copy.icon}"
-  tc_item_name:
+  note.tc_item_name:
     displayName: "${copy.item}"
-  tc_source:
+  note.tc_source:
     displayName: "${copy.source}"
-  tc_character:
+  note.tc_character:
     displayName: "${copy.character}"
-  tc_quantity:
+  note.tc_quantity:
     displayName: "${copy.quantity}"
-  tc_item_type:
+  note.tc_item_type:
     displayName: "${copy.type}"
-  tc_item_rarity:
+  note.tc_item_rarity:
     displayName: "${copy.rarity}"
-  tc_captured_at:
+  note.tc_captured_at:
     displayName: "${copy.captured}"
   formula.unit_gold:
     displayName: "${copy.unitValue}"
@@ -141,7 +141,7 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 		['materials-base', 'Materials.base', materialsBody],
 	] as const) {
 		for (const locale of ['es', 'en'] as const) {
-			const draft = { id, kind: 'base', contentVersion: 1, locale, relativePath } as const;
+			const draft = { id, kind: 'base', contentVersion: 2, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}

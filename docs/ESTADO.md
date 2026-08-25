@@ -224,8 +224,8 @@ El inventario durable está integrado en el Inventory Advisor como flujo manual 
 Preview captura las cuatro fuentes físicas completas y prepara un plan Vault-only; Apply relee y usa
 CAS. El writer genera una nota por objeto, ubicación y personaje, suma pilas del mismo personaje y
 marca stale como inactivo/cero sin borrar archivos. No persiste cuenta, snapshot, token ni payload
-raw. El bundle gestionado v4 añade `Inventory.base` y `Materials.base` ES/EN con orden numérico por
-valor. Falta QA visual/manual dentro de Obsidian y comparación contra los scripts legacy antes de que
+raw. El bundle gestionado v5 conserva `Inventory.base` y `Materials.base` ES/EN con orden numérico por
+valor y corrige sus nombres visibles mediante `properties.note.tc_*`. Falta QA visual/manual dentro de Obsidian y comparación contra los scripts legacy antes de que
 David los retire.
 
 H4.19 añade el kernel económico independiente de sesión, el adapter/pack de economía del Advisor, captura hermana de precios, integración contextual y guards causales. Gate completo verificado: lint, 94 ficheros/1315 tests, release-preflight, scanner de seguridad y build en verde.

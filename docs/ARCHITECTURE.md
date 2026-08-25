@@ -530,8 +530,11 @@ no forman parte del manifiesto de assets y por tanto no se borran al desinstalar
 
 `InventoryVaultSyncController` conserva plan y estado solo en memoria. Expone idle, disabled, loading,
 preview, applying, success, error y conflict en el Inventory Advisor y en dos comandos estables. Abrir
-la vista no invoca puertos. El bundle gestionado v4 instala variantes ES/EN de `Inventory.base` y
-`Materials.base`; ambas filtran marker/schema, no carpeta, y ordenan por una fórmula numérica en oro.
+la vista no invoca puertos. El bundle gestionado v5 instala variantes ES/EN de `Inventory.base` y
+`Materials.base`; ambas filtran marker/schema, no carpeta, ordenan por una fórmula numérica en oro y
+registran los nombres visibles del frontmatter con claves `properties.note.tc_*`, que es la forma
+canónica que Obsidian serializa. Las referencias operativas de filtros, fórmulas, orden y sort siguen
+usando los campos `tc_*`; las propiedades `formula.*` y `file.*` conservan su namespace propio.
 
 ## Rutas Vault H5.8
 
