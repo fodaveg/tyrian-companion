@@ -2,6 +2,7 @@ import type { ConnectionState } from '../account/connection-service';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type {
 	ManagedAssetsMessageCode,
+	ManagedAssetsRootDivergence,
 	ManagedAssetsView,
 	ManagedAssetsVisualStatus,
 } from '../assets/managed-assets-ui';
@@ -20,7 +21,11 @@ export const CONNECTION_ERROR_KEYS: Record<ConnectionErrorCode, TranslationKey> 
 };
 
 /** Converts closed managed-asset result codes into the active display locale. */
-export function projectManagedAssetsDescription(view: ManagedAssetsView, translator: Translator): string {
+export function projectManagedAssetsDescription(
+	view: ManagedAssetsView,
+	translator: Translator,
+	rootDivergence: ManagedAssetsRootDivergence | null = null,
+): string {
 	const reasonText = view.message === 'preview_blocked'
 		? view.plan?.reasons.map((reason) => translator.t(managedAssetsStatusKey(reason))).join(', ') ?? ''
 		: undefined;
@@ -28,7 +33,11 @@ export function projectManagedAssetsDescription(view: ManagedAssetsView, transla
 	const steps = view.plan?.steps.map((step) => translator.t('settings.assets.step', {
 		status: translator.t(managedAssetsStatusKey(step.status)), path: step.path,
 	})).join(' · ');
-	return steps ? `${message} ${steps}` : message;
+	const base = steps ? `${message} ${steps}` : message;
+	if (rootDivergence === null) return base;
+	return `${translator.t('settings.assets.rootDiverged', {
+		managedAssetsRoot: rootDivergence.managedAssetsRoot, outputFolder: rootDivergence.outputFolder,
+	})} ${base}`;
 }
 
 /** Keeps API failure messages out of Settings: codes/reasons project to known translated copy. */

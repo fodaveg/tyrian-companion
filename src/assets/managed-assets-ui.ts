@@ -34,6 +34,25 @@ export function projectManagedAssetsActions(context: ManagedAssetsActionContext)
 	};
 }
 
+export interface ManagedAssetsRootDivergence {
+	managedAssetsRoot: string;
+	outputFolder: string;
+}
+
+/**
+ * Detects a managed-assets root left behind by an explicit folder change. Legacy roots carry
+ * their own retained-state messaging, so they never report a divergence here.
+ */
+export function projectManagedAssetsRootDivergence(settings: {
+	managedAssetsRoot: string | null;
+	outputFolder: string;
+	legacyManagedAssetsRoot: string | null;
+}): ManagedAssetsRootDivergence | null {
+	if (settings.legacyManagedAssetsRoot !== null || settings.managedAssetsRoot === null ||
+		settings.managedAssetsRoot === settings.outputFolder) return null;
+	return { managedAssetsRoot: settings.managedAssetsRoot, outputFolder: settings.outputFolder };
+}
+
 export async function runConfirmedManagedAssetsRemoval(
 	confirm: () => Promise<boolean>,
 	remove: () => Promise<void>,
