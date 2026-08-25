@@ -17,13 +17,13 @@ const MANIFEST_KEYS = [
 const IDENTITY = Object.freeze({
 	id: 'tyrian-companion',
 	name: 'Tyrian Companion',
-	author: 'David',
+	author: 'fodaveg',
 	license: 'MIT',
 	repositoryType: 'git',
 	repositoryUrl: 'https://github.com/fodaveg/tyrian-companion.git',
 });
-const LICENSE_SHA256 = 'e5f4bfdbaa06633c08616a2e4a361c620ac11b8b815af39a15c9269d404c9b31';
-const IDENTITY_DOCUMENT_SHA256 = '9931d916f05f88df5ad2ec83a140f7b1ce69a346ad0cc2732169f209bb8df01e';
+const LICENSE_SHA256 = '4561c26198648e92896e252319c02fa6116b3d38ce85e8deb138bd3d2e041144';
+const IDENTITY_DOCUMENT_SHA256 = '6a1c684986c744abf2ca2952b1a7939c55e8517bcacc8ddae11c8f772a16dda1';
 const TEST_SCRIPT = 'vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:security-scan && npm run test:release-package && npm run test:release-identity-contract && npm run test:beta-channel && npm run test:beta-runtime && npm run test:support-contract && npm run test:h8-helper-decision-contract';
 
 /** Validates the deliberately fixed H7.1 release identity without making a network request. */

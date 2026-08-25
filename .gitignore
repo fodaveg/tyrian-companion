@@ -9,3 +9,7 @@ coverage/
 .beta-artifact/
 /native/mumble-helper/target/
 /native/mumble-helper/UNSIGNED-NOT-FOR-RELEASE.txt
+.env
+.env.*
+*.pem
+*.key

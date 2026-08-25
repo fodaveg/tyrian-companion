@@ -10,7 +10,7 @@ describe('normalizeVaultRelativePath', () => {
 	});
 
 	it.each([
-		'', '/absolute', 'C:/Users/David', '\\\\server\\share', 'a//b', 'a/./b', 'a/../b',
+		'', '/absolute', 'C:/Users/Example', '\\\\server\\share', 'a//b', 'a/./b', 'a/../b',
 		'a/b:c', 'a/b*c', 'a/b?c', 'a/b"c', 'a/b<c', 'a/b>c', 'a/b|c', 'a/b\\c',
 		'a/\u0001b', 'a/\u007fb', 'a/\ud800b', 'a/b.', 'a/b ', 'a/e\u0301', 'CON', 'a/PRN.md',
 		'a/AUX', 'a/NUL.txt', 'a/COM1 ', 'a/COM9.log', 'a/COM¹.log', 'a/LPT1.base', 'a/LPT³.md', 'a/COM1 .md',
