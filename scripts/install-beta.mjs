@@ -476,7 +476,7 @@ function parseManifest(bytes) {
 		fail('manifest-invalid');
 	}
 	if (
-		manifest.id !== PLUGIN_ID || manifest.name !== 'Tyrian Companion' || manifest.author !== 'David' ||
+		manifest.id !== PLUGIN_ID || manifest.name !== 'Tyrian Companion' || manifest.author !== 'fodaveg' ||
 		manifest.isDesktopOnly !== true || !SEMVER.test(manifest.version) || manifest.minAppVersion !== MIN_APP_VERSION ||
 		typeof manifest.description !== 'string' || manifest.description.trim() === ''
 	) fail('manifest-invalid');

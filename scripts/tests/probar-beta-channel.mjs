@@ -42,6 +42,7 @@ try {
 	testConcurrentInstallIsRejected();
 	testDirectoryAuthorityCannotChange();
 	testChecksumAndArchiveFailures();
+	testInstallerAcceptsRepositoryManifest();
 	testInstallerZipMatrix();
 	testInstalledStateFailures();
 	testPathFailures();
@@ -373,12 +374,43 @@ function testChecksumAndArchiveFailures() {
 		'rehashed foreign manifest did not turn red',
 	);
 
-	const incompatible = candidate('incompatible-manifest', '0.1.0', 'David', '99.0.0');
+	const incompatible = candidate('incompatible-manifest', '0.1.0', 'fodaveg', '99.0.0');
 	assertThrows(
 		() => installBetaCandidate({ archivePath: incompatible.archivePath, vaultRoot: vault('incompatible-manifest') }),
 		'manifest-invalid',
 		'rehashed incompatible minimum Obsidian version did not turn red',
 	);
+}
+
+// The installer travels inside the release artifact and cannot import repository
+// modules, so its identity literals must stay literals. This is the only place that
+// ties them to the artifact that actually ships: it feeds installBetaCandidate the
+// repository's real manifest.json. If manifest.json changes and install-beta.mjs does
+// not (or the other way round), this turns red.
+function testInstallerAcceptsRepositoryManifest() {
+	const source = readFileSync(resolve('manifest.json'), 'utf8');
+	const manifest = JSON.parse(source);
+	const release = candidateFromManifest('repository-manifest', source);
+	try {
+		const result = install(release, vault('repository-manifest'));
+		assert(result.status === 'installed', 'the repository manifest.json did not install cleanly');
+	} catch (error) {
+		const code = error instanceof BetaInstallError ? error.code : String(error);
+		fail(`install-beta.mjs rejected the repository manifest.json with ${code}: its identity literals drifted from manifest.json`);
+		return;
+	}
+	for (const [key, value, code] of [
+		['author', `${manifest.author}-drift`, 'manifest-invalid'],
+		['name', `${manifest.name} Drift`, 'manifest-invalid'],
+		['minAppVersion', '99.0.0', 'manifest-invalid'],
+		['id', `${manifest.id}-drift`, 'manifest-invalid'],
+	]) {
+		const drifted = candidateFromManifest(
+			`repository-manifest-${key}`,
+			`${JSON.stringify({ ...manifest, [key]: value }, null, '\t')}\n`,
+		);
+		assertInstallError(drifted, vault(`repository-manifest-${key}`), code, `drifted manifest ${key} did not turn red`);
+	}
 }
 
 function testInstallerZipMatrix() {
@@ -638,12 +670,19 @@ function assertInstallError(release, root, code, message) {
 	assertThrows(() => install(release, root), code, message);
 }
 
-function candidate(name, version, author = 'David', minAppVersion = '1.11.4') {
+function candidate(name, version, author = 'fodaveg', minAppVersion = '1.11.4') {
+	return candidateFromManifest(name, manifestSource(version, author, minAppVersion));
+}
+
+// Packages a candidate from an arbitrary manifest source so the suite can feed the
+// installer the repository's REAL manifest.json instead of a fabricated one.
+function candidateFromManifest(name, source) {
+	const manifest = JSON.parse(source);
 	const root = resolve(testRoot, `candidate-${name}`);
 	mkdirSync(root, { recursive: true });
-	writeJson(resolve(root, 'package.json'), { name: 'tyrian-companion', version });
-	writeFileSync(resolve(root, 'manifest.json'), manifestSource(version, author, minAppVersion));
-	writeJson(resolve(root, 'versions.json'), { [version]: minAppVersion });
+	writeJson(resolve(root, 'package.json'), { name: manifest.id, version: manifest.version });
+	writeFileSync(resolve(root, 'manifest.json'), source);
+	writeJson(resolve(root, 'versions.json'), { [manifest.version]: manifest.minAppVersion });
 	writeFileSync(resolve(root, 'styles.css'), `.candidate-${name} { color: red; }\n`);
 	const result = packageRelease({ root, build: controlledBuild });
 	return { ...result, archiveName: basename(result.archivePath), root };
@@ -697,7 +736,7 @@ function writeInstallerFixture(root) {
 	writeFileSync(resolve(root, 'scripts/install-beta.mjs'), readFileSync(resolve('scripts/install-beta.mjs')));
 }
 
-function manifestSource(version, author = 'David', minAppVersion = '1.11.4') {
+function manifestSource(version, author = 'fodaveg', minAppVersion = '1.11.4') {
 	return `${JSON.stringify({
 		id: 'tyrian-companion',
 		name: 'Tyrian Companion',
