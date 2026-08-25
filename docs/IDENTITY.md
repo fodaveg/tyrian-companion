@@ -8,7 +8,8 @@ La identidad estable del MVP es:
 | --- | --- |
 | ID de plugin | `tyrian-companion` |
 | Nombre visible | **Tyrian Companion** |
-| Autor público | **David** |
+| Autor público | **fodaveg** |
+| Correo público | `fodaveg@fodaveg.net` |
 | Repositorio elegido | `fodaveg/tyrian-companion` |
 | Licencia | MIT |
 | Superficie | Plugin de Obsidian solo para escritorio |
@@ -20,11 +21,11 @@ ligados por `npm run release:identity-contract`.
 
 ## Comprobación de colisión
 
-Comprobación realizada el **2026-08-16** con comparación exacta, case-insensitive, tanto del ID
+Comprobación realizada el **2026-08-25** con comparación exacta, case-insensitive, tanto del ID
 `tyrian-companion` como del nombre `Tyrian Companion`:
 
 - Registro activo oficial `community-plugins.json`, commit
-  [`4ddd58d8a2f092365a818b528a7cfe0e0d380373`](https://github.com/obsidianmd/obsidian-releases/blob/4ddd58d8a2f092365a818b528a7cfe0e0d380373/community-plugins.json): **0 coincidencias**.
+  [`13813b838296c2183b370e2726d010debfeff046`](https://github.com/obsidianmd/obsidian-releases/blob/13813b838296c2183b370e2726d010debfeff046/community-plugins.json): **0 coincidencias**.
 - Registro oficial de retirados `community-plugins-removed.json`, commit
   [`6f8608b75d7800a861b05765d3e34a56b5342c37`](https://github.com/obsidianmd/obsidian-releases/blob/6f8608b75d7800a861b05765d3e34a56b5342c37/community-plugins-removed.json): **0 coincidencias**.
 
