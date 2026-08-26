@@ -111,6 +111,29 @@ interface InventoryNoteFields {
 	descripcion: string;
 }
 
+const INVENTORY_NOTE_KEYS = [
+	'tc_schema', 'tc_kind', 'tc_marker', 'tc_position_id',
+	'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
+	'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
+	'tc_captured_at', 'tc_item_name', 'tc_item_type',
+	'tc_item_rarity', 'tc_icon', 'descripcion',
+] as const;
+
+/**
+ * Keys that joined `INVENTORY_NOTE_KEYS` after notes were already being written into
+ * real Vaults. A note that lacks one of them was written by an older build, not edited
+ * by a person, so it is migrated in place (classified `owned`, replanned as `update`)
+ * instead of being rejected. Everything else stays a conflict, which is the whole point
+ * of the validation: an unknown extra key, a wrong type, a position id or a marker hash
+ * that does not match are all still refused rather than overwritten.
+ *
+ * THIS IS THE ONLY LIST OF ITS KIND. Adding a frontmatter key without listing it here
+ * turns every note already in the Vault into a conflict on the next sync, which writes
+ * nothing at all: that is exactly what `tc_unit_list_copper`/`tc_total_list_copper` did
+ * to a 1302-note Vault when they were added.
+ */
+const INVENTORY_NOTE_KEYS_ADDED_LATER = ['tc_unit_list_copper', 'tc_total_list_copper'] as const;
+
 interface OwnedInventoryNote {
 	fields: InventoryNoteFields;
 	content: string;
@@ -492,8 +515,9 @@ async function classifyInventoryNote(content: string): Promise<
 	let parsed: unknown;
 	try { parsed = parseYaml(frontmatter[1]!); }
 	catch { return { status: 'conflict', positionId }; }
-	if (!isInventoryNoteFields(parsed) || parsed.tc_position_id !== positionId) return { status: 'conflict', positionId };
-	return { status: 'owned', note: { fields: parsed, content } };
+	const fields = migrateInventoryNoteFields(parsed);
+	if (!isInventoryNoteFields(fields) || fields.tc_position_id !== positionId) return { status: 'conflict', positionId };
+	return { status: 'owned', note: { fields, content } };
 }
 
 function positionFromFields(fields: InventoryNoteFields): InventoryVaultPosition {
@@ -542,14 +566,22 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		(value.unitListCopper === null ? value.totalListCopper === null : value.totalListCopper === safeMultiply(value.unitListCopper, value.quantity));
 }
 
+/**
+ * Brings frontmatter written by an older build up to the current key set by defaulting
+ * the absent `INVENTORY_NOTE_KEYS_ADDED_LATER` to `null`, so the note validates and the
+ * plan rewrites it with the missing columns. It only ever ADDS those two keys: a key we
+ * never wrote is left in place so that `isInventoryNoteFields` still rejects it, which
+ * is what keeps a hand-edited note a conflict.
+ */
+function migrateInventoryNoteFields(value: unknown): unknown {
+	if (!record(value)) return value;
+	const migrated: Record<string, unknown> = { ...value };
+	for (const key of INVENTORY_NOTE_KEYS_ADDED_LATER) if (!(key in migrated)) migrated[key] = null;
+	return migrated;
+}
+
 function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
-	if (!record(value) || !exactKeys(value, [
-		'tc_schema', 'tc_kind', 'tc_marker', 'tc_position_id',
-		'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
-		'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
-		'tc_captured_at', 'tc_item_name', 'tc_item_type',
-		'tc_item_rarity', 'tc_icon', 'descripcion',
-	])) return false;
+	if (!record(value) || !exactKeys(value, INVENTORY_NOTE_KEYS)) return false;
 	return value.tc_schema === INVENTORY_NOTE_SCHEMA_VERSION && value.tc_kind === INVENTORY_NOTE_KIND &&
 		value.tc_marker === INVENTORY_NOTE_MARKER && typeof value.tc_position_id === 'string' &&
 		positive(value.tc_item_id) && inventorySource(value.tc_source) &&
@@ -601,7 +633,7 @@ function cleanText(value: string): string {
 
 function normalizeLf(value: string): string { return value.replace(/\r\n?/gu, '\n'); }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function exactKeys(value: Record<string, unknown>, keys: string[]): boolean { const expected = new Set(keys); return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key)); }
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean { const expected = new Set(keys); return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key)); }
 function inventorySource(value: unknown): value is InventoryPositionSource { return ['character', 'shared_inventory', 'bank', 'materials'].includes(String(value)); }
 function nonEmptyText(value: unknown): value is string { return typeof value === 'string' && value.length > 0 && value.length <= 512 && value === value.normalize('NFC'); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }

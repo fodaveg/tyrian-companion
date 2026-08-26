@@ -22,6 +22,8 @@ vault.
 3. Pulsa **Sincronizar con el vault**. El plugin relee todos los archivos del plan antes de escribir.
    Si una nota cambió, pertenece a otra herramienta o usa un schema futuro, la operación falla sin
    sobrescribirla.
+   Una nota escrita por una versión anterior del plugin, a la que le faltan columnas añadidas
+   después, no cuenta como modificada: se reconoce y se reescribe con las columnas nuevas.
 4. Abre `Bases/Inventory.base`. Comprueba las vistas Todos, Personajes, Compartido, Banco y
    Materiales. Filtra `Personaje` para verificar que la cantidad y el valor corresponden solo a esa
    fila.

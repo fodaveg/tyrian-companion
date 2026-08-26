@@ -2,6 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type ItemHolding, type StorageSnapshot } from '../account/storage-snapshot-model';
+import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
@@ -78,7 +79,7 @@ describe('inventory Vault projection', () => {
 	});
 
 	it('does no account capture until the explicit capture action is invoked', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: vi.fn() })) };
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
 		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([])) };
 		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
 		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
@@ -87,6 +88,20 @@ describe('inventory Vault projection', () => {
 		await service.capture('es');
 		expect(client.beginOperation).toHaveBeenCalledOnce();
 		expect(snapshots.captureWithOperation).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		['the request does not answer', async () => ({ status: 503, body: null, headers: {} })],
+		['it answers for another account', async () => ({ status: 200, body: accountProfile('someone-else'), headers: {} })],
+	])('aborts the capture when the account trading-post tier cannot be read because %s', async (_label, respond) => {
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: vi.fn(respond) })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
+		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
+		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
+		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway);
+		// Degrading to 'unknown' here would price every position at null and write that
+		// to Vault without a word, so the capture stops and the caller reports it.
+		await expect(service.capture('es')).rejects.toThrow('inventory_trading_post_access_unavailable');
 	});
 
 	it('gives a full account the instant-sell value of an item the free-to-play whitelist excludes', async () => {
@@ -307,6 +322,51 @@ describe('inventory Vault preview and apply', () => {
 		expect(vault.markdownFiles()).toHaveLength(2);
 	});
 
+	it('migrates a note written before the list-price fields existed instead of blocking on it', async () => {
+		const notePath = `${ROOT}/Inventory/Positions/${LEGACY_NOTE_POSITION_ID}.md`;
+		const vault = new MemoryInventoryVault([[notePath, NOTE_WRITTEN_BY_0_1_11]]);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const snapshot = snapshotWith([holding(LEGACY_NOTE_ITEM_ID, 1, characterBag(LEGACY_NOTE_CHARACTER))]);
+		// Not whitelisted but with a live buy order: the very shape that left most of the
+		// notes in a real Vault at a null sell value, so this also proves that fix lands.
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: LEGACY_NOTE_ITEM_ID, whitelisted: false, bid: { unitCopper: 1234, quantity: 5 }, ask: { unitCopper: 1300, quantity: 5 } },
+		]);
+		const input = await prepareInventoryVaultSyncInput(snapshot, legacyNoteCatalog(snapshot), prices, 'full', 'es');
+
+		const plan = await service.preview(ROOT, input);
+		expect(plan.steps).toEqual([expect.objectContaining({ path: notePath, status: 'update' })]);
+		expect(plan.canApply).toBe(true);
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1 });
+		const fields = frontmatter(vault.contents.get(notePath)!);
+		expect(Object.keys(fields)).toEqual(expect.arrayContaining(['tc_unit_list_copper', 'tc_total_list_copper']));
+		expect(fields).toMatchObject({
+			tc_unit_sell_copper: 1234, tc_total_sell_copper: 1234,
+			tc_unit_list_copper: 1300, tc_total_list_copper: 1300,
+		});
+	});
+
+	it.each([
+		['appended by hand', async (content: string) => `${content}\nnota mia\n`],
+		['carrying an unknown key, re-signed', async (content: string) =>
+			await resign(content.replace('descripcion:', 'tc_nota_mia: recordar\ndescripcion:'))],
+		['claiming a position the marker does not', async (content: string) =>
+			await resign(content.replace('tc_position_id: 100063-c-', 'tc_position_id: 100064-c-'))],
+	])('still blocks a note in that older format %s', async (_label, corrupt) => {
+		const notePath = `${ROOT}/Inventory/Positions/${LEGACY_NOTE_POSITION_ID}.md`;
+		const vault = new MemoryInventoryVault([[notePath, await corrupt(NOTE_WRITTEN_BY_0_1_11)]]);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const snapshot = snapshotWith([holding(LEGACY_NOTE_ITEM_ID, 1, characterBag(LEGACY_NOTE_CHARACTER))]);
+		const input = await prepareInventoryVaultSyncInput(
+			snapshot, legacyNoteCatalog(snapshot), pricesFor(snapshot, LEGACY_NOTE_ITEM_ID, 10), 'full', 'es');
+		const plan = await service.preview(ROOT, input);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: notePath, status: 'conflict' }));
+		expect(plan.canApply).toBe(false);
+		const mutations = vault.mutations;
+		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
+		expect(vault.mutations).toBe(mutations);
+	});
+
 	it('rejects non-portable roots before any mutation', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
@@ -338,6 +398,14 @@ function snapshotWith(
 		},
 		roster: [],
 	};
+}
+
+function accountProfile(accountId: string): Record<string, unknown> {
+	return { id: accountId, name: 'Cuenta.1234', world: 1001, created: '2015-08-28T10:00:00Z', access: ['GuildWars2'], commander: false };
+}
+
+function accountRequest(): ReturnType<typeof vi.fn> {
+	return vi.fn(async () => ({ status: 200, body: accountProfile('account-a'), headers: {} }));
 }
 
 function holding(itemId: number, quantity: number, location: ItemHolding['location']): ItemHolding {
@@ -373,6 +441,58 @@ function pricesFor(snapshot: StorageSnapshot, itemId: number, unitCopper: number
 	return priceSnapshotWith(snapshot, [
 		{ itemId, whitelisted: true, bid: { unitCopper, quantity: 100 }, ask: { unitCopper: unitCopper + 1, quantity: 100 } },
 	]);
+}
+
+/**
+ * A note copied verbatim out of a real Vault, written by 0.1.11 before
+ * `tc_unit_list_copper`/`tc_total_list_copper` existed. Its marker hash is the real one
+ * and covers this exact text, so reflowing or reindenting it makes the note stop
+ * validating for the wrong reason.
+ */
+const NOTE_WRITTEN_BY_0_1_11 = `---
+tc_schema: 1
+tc_kind: gw2_inventory_position
+tc_marker: tyrian_companion_inventory_position
+tc_position_id: 100063-c-54a014e68376be0c2fa8f7ca
+tc_item_id: 100063
+tc_source: character
+tc_character: Rinorrata
+tc_quantity: 1
+tc_unit_sell_copper: null
+tc_total_sell_copper: null
+tc_active: true
+tc_captured_at: 2026-08-26T12:42:21.605Z
+tc_item_name: Reliquia de sobrecarga
+tc_item_type: Relic
+tc_item_rarity: Exotic
+tc_icon: https://render.guildwars2.com/file/755D9F3BA1C2C42CDAEBF59BBF4564B77ADC105D/3592840.png
+descripcion: Existencia de inventario gestionada por Tyrian Companion.
+---
+<!-- tyrian-companion-inventory schema=1 marker=tyrian_companion_inventory_position position=100063-c-54a014e68376be0c2fa8f7ca hash=e90be601c8fbabfdd6890491386fc9d3cb69f482bab1556eecf78b2829b4ede2 -->
+# Reliquia de sobrecarga
+
+Existencia de inventario gestionada por Tyrian Companion.
+`;
+const LEGACY_NOTE_POSITION_ID = '100063-c-54a014e68376be0c2fa8f7ca';
+const LEGACY_NOTE_ITEM_ID = 100063;
+const LEGACY_NOTE_CHARACTER = 'Rinorrata';
+
+/** Re-signs an edited note so it fails validation on its fields, not on a stale hash. */
+async function resign(content: string): Promise<string> {
+	const unsigned = content.replace(/ hash=[a-f0-9]{64} -->/u, ' -->');
+	return unsigned.replace(' -->', ` hash=${await sha256Text(unsigned)} -->`);
+}
+
+function legacyNoteCatalog(snapshot: StorageSnapshot): CatalogResolution {
+	return {
+		...catalogFor(snapshot),
+		items: {
+			[String(LEGACY_NOTE_ITEM_ID)]: {
+				kind: 'item', id: LEGACY_NOTE_ITEM_ID, name: 'Reliquia de sobrecarga', type: 'Relic',
+				rarity: 'Exotic', level: 0, vendorValue: 0, flags: [], gameTypes: [], restrictions: [],
+			},
+		},
+	};
 }
 
 async function inputWithAllSources() {

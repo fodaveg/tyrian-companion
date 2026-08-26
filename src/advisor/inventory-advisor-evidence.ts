@@ -7,7 +7,7 @@ import {
 	type SourceCoverage,
 	type StorageSnapshot,
 } from '../account/storage-snapshot-model';
-import { parseAccountProfile, parseTokenInfo, type TokenInfo } from '../account/account-service';
+import { parseAccountProfile, parseTokenInfo, type AccountProfile, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
@@ -310,15 +310,24 @@ export async function captureInventoryPrices(
  * and the durable inventory-notes sync. Reuses the same tokeninfo-free `account`
  * lookup and the same scope-to-tier mapping (`tradingPostAccess`) as
  * `captureAccountSignals`, so both captures agree on what a "full" account is.
+ *
+ * It fails closed. `'unknown'` is a real answer -- an account whose access list names
+ * no edition we recognise -- and `isTradingPostAccessible()` denies every item for it,
+ * so returning `'unknown'` for a request that simply did not answer would rewrite every
+ * inventory note with null values without saying anything: the exact silent failure this
+ * capture was added to fix. Aborting costs the user a retry and surfaces as the sync's
+ * `capture_unavailable` error instead. The snapshot capture has already read and parsed
+ * `account` over this same operation by the time we get here, so failing is exceptional.
  */
 export async function captureInventoryTradingPostAccess(
 	operation: GuildWars2Operation,
 	expectedAccountId: string,
 ): Promise<AccountSignalsV1['tradingPostAccess']> {
-	try {
-		const profile = parseAccountProfile(await requestBody(operation, 'account'));
-		return profile.id === expectedAccountId ? tradingPostAccess(profile.access) : 'unknown';
-	} catch { return 'unknown'; }
+	let profile: AccountProfile;
+	try { profile = parseAccountProfile(await requestBody(operation, 'account')); }
+	catch { throw new Error('inventory_trading_post_access_unavailable'); }
+	if (profile.id !== expectedAccountId) throw new Error('inventory_trading_post_access_unavailable');
+	return tradingPostAccess(profile.access);
 }
 
 async function captureContainerPrices(
