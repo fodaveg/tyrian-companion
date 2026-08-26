@@ -31,7 +31,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		const runtime = source.slice(source.indexOf('function createInventoryAdvisorRuntime('), source.indexOf('\nfunction managedAssetsFailureCode('));
 		expect(runtime).toContain('createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider)');
 		expect(runtime).toContain('capture: async (captureLocale, expectedPriceItemIds) =>');
-		expect(runtime).toContain('inventoryEvidence.capture(captureLocale, expectedPriceItemIds)');
+		expect(runtime).toContain('inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {');
 		expect(runtime).not.toContain("rules: { current: () => ({ status: 'unavailable' }) }");
 	});
 

@@ -19,7 +19,7 @@ import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
-import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
+import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
@@ -122,6 +122,7 @@ import {
 } from './ui/inventory-vault-sync-controller';
 import {
 	InventoryVaultOneClickSyncController,
+	type InventoryVaultSyncCaptureProgress,
 	type InventoryVaultSyncRunState,
 } from './ui/inventory-vault-sync-run-controller';
 import {
@@ -156,6 +157,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private inventoryVaultSync!: InventoryVaultSyncController;
 	private inventoryVaultSyncRun!: InventoryVaultOneClickSyncController;
 	private readonly inventoryAdvisorPhaseListener: InventoryAdvisorPhaseListenerRef = { current: null };
+	/** A mutable slot the one-click sync run swaps in for the duration of one capture; purely in-memory. */
+	private readonly inventoryAdvisorCaptureProgressListener: InventoryAdvisorCaptureProgressListenerRef = { current: null };
 	private walletVaultSync!: WalletVaultSyncController;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private settingTab!: TyrianCompanionSettingTab;
@@ -265,7 +268,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.inventoryVaultSyncRun = new InventoryVaultOneClickSyncController(
 			{
 				disabledReason: inventorySyncDisabledReason,
-				refreshAdvisor: (onPhase) => this.refreshInventoryAdvisorForSync(onPhase),
+				refreshAdvisor: (onPhase, onCaptureProgress) => this.refreshInventoryAdvisorForSync(onPhase, onCaptureProgress),
 				previewSync: previewInventorySync,
 				applySync: async (plan, onStep) => await inventoryVaultWriter.apply(plan, onStep),
 			},
@@ -310,6 +313,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			() => this.settings.language, this.inventoryPreferences,
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 			this.inventoryAdvisorPhaseListener,
+			this.inventoryAdvisorCaptureProgressListener,
 		);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
@@ -566,13 +570,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderInventoryAdvisorViews();
 	}
 
-	/** Runs the ordinary advisor refresh while reporting its real capture/preferences/classification phases. */
+	/**
+	 * Runs the ordinary advisor refresh while reporting its real capture/preferences/
+	 * classification phases, plus the real request counters inside the capture phase.
+	 * Both listeners are purely in-memory and cleared as soon as the refresh settles.
+	 */
 	private async refreshInventoryAdvisorForSync(
 		onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+		onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
 	): Promise<void> {
 		this.inventoryAdvisorPhaseListener.current = onPhase;
+		this.inventoryAdvisorCaptureProgressListener.current = onCaptureProgress;
 		try { await this.refreshInventoryAdvisor(); }
-		finally { this.inventoryAdvisorPhaseListener.current = null; }
+		finally {
+			this.inventoryAdvisorPhaseListener.current = null;
+			this.inventoryAdvisorCaptureProgressListener.current = null;
+		}
 	}
 
 	/** Live/persisted state of the single-button view sync. It never starts work by itself. */
@@ -1501,6 +1514,11 @@ interface InventoryAdvisorPhaseListenerRef {
 	current: ((phase: 'capture' | 'preferences' | 'classification') => void) | null;
 }
 
+/** Same shape, for the capture phase's own real request counters. */
+interface InventoryAdvisorCaptureProgressListenerRef {
+	current: ((progress: InventoryAdvisorCaptureProgress) => void) | null;
+}
+
 function createInventoryAdvisorRuntime(
 	client: GuildWars2Client,
 	publicClient: GuildWars2PublicCatalogClient,
@@ -1509,6 +1527,7 @@ function createInventoryAdvisorRuntime(
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 	phaseListener: InventoryAdvisorPhaseListenerRef,
+	captureProgressListener: InventoryAdvisorCaptureProgressListenerRef,
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
 	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
@@ -1537,7 +1556,9 @@ function createInventoryAdvisorRuntime(
 					},
 				);
 			}
-			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds);
+			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {
+				captureProgressListener.current?.(progress);
+			});
 		} },
 		preferences: { load: async (capture) => {
 			enterWorkflowStage('preferences');

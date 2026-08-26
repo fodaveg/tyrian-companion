@@ -30,6 +30,40 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(snapshot).toEqual(before);
 	});
 
+	it('forwards many live progress ticks but writes exactly one local receipt, however many characters resolve', async () => {
+		const snapshot = snapshotFixture([10, 11]);
+		const storageTicks: number[] = [];
+		const captureInventoryWithOperation = vi.fn(async (
+			_operation: unknown,
+			onProgress?: (progress: {
+				roster: { completed: number; total: number };
+				accountStores: { completed: number; total: number };
+				characters: { completed: number; total: number };
+			}) => void,
+		) => {
+			for (let completed = 0; completed <= 40; completed += 1) {
+				onProgress?.({ roster: { completed: 1, total: 1 }, accountStores: { completed: 3, total: 3 }, characters: { completed, total: 40 } });
+				storageTicks.push(completed);
+			}
+			return snapshot;
+		});
+		const receipts: unknown[] = [];
+		const service = new InventoryAdvisorEvidenceService(
+			clientFor({ permissions: ['account', 'tradingpost', 'unlocks', 'progression'], urls: undefined }),
+			{ captureInventoryWithOperation }, { resolve: async () => catalogFor(snapshot) },
+			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
+			async (receipt) => { receipts.push(receipt); },
+		);
+		const seenProgress: unknown[] = [];
+		await service.capture('es', [], (progress) => seenProgress.push(progress));
+
+		expect(storageTicks).toHaveLength(41);
+		expect(seenProgress.length).toBeGreaterThan(10);
+		// The one local diagnostic receipt (never a vault write) lands exactly once per
+		// capture call — never once per tick, never once per character.
+		expect(receipts).toHaveLength(1);
+	});
+
 	it('captures a fresh identity-bound sibling batch for the sack and eight H4.7 outcomes', async () => {
 		const snapshot = snapshotFixture([36_038]);
 		const calls: number[][] = [];

@@ -38,6 +38,26 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(cached.title).toBe('Inventory advisor');
 	});
 
+	it('bumps contentVersion only when the underlying content actually changes, never on a mere re-read', async () => {
+		// `current()` clones on every call, so a UI layer that wants to skip rebuilding
+		// expensive DOM for an unrelated re-render (e.g. a live sync-panel tick) needs a
+		// number that stays stable across repeated reads and only moves on real content.
+		const ports = { load: vi.fn(async () => sourceNamed('First')) } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		const beforeRefresh = controller.current().contentVersion;
+		expect(controller.current().contentVersion).toBe(beforeRefresh);
+		expect(controller.current().contentVersion).toBe(beforeRefresh);
+
+		await controller.refresh();
+		const afterRefresh = controller.current().contentVersion;
+		expect(afterRefresh).not.toBe(beforeRefresh);
+		expect(controller.current().contentVersion).toBe(afterRefresh);
+		expect(controller.current().contentVersion).toBe(afterRefresh);
+
+		controller.invalidate();
+		expect(controller.current().contentVersion).not.toBe(afterRefresh);
+	});
+
 	it('shares a single loader flight across concurrent refreshes in one generation', async () => {
 		const capture = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = { load: vi.fn(() => capture.promise) } satisfies InventoryAdvisorControllerPorts;

@@ -21,6 +21,7 @@ import {
 	type InventoryAdvisorViewInteractions,
 } from './inventory-advisor-view';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
+import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -526,7 +527,7 @@ describe('Inventory Advisor view', () => {
 	it('stops at conflict without an apply path, still allows a retry click, and never leaks a raw secret', () => {
 		const summary = { positions: 2, create: 1, update: 0, unchanged: 0, deactivate: 0, conflicts: 1 };
 		for (const [state, alert, buttonDisabled, tone] of [
-			[{ status: 'running', phase: 'capture', percent: 0, completed: null, total: null }, false, true, 'normal'],
+			[{ status: 'running', phase: 'capture', percent: 0, completed: null, total: null, captureStep: null, captureLeg: null, elapsedMs: 12_000 }, false, true, 'normal'],
 			[{ status: 'confirm', summary: { ...summary, conflicts: 0, deactivate: 1 } }, false, true, 'normal'],
 			// A real conflict cannot be applied, but the button still allows the user to retry after resolving it manually.
 			[{ status: 'conflict', summary }, true, false, 'normal'],
@@ -551,7 +552,10 @@ describe('Inventory Advisor view', () => {
 	it('paints the live percent and phase from the run state alone, never from a timer', () => {
 		const running = render(readyModel(), 'es', {
 			inventorySync: {
-				state: { status: 'running', phase: 'classification', percent: 40, completed: null, total: null },
+				state: {
+					status: 'running', phase: 'classification', percent: 40, completed: null, total: null,
+					captureStep: null, captureLeg: null, elapsedMs: 48_000,
+				},
 				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		});
@@ -559,10 +563,15 @@ describe('Inventory Advisor view', () => {
 		const progress = only(find(walk(runningPanel), 'progress'));
 		expect(progress.value).toBe(40);
 		expect(text(walk(runningPanel))).toContain('40%');
+		// The elapsed time is a real clock measurement, shown next to the percent.
+		expect(text(walk(runningPanel))).toContain('48 s');
 
 		const applying = render(readyModel(), 'es', {
 			inventorySync: {
-				state: { status: 'running', phase: 'apply', percent: 90, completed: 9, total: 10 },
+				state: {
+					status: 'running', phase: 'apply', percent: 90, completed: 9, total: 10,
+					captureStep: null, captureLeg: null, elapsedMs: 9_000,
+				},
 				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		});
@@ -570,6 +579,64 @@ describe('Inventory Advisor view', () => {
 		const applyingProgress = only(find(walk(applyingPanel), 'progress'));
 		expect(applyingProgress.value).toBe(90);
 		expect(text(walk(applyingPanel))).toContain('90% · 9/10 · Escritura');
+	});
+
+	it('shows what the capture phase is doing right now, with a real characters counter kept off the aria-live region', () => {
+		const running = render(readyModel(), 'es', {
+			inventorySync: {
+				state: {
+					status: 'running', phase: 'capture', percent: 37, completed: 7, total: 19,
+					captureStep: 'characters', captureLeg: { completed: 4, total: 12 }, elapsedMs: 12_000,
+				},
+				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const statusPanel = only(byClass(running.elements(), 'tyrian-inventory-advisor__sync-status'));
+		expect(statusPanel.attributes.get('aria-live')).toBe('polite');
+		const message = only(withText(walk(statusPanel), 'Leyendo los inventarios de los personajes…'));
+		// The fast-changing counter and elapsed time live in a node that opts itself
+		// out of the aria-live region, so a screen reader is not read every tick.
+		const fastLine = only(find(walk(statusPanel), 'small'));
+		expect(fastLine.attributes.get('aria-live')).toBe('off');
+		expect(fastLine.textContent).toContain('4/12 personajes');
+		expect(fastLine.textContent).toContain('12 s');
+		expect(message.textContent).not.toContain('4/12');
+	});
+
+	it('never rebuilds the results table for a live sync-panel tick, and the rebuild count does not grow with N', () => {
+		const model = { ...readyModel(), contentVersion: 1 };
+		const stateAt = (percent: number): InventoryVaultSyncRunState => ({
+			status: 'running', phase: 'capture', percent, completed: percent, total: 100,
+			captureStep: 'characters', captureLeg: { completed: percent, total: 100 }, elapsedMs: percent * 1_000,
+		});
+		const interactionsAt = (percent: number): InventoryAdvisorViewInteractions => ({
+			inventorySync: { state: stateAt(percent), assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn() },
+		});
+		const mount = render(model, 'es', interactionsAt(0));
+		const results = only(byClass(mount.elements(), 'tyrian-inventory-advisor__results'));
+
+		const tick = (percent: number): boolean => {
+			const before = results.children[0];
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, model, createTranslator('es'), undefined, interactionsAt(percent));
+			return results.children[0] !== before;
+		};
+		const rebuildsAcross = (ticks: number): number => {
+			let rebuilds = 0;
+			for (let percent = 1; percent <= ticks; percent += 1) if (tick(percent)) rebuilds += 1;
+			return rebuilds;
+		};
+
+		// The rebuild count for a run of N sync-only ticks does not grow with N: it
+		// is zero regardless, because none of them touch the advisor's own content.
+		expect(rebuildsAcross(5)).toBe(0);
+		expect(rebuildsAcross(50)).toBe(0);
+
+		// A genuine content change (a fresh capture landing) still rebuilds exactly once.
+		const before = results.children[0];
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement, { ...model, contentVersion: 2 }, createTranslator('es'), undefined, interactionsAt(60),
+		);
+		expect(results.children[0]).not.toBe(before);
 	});
 
 	it('shows the persisted last run with its own note and finished-at line only while nothing is live', () => {
@@ -587,7 +654,10 @@ describe('Inventory Advisor view', () => {
 		expect(text(walk(section))).toContain('La última sincronización guardada movió 2909 filas: 1616 nuevas, 1167 actualizadas, 0 inactivas.');
 		const running = render(readyModel(), 'es', {
 			inventorySync: {
-				state: { status: 'running', phase: 'preview', percent: 60, completed: null, total: null },
+				state: {
+					status: 'running', phase: 'preview', percent: 60, completed: null, total: null,
+					captureStep: null, captureLeg: null, elapsedMs: 20_000,
+				},
 				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		});

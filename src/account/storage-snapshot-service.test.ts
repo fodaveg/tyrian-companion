@@ -4,6 +4,7 @@ import type { HttpResponse } from '../core/http';
 import { HttpTransportError } from '../core/http';
 import {
 	bankFixture,
+	characterInventoryFixture,
 	characterName,
 	completePassFixture,
 } from './__fixtures__/storage';
@@ -17,7 +18,7 @@ import {
 	isComparableStorageSnapshot,
 	isInventoryAdvisorStorageSnapshot,
 } from './storage-delta';
-import { StorageSnapshotService } from './storage-snapshot-service';
+import { StorageSnapshotService, type StorageSnapshotCaptureProgress } from './storage-snapshot-service';
 
 type PassFixture = Record<string, unknown>;
 
@@ -699,6 +700,75 @@ describe('StorageSnapshotService', () => {
 				reason: 'unavailable',
 				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
 			} } },
+		});
+	});
+
+	describe('capture progress', () => {
+		it('reports a real, growing completed/total for each character as its own request settles', async () => {
+			const names = ['Astra', 'Borja', 'Carla'];
+			const fixture = clientFor([passWith({
+				characters: names,
+				...Object.fromEntries(names.map((name) => [
+					`characters/${encodeURIComponent(name)}/inventory`,
+					{ ...characterInventoryFixture, name },
+				])),
+			})]);
+			const ticks: StorageSnapshotCaptureProgress[] = [];
+			await new StorageSnapshotService(fixture.client).captureInventoryWithOperation(
+				fixture.client.beginOperation(),
+				(progress) => ticks.push(progress),
+			);
+
+			expect(ticks.length).toBeGreaterThan(1);
+			// The very first tick lands the instant the roster answers: every total is
+			// already known (3 characters), nothing is completed yet but the roster itself.
+			expect(ticks[0]).toEqual({
+				roster: { completed: 1, total: 1 },
+				accountStores: { completed: 0, total: 3 },
+				characters: { completed: 0, total: 3 },
+			});
+			const last = ticks.at(-1)!;
+			expect(last).toEqual({
+				roster: { completed: 1, total: 1 },
+				accountStores: { completed: 3, total: 3 },
+				characters: { completed: 3, total: 3 },
+			});
+			// Every counter is monotonically non-decreasing across the whole capture.
+			for (let index = 1; index < ticks.length; index += 1) {
+				expect(ticks[index]!.accountStores.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.accountStores.completed);
+				expect(ticks[index]!.characters.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.completed);
+			}
+		});
+
+		it('never divides by zero and never regresses when the account has no characters', async () => {
+			const fixture = clientFor([passWith({ characters: [] })]);
+			const ticks: StorageSnapshotCaptureProgress[] = [];
+			await new StorageSnapshotService(fixture.client).captureInventoryWithOperation(
+				fixture.client.beginOperation(),
+				(progress) => ticks.push(progress),
+			);
+
+			expect(ticks.length).toBeGreaterThan(0);
+			for (const tick of ticks) {
+				expect(tick.characters.total).toBe(0);
+				expect(tick.characters.completed).toBe(0);
+				expect(Number.isNaN(tick.characters.completed)).toBe(false);
+			}
+			expect(ticks.at(-1)).toEqual({
+				roster: { completed: 1, total: 1 },
+				accountStores: { completed: 3, total: 3 },
+				characters: { completed: 0, total: 0 },
+			});
+		});
+
+		it('captures exactly as before when the caller does not pass a progress callback', async () => {
+			const seen: string[] = [];
+			const fixture = clientFor([passWith()], { seen });
+			const snapshot = await new StorageSnapshotService(fixture.client)
+				.captureInventoryWithOperation(fixture.client.beginOperation());
+
+			expect(snapshot.quality).toBe('unstable');
+			expect(seen.map((path) => path.split('?')[0])).toContain('account/inventory');
 		});
 	});
 });

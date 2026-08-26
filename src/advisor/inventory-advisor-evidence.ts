@@ -1,5 +1,5 @@
 import { inventoryAdvisorStorageSnapshotFailure } from '../account/storage-delta';
-import type { StorageSnapshotService } from '../account/storage-snapshot-service';
+import type { StorageSnapshotCaptureProgress, StorageSnapshotService } from '../account/storage-snapshot-service';
 import { allowsEndpoint } from '../account/storage-snapshot-service';
 import {
 	PINNED_SCHEMA,
@@ -21,6 +21,7 @@ import {
 } from './inventory-advisor-model';
 import {
 	INVENTORY_ADVISOR_EVIDENCE_VERSION,
+	type InventoryAdvisorCaptureProgress,
 	type InventoryAdvisorCaptureReceiptSink,
 	type InventoryAdvisorCaptureReceiptV1,
 	type InventoryAdvisorEvidenceCapture,
@@ -40,6 +41,13 @@ const SNAPSHOT_TTL_MS = 15 * 60_000;
 const CATALOG_TTL_MS = 7 * 86_400_000;
 const PRICE_TTL_MS = 15 * 60_000;
 const ACCOUNT_SIGNALS_TTL_MS = 24 * 60 * 60_000;
+/** Catalog, prices, account signals, and container prices: always exactly four concurrent legs. */
+const CATALOG_AND_PRICES_TOTAL = 4;
+const ZERO_STORAGE_CAPTURE_PROGRESS: StorageSnapshotCaptureProgress = {
+	roster: { completed: 0, total: 1 },
+	accountStores: { completed: 0, total: 0 },
+	characters: { completed: 0, total: 0 },
+};
 
 export interface InventoryAdvisorEvidenceClient {
 	beginOperation(): GuildWars2Operation;
@@ -57,7 +65,11 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		private readonly captureReceipt: InventoryAdvisorCaptureReceiptSink = () => undefined,
 	) {}
 
-	capture(locale: CatalogLocale, containerPriceItemIds: readonly number[] = []): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+	capture(
+		locale: CatalogLocale,
+		containerPriceItemIds: readonly number[] = [],
+		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		const ids = normalizeSupplementalIds(containerPriceItemIds);
 		if (ids === null) {
 			return this.finishCapture(
@@ -68,14 +80,31 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		const key = `${locale}:${ids.join(',')}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(locale, ids).finally(() => { if (this.inFlight.get(key) === promise) this.inFlight.delete(key); });
+		const promise = this.captureInternal(locale, ids, onProgress).finally(() => { if (this.inFlight.get(key) === promise) this.inFlight.delete(key); });
 		this.inFlight.set(key, promise);
 		return promise;
 	}
 
-	private async captureInternal(locale: CatalogLocale, containerPriceItemIds: number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
+	private async captureInternal(
+		locale: CatalogLocale,
+		containerPriceItemIds: number[],
+		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		let snapshot: StorageSnapshot | null = null;
 		let operation: GuildWars2Operation;
+		// Purely in-memory: this only ever composes a callback the caller already
+		// owns. It never writes a receipt, a setting, or any note or file anywhere.
+		let latestStorageProgress = ZERO_STORAGE_CAPTURE_PROGRESS;
+		let catalogAndPricesCompleted = 0;
+		const reportProgress = (): void => onProgress?.({
+			...latestStorageProgress,
+			catalogAndPrices: { completed: catalogAndPricesCompleted, total: CATALOG_AND_PRICES_TOTAL },
+		});
+		const onStorageProgress = (progress: StorageSnapshotCaptureProgress): void => {
+			latestStorageProgress = progress;
+			reportProgress();
+		};
+		const reportCatalogOrPrice = (): void => { catalogAndPricesCompleted += 1; reportProgress(); };
 		try {
 			operation = this.client.beginOperation();
 		} catch (error) {
@@ -84,9 +113,9 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				: { status: 'unavailable', evidence: null }, snapshot);
 		}
 		try {
-			snapshot = await this.snapshots.captureInventoryWithOperation(operation);
+			snapshot = await this.snapshots.captureInventoryWithOperation(operation, onStorageProgress);
 			if (shouldRetryTransientSnapshot(snapshot)) {
-				snapshot = await this.snapshots.captureInventoryWithOperation(operation);
+				snapshot = await this.snapshots.captureInventoryWithOperation(operation, onStorageProgress);
 			}
 			const snapshotFailure = inventoryAdvisorStorageSnapshotFailure(snapshot);
 			if (snapshotFailure !== null) {
@@ -106,11 +135,11 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				);
 			}
 			const [catalog, prices, accountSignals, containerPrices] = await Promise.all([
-				this.captureCatalog(snapshot, locale, this.now()),
-				captureInventoryPrices(snapshot, this.publicGateway, this.now()),
-				captureAccountSignals(operation, snapshot.accountId, context.token, context.access, this.now),
-				containerPriceItemIds.length === 0 ? Promise.resolve(null)
-					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now()),
+				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
+				captureInventoryPrices(snapshot, this.publicGateway, this.now()).finally(reportCatalogOrPrice),
+				captureAccountSignals(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
+				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
+					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now())).finally(reportCatalogOrPrice),
 			]);
 			const coverage: InventoryAdvisorEvidenceCoverageV1 = {
 				snapshot: snapshotCoverage(snapshot),

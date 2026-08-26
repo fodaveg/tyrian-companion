@@ -248,6 +248,16 @@ function mountInventoryAdvisorView(
 	let translator = initialTranslator;
 	let filters = { includeBank: false, includeMaterials: false, includeDelivery: false, showKeep: false, showReview: false, ...initialFilters };
 	let interactions = initialInteractions;
+	// `model.contentVersion` only bumps when the advisor's actual content changes (a
+	// fresh capture, an invalidate, a block); `current()` clones on every call, so a
+	// live sync-panel tick (many times a second) still arrives as a distinct object
+	// with the SAME version. Rebuilding the whole results table — one <img> per row,
+	// up to ~1600 in a real vault — on every one of those ticks is pure waste on the
+	// main thread. Absent (hand-built fixtures, tests) it always rebuilds, matching
+	// the previous unconditional behaviour: `unversionedRenders` makes every such key
+	// unique, so it can never match a previous one.
+	let lastResultsKey: string | null = null;
+	let unversionedRenders = 0;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
 	const heading = createEl('h2');
@@ -302,6 +312,11 @@ function mountInventoryAdvisorView(
 	const syncStatusProgress = createEl('progress');
 	syncStatusProgress.className = 'tyrian-inventory-advisor__progress';
 	const syncStatusSmall = createEl('small');
+	// The percent, the running counters, and the elapsed seconds can all tick many
+	// times a second (once per character request). Only a phase/step change belongs
+	// in the aria-live="polite" region above; this fast line opts itself out so a
+	// screen reader is not read a fresh announcement on every single request.
+	syncStatusSmall.setAttribute('aria-live', 'off');
 	const syncStatusSummary = createEl('p');
 	syncStatusSummary.className = 'tyrian-inventory-advisor__sync-summary';
 	const syncStatusLastRunNote = createEl('p');
@@ -547,7 +562,15 @@ function mountInventoryAdvisorView(
 		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
 		preferencesEditor?.update();
-		refreshResults();
+		// See `lastResultsKey` above: skip rebuilding the results table when only a
+		// live sync-panel tick changed, not the advisor's actual content or locale.
+		const resultsKey = model.contentVersion === undefined
+			? `unversioned:${String(unversionedRenders += 1)}`
+			: `${String(model.contentVersion)}:${translator.locale}`;
+		if (resultsKey !== lastResultsKey) {
+			lastResultsKey = resultsKey;
+			refreshResults();
+		}
 	};
 	update(model, translator, interactions);
 	return { update };
@@ -588,12 +611,26 @@ function inventorySyncPanel(state: InventoryVaultSyncRunState, translator: Trans
 		percent: 0, progressLabel: progressLabel(0, null, null, null),
 		summaryLine: null, lastRunNote: null, finishedAtLine: null,
 	};
-	if (state.status === 'running') return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.running'),
-		message: translator.t(`advisor.sync.phase.${state.phase}`),
-		percent: state.percent, progressLabel: progressLabel(state.percent, state.completed, state.total, state.phase),
-		summaryLine: null, lastRunNote: null, finishedAtLine: null,
-	};
+	if (state.status === 'running') {
+		// The elapsed seconds and the running counters change far more often than the
+		// phase or capture step; both stay out of `message` (the aria-live text) and
+		// only widen `progressLabel` (rendered outside the live region, see the mount
+		// site: `syncStatusSmall` carries `aria-live="off"`).
+		const elapsedSeconds = Math.floor(state.elapsedMs / 1000);
+		const captureLegLabel = state.captureStep === 'characters' && state.captureLeg !== null
+			? ` · ${translator.t('advisor.sync.captureCharactersCount', { completed: state.captureLeg.completed, total: state.captureLeg.total })}`
+			: '';
+		return {
+			tone: 'normal', statusWord: translator.t('advisor.sync.status.running'),
+			message: state.phase === 'capture' && state.captureStep !== null
+				? translator.t(`advisor.sync.captureStep.${state.captureStep}`)
+				: translator.t(`advisor.sync.phase.${state.phase}`),
+			percent: state.percent,
+			progressLabel: `${progressLabel(state.percent, state.completed, state.total, state.phase)}`
+				+ `${captureLegLabel} · ${translator.t('advisor.sync.elapsed', { seconds: elapsedSeconds })}`,
+			summaryLine: null, lastRunNote: null, finishedAtLine: null,
+		};
+	}
 	if (state.status === 'confirm') return {
 		tone: 'normal', statusWord: translator.t('advisor.sync.status.confirm'),
 		message: translator.t('advisor.sync.confirmBody', { deactivate: state.summary.deactivate }),

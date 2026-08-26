@@ -5,6 +5,7 @@ import type { InventoryVaultSyncLastRun } from '../core/settings';
 import type { InventoryVaultSyncPlan, InventoryVaultSyncResult } from '../inventory/inventory-vault-sync';
 import {
 	InventoryVaultOneClickSyncController,
+	type InventoryVaultSyncCaptureProgress,
 	type InventoryVaultSyncRunPorts,
 	type InventoryVaultSyncRunState,
 } from './inventory-vault-sync-run-controller';
@@ -90,6 +91,116 @@ describe('inventory Vault one-click sync controller', () => {
 		for (const state of running.slice(0, -2)) expect([state.completed, state.total]).toEqual([null, null]);
 		expect([running.at(-2)?.completed, running.at(-2)?.total]).toEqual([0, 1]);
 		expect([running.at(-1)?.completed, running.at(-1)?.total]).toEqual([1, 1]);
+	});
+
+	it('raises the percent inside capture as simulated character inventories resolve, never past the phase’s own slice', async () => {
+		const total = 12;
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async (
+				onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+				onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
+			) => {
+				onCaptureProgress(captureTick({ accountStores: 0, characters: 0, charactersTotal: total }));
+				for (let completed = 1; completed <= total; completed += 1) {
+					onCaptureProgress(captureTick({ accountStores: Math.min(3, completed), characters: completed, charactersTotal: total }));
+				}
+				onCaptureProgress(captureTick({ accountStores: 3, characters: total, charactersTotal: total, catalogAndPrices: 4 }));
+				onPhase('preferences'); onPhase('classification');
+			}),
+			previewSync: vi.fn(async () => planWith(['create'])),
+			applySync: vi.fn(async (_p: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void) => { onStep(1, 1); return { status: 'applied', created: 1, updated: 0, deactivated: 0 } as const; }),
+		});
+		const { controller, changes } = harness(ports);
+		await controller.run();
+		const capturePercents = changes
+			.filter((state): state is Extract<InventoryVaultSyncRunState, { status: 'running' }> => state.status === 'running' && state.phase === 'capture')
+			.map((state) => state.percent);
+		// It starts at 0 (nothing has landed yet) but moves well before the phase ends,
+		// instead of sitting at 0 for the whole minute-long capture.
+		expect(capturePercents[0]).toBe(0);
+		expect(capturePercents.some((percent) => percent > 0 && percent < 20)).toBe(true);
+		expect(Math.max(...capturePercents)).toBeLessThanOrEqual(20);
+		for (let index = 1; index < capturePercents.length; index += 1) {
+			expect(capturePercents[index]).toBeGreaterThanOrEqual(capturePercents[index - 1]!);
+		}
+	});
+
+	it('does not divide by zero or ever regress when the capture reports zero characters', async () => {
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async (
+				onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+				onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
+			) => {
+				onCaptureProgress(captureTick({ accountStores: 0, characters: 0, charactersTotal: 0 }));
+				onCaptureProgress(captureTick({ accountStores: 3, characters: 0, charactersTotal: 0, catalogAndPrices: 4 }));
+				onPhase('preferences'); onPhase('classification');
+			}),
+		});
+		const { controller, changes } = harness(ports);
+		await controller.run();
+		const capture = changes.filter((state): state is Extract<InventoryVaultSyncRunState, { status: 'running' }> => state.status === 'running' && state.phase === 'capture');
+		expect(capture.length).toBeGreaterThan(1);
+		const percents = capture.map((state) => state.percent);
+		for (const percent of percents) expect(Number.isNaN(percent)).toBe(false);
+		for (let index = 1; index < percents.length; index += 1) expect(percents[index]).toBeGreaterThanOrEqual(percents[index - 1]!);
+	});
+
+	it('never lets the percent regress across a whole run, from capture through apply', async () => {
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async (
+				onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+				onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
+			) => {
+				for (let completed = 0; completed <= 8; completed += 1) {
+					onCaptureProgress(captureTick({ accountStores: Math.min(3, completed), characters: completed, charactersTotal: 8 }));
+				}
+				onPhase('preferences'); onPhase('classification');
+			}),
+			previewSync: vi.fn(async () => planWith(['create', 'create', 'update'])),
+			applySync: vi.fn(async (plan: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void) => {
+				for (let completed = 0; completed <= plan.steps.length; completed += 1) onStep(completed, plan.steps.length);
+				return { status: 'applied', created: 2, updated: 1, deactivated: 0 } as const;
+			}),
+		});
+		const { controller, changes } = harness(ports);
+		await controller.run();
+		const running = changes.filter((state): state is Extract<InventoryVaultSyncRunState, { status: 'running' }> => state.status === 'running');
+		expect(running.length).toBeGreaterThan(10);
+		for (let index = 1; index < running.length; index += 1) {
+			expect(running[index]!.percent).toBeGreaterThanOrEqual(running[index - 1]!.percent);
+		}
+	});
+
+	it.each([
+		[3, 2], [30, 20],
+	] as const)('persists the outcome exactly once per run, regardless of %i characters or %i plan steps', async (characters, steps) => {
+		const finished: InventoryVaultSyncLastRun[] = [];
+		const changesSeen: InventoryVaultSyncRunState[] = [];
+		const ports = portsFor({
+			refreshAdvisor: vi.fn(async (
+				onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+				onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
+			) => {
+				for (let completed = 0; completed <= characters; completed += 1) {
+					onCaptureProgress(captureTick({ accountStores: Math.min(3, completed), characters: completed, charactersTotal: characters }));
+				}
+				onPhase('preferences'); onPhase('classification');
+			}),
+			previewSync: vi.fn(async () => planWith(Array.from({ length: steps }, () => 'create' as const))),
+			applySync: vi.fn(async (plan: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void) => {
+				for (let completed = 0; completed <= plan.steps.length; completed += 1) onStep(completed, plan.steps.length);
+				return { status: 'applied', created: steps, updated: 0, deactivated: 0 } as const;
+			}),
+		});
+		const controller = new InventoryVaultOneClickSyncController(
+			ports, null, (state) => changesSeen.push(state), (outcome) => finished.push(outcome), () => Date.now(),
+		);
+		await controller.run();
+		// The DOM-facing onChange fires many times (once per live tick, by design); the
+		// persistence-facing onFinished — the one port `main.ts` wires to `saveData` —
+		// fires exactly once, however many characters or plan steps this run had.
+		expect(changesSeen.length).toBeGreaterThan(characters);
+		expect(finished).toHaveLength(1);
 	});
 
 	it('reports the apply phase completed/total straight from the plan the writer settles', async () => {
@@ -225,6 +336,17 @@ function planWith(
 			before: status === 'create' ? null : `before-${String(index)}`,
 			after: status === 'conflict' ? null : `after-${String(index)}`,
 		})),
+	};
+}
+
+function captureTick(
+	values: { accountStores: number; characters: number; charactersTotal: number; catalogAndPrices?: number },
+): InventoryVaultSyncCaptureProgress {
+	return {
+		roster: { completed: 1, total: 1 },
+		accountStores: { completed: values.accountStores, total: 3 },
+		characters: { completed: values.characters, total: values.charactersTotal },
+		catalogAndPrices: { completed: values.catalogAndPrices ?? 0, total: 4 },
 	};
 }
 

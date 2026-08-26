@@ -35,6 +35,19 @@ interface VerifiedSnapshotContext {
 
 export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
 
+/**
+ * A real, request-counted snapshot of one capture pass in progress. Every `total` is
+ * either a fixed constant (`roster`) or known the moment the roster response lands
+ * (`accountStores` from the pinned token's own permissions, `characters` from the
+ * roster length itself) — never an estimate. Optional end to end: only the inventory
+ * advisor's one-click sync observes it today.
+ */
+export interface StorageSnapshotCaptureProgress {
+	readonly roster: { readonly completed: number; readonly total: number };
+	readonly accountStores: { readonly completed: number; readonly total: number };
+	readonly characters: { readonly completed: number; readonly total: number };
+}
+
 const REQUIRED_SCOPES = ['account', 'characters', 'inventories'] as const;
 
 /** Captures a consistency-qualified storage snapshot without writing or valuing assets. */
@@ -56,20 +69,28 @@ export class StorageSnapshotService {
 		return this.captureScopedWithOperation(operation, 'complete');
 	}
 
-	/** Captures only character bags and shared inventory for the Inventory Advisor. */
-	async captureInventoryWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
-		return this.captureScopedWithOperation(operation, 'inventory_advisor');
+	/**
+	 * Captures only character bags and shared inventory for the Inventory Advisor.
+	 * `onProgress` is optional and observed only by callers that want a live status
+	 * (today, the one-click sync); it never changes what is captured.
+	 */
+	async captureInventoryWithOperation(
+		operation: GuildWars2Operation,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+	): Promise<StorageSnapshot> {
+		return this.captureScopedWithOperation(operation, 'inventory_advisor', onProgress);
 	}
 
 	private async captureScopedWithOperation(
 		operation: GuildWars2Operation,
 		scope: StorageSnapshotCaptureScope,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 	): Promise<StorageSnapshot> {
 		const context = await verifySnapshotContext(operation, this.globalLimit);
 		const key = `${context.key}:${scope}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(operation, context, scope).finally(() => {
+		const promise = this.captureInternal(operation, context, scope, onProgress).finally(() => {
 			if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
 		});
 		this.inFlight.set(key, promise);
@@ -80,10 +101,11 @@ export class StorageSnapshotService {
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
 		scope: StorageSnapshotCaptureScope,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 	): Promise<StorageSnapshot> {
 		const startedAt = new Date().toISOString();
 		const snapshotId = crypto.randomUUID();
-		const first = await this.capturePass(operation, context, scope);
+		const first = await this.capturePass(operation, context, scope, onProgress);
 		if (scope === 'inventory_advisor') {
 			return finalizeStorageSnapshot({
 				pass: first,
@@ -121,10 +143,20 @@ export class StorageSnapshotService {
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
 		scope: StorageSnapshotCaptureScope,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 	): Promise<StorageSnapshotPass> {
 		const coverage = emptyCoverage(context.permissions, context.urls, scope);
 		const holdings: StorageSnapshotPass['holdings'] = [];
 		const currencies: StorageSnapshotPass['currencies'] = [];
+		// Every store this token can even reach is already known from its permissions
+		// and URL restrictions above; only the character count still needs the roster.
+		const accountStoresTotal = 1
+			+ (coverage.sources.bank.status === 'complete' ? 1 : 0)
+			+ (coverage.sources.materials.status === 'complete' ? 1 : 0)
+			+ (scope === 'complete' && coverage.sources.wallet.status === 'complete' ? 1 : 0)
+			+ (coverage.sources.commerce_delivery.status === 'complete' ? 1 : 0);
+		let accountStoresCompleted = 0;
+		let charactersCompleted = 0;
 
 		const rosterResult = await captureSource(
 			() => this.globalLimit(() => operation.requestDetailed(withSchema('characters'))),
@@ -141,6 +173,18 @@ export class StorageSnapshotService {
 			if (unavailable.length > 0) throw new SnapshotCapabilityError(unavailable.map((url) => `url:${url}`));
 		}
 
+		// The roster response is the first moment every total in this pass is known
+		// (the character count included), so it is also the first progress tick.
+		const charactersTotal = roster.length;
+		const reportProgress = (): void => onProgress?.({
+			roster: { completed: 1, total: 1 },
+			accountStores: { completed: accountStoresCompleted, total: accountStoresTotal },
+			characters: { completed: charactersCompleted, total: charactersTotal },
+		});
+		reportProgress();
+		const reportAccountStore = (): void => { accountStoresCompleted += 1; reportProgress(); };
+		const reportCharacter = (): void => { charactersCompleted += 1; reportProgress(); };
+
 		const accountTasks: Array<Promise<void>> = [
 			this.captureItems(
 				operation,
@@ -151,7 +195,7 @@ export class StorageSnapshotService {
 				'account/inventory',
 				(value) => parseSlotArray(value, 'shared_inventory'),
 				true,
-			),
+			).finally(reportAccountStore),
 		];
 		if (coverage.sources.bank.status === 'complete') accountTasks.push(
 			this.captureItems(
@@ -163,7 +207,7 @@ export class StorageSnapshotService {
 				'account/bank',
 				(value) => parseSlotArray(value, 'bank'),
 				scope === 'complete',
-			),
+			).finally(reportAccountStore),
 		);
 		if (coverage.sources.materials.status === 'complete') accountTasks.push(
 			this.captureItems(
@@ -175,18 +219,18 @@ export class StorageSnapshotService {
 				'account/materials',
 				parseMaterials,
 				scope === 'complete',
-			),
+			).finally(reportAccountStore),
 		);
 
 		const optionalTasks: Array<Promise<void>> = [];
 		if (scope === 'complete' && coverage.sources.wallet.status === 'complete') {
 			optionalTasks.push(
-				this.captureCurrencies(operation, this.globalLimit, coverage, currencies, 'wallet', 'account/wallet'),
+				this.captureCurrencies(operation, this.globalLimit, coverage, currencies, 'wallet', 'account/wallet').finally(reportAccountStore),
 			);
 		}
 		if (coverage.sources.commerce_delivery.status === 'complete') {
 			optionalTasks.push(
-				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies),
+				this.captureDelivery(operation, this.globalLimit, coverage, holdings, currencies).finally(reportAccountStore),
 			);
 		}
 
@@ -205,7 +249,7 @@ export class StorageSnapshotService {
 					coverage.characters[character] = result.coverage;
 					if (result.value) holdings.push(...result.value);
 				}),
-			),
+			).finally(reportCharacter),
 		);
 
 		const tasks = [...accountTasks, ...optionalTasks, ...characterTasks];

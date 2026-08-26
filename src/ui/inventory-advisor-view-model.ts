@@ -31,6 +31,13 @@ export interface InventoryAdvisorViewModel {
 	/** Redacted availability of opt-in stores; null until a trusted capture exists. */
 	optionalSources?: InventoryAdvisorPresentation['optionalSources'] | null;
 	groups: InventoryAdvisorViewModelGroup[];
+	/**
+	 * Bumped only when the underlying content actually changes (a fresh capture, an
+	 * invalidate, a block). A live sync-panel tick reuses the same number, so the
+	 * view can skip rebuilding the results table for it. Absent outside the plugin's
+	 * own controller (e.g. hand-built test fixtures), where every render rebuilds.
+	 */
+	contentVersion?: number;
 }
 
 export interface InventoryAdvisorViewModelGroup {

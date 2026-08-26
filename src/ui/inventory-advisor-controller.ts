@@ -23,6 +23,12 @@ export class InventoryAdvisorPresentationController {
 	private refreshWarning: InventoryAdvisorViewModel['refreshWarning'];
 	private generation = 0;
 	private disposed = false;
+	/**
+	 * Bumped only where `cached`, `refreshWarning`, or `failed` actually change — never
+	 * on a mere re-read. `current()` clones on every call, so reference equality on the
+	 * returned model can't tell a fresh capture from a re-render; this number can.
+	 */
+	private contentVersion = 0;
 
 	constructor(private readonly ports: InventoryAdvisorControllerPorts) {}
 
@@ -33,21 +39,25 @@ export class InventoryAdvisorPresentationController {
 
 	/** Projects the current memory snapshot. It never performs I/O. */
 	current(options: InventoryAdvisorPresentationOptions = {}): InventoryAdvisorViewModel {
-		if (this.disposed) return clone(buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation()));
+		return { ...clone(this.buildCurrent(options)), contentVersion: this.contentVersion };
+	}
+
+	private buildCurrent(options: InventoryAdvisorPresentationOptions): InventoryAdvisorViewModel {
+		if (this.disposed) return buildInventoryAdvisorViewModel(invalidInventoryAdvisorPresentation());
 		if (this.cached !== null) {
-			if (this.cached.status === 'blocked') return clone({
+			if (this.cached.status === 'blocked') return {
 				...buildInventoryAdvisorViewModel({
 					version: 1, status: 'blocked', groups: [], discardReview: { status: 'unavailable' },
 				}),
 				blockedReason: this.cached.reason,
-			});
-			return clone({
+			};
+			return {
 				...buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)),
 				...(this.refreshWarning === undefined ? {} : { refreshWarning: this.refreshWarning }),
-			});
+			};
 		}
 		const model = buildInventoryAdvisorViewModel(this.failed ? invalidInventoryAdvisorPresentation() : null);
-		return clone(this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model);
+		return this.failed ? { ...model, blockedReason: 'unexpected_failure' } : model;
 	}
 
 	/** Explicitly captures fresh evidence. Only the newest refresh may update or answer from the cache. */
@@ -79,6 +89,7 @@ export class InventoryAdvisorPresentationController {
 		this.flight = null;
 		this.failed = false;
 		this.refreshWarning = undefined;
+		this.contentVersion += 1;
 	}
 
 	/** Blocks the visible projection after a local preference integrity failure without starting capture. */
@@ -90,6 +101,7 @@ export class InventoryAdvisorPresentationController {
 		this.flight = null;
 		this.failed = false;
 		this.refreshWarning = undefined;
+		this.contentVersion += 1;
 	}
 
 	/** Permanently rejects later loads and prevents an outstanding flight from repopulating memory. */
@@ -101,6 +113,7 @@ export class InventoryAdvisorPresentationController {
 		this.failed = false;
 		this.refreshWarning = undefined;
 		this.disposed = true;
+		this.contentVersion += 1;
 	}
 
 	private runFlight(generation: number, kind: 'refresh' | 'reclassify'): Promise<void> {
@@ -121,16 +134,19 @@ export class InventoryAdvisorPresentationController {
 				&& this.cached?.status === 'ready') {
 				this.refreshWarning = safe.reason;
 				this.failed = false;
+				this.contentVersion += 1;
 				return;
 			}
 			this.cached = safe;
 			this.refreshWarning = undefined;
 			this.failed = false;
+			this.contentVersion += 1;
 		}).catch(() => {
 			if (this.generation !== generation) return;
 			this.cached = null;
 			this.refreshWarning = undefined;
 			this.failed = true;
+			this.contentVersion += 1;
 		}).finally(() => {
 			if (this.flight?.promise === promise) this.flight = null;
 		});

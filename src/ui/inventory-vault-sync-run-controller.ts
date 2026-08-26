@@ -16,13 +16,34 @@ export const INVENTORY_VAULT_SYNC_RUN_PHASES = [
 ] as const;
 export type InventoryVaultSyncRunPhase = typeof INVENTORY_VAULT_SYNC_RUN_PHASES[number];
 
+/**
+ * A real, request-counted snapshot of the capture phase's concurrent legs. Every
+ * `total` is either a fixed constant or known the moment the roster response lands
+ * — never an estimate. `catalogAndPrices` is always exactly 4 (catalog, prices,
+ * account signals, container prices).
+ */
+export interface InventoryVaultSyncCaptureProgress {
+	readonly roster: { readonly completed: number; readonly total: number };
+	readonly accountStores: { readonly completed: number; readonly total: number };
+	readonly characters: { readonly completed: number; readonly total: number };
+	readonly catalogAndPrices: { readonly completed: number; readonly total: number };
+}
+
+export type InventoryVaultSyncCaptureStep = 'roster' | 'account_stores' | 'characters' | 'catalog_prices';
+
 export interface InventoryVaultSyncRunProgress {
 	readonly phase: InventoryVaultSyncRunPhase;
 	/** Fraction of the fixed phase sequence completed so far. */
 	readonly percent: number;
-	/** Present only for a phase whose denominator the plan actually knows. */
+	/** Present only for a phase whose denominator the plan (or the capture) actually knows. */
 	readonly completed: number | null;
 	readonly total: number | null;
+	/** Which real capture leg is in flight; set only while phase is 'capture' and a tick has landed. */
+	readonly captureStep: InventoryVaultSyncCaptureStep | null;
+	/** That leg's own completed/total (e.g. characters resolved so far), independent of the aggregate above. */
+	readonly captureLeg: { readonly completed: number; readonly total: number } | null;
+	/** Wall-clock time since this run (or, once paused for confirm, since the write) started. A measurement, never an estimate. */
+	readonly elapsedMs: number;
 }
 
 export type InventoryVaultSyncRunState =
@@ -36,13 +57,20 @@ export type InventoryVaultSyncRunState =
 
 export interface InventoryVaultSyncRunPorts {
 	disabledReason(): InventoryVaultSyncDisabledReason | null;
-	/** Runs the advisor refresh (capture, preferences, classification) reporting each real phase. */
-	refreshAdvisor(onPhase: (phase: 'capture' | 'preferences' | 'classification') => void): Promise<void>;
+	/**
+	 * Runs the advisor refresh (capture, preferences, classification) reporting each
+	 * real phase, plus the real request counters inside the capture phase itself.
+	 */
+	refreshAdvisor(
+		onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+		onCaptureProgress: (progress: InventoryVaultSyncCaptureProgress) => void,
+	): Promise<void>;
 	previewSync(): Promise<InventoryVaultSyncPlan>;
 	applySync(plan: InventoryVaultSyncPlan, onStep: (completed: number, total: number) => void): Promise<InventoryVaultSyncResult>;
 }
 
 const PHASE_COUNT = INVENTORY_VAULT_SYNC_RUN_PHASES.length;
+const APPLY_PHASE_INDEX = INVENTORY_VAULT_SYNC_RUN_PHASES.indexOf('apply');
 
 /**
  * Drives the single-button run behind the Inventory advisor view: one click walks
@@ -55,6 +83,10 @@ export class InventoryVaultOneClickSyncController {
 	private lastRun: InventoryVaultSyncLastRun | null;
 	private generation = 0;
 	private disposed = false;
+	/** The latest real capture tick for the run in flight; cleared at the start of every run. */
+	private captureProgress: InventoryVaultSyncCaptureProgress | null = null;
+	/** Guards against a percent dip (a capture retry restarting its own counters, a stale tick). */
+	private maxPercent = 0;
 
 	constructor(
 		private readonly ports: InventoryVaultSyncRunPorts,
@@ -86,13 +118,22 @@ export class InventoryVaultOneClickSyncController {
 		const generation = ++this.generation;
 		const startedAt = this.now();
 		this.plan = null;
-		this.enter({ status: 'running', ...this.progressFor('capture') }, generation);
+		this.captureProgress = null;
+		this.maxPercent = 0;
+		this.enter({ status: 'running', ...this.progressFor('capture', startedAt) }, generation);
 		try {
-			await this.ports.refreshAdvisor((phase) => {
-				this.enter({ status: 'running', ...this.progressFor(phase) }, generation);
-			});
+			await this.ports.refreshAdvisor(
+				(phase) => {
+					if (phase === 'capture') this.captureProgress = null;
+					this.enter({ status: 'running', ...this.progressFor(phase, startedAt) }, generation);
+				},
+				(progress) => {
+					this.captureProgress = progress;
+					this.enter({ status: 'running', ...this.progressFor('capture', startedAt) }, generation);
+				},
+			);
 			if (this.stale(generation)) return this.current();
-			this.enter({ status: 'running', ...this.progressFor('preview') }, generation);
+			this.enter({ status: 'running', ...this.progressFor('preview', startedAt) }, generation);
 			const plan = await this.ports.previewSync();
 			if (this.stale(generation)) return this.current();
 			await this.afterPreview(plan, startedAt, generation);
@@ -160,9 +201,9 @@ export class InventoryVaultOneClickSyncController {
 		startedAt: number,
 		generation: number,
 	): Promise<void> {
-		this.enter({ status: 'running', ...this.progressForApply(0, plan.steps.length) }, generation);
+		this.enter({ status: 'running', ...this.progressForApply(0, plan.steps.length, startedAt) }, generation);
 		const result = await this.ports.applySync(plan, (completed, total) => {
-			this.enter({ status: 'running', ...this.progressForApply(completed, total) }, generation);
+			this.enter({ status: 'running', ...this.progressForApply(completed, total, startedAt) }, generation);
 		});
 		if (this.stale(generation)) return;
 		this.plan = null;
@@ -203,14 +244,72 @@ export class InventoryVaultOneClickSyncController {
 		return this.disposed || generation !== this.generation;
 	}
 
-	private progressFor(phase: InventoryVaultSyncRunPhase): InventoryVaultSyncRunProgress {
+	private progressFor(phase: InventoryVaultSyncRunPhase, startedAt: number): InventoryVaultSyncRunProgress {
+		const elapsedMs = Math.max(0, this.now() - startedAt);
+		if (phase === 'capture') return this.progressForCapture(elapsedMs);
 		const index = INVENTORY_VAULT_SYNC_RUN_PHASES.indexOf(phase);
-		return { phase, percent: Math.round((index / PHASE_COUNT) * 100), completed: null, total: null };
+		return {
+			phase, percent: this.clampPercent(Math.round((index / PHASE_COUNT) * 100)),
+			completed: null, total: null, captureStep: null, captureLeg: null, elapsedMs,
+		};
 	}
 
-	private progressForApply(completed: number, total: number): InventoryVaultSyncRunProgress {
-		const base = this.progressFor('apply').percent;
-		const percent = total > 0 ? Math.round(base + (completed / total) * (100 - base)) : base;
-		return { phase: 'apply', percent, completed, total };
+	/**
+	 * The capture phase's own percent is the real fraction of every request it makes
+	 * (roster, the account stores, one request per character, catalog and prices),
+	 * scaled into the [0, 100/PHASE_COUNT) slice the fixed phase sequence gives it.
+	 * It moves the instant the roster answers, not on a five-way index step.
+	 */
+	private progressForCapture(elapsedMs: number): InventoryVaultSyncRunProgress {
+		const progress = this.captureProgress;
+		if (progress === null) {
+			return {
+				phase: 'capture', percent: this.clampPercent(0),
+				completed: null, total: null, captureStep: null, captureLeg: null, elapsedMs,
+			};
+		}
+		const totalUnits = progress.roster.total + progress.accountStores.total
+			+ progress.characters.total + progress.catalogAndPrices.total;
+		const completedUnits = progress.roster.completed + progress.accountStores.completed
+			+ progress.characters.completed + progress.catalogAndPrices.completed;
+		const fraction = totalUnits > 0 ? completedUnits / totalUnits : 0;
+		const percent = this.clampPercent(Math.round(fraction * (100 / PHASE_COUNT)));
+		const captureStep = captureStepFor(progress);
+		return {
+			phase: 'capture', percent, completed: completedUnits, total: totalUnits,
+			captureStep, captureLeg: captureStep === null ? null : legFor(progress, captureStep), elapsedMs,
+		};
 	}
+
+	private progressForApply(completed: number, total: number, startedAt: number): InventoryVaultSyncRunProgress {
+		const elapsedMs = Math.max(0, this.now() - startedAt);
+		const base = Math.round((APPLY_PHASE_INDEX / PHASE_COUNT) * 100);
+		const percent = this.clampPercent(total > 0 ? Math.round(base + (completed / total) * (100 - base)) : base);
+		return { phase: 'apply', percent, completed, total, captureStep: null, captureLeg: null, elapsedMs };
+	}
+
+	private clampPercent(percent: number): number {
+		const clamped = Math.max(percent, this.maxPercent);
+		this.maxPercent = clamped;
+		return clamped;
+	}
+}
+
+/** Characters first (the long leg), then the account stores, then catalog/prices, then roster itself. */
+function captureStepFor(progress: InventoryVaultSyncCaptureProgress): InventoryVaultSyncCaptureStep | null {
+	if (progress.characters.total > 0 && progress.characters.completed < progress.characters.total) return 'characters';
+	if (progress.accountStores.completed < progress.accountStores.total) return 'account_stores';
+	if (progress.catalogAndPrices.completed < progress.catalogAndPrices.total) return 'catalog_prices';
+	if (progress.roster.completed < progress.roster.total) return 'roster';
+	return null;
+}
+
+function legFor(
+	progress: InventoryVaultSyncCaptureProgress,
+	step: InventoryVaultSyncCaptureStep,
+): { completed: number; total: number } {
+	if (step === 'roster') return progress.roster;
+	if (step === 'account_stores') return progress.accountStores;
+	if (step === 'characters') return progress.characters;
+	return progress.catalogAndPrices;
 }

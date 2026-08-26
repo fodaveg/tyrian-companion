@@ -1,4 +1,5 @@
 import type { SourceCoverage, StorageSnapshot } from '../account/storage-snapshot-model';
+import type { StorageSnapshotCaptureProgress } from '../account/storage-snapshot-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
@@ -127,6 +128,15 @@ export type InventoryAdvisorEvidenceCaptureResultV1 =
 	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null;
 		failure?: InventoryAdvisorEvidenceFailure };
 
+/** Adds the catalog/prices leg (always 4 concurrent requests) to the storage capture's own counters. */
+export interface InventoryAdvisorCaptureProgress extends StorageSnapshotCaptureProgress {
+	readonly catalogAndPrices: { readonly completed: number; readonly total: number };
+}
+
 export interface InventoryAdvisorEvidenceCapture {
-	capture(locale: CatalogLocale, containerPriceItemIds?: readonly number[]): Promise<InventoryAdvisorEvidenceCaptureResultV1>;
+	capture(
+		locale: CatalogLocale,
+		containerPriceItemIds?: readonly number[],
+		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+	): Promise<InventoryAdvisorEvidenceCaptureResultV1>;
 }
