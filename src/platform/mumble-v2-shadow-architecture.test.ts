@@ -59,7 +59,10 @@ const QUEUE_NAMES = new Set([
 	'PendingProposalService', 'accept', 'claim', 'dismiss', 'enqueue', 'reconcile',
 ]);
 
-describe('H8.8 isolated shadow presence boundary', () => {
+// Every case re-runs the whole-tree boundary scan several times. Isolated each stays
+// around 2s, but under the full parallel suite they crossed the default 5s budget and
+// failed the gate at random. The budget is raised; no assertion changes.
+describe('H8.8 isolated shadow presence boundary', { timeout: 30_000 }, () => {
 	it('censuses exactly the pure presence reducer and human-review DTO adapter', () => {
 		expect(shadowBoundaryViolations(productionSources())).toEqual([]);
 	});
@@ -297,12 +300,18 @@ function propertyName(name: ts.PropertyName | ts.BindingName): string | null {
 		? name.text : null;
 }
 
+// Reading every production file off disk once per case pushed this suite past the default
+// 5s budget under load. The scan is deterministic within a run, so it is read once; each
+// caller still gets its own copy because the cases mutate the map they receive.
+let productionSourcesCache: Map<string, string> | null = null;
+
 function productionSources(): Map<string, string> {
-	return new Map(walk('src')
+	productionSourcesCache ??= new Map(walk('src')
 		.map((path) => relative('.', path).replaceAll('\\', '/'))
 		.filter((path) => path.endsWith('.ts') && !/\.(?:spec|test)\.ts$/u.test(path))
 		.filter((path) => !/(?:^|\/)(?:__fixtures__|test)(?:\/|$)/u.test(path))
 		.map((path) => [path, readFileSync(path, 'utf8')]));
+	return new Map(productionSourcesCache);
 }
 
 function walk(directory: string): string[] {
