@@ -42,16 +42,31 @@ describe('inventory Base assets', () => {
 		for (const asset of await inventoryManagedAssets()) {
 			const document = parse(asset.bytes) as BaseDocument;
 			expect(document.formulas.item_icon).toBe('if(tc_icon != null, image(tc_icon), null)');
-			expect(document.formulas.total_gold).toMatch(/tc_total_sell_copper\s*\/\s*10000/u);
-			expect(document.formulas.total_gold).not.toMatch(/(?:toString|format|"[🟡🟠🟤])/u);
+			expect(document.formulas.total_gold).toBeUndefined();
+			expect(document.formulas.unit_gold).toBeUndefined();
 			expect(document.properties['note.tc_source']).toBeDefined();
 			expect(document.properties['note.tc_character']).toBeDefined();
+			expect(document.properties['note.tc_total_sell_copper']).toBeDefined();
 			for (const view of document.views) {
 				expect(view.order).toContain('formula.item_icon');
 				expect(view.order).not.toContain('tc_icon');
 				expect(view.columnSize).toEqual({ 'formula.item_icon': 52 });
 				expect(view.order).toContain('tc_quantity');
-				expect(view.order).toContain('formula.total_gold');
+				expect(view.order).toContain('tc_total_sell_copper');
+				expect(view.order).toContain('tc_unit_sell_copper');
+				expect(view.order).not.toContain('formula.total_gold');
+				expect(view.order).not.toContain('formula.unit_gold');
+			}
+		}
+	});
+
+	it('sorts by the raw copper note property, never by a divided formula', async () => {
+		for (const asset of await inventoryManagedAssets()) {
+			expect(asset.bytes).not.toMatch(/\/\s*10000/u);
+			const document = parse(asset.bytes) as BaseDocument;
+			for (const view of document.views) {
+				expect(view.sort[0]).toEqual({ property: 'tc_total_sell_copper', direction: 'DESC' });
+				expect(view.sort[0]?.property.startsWith('formula.')).toBe(false);
 			}
 		}
 	});
@@ -65,9 +80,10 @@ describe('inventory Base assets', () => {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
 					'note.tc_item_name', 'note.tc_source', 'note.tc_character', 'note.tc_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity', 'note.tc_captured_at',
+					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
-					'formula.item_icon', 'formula.unit_gold', 'formula.total_gold', 'formula.source_label',
+					'formula.item_icon', 'formula.source_label',
 				]);
 			}
 		}
@@ -165,7 +181,7 @@ function validateBaseDocument(document: BaseDocument): void {
 	}
 	for (const view of document.views) {
 		expect(view.type).toBe('table');
-		expect(view.sort[0]).toEqual({ property: 'formula.total_gold', direction: 'DESC' });
+		expect(view.sort[0]).toEqual({ property: 'tc_total_sell_copper', direction: 'DESC' });
 	}
 }
 
