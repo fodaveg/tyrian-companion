@@ -127,6 +127,24 @@ export function classifyItemLiquidity(
 	};
 }
 
+/**
+ * Whether an item that trading-post/binding classification already marks eligible can
+ * actually be sold or listed by THIS account. A free-to-play account is restricted to
+ * the game's trading-post whitelist; a full account trades anything the trading post
+ * itself allows. This is the single source of truth for that rule: the Inventory
+ * Advisor's market route and the durable Vault sync both call it instead of
+ * re-deriving the whitelist condition by hand, which is what let the Vault sync apply
+ * the free-to-play whitelist to full accounts too.
+ */
+export function isTradingPostAccessible(
+	tradingPost: TradingPostEligibility,
+	tradingPostAccess: 'full' | 'free_to_play' | 'unknown',
+	whitelisted: boolean,
+): boolean {
+	return tradingPost.status === 'eligible'
+		&& (tradingPostAccess === 'full' || (tradingPostAccess === 'free_to_play' && whitelisted));
+}
+
 export function isItemLiquidityClassification(value: unknown): value is ItemLiquidityClassification {
 	if (!isRecord(value)
 		|| !exactKeys(value, [

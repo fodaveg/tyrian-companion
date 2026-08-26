@@ -47,6 +47,8 @@ describe('inventory Base assets', () => {
 			expect(document.properties['note.tc_source']).toBeDefined();
 			expect(document.properties['note.tc_character']).toBeDefined();
 			expect(document.properties['note.tc_total_sell_copper']).toBeDefined();
+			expect(document.properties['note.tc_unit_list_copper']).toBeDefined();
+			expect(document.properties['note.tc_total_list_copper']).toBeDefined();
 			for (const view of document.views) {
 				expect(view.order).toContain('formula.item_icon');
 				expect(view.order).not.toContain('tc_icon');
@@ -54,6 +56,8 @@ describe('inventory Base assets', () => {
 				expect(view.order).toContain('tc_quantity');
 				expect(view.order).toContain('tc_total_sell_copper');
 				expect(view.order).toContain('tc_unit_sell_copper');
+				expect(view.order).toContain('tc_unit_list_copper');
+				expect(view.order).toContain('tc_total_list_copper');
 				expect(view.order).not.toContain('formula.total_gold');
 				expect(view.order).not.toContain('formula.unit_gold');
 			}
@@ -81,6 +85,7 @@ describe('inventory Base assets', () => {
 					'note.tc_item_name', 'note.tc_source', 'note.tc_character', 'note.tc_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity', 'note.tc_captured_at',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
+					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
 					'formula.item_icon', 'formula.source_label',
@@ -151,7 +156,7 @@ describe('inventory Base assets', () => {
 			locale: 'es',
 			positions: [{
 				positionId: '42-b-account', itemId: 42, source: 'bank', character: null,
-				quantity: 3, unitSellCopper: 10, totalSellCopper: 30,
+				quantity: 3, unitSellCopper: 10, totalSellCopper: 30, unitListCopper: 11, totalListCopper: 33,
 				name: 'Objeto 42', type: 'Material', rarity: 'Fine', icon: null,
 			}],
 		});

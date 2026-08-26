@@ -305,6 +305,22 @@ export async function captureInventoryPrices(
 	};
 }
 
+/**
+ * Account trading-post tier shared by the explicit Inventory Advisor evidence capture
+ * and the durable inventory-notes sync. Reuses the same tokeninfo-free `account`
+ * lookup and the same scope-to-tier mapping (`tradingPostAccess`) as
+ * `captureAccountSignals`, so both captures agree on what a "full" account is.
+ */
+export async function captureInventoryTradingPostAccess(
+	operation: GuildWars2Operation,
+	expectedAccountId: string,
+): Promise<AccountSignalsV1['tradingPostAccess']> {
+	try {
+		const profile = parseAccountProfile(await requestBody(operation, 'account'));
+		return profile.id === expectedAccountId ? tradingPostAccess(profile.access) : 'unknown';
+	} catch { return 'unknown'; }
+}
+
 async function captureContainerPrices(
 	snapshot: StorageSnapshot,
 	requestedItemIds: number[],

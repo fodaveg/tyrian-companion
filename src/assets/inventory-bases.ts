@@ -7,13 +7,15 @@ const COPY = {
 	es: {
 		all: 'Todos', characters: 'Personajes', shared: 'Compartido', bank: 'Banco', materials: 'Materiales',
 		item: 'Objeto', icon: 'Icono', source: 'Ubicación', character: 'Personaje', quantity: 'Cantidad',
-		type: 'Tipo', rarity: 'Rareza', unitValue: 'Valor unidad 🟤', totalValue: 'Valor 🟤', captured: 'Actualizado',
+		type: 'Tipo', rarity: 'Rareza', unitValue: 'Venta instantánea 🟤', totalValue: 'Venta instantánea (total) 🟤',
+		unitListValue: 'Publicación 🟤', totalListValue: 'Publicación (total) 🟤', captured: 'Actualizado',
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
 	},
 	en: {
 		all: 'All', characters: 'Characters', shared: 'Shared', bank: 'Bank', materials: 'Materials',
 		item: 'Item', icon: 'Icon', source: 'Location', character: 'Character', quantity: 'Quantity',
-		type: 'Type', rarity: 'Rarity', unitValue: 'Unit value 🟤', totalValue: 'Value 🟤', captured: 'Updated',
+		type: 'Type', rarity: 'Rarity', unitValue: 'Instant sell 🟤', totalValue: 'Instant sell (total) 🟤',
+		unitListValue: 'Listing 🟤', totalListValue: 'Listing (total) 🟤', captured: 'Updated',
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
 	},
 } as const;
@@ -50,6 +52,10 @@ properties:
     displayName: "${copy.unitValue}"
   note.tc_total_sell_copper:
     displayName: "${copy.totalValue}"
+  note.tc_unit_list_copper:
+    displayName: "${copy.unitListValue}"
+  note.tc_total_list_copper:
+    displayName: "${copy.totalListValue}"
   formula.source_label:
     displayName: "${copy.source}"
 `;
@@ -57,7 +63,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_item_type, tc_item_rarity, tc_captured_at]';
+	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -119,7 +125,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_item_type, tc_item_rarity, tc_captured_at]
+    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]
     sort:
       - property: tc_total_sell_copper
         direction: DESC

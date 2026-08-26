@@ -3,19 +3,21 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type { GuildWars2Client } from '../account/guild-wars-2-client';
 import type { ItemHolding, StorageSnapshot } from '../account/storage-snapshot-model';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
-import { captureInventoryPrices } from '../advisor/inventory-advisor-evidence';
-import type { InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
+import { captureInventoryPrices, captureInventoryTradingPostAccess } from '../advisor/inventory-advisor-evidence';
+import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { normalizeVaultRelativePath } from '../core/vault-path';
+import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
 export const INVENTORY_NOTE_KIND = 'gw2_inventory_position' as const;
 export const INVENTORY_NOTE_MARKER = 'tyrian_companion_inventory_position' as const;
 
 export type InventoryPositionSource = 'character' | 'shared_inventory' | 'bank' | 'materials';
+type InventoryTradingPostAccess = AccountSignalsV1['tradingPostAccess'];
 
 export interface InventoryVaultFile { path: string }
 
@@ -37,6 +39,8 @@ export interface InventoryVaultPosition {
 	quantity: number;
 	unitSellCopper: number | null;
 	totalSellCopper: number | null;
+	unitListCopper: number | null;
+	totalListCopper: number | null;
 	name: string;
 	type: string | null;
 	rarity: string | null;
@@ -78,6 +82,13 @@ export type InventoryVaultSyncResult =
 	| { status: 'applied' | 'unchanged'; created: number; updated: number; deactivated: number }
 	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string };
 
+/**
+ * `tc_unit_sell_copper` is the instant-sell (bid) quote and `tc_unit_list_copper` is
+ * the listing (ask) quote. They are tracked separately, both nullable independently:
+ * an item can be trading-post eligible with a published ask but no current bid, and
+ * that must render as "no buy order right now" (only the sell column is null), not as
+ * "not sellable" (both columns null).
+ */
 interface InventoryNoteFields {
 	tc_schema: typeof INVENTORY_NOTE_SCHEMA_VERSION;
 	tc_kind: typeof INVENTORY_NOTE_KIND;
@@ -89,6 +100,8 @@ interface InventoryNoteFields {
 	tc_quantity: number;
 	tc_unit_sell_copper: number | null;
 	tc_total_sell_copper: number | null;
+	tc_unit_list_copper: number | null;
+	tc_total_list_copper: number | null;
 	tc_active: boolean;
 	tc_captured_at: string;
 	tc_item_name: string;
@@ -129,11 +142,12 @@ export class InventoryVaultCaptureService {
 		const operation = this.client.beginOperation();
 		const snapshot = await this.snapshots.captureWithOperation(operation);
 		if (!inventorySnapshotComplete(snapshot)) throw new Error('inventory_capture_incomplete');
-		const [catalog, prices] = await Promise.all([
+		const [catalog, prices, tradingPostAccess] = await Promise.all([
 			this.catalog.resolve(snapshot, locale),
 			captureInventoryPrices(snapshot, this.publicGateway, this.now()),
+			captureInventoryTradingPostAccess(operation, snapshot.accountId),
 		]);
-		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, locale);
+		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale);
 	}
 }
 
@@ -145,10 +159,13 @@ export async function prepareInventoryVaultSyncInput(
 	snapshot: StorageSnapshot,
 	catalog: CatalogResolution,
 	prices: InventoryPriceSnapshotV1,
+	tradingPostAccess: InventoryTradingPostAccess,
 	locale: CatalogLocale,
 ): Promise<InventoryVaultSyncInput> {
 	assertCaptureRelations(snapshot, catalog, prices, locale);
-	const grouped = new Map<string, { itemId: number; source: InventoryPositionSource; character: string | null; quantity: number }>();
+	const grouped = new Map<string, {
+		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number; holding: ItemHolding;
+	}>();
 	for (const holding of snapshot.holdings) {
 		if (holding.kind !== 'item' || holding.state !== 'loose') continue;
 		const location = inventoryLocation(holding);
@@ -156,14 +173,21 @@ export async function prepareInventoryVaultSyncInput(
 		const groupKey = JSON.stringify([holding.itemId, location.source, location.character]);
 		const current = grouped.get(groupKey);
 		if (current) current.quantity = safeAdd(current.quantity, holding.quantity);
-		else grouped.set(groupKey, { itemId: holding.itemId, ...location, quantity: holding.quantity });
+		// The representative holding only feeds `classifyItemLiquidity`'s state/binding
+		// check; the first stack seen for this item+location is a fine stand-in even
+		// when several stacks are aggregated into one row.
+		else grouped.set(groupKey, { itemId: holding.itemId, ...location, quantity: holding.quantity, holding });
 	}
 
 	const priceById = new Map(prices.items.map((price) => [price.itemId, price]));
 	const positions = await Promise.all([...grouped.values()].map(async (group): Promise<InventoryVaultPosition> => {
-		const item = catalog.items[String(group.itemId)];
+		const item = catalog.items[String(group.itemId)] ?? null;
 		const price = priceById.get(group.itemId);
-		const unitSellCopper = price?.whitelisted === true && price.bid !== null ? price.bid.unitCopper : null;
+		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
+		const eligible = liquidity.status === 'ok'
+			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
+		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
+		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
 		return {
 			positionId: await positionId(group.itemId, group.source, group.character),
 			itemId: group.itemId,
@@ -172,6 +196,8 @@ export async function prepareInventoryVaultSyncInput(
 			quantity: group.quantity,
 			unitSellCopper,
 			totalSellCopper: unitSellCopper === null ? null : safeMultiply(unitSellCopper, group.quantity),
+			unitListCopper,
+			totalListCopper: unitListCopper === null ? null : safeMultiply(unitListCopper, group.quantity),
 			name: cleanText(item?.name ?? (locale === 'es' ? `Objeto ${String(group.itemId)}` : `Item ${String(group.itemId)}`)),
 			type: item?.type ? cleanText(item.type) : null,
 			rarity: item?.rarity ? cleanText(item.rarity) : null,
@@ -414,6 +440,8 @@ function fieldsFor(
 		tc_quantity: quantity,
 		tc_unit_sell_copper: position.unitSellCopper,
 		tc_total_sell_copper: position.unitSellCopper === null ? null : safeMultiply(position.unitSellCopper, quantity),
+		tc_unit_list_copper: position.unitListCopper,
+		tc_total_list_copper: position.unitListCopper === null ? null : safeMultiply(position.unitListCopper, quantity),
 		tc_active: active,
 		tc_captured_at: capturedAt,
 		tc_item_name: position.name,
@@ -477,6 +505,8 @@ function positionFromFields(fields: InventoryNoteFields): InventoryVaultPosition
 		quantity: fields.tc_quantity,
 		unitSellCopper: fields.tc_unit_sell_copper,
 		totalSellCopper: fields.tc_total_sell_copper,
+		unitListCopper: fields.tc_unit_list_copper,
+		totalListCopper: fields.tc_total_list_copper,
 		name: fields.tc_item_name,
 		type: fields.tc_item_type,
 		rarity: fields.tc_item_rarity,
@@ -504,17 +534,19 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 	return record(value) && typeof value.positionId === 'string' && /^[1-9]\d*-[csbm]-(?:account|[a-f0-9]{24})$/u.test(value.positionId) &&
 		positive(value.itemId) && inventorySource(value.source) && (value.character === null || nonEmptyText(value.character)) &&
 		(value.source === 'character' ? value.character !== null : value.character === null) && positive(value.quantity) &&
-		nullableNonNegative(value.unitSellCopper) && nullableNonNegative(value.totalSellCopper) && nonEmptyText(value.name) &&
+		nullableNonNegative(value.unitSellCopper) && nullableNonNegative(value.totalSellCopper) &&
+		nullableNonNegative(value.unitListCopper) && nullableNonNegative(value.totalListCopper) && nonEmptyText(value.name) &&
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
 		(value.icon === null || nonEmptyText(value.icon)) &&
-		(value.unitSellCopper === null ? value.totalSellCopper === null : value.totalSellCopper === safeMultiply(value.unitSellCopper, value.quantity));
+		(value.unitSellCopper === null ? value.totalSellCopper === null : value.totalSellCopper === safeMultiply(value.unitSellCopper, value.quantity)) &&
+		(value.unitListCopper === null ? value.totalListCopper === null : value.totalListCopper === safeMultiply(value.unitListCopper, value.quantity));
 }
 
 function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 	if (!record(value) || !exactKeys(value, [
 		'tc_schema', 'tc_kind', 'tc_marker', 'tc_position_id',
 		'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
-		'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_active',
+		'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
 		'tc_captured_at', 'tc_item_name', 'tc_item_type',
 		'tc_item_rarity', 'tc_icon', 'descripcion',
 	])) return false;
@@ -524,7 +556,8 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		(value.tc_character === null || nonEmptyText(value.tc_character)) &&
 		(value.tc_source === 'character' ? value.tc_character !== null : value.tc_character === null) &&
 		nonNegative(value.tc_quantity) && nullableNonNegative(value.tc_unit_sell_copper) &&
-		nullableNonNegative(value.tc_total_sell_copper) && typeof value.tc_active === 'boolean' &&
+		nullableNonNegative(value.tc_total_sell_copper) && nullableNonNegative(value.tc_unit_list_copper) &&
+		nullableNonNegative(value.tc_total_list_copper) && typeof value.tc_active === 'boolean' &&
 		value.tc_active === (value.tc_quantity > 0) && iso(value.tc_captured_at) &&
 		nonEmptyText(value.tc_item_name) && (value.tc_item_type === null || nonEmptyText(value.tc_item_type)) &&
 		(value.tc_item_rarity === null || nonEmptyText(value.tc_item_rarity)) &&

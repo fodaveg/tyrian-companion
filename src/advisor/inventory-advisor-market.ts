@@ -1,7 +1,7 @@
 import type { ItemHolding } from '../account/storage-snapshot-model';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { createCatalogVendorValue, createTradingPostValueWithPolicy } from '../economy/gw2-fees';
-import { classifyItemLiquidity } from '../economy/item-liquidity';
+import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 import type { InventoryItemPriceV1 } from './inventory-advisor-model';
 
 export type InventoryMarketActionV1 = 'sell' | 'list' | 'vendor' | 'keep' | 'review';
@@ -22,8 +22,7 @@ export function selectInventoryMarketRoute(input: InventoryMarketSelectionInputV
 	if (liquidity.status !== 'ok') return { action: 'review', reason: 'catalog_invalid' };
 	const vendorValue = createCatalogVendorValue(input.item, input.quantity);
 	const vendor = vendorValue.status === 'ok' ? vendorValue.value.netCopper : null;
-	const tradingPost = liquidity.classification.tradingPost.status === 'eligible'
-		&& (input.tradingPostAccess === 'full' || (input.tradingPostAccess === 'free_to_play' && input.price?.whitelisted === true));
+	const tradingPost = isTradingPostAccessible(liquidity.classification.tradingPost, input.tradingPostAccess, input.price?.whitelisted === true);
 	const sell = tradingPost && input.allowSell && input.price?.bid !== null && input.price !== undefined && input.price.bid.quantity >= input.quantity
 		? createTradingPostValueWithPolicy('instant_sell', input.price.bid.unitCopper, input.quantity) : null;
 	const list = tradingPost && input.price?.ask !== null && input.price !== undefined

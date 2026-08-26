@@ -2,7 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type ItemHolding, type StorageSnapshot } from '../account/storage-snapshot-model';
-import type { InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
+import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
 	InventoryVaultCaptureService,
@@ -28,7 +28,7 @@ describe('inventory Vault projection', () => {
 			{ ...holding(42, 19, { source: 'bank', slot: 1 }), state: 'embedded_upgrade' },
 			holding(42, 23, { source: 'character', character: 'Alfa', container: 'equipped_bag', bagIndex: 0 }),
 		]);
-		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'es');
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
 		expect(projected.positions.map(({ source, character, quantity, totalSellCopper }) =>
 			({ source, character, quantity, totalSellCopper }))).toEqual([
 			{ source: 'bank', character: null, quantity: 13, totalSellCopper: 130 },
@@ -47,8 +47,8 @@ describe('inventory Vault projection', () => {
 			holding(99, 1, { source: 'bank', slot: 0 }),
 			holding(42, 2, characterBag(character)),
 		], { accountId: account });
-		const first = await prepareInventoryVaultSyncInput(firstSnapshot, catalogFor(firstSnapshot), pricesFor(firstSnapshot, 42, 10), 'es');
-		const second = await prepareInventoryVaultSyncInput(reorderedSnapshot, catalogFor(reorderedSnapshot), pricesFor(reorderedSnapshot, 42, 10), 'es');
+		const first = await prepareInventoryVaultSyncInput(firstSnapshot, catalogFor(firstSnapshot), pricesFor(firstSnapshot, 42, 10), 'full', 'es');
+		const second = await prepareInventoryVaultSyncInput(reorderedSnapshot, catalogFor(reorderedSnapshot), pricesFor(reorderedSnapshot, 42, 10), 'full', 'es');
 		const id = first.positions[0]!.positionId;
 		expect(second.positions.find((position) => position.itemId === 42)?.positionId).toBe(id);
 		expect(id).toMatch(/^42-c-[a-f0-9]{24}$/u);
@@ -71,6 +71,7 @@ describe('inventory Vault projection', () => {
 				snapshot,
 				changedCatalog as CatalogResolution,
 				changedPrices as InventoryPriceSnapshotV1,
+				'full',
 				locale,
 			)).rejects.toThrow('inventory_capture_identity_mismatch');
 		}
@@ -86,6 +87,63 @@ describe('inventory Vault projection', () => {
 		await service.capture('es');
 		expect(client.beginOperation).toHaveBeenCalledOnce();
 		expect(snapshots.captureWithOperation).toHaveBeenCalledOnce();
+	});
+
+	it('gives a full account the instant-sell value of an item the free-to-play whitelist excludes', async () => {
+		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: false, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+		]);
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: 10, totalSellCopper: 50 });
+	});
+
+	it('leaves a free-to-play account without a value for an item the whitelist excludes', async () => {
+		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: false, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+		]);
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'free_to_play', 'es');
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: null, totalListCopper: null });
+	});
+
+	it('leaves an account-bound item without any trading-post value even for a full account', async () => {
+		const snapshot = snapshotWith([{ ...holding(42, 5, { source: 'bank', slot: 0 }), metadata: { binding: 'Account' } }]);
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: null, totalListCopper: null });
+	});
+
+	it('distinguishes a published listing without a current buy order from an item that cannot be sold at all', async () => {
+		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: true, bid: null, ask: { unitCopper: 20, quantity: 50 } },
+		]);
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
+		// No buy order right now: the sell column stays null, but the item IS sellable,
+		// which the published ask (list) column proves.
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: 20, totalListCopper: 100 });
+	});
+
+	it('updates an existing note whose sell value is null once the correct eligibility rule applies', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
+		const catalog = catalogFor(snapshot);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: false, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+		]);
+		// Simulates a note written while the wrong eligibility rule applied: same
+		// snapshot and prices, but no trading-post access at all, so it lands null.
+		const stale = await prepareInventoryVaultSyncInput(snapshot, catalog, prices, 'unknown', 'es');
+		await service.apply(await service.preview(ROOT, stale));
+		const stalePath = vault.markdownFiles()[0]!.path;
+		expect(frontmatter(vault.contents.get(stalePath)!).tc_unit_sell_copper).toBeNull();
+
+		const fixed = await prepareInventoryVaultSyncInput(snapshot, catalog, prices, 'full', 'es');
+		const plan = await service.preview(ROOT, fixed);
+		expect(plan.steps[0]).toMatchObject({ status: 'update' });
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1 });
+		expect(frontmatter(vault.contents.get(stalePath)!).tc_unit_sell_copper).toBe(10);
 	});
 });
 
@@ -132,7 +190,7 @@ describe('inventory Vault preview and apply', () => {
 		const token = 'token-private-789';
 		const character = 'Beta / Dos';
 		const snapshot = snapshotWith([holding(42, 2, characterBag(character))], { accountId, snapshotId });
-		const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'es');
+		const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		await service.apply(await service.preview(ROOT, input));
@@ -222,7 +280,11 @@ describe('inventory Vault preview and apply', () => {
 		const changed = {
 			...initial,
 			capturedAt: '2026-08-25T08:02:00.000Z',
-			positions: initial.positions.map((position) => ({ ...position, quantity: position.quantity + 1, totalSellCopper: (position.unitSellCopper ?? 0) * (position.quantity + 1) })),
+			positions: initial.positions.map((position) => ({
+				...position, quantity: position.quantity + 1,
+				totalSellCopper: (position.unitSellCopper ?? 0) * (position.quantity + 1),
+				totalListCopper: (position.unitListCopper ?? 0) * (position.quantity + 1),
+			})),
 		};
 		const plan = await service.preview(ROOT, changed);
 		const last = plan.steps.at(-1)!;
@@ -298,13 +360,19 @@ function catalogFor(snapshot: StorageSnapshot): CatalogResolution {
 	};
 }
 
-function pricesFor(snapshot: StorageSnapshot, itemId: number, unitCopper: number): InventoryPriceSnapshotV1 {
+function priceSnapshotWith(snapshot: StorageSnapshot, items: InventoryItemPriceV1[]): InventoryPriceSnapshotV1 {
 	return {
 		version: 1, accountId: snapshot.accountId, snapshotId: snapshot.snapshotId,
 		capturedAt: CAPTURED_AT, source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA,
-		requestedItemIds: [itemId], status: 'complete', missingItemIds: [],
-		items: [{ itemId, whitelisted: true, bid: { unitCopper, quantity: 100 }, ask: { unitCopper: unitCopper + 1, quantity: 100 } }],
+		requestedItemIds: items.map((item) => item.itemId), status: 'complete', missingItemIds: [],
+		items,
 	};
+}
+
+function pricesFor(snapshot: StorageSnapshot, itemId: number, unitCopper: number): InventoryPriceSnapshotV1 {
+	return priceSnapshotWith(snapshot, [
+		{ itemId, whitelisted: true, bid: { unitCopper, quantity: 100 }, ask: { unitCopper: unitCopper + 1, quantity: 100 } },
+	]);
 }
 
 async function inputWithAllSources() {
@@ -315,12 +383,12 @@ async function inputWithAllSources() {
 		holding(42, 5, { source: 'bank', slot: 0 }),
 		holding(42, 6, { source: 'materials', category: 1 }),
 	]);
-	return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'es');
+	return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
 }
 
 async function oneBankInput() {
 	const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
-	return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'es');
+	return await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
 }
 
 function frontmatter(content: string): Record<string, unknown> {
