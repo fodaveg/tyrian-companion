@@ -6,6 +6,8 @@ import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-adviso
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { InventoryAdvisorPresentationController, type InventoryAdvisorControllerPorts } from './inventory-advisor-controller';
 
+const buildPresentationCalls = vi.fn();
+
 vi.mock('../advisor/inventory-advisor-presentation', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../advisor/inventory-advisor-presentation')>();
 	return {
@@ -14,6 +16,7 @@ vi.mock('../advisor/inventory-advisor-presentation', async (importOriginal) => {
 			source: InventoryAdvisorPresentationSource,
 			options: InventoryAdvisorPresentationOptions = {},
 		) {
+			buildPresentationCalls(options);
 			const fixtureName = (source.input as unknown as { fixtureName?: string }).fixtureName;
 			return fixtureName === undefined ? actual.buildInventoryAdvisorPresentation(source, options) : namedPresentation(fixtureName);
 		},
@@ -57,6 +60,39 @@ describe('H5.11 inventory advisor presentation controller', () => {
 
 		controller.invalidate();
 		expect(controller.current().contentVersion).not.toBe(afterRefresh);
+	});
+
+	it('memoizes the built model per contentVersion and options, and freezes it against nested mutation', async () => {
+		// A live sync-panel tick calls `current()` once per written note while the
+		// advisor's own content never moves; re-deriving and deep-cloning the whole
+		// presentation on every one of those reads made progress reporting on a large
+		// inventory quadratic in row count. This locks in that a stable `contentVersion`
+		// reuses one build instead of repeating it.
+		buildPresentationCalls.mockClear();
+		const ports = { load: vi.fn(async () => sourceNamed('Memoized')) } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		await controller.refresh();
+		expect(buildPresentationCalls).toHaveBeenCalledOnce();
+
+		for (let repeat = 0; repeat < 5; repeat += 1) expect(firstRowName(controller.current())).toBe('Memoized');
+		expect(buildPresentationCalls).toHaveBeenCalledOnce();
+
+		// A caller reaching into a nested structure of what it received (not just the
+		// top-level field the older test already covers) is rejected outright, not
+		// silently accepted and then leaked into a later read.
+		const leaked = controller.current();
+		expect(() => leaked.groups[0]!.rows[0]!.allocations.push({
+			positionRef: '#/positions/intruder', quantity: 999, location: { source: 'bank', slot: 0 },
+		})).toThrow(TypeError);
+		expect(() => { leaked.groups[0]!.rows[0]!.name = 'Corrupted'; }).toThrow(TypeError);
+		expect(firstRowName(controller.current())).toBe('Memoized');
+		expect(controller.current().groups[0]!.rows[0]!.allocations).toHaveLength(1);
+
+		// Different options are a different cache entry, and a later refresh rebuilds.
+		controller.current({ sort: 'name_asc' });
+		expect(buildPresentationCalls).toHaveBeenCalledTimes(2);
+		await controller.refresh();
+		expect(buildPresentationCalls).toHaveBeenCalledTimes(3);
 	});
 
 	it('shares a single loader flight across concurrent refreshes in one generation', async () => {

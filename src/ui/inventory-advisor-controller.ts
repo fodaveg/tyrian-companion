@@ -29,6 +29,16 @@ export class InventoryAdvisorPresentationController {
 	 * returned model can't tell a fresh capture from a re-render; this number can.
 	 */
 	private contentVersion = 0;
+	/**
+	 * The fully built, deep-frozen model for the `contentVersion`/`options` pair it was
+	 * built for. A live sync-panel tick (one per written note) calls `current()` many
+	 * times while the advisor's own content never moves; without this memo, every one
+	 * of those reads re-derived the whole presentation from the raw source AND deep
+	 * cloned it twice, which made progress reporting on a large inventory quadratic in
+	 * row count instead of linear. `contentVersion` alone is a complete cache key: it
+	 * is bumped exactly where `cached`/`refreshWarning`/`failed` change, never otherwise.
+	 */
+	private builtModel: { contentVersion: number; optionsKey: string; model: InventoryAdvisorViewModel } | null = null;
 
 	constructor(private readonly ports: InventoryAdvisorControllerPorts) {}
 
@@ -39,7 +49,17 @@ export class InventoryAdvisorPresentationController {
 
 	/** Projects the current memory snapshot. It never performs I/O. */
 	current(options: InventoryAdvisorPresentationOptions = {}): InventoryAdvisorViewModel {
-		return { ...clone(this.buildCurrent(options)), contentVersion: this.contentVersion };
+		const optionsKey = JSON.stringify(options);
+		if (this.builtModel === null || this.builtModel.contentVersion !== this.contentVersion || this.builtModel.optionsKey !== optionsKey) {
+			const model = deepFreeze({ ...clone(this.buildCurrent(options)), contentVersion: this.contentVersion });
+			this.builtModel = { contentVersion: this.contentVersion, optionsKey, model };
+		}
+		// The memoized model is frozen (nested structures included), so every caller
+		// shares the same underlying data safely; the top-level spread still gives each
+		// caller its own object, so a caller mutating a top-level field of what it holds
+		// (the existing "never leaks a mutable cached value" guarantee) can't affect a
+		// later read the way returning the frozen object by reference would.
+		return { ...this.builtModel.model };
 	}
 
 	private buildCurrent(options: InventoryAdvisorPresentationOptions): InventoryAdvisorViewModel {
@@ -157,4 +177,17 @@ export class InventoryAdvisorPresentationController {
 
 function clone<T>(value: T): T {
 	return structuredClone(value);
+}
+
+/** Recursively freezes an already-detached (cloned) value so the memo in `current()`
+ * can be shared across reads without a caller reaching through nested arrays/objects
+ * to corrupt a later read. A plain `Object.freeze` is shallow and would not cover
+ * `groups[].rows[].allocations`, for instance. */
+function deepFreeze<T>(value: T): T {
+	if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
+	Object.freeze(value);
+	for (const key of Object.keys(value)) {
+		deepFreeze((value as Record<string, unknown>)[key]);
+	}
+	return value;
 }
