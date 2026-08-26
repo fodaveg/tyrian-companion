@@ -9,10 +9,17 @@ describe('normalizeVaultRelativePath', () => {
 		expect(normalizeVaultRelativePath('Guild Wars 2/Éxito')).toBe('Guild Wars 2/Éxito');
 	});
 
+	it('normalizes an NFD-decomposed path to NFC instead of rejecting it', () => {
+		const nfd = 'Guild Wars 2/E\u0301xito';
+		expect(nfd).not.toBe(nfd.normalize('NFC'));
+		expect(normalizeVaultRelativePath(nfd)).toBe('Guild Wars 2/Éxito');
+		expect(normalizeVaultRelativePath(nfd)).toBe(nfd.normalize('NFC'));
+	});
+
 	it.each([
 		'', '/absolute', 'C:/Users/Example', '\\\\server\\share', 'a//b', 'a/./b', 'a/../b',
 		'a/b:c', 'a/b*c', 'a/b?c', 'a/b"c', 'a/b<c', 'a/b>c', 'a/b|c', 'a/b\\c',
-		'a/\u0001b', 'a/\u007fb', 'a/\ud800b', 'a/b.', 'a/b ', 'a/e\u0301', 'CON', 'a/PRN.md',
+		'a/\u0001b', 'a/\u007fb', 'a/\ud800b', 'a/b.', 'a/b ', 'CON', 'a/PRN.md',
 		'a/AUX', 'a/NUL.txt', 'a/COM1 ', 'a/COM9.log', 'a/COM¹.log', 'a/LPT1.base', 'a/LPT³.md', 'a/COM1 .md',
 		'a/'.concat('b'.repeat(121)), 'a'.repeat(241),
 	])('rejects an unsafe or non-portable path %j', (path) => {

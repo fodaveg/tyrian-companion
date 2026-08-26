@@ -155,9 +155,25 @@ export function hasLegacyPaths(settings: Pick<TyrianSettings, 'legacyOutputFolde
 	return settings.legacyOutputFolder !== null || settings.legacyManagedAssetsRoot !== null;
 }
 
-/** Returns a normalized vault-relative folder or the safe default. */
+/** Returns a normalized vault-relative folder or the safe default. Only fit for migrating
+ * already-persisted data: an interactive edit must never silently swap in this fallback,
+ * see `resolveVaultFolderInput`. */
 export function normalizeVaultFolder(value: unknown, configDir?: string): string {
 	return portableVaultFolder(value, configDir) ?? DEFAULT_SETTINGS.outputFolder;
+}
+
+export type VaultFolderInputResult =
+	| { status: 'valid'; value: string }
+	| { status: 'invalid' };
+
+/**
+ * Validates a folder the user is actively typing in Settings. Unlike `normalizeVaultFolder`,
+ * a rejected value never gets silently replaced by the default: the caller must surface the
+ * rejection and keep the previously saved folder untouched.
+ */
+export function resolveVaultFolderInput(value: string, configDir?: string): VaultFolderInputResult {
+	const normalized = portableVaultFolder(value, configDir);
+	return normalized === null ? { status: 'invalid' } : { status: 'valid', value: normalized };
 }
 
 function portableVaultFolder(value: unknown, configDir?: string): string | null {

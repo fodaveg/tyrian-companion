@@ -524,6 +524,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (this.unloaded) return;
 		this.runtimeReady = true;
 		this.renderViews();
+		// Heals a root left behind by a folder change made before this version shipped the
+		// auto-relocation above (David's own install: notes three folders deep, Bases still at
+		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.
+		void this.reconcileManagedAssetsRoot();
 	}
 
 	onunload(): void {
@@ -1061,15 +1065,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.runManagedAssetOperation(() => this.managedAssets.apply(this.settings.managedAssetsRoot!, 'repair'));
 	}
 
-	async relocateManagedAssets(): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
+	 * pointer could not be confirmed to match the retained root first). */
+	async relocateManagedAssets(): Promise<ManagedAssetsLifecycleResult | null> {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return null; }
 		const destination = this.settings.outputFolder;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority()) return;
+		if (!await this.ensureManagedAssetsAuthority()) return null;
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined));
 		if ('root' in result && (legacyRoot === null || result.status === 'relocated' && result.root === destination)) {
 			await this.updateSettings({ managedAssetsRoot: result.root });
 		}
+		return result;
 	}
 
 	async removeManagedAssets(): Promise<void> {
@@ -1079,6 +1086,36 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.remove(legacyRoot ?? undefined));
 		if ('root' in result && (legacyRoot === null || result.status === 'removed' && result.root === null)) {
 			await this.updateSettings({ managedAssetsRoot: result.root });
+		}
+	}
+
+	/**
+	 * The output-folder selector is the single source of truth for managed assets: Bases and
+	 * templates must never sit somewhere the user never chose. This heals both an explicit
+	 * folder change and a divergence discovered at startup (an install whose Bases root never
+	 * followed a later folder change, e.g. an upgrade from before H5.8) through the exact same
+	 * journaled Move lifecycle as the manual "Move" action, not a bespoke copy of it. Move only
+	 * deletes origin bytes after the destination install already succeeded and refuses to run
+	 * over a modified/unowned/conflicting root, so a blocked reconciliation always leaves both
+	 * roots exactly as they were: nothing is ever moved halfway or silently overwritten. A
+	 * completed or blocked attempt still surfaces through a Notice, because relocating files in
+	 * the user's Vault without them ever seeing it is worse than telling them after the fact;
+	 * the Settings row and its manual Move button remain the escape hatch when this is blocked.
+	 *
+	 * A retained legacy root is deliberately excluded: `managed-assets.test.ts` documents that
+	 * adopting one only ever happens through an explicit lifecycle Move, and this must not turn
+	 * that into something that fires on its own the next time Obsidian starts.
+	 */
+	private async reconcileManagedAssetsRoot(): Promise<void> {
+		if (this.settings.legacyManagedAssetsRoot !== null) return;
+		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
+		const result = await this.relocateManagedAssets();
+		if (result === null) return;
+		const translator = createTranslator(this.settings.language);
+		if (result.status === 'relocated') {
+			new Notice(translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }));
+		} else if (result.status !== 'unchanged') {
+			new Notice(translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'));
 		}
 	}
 
@@ -1288,6 +1325,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		this.renderViews();
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
+		// An explicit folder change takes Bases/templates with it, so the selector stays the
+		// single source of truth without a separate manual step.
+		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot();
 	}
 
 	private async loadSettings(): Promise<void> {

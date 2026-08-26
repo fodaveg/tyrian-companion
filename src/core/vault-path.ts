@@ -10,19 +10,23 @@ export interface VaultRelativePathOptions {
 }
 
 /**
- * Accepts only a canonical, portable relative Vault path. The contract is deliberately
- * narrower than any one filesystem so generated artifacts can travel through Sync.
+ * Accepts a portable relative Vault path. NFC is canonicalized here rather than required of
+ * the caller: macOS routinely hands back NFD-decomposed accents, and a folder typed with either
+ * form must resolve to the same path instead of silently falling back to a different one. The
+ * rest of the contract is deliberately narrower than any one filesystem so generated artifacts
+ * can travel through Sync.
  */
 export function normalizeVaultRelativePath(
 	value: unknown,
 	options: VaultRelativePathOptions = {},
 ): string | null {
-	if (typeof value !== 'string' || value.length === 0 || value !== value.normalize('NFC') ||
-		value.startsWith('/') || value.includes('\\') ||
-		value.length > (options.maxPathLength ?? MAX_VAULT_RELATIVE_PATH_LENGTH)) return null;
+	if (typeof value !== 'string' || value.length === 0) return null;
+	const normalized = value.normalize('NFC');
+	if (normalized.startsWith('/') || normalized.includes('\\') ||
+		normalized.length > (options.maxPathLength ?? MAX_VAULT_RELATIVE_PATH_LENGTH)) return null;
 
-	const segments = value.split('/');
-	const foldedPath = foldForWindows(value);
+	const segments = normalized.split('/');
+	const foldedPath = foldForWindows(normalized);
 	const forbiddenPrefixes = (options.forbiddenPathPrefixes ?? []).map(foldForWindows);
 	const forbiddenRoots = new Set((options.forbiddenRootSegments ?? []).map(foldForWindows));
 	const forbiddenSegments = new Set((options.forbiddenSegments ?? []).map(foldForWindows));

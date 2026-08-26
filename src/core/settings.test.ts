@@ -6,6 +6,7 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	normalizeVaultFolder,
+	resolveVaultFolderInput,
 	SETTINGS_SCHEMA_VERSION,
 	shouldPersistSettingsOnLoad,
 } from './settings';
@@ -51,7 +52,7 @@ describe('migrateSettings', () => {
 		(field) => {
 			const persisted = {
 				...DEFAULT_SETTINGS,
-				outputFolder: 'Guild Wars 2/e\u0301',
+				outputFolder: 'Guild Wars 2/CON',
 				[field]: 'must-not-be-persisted',
 			};
 			const migrated = migrateSettings(persisted);
@@ -68,7 +69,7 @@ describe('migrateSettings', () => {
 		const persisted = {
 			...DEFAULT_SETTINGS,
 			apiKeySecret: 'gw2-primary',
-			outputFolder: 'Guild Wars 2/e\u0301',
+			outputFolder: 'Guild Wars 2/CON',
 			legacyManagedAssetsRoot: 'Guild Wars 2/COM\u00b9',
 			unknown: {
 				apiToken: 'must-not-be-persisted',
@@ -99,7 +100,7 @@ describe('migrateSettings', () => {
 	it('retains b05e656 legacy paths in the canonical rewrite', () => {
 		const b05e656 = {
 			schemaVersion: 3,
-			outputFolder: 'Guild Wars 2/e\u0301',
+			outputFolder: 'Guild Wars 2/CON',
 			managedAssetsRoot: 'Guild Wars 2/COM¹',
 		};
 		const migrated = migrateSettings(b05e656);
@@ -115,7 +116,7 @@ describe('migrateSettings', () => {
 		expect(shouldPersistSettingsOnLoad(migrated, migrateSettings(migrated))).toBe(false);
 	});
 
-	it.each(['Guild Wars 2/e\u0301', 'Guild Wars 2/COM1', 'a'.repeat(129)])(
+	it.each(['Guild Wars 2/CON', 'Guild Wars 2/COM1', 'a'.repeat(129)])(
 		'retains each b05e656 path class %j as legacy evidence',
 		(path) => {
 			const migrated = migrateSettings({ schemaVersion: 3, outputFolder: path, managedAssetsRoot: path });
@@ -160,11 +161,11 @@ describe('migrateSettings', () => {
 	it('preserves legacy paths through unrelated saves and clears each only after its explicit replacement', () => {
 		const legacy = migrateSettings({
 			schemaVersion: 3,
-			outputFolder: 'Guild Wars 2/e\u0301',
+			outputFolder: 'Guild Wars 2/CON',
 			managedAssetsRoot: 'Guild Wars 2/COM¹',
 		});
 		const unrelated = mergeSettingsUpdate(legacy, { language: 'en' });
-		expect(unrelated.legacyOutputFolder).toBe('Guild Wars 2/e\u0301');
+		expect(unrelated.legacyOutputFolder).toBe('Guild Wars 2/CON');
 		expect(unrelated.legacyManagedAssetsRoot).toBe('Guild Wars 2/COM¹');
 		const outputMoved = mergeSettingsUpdate(unrelated, { outputFolder: 'Tyrian Companion Safe' });
 		expect(outputMoved.legacyOutputFolder).toBeNull();
@@ -206,7 +207,6 @@ describe('normalizeVaultFolder', () => {
 		'Games/COM².md',
 		`Games/${'a'.repeat(121)}`,
 		'a'.repeat(129),
-		'Games/e\u0301',
 	])(
 		'replaces unsafe path %s with the default',
 		(path) => {
@@ -218,4 +218,27 @@ describe('normalizeVaultFolder', () => {
 		expect(normalizeVaultFolder(`Config/${NESTED_CONFIG_DIR.slice('config/'.length)}/plugins`, NESTED_CONFIG_DIR)).toBe(DEFAULT_SETTINGS.outputFolder);
 		expect(normalizeVaultFolder(`Config/${NESTED_CONFIG_DIR.slice('config/'.length)}-copy`, NESTED_CONFIG_DIR)).toBe(`Config/${NESTED_CONFIG_DIR.slice('config/'.length)}-copy`);
 	});
+
+	it('accepts an NFD-decomposed accent and stores it in NFC instead of falling back to the default', () => {
+		const nfd = 'Games/e\u0301xito';
+		expect(normalizeVaultFolder(nfd, '.config')).toBe('Games/\u00e9xito');
+		expect(normalizeVaultFolder(nfd, '.config')).not.toBe(DEFAULT_SETTINGS.outputFolder);
+	});
+});
+
+describe('resolveVaultFolderInput', () => {
+	it('accepts a safe vault-relative folder unchanged', () => {
+		expect(resolveVaultFolderInput('Games/Guild Wars 2')).toEqual({ status: 'valid', value: 'Games/Guild Wars 2' });
+	});
+
+	it('accepts an NFD-decomposed accent and normalizes it to NFC', () => {
+		expect(resolveVaultFolderInput('Games/e\u0301xito')).toEqual({ status: 'valid', value: 'Games/\u00e9xito' });
+	});
+
+	it.each(['Games/Bad:Name', 'Games/Bad\\Name', 'Games/CON', 'Games/Trailing.'])(
+		'rejects an unsafe path %s without producing a substitute value',
+		(path) => {
+			expect(resolveVaultFolderInput(path, '.config')).toEqual({ status: 'invalid' });
+		},
+	);
 });

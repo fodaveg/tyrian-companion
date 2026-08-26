@@ -231,7 +231,8 @@
 }
 
 .tyrian-companion-view__session-error,
-.tyrian-companion-start-modal__error {
+.tyrian-companion-start-modal__error,
+.tyrian-companion-settings__error {
 	color: var(--text-error);
 }
 
@@ -385,7 +386,8 @@
 	}
 }
 
-.tyrian-companion-start-modal__error:empty {
+.tyrian-companion-start-modal__error:empty,
+.tyrian-companion-settings__error:empty {
 	display: none;
 }
 

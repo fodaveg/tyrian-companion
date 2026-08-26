@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import TyrianCompanionPlugin from './main';
 import type { ConnectionState } from './account/connection-service';
+import { genericManagedAssets } from './assets/generic-assets';
+import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
+import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
+import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
+import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { COMPANION_VIEW_TYPE } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
@@ -150,6 +155,77 @@ describe('configured notes root', () => {
 	});
 });
 
+describe('managed-assets root reconciliation', () => {
+	it('relocates already-installed Bases when the output folder changes, and equalizes both roots', async () => {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		const harness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Origin' });
+
+		await harness.applyManagedAssets();
+		expect(harness.settings.managedAssetsRoot).toBe('Origin');
+		expect(vault.contents.has('Origin/Bases/Sessions.base')).toBe(true);
+
+		await harness.updateSettings({ outputFolder: 'Destination' });
+
+		expect(harness.settings.outputFolder).toBe('Destination');
+		expect(harness.settings.managedAssetsRoot).toBe('Destination');
+		expect(vault.contents.has('Origin/Bases/Sessions.base')).toBe(false);
+		expect(vault.contents.has('Destination/Bases/Sessions.base')).toBe(true);
+	});
+
+	it('heals an install that already started diverged, exactly like the real-world case of notes nested deep and Bases at the vault root', async () => {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		// Bootstraps a real install at the shallow root, then walks the setting forward without
+		// going through updateSettings, mirroring the persisted-data.json shape this heals: an
+		// old install whose managed root never followed a later, deeper output-folder change.
+		const bootstrapHarness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Tyrian Companion' });
+		await bootstrapHarness.applyManagedAssets();
+		expect(vault.contents.has('Tyrian Companion/Bases/Sessions.base')).toBe(true);
+
+		const harness = buildManagedAssetsRootHarness(vault, manager, {
+			...DEFAULT_SETTINGS,
+			outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion',
+			managedAssetsRoot: 'Tyrian Companion',
+		});
+
+		await harness.reconcileManagedAssetsRoot();
+
+		expect(harness.settings.managedAssetsRoot).toBe('02 - Áreas/Guild Wars 2/Tyrian Companion');
+		expect(vault.contents.has('Tyrian Companion/Bases/Sessions.base')).toBe(false);
+		expect(vault.contents.has('02 - Áreas/Guild Wars 2/Tyrian Companion/Bases/Sessions.base')).toBe(true);
+	});
+
+	it('never auto-adopts a retained legacy managed-assets root; only an explicit Move may', async () => {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		const harness = buildManagedAssetsRootHarness(vault, manager, {
+			...DEFAULT_SETTINGS,
+			outputFolder: 'New Home',
+			managedAssetsRoot: null,
+			legacyManagedAssetsRoot: 'Old/CON',
+		});
+
+		await harness.reconcileManagedAssetsRoot();
+
+		expect(harness.settings.legacyManagedAssetsRoot).toBe('Old/CON');
+		expect(harness.settings.managedAssetsRoot).toBeNull();
+	});
+
+	it('leaves an already-matching root untouched and does not report it as relocated', async () => {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		const harness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
+		await harness.applyManagedAssets();
+		const before = vault.writeCount;
+
+		await harness.reconcileManagedAssetsRoot();
+
+		expect(harness.settings.managedAssetsRoot).toBe('Home');
+		expect(vault.writeCount).toBe(before);
+	});
+});
+
 async function flush(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();
@@ -231,3 +307,108 @@ describe('deferred runtime boot guard', () => {
 		await expect(plugin.stopManualSession()).resolves.toBeUndefined();
 	});
 });
+
+/** Minimal in-memory Vault double, matching the one `managed-assets.test.ts` exercises the
+ * real journal against, so the reconciliation tests above prove actual file moves. */
+class MemoryAssetVault implements ManagedAssetsVault {
+	readonly contents = new Map<string, string>();
+	readonly folders = new Set<string>();
+	writeCount = 0;
+	file(path: string): ManagedAssetFile | null { return this.contents.has(path) || this.folders.has(path) ? { path } : null; }
+	async read(file: ManagedAssetFile): Promise<string> {
+		const value = this.contents.get(file.path);
+		if (value === undefined) throw new Error('not_file');
+		return value;
+	}
+	async createFolder(path: string): Promise<void> { this.folders.add(path); }
+	async create(path: string, content: string): Promise<ManagedAssetFile> {
+		if (this.file(path)) throw new Error('exists');
+		this.writeCount += 1;
+		this.contents.set(path, content);
+		return { path };
+	}
+	async process(file: ManagedAssetFile, update: (content: string) => string): Promise<string> {
+		const current = this.contents.get(file.path);
+		if (current === undefined) throw new Error('not_file');
+		const next = update(current);
+		if (next !== current) { this.writeCount += 1; this.contents.set(file.path, next); }
+		return next;
+	}
+	async trashFile(file: ManagedAssetFile): Promise<void> { this.contents.delete(file.path); }
+}
+
+/** A real single-asset bundle, exactly as `managed-assets.test.ts` builds one, so hashing and
+ * marker checks run for real instead of being stubbed away. */
+async function buildManagedAssetsManager(vault: MemoryAssetVault): Promise<ManagedAssetsManager> {
+	const [asset] = await genericManagedAssets();
+	if (!asset) throw new Error('missing generic-assets fixture');
+	return new ManagedAssetsManager(vault, 'test-config-dir', {
+		bundleVersion: asset.contentVersion, locale: 'es', assets: [asset],
+	});
+}
+
+interface ManagedAssetsRootHarness {
+	runtimeReady: boolean;
+	settings: TyrianSettings;
+	app: { vault: { configDir: string } };
+	managedAssetsLifecycle: ManagedAssetsLifecycle;
+	managedAssetsView: unknown;
+	settingTab: { refreshManagedAssetsRow(): void };
+	inventoryVaultSync: { invalidate(): void };
+	inventoryVaultSyncRun: { invalidate(): void };
+	walletVaultSync: { invalidate(): void };
+	saveData(data: unknown): Promise<void>;
+	refreshLootPresentation(): Promise<void>;
+	renderViews(): void;
+	renderInventoryAdvisorViews(): void;
+	applyManagedAssets(): Promise<void>;
+	updateSettings(update: Partial<TyrianSettings>): Promise<void>;
+	relocateManagedAssets(): Promise<unknown>;
+	reconcileManagedAssetsRoot(): Promise<void>;
+	ensureManagedAssetsAuthority(): Promise<boolean>;
+	runManagedAssetsLifecycle(operation: () => Promise<unknown>): Promise<unknown>;
+}
+
+/**
+ * Wires the real `TyrianCompanionPlugin` prototype methods that implement folder-change
+ * reconciliation to an isolated harness object instead of a full plugin instance, following
+ * this file's established `.call(harness, …)` pattern. Every method the exercised methods call
+ * on `this` is either a real bound method (so recursive calls stay real) or a narrow stub for a
+ * leaf I/O effect (saveData, render, sync invalidation) that reconciliation does not assert on.
+ */
+function buildManagedAssetsRootHarness(
+	vault: MemoryAssetVault,
+	manager: ManagedAssetsManager,
+	initialSettings: TyrianSettings,
+): ManagedAssetsRootHarness {
+	const proto = TyrianCompanionPlugin.prototype as unknown as {
+		applyManagedAssets(this: ManagedAssetsRootHarness): Promise<void>;
+		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<void>;
+		relocateManagedAssets(this: ManagedAssetsRootHarness): Promise<unknown>;
+		reconcileManagedAssetsRoot(this: ManagedAssetsRootHarness): Promise<void>;
+		ensureManagedAssetsAuthority(this: ManagedAssetsRootHarness): Promise<boolean>;
+		runManagedAssetsLifecycle(this: ManagedAssetsRootHarness, operation: () => Promise<unknown>): Promise<unknown>;
+	};
+	const harness: ManagedAssetsRootHarness = {
+		runtimeReady: true,
+		settings: initialSettings,
+		app: { vault: { configDir: 'test-config-dir' } },
+		managedAssetsLifecycle: new ManagedAssetsLifecycle(manager, new MemoryManagedAssetsPointerStore()),
+		managedAssetsView: null,
+		settingTab: { refreshManagedAssetsRow: () => undefined },
+		inventoryVaultSync: { invalidate: () => undefined },
+		inventoryVaultSyncRun: { invalidate: () => undefined },
+		walletVaultSync: { invalidate: () => undefined },
+		saveData: async () => undefined,
+		refreshLootPresentation: async () => undefined,
+		renderViews: () => undefined,
+		renderInventoryAdvisorViews: () => undefined,
+		applyManagedAssets: () => proto.applyManagedAssets.call(harness),
+		updateSettings: (update) => proto.updateSettings.call(harness, update),
+		relocateManagedAssets: () => proto.relocateManagedAssets.call(harness),
+		reconcileManagedAssetsRoot: () => proto.reconcileManagedAssetsRoot.call(harness),
+		ensureManagedAssetsAuthority: () => proto.ensureManagedAssetsAuthority.call(harness),
+		runManagedAssetsLifecycle: (operation) => proto.runManagedAssetsLifecycle.call(harness, operation),
+	};
+	return harness;
+}

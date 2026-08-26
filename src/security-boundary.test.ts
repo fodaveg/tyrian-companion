@@ -104,7 +104,7 @@ describe('H6.7 credential boundary', () => {
 		const persisted = {
 			...DEFAULT_SETTINGS,
 			apiKeySecret: 'gw2-primary',
-			outputFolder: 'Guild Wars 2/e\u0301',
+			outputFolder: 'Guild Wars 2/CON',
 			apiKey: TOKEN_SENTINEL,
 		};
 		const saved: unknown[] = [];

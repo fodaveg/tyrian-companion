@@ -15,7 +15,7 @@ import {
 	runConfirmedManagedAssetsRemoval,
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
-import { normalizeVaultFolder } from '../core/settings';
+import { resolveVaultFolderInput } from '../core/settings';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import type TyrianCompanionPlugin from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
@@ -159,10 +159,19 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				desc: this.plugin.settings.legacyOutputFolder === null
 					? this.t('settings.output.desc') : this.t('settings.output.legacyDesc'),
 				render: (setting) => {
+					const error = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__error' });
+					error.setAttr('role', 'alert');
+					error.setAttr('aria-live', 'polite');
+					// A rejected value is never silently swapped for the default: the field keeps
+					// what the user typed and the previously saved folder stays in effect.
 					const applyOutputFolder = async (outputFolder: string) => {
-						await this.plugin.updateSettings({
-							outputFolder: normalizeVaultFolder(outputFolder, this.app.vault.configDir),
-						});
+						const resolved = resolveVaultFolderInput(outputFolder, this.app.vault.configDir);
+						if (resolved.status === 'invalid') {
+							error.setText(this.t('settings.output.invalid'));
+							return;
+						}
+						error.setText('');
+						await this.plugin.updateSettings({ outputFolder: resolved.value });
 					};
 					setting.addText((text) => {
 						text

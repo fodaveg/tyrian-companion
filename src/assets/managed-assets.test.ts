@@ -11,8 +11,12 @@ import { MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
 const CONFIG_DIR = 'vault-config';
 
 describe('managed asset paths and planning', () => {
-	it.each(['A/../B.base', 'A//B.base', '/A.base', 'A\\B.base', 'vault-config/A.base', 'VAULT-CONFIG/A.base', 'A/B?.base', 'A/B. ', `A/\0.base`, 'A/\u0001.base', 'A/e\u0301.base', 'A/CON.base', 'A/LPT1.md', `A/${'b'.repeat(121)}.base`])('rejects unsafe or non-NFC path %s', (path) => {
+	it.each(['A/../B.base', 'A//B.base', '/A.base', 'A\\B.base', 'vault-config/A.base', 'VAULT-CONFIG/A.base', 'A/B?.base', 'A/B. ', `A/\0.base`, 'A/\u0001.base', 'A/CON.base', 'A/LPT1.md', `A/${'b'.repeat(121)}.base`])('rejects unsafe path %s', (path) => {
 		expect(normalizeManagedAssetPath(path, CONFIG_DIR)).toBeNull();
+	});
+
+	it('accepts an NFD-decomposed asset path and normalizes it to NFC', () => {
+		expect(normalizeManagedAssetPath('A/e\u0301.base', CONFIG_DIR)).toBe('A/\u00e9.base');
 	});
 
 	it('allows only managed extensions and blocks unowned occupations in a pure preview', () => {
@@ -352,7 +356,7 @@ describe('ManagedAssetsManager', () => {
 		const vault = new MemoryAssetVault();
 		const instance = await manager(vault, 1);
 		await instance.apply('Tyrian Companion');
-		const legacyRoot = 'Tyrian/e\u0301';
+		const legacyRoot = 'Tyrian/CON';
 		const sourceManifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
 		const legacyManifestPath = `${legacyRoot}/${MANAGED_ASSETS_MANIFEST}`;
 		const sourceAssetPath = 'Tyrian Companion/Bases/Sessions.base';
@@ -375,7 +379,7 @@ describe('ManagedAssetsManager', () => {
 		const vault = new MemoryAssetVault();
 		const instance = await manager(vault, 1);
 		await instance.apply('Tyrian Companion');
-		const legacyRoot = 'Tyrian/e\u0301';
+		const legacyRoot = 'Tyrian/CON';
 		const sourceManifestPath = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
 		const legacyManifestPath = `${legacyRoot}/${MANAGED_ASSETS_MANIFEST}`;
 		const sourceAssetPath = 'Tyrian Companion/Bases/Sessions.base';
