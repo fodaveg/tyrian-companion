@@ -37,7 +37,8 @@ const NATIVE_SOURCE_SHA256 = new Map([
 	['native/mumble-helper/src/source.rs', '008997c8d34672bb351b021b57d609f4db76e2092189b561ded69a927c415c09'],
 	['native/mumble-helper/src/win32.rs', '6c67d644ce844ba6f98eda512493399ea724ed644cfa46b103577152612cb977'],
 ]);
-const IGNORED_DIRECTORIES = new Set(['.git', 'coverage', 'node_modules', 'target']);
+// `.claude` holds agent worktrees: a full second copy of the repo that is not this candidate.
+const IGNORED_DIRECTORIES = new Set(['.claude', '.git', 'coverage', 'node_modules', 'target']);
 const NON_PRODUCT_SOURCE_SCOPE = /(?:^|\/)(?:docs|examples|fixtures|test|tests|__fixtures__|__tests__)(?:\/|$)|\.(?:spec|test)\.[^/]+$/u;
 const REVIEWED_H8_8_PRODUCT_SHA256 = new Map([
 	['src/platform/mumble-v2-presence-policy.ts', 'b07d268f466fbcea583b4096cbbf39620edd5cbf4dbeb73a5dbe1d241c71df81'],
@@ -557,7 +558,7 @@ function walk(directory, root) {
 
 function walkIncludingTarget(directory, root) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		if (entry.isDirectory() && ['.git', 'coverage', 'node_modules'].includes(entry.name)) return [];
+		if (entry.isDirectory() && ['.claude', '.git', 'coverage', 'node_modules'].includes(entry.name)) return [];
 		const absolute = resolve(directory, entry.name);
 		if (entry.isDirectory()) return walkIncludingTarget(absolute, root);
 		const path = relative(root, absolute).replaceAll('\\', '/');

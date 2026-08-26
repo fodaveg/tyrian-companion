@@ -18,7 +18,8 @@ const RELEASE_ARTIFACT_FILES = new Set([
 ]);
 
 const FALLBACK_IGNORED_DIRECTORIES = new Set([
-	'.git', 'coverage', 'dist', 'node_modules',
+	// `.claude` holds agent worktrees: a full second copy of the repo that is not this candidate.
+	'.claude', '.git', 'coverage', 'dist', 'node_modules',
 ]);
 const FALLBACK_IGNORED_FILES = new Set(['main.js']);
 const PRIVATE_KEY_PATTERN = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/iu;
