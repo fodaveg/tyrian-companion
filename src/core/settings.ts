@@ -5,6 +5,28 @@ export const SETTINGS_SCHEMA_VERSION = 4 as const;
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
 
+export type InventoryVaultSyncRunStatus = 'success' | 'error';
+export type InventoryVaultSyncRunErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure';
+
+/** Structural twin of the ui layer's plan summary; settings never imports from ui. */
+export interface InventoryVaultSyncPlanSummarySnapshot {
+	positions: number;
+	create: number;
+	update: number;
+	unchanged: number;
+	deactivate: number;
+	conflicts: number;
+}
+
+/** The one-click sync outcome durably recorded once the H-single-button run ends. */
+export interface InventoryVaultSyncLastRun {
+	status: InventoryVaultSyncRunStatus;
+	finishedAt: string;
+	durationMs: number;
+	summary: InventoryVaultSyncPlanSummarySnapshot | null;
+	error: InventoryVaultSyncRunErrorReason | null;
+}
+
 export interface TyrianSettings {
 	schemaVersion: typeof SETTINGS_SCHEMA_VERSION;
 	/** Name of the Obsidian SecretStorage entry, never the secret value. */
@@ -20,6 +42,8 @@ export interface TyrianSettings {
 	legacyOutputFolder: string | null;
 	/** A pre-H5.8 managed root retained without altering the durable pointer. */
 	legacyManagedAssetsRoot: string | null;
+	/** Last outcome of the one-click inventory Vault sync. Null before any run, or on a pre-0.1.7 install. */
+	inventorySyncLastRun: InventoryVaultSyncLastRun | null;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -33,6 +57,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	managedAssetsRoot: null,
 	legacyOutputFolder: null,
 	legacyManagedAssetsRoot: null,
+	inventorySyncLastRun: null,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -66,7 +91,41 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			legacyVaultFolder(data.outputFolder, configDir),
 		legacyManagedAssetsRoot: legacyVaultFolder(data.legacyManagedAssetsRoot, configDir) ??
 			legacyVaultFolder(data.managedAssetsRoot, configDir),
+		inventorySyncLastRun: inventoryVaultSyncLastRun(data.inventorySyncLastRun),
 	};
+}
+
+const SYNC_RUN_STATUSES: ReadonlySet<string> = new Set(['success', 'error']);
+const SYNC_RUN_ERROR_REASONS: ReadonlySet<string> = new Set(['capture_unavailable', 'write_unavailable', 'unexpected_failure']);
+const SYNC_PLAN_SUMMARY_FIELDS = ['positions', 'create', 'update', 'unchanged', 'deactivate', 'conflicts'] as const;
+
+/** Tolerates an absent field (pre-0.1.7) and purges anything that is not exactly this closed shape. */
+function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | null {
+	if (!isRecord(value)) return null;
+	if (typeof value.status !== 'string' || !SYNC_RUN_STATUSES.has(value.status)) return null;
+	if (typeof value.finishedAt !== 'string' || Number.isNaN(Date.parse(value.finishedAt))) return null;
+	if (typeof value.durationMs !== 'number' || !Number.isFinite(value.durationMs) || value.durationMs < 0) return null;
+	const error = typeof value.error === 'string' && SYNC_RUN_ERROR_REASONS.has(value.error)
+		? value.error as InventoryVaultSyncRunErrorReason : null;
+	if (value.status === 'error' && error === null) return null;
+	return {
+		status: value.status as InventoryVaultSyncRunStatus,
+		finishedAt: value.finishedAt,
+		durationMs: value.durationMs,
+		summary: inventoryVaultSyncPlanSummarySnapshot(value.summary),
+		error: value.status === 'success' ? null : error,
+	};
+}
+
+function inventoryVaultSyncPlanSummarySnapshot(value: unknown): InventoryVaultSyncPlanSummarySnapshot | null {
+	if (!isRecord(value)) return null;
+	const summary = {} as Record<(typeof SYNC_PLAN_SUMMARY_FIELDS)[number], number>;
+	for (const field of SYNC_PLAN_SUMMARY_FIELDS) {
+		const entry = value[field];
+		if (typeof entry !== 'number' || !Number.isInteger(entry) || entry < 0) return null;
+		summary[field] = entry;
+	}
+	return summary;
 }
 
 /** Backwards-compatible alias for callers that normalize partial settings updates. */

@@ -265,16 +265,24 @@ export class InventoryVaultSyncService {
 		};
 	}
 
-	apply(plan: InventoryVaultSyncPlan): Promise<InventoryVaultSyncResult> {
+	/**
+	 * `onStep`, when given, reports real progress: how many of `plan.steps` are
+	 * settled (already-unchanged entries count as settled from the start) against
+	 * the plan's own total. It is never a substitute for the returned result.
+	 */
+	apply(plan: InventoryVaultSyncPlan, onStep?: (completed: number, total: number) => void): Promise<InventoryVaultSyncResult> {
 		if (this.flight) return this.flight;
-		const flight = this.applyInternal(plan).finally(() => {
+		const flight = this.applyInternal(plan, onStep).finally(() => {
 			if (this.flight === flight) this.flight = null;
 		});
 		this.flight = flight;
 		return flight;
 	}
 
-	private async applyInternal(plan: InventoryVaultSyncPlan): Promise<InventoryVaultSyncResult> {
+	private async applyInternal(
+		plan: InventoryVaultSyncPlan,
+		onStep?: (completed: number, total: number) => void,
+	): Promise<InventoryVaultSyncResult> {
 		if (!isInventoryVaultSyncPlan(plan, this.configDir) || !plan.canApply) {
 			return { status: 'invalid', message: 'The inventory preview is invalid or blocked.' };
 		}
@@ -289,7 +297,10 @@ export class InventoryVaultSyncService {
 					}
 				}
 			}
+			const total = plan.steps.length;
 			const writes = plan.steps.filter((entry) => entry.status !== 'unchanged');
+			let completed = total - writes.length;
+			onStep?.(completed, total);
 			if (writes.length === 0) return { status: 'unchanged', created: 0, updated: 0, deactivated: 0 };
 			await ensureFolders(this.vault, inventoryFolder(plan.root));
 			let created = 0;
@@ -306,6 +317,8 @@ export class InventoryVaultSyncService {
 						}
 					}
 					created += 1;
+					completed += 1;
+					onStep?.(completed, total);
 					continue;
 				}
 				const file = this.vault.file(entry.path);
@@ -322,6 +335,8 @@ export class InventoryVaultSyncService {
 				}
 				if (entry.status === 'deactivate') deactivated += 1;
 				else updated += 1;
+				completed += 1;
+				onStep?.(completed, total);
 			}
 			return { status: 'applied', created, updated, deactivated };
 		} catch {

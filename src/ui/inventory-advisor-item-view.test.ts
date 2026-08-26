@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { InventoryVaultSyncLastRun } from '../core/settings';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
+import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { InventoryAdvisorItemView, type InventoryAdvisorViewActions } from './inventory-advisor-item-view';
 
 vi.mock('obsidian', () => ({
@@ -8,6 +10,7 @@ vi.mock('obsidian', () => ({
 		readonly contentEl = new FakeElement('div', activeDocument);
 		constructor(_leaf: unknown) {}
 	},
+	setIcon: (el: { setAttribute(name: string, value: string): void }, iconId: string) => { el.setAttribute('data-icon', iconId); },
 }));
 
 let activeDocument: FakeDocument;
@@ -28,8 +31,6 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const right = new InventoryAdvisorItemView({} as never, rightActions.value);
 		await left.onOpen();
 		await right.onOpen();
-		expect(leftActions.refresh).not.toHaveBeenCalled();
-		expect(rightActions.refresh).not.toHaveBeenCalled();
 
 		const [leftSearch] = find(left.contentEl as unknown as FakeElement, 'input');
 		const [leftAction, leftGroup] = find(left.contentEl as unknown as FakeElement, 'select');
@@ -45,7 +46,6 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		right.render();
 		leftLocale = 'en';
 		left.render();
-		await left.refresh();
 
 		const [updatedSearch] = find(left.contentEl as unknown as FakeElement, 'input');
 		const [updatedAction, updatedGroup] = find(left.contentEl as unknown as FakeElement, 'select');
@@ -54,64 +54,97 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(updatedGroup).toBe(leftGroup);
 		expect([updatedSearch?.value, updatedAction?.value, updatedGroup?.value]).toEqual(['material', 'sell', 'evidence']);
 		expect(activeDocument.activeElement).toBe(leftSearch);
-		expect(leftActions.refresh).toHaveBeenCalledOnce();
 		expect(text(left.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
 		expect(text(right.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
 	});
 
-	it('opens without capture and invokes one explicit refresh for one button click', async () => {
+	it('opens without capturing or writing, and a single click on the one guided button runs the whole sync once', async () => {
 		installDom();
-		const viewActions = actions(() => 'es');
+		const run = vi.fn(async () => undefined);
+		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, run });
 		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await view.onOpen();
-		expect(viewActions.refresh).not.toHaveBeenCalled();
-		const refresh = find(view.contentEl as unknown as FakeElement, 'button')[0];
-		if (!refresh) throw new Error('Refresh button was not mounted.');
-		refresh.dispatch('click');
+		expect(run).not.toHaveBeenCalled();
+		const button = find(view.contentEl as unknown as FakeElement, 'button')
+			.find((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario'));
+		if (!button) throw new Error('The single sync button was not mounted.');
+		button.dispatch('click');
 		await Promise.resolve();
 		await Promise.resolve();
-		expect(viewActions.refresh).toHaveBeenCalledOnce();
+		expect(run).toHaveBeenCalledOnce();
 	});
 
-	it('opens durable sync without I/O and forwards only explicit preview and apply clicks', async () => {
+	it('forwards confirm and cancel only from their own buttons while a destructive plan awaits confirmation', async () => {
 		installDom();
-		const preview = vi.fn(async () => undefined);
-		const apply = vi.fn(async () => undefined);
-		const viewActions = actions(() => 'es');
-		const view = new InventoryAdvisorItemView({} as never, {
-			...viewActions.value,
-			getInventoryVaultSyncState: () => ({
-				status: 'preview',
-				summary: { positions: 1, create: 1, update: 0, unchanged: 0, deactivate: 0, conflicts: 0 },
-			}),
-			canApplyInventoryVaultSync: () => true,
-			hasManagedAssetsRoot: () => true,
-			previewInventoryVaultSync: preview,
-			applyInventoryVaultSync: apply,
-		});
+		const confirm = vi.fn(async () => undefined);
+		const cancel = vi.fn();
+		const summary = { positions: 3, create: 1, update: 1, unchanged: 1, deactivate: 1, conflicts: 0 };
+		const viewActions = actions(() => 'es', { state: { status: 'confirm', summary }, confirm, cancel });
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await view.onOpen();
-		expect(preview).not.toHaveBeenCalled();
-		expect(apply).not.toHaveBeenCalled();
 		const buttons = find(view.contentEl as unknown as FakeElement, 'button');
-		const previewButton = buttons.find((button) => button.textContent === 'Previsualizar sincronización');
-		const applyButton = buttons.find((button) => button.textContent === 'Sincronizar con el vault');
-		if (!previewButton || !applyButton) throw new Error('Inventory sync buttons were not mounted.');
-		previewButton.dispatch('click');
-		applyButton.dispatch('click');
+		const confirmButton = buttons.find((candidate) => candidate.textContent === 'Confirmar y escribir');
+		const cancelButton = buttons.find((candidate) => candidate.textContent === 'Cancelar');
+		if (!confirmButton || !cancelButton) throw new Error('Confirm/cancel buttons were not mounted.');
+		confirmButton.dispatch('click');
+		cancelButton.dispatch('click');
 		await Promise.resolve();
 		await Promise.resolve();
-		expect(preview).toHaveBeenCalledOnce();
-		expect(apply).toHaveBeenCalledOnce();
+		expect(confirm).toHaveBeenCalledOnce();
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('shows the persisted last run again after the view closes and reopens, without a view-local cache', async () => {
+		installDom();
+		const lastRun: InventoryVaultSyncLastRun = {
+			status: 'success', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
+			summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 }, error: null,
+		};
+		let queries = 0;
+		const getState = vi.fn((): InventoryVaultSyncRunState => { queries += 1; return { status: 'idle', lastRun }; });
+		const viewActions = actions(() => 'es', { getState });
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		expect(text(view.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		const queriesWhileOpen = queries;
+		expect(queriesWhileOpen).toBeGreaterThan(0);
+
+		await view.onClose();
+		await view.onOpen();
+		expect(text(view.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		expect(queries).toBeGreaterThan(queriesWhileOpen);
+
+		// A brand-new ItemView instance backed by the same actions shows the same saved run:
+		// the outcome lives behind the action port, never in the closed view's own fields.
+		const remounted = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await remounted.onOpen();
+		expect(text(remounted.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
 	});
 });
 
-function actions(locale: () => 'es' | 'en'): { value: InventoryAdvisorViewActions; refresh: ReturnType<typeof vi.fn> } {
-	const refresh = vi.fn(async () => undefined);
-	return { value: {
+function actions(
+	locale: () => 'es' | 'en',
+	sync?: {
+		state?: InventoryVaultSyncRunState;
+		getState?: () => InventoryVaultSyncRunState;
+		run?: () => Promise<void>;
+		confirm?: () => Promise<void>;
+		cancel?: () => void;
+	},
+): { value: InventoryAdvisorViewActions } {
+	const base: InventoryAdvisorViewActions = {
 		getInventoryAdvisorLocale: locale,
 		getInventoryAdvisorViewModel: readyModel,
-		refreshInventoryAdvisor: refresh,
-	}, refresh };
+	};
+	if (sync === undefined) return { value: base };
+	return { value: {
+		...base,
+		getInventoryVaultSyncRunState: sync.getState ?? (() => sync.state ?? { status: 'idle', lastRun: null }),
+		runInventoryVaultSync: sync.run ?? (async () => undefined),
+		confirmInventoryVaultSync: sync.confirm ?? (async () => undefined),
+		cancelInventoryVaultSync: sync.cancel ?? (() => undefined),
+		hasManagedAssetsRoot: () => true,
+	} };
 }
 
 function readyModel(): InventoryAdvisorViewModel {
@@ -162,9 +195,11 @@ class FakeElement {
 	textContent: string | null = null;
 	type = '';
 	value = '';
+	max = 0;
 	placeholder = '';
 	selected = false;
 	disabled = false;
+	hidden = false;
 
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
 	append(...children: FakeElement[]): void { this.children.push(...children); }

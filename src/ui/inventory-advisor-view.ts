@@ -1,5 +1,8 @@
-import type { Translator } from '../core/i18n';
-import type { InventoryVaultSyncViewState } from './inventory-vault-sync-controller';
+import { setIcon } from 'obsidian';
+
+import type { TranslationParams, Translator } from '../core/i18n';
+import type { InventoryVaultSyncPlanSummary } from './inventory-vault-sync-controller';
+import type { InventoryVaultSyncRunPhase, InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -30,8 +33,6 @@ export interface InventoryAdvisorViewPort {
 }
 
 export interface InventoryAdvisorViewInteractions {
-	onRefresh?: () => void | Promise<void>;
-	refreshing?: boolean;
 	preferences?: InventoryPreferencesEditorState;
 	preferencesBusy?: boolean;
 	onLoadPreferences?: () => void | Promise<void>;
@@ -39,12 +40,13 @@ export interface InventoryAdvisorViewInteractions {
 	onRemoveGoal?: (goalId: string) => void | Promise<void>;
 	onUpsertKeepException?: (keepException: KeepExceptionV1) => void | Promise<void>;
 	onRemoveKeepException?: (exceptionId: string) => void | Promise<void>;
+	/** The single guided sync button: one click refreshes, previews, and (unless it must pause) applies. */
 	inventorySync?: {
-		state: InventoryVaultSyncViewState;
-		canApply: boolean;
+		state: InventoryVaultSyncRunState;
 		assetsInstalled: boolean;
-		onPreview: () => void | Promise<void>;
-		onApply: () => void | Promise<void>;
+		onRun: () => void | Promise<void>;
+		onConfirm: () => void | Promise<void>;
+		onCancel: () => void;
 	};
 }
 
@@ -257,21 +259,61 @@ function mountInventoryAdvisorView(
 	syncSection.className = 'tyrian-inventory-advisor__sync';
 	const syncHeading = createEl('h3');
 	const syncIntro = createEl('p');
+	const syncNotice = createDiv();
+	syncNotice.className = 'tyrian-inventory-advisor__sync-notice';
+	const syncOpenNotice = createEl('p');
+	const syncNoticeLastRun = createEl('p');
+	syncNotice.append(syncOpenNotice, syncNoticeLastRun);
 	const syncAssetsHint = createEl('p');
 	syncAssetsHint.className = 'tyrian-inventory-advisor__sync-hint';
-	const syncStatus = createEl('p');
-	syncStatus.className = 'tyrian-inventory-advisor__sync-status';
-	syncStatus.setAttribute('aria-live', 'polite');
-	const syncActions = createDiv();
-	syncActions.className = 'tyrian-inventory-advisor__sync-actions';
-	const syncPreview = createEl('button');
-	syncPreview.type = 'button';
-	syncPreview.addEventListener('click', () => { void interactions.inventorySync?.onPreview(); });
-	const syncApply = createEl('button');
-	syncApply.type = 'button';
-	syncApply.addEventListener('click', () => { void interactions.inventorySync?.onApply(); });
-	syncActions.append(syncPreview, syncApply);
-	syncSection.append(syncHeading, syncIntro, syncAssetsHint, syncStatus, syncActions);
+	const syncButton = createEl('button');
+	syncButton.type = 'button';
+	syncButton.className = 'mod-cta tyrian-inventory-advisor__sync-button';
+	const syncButtonIcon = createSpan();
+	syncButtonIcon.className = 'tyrian-inventory-advisor__sync-button-icon';
+	setIcon(syncButtonIcon, 'refresh-cw');
+	const syncButtonText = createSpan();
+	syncButton.append(syncButtonIcon, syncButtonText);
+	syncButton.addEventListener('click', () => { void interactions.inventorySync?.onRun(); });
+	const syncConfirm = createDiv();
+	syncConfirm.className = 'tyrian-inventory-advisor__sync-confirm';
+	const syncConfirmTitle = createEl('strong');
+	const syncConfirmBody = createEl('p');
+	const syncConfirmSummary = createEl('p');
+	syncConfirmSummary.className = 'tyrian-inventory-advisor__sync-summary';
+	const syncConfirmActions = createDiv();
+	syncConfirmActions.className = 'tyrian-inventory-advisor__sync-actions';
+	const syncConfirmApply = createEl('button');
+	syncConfirmApply.type = 'button';
+	syncConfirmApply.className = 'mod-cta';
+	syncConfirmApply.addEventListener('click', () => { void interactions.inventorySync?.onConfirm(); });
+	const syncConfirmCancel = createEl('button');
+	syncConfirmCancel.type = 'button';
+	syncConfirmCancel.addEventListener('click', () => { interactions.inventorySync?.onCancel(); });
+	syncConfirmActions.append(syncConfirmApply, syncConfirmCancel);
+	syncConfirm.append(syncConfirmTitle, syncConfirmBody, syncConfirmSummary, syncConfirmActions);
+	const syncStatusHeading = createEl('h4');
+	const syncStatusPanel = createDiv();
+	syncStatusPanel.className = 'tyrian-inventory-advisor__sync-status';
+	syncStatusPanel.setAttribute('aria-live', 'polite');
+	const syncStatusTitle = createEl('strong');
+	syncStatusTitle.className = 'tyrian-inventory-advisor__sync-status-title';
+	const syncStatusMessage = createEl('p');
+	const syncStatusProgress = createEl('progress');
+	syncStatusProgress.className = 'tyrian-inventory-advisor__progress';
+	const syncStatusSmall = createEl('small');
+	const syncStatusSummary = createEl('p');
+	syncStatusSummary.className = 'tyrian-inventory-advisor__sync-summary';
+	const syncStatusLastRunNote = createEl('p');
+	const syncStatusFinishedAt = createEl('p');
+	syncStatusPanel.append(
+		syncStatusTitle, syncStatusMessage, syncStatusProgress, syncStatusSmall,
+		syncStatusSummary, syncStatusLastRunNote, syncStatusFinishedAt,
+	);
+	syncSection.append(
+		syncHeading, syncIntro, syncNotice, syncAssetsHint, syncButton, syncConfirm,
+		syncStatusHeading, syncStatusPanel,
+	);
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
@@ -345,11 +387,6 @@ function mountInventoryAdvisorView(
 		sourceControls.set(candidate, { input, text, status });
 	}
 	controls.append(searchLabel, actionLabel, groupLabelElement, characterLabel, sortLabelElement, sourceFieldset);
-	const progress = createEl('progress');
-	progress.className = 'tyrian-inventory-advisor__progress';
-	progress.removeAttribute('value');
-	progress.hidden = true;
-	let refreshButton: HTMLButtonElement | null = null;
 	const refreshResults = (): void => {
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
 		let sourceSelectionChanged = false;
@@ -388,8 +425,7 @@ function mountInventoryAdvisorView(
 				action.focus();
 			},
 		));
-		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty')
-			: interactions.refreshing === true ? translator.t('advisor.view.refreshProgress') : stateLabel(model, translator);
+		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
 	};
 	const updateFilters = (): void => {
 		filters = {
@@ -412,7 +448,7 @@ function mountInventoryAdvisorView(
 	character.addEventListener('change', updateFilters);
 	sortSelect.addEventListener('change', updateFilters);
 	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
-	section.append(heading, intro, iconDisclosure, controls, progress, state, syncSection);
+	section.append(heading, intro, iconDisclosure, controls, state, syncSection);
 	if (preferencesEditor !== null) section.append(preferencesEditor.element);
 	section.append(results);
 	container.replaceChildren(section);
@@ -444,20 +480,47 @@ function mountInventoryAdvisorView(
 		if (sync !== undefined) {
 			syncHeading.textContent = translator.t('advisor.sync.title');
 			syncIntro.textContent = translator.t('advisor.sync.intro');
+			syncOpenNotice.textContent = translator.t('advisor.sync.openNotice');
+			const historicalSummary = sync.state.status === 'idle' ? sync.state.lastRun?.summary ?? null : null;
+			syncNoticeLastRun.hidden = historicalSummary === null;
+			if (historicalSummary !== null) {
+				syncNoticeLastRun.textContent = translator.t('advisor.sync.noticeLastRun', summaryParams(historicalSummary));
+			}
 			syncAssetsHint.textContent = translator.t('advisor.sync.assetsHint');
 			syncAssetsHint.hidden = sync.assetsInstalled;
-			syncStatus.textContent = inventorySyncStateLabel(sync.state, translator);
-			const working = sync.state.status === 'loading' || sync.state.status === 'applying';
-			syncPreview.textContent = translator.t('advisor.sync.preview');
-			syncPreview.setAttribute('aria-label', translator.t('advisor.sync.preview'));
-			syncPreview.disabled = working || sync.state.status === 'disabled';
-			syncApply.textContent = translator.t('advisor.sync.apply');
-			syncApply.setAttribute('aria-label', translator.t('advisor.sync.apply'));
-			syncApply.disabled = working || !sync.canApply;
-			syncSection.setAttribute('aria-busy', String(working));
-			if (sync.state.status === 'conflict' || sync.state.status === 'error' || sync.state.status === 'disabled') {
-				syncStatus.setAttribute('role', 'alert');
-			} else syncStatus.removeAttribute('role');
+			const busy = sync.state.status === 'running';
+			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
+			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
+			syncButton.disabled = busy || sync.state.status === 'confirm' || sync.state.status === 'disabled';
+			syncSection.setAttribute('aria-busy', String(busy));
+
+			syncConfirm.hidden = sync.state.status !== 'confirm';
+			if (sync.state.status === 'confirm') {
+				syncConfirmTitle.textContent = translator.t('advisor.sync.confirmTitle');
+				syncConfirmBody.textContent = translator.t('advisor.sync.confirmBody', { deactivate: sync.state.summary.deactivate });
+				syncConfirmSummary.textContent = translator.t('advisor.sync.summaryLine', summaryParams(sync.state.summary));
+			}
+			syncConfirmApply.textContent = translator.t('advisor.sync.confirmApply');
+			syncConfirmCancel.textContent = translator.t('common.cancel');
+
+			syncStatusHeading.textContent = translator.t('advisor.sync.statusHeading');
+			const panel = inventorySyncPanel(sync.state, translator);
+			syncStatusTitle.textContent = `${panel.statusWord} · ${translator.t('advisor.sync.button')}`;
+			syncStatusTitle.setAttribute('data-tone', panel.tone);
+			syncStatusMessage.textContent = panel.message;
+			syncStatusProgress.max = 100;
+			syncStatusProgress.value = panel.percent;
+			syncStatusSmall.textContent = panel.progressLabel;
+			syncStatusSummary.hidden = panel.summaryLine === null;
+			syncStatusSummary.textContent = panel.summaryLine ?? '';
+			syncStatusLastRunNote.hidden = panel.lastRunNote === null;
+			syncStatusLastRunNote.textContent = panel.lastRunNote ?? '';
+			syncStatusFinishedAt.hidden = panel.finishedAtLine === null;
+			syncStatusFinishedAt.textContent = panel.finishedAtLine ?? '';
+			if (sync.state.status === 'conflict' || sync.state.status === 'disabled'
+				|| (sync.state.status === 'idle' && sync.state.lastRun?.status === 'error')) {
+				syncStatusPanel.setAttribute('role', 'alert');
+			} else syncStatusPanel.removeAttribute('role');
 		}
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
@@ -481,22 +544,8 @@ function mountInventoryAdvisorView(
 		}
 		if (model.status === 'loading') controls.setAttribute('aria-disabled', 'true');
 		else controls.removeAttribute('aria-disabled');
-		progress.hidden = interactions.refreshing !== true;
-		progress.setAttribute('aria-label', translator.t('advisor.view.refreshProgress'));
-		section.setAttribute('aria-busy', String(interactions.refreshing === true));
 		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
-		if (interactions.onRefresh !== undefined && refreshButton === null) {
-			refreshButton = createEl('button');
-			refreshButton.type = 'button';
-			refreshButton.addEventListener('click', () => { void interactions.onRefresh?.(); });
-			controls.append(refreshButton);
-		}
-		if (refreshButton !== null) {
-			refreshButton.textContent = translator.t(interactions.refreshing ? 'advisor.view.refreshing' : 'advisor.view.refresh');
-			refreshButton.setAttribute('aria-label', translator.t('advisor.view.refresh'));
-			refreshButton.disabled = interactions.refreshing === true || interactions.onRefresh === undefined;
-		}
 		preferencesEditor?.update();
 		refreshResults();
 	};
@@ -504,23 +553,78 @@ function mountInventoryAdvisorView(
 	return { update };
 }
 
-function inventorySyncStateLabel(state: InventoryVaultSyncViewState, translator: Translator): string {
-	if (state.status === 'disabled') return translator.t(`advisor.sync.state.disabled.${state.reason}`);
-	if (state.status === 'error') return translator.t(`advisor.sync.state.error.${state.reason}`);
-	if (state.status === 'preview') return translator.t('advisor.sync.state.preview', {
-		positions: state.summary.positions,
-		create: state.summary.create,
-		update: state.summary.update,
-		deactivate: state.summary.deactivate,
-	});
-	if (state.status === 'applying') return translator.t('advisor.sync.state.applying');
-	if (state.status === 'success') return translator.t('advisor.sync.state.success', {
-		created: state.result.created,
-		updated: state.result.updated,
-		deactivated: state.result.deactivated,
-	});
-	if (state.status === 'conflict') return translator.t('advisor.sync.state.conflict');
-	return translator.t(`advisor.sync.state.${state.status}`);
+/** Everything the Estado panel renders, derived only from the run state (never a timer). */
+interface InventorySyncPanelProjection {
+	readonly tone: 'error' | 'success' | 'normal';
+	readonly statusWord: string;
+	readonly message: string;
+	readonly percent: number;
+	readonly progressLabel: string;
+	readonly summaryLine: string | null;
+	readonly lastRunNote: string | null;
+	readonly finishedAtLine: string | null;
+}
+
+const EMPTY_SYNC_SUMMARY: InventoryVaultSyncPlanSummary = {
+	positions: 0, create: 0, update: 0, unchanged: 0, deactivate: 0, conflicts: 0,
+};
+
+/** Named summary interfaces have no index signature; this gives `t()` a plain params object. */
+function summaryParams(summary: InventoryVaultSyncPlanSummary): TranslationParams {
+	return {
+		positions: summary.positions, create: summary.create, update: summary.update,
+		unchanged: summary.unchanged, deactivate: summary.deactivate, conflicts: summary.conflicts,
+	};
+}
+
+function inventorySyncPanel(state: InventoryVaultSyncRunState, translator: Translator): InventorySyncPanelProjection {
+	const progressLabel = (percent: number, completed: number | null, total: number | null, phase: InventoryVaultSyncRunPhase | null): string =>
+		completed !== null && total !== null && phase !== null
+			? translator.t('advisor.sync.progressWithTotal', { percent, completed, total, phase: translator.t(`advisor.sync.phaseShort.${phase}`) })
+			: translator.t('advisor.sync.progressPercentOnly', { percent });
+	if (state.status === 'disabled') return {
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.disabled'),
+		message: translator.t(`advisor.sync.state.disabled.${state.reason}`),
+		percent: 0, progressLabel: progressLabel(0, null, null, null),
+		summaryLine: null, lastRunNote: null, finishedAtLine: null,
+	};
+	if (state.status === 'running') return {
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.running'),
+		message: translator.t(`advisor.sync.phase.${state.phase}`),
+		percent: state.percent, progressLabel: progressLabel(state.percent, state.completed, state.total, state.phase),
+		summaryLine: null, lastRunNote: null, finishedAtLine: null,
+	};
+	if (state.status === 'confirm') return {
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.confirm'),
+		message: translator.t('advisor.sync.confirmBody', { deactivate: state.summary.deactivate }),
+		percent: 80, progressLabel: progressLabel(80, null, null, null),
+		summaryLine: translator.t('advisor.sync.summaryLine', summaryParams(state.summary)), lastRunNote: null, finishedAtLine: null,
+	};
+	if (state.status === 'conflict') return {
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.conflict'),
+		message: translator.t('advisor.sync.state.conflict'),
+		percent: 100, progressLabel: progressLabel(100, null, null, null),
+		summaryLine: state.summary === null ? null : translator.t('advisor.sync.summaryLine', summaryParams(state.summary)),
+		lastRunNote: null, finishedAtLine: null,
+	};
+	const lastRun = state.lastRun;
+	if (lastRun === null) return {
+		tone: 'normal', statusWord: translator.t('advisor.sync.status.idle'),
+		message: translator.t('advisor.sync.idle'),
+		percent: 0, progressLabel: progressLabel(0, null, null, null),
+		summaryLine: null, lastRunNote: null, finishedAtLine: null,
+	};
+	const percent = lastRun.status === 'success' ? 100 : 0;
+	return {
+		tone: lastRun.status, statusWord: translator.t(`advisor.sync.status.${lastRun.status}`),
+		message: lastRun.status === 'success'
+			? translator.t('advisor.sync.lastRun.success', summaryParams(lastRun.summary ?? EMPTY_SYNC_SUMMARY))
+			: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`),
+		percent, progressLabel: progressLabel(percent, null, null, null),
+		summaryLine: lastRun.summary === null ? null : translator.t('advisor.sync.summaryLine', summaryParams(lastRun.summary)),
+		lastRunNote: translator.t('advisor.sync.lastRunNote'),
+		finishedAtLine: translator.t('advisor.sync.lastRunFinishedAt', { finishedAt: lastRun.finishedAt }),
+	};
 }
 
 function optionalSourceCoverageLabel(

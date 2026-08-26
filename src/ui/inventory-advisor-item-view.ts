@@ -6,7 +6,7 @@ import type { InventoryPreferencesEditorSession } from '../advisor/inventory-pre
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
-import type { InventoryVaultSyncViewState } from './inventory-vault-sync-controller';
+import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 
 export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 
@@ -14,22 +14,24 @@ export interface InventoryAdvisorViewActions {
 	getInventoryAdvisorLocale(): Locale;
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
 	createInventoryPreferencesEditorSession?(): InventoryPreferencesEditorSession;
-	refreshInventoryAdvisor(): Promise<void>;
 	loadInventoryPreferences?(): Promise<void>;
 	upsertInventoryGoal?(goal: ReservationGoal): Promise<void>;
 	removeInventoryGoal?(goalId: string): Promise<void>;
 	upsertInventoryKeepException?(keepException: KeepExceptionV1): Promise<void>;
 	removeInventoryKeepException?(exceptionId: string): Promise<void>;
-	getInventoryVaultSyncState?(): InventoryVaultSyncViewState;
-	canApplyInventoryVaultSync?(): boolean;
+	/** Reads the live/persisted state of the single-button sync; never starts work by itself. */
+	getInventoryVaultSyncRunState?(): InventoryVaultSyncRunState;
 	hasManagedAssetsRoot?(): boolean;
-	previewInventoryVaultSync?(): Promise<void>;
-	applyInventoryVaultSync?(): Promise<void>;
+	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
+	runInventoryVaultSync?(): Promise<void>;
+	/** Writes a plan that paused for confirmation. */
+	confirmInventoryVaultSync?(): Promise<void>;
+	/** Discards a pending destructive plan without writing anything. */
+	cancelInventoryVaultSync?(): void;
 }
 
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
 export class InventoryAdvisorItemView extends ItemView {
-	private refreshing = false;
 	private preferencesBusy = false;
 	private closed = false;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
@@ -46,31 +48,32 @@ export class InventoryAdvisorItemView extends ItemView {
 
 	render(): void {
 		if (this.closed) return;
+		const sync = this.actions.getInventoryVaultSyncRunState === undefined
+			|| this.actions.runInventoryVaultSync === undefined
+			|| this.actions.confirmInventoryVaultSync === undefined
+			|| this.actions.cancelInventoryVaultSync === undefined
+			? undefined
+			: {
+				state: this.actions.getInventoryVaultSyncRunState(),
+				assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
+				onRun: () => this.runInventorySyncAction(() => this.actions.runInventoryVaultSync!()),
+				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),
+				onCancel: () => { this.actions.cancelInventoryVaultSync!(); this.render(); },
+			};
 		renderInventoryAdvisorView(
 			this.contentEl,
 			this.actions.getInventoryAdvisorViewModel(),
 			createTranslator(this.actions.getInventoryAdvisorLocale()),
 			undefined,
 			{
-				refreshing: this.refreshing,
 				preferencesBusy: this.preferencesBusy,
-				onRefresh: () => this.refresh(),
 				preferences: this.preferenceSession?.current(),
 				onLoadPreferences: this.preferenceSession === undefined ? undefined : () => this.runPreferenceAction(async () => { await this.preferenceSession!.load(); }),
 				onUpsertGoal: this.preferenceSession === undefined ? undefined : (goal) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertGoal(goal); }),
 				onRemoveGoal: this.preferenceSession === undefined ? undefined : (goalId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeGoal(goalId); }),
 				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertKeepException(keepException); }),
 				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
-				inventorySync: this.actions.getInventoryVaultSyncState === undefined ||
-					this.actions.previewInventoryVaultSync === undefined || this.actions.applyInventoryVaultSync === undefined
-					? undefined
-					: {
-						state: this.actions.getInventoryVaultSyncState(),
-						canApply: this.actions.canApplyInventoryVaultSync?.() ?? false,
-						assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
-						onPreview: () => this.runInventorySyncAction(() => this.actions.previewInventoryVaultSync!()),
-						onApply: () => this.runInventorySyncAction(() => this.actions.applyInventoryVaultSync!()),
-					},
+				inventorySync: sync,
 			},
 		);
 	}
@@ -80,14 +83,6 @@ export class InventoryAdvisorItemView extends ItemView {
 		this.render();
 		try { await action(); }
 		finally { this.render(); }
-	}
-
-	async refresh(): Promise<void> {
-		if (this.refreshing || this.closed) return;
-		this.refreshing = true;
-		this.render();
-		try { await this.actions.refreshInventoryAdvisor(); }
-		finally { this.refreshing = false; this.render(); }
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {

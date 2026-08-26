@@ -107,6 +107,31 @@ describe('durable inventory Vault commands', () => {
 	});
 });
 
+describe('one-click inventory sync outcome persistence', () => {
+	it('merges the fresh outcome into settings and saves the whole object, leaving unrelated fields untouched', async () => {
+		const saved: unknown[] = [];
+		const plugin = {
+			settings: { apiKeySecret: 'gw2-primary', language: 'es', inventorySyncLastRun: null },
+			saveData: async (data: unknown) => { saved.push(data); },
+		};
+		const outcome = {
+			status: 'success' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
+			summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 }, error: null,
+		};
+		interface OutcomeHarness {
+			settings: { apiKeySecret: string; language: string; inventorySyncLastRun: typeof outcome | null };
+			saveData(data: unknown): Promise<void>;
+		}
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const record = (TyrianCompanionPlugin.prototype as unknown as {
+			recordInventorySyncOutcome(this: OutcomeHarness, next: typeof outcome): Promise<void>;
+		}).recordInventorySyncOutcome;
+		await record.call(plugin, outcome);
+		expect(plugin.settings).toEqual({ apiKeySecret: 'gw2-primary', language: 'es', inventorySyncLastRun: outcome });
+		expect(saved).toEqual([plugin.settings]);
+	});
+});
+
 describe('configured notes root', () => {
 	it('always follows the explicit output folder, never the managed-assets pointer', () => {
 		const plugin = {

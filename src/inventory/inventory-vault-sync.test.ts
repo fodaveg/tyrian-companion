@@ -106,6 +106,26 @@ describe('inventory Vault preview and apply', () => {
 		expect(vault.mutations).toBe(writes);
 	});
 
+	it('reports onStep progress from the plan\'s own steps, not from a timer', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const input = await inputWithAllSources();
+		const preview = await service.preview(ROOT, input);
+		const ticks: Array<[number, number]> = [];
+		await service.apply(preview, (completed, total) => ticks.push([completed, total]));
+		expect(preview.steps).toHaveLength(5);
+		expect(ticks.every(([, total]) => total === 5)).toBe(true);
+		expect(ticks.at(0)).toEqual([0, 5]);
+		expect(ticks.at(-1)).toEqual([5, 5]);
+		expect(ticks.map(([completed]) => completed)).toEqual([0, 1, 2, 3, 4, 5]);
+
+		const second = await service.preview(ROOT, input);
+		expect(second.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		const unchangedTicks: Array<[number, number]> = [];
+		await service.apply(second, (completed, total) => unchangedTicks.push([completed, total]));
+		expect(unchangedTicks).toEqual([[5, 5]]);
+	});
+
 	it('writes deterministic opaque filenames and redacts capture identities and raw credentials', async () => {
 		const accountId = 'account-private-123';
 		const snapshotId = 'snapshot-private-456';

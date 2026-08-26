@@ -47,3 +47,8 @@ export class TFile {}
 export async function requestUrl(): Promise<{ status: number; headers: Record<string, string>; json: unknown }> {
 	return { status: 200, headers: {}, json: {} };
 }
+
+/** Records the requested Lucide icon id on the element instead of rendering real markup. */
+export function setIcon(el: { setAttribute(name: string, value: string): void }, iconId: string): void {
+	el.setAttribute('data-icon', iconId);
+}

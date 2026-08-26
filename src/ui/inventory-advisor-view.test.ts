@@ -147,7 +147,7 @@ describe('Inventory Advisor view', () => {
 			const mount = render({ ...readyModel(), status, groups: status === 'ready' || status === 'limited' ? readyModel().groups : [] });
 			const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
 			expect(state.attributes.get('aria-live')).toBe('polite');
-			expect(mount.section.attributes.get('aria-busy')).toBe('false');
+			expect(mount.section.attributes.get('aria-busy')).toBe(String(status === 'loading'));
 			if (status === 'blocked' || status === 'invalid') expect(state.attributes.get('role')).toBe('alert');
 			else expect(state.attributes.has('role')).toBe(false);
 			expect(mount.elements().every((element) => !element.attributes.has('tabindex'))).toBe(true);
@@ -348,20 +348,16 @@ describe('Inventory Advisor view', () => {
 		expect(walk(pressed).some((element) => element.textContent === 'Vender ya')).toBe(true);
 	});
 
-	it('renders only trusted GW2 item icons and an honest indeterminate refresh state', () => {
+	it('renders only trusted GW2 item icons', () => {
 		const model = allStatesAndActionsModel();
 		model.groups[0]!.rows[0]!.icon = 'https://render.guildwars2.com/file/abc.png';
 		model.groups[0]!.rows[1]!.icon = 'https://render.guildwars2.com:444/file/port.png';
 		model.groups[0]!.rows[2]!.icon = 'https://user@render.guildwars2.com/file/credentials.png';
-		const mount = render(model, 'es', { refreshing: true });
+		const mount = render(model);
 		const images = find(mount.elements(), 'img');
 		expect(images).toHaveLength(2);
 		expect(new Set(images.map((image) => image.attributes.get('src')))).toEqual(new Set(['https://render.guildwars2.com/file/abc.png']));
 		expect(images.every((image) => image.attributes.get('alt') === '')).toBe(true);
-		const progress = only(find(mount.elements(), 'progress'));
-		expect(progress.attributes.has('value')).toBe(false);
-		expect(mount.section.attributes.get('aria-busy')).toBe('true');
-		expect(text(mount.elements())).toContain('Puede tardar cerca de un minuto.');
 		expect(text(mount.elements())).toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
 	});
 
@@ -475,55 +471,128 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).not.toMatch(/vault-hash|account-a|generation/u);
 	});
 
-	it('renders durable inventory controls without capturing or applying until an explicit click', () => {
-		const preview = vi.fn();
-		const apply = vi.fn();
+	it('renders the one guided button and its advance notice without capturing or writing until an explicit click', () => {
+		const onRun = vi.fn();
+		const onConfirm = vi.fn();
+		const onCancel = vi.fn();
 		const mount = render(readyModel(), 'es', {
 			inventorySync: {
-				state: { status: 'idle' }, canApply: false, assetsInstalled: false,
-				onPreview: preview, onApply: apply,
+				state: { status: 'idle', lastRun: null }, assetsInstalled: false,
+				onRun, onConfirm, onCancel,
 			},
 		});
 		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
-		const status = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
-		const [previewButton, applyButton] = find(walk(section), 'button');
+		const statusPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
 		expect(section.hidden).toBe(false);
-		expect(status.attributes.get('aria-live')).toBe('polite');
+		expect(statusPanel.attributes.get('aria-live')).toBe('polite');
 		expect(text(walk(section))).toContain('Abrir esta vista no lee la cuenta ni escribe notas.');
 		expect(text(walk(section))).toContain('Instala o actualiza los assets gestionados');
-		expect(preview).not.toHaveBeenCalled();
-		expect(apply).not.toHaveBeenCalled();
-		previewButton!.dispatch('click');
-		expect(preview).toHaveBeenCalledOnce();
-		expect(applyButton!.disabled).toBe(true);
-		expect(apply).not.toHaveBeenCalled();
+		const button = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
+		expect(button.disabled).toBe(false);
+		expect(button.attributes.get('aria-label')).toBe('Sincronizar inventario');
+		const confirmPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm'));
+		expect(confirmPanel.hidden).toBe(true);
+		expect(onRun).not.toHaveBeenCalled();
+		button.dispatch('click');
+		expect(onRun).toHaveBeenCalledOnce();
+		expect(onConfirm).not.toHaveBeenCalled();
+		expect(onCancel).not.toHaveBeenCalled();
 	});
 
-	it('exposes loading, preview, applying, success, error, conflict and disabled sync states accessibly', () => {
-		const summary = { positions: 2, create: 1, update: 0, unchanged: 0, deactivate: 1, conflicts: 0 };
-		for (const [state, canApply, busy, alert, previewDisabled, applyDisabled] of [
-			[{ status: 'loading' }, false, true, false, true, true],
-			[{ status: 'preview', summary }, true, false, false, false, false],
-			[{ status: 'applying', summary }, false, true, false, true, true],
-			[{ status: 'success', summary, result: { status: 'applied', created: 1, updated: 0, deactivated: 1 } }, false, false, false, false, true],
-			[{ status: 'error', reason: 'capture_unavailable' }, false, false, true, false, true],
-			[{ status: 'conflict', summary }, false, false, true, false, true],
-			[{ status: 'disabled', reason: 'missing_key' }, false, false, true, true, true],
+	it('pauses for explicit confirmation on a destructive plan, disables the button, and forwards confirm/cancel only from their own controls', () => {
+		const onRun = vi.fn();
+		const onConfirm = vi.fn();
+		const onCancel = vi.fn();
+		const summary = { positions: 3, create: 1, update: 1, unchanged: 0, deactivate: 1, conflicts: 0 };
+		const mount = render(readyModel(), 'es', {
+			inventorySync: { state: { status: 'confirm', summary }, assetsInstalled: true, onRun, onConfirm, onCancel },
+		});
+		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+		const runButton = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
+		expect(runButton.disabled).toBe(true);
+		const confirmPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm'));
+		expect(confirmPanel.hidden).toBe(false);
+		expect(text(walk(confirmPanel))).toContain('desactivará 1 filas');
+		expect(text(walk(confirmPanel))).toContain('3 filas · 1 nuevas · 1 actualizadas · 0 sin cambios · 1 inactivas · 0 conflictos');
+		const confirmButton = only(find(walk(confirmPanel), 'button').filter((candidate) => candidate.textContent === 'Confirmar y escribir'));
+		const cancelButton = only(find(walk(confirmPanel), 'button').filter((candidate) => candidate.textContent === 'Cancelar'));
+		confirmButton.dispatch('click');
+		expect(onConfirm).toHaveBeenCalledOnce();
+		cancelButton.dispatch('click');
+		expect(onCancel).toHaveBeenCalledOnce();
+		expect(onRun).not.toHaveBeenCalled();
+	});
+
+	it('stops at conflict without an apply path, still allows a retry click, and never leaks a raw secret', () => {
+		const summary = { positions: 2, create: 1, update: 0, unchanged: 0, deactivate: 0, conflicts: 1 };
+		for (const [state, alert, buttonDisabled, tone] of [
+			[{ status: 'running', phase: 'capture', percent: 0, completed: null, total: null }, false, true, 'normal'],
+			[{ status: 'confirm', summary: { ...summary, conflicts: 0, deactivate: 1 } }, false, true, 'normal'],
+			// A real conflict cannot be applied, but the button still allows the user to retry after resolving it manually.
+			[{ status: 'conflict', summary }, true, false, 'normal'],
+			[{ status: 'disabled', reason: 'missing_key' }, true, true, 'normal'],
+			[{ status: 'idle', lastRun: { status: 'success', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 1, summary, error: null } }, false, false, 'success'],
+			[{ status: 'idle', lastRun: { status: 'error', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 1, summary: null, error: 'write_unavailable' } }, true, false, 'error'],
 		] as const) {
 			const mount = render(readyModel(), 'en', {
-				inventorySync: { state, canApply, assetsInstalled: true, onPreview: vi.fn(), onApply: vi.fn() },
+				inventorySync: { state, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn() },
 			});
 			const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
-			const status = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
-			const [previewButton, applyButton] = find(walk(section), 'button');
-			expect(section.attributes.get('aria-busy')).toBe(String(busy));
-			expect(status.attributes.has('role')).toBe(alert);
-			expect(previewButton?.attributes.get('aria-label')).toBe('Preview sync');
-			expect(applyButton?.attributes.get('aria-label')).toBe('Sync to Vault');
-			expect(previewButton?.disabled).toBe(previewDisabled);
-			expect(applyButton?.disabled).toBe(applyDisabled);
+			const statusPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
+			const statusTitle = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status-title'));
+			const button = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sync inventory' || element.textContent === 'Syncing…')));
+			expect(statusPanel.attributes.has('role')).toBe(alert);
+			expect(button.disabled).toBe(buttonDisabled);
+			expect(statusTitle.attributes.get('data-tone')).toBe(tone);
 			expect(text(walk(section))).not.toMatch(/account-|token-|RAW_/u);
 		}
+	});
+
+	it('paints the live percent and phase from the run state alone, never from a timer', () => {
+		const running = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'running', phase: 'classification', percent: 40, completed: null, total: null },
+				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const runningPanel = only(byClass(running.elements(), 'tyrian-inventory-advisor__sync-status'));
+		const progress = only(find(walk(runningPanel), 'progress'));
+		expect(progress.value).toBe(40);
+		expect(text(walk(runningPanel))).toContain('40%');
+
+		const applying = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'running', phase: 'apply', percent: 90, completed: 9, total: 10 },
+				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const applyingPanel = only(byClass(applying.elements(), 'tyrian-inventory-advisor__sync-status'));
+		const applyingProgress = only(find(walk(applyingPanel), 'progress'));
+		expect(applyingProgress.value).toBe(90);
+		expect(text(walk(applyingPanel))).toContain('90% · 9/10 · Escritura');
+	});
+
+	it('shows the persisted last run with its own note and finished-at line only while nothing is live', () => {
+		const mount = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'idle', lastRun: {
+					status: 'success', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
+					summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 }, error: null,
+				} }, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+		expect(text(walk(section))).toContain('Se muestra la última ejecución guardada.');
+		expect(text(walk(section))).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		expect(text(walk(section))).toContain('La última sincronización guardada movió 2909 filas: 1616 nuevas, 1167 actualizadas, 0 inactivas.');
+		const running = render(readyModel(), 'es', {
+			inventorySync: {
+				state: { status: 'running', phase: 'preview', percent: 60, completed: null, total: null },
+				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		});
+		const runningSection = only(byClass(running.elements(), 'tyrian-inventory-advisor__sync'));
+		expect(text(walk(runningSection))).not.toContain('Se muestra la última ejecución guardada.');
 	});
 });
 

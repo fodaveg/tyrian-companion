@@ -477,14 +477,95 @@
 }
 
 .tyrian-inventory-advisor__sync h3,
+.tyrian-inventory-advisor__sync h4,
 .tyrian-inventory-advisor__sync p {
 	margin-block: 0 var(--size-4-2);
 }
 
-.tyrian-inventory-advisor__sync-hint,
-.tyrian-inventory-advisor__sync-status {
+.tyrian-inventory-advisor__sync-hint {
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-notice {
+	margin-block-end: var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-inline-start: 3px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-notice p {
+	margin-block: 0 var(--size-4-1);
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__sync-button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-height: 44px;
+	margin-block-end: var(--size-4-3);
+}
+
+.tyrian-inventory-advisor__sync-button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.tyrian-inventory-advisor__sync-button-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.tyrian-inventory-advisor__sync-confirm {
+	display: grid;
+	gap: var(--size-4-1);
+	margin-block-end: var(--size-4-3);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-confirm[hidden] {
+	display: none;
+}
+
+.tyrian-inventory-advisor__sync-summary {
+	overflow-wrap: anywhere;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__sync-status {
+	display: grid;
+	gap: var(--size-4-1);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-status-title {
+	color: var(--text-normal);
+	letter-spacing: .02em;
+}
+
+.tyrian-inventory-advisor__sync-status-title[data-tone="error"] {
+	color: var(--text-error);
+}
+
+.tyrian-inventory-advisor__sync-status-title[data-tone="success"] {
+	color: var(--text-success);
+}
+
+.tyrian-inventory-advisor__sync-status small {
+	color: var(--text-muted);
 }
 
 .tyrian-inventory-advisor__sync-actions {

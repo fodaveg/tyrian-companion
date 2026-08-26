@@ -41,6 +41,7 @@ import {
 	migrateSettings,
 	shouldPersistSettingsOnLoad,
 	type DetectionMode,
+	type InventoryVaultSyncLastRun,
 	type TyrianSettings,
 } from './core/settings';
 import {
@@ -113,11 +114,16 @@ import {
 import {
 	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
+	type InventoryVaultSyncPlan,
 } from './inventory/inventory-vault-sync';
 import {
 	InventoryVaultSyncController,
-	type InventoryVaultSyncViewState,
+	type InventoryVaultSyncDisabledReason,
 } from './ui/inventory-vault-sync-controller';
+import {
+	InventoryVaultOneClickSyncController,
+	type InventoryVaultSyncRunState,
+} from './ui/inventory-vault-sync-run-controller';
 import {
 	WalletVaultCaptureService,
 	WalletVaultSyncService,
@@ -148,6 +154,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private inventoryVaultSync!: InventoryVaultSyncController;
+	private inventoryVaultSyncRun!: InventoryVaultOneClickSyncController;
+	private readonly inventoryAdvisorPhaseListener: InventoryAdvisorPhaseListenerRef = { current: null };
 	private walletVaultSync!: WalletVaultSyncController;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private settingTab!: TyrianCompanionSettingTab;
@@ -232,26 +240,39 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		}, this.app.vault.configDir);
 		let inventoryVaultCapture: InventoryVaultCaptureService | null = null;
+		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
+			if (inventoryVaultCapture === null) {
+				inventoryVaultCapture = new InventoryVaultCaptureService(
+					inventoryClient,
+					inventorySnapshots,
+					new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter()),
+					inventoryPublicClient,
+				);
+			}
+			const input = await inventoryVaultCapture.capture(this.settings.language);
+			return await inventoryVaultWriter.preview(this.configuredNotesRoot(), input);
+		};
+		const inventorySyncDisabledReason = (): InventoryVaultSyncDisabledReason | null => {
+			if (this.settings.apiKeySecret.length === 0) return 'missing_key';
+			if (this.settings.legacyOutputFolder !== null || this.settings.legacyManagedAssetsRoot !== null) return 'legacy_root';
+			return null;
+		};
 		this.inventoryVaultSync = new InventoryVaultSyncController({
-			disabledReason: () => {
-				if (this.settings.apiKeySecret.length === 0) return 'missing_key';
-				if (this.settings.legacyOutputFolder !== null || this.settings.legacyManagedAssetsRoot !== null) return 'legacy_root';
-				return null;
-			},
-			preview: async () => {
-				if (inventoryVaultCapture === null) {
-					inventoryVaultCapture = new InventoryVaultCaptureService(
-						inventoryClient,
-						inventorySnapshots,
-						new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter()),
-						inventoryPublicClient,
-					);
-				}
-				const input = await inventoryVaultCapture.capture(this.settings.language);
-				return await inventoryVaultWriter.preview(this.configuredNotesRoot(), input);
-			},
+			disabledReason: inventorySyncDisabledReason,
+			preview: previewInventorySync,
 			apply: async (plan) => await inventoryVaultWriter.apply(plan),
 		});
+		this.inventoryVaultSyncRun = new InventoryVaultOneClickSyncController(
+			{
+				disabledReason: inventorySyncDisabledReason,
+				refreshAdvisor: (onPhase) => this.refreshInventoryAdvisorForSync(onPhase),
+				previewSync: previewInventorySync,
+				applySync: async (plan, onStep) => await inventoryVaultWriter.apply(plan, onStep),
+			},
+			this.settings.inventorySyncLastRun,
+			() => this.renderInventoryAdvisorViews(),
+			(outcome) => { void this.recordInventorySyncOutcome(outcome); },
+		);
 		const walletVaultWriter = new WalletVaultSyncService({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
 			markdownFiles: () => this.app.vault.getMarkdownFiles(),
@@ -288,6 +309,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			inventoryClient, inventoryPublicClient, inventorySnapshots,
 			() => this.settings.language, this.inventoryPreferences,
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
+			this.inventoryAdvisorPhaseListener,
 		);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
@@ -466,6 +488,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
+		this.inventoryVaultSyncRun?.dispose();
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.startModal?.close();
@@ -543,12 +566,38 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderInventoryAdvisorViews();
 	}
 
-	getInventoryVaultSyncState(): InventoryVaultSyncViewState {
-		return this.inventoryVaultSync.current();
+	/** Runs the ordinary advisor refresh while reporting its real capture/preferences/classification phases. */
+	private async refreshInventoryAdvisorForSync(
+		onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
+	): Promise<void> {
+		this.inventoryAdvisorPhaseListener.current = onPhase;
+		try { await this.refreshInventoryAdvisor(); }
+		finally { this.inventoryAdvisorPhaseListener.current = null; }
 	}
 
-	canApplyInventoryVaultSync(): boolean {
-		return this.inventoryVaultSync.canApply();
+	/** Live/persisted state of the single-button view sync. It never starts work by itself. */
+	getInventoryVaultSyncRunState(): InventoryVaultSyncRunState {
+		return this.inventoryVaultSyncRun.current();
+	}
+
+	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
+	async runInventoryVaultSync(): Promise<void> {
+		await this.inventoryVaultSyncRun.run();
+	}
+
+	/** Writes a plan that paused for confirmation because it would deactivate rows. */
+	async confirmInventoryVaultSync(): Promise<void> {
+		await this.inventoryVaultSyncRun.confirm();
+	}
+
+	/** Discards a pending destructive plan without writing anything. */
+	cancelInventoryVaultSync(): void {
+		this.inventoryVaultSyncRun.cancel();
+	}
+
+	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
+		this.settings = { ...this.settings, inventorySyncLastRun: outcome };
+		await this.saveData(this.settings);
 	}
 
 	async previewInventoryVaultSync(openView = false): Promise<void> {
@@ -1140,6 +1189,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			previousManagedAssetsRoot !== this.settings.managedAssetsRoot || previousLegacyOutputFolder !== this.settings.legacyOutputFolder ||
 			previousLegacyManagedAssetsRoot !== this.settings.legacyManagedAssetsRoot) {
 			this.inventoryVaultSync.invalidate();
+			this.inventoryVaultSyncRun.invalidate();
 			this.walletVaultSync.invalidate();
 		}
 		if (previousLanguage !== this.settings.language || previousOutputFolder !== this.settings.outputFolder) {
@@ -1446,6 +1496,11 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 	};
 }
 
+/** A mutable slot the one-click sync run swaps in for the duration of one refresh call. */
+interface InventoryAdvisorPhaseListenerRef {
+	current: ((phase: 'capture' | 'preferences' | 'classification') => void) | null;
+}
+
 function createInventoryAdvisorRuntime(
 	client: GuildWars2Client,
 	publicClient: GuildWars2PublicCatalogClient,
@@ -1453,11 +1508,16 @@ function createInventoryAdvisorRuntime(
 	locale: () => Locale,
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
+	phaseListener: InventoryAdvisorPhaseListenerRef,
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
 	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
 	let workflowStartedAt = 0;
 	let workflowStage: 'capture' | 'preferences' | 'classification' = 'capture';
+	const enterWorkflowStage = (stage: typeof workflowStage): void => {
+		workflowStage = stage;
+		phaseListener.current?.(stage);
+	};
 	const writeWorkflowReceipt = async (
 		workflow: NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>,
 	): Promise<void> => {
@@ -1480,15 +1540,15 @@ function createInventoryAdvisorRuntime(
 			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds);
 		} },
 		preferences: { load: async (capture) => {
-			workflowStage = 'preferences';
+			enterWorkflowStage('preferences');
 			await writeWorkflowReceipt({
-				status: 'progress', stage: workflowStage,
+				status: 'progress', stage: 'preferences',
 				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
 			});
 			const loaded = await preferences.load(capture);
-			workflowStage = 'classification';
+			enterWorkflowStage('classification');
 			await writeWorkflowReceipt({
-				status: 'progress', stage: workflowStage,
+				status: 'progress', stage: 'classification',
 				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
 			});
 			return loaded;
@@ -1499,7 +1559,7 @@ function createInventoryAdvisorRuntime(
 		load: async () => {
 			latestCaptureReceipt = null;
 			workflowStartedAt = Date.now();
-			workflowStage = 'capture';
+			enterWorkflowStage('capture');
 			try {
 				const result = await inventoryWorkflow.refresh(locale());
 				await writeWorkflowReceipt(inventoryAdvisorWorkflowReceipt(result));

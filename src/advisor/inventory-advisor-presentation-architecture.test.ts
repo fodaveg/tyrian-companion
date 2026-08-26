@@ -45,16 +45,17 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', './inventory-advisor-view-model', './inventory-advisor-view',
-			'./inventory-vault-sync-controller'],
-			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel', 'actions.refreshInventoryAdvisor',
+			'./inventory-vault-sync-run-controller'],
+			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel',
 				'actions.createInventoryPreferencesEditorSession', 'preferenceSession.current', 'preferenceSession.load',
 				'preferenceSession.upsertGoal', 'preferenceSession.removeGoal', 'preferenceSession.upsertKeepException', 'preferenceSession.removeKeepException',
-				'actions.getInventoryVaultSyncState', 'actions.canApplyInventoryVaultSync', 'actions.hasManagedAssetsRoot',
-				'actions.previewInventoryVaultSync', 'actions.applyInventoryVaultSync'],
+				'actions.getInventoryVaultSyncRunState', 'actions.hasManagedAssetsRoot',
+				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
-		imports: ['../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
-			'../economy/reservation-model', './inventory-advisor-view-model', './inventory-vault-sync-controller'],
+		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+			'../economy/reservation-model', './inventory-advisor-view-model', './inventory-vault-sync-controller',
+			'./inventory-vault-sync-run-controller'],
 		portCalls: [],
 	}],
 ]);

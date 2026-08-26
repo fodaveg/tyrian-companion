@@ -124,6 +124,39 @@ describe('migrateSettings', () => {
 		},
 	);
 
+	it('tolerates a pre-0.1.7 install with no inventorySyncLastRun field', () => {
+		expect(migrateSettings({ apiKeySecret: 'gw2-primary' }).inventorySyncLastRun).toBeNull();
+	});
+
+	it('round-trips a valid inventorySyncLastRun and purges an invalid or foreign one', () => {
+		const outcome = {
+			status: 'success' as const, finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 86694,
+			summary: { positions: 2909, create: 1616, update: 1167, unchanged: 79, deactivate: 0, conflicts: 0 },
+			error: null,
+		};
+		expect(migrateSettings({ inventorySyncLastRun: outcome }).inventorySyncLastRun).toEqual(outcome);
+		expect(migrateSettings({ inventorySyncLastRun: { status: 'error', finishedAt: '2026-08-25T07:00:13.750Z',
+			durationMs: 40, summary: null, error: 'write_unavailable' } }).inventorySyncLastRun).toEqual({
+			status: 'error', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 40, summary: null, error: 'write_unavailable',
+		});
+		for (const invalid of [
+			{ status: 'error', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 1, summary: null, error: null },
+			{ status: 'made-up', finishedAt: '2026-08-25T07:00:13.750Z', durationMs: 1, summary: null, error: null },
+			{ ...outcome, finishedAt: 'not-a-date' },
+			{ ...outcome, durationMs: -1 },
+			'RAW_STRING',
+			42,
+		]) {
+			expect(migrateSettings({ inventorySyncLastRun: invalid }).inventorySyncLastRun).toBeNull();
+		}
+		expect(migrateSettings({
+			inventorySyncLastRun: { ...outcome, summary: { ...outcome.summary, create: -1 } },
+		}).inventorySyncLastRun).toEqual({ ...outcome, summary: null });
+		expect(migrateSettings({
+			inventorySyncLastRun: { ...outcome, summary: { positions: 1 } },
+		}).inventorySyncLastRun).toEqual({ ...outcome, summary: null });
+	});
+
 	it('preserves legacy paths through unrelated saves and clears each only after its explicit replacement', () => {
 		const legacy = migrateSettings({
 			schemaVersion: 3,
