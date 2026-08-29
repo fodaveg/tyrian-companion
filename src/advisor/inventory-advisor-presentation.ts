@@ -4,6 +4,13 @@ import { isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-d
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
 import type { InventoryAdvisorInputV1, InventoryAdvisorResultV1 } from './inventory-advisor-model';
+import type {
+	InventoryAdvisorLineV1,
+	InventoryAdvisorReasonCode,
+	InventoryRecommendationDecisionV1,
+} from './inventory-advisor-model';
+import { classifyItemLiquidity } from '../economy/item-liquidity';
+import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import {
 	INVENTORY_ADVISOR_PRESENTATION_VERSION,
 	type InventoryAdvisorPresentation,
@@ -75,6 +82,7 @@ export function buildInventoryAdvisorPresentation(
 				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
 				irreversibleReviewOnly: presentationAction === 'discard_review',
 				discardProof: discardProof === null ? null : structuredClone(discardProof),
+				containerEconomy: containerEconomyFor(source, line, decision),
 			} satisfies InventoryAdvisorPresentationRow;
 		}));
 		const filtered = rows.filter((row) => matchesFilters(row, options.filters, source.input.catalog.locale));
@@ -99,6 +107,76 @@ export function buildInventoryAdvisorPresentation(
 				: { status: 'unavailable' },
 		};
 	} catch { return invalidInventoryAdvisorPresentation(); }
+}
+
+function containerEconomyFor(
+	source: InventoryAdvisorPresentationSource,
+	line: InventoryAdvisorLineV1,
+	decision: InventoryRecommendationDecisionV1,
+): InventoryAdvisorPresentationRow['containerEconomy'] {
+	if (!('discardContext' in source) || !['open', 'sell', 'vendor'].includes(decision.action)) return null;
+	const engine = source.discardContext.engineInput;
+	const economy = engine.containerEconomy;
+	if (economy === undefined) return null;
+	if (economy.pack.model.containerItemId !== line.itemId) return null;
+	const input = engine.input;
+	const item = input.catalog.items[String(line.itemId)];
+	if (item === undefined) return null;
+	const explanations = new Map(source.result.report?.explanations.map((entry) => [entry.ref, entry.reasonCodes]) ?? []);
+	const availableRefs = new Set(line.positions.filter((position) => position.state === 'loose'
+		|| position.state === 'pending_claim').map((position) => position.ref));
+	const allocated = (candidate: InventoryRecommendationDecisionV1): number => candidate.allocations
+		.filter((allocation) => availableRefs.has(allocation.positionRef))
+		.reduce((sum, allocation) => sum + allocation.quantity, 0);
+	const hasReason = (candidate: InventoryRecommendationDecisionV1, reason: InventoryAdvisorReasonCode): boolean =>
+		explanations.get(candidate.explanationRef)?.includes(reason) ?? false;
+	const reservedQuantity = line.decisions.filter((candidate) => hasReason(candidate, 'reserved_for_goal'))
+		.reduce((sum, candidate) => sum + allocated(candidate), 0);
+	const exceptionQuantity = line.decisions.filter((candidate) => hasReason(candidate, 'user_keep_exception'))
+		.reduce((sum, candidate) => sum + allocated(candidate), 0);
+	const reviewQuantity = line.decisions.filter((candidate) => candidate !== decision
+		&& !hasReason(candidate, 'reserved_for_goal') && !hasReason(candidate, 'user_keep_exception'))
+		.reduce((sum, candidate) => sum + allocated(candidate), 0);
+	const bagPrice = economy.prices.items.find((entry) => entry.itemId === line.itemId);
+	const priceStatus = bagPrice?.bid === null || bagPrice === undefined ? 'missing' : 'available';
+	const bindings = decision.allocations.map((allocation) => {
+		const position = line.positions.find((candidate) => candidate.ref === allocation.positionRef);
+		const holding = position ? input.snapshot.holdings[position.holdingIndex] : undefined;
+		const liquidity = classifyItemLiquidity(holding, item, priceStatus);
+		return liquidity.status === 'ok' ? liquidity.classification.binding.kind : 'unknown';
+	});
+	const binding = bindings.length > 0 && bindings.every((entry) => entry === bindings[0])
+		? bindings[0]! : 'unknown';
+	const result = evaluateInventoryContainerEconomy({
+		version: 1,
+		asOf: input.asOf,
+		accountId: input.snapshot.accountId,
+		snapshotId: input.snapshot.snapshotId,
+		schemaVersion: input.snapshot.schemaVersion,
+		allocation: {
+			ownedQuantity: line.ownedQuantity,
+			availableQuantity: line.availableQuantity,
+			reservedQuantity,
+			exceptionQuantity,
+			reviewQuantity,
+			freeQuantity: decision.quantity,
+		},
+		container: { itemId: line.itemId, catalogItem: item, binding,
+			tradingAccess: input.accountSignals.tradingPostAccess },
+		rulePack: input.rulePack,
+		knowledgePackSha256: engine.knowledgePack.sha256,
+		economyPack: economy.pack,
+		prices: economy.prices,
+		...(engine.personalValuation === undefined ? {} : { personalValuation: engine.personalValuation }),
+	});
+	return result.status === 'ready'
+		? structuredClone({
+			recommendation: result.decision,
+			recommendationBasis: result.recommendationBasis,
+			liquidOnly: result.liquidOnly,
+			personal: result.personal,
+		})
+		: null;
 }
 
 function isPresentationSource(value: unknown): value is InventoryAdvisorPresentationSource {

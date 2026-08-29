@@ -88,16 +88,59 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v7 without scanning, claiming assets, price history or Halloween', () => {
+	it('migrates v2 to v8 without scanning, claiming assets, price history or Halloween', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 7,
+			schemaVersion: 8,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
 			halloweenValueThresholdCopper: 10_000,
+			halloweenPersonalValuation: { version: 1, values: [] },
 		});
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
+	});
+
+	it('migrates v7 to v8 with an empty manual overlay and canonicalizes valid values', () => {
+		expect(migrateSettings({ schemaVersion: 7 })).toMatchObject({
+			schemaVersion: 8,
+			halloweenPersonalValuation: { version: 1, values: [] },
+		});
+		expect(migrateSettings({
+			schemaVersion: 8,
+			halloweenPersonalValuation: { version: 1, values: [
+				{ outcomeKey: 'item:45176', unitCopper: 0, origin: 'manual' },
+				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+			] },
+		}).halloweenPersonalValuation).toEqual({ version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+			{ outcomeKey: 'item:45176', unitCopper: 0, origin: 'manual' },
+		] });
+	});
+
+	it('purges foreign, duplicate, liquid and unsafe personal values without inventing defaults', () => {
+		for (const values of [
+			[{ outcomeKey: 'item:999999', unitCopper: 1, origin: 'manual' }],
+			[{ outcomeKey: 'item:36041', unitCopper: 1, origin: 'manual' }],
+			[{ outcomeKey: 'item:36031', unitCopper: 1, origin: 'manual' },
+				{ outcomeKey: 'item:36031', unitCopper: 2, origin: 'manual' }],
+			[{ outcomeKey: 'item:36031', unitCopper: -1, origin: 'manual' }],
+		]) {
+			expect(migrateSettings({ halloweenPersonalValuation: { version: 1, values } })
+				.halloweenPersonalValuation).toEqual({ version: 1, values: [] });
+		}
+	});
+
+	it('preserves the last saved overlay when an interactive update is invalid', () => {
+		const current = migrateSettings({ halloweenPersonalValuation: { version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+		] } });
+		const updated = mergeSettingsUpdate(current, {
+			halloweenPersonalValuation: { version: 1, values: [
+				{ outcomeKey: 'item:36031', unitCopper: -1, origin: 'manual' },
+			] },
+		});
+		expect(updated.halloweenPersonalValuation).toEqual(current.halloweenPersonalValuation);
 	});
 
 	it('keeps the Halloween p90 alert opt-in and sanitizes its margin and cooldown', () => {

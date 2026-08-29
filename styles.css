@@ -391,6 +391,98 @@
 	display: none;
 }
 
+.tyrian-personal-valuation-setting {
+	display: block;
+	container-type: inline-size;
+}
+
+.tyrian-personal-valuation-setting .setting-item-info,
+.tyrian-personal-valuation-setting .setting-item-control {
+	inline-size: 100%;
+}
+
+.tyrian-personal-valuation {
+	display: grid;
+	gap: var(--size-4-3);
+	inline-size: 100%;
+}
+
+.tyrian-personal-valuation__summary,
+.tyrian-personal-valuation__warning {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-personal-valuation__warning {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-inline-start: 3px solid var(--color-orange);
+	background: var(--background-secondary);
+}
+
+.tyrian-personal-valuation__grid {
+	display: grid;
+	gap: var(--size-4-2);
+}
+
+.tyrian-personal-valuation__row {
+	display: grid;
+	grid-template-columns: minmax(12rem, 1fr) minmax(9rem, 12rem) max-content;
+	align-items: center;
+	gap: var(--size-4-2) var(--size-4-3);
+	padding-block: var(--size-4-1);
+}
+
+.tyrian-personal-valuation__row label {
+	display: grid;
+	gap: var(--size-4-1);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-personal-valuation__meta {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-personal-valuation__row input,
+.tyrian-personal-valuation__row button {
+	min-block-size: 44px;
+}
+
+.tyrian-personal-valuation__message {
+	grid-column: 2 / -1;
+	min-block-size: 1.4em;
+	overflow-wrap: anywhere;
+}
+
+@container (max-width: 760px) {
+	.tyrian-personal-valuation__row {
+		grid-template-columns: minmax(0, 1fr) minmax(8rem, 11rem);
+	}
+
+	.tyrian-personal-valuation__row button {
+		grid-column: 2;
+	}
+}
+
+@container (max-width: 480px) {
+	.tyrian-personal-valuation__row {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.tyrian-personal-valuation__row input,
+	.tyrian-personal-valuation__row button,
+	.tyrian-personal-valuation__message {
+		grid-column: 1;
+		inline-size: 100%;
+	}
+}
+
+@container (max-width: 320px) {
+	.tyrian-personal-valuation__row {
+		padding-block: var(--size-4-2);
+	}
+}
+
 .tyrian-companion-review fieldset,
 .tyrian-companion-quality-correction fieldset {
 	display: grid;
@@ -996,6 +1088,32 @@
 }
 
 .tyrian-inventory-advisor__card dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__container-economy {
+	margin-block-start: var(--size-4-2);
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.tyrian-inventory-advisor__container-economy summary {
+	display: flex;
+	align-items: center;
+	min-block-size: 44px;
+	cursor: pointer;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__container-economy dl {
+	display: grid;
+	grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__container-economy dd {
 	margin: 0;
 	overflow-wrap: anywhere;
 }

@@ -131,16 +131,18 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		const reclassified = deferred<InventoryAdvisorWorkflowResult>();
 		const captured = deferred<InventoryAdvisorWorkflowResult>();
 		const ports = {
-			load: vi.fn(() => captured.promise), reclassify: vi.fn(() => reclassified.promise),
+			load: vi.fn().mockResolvedValueOnce(sourceNamed('Initial')).mockReturnValueOnce(captured.promise),
+			reclassify: vi.fn(() => reclassified.promise),
 		} satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);
+		await controller.refresh();
 		const reclassifying = controller.reclassify();
 		await Promise.resolve();
 		const refreshing = controller.refresh();
-		expect(ports.load).not.toHaveBeenCalled();
+		expect(ports.load).toHaveBeenCalledOnce();
 		reclassified.resolve(sourceNamed('Reclassified'));
 		await settle();
-		expect(ports.load).toHaveBeenCalledOnce();
+		expect(ports.load).toHaveBeenCalledTimes(2);
 		captured.resolve(sourceNamed('Fresh'));
 		await Promise.all([reclassifying, refreshing]);
 		expect(firstRowName(controller.current())).toBe('Fresh');
@@ -154,6 +156,7 @@ describe('H5.11 inventory advisor presentation controller', () => {
 			reclassify: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise),
 		} satisfies InventoryAdvisorControllerPorts;
 		const controller = new InventoryAdvisorPresentationController(ports);
+		await controller.refresh();
 		const afterGenerationOne = controller.reclassify();
 		const afterGenerationTwo = controller.reclassify();
 		await Promise.resolve();
@@ -180,6 +183,21 @@ describe('H5.11 inventory advisor presentation controller', () => {
 			expect(model).toMatchObject({ status: 'blocked', blockedReason: reason, groups: [] });
 			expect(JSON.stringify(model)).not.toMatch(/account|vault|token|secret/iu);
 		}
+	});
+
+	it('defers a settings-triggered reclassification until the first explicit capture exists', async () => {
+		const ports = {
+			load: vi.fn(async () => sourceNamed('Captured later')),
+			reclassify: vi.fn(async () => sourceNamed('Reclassified')),
+		} satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		await expect(controller.reclassify()).resolves.toMatchObject({ status: 'loading', groups: [] });
+		expect(ports.load).not.toHaveBeenCalled();
+		expect(ports.reclassify).not.toHaveBeenCalled();
+		await controller.refresh();
+		await controller.reclassify();
+		expect(ports.load).toHaveBeenCalledOnce();
+		expect(ports.reclassify).toHaveBeenCalledOnce();
 	});
 
 	it('keeps the last valid result only when a later refresh has an explicitly transient capture failure', async () => {

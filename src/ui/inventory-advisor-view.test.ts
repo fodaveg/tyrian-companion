@@ -35,6 +35,51 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).toContain(expected);
 	});
 
+	it.each([
+		['es', 'EV líquido por bolsa', 'Pendiente: faltan 9 de 10 valores manuales', 'margen del 10%',
+			'Solo líquida: Abrir · personal pendiente', 'EV líquido; la valoración personal no está completa'],
+		['en', 'Liquid EV per bag', 'Pending: 9 of 10 manual values missing', 'with a 10% margin',
+			'Liquid-only: Open · personal pending', 'Liquid EV; personal valuation is incomplete'],
+	] as const)('discloses liquid EV and a partial personal lower bound without a personal decision in %s',
+		(locale, liquid, pending, threshold, decisions, basis) => {
+			const model = economyModel(personalDisclosure('partial', false));
+			const mount = render(model, locale);
+			const copy = text(mount.elements());
+			expect(copy).toContain(liquid);
+			expect(copy).toContain(pending);
+			expect(copy).toContain(threshold);
+			expect(copy).toContain(decisions);
+			expect(copy).toContain(basis);
+			expect(copy).toContain(locale === 'es' ? 'límite inferior, no como total' : 'lower bound, not a total');
+		});
+
+	it('shows both decisions when complete personal EV changes the primary recommendation', () => {
+		const mount = render(economyModel(personalDisclosure('complete', true)), 'es');
+		const copy = text(mount.elements());
+		expect(copy).toContain('Líquida: Vender ya · personal: Abrir');
+		expect(copy).toContain('EV personal completo');
+		expect(copy).not.toContain('límite inferior, no como total');
+		expect(copy).toContain('La cola rara y los jackpots agregados (1171 unidades de muestra) permanecen sin valorar.');
+		expect(copy).toContain('1484,56789 cobre esperado');
+	});
+
+	it.each([
+		['es', 'Sin valores manuales todavía; no equivale a un ajuste conocido de cero'],
+		['en', 'No manual values yet; this is not a known zero adjustment'],
+	] as const)('does not present absent personal values as a known zero in %s', (locale, expected) => {
+		const disclosure = personalDisclosure('partial', false);
+		disclosure.personal.valuation.coverage = 'none';
+		disclosure.personal.valuation.lines = [];
+		disclosure.personal.valuation.unvalued = Array.from({ length: 10 }, (_, index) => ({
+			outcomeKey: `item:${String(36_031 + index)}`,
+			label: `Outcome ${String(index)}`,
+			expectedUnitsMillionths: 1,
+		}));
+		const copy = text(render(economyModel(disclosure), locale).elements());
+		expect(copy).toContain(expected);
+		expect(copy).not.toContain(locale === 'es' ? '0 cobre esperado como límite inferior' : '0 expected copper as a lower bound');
+	});
+
 	it.each([[479, 'cards'], [480, 'cards'], [759, 'cards'], [760, 'table']] as const)(
 		'selects the semantic H5.11 layout at %ipx',
 		(width, expected) => expect(inventoryAdvisorViewLayout(width)).toBe(expected),
@@ -792,6 +837,67 @@ function readyModel(): InventoryAdvisorViewModel {
 			row({ itemId: 200, name: 'Resto sin valor', action: 'discard_review', coverage: coverage('limited'), irreversibleReviewOnly: true,
 				discardProof: { itemId: 200, explanationRef: '#/explanations/200/0', producerResultSha256: 'a'.repeat(64), discardRuleId: 'discard-200', discardRuleSourceIds: ['source'], assertionIds: { use: 'use-200', open: 'open-200', salvage: 'salvage-200' }, assertionSourceIds: { use: ['source'], open: ['source'], salvage: ['source'] } } }),
 		] }],
+	};
+}
+
+function economyModel(containerEconomy: NonNullable<InventoryAdvisorViewRow['containerEconomy']>): InventoryAdvisorViewModel {
+	return {
+		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		optionalSources: null,
+		groups: [{ key: 'curated', rows: [row({
+			itemId: 36_038, name: 'Trick-or-Treat Bag', action: containerEconomy.recommendation.action,
+			containerEconomy,
+		})] }],
+	};
+}
+
+function personalDisclosure(
+	coverageState: 'partial' | 'complete',
+	different: boolean,
+): NonNullable<InventoryAdvisorViewRow['containerEconomy']> {
+	const liquidAction = different ? 'sell' as const : 'open' as const;
+	const liquidDecision = { action: liquidAction, quantity: 3, ruleId: liquidAction === 'open' ? 'open-rule' : null };
+	const personalDecision = coverageState === 'complete'
+		? { action: 'open' as const, quantity: 3, ruleId: 'open-rule' }
+		: null;
+	const valued = coverageState === 'complete' ? 10 : 1;
+	return {
+		recommendation: personalDecision ?? liquidDecision,
+		recommendationBasis: coverageState === 'complete' ? 'personal' : 'liquid_only',
+		liquidOnly: {
+			decision: liquidDecision,
+			explanation: {
+				sellNow: { route: 'instant_sell', unitCopper: 1_000, grossCopper: 3_000,
+					listingFeeCopper: 150, exchangeFeeCopper: 300, totalFeesCopper: 450, netCopper: 2_550 },
+				open: { evPerContainerMicroCopper: 1_234_567_890, totalExpectedMicroCopper: '3703703670',
+					coverage: 'complete', modelId: 'model', modelVersion: 1, sampleContainers: 106_264,
+					excludedSampleUnits: 1_171, rareTreatment: 'excluded' },
+				threshold: { marginBps: 1_000, requiredOpenMicroCopper: '2805000000' },
+				comparison: { differenceMicroCopper: '898703670', advantageBps: 4_500,
+					rule: 'open_at_or_above_threshold' },
+				freshness: { asOf: '2026-08-29T00:00:00.000Z', priceCapturedAt: '2026-08-29T00:00:00.000Z', priceAgeMs: 0 },
+				caveats: ['excluded_outcomes_not_valued'],
+			},
+		},
+		personal: {
+			valuation: {
+				version: 1, modelId: 'model', modelVersion: 1, containerItemId: 36_038,
+				coverage: coverageState, knownAdjustment: 250_000_000,
+				totalAdjustment: coverageState === 'complete' ? 250_000_000 : null,
+				lines: Array.from({ length: valued }, (_, index) => ({ outcomeKey: `item:${String(36_031 + index)}`,
+					label: `Outcome ${String(index)}`, expectedUnitsMillionths: 1_000_000, unitCopper: 25,
+					adjustment: 25_000_000, origin: 'manual' as const })),
+				unvalued: Array.from({ length: 10 - valued }, (_, index) => ({ outcomeKey: `item:${String(46_000 + index)}`,
+					label: `Pending ${String(index)}`, expectedUnitsMillionths: 1_000_000 })),
+				outsideModelSampleUnits: 1_171, origin: 'manual',
+			},
+			openEvPerContainerMicroCopper: coverageState === 'complete' ? 1_484_567_890 : null,
+			totalExpectedMicroCopper: coverageState === 'complete' ? '4453703670' : null,
+			decision: personalDecision,
+			comparison: coverageState === 'complete'
+				? { differenceMicroCopper: '1648703670', advantageBps: 7_450,
+					rule: 'open_at_or_above_threshold' } : null,
+		},
 	};
 }
 

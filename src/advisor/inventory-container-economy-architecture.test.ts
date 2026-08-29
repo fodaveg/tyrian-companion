@@ -22,6 +22,7 @@ const ALLOWED_DEPENDENCIES = {
 		'../catalog/public-catalog-validators',
 		'../economy/container-disposition-kernel',
 		'../economy/container-model',
+		'../economy/container-personal-valuation',
 		'../economy/models/halloween-trick-or-treat-bag',
 		'./inventory-advisor-contract',
 		'./inventory-advisor-model',

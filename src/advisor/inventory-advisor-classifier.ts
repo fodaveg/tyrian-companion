@@ -20,6 +20,7 @@ import {
 	isInventoryContainerPriceEvidence,
 } from './inventory-container-economy';
 import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
+import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -44,7 +45,9 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const envelope = createInventoryRecommendationEnvelope(report);
 		if (envelope === null) return publicInvalid();
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
-		return isInventoryAdvisorResultForInput(result, input, value.knowledgePack, value.containerEconomy) ? result : publicInvalid();
+		return isInventoryAdvisorResultForInput(
+			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
+		) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
 
@@ -68,7 +71,7 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
-			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy));
+			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
 			knowledgePack: { id: knowledgePack.id, version: knowledgePack.version, sha256: knowledgePack.sha256 }, lines };
@@ -113,7 +116,8 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 }
 
 function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number,
-	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy']): InventoryAdvisorEngineLineV1 {
+	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy'],
+	personalValuation: EngineInput['personalValuation']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
@@ -165,7 +169,7 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 			.filter(predicate).flatMap((decision) => decision.allocations)
 			.filter((allocation) => availableRefs.has(allocation.positionRef))
 			.reduce((total, allocation) => total + allocation.quantity, 0);
-		const economic = containerEconomyDecision(input, economy, itemId, freeQuantity,
+		const economic = containerEconomyDecision(input, economy, personalValuation, itemId, freeQuantity,
 			availableAllocated((decision) => decision.reason === 'reserved_for_goal'),
 			availableAllocated((decision) => decision.reason === 'user_keep_exception'),
 			availableAllocated((decision) => decision.action === 'review'), freePositions, pack.sha256);
@@ -314,6 +318,7 @@ function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowled
 function containerEconomyDecision(
 	input: InventoryAdvisorInputV1,
 	economy: EngineInput['containerEconomy'],
+	personalValuation: EngineInput['personalValuation'],
 	itemId: number,
 	freeQuantity: number,
 	reservedQuantity: number,
@@ -358,6 +363,7 @@ function containerEconomyDecision(
 		knowledgePackSha256,
 		economyPack: economy.pack,
 		prices: economy.prices,
+		...(personalValuation === undefined ? {} : { personalValuation }),
 	});
 	if (result.status !== 'ready') return { action: 'review', reason: result.status === 'invalid'
 		? 'rule_conflict' : economyReason(result.reason), ruleId: null };
@@ -376,7 +382,8 @@ function economyReason(reason: string): string {
 		allocation_incoherent: 'rule_conflict', binding_unknown: 'binding_unknown',
 		trading_access_unknown: 'tp_access_unknown', price_partial: 'price_partial', price_stale: 'price_stale',
 		price_future: 'price_stale', price_missing: 'price_missing', price_incoherent: 'price_partial',
-		open_ev_partial: 'price_partial', container_not_sellable: 'no_sell', arithmetic_overflow: 'arithmetic_overflow',
+		open_ev_partial: 'price_partial', container_not_sellable: 'no_sell',
+		personal_valuation_incoherent: 'rule_conflict', arithmetic_overflow: 'arithmetic_overflow',
 	};
 	return reasons[reason] ?? 'rule_conflict';
 }
@@ -437,13 +444,16 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 }
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
-	if (!record(value) || (!keys(value, ['input', 'knowledgePack'])
-		&& !keys(value, ['input', 'knowledgePack', 'containerEconomy']))
+	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], ['containerEconomy', 'personalValuation'])
 		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
-	return value.containerEconomy === undefined || (record(value.containerEconomy)
-		&& keys(value.containerEconomy, ['pack', 'prices'])
-		&& isInventoryContainerEconomyPack(value.containerEconomy.pack)
-		&& isInventoryContainerPriceEvidence(value.containerEconomy.prices));
+	const economy = value.containerEconomy;
+	if (economy !== undefined && (!record(economy) || !keys(economy, ['pack', 'prices'])
+		|| !isInventoryContainerEconomyPack(economy.pack)
+		|| !isInventoryContainerPriceEvidence(economy.prices))) return false;
+	if (value.personalValuation === undefined) return true;
+	if (economy === undefined || !isContainerPersonalValuation(value.personalValuation)) return false;
+	const validatedEconomy = economy as NonNullable<EngineInput['containerEconomy']>;
+	return resolveContainerPersonalValuation(validatedEconomy.pack.model, value.personalValuation).status === 'ok';
 }
 function ids(input: InventoryAdvisorInputV1): number[] { return Object.entries(input.snapshot.ownedByItem).filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort((a, b) => a - b); }
 function invalid(): InventoryAdvisorEngineResultV1 { return { status: 'invalid', report: null, envelope: null }; }
@@ -469,6 +479,7 @@ function decision(value: unknown): value is InventoryAdvisorEngineDecisionV1 { r
 function source(value: unknown): boolean { return record(value) && keys(value, ['id', 'url', 'retrievedAt']) && id(value.id) && typeof value.url === 'string' && value.url.startsWith('https://') && iso(value.retrievedAt); }
 function record(value: unknown): value is Record<string, unknown> { try { return typeof value === 'object' && value !== null && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null); } catch { return false; } }
 function keys(value: Record<string, unknown>, expected: string[]): boolean { const actual = Object.keys(value).sort(); const sortedExpected = [...expected].sort(); return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]); }
+function optionalKeys(value: Record<string, unknown>, required: string[], optional: string[]): boolean { const actual = Object.keys(value); return required.every((key) => actual.includes(key)) && actual.every((key) => required.includes(key) || optional.includes(key)); }
 function id(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }

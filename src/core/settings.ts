@@ -5,8 +5,15 @@ import type {
 	PriceHistoryRawRetentionDays,
 } from '../economy/price-history-model';
 import type { HalloweenPriceAlertCooldownHours } from '../halloween/halloween-price-alert';
+import {
+	canonicalContainerPersonalValuation,
+	isContainerPersonalValuation,
+	resolveContainerPersonalValuation,
+	type ContainerPersonalValuationV1,
+} from '../economy/container-personal-valuation';
+import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
 
-export const SETTINGS_SCHEMA_VERSION = 7 as const;
+export const SETTINGS_SCHEMA_VERSION = 8 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -62,6 +69,8 @@ export interface TyrianSettings {
 	halloweenPriceAlertEnabled: boolean;
 	halloweenPriceAlertMinimumAboveP90Bps: number;
 	halloweenPriceAlertCooldownHours: HalloweenPriceAlertCooldownHours;
+	/** Manual values for explicit non-liquid outcomes. Independent from Halloween alerts. */
+	halloweenPersonalValuation: ContainerPersonalValuationV1;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -85,6 +94,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	halloweenPriceAlertEnabled: false,
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
+	halloweenPersonalValuation: { version: 1 as const, values: [] },
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -139,7 +149,21 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		),
 		halloweenPriceAlertCooldownHours: enumNumber(data.halloweenPriceAlertCooldownHours,
 			HALLOWEEN_PRICE_ALERT_COOLDOWNS, DEFAULT_SETTINGS.halloweenPriceAlertCooldownHours) as HalloweenPriceAlertCooldownHours,
+		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
+			?? { version: 1, values: [] },
 	};
+}
+
+/** Accepts only a closed V1 overlay bound to the current explicit Halloween outcome set. */
+export function normalizeHalloweenPersonalValuation(value: unknown): ContainerPersonalValuationV1 | null {
+	return halloweenPersonalValuation(value);
+}
+
+function halloweenPersonalValuation(value: unknown): ContainerPersonalValuationV1 | null {
+	if (!isContainerPersonalValuation(value)) return null;
+	const canonical = canonicalContainerPersonalValuation(value);
+	return resolveContainerPersonalValuation(halloweenTrickOrTreatBagModel(), canonical).status === 'ok'
+		? canonical : null;
 }
 
 function boundedNonNegativeInteger(value: unknown, fallback: number, maximum: number): number {
@@ -197,9 +221,13 @@ export function mergeSettingsUpdate(
 	configDir?: string,
 ): TyrianSettings {
 	const { legacyManagedAssetsRoot: _legacyManagedAssetsRoot, legacyOutputFolder: _legacyOutputFolder, ...safeUpdate } = update;
+	const personalValuation = safeUpdate.halloweenPersonalValuation === undefined
+		? current.halloweenPersonalValuation
+		: halloweenPersonalValuation(safeUpdate.halloweenPersonalValuation) ?? current.halloweenPersonalValuation;
 	return migrateSettings({
 		...current,
 		...safeUpdate,
+		halloweenPersonalValuation: personalValuation,
 		legacyOutputFolder: safeUpdate.outputFolder === undefined ? current.legacyOutputFolder : null,
 		legacyManagedAssetsRoot: safeUpdate.managedAssetsRoot === undefined ? current.legacyManagedAssetsRoot : null,
 	}, configDir);

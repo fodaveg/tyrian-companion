@@ -38,7 +38,7 @@ describe('H11.3 and H11.5 architecture contract', () => {
 
 	it('keeps the p90 alert opt-in, local, durable, crossing-based, and quantity-free', () => {
 		const settings = readFileSync('src/core/settings.ts', 'utf8');
-		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 7');
+		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 8');
 		expect(settings).toContain('halloweenPriceAlertEnabled: false');
 		expect(settings).toContain('halloweenPriceAlertMinimumAboveP90Bps: 0');
 		expect(settings).toContain('halloweenPriceAlertCooldownHours: 24');

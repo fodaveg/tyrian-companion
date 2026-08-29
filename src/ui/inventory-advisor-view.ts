@@ -782,7 +782,7 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
 	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
 	tableRow.append(evidenceCell(row.coverage, translator));
-	appendCell(tableRow, explanationLabel(row, translator), tableColumnClass('explanation'));
+	tableRow.append(explanationCell(row, translator));
 	return tableRow;
 }
 
@@ -834,6 +834,17 @@ function evidenceCell(coverage: InventoryAdvisorViewCoverage, translator: Transl
 	return cell;
 }
 
+function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): HTMLTableCellElement {
+	const cell = createEl('td');
+	cell.className = tableColumnClass('explanation');
+	const explanation = createEl('p');
+	explanation.textContent = explanationLabel(row, translator);
+	cell.append(explanation);
+	const economy = containerEconomyDetails(row, translator);
+	if (economy !== null) cell.append(economy);
+	return cell;
+}
+
 function renderCards(
 	groups: readonly InventoryAdvisorViewGroup[],
 	groupBy: InventoryAdvisorViewGroupBy,
@@ -864,6 +875,8 @@ function renderCards(
 			article.append(list);
 			const advanced = advancedEvidenceDetails(row.coverage, translator);
 			if (advanced !== null) article.append(advanced);
+			const economy = containerEconomyDetails(row, translator);
+			if (economy !== null) article.append(economy);
 			cards.append(article);
 		}
 	}
@@ -1052,6 +1065,84 @@ function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator):
 	return row.reasonCodes.length === 0
 		? translator.t('advisor.view.noExplanation')
 		: row.reasonCodes.map((code) => translator.t(`advisor.view.reason.${code}`)).join(' · ');
+}
+
+/** H11.6 disclosure. It adds no statistical interval and never hides the liquid-only baseline. */
+function containerEconomyDetails(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+): HTMLDetailsElement | null {
+	const economy = row.containerEconomy;
+	if (economy == null) return null;
+	const details = createEl('details');
+	details.className = 'tyrian-inventory-advisor__container-economy';
+	const summary = createEl('summary');
+	summary.textContent = translator.t('advisor.containerEconomy.title');
+	const list = createEl('dl');
+	addDefinition(list, translator.t('advisor.containerEconomy.liquidEv'),
+		formatMicroCopper(economy.liquidOnly.explanation.open.evPerContainerMicroCopper, translator));
+	const coverage = economy.personal.valuation.coverage;
+	addDefinition(list, translator.t('advisor.containerEconomy.knownAdjustment'), coverage === 'none'
+		? translator.t('advisor.containerEconomy.adjustmentUnknown')
+		: coverage === 'partial'
+			? translator.t('advisor.containerEconomy.adjustmentLowerBound', {
+				value: formatMicroCopper(economy.personal.valuation.knownAdjustment, translator),
+			})
+			: formatMicroCopper(economy.personal.valuation.knownAdjustment, translator));
+	addDefinition(list, translator.t('advisor.containerEconomy.personalEv'),
+		economy.personal.openEvPerContainerMicroCopper === null
+			? translator.t('advisor.containerEconomy.pending', {
+				pending: economy.personal.valuation.unvalued.length,
+				total: economy.personal.valuation.lines.length + economy.personal.valuation.unvalued.length,
+			})
+			: formatMicroCopper(economy.personal.openEvPerContainerMicroCopper, translator));
+	addDefinition(list, translator.t('advisor.containerEconomy.sellNow'),
+		formatInventoryAdvisorCopper(economy.liquidOnly.explanation.sellNow.netCopper, translator));
+	addDefinition(list, translator.t('advisor.containerEconomy.threshold'),
+		translator.t('advisor.containerEconomy.thresholdValue', {
+			margin: economy.liquidOnly.explanation.threshold.marginBps / 100,
+			value: formatMicroCopperString(
+				economy.liquidOnly.explanation.threshold.requiredOpenMicroCopper, translator,
+			),
+		}));
+	const liquidAction = actionLabelFor(economy.liquidOnly.decision.action, translator);
+	const personalAction = economy.personal.decision === null
+		? null : actionLabelFor(economy.personal.decision.action, translator);
+	addDefinition(list, translator.t('advisor.containerEconomy.decisions'), personalAction === null
+		? translator.t('advisor.containerEconomy.liquidDecisionOnly', { liquid: liquidAction })
+		: personalAction === liquidAction
+			? translator.t('advisor.containerEconomy.sameDecision', { action: personalAction })
+			: translator.t('advisor.containerEconomy.differentDecisions', {
+				liquid: liquidAction, personal: personalAction,
+			}));
+	addDefinition(list, translator.t('advisor.containerEconomy.recommendationBasis'),
+		translator.t(`advisor.containerEconomy.basis.${economy.recommendationBasis}`));
+	const outside = createEl('p');
+	outside.textContent = translator.t('advisor.containerEconomy.outsideModel', {
+		units: economy.personal.valuation.outsideModelSampleUnits,
+	});
+	details.append(summary, list, outside);
+	return details;
+}
+
+function formatMicroCopper(value: number, translator: Translator): string {
+	return formatMicroCopperBigInt(BigInt(value), translator);
+}
+
+function formatMicroCopperString(value: string, translator: Translator): string {
+	return formatMicroCopperBigInt(BigInt(value), translator);
+}
+
+function formatMicroCopperBigInt(microCopper: bigint, translator: Translator): string {
+	const whole = microCopper / 1_000_000n;
+	const fraction = (microCopper % 1_000_000n).toString().padStart(6, '0').replace(/0+$/u, '');
+	const decimal = new Intl.NumberFormat(translator.locale).formatToParts(1.1)
+		.find((part) => part.type === 'decimal')?.value ?? '.';
+	return translator.t('advisor.containerEconomy.microCopper', {
+		value: fraction.length === 0
+			? whole.toLocaleString(translator.locale)
+			: `${whole.toLocaleString(translator.locale)}${decimal}${fraction}`,
+	});
 }
 
 const COVERAGE_AXES = [

@@ -9,6 +9,12 @@ import {
 import { isContainerModel, type ContainerModelV1 } from '../economy/container-model';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
 import {
+	isContainerPersonalValuation,
+	resolveContainerPersonalValuation,
+	type ContainerPersonalValuationResolutionV1,
+	type ContainerPersonalValuationV1,
+} from '../economy/container-personal-valuation';
+import {
 	isInventoryAdvisorRulePackV2,
 	sha256StandardCanonicalValue,
 } from './inventory-advisor-contract';
@@ -79,6 +85,8 @@ export interface InventoryContainerEconomyInputV1 {
 	knowledgePackSha256: string;
 	economyPack: InventoryContainerEconomyPackV1;
 	prices: InventoryContainerPriceEvidenceV1;
+	/** User-owned overlay. It is never included in the economy pack or model fingerprint. */
+	personalValuation?: ContainerPersonalValuationV1;
 }
 
 export type InventoryContainerEconomyReviewReason =
@@ -97,12 +105,40 @@ export type InventoryContainerEconomyReviewReason =
 	| 'price_incoherent'
 	| 'open_ev_partial'
 	| 'container_not_sellable'
+	| 'personal_valuation_incoherent'
 	| 'arithmetic_overflow';
+
+export interface InventoryContainerEconomyDecisionV1 {
+	action: 'open' | 'sell' | 'vendor';
+	quantity: number;
+	ruleId: string | null;
+}
+
+export interface InventoryContainerPersonalEconomyV1 {
+	valuation: ContainerPersonalValuationResolutionV1;
+	/** Available only when all ten explicit non-liquid outcomes have manual values. */
+	openEvPerContainerMicroCopper: number | null;
+	totalExpectedMicroCopper: string | null;
+	decision: InventoryContainerEconomyDecisionV1 | null;
+	comparison: {
+		differenceMicroCopper: string;
+		advantageBps: number | null;
+		rule: 'open_at_or_above_threshold';
+	} | null;
+}
 
 export type InventoryContainerEconomyResult =
 	| {
 		status: 'ready';
-		decision: { action: 'open' | 'sell' | 'vendor'; quantity: number; ruleId: string | null };
+		/** Primary recommendation: personal only with complete coverage, liquid-only otherwise. */
+		decision: InventoryContainerEconomyDecisionV1;
+		recommendationBasis: 'liquid_only' | 'personal';
+		liquidOnly: {
+			decision: InventoryContainerEconomyDecisionV1;
+			explanation: ContainerDispositionKernelExplanation;
+		};
+		personal: InventoryContainerPersonalEconomyV1;
+		/** Backwards-compatible alias for the unchanged liquid-only explanation. */
 		explanation: ContainerDispositionKernelExplanation;
 	}
 	| { status: 'review'; reason: InventoryContainerEconomyReviewReason }
@@ -166,14 +202,27 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		if (kernel.status === 'invalid') return review(kernel.reason === 'arithmetic_overflow'
 			? 'arithmetic_overflow' : 'model_incoherent');
 		if (kernel.status === 'review') return review(kernelReason(kernel.reason));
+		const liquidDecision: InventoryContainerEconomyDecisionV1 = {
+			action: kernel.decision.action === 'open' ? 'open'
+				: kernel.decision.sellRoute === 'vendor' ? 'vendor' : 'sell',
+			quantity: kernel.decision.quantity,
+			ruleId: kernel.decision.action === 'open' ? pack.rulePack.ruleId : null,
+		};
+		const personal = personalEconomy(
+			pack.model,
+			input.personalValuation ?? { version: 1, values: [] },
+			kernel.explanation,
+			allocation.freeQuantity,
+			pack.rulePack.ruleId,
+		);
+		if (personal.status === 'invalid') return review(personal.reason);
+		const primary = personal.value.decision ?? liquidDecision;
 		return {
 			status: 'ready',
-			decision: {
-				action: kernel.decision.action === 'open' ? 'open'
-					: kernel.decision.sellRoute === 'vendor' ? 'vendor' : 'sell',
-				quantity: kernel.decision.quantity,
-				ruleId: kernel.decision.action === 'open' ? pack.rulePack.ruleId : null,
-			},
+			decision: primary,
+			recommendationBasis: personal.value.decision === null ? 'liquid_only' : 'personal',
+			liquidOnly: { decision: liquidDecision, explanation: kernel.explanation },
+			personal: personal.value,
 			explanation: kernel.explanation,
 		};
 	} catch {
@@ -292,14 +341,79 @@ function halloweenContainerEconomyPack(
 }
 
 function isInput(value: unknown): value is InventoryContainerEconomyInputV1 {
-	return record(value) && exactKeys(value, [
+	return record(value) && exactOptionalKeys(value, [
 		'version', 'asOf', 'accountId', 'snapshotId', 'schemaVersion', 'allocation', 'container', 'rulePack',
 		'knowledgePackSha256', 'economyPack', 'prices',
-	]) && value.version === 1 && iso(value.asOf) && text(value.accountId, 256) && text(value.snapshotId, 256)
+	], ['personalValuation']) && value.version === 1 && iso(value.asOf) && text(value.accountId, 256) && text(value.snapshotId, 256)
 		&& text(value.schemaVersion, 256)
 		&& allocation(value.allocation) && container(value.container) && isInventoryAdvisorRulePackV2(value.rulePack)
 		&& sha(value.knowledgePackSha256) && isInventoryContainerEconomyPack(value.economyPack)
-		&& isInventoryContainerPriceEvidence(value.prices);
+		&& isInventoryContainerPriceEvidence(value.prices)
+		&& (value.personalValuation === undefined || isContainerPersonalValuation(value.personalValuation));
+}
+
+function personalEconomy(
+	model: ContainerModelV1,
+	overlay: ContainerPersonalValuationV1,
+	liquid: ContainerDispositionKernelExplanation,
+	quantity: number,
+	openRuleId: string,
+): { status: 'ok'; value: InventoryContainerPersonalEconomyV1 }
+	| { status: 'invalid'; reason: 'personal_valuation_incoherent' | 'arithmetic_overflow' } {
+	const resolved = resolveContainerPersonalValuation(model, overlay);
+	if (resolved.status === 'invalid') return {
+		status: 'invalid',
+		reason: resolved.reason === 'arithmetic_overflow' ? 'arithmetic_overflow' : 'personal_valuation_incoherent',
+	};
+	const base: InventoryContainerPersonalEconomyV1 = {
+		valuation: resolved.value,
+		openEvPerContainerMicroCopper: null,
+		totalExpectedMicroCopper: null,
+		decision: null,
+		comparison: null,
+	};
+	if (resolved.value.coverage !== 'complete' || resolved.value.totalAdjustment === null) {
+		return { status: 'ok', value: base };
+	}
+	const perContainer = BigInt(liquid.open.evPerContainerMicroCopper)
+		+ BigInt(resolved.value.totalAdjustment);
+	const openTotal = perContainer * BigInt(quantity);
+	if (!safeNonNegativeBigInt(perContainer) || !safeNonNegativeBigInt(openTotal)) {
+		return { status: 'invalid', reason: 'arithmetic_overflow' };
+	}
+	const requiredOpen = BigInt(liquid.threshold.requiredOpenMicroCopper);
+	const sellMicro = BigInt(liquid.sellNow.netCopper) * 1_000_000n;
+	const opens = openTotal >= requiredOpen;
+	const advantage = sellMicro === 0n ? null
+		: safeSignedBigIntNumber((openTotal - sellMicro) * 10_000n / sellMicro);
+	const decision: InventoryContainerEconomyDecisionV1 = {
+		action: opens ? 'open' : liquid.sellNow.route === 'vendor' ? 'vendor' : 'sell',
+		quantity,
+		ruleId: opens ? openRuleId : null,
+	};
+	return {
+		status: 'ok',
+		value: {
+			...base,
+			openEvPerContainerMicroCopper: Number(perContainer),
+			totalExpectedMicroCopper: openTotal.toString(),
+			decision,
+			comparison: {
+				differenceMicroCopper: (openTotal - requiredOpen).toString(),
+				advantageBps: advantage,
+				rule: 'open_at_or_above_threshold',
+			},
+		},
+	};
+}
+
+function safeNonNegativeBigInt(value: bigint): boolean {
+	return value >= 0n && value <= BigInt(Number.MAX_SAFE_INTEGER);
+}
+
+function safeSignedBigIntNumber(value: bigint): number | null {
+	return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+		? Number(value) : null;
 }
 
 function ruleBinding(input: InventoryContainerEconomyInputV1): boolean {
@@ -436,4 +550,10 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 	const actual = Object.keys(value).sort();
 	const sorted = [...expected].sort();
 	return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
+}
+
+function exactOptionalKeys(value: Record<string, unknown>, required: string[], optional: string[]): boolean {
+	const keys = Object.keys(value);
+	return required.every((key) => keys.includes(key))
+		&& keys.every((key) => required.includes(key) || optional.includes(key));
 }

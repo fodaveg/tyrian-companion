@@ -52,8 +52,10 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			economyPack: {
 				packId: 'tc.inventory-container-economy.halloween-v1',
 				activation: { status: 'enabled', activatedAt: '2026-08-16T05:22:24.000Z' },
+				modelFingerprint: '7501839c02bbbcf5e07e6fe662d1ae3ceaf5e6b5a423f9d6a09432b1ab524fc1',
 				expectedPriceItemIds: [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002],
 				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate' },
+				sha256: 'ba445d034b605d9c5db6219c1a8a689f334a62816aed75ba70b2f17d99dc0f5f',
 			},
 		});
 		expect(result.bundle.rulePack.sources).toEqual(sources());
@@ -177,6 +179,19 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		]);
 		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack, engineInput.containerEconomy)).toBe(true);
 		expect(isInventoryAdvisorResultForInput(result, input, bundle.knowledgePack)).toBe(false);
+		const partialPersonalValuation = { version: 1 as const, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 0, origin: 'manual' as const },
+		] };
+		const personalResult = classifyInventoryAdvisor({ ...engineInput, personalValuation: partialPersonalValuation });
+		expect(personalResult.report?.lines[0]?.decisions).toEqual([
+			expect.objectContaining({ action: 'open', quantity: 2 }),
+		]);
+		expect(isInventoryAdvisorResultForInput(
+			personalResult, input, bundle.knowledgePack, engineInput.containerEconomy, partialPersonalValuation,
+		)).toBe(true);
+		expect(classifyInventoryAdvisor({ ...engineInput, personalValuation: {
+			version: 1, values: [{ outcomeKey: 'item:999999', unitCopper: 1, origin: 'manual' }],
+		} })).toMatchObject({ status: 'invalid', report: null, envelope: null });
 		for (const [action, sackBid, outcomeBid] of [
 			['sell', 10_000, 1],
 			['vendor', 1, 1],

@@ -502,7 +502,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		this.inventoryAdvisor = createInventoryAdvisorRuntime(
 			inventoryClient, inventoryPublicClient, inventorySnapshots,
-			() => this.settings.language, this.inventoryPreferences,
+			() => this.settings.language,
+			() => this.settings.halloweenPersonalValuation,
+			this.inventoryPreferences,
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 			this.inventoryAdvisorPhaseListener,
 			this.inventoryAdvisorCaptureProgressListener,
@@ -1475,6 +1477,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousLegacyManagedAssetsRoot = this.settings.legacyManagedAssetsRoot;
 		const previousPriceHistory = priceHistorySettingsFrom(this.settings);
 		const previousHalloweenEnabled = this.settings.halloweenEnabled;
+		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
@@ -1504,6 +1507,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.renderViews();
 		}
 		await this.saveData(this.settings);
+		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)) {
+			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
+			await this.inventoryAdvisor.reclassify();
+			this.renderInventoryAdvisorViews();
+		}
 		const nextPriceHistory = priceHistorySettingsFrom(this.settings);
 		if (this.priceHistory !== null && JSON.stringify(previousPriceHistory) !== JSON.stringify(nextPriceHistory)) {
 			await this.priceHistory.configure(nextPriceHistory);
@@ -1929,6 +1937,7 @@ function createInventoryAdvisorRuntime(
 	publicClient: GuildWars2PublicCatalogClient,
 	snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
 	locale: () => Locale,
+	personalValuation: () => TyrianSettings['halloweenPersonalValuation'],
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 	phaseListener: InventoryAdvisorPhaseListenerRef,
@@ -1979,7 +1988,7 @@ function createInventoryAdvisorRuntime(
 			});
 			return loaded;
 		} },
-		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
+		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider, personalValuation),
 	});
 	return new InventoryAdvisorPresentationController({
 		load: async () => {

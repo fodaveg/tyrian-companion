@@ -1,5 +1,6 @@
 import type { InventoryAdvisorInputV1, InventoryAdvisorPositionV1, InventoryRecommendationAction } from './inventory-advisor-model';
 import type { InventoryContainerEconomyPackV1, InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
+import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 
 export const INVENTORY_KNOWLEDGE_PACK_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_ENGINE_VERSION = 1 as const;
@@ -41,6 +42,8 @@ export interface InventoryAdvisorEngineInputV1 {
 		pack: InventoryContainerEconomyPackV1;
 		prices: InventoryContainerPriceEvidenceV1;
 	};
+	/** Mutable user overlay kept outside the immutable economy pack. */
+	personalValuation?: ContainerPersonalValuationV1;
 }
 
 export interface InventoryAdvisorEngineAllocationV1 { positionRef: string; quantity: number; }

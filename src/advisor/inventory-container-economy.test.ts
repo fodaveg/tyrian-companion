@@ -51,6 +51,62 @@ describe('H4.19 inventory container economy', () => {
 		expect(JSON.stringify(result.decision)).not.toMatch(/listing|executor|background|discard/u);
 	});
 
+	it('keeps the liquid-only result identical while an incomplete overlay has no personal EV or decision', () => {
+		const withoutOverlay = evaluateInventoryContainerEconomy(fixture('open'));
+		const value = fixture('open');
+		value.personalValuation = { version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 0, origin: 'manual' },
+		] };
+		const result = evaluateInventoryContainerEconomy(value);
+		expect(result.status).toBe('ready');
+		expect(withoutOverlay.status).toBe('ready');
+		if (result.status !== 'ready' || withoutOverlay.status !== 'ready') return;
+		expect(result.liquidOnly).toEqual(withoutOverlay.liquidOnly);
+		expect(result.personal).toMatchObject({
+			valuation: { coverage: 'partial', knownAdjustment: 0, totalAdjustment: null },
+			openEvPerContainerMicroCopper: null, totalExpectedMicroCopper: null,
+			decision: null, comparison: null,
+		});
+		expect(result.recommendationBasis).toBe('liquid_only');
+	});
+
+	it.each([
+		[10_000, 'open'],
+		[0, 'sell'],
+	] as const)('lets a complete personal overlay select %s copper outcomes as %s', (unitCopper, personalAction) => {
+		const value = fixture('sell');
+		value.personalValuation = {
+			version: 1,
+			values: value.economyPack.model.outcomes
+				.filter((outcome) => outcome.valuationPolicy === 'excluded')
+				.map((outcome) => ({ outcomeKey: outcome.key, unitCopper, origin: 'manual' as const })),
+		};
+		const result = evaluateInventoryContainerEconomy(value);
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		expect(result.liquidOnly.decision.action).toBe('sell');
+		expect(result.personal.valuation.coverage).toBe('complete');
+		expect(result.personal.openEvPerContainerMicroCopper).not.toBeNull();
+		expect(result.personal.decision?.action).toBe(personalAction);
+		expect(result.decision.action).toBe(personalAction);
+		expect(result.recommendationBasis).toBe('personal');
+	});
+
+	it('can move the personal decision from open back to sell when complete manual values change', () => {
+		const value = fixture('sell');
+		const values = value.economyPack.model.outcomes
+			.filter((outcome) => outcome.valuationPolicy === 'excluded')
+			.map((outcome) => ({ outcomeKey: outcome.key, unitCopper: 10_000, origin: 'manual' as const }));
+		value.personalValuation = { version: 1, values };
+		expect(evaluateInventoryContainerEconomy(value)).toMatchObject({
+			status: 'ready', personal: { decision: { action: 'open' } },
+		});
+		value.personalValuation = { version: 1, values: values.map((entry) => ({ ...entry, unitCopper: 0 })) };
+		expect(evaluateInventoryContainerEconomy(value)).toMatchObject({
+			status: 'ready', personal: { decision: { action: 'sell' } },
+		});
+	});
+
 	it('makes human activation effective at its exact timestamp, never before it', () => {
 		const before = fixture('open');
 		before.asOf = '2026-08-16T05:22:23.999Z';

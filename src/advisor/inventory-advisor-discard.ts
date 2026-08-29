@@ -6,6 +6,7 @@ import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
 import type { InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
+import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 import {
 	INVENTORY_DISCARD_ALLOWLIST_VERSION,
 	type InventoryDiscardAllowlistInputV1,
@@ -22,7 +23,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		if (!isInput(value)) return invalid();
 		const reproduced = classifyInventoryAdvisor(value.engineInput);
 		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack,
-			value.engineInput.containerEconomy)
+			value.engineInput.containerEconomy, value.engineInput.personalValuation)
 			|| canonical(reproduced) !== canonical(value.producerResult)) return invalid();
 		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) return invalid();
 		const producerResultSha256 = sha256CanonicalValue(value.producerResult);
@@ -79,7 +80,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		};
 		const publicResult = { status: result.status, report: result.report, envelope: result.envelope };
 		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack,
-			value.engineInput.containerEconomy)
+			value.engineInput.containerEconomy, value.engineInput.personalValuation)
 			&& isInventoryDiscardAllowlistResultShape(result) ? result : invalid();
 	} catch { return invalid(); }
 }
@@ -133,12 +134,19 @@ function isInventoryDiscardAllowlistResultShape(value: unknown): value is Invent
 function isInput(value: unknown): value is InventoryDiscardAllowlistInputV1 {
 	if (!record(value) || !keys(value, ['engineInput', 'producerResult']) || !record(value.engineInput)
 		|| !isInventoryKnowledgePack(value.engineInput.knowledgePack)) return false;
-	if (keys(value.engineInput, ['input', 'knowledgePack'])) return true;
-	return keys(value.engineInput, ['containerEconomy', 'input', 'knowledgePack'])
-		&& record(value.engineInput.containerEconomy)
+	const actual = Object.keys(value.engineInput);
+	if (!['input', 'knowledgePack'].every((key) => actual.includes(key))
+		|| !actual.every((key) => ['containerEconomy', 'input', 'knowledgePack', 'personalValuation'].includes(key))) return false;
+	if (value.engineInput.containerEconomy === undefined) return value.engineInput.personalValuation === undefined;
+	return record(value.engineInput.containerEconomy)
 		&& keys(value.engineInput.containerEconomy, ['pack', 'prices'])
 		&& isInventoryContainerEconomyPack(value.engineInput.containerEconomy.pack)
-		&& isInventoryContainerPriceEvidence(value.engineInput.containerEconomy.prices);
+		&& isInventoryContainerPriceEvidence(value.engineInput.containerEconomy.prices)
+		&& (value.engineInput.personalValuation === undefined
+			|| (isContainerPersonalValuation(value.engineInput.personalValuation)
+				&& resolveContainerPersonalValuation(
+					value.engineInput.containerEconomy.pack.model, value.engineInput.personalValuation,
+				).status === 'ok'));
 }
 
 function allowlistProof(engineInput: InventoryDiscardAllowlistInputV1['engineInput'], line: InventoryAdvisorLineV1, decision: InventoryRecommendationDecisionV1, producerResultSha256: string): InventoryDiscardAllowlistProofV1 | null {

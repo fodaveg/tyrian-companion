@@ -12,6 +12,7 @@ import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-adv
 import { INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION } from './inventory-container-economy';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
+import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
@@ -178,6 +179,50 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(capture).toHaveBeenCalledOnce();
 		expect(preferences).toHaveBeenCalledTimes(2);
 		expect(preferences.mock.invocationCallOrder[0]).toBeGreaterThan(capture.mock.invocationCallOrder[0]!);
+	});
+
+	it('reads a newly saved personal overlay during in-memory reclassification without another capture', async () => {
+		const fixture = reviewedDiscardFixture();
+		rebaseEvidence(fixture.evidence, '2026-08-16T05:22:30.000Z');
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:23:00.000Z');
+		if (loaded.status !== 'available') throw new Error('Expected built-in rules.');
+		const expectedPriceItemIds = loaded.bundle.economyPack.expectedPriceItemIds;
+		let overlay: ContainerPersonalValuationV1 = { version: 1, values: [] };
+		const capture = vi.fn(async () => ({
+			status: 'complete' as const,
+			evidence: fixture.evidence,
+			containerPrices: {
+				version: INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION,
+				accountId: fixture.evidence.accountId,
+				snapshotId: fixture.evidence.snapshotId,
+				schemaVersion: fixture.evidence.schemaVersion,
+				capturedAt: '2026-08-16T05:22:30.000Z',
+				source: 'gw2-commerce-prices' as const,
+				requestedItemIds: structuredClone(expectedPriceItemIds),
+				status: 'unavailable' as const,
+				items: [],
+				missingItemIds: structuredClone(expectedPriceItemIds),
+			},
+		}));
+		const preferences = vi.fn(async () => ({ status: 'ready' as const, value: { goals: [], keepExceptions: [] } }));
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture }, preferences: { load: preferences },
+			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider, () => overlay),
+			now: () => Date.parse('2026-08-16T05:23:00.000Z'),
+		});
+		const first = await workflow.refresh('es');
+		expect(first.status).toBe('ready');
+		if (first.status !== 'ready' || !('discardContext' in first.source)) throw new Error('Expected contextual result.');
+		expect(first.source.discardContext.engineInput.personalValuation).toEqual({ version: 1, values: [] });
+
+		overlay = { version: 1, values: [{ outcomeKey: 'item:36031', unitCopper: 0, origin: 'manual' }] };
+		const second = await workflow.reclassify();
+		expect(second.status).toBe('ready');
+		if (second.status !== 'ready' || !('discardContext' in second.source)) throw new Error('Expected contextual result.');
+		expect(second.source.discardContext.engineInput.personalValuation).toEqual(overlay);
+		expect(capture).toHaveBeenCalledOnce();
+		expect(capture).toHaveBeenCalledWith('es', expectedPriceItemIds);
+		expect(preferences).toHaveBeenCalledTimes(2);
 	});
 
 	it('invalidates stale retained evidence during reclassification rather than recapturing or composing defaults', async () => {

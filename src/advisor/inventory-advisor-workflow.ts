@@ -9,6 +9,7 @@ import type { InventoryAdvisorContextualPresentationSource, InventoryAdvisorPres
 import type { CatalogLocale } from '../catalog/public-catalog-model';
 import type { InventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
 import type { InventoryContainerEconomyPackV1 } from './inventory-container-economy';
+import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -32,6 +33,7 @@ export type InventoryAdvisorRules = {
 	knowledgePack: InventoryKnowledgePackV1;
 	policy: InventoryAdvisorPolicyV1;
 	containerEconomyPack?: InventoryContainerEconomyPackV1;
+	personalValuation?: ContainerPersonalValuationV1;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
@@ -131,6 +133,7 @@ export class InventoryAdvisorWorkflow {
 /** Maps the immutable H4.17 bundle into the H5.11 workflow without weakening its expiry gate. */
 export function createInventoryAdvisorBuiltinRulesProvider(
 	provider: InventoryAdvisorBuiltinBundleProvider,
+	personalValuation?: () => ContainerPersonalValuationV1,
 ): InventoryAdvisorRulesProvider {
 	return Object.freeze({
 		current(asOf: string): InventoryAdvisorRulesAvailability {
@@ -141,6 +144,9 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 					knowledgePack: loaded.bundle.knowledgePack,
 					policy: loaded.bundle.policy,
 					containerEconomyPack: loaded.bundle.economyPack,
+					...(personalValuation === undefined ? {} : {
+						personalValuation: structuredClone(personalValuation()),
+					}),
 				} }
 				: { status: 'unavailable' };
 		},
@@ -161,14 +167,18 @@ export function composeInventoryAdvisorRefresh(
 		rulePack: structuredClone(rules.rulePack), policy: structuredClone(rules.policy),
 	});
 	if (input === null) throw new Error('inventory_advisor_input_invalid');
+	const containerEconomy = rules.containerEconomyPack !== undefined && capture.containerPrices !== undefined
+		&& capture.containerPrices !== null ? { containerEconomy: {
+			pack: structuredClone(rules.containerEconomyPack),
+			prices: structuredClone(capture.containerPrices),
+		} } : {};
 	const engineInput = {
 		input,
 		knowledgePack: structuredClone(rules.knowledgePack),
-		...(rules.containerEconomyPack !== undefined && capture.containerPrices !== undefined
-			&& capture.containerPrices !== null ? { containerEconomy: {
-			pack: structuredClone(rules.containerEconomyPack),
-			prices: structuredClone(capture.containerPrices),
-		} } : {}),
+		...containerEconomy,
+		...(!('containerEconomy' in containerEconomy) || rules.personalValuation === undefined ? {} : {
+			personalValuation: structuredClone(rules.personalValuation),
+		}),
 	};
 	const producerResult = classifyInventoryAdvisor(engineInput);
 	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });

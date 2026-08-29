@@ -95,6 +95,10 @@ export class InventoryAdvisorPresentationController {
 	/** Reprojects a cached fresh capture; it never starts a second account capture. */
 	async reclassify(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
 		if (this.disposed || this.ports.reclassify === undefined) return this.current(options);
+		// A settings write before the first Refresh prepares the next classification. If a
+		// Refresh is already in flight, however, queue behind it so that captured evidence
+		// is immediately projected with the latest settings.
+		if (this.cached === null && (this.flight === null || this.flight.kind !== 'refresh')) return this.current(options);
 		const generation = this.generation;
 		await this.runFlight(generation, 'reclassify');
 		return this.current(options);

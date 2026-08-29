@@ -38,14 +38,14 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/advisor/inventory-advisor-presentation.ts', {
 		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
-			'./inventory-advisor-presentation-model'],
+			'./inventory-advisor-presentation-model', '../economy/item-liquidity', './inventory-container-economy'],
 		portCalls: [],
 	}],
 	['src/advisor/inventory-advisor-workflow.ts', {
 		imports: ['./inventory-advisor-evidence-model', './inventory-advisor-evidence-contract', './inventory-advisor-classifier',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
-			'./inventory-advisor-builtin-bundle', './inventory-container-economy'],
+			'./inventory-advisor-builtin-bundle', './inventory-container-economy', '../economy/container-personal-valuation'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {

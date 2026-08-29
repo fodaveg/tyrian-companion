@@ -25,6 +25,7 @@ import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
+import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -58,8 +59,13 @@ export function isInventoryAdvisorResultForInput(
 	input: unknown,
 	knowledgePack?: unknown,
 	containerEconomy?: InventoryAdvisorEngineInputV1['containerEconomy'],
+	personalValuation?: ContainerPersonalValuationV1,
 ): value is InventoryAdvisorResultV1 {
-	try { return isInventoryAdvisorResultForInputUnsafe(value, input, knowledgePack, containerEconomy); } catch { return false; }
+	try {
+		return isInventoryAdvisorResultForInputUnsafe(
+			value, input, knowledgePack, containerEconomy, personalValuation,
+		);
+	} catch { return false; }
 }
 
 function isInventoryAdvisorResultForInputUnsafe(
@@ -67,6 +73,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 	input: unknown,
 	knowledgePack: unknown,
 	containerEconomy: InventoryAdvisorEngineInputV1['containerEconomy'],
+	personalValuation: ContainerPersonalValuationV1 | undefined,
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
@@ -159,7 +166,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 			);
 			if (requiresEconomicReproduction) {
 				if (!validEconomicDecisionAgainstInput(decision, line, input,
-					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy, report.explanations)) return false;
+					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy,
+					personalValuation, report.explanations)) return false;
 			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
 				remainingBid, explanation?.reasonCodes ?? [])) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
@@ -188,6 +196,7 @@ function validEconomicDecisionAgainstInput(
 	input: InventoryAdvisorInputV1,
 	knowledgePack: InventoryKnowledgePackV1 | undefined,
 	economy: InventoryAdvisorEngineInputV1['containerEconomy'],
+	personalValuation: ContainerPersonalValuationV1 | undefined,
 	explanations: InventoryAdvisorExplanationV1[],
 ): boolean {
 	if (!economy || !knowledgePack || input.rulePack.schemaVersion !== 2
@@ -243,6 +252,7 @@ function validEconomicDecisionAgainstInput(
 		knowledgePackSha256: knowledgePack.sha256,
 		economyPack: economy.pack,
 		prices: economy.prices,
+		...(personalValuation === undefined ? {} : { personalValuation }),
 	});
 	return result.status === 'ready' && result.decision.action === decision.action
 		&& result.decision.quantity === decision.quantity && result.decision.ruleId === decision.ruleId;

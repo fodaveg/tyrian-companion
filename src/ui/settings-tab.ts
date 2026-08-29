@@ -23,6 +23,7 @@ import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
 import { VaultFolderInputSuggest } from './vault-folder-suggest';
+import { HalloweenPersonalValuationSettings } from './halloween-personal-valuation-settings';
 
 type SettingRenderer = (setting: Setting) => void;
 
@@ -36,6 +37,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private sessionHistoryScrubButton: ButtonComponent | null = null;
 	private readonly sessionHistoryScrubController: SessionHistoryScrubController;
 	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
+	private readonly halloweenPersonalValuation: HalloweenPersonalValuationSettings;
 
 	constructor(
 		app: App,
@@ -47,6 +49,13 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			confirm: (preview) => confirmSessionHistoryScrub(this.app, this.t.bind(this), preview),
 			cancelPreview: (token) => this.plugin.cancelSessionHistoryScrubPreview(token),
 			scrub: (token) => this.plugin.scrubSessionHistory(token),
+		});
+		this.halloweenPersonalValuation = new HalloweenPersonalValuationSettings({
+			value: () => this.plugin.settings.halloweenPersonalValuation,
+			save: async (halloweenPersonalValuation) => {
+				await this.plugin.updateSettings({ halloweenPersonalValuation });
+			},
+			translator: () => createTranslator(this.plugin.settings.language),
 		});
 	}
 
@@ -228,6 +237,13 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								});
 							}),
 					);
+				},
+			},
+			{
+				name: this.t('settings.halloween.personal.name'), desc: this.t('settings.halloween.personal.desc'),
+				render: (setting) => {
+					setting.settingEl.addClass('tyrian-personal-valuation-setting');
+					this.halloweenPersonalValuation.render(setting.controlEl);
 				},
 			},
 			{

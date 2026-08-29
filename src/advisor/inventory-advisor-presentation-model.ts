@@ -1,6 +1,11 @@
 import type { ItemLocation, SourceCoverage } from '../account/storage-snapshot-model';
 import type { InventoryAdvisorCoverageV1, InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
 import type { InventoryDiscardAllowlistProofV1 } from './inventory-advisor-discard-model';
+import type {
+	InventoryContainerEconomyDecisionV1,
+	InventoryContainerPersonalEconomyV1,
+} from './inventory-container-economy';
+import type { ContainerDispositionKernelExplanation } from '../economy/container-disposition-kernel';
 
 export const INVENTORY_ADVISOR_PRESENTATION_VERSION = 1 as const;
 
@@ -48,6 +53,15 @@ export interface InventoryAdvisorPresentationRow {
 	value: InventoryAdvisorPresentationValue;
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryDiscardAllowlistProofV1 | null;
+	containerEconomy?: {
+		recommendation: InventoryContainerEconomyDecisionV1;
+		recommendationBasis: 'liquid_only' | 'personal';
+		liquidOnly: {
+			decision: InventoryContainerEconomyDecisionV1;
+			explanation: ContainerDispositionKernelExplanation;
+		};
+		personal: InventoryContainerPersonalEconomyV1;
+	} | null;
 }
 
 export interface InventoryAdvisorPresentationSection {
