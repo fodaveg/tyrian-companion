@@ -424,7 +424,10 @@ function parseNotice(value: unknown): HalloweenNoticeV1 {
 }
 
 function validNotice(value: unknown): value is HalloweenNoticeV1 {
-	return isRecord(value) && value.version === 1 && typeof value.vaultId === 'string' && value.vaultId.length > 0 &&
+	return isRecord(value) && exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'noticeId', 'episodeId', 'observedAt', 'source', 'wording', 'coverage', 'items',
+		'acknowledgedAt',
+	]) && value.version === 1 && typeof value.vaultId === 'string' && value.vaultId.length > 0 &&
 		typeof value.accountRef === 'string' && value.accountRef.length > 0 && typeof value.noticeId === 'string' && value.noticeId.length > 0 &&
 		typeof value.episodeId === 'string' && value.episodeId.length > 0 && isIso(value.observedAt) &&
 		(value.source === 'assisted_poll' || value.source === 'session_final') && value.wording === 'observed_change' &&
@@ -434,7 +437,8 @@ function validNotice(value: unknown): value is HalloweenNoticeV1 {
 }
 
 function validAlertItem(value: unknown): value is HalloweenAlertItem {
-	return isRecord(value) && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0 &&
+	return isRecord(value) && exactKeys(value, ['itemId', 'quantity', 'name', 'reasons']) &&
+		typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0 &&
 		typeof value.quantity === 'number' && Number.isSafeInteger(value.quantity) && value.quantity > 0 &&
 		(value.name === null || (typeof value.name === 'string' && value.name.length > 0 && value.name.length <= 256)) &&
 		Array.isArray(value.reasons) && value.reasons.length > 0 && value.reasons.every(validAlertReason);
@@ -554,10 +558,13 @@ function positiveInteger(value: unknown): value is number {
 	return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
-function strictBackfill(value: readonly HalloweenBackfillCandidate[]): boolean {
+function strictBackfill(value: unknown): value is readonly HalloweenBackfillCandidate[] {
+	if (!Array.isArray(value)) return false;
 	const ids = new Set<string>();
 	for (const candidate of value) {
-		if (typeof candidate.observationId !== 'string' || candidate.observationId.length === 0 || ids.has(candidate.observationId) ||
+		if (!isRecord(candidate) || !exactKeys(candidate, [
+			'observationId', 'episodeId', 'observedAt', 'coverage', 'gains',
+		]) || typeof candidate.observationId !== 'string' || candidate.observationId.length === 0 || ids.has(candidate.observationId) ||
 			typeof candidate.episodeId !== 'string' || candidate.episodeId.length === 0 || !isIso(candidate.observedAt) ||
 			(candidate.coverage !== 'complete' && candidate.coverage !== 'partial') || !strictGains(candidate.gains)) return false;
 		ids.add(candidate.observationId);
@@ -565,9 +572,15 @@ function strictBackfill(value: readonly HalloweenBackfillCandidate[]): boolean {
 	return true;
 }
 
-function strictGains(value: readonly { itemId: number; quantity: number }[]): boolean {
-	return value.every((gain, index) => positiveInteger(gain.itemId) && positiveInteger(gain.quantity) &&
-		(index === 0 || value[index - 1]!.itemId < gain.itemId));
+function strictGains(value: unknown): value is readonly { itemId: number; quantity: number }[] {
+	if (!Array.isArray(value)) return false;
+	let previous = 0;
+	for (const gain of value) {
+		if (!isRecord(gain) || !exactKeys(gain, ['itemId', 'quantity']) || !positiveInteger(gain.itemId) ||
+			!positiveInteger(gain.quantity) || gain.itemId <= previous) return false;
+		previous = gain.itemId;
+	}
+	return true;
 }
 
 function strictIds(value: unknown[]): value is number[] {

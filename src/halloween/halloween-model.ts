@@ -102,7 +102,8 @@ export function isHalloweenObservation(value: unknown): value is HalloweenObserv
 		!['complete', 'partial'].includes(String(value.coverage)) || !Array.isArray(value.gains)) return false;
 	let previous = 0;
 	for (const gain of value.gains) {
-		if (!isRecord(gain) || !positiveInteger(gain.itemId) || !positiveInteger(gain.quantity) || gain.itemId <= previous) return false;
+		if (!isRecord(gain) || !exactKeys(gain, ['itemId', 'quantity']) || !positiveInteger(gain.itemId) ||
+			!positiveInteger(gain.quantity) || gain.itemId <= previous) return false;
 		previous = gain.itemId;
 	}
 	return true;
@@ -118,4 +119,8 @@ function isIso(value: unknown): value is string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+	return Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }

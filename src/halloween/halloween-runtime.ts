@@ -45,6 +45,7 @@ export class HalloweenRuntime {
 	private generation = 0;
 	private activation: Promise<void> | null = null;
 	private backfillFlight: Promise<void> | null = null;
+	private backfillToken: object | null = null;
 	private backfillDirty = false;
 	private readonly episodeFlights = new Map<string, Promise<HalloweenNoticeV1 | null>>();
 	private enabled = false;
@@ -75,6 +76,7 @@ export class HalloweenRuntime {
 		this.generation += 1;
 		this.activation = null;
 		this.backfillFlight = null;
+		this.backfillToken = null;
 		this.backfillDirty = false;
 		this.episodeFlights.clear();
 		this.store?.close();
@@ -96,24 +98,13 @@ export class HalloweenRuntime {
 		const accountRef = this.options.accountRef();
 		if (!this.enabled || store === null || accountRef === null) return Promise.resolve();
 		if (this.backfillFlight !== null) {
-			const active = this.backfillFlight;
 			this.backfillDirty = true;
-			return active.then(async () => {
-				const next = this.backfillFlight;
-				if (next !== null && next !== active) await next;
-			});
+			return this.backfillFlight;
 		}
 		const generation = this.generation;
-		const flight = this.refreshBackfillInternal(generation, store, accountRef).catch((error: unknown) => {
-			if (this.owns(generation, store)) this.storeFailure(error);
-		}).finally(() => {
-			if (this.backfillFlight !== flight) return;
-			this.backfillFlight = null;
-			if (this.backfillDirty && this.owns(generation, store)) {
-				this.backfillDirty = false;
-				void this.refreshBackfill();
-			}
-		});
+		const token = {};
+		const flight = this.runBackfill(token, generation, store, accountRef);
+		this.backfillToken = token;
 		this.backfillFlight = flight;
 		return flight;
 	}
@@ -152,7 +143,12 @@ export class HalloweenRuntime {
 			!this.online || input.delta.status === 'invalid') return null;
 		const gains = positiveObservedGains(input.delta.itemChanges);
 		if (gains.length === 0 && input.source !== 'session_final') {
-			this.setState({ status: this.backfillPartial ? 'partial' : 'empty' });
+			try {
+				const notices = await store.readNotices(this.options.vaultId, accountRef);
+				if (this.owns(generation, store)) this.projectNotices(notices);
+			} catch (error) {
+				if (this.owns(generation, store)) this.storeFailure(error);
+			}
 			return null;
 		}
 		const observedAt = input.delta.window?.to ?? new Date(this.now()).toISOString();
@@ -243,6 +239,7 @@ export class HalloweenRuntime {
 		this.enabled = false;
 		this.generation += 1;
 		this.backfillFlight = null;
+		this.backfillToken = null;
 		this.backfillDirty = false;
 		this.episodeFlights.clear();
 		this.store?.close();
@@ -257,7 +254,7 @@ export class HalloweenRuntime {
 			this.store = opened;
 			const accountRef = this.options.accountRef();
 			if (accountRef === null) { this.projectNotices([]); return; }
-			await this.refreshBackfillInternal(generation, opened, accountRef);
+			await this.refreshBackfill();
 			if (!this.owns(generation, opened)) return;
 			const notices = await opened.readNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, opened)) return;
@@ -266,6 +263,35 @@ export class HalloweenRuntime {
 			if (this.current(generation) && (opened === null || opened === this.store)) this.storeFailure(error);
 			else opened?.close();
 		}
+	}
+
+	private async runBackfill(
+		token: object,
+		generation: number,
+		store: IndexedDbHalloweenStore,
+		accountRef: string,
+	): Promise<void> {
+		try {
+			await this.drainBackfill(generation, store, accountRef);
+		} catch (error) {
+			if (this.owns(generation, store)) this.storeFailure(error);
+		} finally {
+			if (this.backfillToken === token) {
+				this.backfillToken = null;
+				this.backfillFlight = null;
+			}
+		}
+	}
+
+	private async drainBackfill(
+		generation: number,
+		store: IndexedDbHalloweenStore,
+		accountRef: string,
+	): Promise<void> {
+		do {
+			this.backfillDirty = false;
+			await this.refreshBackfillInternal(generation, store, accountRef);
+		} while (this.backfillDirty && this.owns(generation, store));
 	}
 
 	private async refreshBackfillInternal(

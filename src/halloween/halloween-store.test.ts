@@ -55,6 +55,43 @@ describe('IndexedDbHalloweenStore', () => {
 		store.close();
 	});
 
+	it('rejects unexpected fields recursively before write and when reading sabotaged durable records', async () => {
+		const factory = new IDBFactory(); const name = dbName('recursive-shape');
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		await expect(store.recordObservation({
+			...observation('gain-extra', []), gains: [{ itemId: 1, quantity: 1, accountId: 'must-not-persist' }],
+		} as never)).rejects.toMatchObject({ failure: 'corrupt' });
+		await expect(store.enqueueNotice({ ...notice('notice-extra', [1]), accountId: 'must-not-persist' } as never))
+			.rejects.toMatchObject({ failure: 'corrupt' });
+		await expect(store.enqueueNotice({ ...notice('item-extra', []), items: [{ itemId: 1, quantity: 1, name: null,
+			reasons: [{ code: 'first_seen' }], accountId: 'must-not-persist' }] } as never))
+			.rejects.toMatchObject({ failure: 'corrupt' });
+		await expect(store.applyBackfill('vault', 'account', [{ observationId: 'candidate-extra', episodeId: 'candidate-extra',
+			observedAt: '2026-08-29T12:00:00.000Z', coverage: 'complete', gains: [], accountId: 'must-not-persist' }] as never,
+		'2026-08-29T12:01:00.000Z')).rejects.toMatchObject({ failure: 'corrupt' });
+		await expect(store.applyBackfill('vault', 'account', [{ observationId: 'backfill-gain-extra', episodeId: 'backfill-gain-extra',
+			observedAt: '2026-08-29T12:00:00.000Z', coverage: 'complete',
+			gains: [{ itemId: 2, quantity: 1, accountId: 'must-not-persist' }] }] as never,
+		'2026-08-29T12:01:00.000Z')).rejects.toMatchObject({ failure: 'corrupt' });
+		store.close();
+
+		const raw = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		let tx = raw.transaction(HALLOWEEN_NOTICE_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_NOTICE_STORE).put({ ...notice('sabotaged-notice', []), items: [{ itemId: 3, quantity: 1,
+			name: null, reasons: [{ code: 'first_seen' }], accountId: 'nested-secret' }] });
+		await transactionDone(tx);
+		tx = raw.transaction(HALLOWEEN_OBSERVATION_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_OBSERVATION_STORE).put({ ...observation('sabotaged-observation', []),
+			gains: [{ itemId: 4, quantity: 1, accountId: 'nested-secret' }], firstSeenItemIds: [4] });
+		await transactionDone(tx); raw.close();
+
+		const reopened = await IndexedDbHalloweenStore.open(factory, name);
+		await expect(reopened.readNotices('vault', 'account')).rejects.toMatchObject({ failure: 'corrupt' });
+		await expect(reopened.recordObservation({ ...observation('sabotaged-observation', []), gains: [{ itemId: 4, quantity: 1 }] }))
+			.rejects.toMatchObject({ failure: 'corrupt' });
+		reopened.close();
+	});
+
 	it('replaces provisional episode evidence atomically at session final without a second notice', async () => {
 		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('replace'));
 		await store.enqueueNotice(notice('poll-1', [1, 2]));

@@ -280,6 +280,35 @@ describe('HalloweenRuntime', () => {
 		runtime.dispose();
 	});
 
+	it('serializes activation and vault refresh through one backfill flight and retains the newest partial coverage', async () => {
+		let releaseActivation!: (value: readonly never[]) => void;
+		let calls = 0;
+		const loadBackfill = vi.fn(async () => {
+			calls += 1;
+			if (calls === 1) return await new Promise<readonly never[]>((resolve) => { releaseActivation = resolve; });
+			return [{ observationId: 'note:v2:new', episodeId: 'note:v2:new', observedAt: '2026-08-29T11:00:00.000Z',
+				coverage: 'partial' as const, gains: [] }];
+		});
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
+				netUnitCopper: null })));
+		const runtime = new HalloweenRuntime(options({ loadBackfill, resolveEvidence }));
+		const activation = runtime.activate();
+		await vi.waitFor(() => expect(loadBackfill).toHaveBeenCalledTimes(1));
+		const refresh = runtime.refreshBackfill();
+		await Promise.resolve();
+		expect(loadBackfill).toHaveBeenCalledTimes(1);
+		releaseActivation([]);
+		await Promise.all([activation, refresh]);
+		expect(loadBackfill).toHaveBeenCalledTimes(2);
+		expect(runtime.getState().status).toBe('partial');
+		expect(await runtime.observeDelta({ delta: delta('queued-a', 'queued-b', [88]), source: 'assisted_poll',
+			episodeId: 'session:queued' })).toBeNull();
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ learning: true }));
+		runtime.dispose();
+	});
+
 	it('rescans idempotently while active and promotes a newly synced canonical note into seen/H9 evidence', async () => {
 		let candidates: { observationId: string; episodeId: string; observedAt: string; coverage: 'complete'; gains: { itemId: number; quantity: number }[] }[] = [];
 		const loadBackfill = vi.fn(async () => candidates);
@@ -322,6 +351,17 @@ describe('HalloweenRuntime', () => {
 		await refreshing;
 		await live;
 		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [], learning: false }));
+		runtime.dispose();
+	});
+
+	it('keeps the durable unread inbox projected after an assisted poll with no gains', async () => {
+		const runtime = new HalloweenRuntime(options());
+		await runtime.activate();
+		await runtime.observeDelta({ delta: delta('inbox-a', 'inbox-b', [1]), source: 'assisted_poll', episodeId: 'session:inbox' });
+		expect(runtime.getState()).toMatchObject({ unreadCount: 1 });
+		await runtime.observeDelta({ delta: delta('inbox-b', 'inbox-c', []), source: 'assisted_poll', episodeId: 'session:empty-poll' });
+		expect(runtime.getState()).toMatchObject({ status: 'unread', unreadCount: 1 });
+		expect(runtime.getState().notices).toHaveLength(1);
 		runtime.dispose();
 	});
 
