@@ -5,8 +5,8 @@
 - Añadido un runtime opt-in que acepta solo deltas positivos de sesiones Halloween y clasifica
   alertas por umbral de valor, rareza, primera observación y desbloqueo de skin o mini. Rare+ solo
   alerta con ausencia de cotización demostrada o vinculación. El inbox/outbox deduplica cada objeto
-  dentro del episodio; el polling puede emitir avisos provisionales y el cierre los sustituye por una
-  alerta final.
+  dentro del episodio; el polling puede emitir avisos provisionales y el cierre los reconcilia con el
+  delta final, sustituyéndolos por una alerta final o eliminándolos cuando ya no aplica ninguna señal.
 - La lista empírica se aprende de forma incremental y canónica. El backfill se ejecuta antes del vivo
   sobre notas Halloween válidas: schema v3 aporta deltas exactos; v1 no tiene `tc_event` y no se usa
   para `seen`; v2 sin deltas exactos queda `partial` y no habilita `first_seen`.

@@ -7,7 +7,8 @@ de integrar y publicar.** El runtime opt-in consume únicamente deltas positivos
 Halloween aceptadas y genera alertas revisables por valor, rareza, primera observación y desbloqueo
 de skin o mini. La rareza Rare+ solo alerta cuando existe ausencia de cotización demostrada o el
 objeto está vinculado. Un inbox/outbox durable deduplica cada objeto dentro del episodio; durante el
-polling puede emitir avisos provisionales y el cierre los sustituye por una alerta final. El
+polling puede emitir avisos provisionales y el cierre los reconcilia con el delta final,
+sustituyéndolos por una alerta final o eliminándolos cuando ya no aplica ninguna señal. El
 reconocimiento se conserva solo cuando el contenido final sigue siendo un subconjunto válido.
 
 La lista empírica se aprende de forma incremental y canónica, con backfill de notas de sesión antes
