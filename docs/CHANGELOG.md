@@ -1,5 +1,23 @@
 # Changelog
 
+## H9.10-H9.13 - Prioridades visibles del inventario
+
+- H9.10 distingue peso muerto retenido y posiciones pendientes sin clasificar, conserva la
+  procedencia de cada hueco ocupado y ordena primero por espacio liberable agregado por objeto y
+  después por valor demostrado.
+- H9.11 muestra qué porcentaje del valor conocido visible representa cada fila y su porcentaje
+  acumulado, con cálculo determinista y fallo cerrado ante sumas fuera del rango seguro.
+- H9.12 detalla las reservas por objetivo y las excepciones para conservar con cantidad, motivo, base
+  y destino previsto; esas posiciones protegidas no se presentan como carga liberable.
+- H9.13 compara el neto de vender al instante con el neto de publicar, incluida su diferencia en
+  cobre y porcentaje. Consume una sola vez la profundidad finita de las pujas y deja como no
+  disponible cualquier contraparte no demostrada.
+- Tabla y tarjetas muestran el nuevo contexto en ES/EN y conservan la procedencia al filtrar por
+  ubicación. Integrado en `main` mediante `06919f4` y `762d67f`; la revisión final no encontró
+  hallazgos y el gate completo quedó verde con 147 ficheros y 1.968 tests, además de seguridad,
+  contratos, build y paquete. No forma parte de `0.1.13` ni acredita QA visual o instalación en
+  Obsidian.
+
 ## Release beta 0.1.13
 
 - Publicada el 2026-08-29 la

@@ -2,6 +2,23 @@
 
 ## Vertical activa
 
+**H9.10-H9.13, prioridades visibles del inventario: integradas en `main` mediante `06919f4` y
+`762d67f`.** H9.10 identifica el peso muerto retenido y lo pendiente sin clasificar, conserva las
+posiciones exactas que ocupan espacio y muestra sus unidades y huecos ocupados. El orden principal
+prioriza primero el espacio liberable agregado por objeto y después el valor demostrado.
+
+H9.11 añade a cada valor conocido su porcentaje del total visible y el porcentaje acumulado, con
+cálculo seguro y determinista. H9.12 explica cada protección con la reserva u excepción concreta, su
+cantidad, motivo, base y destino previsto, sin atribuir carga de inventario a lo que el usuario ha
+decidido conservar. H9.13 presenta en paralelo el neto de vender al instante, el neto de publicar y
+su diferencia absoluta y porcentual; respeta la profundidad finita de las pujas y no inventa el lado
+del mercado que falta.
+
+La información aparece en tabla y tarjetas, con copy ES/EN y sin perder la procedencia al filtrar por
+ubicación. La revisión final de `762d67f` no encontró hallazgos. El gate completo quedó verde con 147
+ficheros y 1.968 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma
+parte de la release `0.1.13` ni acredita QA visual o instalación en Obsidian.
+
 **Release beta `0.1.13` publicada el 2026-08-29.** El tag y commit
 `1fe6c4ca2e0b0713f7c71e27a6f24c8f425fa42a` están disponibles en la
 [GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13). BRAT puede
