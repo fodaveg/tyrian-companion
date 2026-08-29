@@ -89,6 +89,8 @@ export interface AssistedDetectionServiceOptions {
 	getSessionState: () => SessionState;
 	onStateChange?: (state: AssistedDetectionState) => void;
 	onProposal?: (proposal: RelevantStartProposal | InactivityStopProposal) => Promise<boolean>;
+	/** Positive-delta consumers receive observed evidence only; this does not attribute a game drop. */
+	onObservedDelta?: (delta: Exclude<StorageDelta, { status: 'invalid' }>, episodeId: string) => void;
 	relevantRuleSet?: RelevantItemRuleSet;
 	inactivityThresholdMs?: number;
 	now?: () => Date;
@@ -120,12 +122,14 @@ export class AssistedDetectionService {
 	private generation = 0;
 	private armFlight: Promise<AssistedDetectionState> | null = null;
 	private disposed = false;
+	private readonly onObservedDelta: NonNullable<AssistedDetectionServiceOptions['onObservedDelta']>;
 
 	constructor(options: AssistedDetectionServiceOptions) {
 		this.snapshots = options.snapshots;
 		this.getSessionState = options.getSessionState;
 		this.onStateChange = options.onStateChange ?? (() => undefined);
 		this.onProposal = options.onProposal ?? (() => Promise.resolve(false));
+		this.onObservedDelta = options.onObservedDelta ?? (() => undefined);
 		this.relevantRuleSet = options.relevantRuleSet ?? HALLOWEEN_RELEVANT_ITEM_RULE_SET;
 		this.startDetector = new RelevantItemStartDetector(this.relevantRuleSet);
 		this.relevantItemIds = new Set(this.relevantRuleSet.itemIds);
@@ -291,6 +295,7 @@ export class AssistedDetectionService {
 		this.previousSnapshot = structuredClone(current);
 		this.previousSessionContext = currentSessionContext;
 		this.state.lastSnapshotAt = current.completedAt;
+		this.onObservedDelta(structuredClone(delta), `assisted:${this.state.armedAt}`);
 		this.observeDelta(delta, session);
 		if (this.state.status === 'armed') {
 			this.emit();

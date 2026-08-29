@@ -94,6 +94,22 @@ describe('AssistedDetectionService', () => {
 		expect(harness.scheduler.stops).toBeGreaterThan(0);
 	});
 
+	it('publishes each qualified poll delta as observed evidence with one armed episode id', async () => {
+		const observed: Array<{ ids: number[]; episodeId: string }> = [];
+		const harness = createHarness([
+			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
+		], idleSession, undefined, undefined, (delta, episodeId) => observed.push({
+			ids: delta.itemChanges.filter(({ delta: quantity }) => quantity > 0).map(({ id }) => id), episodeId,
+		}));
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		expect(observed).toEqual([
+			{ ids: [36_038], episodeId: 'assisted:2026-08-13T09:59:00.000Z' },
+			{ ids: [36_038], episodeId: 'assisted:2026-08-13T09:59:00.000Z' },
+		]);
+	});
+
 	it('dismisses a proposal, clears its evidence and resumes polling', async () => {
 		const harness = createHarness([
 			snapshot('a', 0, 0),
@@ -302,6 +318,7 @@ function createHarness(
 	getSessionState: () => SessionState = idleSession,
 	inactivityThresholdMs = 30 * 60_000,
 	onProposal?: ConstructorParameters<typeof AssistedDetectionService>[0]['onProposal'],
+	onObservedDelta?: ConstructorParameters<typeof AssistedDetectionService>[0]['onObservedDelta'],
 ) {
 	const queue = snapshots.map((value) => structuredClone(value));
 	const scheduler = new FakeScheduler();
@@ -317,6 +334,7 @@ function createHarness(
 		},
 		getSessionState,
 		onProposal,
+		onObservedDelta,
 		inactivityThresholdMs,
 		now: () => new Date('2026-08-13T09:59:00.000Z'),
 		schedulerFactory: (options) => scheduler.connect(options),

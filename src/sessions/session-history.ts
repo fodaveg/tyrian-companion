@@ -132,6 +132,7 @@ const V2_SESSION_KEYS = [
 	...V1_SESSION_KEYS, 'tc_event', 'tc_event_source', 'tc_recommendation_action', 'tc_recommendation_quantity',
 	'tc_recommendation_route',
 ] as const;
+const V3_SESSION_KEYS = [...V2_SESSION_KEYS, 'tc_positive_item_deltas_json'] as const;
 const CSV_COLUMNS = [
 	'session_ref', 'account_ref', 'started_at', 'ended_at', 'duration_ms', 'classification', 'confidence', 'scope',
 	'valuation_coverage', 'observed_immediate_copper', 'observed_listing_copper', 'sacks', 'sacks_per_hour_milli',
@@ -349,8 +350,9 @@ async function decodeDurableSession(content: string): Promise<{ status: 'ok'; se
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;
 	if (Object.keys(fm).length === 0) return { status: 'non_candidate' };
-	if (fm.tc_kind !== 'gw2_farming_session' || (fm.tc_schema !== 1 && fm.tc_schema !== 2) ||
-		!hasExactKeys(fm, fm.tc_schema === 1 ? V1_SESSION_KEYS : V2_SESSION_KEYS) || !note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
+	if (fm.tc_kind !== 'gw2_farming_session' || (fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3) ||
+		!hasExactKeys(fm, fm.tc_schema === 1 ? V1_SESSION_KEYS : fm.tc_schema === 2 ? V2_SESSION_KEYS : V3_SESSION_KEYS) ||
+		!note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
 	const sessionRef = fm.tc_session_ref;
 	const accountRef = fm.tc_account_ref;
 	const startedAt = fm.tc_started_at;
@@ -429,7 +431,22 @@ function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boo
 	return (fm.tc_event === null || fm.tc_event === 'halloween') &&
 		(fm.tc_event_source === null || fm.tc_event_source === 'manual_explicit' || fm.tc_event_source === 'assisted') &&
 		(fm.tc_event === null ? fm.tc_event_source === null : fm.tc_event_source !== null) &&
-		validRecommendationMetadata(fm);
+		validRecommendationMetadata(fm) && validPositiveItemDeltas(fm);
+}
+
+function validPositiveItemDeltas(fm: Readonly<Record<string, string | number | null>>): boolean {
+	if (fm.tc_schema !== 3) return true;
+	if (typeof fm.tc_positive_item_deltas_json !== 'string') return false;
+	try {
+		const value: unknown = JSON.parse(fm.tc_positive_item_deltas_json);
+		if (!Array.isArray(value)) return false;
+		let previous = 0;
+		for (const entry of value) {
+			if (!Array.isArray(entry) || entry.length !== 2 || !safePositive(entry[0]) || !safePositive(entry[1]) || entry[0] <= previous) return false;
+			previous = entry[0];
+		}
+		return true;
+	} catch { return false; }
 }
 
 function validRecommendationMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {

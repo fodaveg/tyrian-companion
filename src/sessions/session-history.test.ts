@@ -203,12 +203,22 @@ describe('durable session history', () => {
 		expect(vault.reads).toBe(2);
 	});
 
+	it('scans schema v3 notes with canonical positive item evidence', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note({
+			tc_schema: 3, tc_positive_item_deltas_json: '[[100,3],[36038,25]]',
+		}));
+		await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({
+			status: 'ok', sessions: [{ sessionRef: 'a'.repeat(64) }],
+		});
+	});
+
 	it('fails closed for corrupt blocks, future schemas, and duplicate session refs', async () => {
 		const corrupt = new MemoryVault();
 		corrupt.contents.set('Sessions/one.md', (await note()).replace('summary content', 'edited summary'));
 		await expect(new SessionHistoryService(corrupt).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const future = new MemoryVault();
-		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 3'));
+		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 4'));
 		await expect(new SessionHistoryService(future).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const duplicate = new MemoryVault();
 		duplicate.contents.set('Sessions/one.md', await note());

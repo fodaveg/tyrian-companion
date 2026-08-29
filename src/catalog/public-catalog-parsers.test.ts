@@ -68,6 +68,7 @@ describe('public catalog parsers', () => {
 			extra_recipe_ids: [403, 402, 403],
 			guild_upgrade_id: 501,
 			color_id: 601,
+			skins: [704, 703, 704],
 		};
 
 		const parsed = parseCatalogItems([bag, consumable]);
@@ -93,6 +94,7 @@ describe('public catalog parsers', () => {
 			extraRecipeIds: [402, 403],
 			guildUpgradeId: 501,
 			colorId: 601,
+			skins: [703, 704],
 		});
 	});
 
@@ -136,6 +138,7 @@ describe('public catalog parsers', () => {
 		['negative currency order', [{ ...currencyPayload(1), order: -1 }], parseCatalogCurrencies],
 		['zero material member id', [{ ...materialPayload(7), items: [0] }], parseCatalogMaterials],
 		['non-string open enum', [{ ...itemPayload(10), type: 42 }], parseCatalogItems],
+		['invalid unlock skin id', [{ ...itemPayload(10), details: { skins: [1, 0] } }], parseCatalogItems],
 	])('rejects %s', (_label, value, parser) => {
 		expect(() => parser(value)).toThrow(InvalidCatalogPayloadError);
 	});

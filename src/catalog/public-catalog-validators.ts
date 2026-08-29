@@ -32,6 +32,7 @@ const DETAILS_KEYS = new Set([
 	'noSellOrSort',
 	'charges',
 	'minipetId',
+	'skins',
 	'suffixItemId',
 	'secondarySuffixItemId',
 	'statChoices',
@@ -122,6 +123,7 @@ export function isNormalizedCatalogItemDetails(value: unknown): value is Catalog
 		(value.noSellOrSort === undefined || typeof value.noSellOrSort === 'boolean') &&
 		isOptionalNonNegativeInteger(value.charges) &&
 		isOptionalPositiveId(value.minipetId) &&
+		(value.skins === undefined || isSortedUniqueIds(value.skins)) &&
 		isOptionalPositiveId(value.suffixItemId) &&
 		(value.secondarySuffixItemId === undefined ||
 			(typeof value.secondarySuffixItemId === 'string' && value.secondarySuffixItemId.length > 0)) &&

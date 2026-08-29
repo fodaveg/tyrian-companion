@@ -154,6 +154,7 @@ function createFrontmatter(
 		tc_kind: 'gw2_farming_session',
 		tc_event: note.eventDeclaration?.event ?? null,
 		tc_event_source: note.eventDeclaration?.source ?? null,
+		tc_positive_item_deltas_json: positiveItemDeltasJson(note),
 		tc_session_ref: sessionRef,
 		tc_account_ref: accountRef,
 		tc_locale: note.locale,
@@ -189,6 +190,13 @@ function createFrontmatter(
 		tc_side_effects: 'none',
 		descripcion: noteText(note.locale, 'note.description'),
 	};
+}
+
+/** Canonical machine-readable H11.2 evidence. It records only positive net changes, never a snapshot. */
+function positiveItemDeltasJson(note: PreparedSessionNote): string {
+	return JSON.stringify(note.runtime.delta.itemChanges.filter(({ id, delta }) =>
+		Number.isSafeInteger(id) && id > 0 && Number.isSafeInteger(delta) && delta > 0)
+		.map(({ id, delta }) => [id, delta] as const).sort(([left], [right]) => left - right));
 }
 
 function frontmatterRecommendation(note: PreparedSessionNote):

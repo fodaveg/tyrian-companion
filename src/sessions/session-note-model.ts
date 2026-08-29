@@ -20,7 +20,7 @@ import {
 	type SessionDetectionQualitySummary,
 } from './session-detection-quality';
 
-export const SESSION_NOTE_SCHEMA_VERSION = 2 as const;
+export const SESSION_NOTE_SCHEMA_VERSION = 3 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
 export const SESSION_NOTE_BLOCK_IDS = [
 	'summary', 'evidence', 'results', 'economy', 'decision', 'provenance',

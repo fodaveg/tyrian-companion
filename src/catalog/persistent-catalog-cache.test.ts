@@ -82,6 +82,18 @@ describe('PersistentCatalogCache', () => {
 		).not.toBe(catalogCacheStorageKey(canonical));
 	});
 
+	it('invalidates normalizer v2 records before reading v3 skin metadata', async () => {
+		const store = new SharedRecordStore();
+		const cache = new PersistentCatalogCache(store);
+		const current = itemKey('es', 10);
+		const legacy = { ...current, normalizerVersion: 2 };
+		store.records.set(catalogCacheStorageKey(legacy), JSON.stringify({
+			key: legacy, record: { ...record(normalizedItem(10)), normalizerVersion: 2 },
+		}));
+		await expect(cache.get(current)).resolves.toBeUndefined();
+		expect(catalogCacheStorageKey(current)).not.toBe(catalogCacheStorageKey(legacy));
+	});
+
 	it('round-trips null negative records with their reason', async () => {
 		const cache = new PersistentCatalogCache(new SharedRecordStore());
 		const key = itemKey('en', 404);

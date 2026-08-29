@@ -111,6 +111,7 @@ function parseDetails(value: unknown): CatalogItemDetails | undefined {
 	if (record.stat_choices !== undefined) {
 		details.statChoices = positiveIdArray(record.stat_choices);
 	}
+	if (record.skins !== undefined) details.skins = positiveIdArray(record.skins);
 	if (record.duration_ms !== undefined) {
 		details.durationMs = nonNegativeInteger(record.duration_ms, 'items');
 	}
@@ -132,6 +133,7 @@ function parseDetails(value: unknown): CatalogItemDetails | undefined {
 		'suffix_item_id',
 		'secondary_suffix_item_id',
 		'stat_choices',
+		'skins',
 		'duration_ms',
 		'unlock_type',
 		'apply_count',

@@ -2,7 +2,7 @@ import type { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 
 export type CatalogLocale = 'es' | 'en';
 export type CatalogKind = 'items' | 'currencies' | 'materials';
-export const CATALOG_NORMALIZER_VERSION = 2;
+export const CATALOG_NORMALIZER_VERSION = 3;
 
 export type CatalogUnknownValue =
 	| null
@@ -19,6 +19,8 @@ export interface CatalogItemDetails {
 	noSellOrSort?: boolean;
 	charges?: number;
 	minipetId?: number;
+	/** Unlock ids granted by this item. This is not the skin currently applied to an equipment instance. */
+	skins?: number[];
 	suffixItemId?: number;
 	/** GW2 exposes this legacy field as a string; an empty string means absent. */
 	secondarySuffixItemId?: string;

@@ -38,7 +38,8 @@ describe('session note model and renderer', () => {
 		if (first.status !== 'ok') return;
 		expect(first.note.preferredPath).toMatch(/^Tyrian Companion\/sessions\/2026\/2026-08-13 080001Z - [a-f0-9]{16}\.md$/u);
 		expect(first.note.frontmatter).toMatchObject({
-			tc_schema: 2, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_schema: 3, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_positive_item_deltas_json: '[[100,3]]',
 			tc_event: null,
 			tc_scope: 'observed_storage_net', tc_execution: 'manual_in_game', tc_side_effects: 'none',
 			tc_observed_immediate_copper: null, tc_recommendation_status: 'not_evaluated',
