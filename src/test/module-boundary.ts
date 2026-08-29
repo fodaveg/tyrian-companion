@@ -4,17 +4,30 @@
  * they stay here instead of being copied into every architecture suite.
  */
 
-const SPECIFIER_PATTERNS = [
-	/(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/gu,
-	/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-	/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-];
+import ts from 'typescript';
 
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
 export function moduleSpecifiers(source: string): string[] {
-	return SPECIFIER_PATTERNS.flatMap((pattern) => [...source.matchAll(pattern)]
-		.map((match) => match[1])
-		.filter((value): value is string => value !== undefined));
+	const file = ts.createSourceFile('boundary-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	const discovered: Array<{ position: number; specifier: string }> = [];
+	const record = (node: ts.Node, literal: ts.Expression | undefined): void => {
+		if (literal !== undefined && (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal))) {
+			discovered.push({ position: node.getStart(file), specifier: literal.text });
+		}
+	};
+	const visit = (node: ts.Node): void => {
+		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+			record(node, node.moduleSpecifier);
+		} else if (ts.isCallExpression(node)) {
+			if (node.expression.kind === ts.SyntaxKind.ImportKeyword
+				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
+				record(node, node.arguments[0]);
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return discovered.sort((left, right) => left.position - right.position).map(({ specifier }) => specifier);
 }
 
 /** True when a loaded export is JSON-shaped data instead of a live capability object. */
