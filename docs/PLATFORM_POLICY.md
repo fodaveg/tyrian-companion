@@ -52,10 +52,12 @@ Desactivadas no abren su IndexedDB, no consultan catálogo/precios/unlocks y no 
 no recupera intervalos. El store y los ids observados son locales al dispositivo y Obsidian Sync no
 sincroniza la bandeja. La UI contempla 320/480/760 px, controles de 44 px y variables semánticas del
 tema; el contraste real queda para QA en temas de Obsidian y no se afirma desde tests de fuente.
-Tras el opt-in, el primer uso por cuenta lee automáticamente las notas de sesión explícitamente
-marcadas Halloween para reconstruir seen antes del vivo; no pide confirmación porque solo lee Vault
-y escribe IndexedDB local. El polling solo ingresa después de aceptar la sesión Halloween y el cierre
-reemplaza el episodio provisional sin duplicar el aviso foreground.
+Tras el opt-in, cada activación lee automáticamente las notas de sesión canónicas explícitamente
+marcadas Halloween para reconstruir seen antes del vivo; cambios Markdown posteriores bajo la
+carpeta de sesiones vigente disparan un refresh coalescido, sin timers ni tormentas. No pide confirmación porque solo lee Vault y escribe
+IndexedDB local. Una nota v3 corrupta falla cerrada. El polling solo ingresa después de aceptar la
+sesión Halloween y el cierre serializado sella y reemplaza el episodio provisional sin duplicar el
+aviso foreground; un cierre sin provisional sí emite exactamente uno.
 
 ## Mumble Link en v2
 

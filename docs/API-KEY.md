@@ -39,7 +39,7 @@ endpoints está en [API:API key](https://wiki.guildwars2.com/wiki/API_key) y
   superficie queda no disponible.
 - `tradingpost`: entregas pendientes y señal de acceso al bazar. Los precios públicos no usan clave.
 - `progression`: logros utilizados como evidencia opcional del Inventory Advisor.
-- `unlocks`: recetas, skins y minis como evidencia opcional del Inventory Advisor y de las alertas de Halloween. Halloween consulta `/v2/account/skins` y `/v2/account/minis` solo al estar activado; sin cobertura completa no afirma que falte un desbloqueo.
+- `unlocks`: recetas, skins y minis como evidencia opcional del Inventory Advisor y de las alertas de Halloween. Halloween consulta `/v2/account/skins` y `/v2/account/minis` solo al estar activado; cada tipo se evalúa con cobertura independiente y nunca afirma que falte un desbloqueo en una dimensión ausente o fallida.
 
 Los cuatro permisos del perfil mínimo son necesarios para el flujo completo de sesión, aunque una
 mera comprobación de conexión acepte una clave con solo `account`. Los cuatro adicionales mejoran la

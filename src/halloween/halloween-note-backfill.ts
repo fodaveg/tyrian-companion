@@ -1,6 +1,6 @@
-import { parse as parseYaml } from 'yaml';
+import { inspectDurableSessionNote } from '../sessions/session-history';
+import { sha256Text } from '../sessions/session-note-renderer';
 import type { HalloweenBackfillCandidate } from './halloween-model';
-import { decodeHalloweenNoteEvidence } from './halloween-note-evidence';
 
 export interface HalloweenBackfillFile { path: string }
 export interface HalloweenBackfillVault {
@@ -8,58 +8,58 @@ export interface HalloweenBackfillVault {
 	read(file: HalloweenBackfillFile): Promise<string>;
 }
 
-const REF = /^[a-f0-9]{64}$/u;
+export class HalloweenBackfillError extends Error {
+	constructor(readonly failure: 'corrupt' | 'unavailable') {
+		super(`Halloween note backfill is ${failure}.`);
+		this.name = 'HalloweenBackfillError';
+	}
+}
 
-/** Reads only explicit Halloween session notes; human prose never becomes inventory evidence. */
+/** Reads canonical durable session notes; prose and unverified metadata never become inventory evidence. */
 export async function scanHalloweenSessionNotes(
 	vault: HalloweenBackfillVault,
 	accountRef: string,
 ): Promise<HalloweenBackfillCandidate[]> {
 	const candidates: HalloweenBackfillCandidate[] = [];
-	const observed = new Set<string>();
+	const observedSessions = new Set<string>();
 	for (const file of [...vault.markdownFiles()].sort((left, right) => left.path.localeCompare(right.path))) {
-		const content = await vault.read(file);
-		let frontmatter: Record<string, string | number | null> | null = null;
-		try { frontmatter = parseFrontmatter(content); }
-		catch (error) {
-			if (/\btc_event\s*:\s*["']?halloween\b/iu.test(content)) throw error;
+		let content: string;
+		try { content = await vault.read(file); }
+		catch { throw new HalloweenBackfillError('unavailable'); }
+		const inspected = await inspectDurableSessionNote(content);
+		if (inspected.status !== 'ok') {
+			if (inspected.status === 'invalid' && hasHalloweenTcHint(content)) throw new HalloweenBackfillError('corrupt');
 			continue;
 		}
-		if (frontmatter?.tc_kind !== 'gw2_farming_session' || frontmatter.tc_event !== 'halloween' ||
-			frontmatter.tc_account_ref !== accountRef ||
-			typeof frontmatter.tc_session_ref !== 'string' || !REF.test(frontmatter.tc_session_ref) ||
-			typeof frontmatter.tc_ended_at !== 'string' || !isIso(frontmatter.tc_ended_at)) continue;
-		const observationId = `note:${frontmatter.tc_session_ref}`;
-		if (observed.has(observationId)) throw new Error('Duplicate Halloween session note reference.');
-		observed.add(observationId);
-		const decoded = decodeHalloweenNoteEvidence(frontmatter);
+		const evidence = inspected.evidence;
+		if (evidence.event !== 'halloween' || evidence.accountRef !== accountRef) continue;
+		if (observedSessions.has(evidence.sessionRef)) throw new HalloweenBackfillError('corrupt');
+		observedSessions.add(evidence.sessionRef);
+		const gains = evidence.positiveItemDeltas === null ? [] : [...evidence.positiveItemDeltas];
+		const fingerprint = await sha256Text(JSON.stringify({
+			schema: evidence.schema,
+			sessionRef: evidence.sessionRef,
+			endedAt: evidence.endedAt,
+			gains,
+		}));
 		candidates.push({
-			observationId,
-			episodeId: `note-session:${frontmatter.tc_session_ref}`,
-			observedAt: frontmatter.tc_ended_at,
-			coverage: decoded.status === 'exact' ? 'complete' : 'partial',
-			gains: decoded.status === 'exact' ? decoded.gains : [],
+			observationId: `note:${evidence.sessionRef}:${fingerprint}`,
+			episodeId: `note-session:${evidence.sessionRef}`,
+			observedAt: evidence.endedAt,
+			coverage: evidence.schema === 3 ? 'complete' : 'partial',
+			gains,
 		});
 	}
 	return candidates.sort((left, right) => left.observedAt.localeCompare(right.observedAt) ||
 		left.observationId.localeCompare(right.observationId));
 }
 
-function parseFrontmatter(content: string): Record<string, string | number | null> | null {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
-	if (!match) return null;
-	const parsed: unknown = parseYaml(match[1]!);
-	if (!isRecord(parsed)) return null;
-	for (const value of Object.values(parsed)) {
-		if (value !== null && typeof value !== 'string' && typeof value !== 'number') return null;
-	}
-	return parsed as Record<string, string | number | null>;
-}
-
-function isIso(value: string): boolean {
-	return Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Used only to decide whether an invalid canonical note must fail the opt-in scan closed. */
+function hasHalloweenTcHint(content: string): boolean {
+	const opening = /^---\r?\n/u.exec(content)?.[0];
+	if (opening === undefined) return false;
+	const closing = /\r?\n---(?:\r?\n|$)/u.exec(content.slice(opening.length));
+	if (closing?.index === undefined) return false;
+	return /(?:^|\r?\n)\s*tc_event\s*:\s*["']?halloween["']?\s*(?:\r?\n|$)/iu
+		.test(content.slice(opening.length, opening.length + closing.index));
 }

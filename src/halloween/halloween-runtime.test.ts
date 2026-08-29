@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { HalloweenItemEvidence } from './halloween-model';
+import { HalloweenBackfillError } from './halloween-note-backfill';
 import { HalloweenRuntime } from './halloween-runtime';
 import { HALLOWEEN_DB_NAME, HALLOWEEN_DB_VERSION, HALLOWEEN_EPISODE_STORE } from './halloween-store';
 
@@ -44,6 +45,74 @@ describe('HalloweenRuntime', () => {
 		expect(runtime.getState().unreadCount).toBe(1);
 		expect(await runtime.acknowledge(notice!.noticeId)).toBe(true);
 		expect(runtime.getState().unreadCount).toBe(0);
+		runtime.dispose();
+	});
+
+	it('keeps a first-seen-only alert causal when final corrects the assisted quantity', async () => {
+		const runtime = new HalloweenRuntime(options({ resolveEvidence: async ({ gains, firstSeenItemIds, learning }) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
+				netUnitCopper: null })) }));
+		await runtime.activate();
+		const provisional = await runtime.observeDelta({
+			delta: delta('causal-a', 'causal-b', [1]), source: 'assisted_poll', episodeId: 'session:causal',
+		});
+		expect(provisional?.items[0]?.reasons).toEqual([{ code: 'first_seen' }]);
+		const corrected = delta('causal-a', 'causal-final', [1]);
+		corrected.itemChanges[0] = { id: 1, before: 0, after: 9, delta: 9 };
+		const final = await runtime.observeDelta({ delta: corrected, source: 'session_final', episodeId: 'session:causal' });
+		expect(final?.items[0]).toMatchObject({ quantity: 9, reasons: [{ code: 'first_seen' }] });
+		runtime.dispose();
+	});
+
+	it('emits one foreground Notice for final-only, preserves ack on replacement, and never repeats final', async () => {
+		const onNotice = vi.fn();
+		const runtime = new HalloweenRuntime(options({ onNotice }));
+		await runtime.activate();
+		const final = await runtime.observeDelta({
+			delta: delta('final-only-a', 'final-only-b', [5]), source: 'session_final', episodeId: 'session:final-only',
+		});
+		expect(final).not.toBeNull();
+		expect(onNotice).toHaveBeenCalledTimes(1);
+		await runtime.observeDelta({
+			delta: delta('final-only-a', 'final-only-b', [5]), source: 'session_final', episodeId: 'session:final-only',
+		});
+		expect(onNotice).toHaveBeenCalledTimes(1);
+
+		const provisional = await runtime.observeDelta({
+			delta: delta('ack-a', 'ack-b', [6]), source: 'assisted_poll', episodeId: 'session:ack',
+		});
+		await runtime.acknowledge(provisional!.noticeId);
+		await runtime.observeDelta({
+			delta: delta('ack-a', 'ack-final', [6]), source: 'session_final', episodeId: 'session:ack',
+		});
+		expect(runtime.getState().notices.find(({ episodeId }) => episodeId === 'session:ack')?.acknowledgedAt).not.toBeNull();
+		expect(onNotice).toHaveBeenCalledTimes(2);
+		runtime.dispose();
+	});
+
+	it('serializes each episode so a slow assisted poll cannot survive or enqueue after final', async () => {
+		let release!: (value: HalloweenItemEvidence[]) => void;
+		let calls = 0;
+		const onNotice = vi.fn();
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) => {
+			calls += 1;
+			const resolved = gains.map(({ itemId, quantity }) => evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning));
+			return calls === 1 ? await new Promise<HalloweenItemEvidence[]>((resolve) => { release = resolve; }) : resolved;
+		});
+		const runtime = new HalloweenRuntime(options({ resolveEvidence, onNotice }));
+		await runtime.activate();
+		const assisted = runtime.observeDelta({ delta: delta('slow-a', 'slow-b', [1]), source: 'assisted_poll', episodeId: 'session:slow' });
+		await vi.waitFor(() => expect(resolveEvidence).toHaveBeenCalledTimes(1));
+		const final = runtime.observeDelta({ delta: delta('slow-a', 'slow-final', [2]), source: 'session_final', episodeId: 'session:slow' });
+		expect(resolveEvidence).toHaveBeenCalledTimes(1);
+		release([evidence(1, 1, true, false)]);
+		await assisted;
+		await final;
+		expect(runtime.getState().notices).toMatchObject([{ source: 'session_final', items: [{ itemId: 2 }] }]);
+		expect(onNotice).toHaveBeenCalledTimes(1);
+		expect(await runtime.observeDelta({ delta: delta('late-a', 'late-b', [3]), source: 'assisted_poll',
+			episodeId: 'session:slow' })).toBeNull();
+		expect(runtime.getState().notices[0]?.items).toMatchObject([{ itemId: 2 }]);
 		runtime.dispose();
 	});
 
@@ -97,7 +166,7 @@ describe('HalloweenRuntime', () => {
 		first.dispose();
 		const second = new HalloweenRuntime(options({ factory, loadBackfill, priceHistory: history }));
 		await second.activate();
-		expect(loadBackfill).toHaveBeenCalledTimes(1);
+		expect(loadBackfill).toHaveBeenCalledTimes(2);
 		expect((await second.observeDelta({ delta: delta('b', 'c', [9]), source: 'assisted_poll', episodeId: 'session:t' }))?.items)
 			.toMatchObject([{ itemId: 9 }]);
 		second.dispose();
@@ -111,7 +180,7 @@ describe('HalloweenRuntime', () => {
 		await runtime.activate(); runtime.disable();
 		accountRef = 'account-b'; await runtime.activate(); runtime.disable();
 		accountRef = 'account-a'; await runtime.activate();
-		expect(loadBackfill.mock.calls.map(([account]) => account)).toEqual(['account-a', 'account-b']);
+		expect(loadBackfill.mock.calls.map(([account]) => account)).toEqual(['account-a', 'account-b', 'account-a']);
 		runtime.dispose();
 	});
 
@@ -123,7 +192,37 @@ describe('HalloweenRuntime', () => {
 		await first.activate(); expect(first.getState().status).toBe('partial'); first.dispose();
 		const second = new HalloweenRuntime(options({ factory, loadBackfill }));
 		await second.activate(); expect(second.getState().status).toBe('partial');
-		expect(loadBackfill).toHaveBeenCalledTimes(1); second.dispose();
+		expect(loadBackfill).toHaveBeenCalledTimes(2); second.dispose();
+	});
+
+	it('rescans idempotently while active and promotes a newly synced canonical note into seen/H9 evidence', async () => {
+		let candidates: { observationId: string; episodeId: string; observedAt: string; coverage: 'complete'; gains: { itemId: number; quantity: number }[] }[] = [];
+		const loadBackfill = vi.fn(async () => candidates);
+		const history = { active: vi.fn(() => true), observeItemIds: vi.fn(async () => undefined) };
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning)));
+		const runtime = new HalloweenRuntime(options({ loadBackfill, priceHistory: history, resolveEvidence }));
+		await runtime.activate();
+		candidates = [{ observationId: 'note:new:fingerprint', episodeId: 'note-session:new',
+			observedAt: '2026-08-29T11:30:00.000Z', coverage: 'complete', gains: [{ itemId: 42, quantity: 2 }] }];
+		await runtime.refreshBackfill();
+		expect(history.observeItemIds).toHaveBeenLastCalledWith([42]);
+		await runtime.observeDelta({ delta: delta('sync-a', 'sync-b', [42]), source: 'assisted_poll', episodeId: 'session:after-sync' });
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [], learning: false }));
+		runtime.dispose();
+	});
+
+	it('fails closed and reflects a newly synced corrupt v3 note', async () => {
+		let corrupt = false;
+		const runtime = new HalloweenRuntime(options({ loadBackfill: async () => {
+			if (corrupt) throw new HalloweenBackfillError('corrupt');
+			return [];
+		} }));
+		await runtime.activate();
+		corrupt = true;
+		await runtime.refreshBackfill();
+		expect(runtime.getState().status).toBe('store_corrupt');
+		runtime.dispose();
 	});
 
 	it('drops stale async completions after disable and exposes offline without evaluating', async () => {
@@ -141,6 +240,26 @@ describe('HalloweenRuntime', () => {
 		runtime.setOnline(false);
 		expect(await runtime.observeDelta({ delta: delta('b', 'c', [2]), source: 'assisted_poll', episodeId: 'e' })).toBeNull();
 		expect(runtime.getState().status).toBe('offline');
+		runtime.dispose();
+	});
+
+	it('drops operations still queued when generation or pseudonymous account changes', async () => {
+		let accountRef = 'account-a';
+		let release!: (value: HalloweenItemEvidence[]) => void;
+		const resolveEvidence = vi.fn(() => new Promise<HalloweenItemEvidence[]>((resolve) => { release = resolve; }));
+		const runtime = new HalloweenRuntime(options({ accountRef: () => accountRef, resolveEvidence }));
+		await runtime.activate();
+		const active = runtime.observeDelta({ delta: delta('old-a', 'old-b', [1]), source: 'assisted_poll', episodeId: 'session:old' });
+		const queued = runtime.observeDelta({ delta: delta('old-a', 'old-final', [1]), source: 'session_final', episodeId: 'session:old' });
+		await vi.waitFor(() => expect(resolveEvidence).toHaveBeenCalledTimes(1));
+		runtime.disable();
+		accountRef = 'account-b';
+		await runtime.activate();
+		release([evidence(1, 1, true, false)]);
+		await expect(active).resolves.toBeNull();
+		await expect(queued).resolves.toBeNull();
+		expect(resolveEvidence).toHaveBeenCalledTimes(1);
+		expect(runtime.getState().notices).toEqual([]);
 		runtime.dispose();
 	});
 
@@ -176,6 +295,21 @@ describe('HalloweenRuntime', () => {
 		expect(runtime.getState().status).toBe(status);
 		runtime.dispose();
 	});
+
+	it.each([['unavailable', 'partial'], ['invalid', 'partial'], ['rate_limited', 'backoff']] as const)(
+		'projects %s catalog coverage as %s even when prices and unlock dimensions are complete',
+		async (catalogStatus, status) => {
+			const runtime = new HalloweenRuntime(options({ resolveEvidence: async ({ gains }) => gains.map(({ itemId, quantity }) => ({
+				...evidence(itemId, quantity, false, false), catalogStatus,
+				unlocks: { status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
+					unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null },
+			})) }));
+			await runtime.activate();
+			await runtime.observeDelta({ delta: delta('catalog-a', 'catalog-b', [1]), source: 'assisted_poll', episodeId: 'session:catalog' });
+			expect(runtime.getState().status).toBe(status);
+			runtime.dispose();
+		},
+	);
 });
 
 function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0]> = {}): ConstructorParameters<typeof HalloweenRuntime>[0] {
@@ -188,8 +322,9 @@ function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0
 	};
 }
 function evidence(itemId: number, quantity: number, firstSeen: boolean, learning: boolean): HalloweenItemEvidence {
-	return { itemId, quantity, catalog: null, netUnitCopper: 10_000, priceStatus: 'quote', bound: false, firstSeen, learning,
-		unlocks: { status: 'missing_scope', unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null } };
+	return { itemId, quantity, catalog: null, catalogStatus: 'complete', netUnitCopper: 10_000, priceStatus: 'quote', bound: false, firstSeen, learning,
+		unlocks: { status: 'missing_scope', skinsStatus: 'missing_scope', minisStatus: 'missing_scope',
+			unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null } };
 }
 function delta(before: string, after: string, ids: number[]): StorageDelta {
 	return { version: 1, status: 'comparable', accountId: 'raw-never-persisted', beforeSnapshotId: before, afterSnapshotId: after,

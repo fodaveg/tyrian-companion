@@ -8,6 +8,7 @@ import {
 	type HalloweenObservationSource,
 	type HalloweenPolicy,
 } from './halloween-model';
+import { HalloweenBackfillError } from './halloween-note-backfill';
 import { HalloweenStoreError, IndexedDbHalloweenStore, type HalloweenStoreFailure } from './halloween-store';
 
 export type HalloweenRuntimeStatus =
@@ -43,6 +44,9 @@ export class HalloweenRuntime {
 	private store: IndexedDbHalloweenStore | null = null;
 	private generation = 0;
 	private activation: Promise<void> | null = null;
+	private backfillFlight: Promise<void> | null = null;
+	private backfillDirty = false;
+	private readonly episodeFlights = new Map<string, Promise<HalloweenNoticeV1 | null>>();
 	private enabled = false;
 	private online = true;
 	private learning = true;
@@ -70,6 +74,9 @@ export class HalloweenRuntime {
 		this.enabled = false;
 		this.generation += 1;
 		this.activation = null;
+		this.backfillFlight = null;
+		this.backfillDirty = false;
+		this.episodeFlights.clear();
 		this.store?.close();
 		this.store = null;
 		this.learning = true;
@@ -83,17 +90,61 @@ export class HalloweenRuntime {
 		else if (this.enabled && this.store !== null && this.state.status === 'offline') this.projectNotices(this.state.notices);
 	}
 
-	async observeDelta(input: {
+	/** Coalesced lifecycle hook for newly synced or modified session notes. */
+	refreshBackfill(): Promise<void> {
+		const store = this.store;
+		const accountRef = this.options.accountRef();
+		if (!this.enabled || store === null || accountRef === null) return Promise.resolve();
+		if (this.backfillFlight !== null) {
+			const active = this.backfillFlight;
+			this.backfillDirty = true;
+			return active.then(async () => {
+				const next = this.backfillFlight;
+				if (next !== null && next !== active) await next;
+			});
+		}
+		const generation = this.generation;
+		const flight = this.refreshBackfillInternal(generation, store, accountRef).catch((error: unknown) => {
+			if (this.owns(generation, store)) this.storeFailure(error);
+		}).finally(() => {
+			if (this.backfillFlight !== flight) return;
+			this.backfillFlight = null;
+			if (this.backfillDirty && this.owns(generation, store)) {
+				this.backfillDirty = false;
+				void this.refreshBackfill();
+			}
+		});
+		this.backfillFlight = flight;
+		return flight;
+	}
+
+	observeDelta(input: {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
 	}): Promise<HalloweenNoticeV1 | null> {
+		const accountRef = this.options.accountRef();
+		const generation = this.generation;
+		const key = `${accountRef ?? 'missing'}\u0000${input.episodeId}`;
+		const prior = this.episodeFlights.get(key) ?? Promise.resolve(null);
+		const flight = prior.catch(() => null).then(async () =>
+			await this.observeDeltaSerial(input, generation, accountRef));
+		this.episodeFlights.set(key, flight);
+		void flight.finally(() => { if (this.episodeFlights.get(key) === flight) this.episodeFlights.delete(key); });
+		return flight;
+	}
+
+	private async observeDeltaSerial(input: {
+		delta: StorageDelta;
+		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
+		episodeId: string;
+	}, generation: number, queuedAccountRef: string | null): Promise<HalloweenNoticeV1 | null> {
 		const store = this.store;
 		const accountRef = this.options.accountRef();
-		if (!this.enabled || store === null || accountRef === null || !this.online || input.delta.status === 'invalid') return null;
+		if (!this.enabled || generation !== this.generation || store === null || accountRef === null || accountRef !== queuedAccountRef ||
+			!this.online || input.delta.status === 'invalid') return null;
 		const gains = positiveObservedGains(input.delta.itemChanges);
 		if (gains.length === 0) { this.setState({ status: this.backfillPartial ? 'partial' : 'empty' }); return null; }
-		const generation = this.generation;
 		const observedAt = input.delta.window?.to ?? new Date(this.now()).toISOString();
 		const observationId = `${input.source}:${input.delta.beforeSnapshotId ?? 'unknown'}:${input.delta.afterSnapshotId ?? 'unknown'}`;
 		this.setState({ status: 'pending' });
@@ -104,6 +155,7 @@ export class HalloweenRuntime {
 				coverage: input.delta.status === 'comparable' ? 'complete' : 'partial', gains,
 			});
 			if (!this.owns(generation, store)) return null;
+			if (receipt.status === 'terminal') return null;
 			if (this.options.priceHistory?.active()) {
 				await this.options.priceHistory.observeItemIds(gains.map(({ itemId }) => itemId));
 				if (!this.owns(generation, store)) return null;
@@ -113,10 +165,12 @@ export class HalloweenRuntime {
 			});
 			if (!this.owns(generation, store)) return null;
 			const items = evaluateHalloweenItems(evidence, this.options.policy());
-			const evidenceState: HalloweenRuntimeStatus | null = evidence.some(({ unlocks, priceStatus }) =>
-				unlocks.status === 'rate_limited' || priceStatus === 'rate_limited')
-				? 'backoff' : evidence.some(({ unlocks, priceStatus }) => unlocks.status !== 'complete' ||
-					priceStatus === 'unavailable' || priceStatus === 'invalid') ? 'partial' : null;
+			const evidenceState: HalloweenRuntimeStatus | null = evidence.some(({ unlocks, priceStatus, catalogStatus }) =>
+				unlocks.skinsStatus === 'rate_limited' || unlocks.minisStatus === 'rate_limited' ||
+				priceStatus === 'rate_limited' || catalogStatus === 'rate_limited')
+				? 'backoff' : evidence.some(({ unlocks, priceStatus, catalogStatus }) =>
+					unlocks.skinsStatus !== 'complete' || unlocks.minisStatus !== 'complete' ||
+					priceStatus === 'unavailable' || priceStatus === 'invalid' || catalogStatus !== 'complete') ? 'partial' : null;
 			this.learning = false;
 			if (items.length === 0) {
 				if (input.source === 'session_final') {
@@ -135,14 +189,17 @@ export class HalloweenRuntime {
 				wording: 'observed_change', coverage: input.delta.status === 'comparable' && evidenceState === null ? 'complete' : 'partial',
 				items, acknowledgedAt: null,
 			};
-			const committed = input.source === 'session_final'
+			const replacement = input.source === 'session_final'
 				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, notice)
-				: await store.enqueueNotice(notice);
+				: null;
+			const committed = replacement?.notice ?? (input.source === 'session_final' ? null : await store.enqueueNotice(notice));
 			if (!this.owns(generation, store)) return null;
 			const notices = await store.readNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store)) return null;
 			this.projectNotices(notices, observedAt, evidenceState);
-			if (committed && input.source !== 'session_final') this.options.onNotice?.(structuredClone(committed));
+			if (committed && (input.source !== 'session_final' || replacement?.shouldNotify)) {
+				this.options.onNotice?.(structuredClone(committed));
+			}
 			return committed;
 		} catch (error) {
 			if (this.owns(generation, store)) this.storeFailure(error);
@@ -170,6 +227,9 @@ export class HalloweenRuntime {
 		this.disposed = true;
 		this.enabled = false;
 		this.generation += 1;
+		this.backfillFlight = null;
+		this.backfillDirty = false;
+		this.episodeFlights.clear();
 		this.store?.close();
 		this.store = null;
 	}
@@ -182,29 +242,41 @@ export class HalloweenRuntime {
 			this.store = opened;
 			const accountRef = this.options.accountRef();
 			if (accountRef === null) { this.projectNotices([]); return; }
-			let learningCoverage = await opened.readLearningCoverage(this.options.vaultId, accountRef);
+			await this.refreshBackfillInternal(generation, opened, accountRef);
 			if (!this.owns(generation, opened)) return;
-			if (learningCoverage === null) {
-				const candidates = [...(await this.options.loadBackfill?.(accountRef) ?? [])]
-					.sort((left, right) => left.observedAt.localeCompare(right.observedAt) ||
-						left.observationId.localeCompare(right.observationId));
-				if (!this.owns(generation, opened)) return;
-				await opened.applyBackfill(this.options.vaultId, accountRef, candidates, new Date(this.now()).toISOString());
-				if (!this.owns(generation, opened)) return;
-				learningCoverage = candidates.some(({ coverage }) => coverage === 'partial') ? 'partial' : 'complete';
-			}
-			this.learning = false;
-			this.backfillPartial = learningCoverage === 'partial';
 			const notices = await opened.readNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, opened)) return;
 			this.projectNotices(notices);
-			if (this.options.priceHistory?.active()) {
-				const recent = await opened.readRecentItemIds(this.options.vaultId, accountRef, 400);
-				if (this.owns(generation, opened)) await this.options.priceHistory.observeItemIds(recent);
-			}
 		} catch (error) {
 			if (this.current(generation) && (opened === null || opened === this.store)) this.storeFailure(error);
 			else opened?.close();
+		}
+	}
+
+	private async refreshBackfillInternal(
+		generation: number,
+		store: IndexedDbHalloweenStore,
+		accountRef: string,
+	): Promise<void> {
+		try {
+			const candidates = [...(await this.options.loadBackfill?.(accountRef) ?? [])]
+				.sort((left, right) => left.observedAt.localeCompare(right.observedAt) ||
+					left.observationId.localeCompare(right.observationId));
+			if (!this.owns(generation, store)) return;
+			await store.applyBackfill(this.options.vaultId, accountRef, candidates, new Date(this.now()).toISOString());
+			if (!this.owns(generation, store)) return;
+			const learningCoverage = await store.readLearningCoverage(this.options.vaultId, accountRef);
+			if (!this.owns(generation, store)) return;
+			this.learning = false;
+			this.backfillPartial = learningCoverage === 'partial';
+			if (this.options.priceHistory?.active()) {
+				const recent = await store.readRecentItemIds(this.options.vaultId, accountRef, 400);
+				if (!this.owns(generation, store)) return;
+				await this.options.priceHistory.observeItemIds(recent);
+			}
+		} catch (error) {
+			if (error instanceof HalloweenBackfillError && error.failure === 'corrupt') throw new HalloweenStoreError('corrupt');
+			throw error;
 		}
 	}
 

@@ -25,6 +25,8 @@ export interface HalloweenObservationV1 {
 
 export interface HalloweenUnlockEvidence {
 	status: 'complete' | 'partial' | 'missing_scope' | 'unavailable' | 'rate_limited' | 'invalid';
+	skinsStatus: 'complete' | 'missing_scope' | 'unavailable' | 'rate_limited' | 'invalid';
+	minisStatus: 'complete' | 'missing_scope' | 'unavailable' | 'rate_limited' | 'invalid';
 	unlockedSkinIds: number[];
 	unlockedMiniIds: number[];
 	retryAfterMs: number | null;
@@ -34,6 +36,7 @@ export interface HalloweenItemEvidence {
 	itemId: number;
 	quantity: number;
 	catalog: CatalogItem | null;
+	catalogStatus: 'complete' | 'unavailable' | 'invalid' | 'rate_limited';
 	/** Best demonstrated liquid or vendor value per unit, after modeled fees. */
 	netUnitCopper: number | null;
 	/** Closed TP coverage. Only `no_quote` proves that a market quote is absent. */

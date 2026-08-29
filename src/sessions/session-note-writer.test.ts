@@ -4,6 +4,7 @@ import { afterSnapshot, looseHolding, storageDeltaSnapshot, walletCurrency } fro
 import { compareStorageSnapshots } from '../account/storage-delta';
 import { calculateSessionValuation, type SessionValuation } from '../economy/session-valuation';
 import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
+import { scanHalloweenSessionNotes } from '../halloween/halloween-note-backfill';
 import { buildReservationBalance, createReservationPlan, partitionSessionValuation } from '../economy/reservation';
 import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { createSessionContaminationReview } from './session-contamination-review';
@@ -27,6 +28,23 @@ import {
 } from './session-note-writer';
 
 describe('session note model and renderer', () => {
+	it('feeds the Halloween backfill through the real renderer with array tags and managed hashes', async () => {
+		const input = sessionInput();
+		input.eventDeclaration = { event: 'halloween', source: 'manual_explicit', declaredAt: '2026-08-13T08:00:02.000Z' };
+		const note = await rendered(input);
+		expect(note.content).toContain('tags: ["gw2/session"]');
+		await expect(scanHalloweenSessionNotes({
+			markdownFiles: () => [{ path: note.preferredPath }],
+			read: async () => note.content,
+		}, note.accountRef)).resolves.toEqual([
+			expect.objectContaining({
+				episodeId: `note-session:${note.sessionRef}`,
+				coverage: 'complete',
+				gains: [{ itemId: 100, quantity: 3 }],
+			}),
+		]);
+	});
+
 	it('builds a deterministic UTC path, hashed references and stable frontmatter', async () => {
 		const input = sessionInput();
 		const prepared = prepareSessionNote(input);

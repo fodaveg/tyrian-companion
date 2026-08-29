@@ -42,6 +42,19 @@ export interface DurableSessionHistoryRecord {
 	recommendationRoute: string | null;
 }
 
+export interface DurableSessionNoteEvidence {
+	schema: 1 | 2 | 3;
+	event: 'halloween' | null;
+	sessionRef: string;
+	accountRef: string;
+	endedAt: string;
+	positiveItemDeltas: readonly { itemId: number; quantity: number }[] | null;
+}
+
+export type DurableSessionNoteInspection =
+	| { status: 'ok'; session: DurableSessionHistoryRecord; evidence: DurableSessionNoteEvidence }
+	| { status: 'non_candidate' | 'invalid' };
+
 export type SessionHistoryScan =
 	| { status: 'ok'; sessions: readonly DurableSessionHistoryRecord[]; ignored: number }
 	| { status: 'conflict'; invalid: number; duplicates: number };
@@ -345,7 +358,8 @@ export class SessionHistoryService {
 	}
 }
 
-async function decodeDurableSession(content: string): Promise<{ status: 'ok'; session: DurableSessionHistoryRecord } | { status: 'non_candidate' | 'invalid' }> {
+/** Canonical durable-note inspector shared by history and opt-in feature backfills. */
+export async function inspectDurableSessionNote(content: string): Promise<DurableSessionNoteInspection> {
 	const note = await inspectStoredSessionNote(content);
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;
@@ -365,6 +379,8 @@ async function decodeDurableSession(content: string): Promise<{ status: 'ok'; se
 		Date.parse(endedAt) - Date.parse(startedAt) !== durationMs ||
 		!enumValue(classification, ['exact', 'estimated', 'contaminated']) || !enumValue(confidence, ['high', 'medium', 'low']) ||
 		scope !== 'observed_storage_net' || !isSessionMetadata(fm)) return { status: 'invalid' };
+	const positiveItemDeltas = fm.tc_schema === 3 ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
+	if (fm.tc_schema === 3 && positiveItemDeltas === null) return { status: 'invalid' };
 	return { status: 'ok', session: {
 		sessionRef, accountRef, startedAt, endedAt, durationMs,
 		classification, confidence, scope,
@@ -374,7 +390,18 @@ async function decodeDurableSession(content: string): Promise<{ status: 'ok'; se
 		listingCopperPerHour: numberOrNull(fm.tc_listing_copper_per_hour), recommendationStatus: stringOr(fm.tc_recommendation_status),
 		recommendationAction: nullableString(fm.tc_recommendation_action), recommendationQuantity: numberOrNull(fm.tc_recommendation_quantity),
 		recommendationRoute: nullableString(fm.tc_recommendation_route),
+	}, evidence: {
+		schema: fm.tc_schema,
+		event: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
+		sessionRef,
+		accountRef,
+		endedAt,
+		positiveItemDeltas,
 	} };
+}
+
+async function decodeDurableSession(content: string): Promise<DurableSessionNoteInspection> {
+	return await inspectDurableSessionNote(content);
 }
 
 function isSessionMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
@@ -436,17 +463,23 @@ function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boo
 
 function validPositiveItemDeltas(fm: Readonly<Record<string, string | number | null>>): boolean {
 	if (fm.tc_schema !== 3) return true;
-	if (typeof fm.tc_positive_item_deltas_json !== 'string') return false;
+	return parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) !== null;
+}
+
+function parsePositiveItemDeltas(value: unknown): { itemId: number; quantity: number }[] | null {
+	if (typeof value !== 'string') return null;
 	try {
-		const value: unknown = JSON.parse(fm.tc_positive_item_deltas_json);
-		if (!Array.isArray(value)) return false;
+		const parsed: unknown = JSON.parse(value);
+		if (!Array.isArray(parsed)) return null;
+		const gains: { itemId: number; quantity: number }[] = [];
 		let previous = 0;
-		for (const entry of value) {
-			if (!Array.isArray(entry) || entry.length !== 2 || !safePositive(entry[0]) || !safePositive(entry[1]) || entry[0] <= previous) return false;
+		for (const entry of parsed) {
+			if (!Array.isArray(entry) || entry.length !== 2 || !safePositive(entry[0]) || !safePositive(entry[1]) || entry[0] <= previous) return null;
+			gains.push({ itemId: entry[0], quantity: entry[1] });
 			previous = entry[0];
 		}
-		return true;
-	} catch { return false; }
+		return gains;
+	} catch { return null; }
 }
 
 function validRecommendationMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {

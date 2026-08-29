@@ -8,7 +8,8 @@ describe('Halloween alert policy', () => {
 		const result = evaluateHalloweenItem(evidence({
 			quantity: 2, netUnitCopper: 10_000, priceStatus: 'unavailable', bound: true, firstSeen: true, learning: false,
 			catalog: item('Rare', { skins: [4, 3], minipetId: 9 }),
-			unlocks: { status: 'complete', unlockedSkinIds: [3], unlockedMiniIds: [], retryAfterMs: null },
+			unlocks: { status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
+				unlockedSkinIds: [3], unlockedMiniIds: [], retryAfterMs: null },
 		}));
 		expect(result?.reasons).toEqual([
 			{ code: 'valuable', netUnitCopper: 10_000, thresholdCopper: 10_000 },
@@ -24,10 +25,16 @@ describe('Halloween alert policy', () => {
 		expect(evaluateHalloweenItem(evidence({ firstSeen: true, learning: true }))).toBeNull();
 	});
 
-	it('never infers a locked unlock from partial evidence and keeps future rarity closed', () => {
+	it('uses unlock coverage per dimension and keeps future rarity closed', () => {
 		expect(evaluateHalloweenItem(evidence({
 			catalog: item('FutureMythic', { skins: [3], minipetId: 9 }),
-			unlocks: { status: 'partial', unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null },
+			unlocks: { status: 'partial', skinsStatus: 'complete', minisStatus: 'unavailable',
+				unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null },
+		}))?.reasons).toEqual([{ code: 'skin_not_unlocked', skinIds: [3] }]);
+		expect(evaluateHalloweenItem(evidence({
+			catalog: item('FutureMythic', { skins: [3], minipetId: 9 }),
+			unlocks: { status: 'unavailable', skinsStatus: 'unavailable', minisStatus: 'unavailable',
+				unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null },
 		}))).toBeNull();
 	});
 
@@ -46,9 +53,10 @@ describe('Halloween alert policy', () => {
 });
 
 function evidence(patch: Partial<HalloweenItemEvidence>): HalloweenItemEvidence {
-	return { itemId: 1, quantity: 1, catalog: item('Basic'), netUnitCopper: null, priceStatus: 'no_quote', bound: false,
+	return { itemId: 1, quantity: 1, catalog: item('Basic'), catalogStatus: 'complete', netUnitCopper: null, priceStatus: 'no_quote', bound: false,
 		firstSeen: false, learning: false,
-		unlocks: { status: 'complete', unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null }, ...patch };
+		unlocks: { status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
+			unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null }, ...patch };
 }
 function item(rarity: string, details?: CatalogItem['details']): CatalogItem {
 	return { kind: 'item', id: 1, name: 'Objeto real con un nombre muy largo para probar contenido', type: 'Consumable',

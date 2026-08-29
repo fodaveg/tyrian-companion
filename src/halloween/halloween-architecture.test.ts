@@ -51,8 +51,10 @@ describe('H11-A architecture and UI contract', () => {
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
 		expect(main).toContain("`session:${session.sessionId}`");
 		expect(main).toContain("`session:${result.state.sessionId}`");
+		expect(main).toMatch(/vault\.on\('modify',[\s\S]*refreshHalloweenBackfill/u);
 		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
-		expect(store).toContain('HALLOWEEN_DB_VERSION = 2');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 3');
+		expect(store).toContain("HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1'");
 		expect(store).toContain("HALLOWEEN_META_STORE = 'meta-v1'");
 	});
 });

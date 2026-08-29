@@ -30,12 +30,14 @@ export function evaluateHalloweenItem(
 		reasons.push({ code: 'rare_unpriced_or_bound', rarity });
 	}
 	if (evidence.firstSeen && !evidence.learning) reasons.push({ code: 'first_seen' });
-	if (evidence.unlocks.status === 'complete' && evidence.catalog?.details) {
+	if (evidence.catalog?.details) {
 		const lockedSkinIds = (evidence.catalog.details.skins ?? [])
 			.filter((id) => !evidence.unlocks.unlockedSkinIds.includes(id));
-		if (lockedSkinIds.length > 0) reasons.push({ code: 'skin_not_unlocked', skinIds: lockedSkinIds });
+		if (evidence.unlocks.skinsStatus === 'complete' && lockedSkinIds.length > 0) {
+			reasons.push({ code: 'skin_not_unlocked', skinIds: lockedSkinIds });
+		}
 		const miniId = evidence.catalog.details.minipetId;
-		if (miniId !== undefined && !evidence.unlocks.unlockedMiniIds.includes(miniId)) {
+		if (evidence.unlocks.minisStatus === 'complete' && miniId !== undefined && !evidence.unlocks.unlockedMiniIds.includes(miniId)) {
 			reasons.push({ code: 'mini_not_unlocked', miniId });
 		}
 	}

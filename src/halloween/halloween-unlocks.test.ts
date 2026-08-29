@@ -7,23 +7,28 @@ describe('Halloween unlock evidence', () => {
 	it('returns complete normalized skins and minis only with unlocks scope', async () => {
 		const service = create({ 'account/skins': [3, 1, 3], 'account/minis': [9, 8] });
 		await expect(service.capture(['account', 'unlocks'])).resolves.toEqual({
-			status: 'complete', unlockedSkinIds: [1, 3], unlockedMiniIds: [8, 9], retryAfterMs: null,
+			status: 'complete', skinsStatus: 'complete', minisStatus: 'complete',
+			unlockedSkinIds: [1, 3], unlockedMiniIds: [8, 9], retryAfterMs: null,
 		});
 	});
 
 	it('distinguishes missing scope, partial and malformed coverage', async () => {
-		await expect(create({}).capture(['account'])).resolves.toMatchObject({ status: 'missing_scope' });
+		await expect(create({}).capture(['account'])).resolves.toMatchObject({
+			status: 'missing_scope', skinsStatus: 'missing_scope', minisStatus: 'missing_scope',
+		});
 		await expect(create({ 'account/skins': [1], 'account/minis': new Error('offline') }).capture(['unlocks']))
-			.resolves.toMatchObject({ status: 'partial', unlockedSkinIds: [1], unlockedMiniIds: [] });
+			.resolves.toMatchObject({ status: 'partial', skinsStatus: 'complete', minisStatus: 'unavailable',
+				unlockedSkinIds: [1], unlockedMiniIds: [] });
 		await expect(create({ 'account/skins': ['bad'], 'account/minis': ['bad'] }).capture(['unlocks']))
-			.resolves.toMatchObject({ status: 'invalid' });
+			.resolves.toMatchObject({ status: 'invalid', skinsStatus: 'invalid', minisStatus: 'invalid' });
 	});
 
 	it('records a 429 in the shared coordinator and fails closed', async () => {
 		let now = 10;
 		const rateLimit = new RateLimitCoordinator({ now: () => now });
 		const service = create({ 'account/skins': new HttpTransportError('http', 429, 5_000, 'limited'), 'account/minis': [] }, rateLimit);
-		await expect(service.capture(['unlocks'])).resolves.toMatchObject({ status: 'rate_limited', retryAfterMs: 5_000 });
+		await expect(service.capture(['unlocks'])).resolves.toMatchObject({ status: 'rate_limited', skinsStatus: 'rate_limited',
+			minisStatus: 'complete', retryAfterMs: 5_000 });
 		expect(rateLimit.status()).toMatchObject({ active: true, remainingMs: 5_000 });
 		now += 5_000;
 	});

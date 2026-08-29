@@ -41,7 +41,7 @@ describe('Halloween evidence service', () => {
 			Array.from({ length: 200 }, (_, index) => index + 1), [201],
 		]);
 		expect(evidence[0]).toMatchObject({
-			itemId: 1, quantity: 2, netUnitCopper: 85, priceStatus: 'quote', bound: false, firstSeen: true,
+			itemId: 1, quantity: 2, catalogStatus: 'complete', netUnitCopper: 85, priceStatus: 'quote', bound: false, firstSeen: true,
 			catalog: { details: { skins: [799, 800], minipetId: 700 } },
 			unlocks: { status: 'complete', unlockedSkinIds: [799], unlockedMiniIds: [700] },
 		});
@@ -56,7 +56,7 @@ describe('Halloween evidence service', () => {
 			gains: [{ itemId: 1, quantity: 3 }], firstSeenItemIds: [], learning: true,
 			scopes: ['unlocks'], locale: 'en',
 		})).resolves.toMatchObject([{
-			itemId: 1, quantity: 3, catalog: null, netUnitCopper: null, priceStatus: 'invalid', bound: false,
+			itemId: 1, quantity: 3, catalog: null, catalogStatus: 'invalid', netUnitCopper: null, priceStatus: 'invalid', bound: false,
 		}]);
 	});
 
@@ -72,6 +72,7 @@ describe('Halloween evidence service', () => {
 			scopes: ['unlocks'], locale: 'en',
 		});
 		expect(evidence[0]?.priceStatus).toBe('rate_limited');
+		expect(evidence[0]?.catalogStatus).toBe('rate_limited');
 		expect(rateLimit.status()).toMatchObject({ active: true, remainingMs: 4_000 });
 		now += 4_000;
 	});

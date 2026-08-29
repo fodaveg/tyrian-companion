@@ -384,6 +384,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 				'notices.halloweenObserved', { count: notice.items.length })),
 			onStateChange: () => this.renderViews(),
 		});
+		const refreshHalloweenBackfill = (file: unknown): void => {
+			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
+			if (this.settings.halloweenEnabled && file instanceof TFile && file.extension === 'md' &&
+				file.path.startsWith(sessionRoot)) {
+				void this.halloween?.refreshBackfill();
+			}
+		};
+		this.registerEvent(this.app.vault.on('create', refreshHalloweenBackfill));
+		this.registerEvent(this.app.vault.on('modify', refreshHalloweenBackfill));
+		this.registerEvent(this.app.vault.on('delete', refreshHalloweenBackfill));
 		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
 		const inventorySnapshots = new RateLimitedStorageSnapshotService(
 			new StorageSnapshotService(inventoryClient),
@@ -1289,7 +1299,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			result.state.sessionId, this.detectionQuality.getSessionSummary(result.state.sessionId),
 		)?.event === 'halloween') {
 			const delta = this.sessions.getProvisionalDelta();
-			if (delta) void this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`);
+			if (delta) await this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`);
 		}
 		this.renderViews();
 		return result.status === 'failed' ? result.message : null;

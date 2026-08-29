@@ -7,11 +7,12 @@ import {
 } from './halloween-model';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-export const HALLOWEEN_DB_VERSION = 2;
+export const HALLOWEEN_DB_VERSION = 3;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
 export const HALLOWEEN_EPISODE_STORE = 'notice-episodes-v1';
+export const HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1';
 export const HALLOWEEN_META_STORE = 'meta-v1';
 
 export type HalloweenStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
@@ -28,8 +29,14 @@ interface StoredObservationV1 extends HalloweenObservationV1 {
 }
 
 export interface HalloweenObservationReceipt {
-	status: 'recorded' | 'duplicate';
+	status: 'recorded' | 'duplicate' | 'terminal';
 	firstSeenItemIds: number[];
+}
+
+export interface HalloweenEpisodeReplacement {
+	notice: HalloweenNoticeV1 | null;
+	changed: boolean;
+	shouldNotify: boolean;
 }
 
 /** Dedicated fail-closed store. Observation idempotence and first-seen are one transaction. */
@@ -62,6 +69,9 @@ export class IndexedDbHalloweenStore {
 				}
 				if (!db.objectStoreNames.contains(HALLOWEEN_EPISODE_STORE)) {
 					db.createObjectStore(HALLOWEEN_EPISODE_STORE, { keyPath: ['vaultId', 'accountRef', 'episodeId', 'itemId'] });
+				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_EPISODE_META_STORE)) {
+					db.createObjectStore(HALLOWEEN_EPISODE_META_STORE, { keyPath: ['vaultId', 'accountRef', 'episodeId'] });
 				}
 				if (!db.objectStoreNames.contains(HALLOWEEN_META_STORE)) {
 					db.createObjectStore(HALLOWEEN_META_STORE, { keyPath: ['vaultId', 'accountRef'] });
@@ -116,12 +126,26 @@ export class IndexedDbHalloweenStore {
 
 	recordObservation(observation: HalloweenObservationV1): Promise<HalloweenObservationReceipt> {
 		if (!isHalloweenObservation(observation)) return Promise.reject(new HalloweenStoreError('corrupt'));
-		return this.run([HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE], 'readwrite', (tx, resolve, reject) => {
+		return this.run([
+			HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE,
+		], 'readwrite', (tx, resolve, reject) => {
 			const observations = tx.objectStore(HALLOWEEN_OBSERVATION_STORE);
 			const seen = tx.objectStore(HALLOWEEN_SEEN_STORE);
-			const existing = observations.get([observation.vaultId, observation.accountRef, observation.observationId]);
-			existing.onerror = () => reject(storeError(existing.error));
-			existing.onsuccess = () => {
+			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
+			const terminal = tx.objectStore(HALLOWEEN_EPISODE_META_STORE)
+				.get([observation.vaultId, observation.accountRef, observation.episodeId]);
+			terminal.onerror = () => reject(storeError(terminal.error));
+			terminal.onsuccess = () => {
+				try {
+					if (terminal.result !== undefined) {
+						parseEpisodeMeta(terminal.result, observation.vaultId, observation.accountRef, observation.episodeId);
+						tx.oncomplete = () => resolve({ status: 'terminal', firstSeenItemIds: [] });
+						return;
+					}
+				} catch (error) { reject(error); tx.abort(); return; }
+				const existing = observations.get([observation.vaultId, observation.accountRef, observation.observationId]);
+				existing.onerror = () => reject(storeError(existing.error));
+				existing.onsuccess = () => {
 				if (existing.result !== undefined) {
 					try {
 						const parsed = parseStoredObservation(existing.result);
@@ -138,29 +162,57 @@ export class IndexedDbHalloweenStore {
 						tx.oncomplete = () => resolve({ status: 'recorded', firstSeenItemIds: [...firstSeenItemIds] });
 						return;
 					}
-					const request = seen.get([observation.vaultId, observation.accountRef, gain.itemId]);
-					request.onerror = () => reject(storeError(request.error));
-					request.onsuccess = () => {
+					const seenRequest = seen.get([observation.vaultId, observation.accountRef, gain.itemId]);
+					seenRequest.onerror = () => reject(storeError(seenRequest.error));
+					seenRequest.onsuccess = () => {
 						try {
-							if (request.result === undefined) firstSeenItemIds.push(gain.itemId);
-							else parseSeen(request.result, observation.vaultId, observation.accountRef, gain.itemId);
-							seen.put({ version: 1, vaultId: observation.vaultId, accountRef: observation.accountRef,
-								itemId: gain.itemId, lastObservedAt: observation.observedAt });
-							visit(index + 1);
+							const globallyFirst = seenRequest.result === undefined;
+							if (!globallyFirst) parseSeen(seenRequest.result, observation.vaultId, observation.accountRef, gain.itemId);
+							const episodeRequest = episodes.get([
+								observation.vaultId, observation.accountRef, observation.episodeId, gain.itemId,
+							]);
+							episodeRequest.onerror = () => reject(storeError(episodeRequest.error));
+							episodeRequest.onsuccess = () => {
+								try {
+									const prior = episodeRequest.result === undefined ? null : parseEpisode(
+										episodeRequest.result, observation.vaultId, observation.accountRef, observation.episodeId, gain.itemId,
+									);
+									const firstSeen = prior?.firstSeen ?? globallyFirst;
+									if (firstSeen) firstSeenItemIds.push(gain.itemId);
+									seen.put({ version: 1, vaultId: observation.vaultId, accountRef: observation.accountRef,
+										itemId: gain.itemId, lastObservedAt: observation.observedAt });
+									episodes.put({ version: 2, vaultId: observation.vaultId, accountRef: observation.accountRef,
+										episodeId: observation.episodeId, itemId: gain.itemId,
+										noticeId: prior?.noticeId ?? null, firstSeen });
+									visit(index + 1);
+								} catch (error) { reject(error); tx.abort(); }
+							};
 						} catch (error) { reject(error); tx.abort(); }
 					};
 				};
 				try { visit(0); } catch (error) { reject(error); tx.abort(); }
+				};
 			};
 		});
 	}
 
 	enqueueNotice(notice: HalloweenNoticeV1): Promise<HalloweenNoticeV1 | null> {
 		if (!validNotice(notice)) return Promise.reject(new HalloweenStoreError('corrupt'));
-		return this.run([HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE], 'readwrite', (tx, resolve, reject) => {
+		return this.run([HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE], 'readwrite', (tx, resolve, reject) => {
 			const notices = tx.objectStore(HALLOWEEN_NOTICE_STORE);
 			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
+			const terminal = tx.objectStore(HALLOWEEN_EPISODE_META_STORE)
+				.get([notice.vaultId, notice.accountRef, notice.episodeId]);
 			const retained: HalloweenAlertItem[] = [];
+			terminal.onerror = () => reject(storeError(terminal.error));
+			terminal.onsuccess = () => {
+				try {
+					if (terminal.result !== undefined) {
+						parseEpisodeMeta(terminal.result, notice.vaultId, notice.accountRef, notice.episodeId);
+						tx.oncomplete = () => resolve(null);
+						return;
+					}
+				} catch (error) { reject(error); tx.abort(); return; }
 			const visit = (index: number): void => {
 				const item = notice.items[index];
 				if (!item) {
@@ -175,14 +227,22 @@ export class IndexedDbHalloweenStore {
 					try {
 						if (request.result === undefined) {
 							retained.push(structuredClone(item));
-							episodes.put({ version: 1, vaultId: notice.vaultId, accountRef: notice.accountRef,
-								episodeId: notice.episodeId, itemId: item.itemId, noticeId: notice.noticeId });
-						} else parseEpisode(request.result, notice.vaultId, notice.accountRef, notice.episodeId, item.itemId);
+							episodes.put({ version: 2, vaultId: notice.vaultId, accountRef: notice.accountRef,
+								episodeId: notice.episodeId, itemId: item.itemId, noticeId: notice.noticeId, firstSeen: false });
+						} else {
+							const prior = parseEpisode(request.result, notice.vaultId, notice.accountRef, notice.episodeId, item.itemId);
+							if (prior.noticeId === null) {
+								retained.push(structuredClone(item));
+								episodes.put({ version: 2, vaultId: notice.vaultId, accountRef: notice.accountRef,
+									episodeId: notice.episodeId, itemId: item.itemId, noticeId: notice.noticeId, firstSeen: prior.firstSeen });
+							}
+						}
 						visit(index + 1);
 					} catch (error) { reject(error); tx.abort(); }
 				};
 			};
 			try { visit(0); } catch (error) { reject(error); tx.abort(); }
+			};
 		});
 	}
 
@@ -192,14 +252,29 @@ export class IndexedDbHalloweenStore {
 		accountRef: string,
 		episodeId: string,
 		notice: HalloweenNoticeV1 | null,
-	): Promise<HalloweenNoticeV1 | null> {
+	): Promise<HalloweenEpisodeReplacement> {
 		if (notice !== null && (!validNotice(notice) || notice.vaultId !== vaultId || notice.accountRef !== accountRef ||
 			notice.episodeId !== episodeId || notice.source !== 'session_final')) {
 			return Promise.reject(new HalloweenStoreError('corrupt'));
 		}
-		return this.run([HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE], 'readwrite', (tx, resolve, reject) => {
+		return this.run([
+			HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE,
+		], 'readwrite', (tx, resolve, reject) => {
 			const notices = tx.objectStore(HALLOWEEN_NOTICE_STORE);
 			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
+			const meta = tx.objectStore(HALLOWEEN_EPISODE_META_STORE);
+			const fingerprint = canonicalFinalNotice(notice);
+			const terminal = meta.get([vaultId, accountRef, episodeId]);
+			terminal.onerror = () => reject(storeError(terminal.error));
+			terminal.onsuccess = () => {
+				try {
+					if (terminal.result !== undefined) {
+						const priorMeta = parseEpisodeMeta(terminal.result, vaultId, accountRef, episodeId);
+						if (priorMeta.finalFingerprint !== fingerprint) throw new HalloweenStoreError('corrupt');
+						tx.oncomplete = () => resolve({ notice: null, changed: false, shouldNotify: false });
+						return;
+					}
+				} catch (error) { reject(error); tx.abort(); return; }
 			const request = episodes.getAll(IDBKeyRange.bound(
 				[vaultId, accountRef, episodeId, 0],
 				[vaultId, accountRef, episodeId, Number.MAX_SAFE_INTEGER],
@@ -208,18 +283,52 @@ export class IndexedDbHalloweenStore {
 			request.onsuccess = () => {
 				try {
 					const prior = request.result.map((value) => parseEpisode(value, vaultId, accountRef, episodeId));
-					for (const record of prior) {
-						notices.delete([vaultId, accountRef, record.noticeId]);
-						episodes.delete([vaultId, accountRef, episodeId, record.itemId]);
-					}
-					if (notice !== null) {
-						notices.put(structuredClone(notice));
-						for (const item of notice.items) episodes.put({
-							version: 1, vaultId, accountRef, episodeId, itemId: item.itemId, noticeId: notice.noticeId,
-						});
-					}
-					tx.oncomplete = () => resolve(notice === null ? null : structuredClone(notice));
+					const noticeIds = [...new Set(prior.map(({ noticeId }) => noticeId).filter((id): id is string => id !== null))];
+					const priorNotices: HalloweenNoticeV1[] = [];
+					const readNotice = (index: number): void => {
+						const noticeId = noticeIds[index];
+						if (noticeId === undefined) {
+							const acknowledged = priorNotices.length > 0 && priorNotices.every(({ acknowledgedAt }) => acknowledgedAt !== null)
+								? priorNotices.map(({ acknowledgedAt }) => acknowledgedAt!).sort().at(-1)! : null;
+							const finalized = notice === null ? null : { ...structuredClone(notice), acknowledgedAt: acknowledged };
+							for (const id of noticeIds) notices.delete([vaultId, accountRef, id]);
+							for (const record of prior) episodes.put({
+								version: 2, vaultId, accountRef, episodeId, itemId: record.itemId,
+								noticeId: null, firstSeen: record.firstSeen,
+							});
+							if (finalized !== null) {
+								notices.put(finalized);
+								for (const item of finalized.items) {
+									const membership = prior.find((record) => record.itemId === item.itemId);
+									episodes.put({ version: 2, vaultId, accountRef, episodeId, itemId: item.itemId,
+										noticeId: finalized.noticeId, firstSeen: membership?.firstSeen ?? false });
+								}
+							}
+							meta.put({ version: 1, vaultId, accountRef, episodeId, finalFingerprint: fingerprint });
+							tx.oncomplete = () => resolve({
+								notice: finalized,
+								changed: true,
+								shouldNotify: finalized !== null && noticeIds.length === 0,
+							});
+							return;
+						}
+						const priorRequest = notices.get([vaultId, accountRef, noticeId]);
+						priorRequest.onerror = () => reject(storeError(priorRequest.error));
+						priorRequest.onsuccess = () => {
+							try {
+								if (priorRequest.result === undefined) throw new HalloweenStoreError('corrupt');
+								const parsed = parseNotice(priorRequest.result);
+								if (parsed.vaultId !== vaultId || parsed.accountRef !== accountRef || parsed.episodeId !== episodeId) {
+									throw new HalloweenStoreError('corrupt');
+								}
+								priorNotices.push(parsed);
+								readNotice(index + 1);
+							} catch (error) { reject(error); tx.abort(); }
+						};
+					};
+					readNotice(0);
 				} catch (error) { reject(error); tx.abort(); }
+			};
 			};
 		});
 	}
@@ -342,12 +451,43 @@ function parseSeen(value: unknown, vaultId: string, accountRef: string, itemId?:
 
 function parseEpisode(
 	value: unknown, vaultId: string, accountRef: string, episodeId: string, itemId?: number,
-): { itemId: number; noticeId: string } {
-	if (!isRecord(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'episodeId', 'itemId', 'noticeId']) ||
-		value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
-		!positiveInteger(value.itemId) || (itemId !== undefined && value.itemId !== itemId) ||
-		typeof value.noticeId !== 'string' || value.noticeId.length === 0) throw new HalloweenStoreError('corrupt');
-	return { itemId: value.itemId, noticeId: value.noticeId };
+): { itemId: number; noticeId: string | null; firstSeen: boolean } {
+	if (!isRecord(value) || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
+		!positiveInteger(value.itemId) || (itemId !== undefined && value.itemId !== itemId)) throw new HalloweenStoreError('corrupt');
+	if (value.version === 1 && exactKeys(value, ['version', 'vaultId', 'accountRef', 'episodeId', 'itemId', 'noticeId']) &&
+		typeof value.noticeId === 'string' && value.noticeId.length > 0) {
+		return { itemId: value.itemId, noticeId: value.noticeId, firstSeen: false };
+	}
+	if (value.version !== 2 || !exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'episodeId', 'itemId', 'noticeId', 'firstSeen',
+	]) || (value.noticeId !== null && (typeof value.noticeId !== 'string' || value.noticeId.length === 0)) ||
+		typeof value.firstSeen !== 'boolean') throw new HalloweenStoreError('corrupt');
+	return { itemId: value.itemId, noticeId: value.noticeId, firstSeen: value.firstSeen };
+}
+
+function parseEpisodeMeta(
+	value: unknown, vaultId: string, accountRef: string, episodeId: string,
+): { finalFingerprint: string } {
+	if (!isRecord(value) || !exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'episodeId', 'finalFingerprint',
+	]) || value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
+		typeof value.finalFingerprint !== 'string' || !validFinalFingerprint(value.finalFingerprint, vaultId, accountRef, episodeId)) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return { finalFingerprint: value.finalFingerprint };
+}
+
+function validFinalFingerprint(value: string, vaultId: string, accountRef: string, episodeId: string): boolean {
+	if (value === 'none') return true;
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (!isRecord(parsed) || !exactKeys(parsed, [
+			'version', 'vaultId', 'accountRef', 'noticeId', 'episodeId', 'observedAt', 'source', 'wording', 'coverage', 'items',
+		])) return false;
+		const notice = { ...parsed, acknowledgedAt: null };
+		return validNotice(notice) && notice.vaultId === vaultId && notice.accountRef === accountRef &&
+			notice.episodeId === episodeId && notice.source === 'session_final' && canonicalFinalNotice(notice) === value;
+	} catch { return false; }
 }
 
 function parseMeta(value: unknown, vaultId: string, accountRef: string): 'complete' | 'partial' {
@@ -362,6 +502,12 @@ function parseMeta(value: unknown, vaultId: string, accountRef: string): 'comple
 function canonicalObservation(value: HalloweenObservationV1): string {
 	const { version, vaultId, accountRef, observationId, episodeId, observedAt, source, coverage, gains } = value;
 	return JSON.stringify({ version, vaultId, accountRef, observationId, episodeId, observedAt, source, coverage, gains });
+}
+
+function canonicalFinalNotice(value: HalloweenNoticeV1 | null): string {
+	if (value === null) return 'none';
+	const { version, vaultId, accountRef, noticeId, episodeId, observedAt, source, wording, coverage, items } = value;
+	return JSON.stringify({ version, vaultId, accountRef, noticeId, episodeId, observedAt, source, wording, coverage, items });
 }
 
 function storeError(error: DOMException | null): HalloweenStoreError {

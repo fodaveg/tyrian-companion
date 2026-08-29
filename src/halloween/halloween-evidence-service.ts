@@ -15,6 +15,11 @@ interface PriceCoverage {
 	price: PublicTradingPostItemPrice | null;
 }
 
+interface CatalogCoverage {
+	status: HalloweenItemEvidence['catalogStatus'];
+	item: CatalogItem | null;
+}
+
 export class HalloweenEvidenceService {
 	constructor(
 		private readonly publicGateway: PublicCatalogGateway,
@@ -35,7 +40,8 @@ export class HalloweenEvidenceService {
 		]);
 		const firstSeen = new Set(input.firstSeenItemIds);
 		return input.gains.map(({ itemId, quantity }) => {
-			const item = catalog.get(itemId) ?? null;
+			const catalogEvidence = catalog.get(itemId) ?? { status: 'unavailable' as const, item: null };
+			const item = catalogEvidence.item;
 			const price = prices.get(itemId) ?? { status: 'unavailable' as const, price: null };
 			const bound = item !== null && item.flags.some((flag) =>
 				flag === 'AccountBound' || flag === 'SoulbindOnAcquire');
@@ -43,23 +49,30 @@ export class HalloweenEvidenceService {
 				? safePercent(price.price.bid.unitCopper, 85) : null;
 			const vendorUnit = item !== null && item.vendorValue > 0 && !item.flags.includes('NoSell') ? item.vendorValue : null;
 			return {
-				itemId, quantity, catalog: item,
+				itemId, quantity, catalog: item, catalogStatus: catalogEvidence.status,
 				netUnitCopper: maximum(instantUnit, vendorUnit), priceStatus: price.status, bound,
 				firstSeen: firstSeen.has(itemId), learning: input.learning, unlocks,
 			};
 		});
 	}
 
-	private async captureCatalog(ids: number[], locale: CatalogLocale): Promise<Map<number, CatalogItem>> {
-		const items = new Map<number, CatalogItem>();
+	private async captureCatalog(ids: number[], locale: CatalogLocale): Promise<Map<number, CatalogCoverage>> {
+		const items = new Map<number, CatalogCoverage>();
 		for (const batch of chunks(ids, MAX_BATCH)) {
 			try {
 				const response = await this.requestDetailed(
 					`items?ids=${batch.join(',')}&lang=${locale}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
 				);
-				if (response.status !== 200 && response.status !== 206) continue;
-				for (const item of parseCatalogItems(response.body)) if (batch.includes(item.id)) items.set(item.id, item);
-			} catch { /* unresolved catalog evidence stays null */ }
+				if (response.status !== 200 && response.status !== 206) {
+					for (const id of batch) items.set(id, { status: 'unavailable', item: null });
+					continue;
+				}
+				const parsed = classifyCatalogBatch(response.body, batch);
+				for (const [id, coverage] of parsed) items.set(id, coverage);
+			} catch (error) {
+				const status = error instanceof HttpTransportError && error.status === 429 ? 'rate_limited' : 'unavailable';
+				for (const id of batch) items.set(id, { status, item: null });
+			}
 		}
 		return items;
 	}
@@ -94,6 +107,31 @@ export class HalloweenEvidenceService {
 			throw error;
 		}
 	}
+}
+
+function classifyCatalogBatch(body: unknown, ids: number[]): Map<number, CatalogCoverage> {
+	const invalid = (): Map<number, CatalogCoverage> => new Map(ids.map((id) => [id, { status: 'invalid', item: null }]));
+	if (!Array.isArray(body)) return invalid();
+	let parsed: CatalogItem[];
+	try { parsed = parseCatalogItems(body); } catch { return invalid(); }
+	const requested = new Set(ids);
+	const byId = new Map(parsed.filter(({ id }) => requested.has(id)).map((item) => [item.id, item]));
+	const result = new Map<number, CatalogCoverage>(ids.map((id) => {
+		const item = byId.get(id) ?? null;
+		return [id, { status: item === null ? 'unavailable' : 'complete', item }];
+	}));
+	const seen = new Set<number>();
+	let ambiguousInvalid = false;
+	for (const entry of body) {
+		if (!isRecord(entry) || !positiveInteger(entry.id)) { ambiguousInvalid = true; continue; }
+		if (!requested.has(entry.id)) continue;
+		if (seen.has(entry.id) || !byId.has(entry.id)) result.set(entry.id, { status: 'invalid', item: null });
+		seen.add(entry.id);
+	}
+	if (ambiguousInvalid) {
+		for (const id of ids) if (result.get(id)?.item === null) result.set(id, { status: 'invalid', item: null });
+	}
+	return result;
 }
 
 function classifyPriceBatch(body: unknown, ids: number[]): Map<number, PriceCoverage> {

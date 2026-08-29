@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import {
 	HALLOWEEN_EPISODE_STORE, HALLOWEEN_NOTICE_STORE, HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE,
-	HALLOWEEN_DB_VERSION, HALLOWEEN_META_STORE,
+	HALLOWEEN_DB_VERSION, HALLOWEEN_EPISODE_META_STORE, HALLOWEEN_META_STORE,
 	IndexedDbHalloweenStore,
 	halloweenStoreFailureFrom,
 } from './halloween-store';
@@ -17,10 +17,11 @@ describe('IndexedDbHalloweenStore', () => {
 		const first = await store.recordObservation(observation('one', [1, 2]));
 		expect(first).toEqual({ status: 'recorded', firstSeenItemIds: [1, 2] });
 		expect(await store.recordObservation(observation('one', [1, 2]))).toEqual({ status: 'duplicate', firstSeenItemIds: [1, 2] });
-		expect(await store.recordObservation(observation('two', [2, 3]))).toEqual({ status: 'recorded', firstSeenItemIds: [3] });
+		expect(await store.recordObservation(observation('two', [2, 3]))).toEqual({ status: 'recorded', firstSeenItemIds: [2, 3] });
 		store.close();
 		const db = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
-		for (const child of [HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_META_STORE]) {
+		for (const child of [HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_NOTICE_STORE,
+			HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE, HALLOWEEN_META_STORE]) {
 			expect(db.objectStoreNames.contains(child)).toBe(true);
 		}
 		db.close();
@@ -60,11 +61,47 @@ describe('IndexedDbHalloweenStore', () => {
 		const final = { ...notice('final', [2]), source: 'session_final' as const,
 			items: [{ itemId: 2, quantity: 9, name: null, reasons: [{ code: 'first_seen' as const }] }] };
 		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toMatchObject({
-			items: [{ itemId: 2, quantity: 9 }],
+			notice: { items: [{ itemId: 2, quantity: 9 }] }, changed: true, shouldNotify: false,
 		});
 		expect(await store.readNotices('vault', 'account')).toEqual([final]);
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual(final);
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual({
+			notice: null, changed: false, shouldNotify: false,
+		});
 		expect(await store.readNotices('vault', 'account')).toHaveLength(1);
+		store.close();
+	});
+
+	it('persists first-seen membership across assisted and final observations in one episode', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('episode-first-seen'));
+		const assisted = await store.recordObservation(observation('assisted', [7]));
+		expect(assisted.firstSeenItemIds).toEqual([7]);
+		const final = await store.recordObservation({
+			...observation('final-observation', [7]), source: 'session_final',
+		});
+		expect(final.firstSeenItemIds).toEqual([7]);
+		store.close();
+	});
+
+	it('preserves acknowledgement, notifies only final-only episodes and seals final idempotently', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('final-ux'));
+		await store.recordObservation(observation('poll', [1]));
+		await store.enqueueNotice(notice('poll-notice', [1]));
+		await store.acknowledge('vault', 'account', 'poll-notice', '2026-08-29T12:02:00.000Z');
+		const final = { ...notice('final-notice', [1]), source: 'session_final' as const };
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toMatchObject({
+			notice: { acknowledgedAt: '2026-08-29T12:02:00.000Z' }, shouldNotify: false, changed: true,
+		});
+		await expect(store.recordObservation({ ...observation('late', [2]), source: 'assisted_poll' }))
+			.resolves.toEqual({ status: 'terminal', firstSeenItemIds: [] });
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual({
+			notice: null, changed: false, shouldNotify: false,
+		});
+
+		const finalOnly = { ...notice('other-final', [9]), episodeId: 'other', source: 'session_final' as const };
+		await store.recordObservation({ ...observation('other-observation', [9]), episodeId: 'other', source: 'session_final' });
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'other', finalOnly)).resolves.toMatchObject({
+			notice: { noticeId: 'other-final' }, shouldNotify: true, changed: true,
+		});
 		store.close();
 	});
 
@@ -139,6 +176,20 @@ describe('IndexedDbHalloweenStore', () => {
 			lastObservedAt: '2026-08-29T12:00:00.000Z', extra: true });
 		await transactionDone(seenTx); rawAgain.close();
 		await expect(reopened.readRecentItemIds('vault', 'account')).rejects.toMatchObject({ failure: 'corrupt' });
+		reopened.close();
+	});
+
+	it('fails closed on a terminal episode record with an invalid final payload', async () => {
+		const factory = new IDBFactory(); const name = dbName('terminal-sabotage');
+		const store = await IndexedDbHalloweenStore.open(factory, name); store.close();
+		const raw = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		const tx = raw.transaction(HALLOWEEN_EPISODE_META_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_EPISODE_META_STORE).put({ version: 1, vaultId: 'vault', accountRef: 'account',
+			episodeId: 'episode', finalFingerprint: '{"fake":true}' });
+		await transactionDone(tx); raw.close();
+		const reopened = await IndexedDbHalloweenStore.open(factory, name);
+		await expect(reopened.recordObservation(observation('after-corruption', [1])))
+			.rejects.toMatchObject({ failure: 'corrupt' });
 		reopened.close();
 	});
 });
