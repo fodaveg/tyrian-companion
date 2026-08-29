@@ -51,6 +51,7 @@ import type { ReservationGoal } from './economy/reservation-model';
 import {
 	mergeSettingsUpdate,
 	migrateSettings,
+	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	shouldPersistSettingsOnLoad,
 	type DetectionMode,
@@ -510,6 +511,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			() => this.settings.language,
 			() => this.settings.halloweenPersonalValuation,
 			() => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
+			() => resolveEquipmentSalvagePreferences(this.settings),
 			this.inventoryPreferences,
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 			this.inventoryAdvisorPhaseListener,
@@ -1489,6 +1491,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousHalloweenEnabled = this.settings.halloweenEnabled;
 		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
 		const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
+		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
@@ -1522,7 +1525,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		let inventoryAdvisorResult: Extract<SettingsUpdateResult, { status: 'saved' }>['inventoryAdvisor'] = 'unchanged';
 		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)
-			|| previousMaterialStorageCapacity !== this.settings.materialStorageCapacity) {
+			|| previousMaterialStorageCapacity !== this.settings.materialStorageCapacity
+			|| previousSalvagePreferences !== JSON.stringify(resolveEquipmentSalvagePreferences(this.settings))) {
 			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
 			try {
 				const reclassified = await this.inventoryAdvisor.reclassify();
@@ -1964,6 +1968,7 @@ function createInventoryAdvisorRuntime(
 	locale: () => Locale,
 	personalValuation: () => TyrianSettings['halloweenPersonalValuation'],
 	materialStorageCapacity: () => ReturnType<typeof resolveMaterialStorageCapacity>,
+	equipmentSalvagePreferences: () => ReturnType<typeof resolveEquipmentSalvagePreferences>,
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 	phaseListener: InventoryAdvisorPhaseListenerRef,
@@ -2016,6 +2021,7 @@ function createInventoryAdvisorRuntime(
 		} },
 		rules: createInventoryAdvisorBuiltinRulesProvider(
 			inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,
+			equipmentSalvagePreferences,
 		),
 	});
 	return new InventoryAdvisorPresentationController({

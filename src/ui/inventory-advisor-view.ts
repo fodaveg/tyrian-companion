@@ -922,6 +922,8 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 	if (context !== null) cell.append(context);
 	const economy = containerEconomyDetails(row, translator);
 	if (economy !== null) cell.append(economy);
+	const salvage = equipmentSalvageDetails(row, translator);
+	if (salvage !== null) cell.append(salvage);
 	return cell;
 }
 
@@ -961,6 +963,8 @@ function renderCards(
 			if (advanced !== null) article.append(advanced);
 			const economy = containerEconomyDetails(row, translator);
 			if (economy !== null) article.append(economy);
+			const salvage = equipmentSalvageDetails(row, translator);
+			if (salvage !== null) article.append(salvage);
 			cards.append(article);
 		}
 	}
@@ -1317,6 +1321,69 @@ function containerEconomyDetails(
 	});
 	details.append(summary, list, outside);
 	return details;
+}
+
+/** H9.16/H9.3 disclosure keeps every excluded output and optional preference visible. */
+function equipmentSalvageDetails(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+): HTMLDetailsElement | null {
+	const salvage = row.equipmentSalvage;
+	if (salvage == null) return null;
+	const details = createEl('details');
+	details.className = 'tyrian-inventory-advisor__equipment-salvage';
+	const summary = createEl('summary');
+	summary.textContent = translator.t('advisor.salvageEconomy.title');
+	const list = createEl('dl');
+	if (salvage.status === 'review') {
+		addDefinition(list, translator.t('advisor.salvageEconomy.status'),
+			translator.t(`advisor.salvageEconomy.review.${salvage.reason}`));
+		addDefinition(list, translator.t('advisor.salvageEconomy.rule'), salvage.ruleId ?? translator.t('advisor.view.value.unavailable'));
+		addDefinition(list, translator.t('advisor.salvageEconomy.sources'), salvage.sourceIds.length === 0
+			? translator.t('advisor.view.value.unavailable') : salvage.sourceIds.join(', '));
+		details.append(summary, list);
+		return details;
+	}
+	const economy = salvage.economics;
+	addDefinition(list, translator.t('advisor.salvageEconomy.rule'), economy.ruleId);
+	addDefinition(list, translator.t('advisor.salvageEconomy.expectedOutput'),
+		translator.t('advisor.salvageEconomy.expectedOutputValue', {
+			quantity: economy.quantity,
+			expected: new Intl.NumberFormat(translator.locale, { maximumFractionDigits: 6 })
+				.format(economy.expectedOutputMillionths * economy.quantity / 1_000_000),
+		}));
+	addDefinition(list, translator.t('advisor.salvageEconomy.outputStrategy'),
+		translator.t(`advisor.salvageEconomy.outputStrategy.${economy.outputStrategySource}`, {
+			strategy: translator.t(`advisor.salvageEconomy.strategy.${economy.outputStrategy}`),
+		}));
+	addDefinition(list, translator.t('advisor.salvageEconomy.grossOutput'),
+		formatSignedMicroCopper(economy.grossOutputMicroCopper, translator));
+	addDefinition(list, translator.t('advisor.salvageEconomy.kit'),
+		translator.t(`advisor.salvageEconomy.kit.${economy.kitSource}`, {
+			kit: translator.t(`advisor.salvageEconomy.kitName.${economy.kit}`),
+			cost: formatSignedMicroCopper(economy.kitCostMicroCopper, translator),
+		}));
+	addDefinition(list, translator.t('advisor.salvageEconomy.time'), economy.timeCostSource === 'configured'
+		? formatSignedMicroCopper(economy.timeCostMicroCopper, translator)
+		: translator.t('advisor.salvageEconomy.time.excluded'));
+	addDefinition(list, translator.t('advisor.salvageEconomy.net'),
+		formatSignedMicroCopper(economy.netSalvageMicroCopper, translator));
+	addDefinition(list, translator.t('advisor.salvageEconomy.market'),
+		translator.t('advisor.salvageEconomy.marketValue', {
+			instant: priceOrFallback(economy.marketAlternatives.instantSellCopper, 'unavailable', translator),
+			listing: priceOrFallback(economy.marketAlternatives.listingCopper, 'unavailable', translator),
+			vendor: priceOrFallback(economy.marketAlternatives.vendorCopper, 'unavailable', translator),
+		}));
+	addDefinition(list, translator.t('advisor.salvageEconomy.sources'), economy.sourceIds.join(', '));
+	const excluded = createEl('p');
+	excluded.textContent = translator.t('advisor.salvageEconomy.excluded');
+	details.append(summary, list, excluded);
+	return details;
+}
+
+function formatSignedMicroCopper(value: number, translator: Translator): string {
+	const sign = value < 0 ? '−' : '';
+	return `${sign}${formatMicroCopper(Math.abs(value), translator)}`;
 }
 
 function formatMicroCopper(value: number, translator: Translator): string {

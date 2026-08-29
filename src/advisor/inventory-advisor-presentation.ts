@@ -13,6 +13,7 @@ import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { valueCompetitiveListing, valueInstantSellDepth } from '../economy/commerce-listings';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
+import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy';
 import {
 	INVENTORY_ADVISOR_PRESENTATION_VERSION,
 	type InventoryAdvisorPresentation,
@@ -107,6 +108,7 @@ export function buildInventoryAdvisorPresentation(
 				irreversibleReviewOnly: presentationAction === 'discard_review',
 				discardProof: discardProof === null ? null : structuredClone(discardProof),
 				containerEconomy: containerEconomyFor(source, line, decision),
+				equipmentSalvage: equipmentSalvageFor(source, line, decision),
 			} satisfies InventoryAdvisorPresentationRow;
 			});
 		});
@@ -408,6 +410,37 @@ function containerEconomyFor(
 			personal: result.personal,
 		})
 		: null;
+}
+
+function equipmentSalvageFor(
+	source: InventoryAdvisorPresentationSource,
+	line: InventoryAdvisorLineV1,
+	decision: InventoryRecommendationDecisionV1,
+): InventoryAdvisorPresentationRow['equipmentSalvage'] {
+	if (!('discardContext' in source)) return null;
+	const engine = source.discardContext.engineInput;
+	const salvage = engine.equipmentSalvage;
+	if (salvage === undefined) return null;
+	const positions = line.positions.filter((position) => decision.allocations
+		.some((allocation) => allocation.positionRef === position.ref));
+	const evaluation = evaluateInventoryEquipmentEconomy(
+		engine.input,
+		engine.knowledgePack.entries.find((entry) => entry.itemId === line.itemId),
+		line.itemId,
+		decision.quantity,
+		positions,
+		Object.values(line.coverage).every((entry) => entry === 'complete'),
+		salvage,
+	);
+	if (evaluation === null || evaluation.status === 'not_applicable') return null;
+	if (evaluation.status === 'ready') return structuredClone(evaluation);
+	const rule = salvage.policy.rules.find((candidate) => candidate.ruleId === evaluation.ruleId);
+	return {
+		status: 'review',
+		reason: evaluation.reason,
+		ruleId: evaluation.ruleId,
+		sourceIds: rule === undefined ? [] : [...rule.sourceIds],
+	};
 }
 
 function isPresentationSource(value: unknown): value is InventoryAdvisorPresentationSource {

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
+import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import { classifyInventoryAdvisor, sha256InventoryKnowledgePack } from './inventory-advisor-classifier';
 import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { sha256InventoryRulePack } from './inventory-advisor-contract';
+import { applyInventoryDiscardAllowlist } from './inventory-advisor-discard';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { buildInventoryAdvisorViewModel } from '../ui/inventory-advisor-view-model';
@@ -12,6 +14,36 @@ import { sortInventoryAdvisorRows } from '../ui/inventory-advisor-view';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
 describe('H5.11 inventory advisor presentation', () => {
+	it('projects traceable Rare economics and keeps unverified Exotic output in review', () => {
+		const rare = equipmentSalvageSource('Rare');
+		const rareRow = contextualRow(rare);
+		expect(rareRow).toMatchObject({
+			action: 'salvage',
+			equipmentSalvage: {
+				status: 'ready', action: 'salvage', economics: {
+					ruleId: 'rare-equipment-68-ecto-v1', kit: 'master', kitSource: 'conservative_master_default',
+					outputStrategy: 'instant_sell', outputStrategySource: 'conservative_lower_quote',
+					timeCostSource: 'excluded_missing_preference',
+				},
+			},
+		});
+		expect(rareRow.equipmentSalvage?.status === 'ready'
+			? rareRow.equipmentSalvage.economics.sourceIds : []).toEqual([
+			'gw2-api-ecto-19721', 'gw2-wiki-ecto-yield', 'gw2-wiki-salvage-3166722',
+			'gw2-wiki-salvage-kit-3121384',
+		]);
+
+		const exoticRow = contextualRow(equipmentSalvageSource('Exotic'));
+		expect(exoticRow).toMatchObject({
+			action: 'review',
+			equipmentSalvage: {
+				status: 'review', reason: 'exotic_output_rate_unverified',
+				ruleId: 'exotic-equipment-68-review-v1',
+				sourceIds: ['gw2-wiki-exotic-equipment-2060139', 'gw2-wiki-salvage-3166722'],
+			},
+		});
+	});
+
 	it('uses the H4.2 policy for minimum fees and half-up rounding instead of duplicating fees', () => {
 		const minimum = source();
 		minimum.input.catalog.items['10'] = { ...minimum.input.catalog.items['10']!, flags: ['NoSell'] };
@@ -377,6 +409,17 @@ function onlyRow(value: InventoryAdvisorEngineInputV1) {
 	return row;
 }
 
+function contextualRow(value: InventoryAdvisorEngineInputV1) {
+	const producerResult = classifyInventoryAdvisor(value);
+	const result = applyInventoryDiscardAllowlist({ engineInput: value, producerResult });
+	const presentation = buildInventoryAdvisorPresentation({
+		input: value.input, result, discardContext: { engineInput: value, producerResult },
+	});
+	const row = presentation.groups[0]?.rows[0];
+	if (row === undefined) throw new Error(`Expected one contextual presentation row (${producerResult.status}/${result.status}/${presentation.status}).`);
+	return row;
+}
+
 function project(value: InventoryAdvisorEngineInputV1) {
 	const result = classifyInventoryAdvisor(value);
 	return buildInventoryAdvisorPresentation({ input: value.input, result });
@@ -425,6 +468,36 @@ function source(): InventoryAdvisorEngineInputV1 {
 		accountSignals: { version: 1, source: 'gw2-account-api', accountId: 'account-1', capturedAt: '2026-08-14T12:00:00.000Z', schemaVersion: PINNED_SCHEMA, tradingPostAccess: 'full', endpointCoverage: { account: evidence(), recipes: evidence(), skins: evidence(), minis: evidence(), achievements: evidence() }, unlockCoverage: 'complete', unlockedRecipes: [], unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {}, achievementProgress: [] }, rulePack,
 		policy: { version: 1, maxSnapshotAgeMs: 900_000, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000, maxAccountSignalsAgeMs: 86_400_000, maxRulePackAgeMs: 15_552_000_000, maxFutureSkewMs: 300_000, listingMinimumAdvantageBps: 1_000 },
 	}, knowledgePack: knowledge };
+}
+
+function equipmentSalvageSource(rarity: 'Rare' | 'Exotic'): InventoryAdvisorEngineInputV1 {
+	const value = source();
+	const asOf = '2026-08-29T12:00:00.000Z';
+	value.input.asOf = asOf;
+	value.input.snapshot.startedAt = '2026-08-29T11:59:00.000Z';
+	value.input.snapshot.completedAt = '2026-08-29T11:59:01.000Z';
+	value.input.catalog.resolvedAt = asOf;
+	value.input.prices.capturedAt = asOf;
+	value.input.accountSignals.capturedAt = asOf;
+	for (const endpoint of Object.values(value.input.accountSignals.endpointCoverage)) endpoint.capturedAt = asOf;
+	value.input.catalog.items['10'] = {
+		kind: 'item', id: 10, name: `${rarity} sword`, type: 'Weapon', rarity, level: 80,
+		vendorValue: 50, flags: [], gameTypes: [], restrictions: [],
+	};
+	value.input.prices.items = [{ itemId: 10, whitelisted: true,
+		bid: { unitCopper: 100, quantity: 2 }, ask: { unitCopper: 110, quantity: 2 } }];
+	value.equipmentSalvage = {
+		policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
+		preferences: { version: 1, kit: null, saleStrategy: null, time: null },
+		prices: {
+			version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', capturedAt: asOf,
+			source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA, requestedItemIds: [19_721],
+			status: 'complete', items: [{ itemId: 19_721, whitelisted: true,
+				bid: { unitCopper: 1_000, quantity: 1_000 }, ask: { unitCopper: 1_050, quantity: 1_000 } }],
+			missingItemIds: [],
+		},
+	};
+	return value;
 }
 
 function coverage() { return { sources: { characters: { status: 'complete' as const }, shared_inventory: { status: 'complete' as const }, bank: { status: 'complete' as const }, materials: { status: 'complete' as const }, wallet: { status: 'complete' as const }, commerce_delivery: { status: 'complete' as const } }, characters: {} }; }

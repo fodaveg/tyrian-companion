@@ -7,6 +7,10 @@ import type {
 } from './inventory-advisor-model';
 import type { InventoryDiscardAllowlistProofV1 } from './inventory-advisor-discard-model';
 import type {
+	EquipmentSalvageEconomicsV1,
+	EquipmentSalvageReviewReason,
+} from '../economy/equipment-salvage-economy';
+import type {
 	InventoryContainerEconomyDecisionV1,
 	InventoryContainerPersonalEconomyV1,
 } from './inventory-container-economy';
@@ -104,6 +108,16 @@ export interface InventoryAdvisorPresentationRow {
 			explanation: ContainerDispositionKernelExplanation;
 		};
 		personal: InventoryContainerPersonalEconomyV1;
+	} | null;
+	equipmentSalvage?: {
+		status: 'ready';
+		action: 'salvage' | 'market';
+		economics: EquipmentSalvageEconomicsV1;
+	} | {
+		status: 'review';
+		reason: EquipmentSalvageReviewReason;
+		ruleId: string | null;
+		sourceIds: string[];
 	} | null;
 }
 

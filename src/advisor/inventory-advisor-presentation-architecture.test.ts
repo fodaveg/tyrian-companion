@@ -11,6 +11,7 @@ const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
 const INVENTORY_ADVISOR_FILES = [
 	...inventoryAdvisorFiles('src/advisor'),
 	...inventoryAdvisorFiles('src/ui'),
+	{ file: 'inventory-equipment-economy.ts', path: 'src/advisor/inventory-equipment-economy.ts' },
 	{ file: 'inventory-sync-panel-view.ts', path: 'src/ui/inventory-sync-panel-view.ts' },
 	{ file: 'price-history-panel-view.ts', path: 'src/ui/price-history-panel-view.ts' },
 ].sort((left, right) => left.path.localeCompare(right.path))
@@ -25,6 +26,7 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/advisor/inventory-advisor-presentation-model.ts',
 	'src/advisor/inventory-advisor-presentation.ts',
 	'src/advisor/inventory-advisor-result.ts',
+	'src/advisor/inventory-equipment-economy.ts',
 	'src/ui/inventory-advisor-controller.ts',
 	'src/ui/inventory-advisor-view-model.ts',
 	'src/ui/inventory-sync-panel-view.ts',
@@ -39,14 +41,20 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
 			'./inventory-advisor-presentation-model', '../economy/item-liquidity', '../economy/reservation',
-			'./inventory-container-economy', '../economy/commerce-listings'],
+			'./inventory-container-economy', '../economy/commerce-listings', './inventory-equipment-economy'],
+		portCalls: [],
+	}],
+	['src/advisor/inventory-equipment-economy.ts', {
+		imports: ['../economy/equipment-salvage-economy', '../economy/item-liquidity',
+			'./inventory-advisor-contract', './inventory-advisor-classifier-model', './inventory-advisor-model'],
 		portCalls: [],
 	}],
 	['src/advisor/inventory-advisor-workflow.ts', {
 		imports: ['./inventory-advisor-evidence-model', './inventory-advisor-evidence-contract', './inventory-advisor-classifier',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
-			'./inventory-advisor-builtin-bundle', './inventory-container-economy', '../economy/container-personal-valuation'],
+			'./inventory-advisor-builtin-bundle', './inventory-container-economy', '../economy/container-personal-valuation',
+			'../economy/equipment-salvage-economy', '../economy/models/equipment-salvage-policy'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
@@ -100,6 +108,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/advisor/inventory-advisor-presentation.ts',
 			'src/advisor/inventory-advisor-result.ts',
 			'src/advisor/inventory-advisor-workflow.ts',
+			'src/advisor/inventory-equipment-economy.ts',
 			'src/ui/inventory-advisor-controller.ts',
 			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-view-model.ts',

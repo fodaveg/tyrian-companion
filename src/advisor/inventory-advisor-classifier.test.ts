@@ -13,6 +13,9 @@ import type {
 import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
+import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
+import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
+import { isInventoryContainerPriceEvidence } from './inventory-container-economy';
 
 describe('H4.15 inventory advisor classifier', () => {
 	it('partitions every owned loose position into a manual market decision', () => {
@@ -457,6 +460,44 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(classifyInventoryAdvisor(input).report?.lines[0]?.decisions
 			.some((decision) => decision.action === 'deposit_material') ?? false).toBe(false);
 	});
+
+	it('compares a Rare level-68+ salvage lower bound with current official prices', () => {
+		const input = equipmentSalvageFixture('Rare');
+		expect(isInventoryAdvisorInput(input.input)).toBe(true);
+		expect(isEquipmentSalvagePolicy(input.equipmentSalvage?.policy)).toBe(true);
+		expect(isEquipmentSalvagePreferences(input.equipmentSalvage?.preferences)).toBe(true);
+		expect(isInventoryContainerPriceEvidence(input.equipmentSalvage?.prices)).toBe(true);
+		const result = classifyInventoryAdvisor(input);
+
+		expect(result).toMatchObject({
+			status: 'ready',
+			envelope: { execution: 'manual_in_game', sideEffects: 'none', requiresUserAction: true },
+		});
+		expect(result.report?.lines[0]?.decisions).toMatchObject([{
+			action: 'salvage', quantity: 2, ruleId: 'rare-equipment-68-ecto-v1', safety: 'manual_only',
+		}]);
+		expect(isInventoryAdvisorResultForInput(
+			result, input.input, input.knowledgePack, undefined, undefined, undefined, undefined, undefined,
+			input.equipmentSalvage,
+		)).toBe(true);
+	});
+
+	it('keeps Exotic and uncertain/forbidden equipment in explicit review', () => {
+		const exotic = equipmentSalvageFixture('Exotic');
+		expect(classifyInventoryAdvisor(exotic).report?.lines[0]).toMatchObject({
+			decisions: [{ action: 'review' }], reasons: [{ code: 'salvage_exotic_rate_unverified' }],
+		});
+		const forbidden = equipmentSalvageFixture('Rare');
+		forbidden.input.catalog.items['10']!.flags.push('NoSalvage');
+		expect(classifyInventoryAdvisor(forbidden).report?.lines[0]).toMatchObject({
+			decisions: [{ action: 'review' }], reasons: [{ code: 'no_salvage' }],
+		});
+		const futureType = equipmentSalvageFixture('Rare');
+		futureType.input.catalog.items['10']!.type = 'FutureEquipment';
+		expect(classifyInventoryAdvisor(futureType).report?.lines[0]).toMatchObject({
+			decisions: [{ action: 'review' }], reasons: [{ code: 'salvage_item_evidence_uncertain' }],
+		});
+	});
 });
 
 function rule(ruleId: string, status: 'approved' | 'revoked') {
@@ -473,6 +514,41 @@ function fixture(): InventoryAdvisorEngineInputV1 {
 	const knowledge: InventoryKnowledgePackV1 = { schemaVersion: 1, id: 'knowledge', version: 1, publishedAt: '2026-08-01T00:00:00.000Z', reviewedAt: '2026-08-02T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z', sha256: '', sources: [{ id: 'source', url: 'https://wiki.guildwars2.com', retrievedAt: '2026-08-02T00:00:00.000Z' }], entries: [{ itemId: 10, use: { status: 'not_applicable', assertionId: 'use-none', sourceIds: ['source'] }, open: { status: 'not_applicable', assertionId: 'open-none', sourceIds: ['source'] }, salvage: { status: 'not_applicable', assertionId: 'salvage-none', sourceIds: ['source'] } }] };
 	knowledge.sha256 = sha256InventoryKnowledgePack(knowledge);
 	return { input: { version: 1, asOf: '2026-08-14T12:00:00.000Z', snapshot, catalog: { snapshotId: 'snapshot-1', locale: 'es', schemaVersion: PINNED_SCHEMA, resolvedAt: '2026-08-14T12:00:00.000Z', items: { '10': { kind: 'item', id: 10, name: 'Item', type: 'Trophy', rarity: 'Basic', level: 0, vendorValue: 1, flags: [], gameTypes: [], restrictions: [] } }, currencies: {}, materials: {}, warnings: [], coverage: { items: { '10': { status: 'resolved', source: 'network' } }, currencies: {}, materials: {} } }, prices: { version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', capturedAt: '2026-08-14T12:00:00.000Z', source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA, requestedItemIds: [10], status: 'complete', items: [{ itemId: 10, whitelisted: true, bid: { unitCopper: 20, quantity: 2 }, ask: { unitCopper: 21, quantity: 2 } }], missingItemIds: [] }, goals: [], keepExceptions: [], accountSignals: { version: 1, source: 'gw2-account-api', accountId: 'account-1', capturedAt: '2026-08-14T12:00:00.000Z', schemaVersion: PINNED_SCHEMA, tradingPostAccess: 'full', endpointCoverage: { account: evidence(), recipes: evidence(), skins: evidence(), minis: evidence(), achievements: evidence() }, unlockCoverage: 'complete', unlockedRecipes: [], unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {}, achievementProgress: [] }, rulePack, policy: { version: 1, maxSnapshotAgeMs: 900_000, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000, maxAccountSignalsAgeMs: 86_400_000, maxRulePackAgeMs: 15_552_000_000, maxFutureSkewMs: 300_000, listingMinimumAdvantageBps: 1_000 } }, knowledgePack: knowledge };
+}
+
+function equipmentSalvageFixture(rarity: 'Rare' | 'Exotic'): InventoryAdvisorEngineInputV1 {
+	const value = fixture();
+	const asOf = '2026-08-29T12:00:00.000Z';
+	value.input.asOf = asOf;
+	value.input.snapshot.startedAt = '2026-08-29T11:59:00.000Z';
+	value.input.snapshot.completedAt = '2026-08-29T11:59:01.000Z';
+	value.input.catalog.resolvedAt = asOf;
+	value.input.prices.capturedAt = asOf;
+	value.input.accountSignals.capturedAt = asOf;
+	for (const endpoint of Object.values(value.input.accountSignals.endpointCoverage)) endpoint.capturedAt = asOf;
+	value.input.snapshot.holdings[0] = {
+		kind: 'item', itemId: 10, quantity: 2, state: 'loose',
+		location: { source: 'shared_inventory', slot: 0 }, metadata: {},
+	};
+	value.input.catalog.items['10'] = {
+		kind: 'item', id: 10, name: `${rarity} sword`, type: 'Weapon', rarity, level: 80,
+		vendorValue: 50, flags: [], gameTypes: [], restrictions: [],
+	};
+	value.input.prices.requestedItemIds = [10];
+	value.input.prices.items = [
+		{ itemId: 10, whitelisted: true, bid: { unitCopper: 100, quantity: 2 }, ask: { unitCopper: 110, quantity: 2 } },
+	];
+	value.equipmentSalvage = {
+		policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
+		preferences: { version: 1, kit: null, saleStrategy: null, time: null },
+		prices: {
+			version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', schemaVersion: PINNED_SCHEMA,
+			capturedAt: asOf, source: 'gw2-commerce-prices', requestedItemIds: [19_721], status: 'complete',
+			items: [{ itemId: 19_721, whitelisted: true, bid: { unitCopper: 1_000, quantity: 10_000 },
+				ask: { unitCopper: 1_050, quantity: 10_000 } }], missingItemIds: [],
+		},
+	};
+	return value;
 }
 
 function materialStorageFixture(looseQuantity: number, storedQuantity: number): InventoryAdvisorEngineInputV1 {

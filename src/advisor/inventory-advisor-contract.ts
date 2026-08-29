@@ -9,6 +9,7 @@ import {
 } from '../catalog/public-catalog-validators';
 import { isReservationGoal } from '../economy/reservation';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import {
 	INVENTORY_ADVISOR_POLICY_VERSION,
 	INVENTORY_ADVISOR_SCOPE,
@@ -52,7 +53,8 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'user_keep_exception', 'rule_missing', 'rule_stale', 'rule_conflict', 'economic_comparison_missing',
 	'economic_activation_pending',
 	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'no_sell',
-	'no_salvage', 'salvage_value_unknown', 'delete_warning', 'alternative_route_exists',
+	'no_salvage', 'salvage_value_unknown', 'salvage_exotic_rate_unverified',
+	'salvage_mystic_cost_unmodeled', 'salvage_item_evidence_uncertain', 'delete_warning', 'alternative_route_exists',
 	'material_storage_space_available', 'discard_not_allowlisted', 'arithmetic_overflow',
 ];
 
@@ -284,7 +286,8 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 			|| explanation.ruleId !== decision.ruleId) return false;
 		const rulePack = value.rulePack;
 		if (decision.ruleId !== null && !rulePack.rules.some((rule) => isEnabledApplicableRule(rulePack, rule)
-			&& rule.ruleId === decision.ruleId && rule.itemId === decision.itemId && rule.action === decision.action)) return false;
+			&& rule.ruleId === decision.ruleId && rule.itemId === decision.itemId && rule.action === decision.action)
+			&& !isBuiltinEquipmentSalvageRule(decision)) return false;
 		if (decision.action === 'discard_candidate'
 			&& decision.discardProof?.rulePackSha256 !== value.rulePack.sha256) return false;
 	}
@@ -295,6 +298,11 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 	}
 	if (value.coverage === 'complete' && value.lines.some((line) => !coverageComplete(line.coverage))) return false;
 	return jsonRoundTrip(value);
+}
+
+function isBuiltinEquipmentSalvageRule(decision: InventoryRecommendationDecisionV1): boolean {
+	return decision.action === 'salvage' && EQUIPMENT_SALVAGE_POLICY_V1.rules.some((rule) =>
+		rule.expectedOutputMillionths !== null && rule.ruleId === decision.ruleId);
 }
 
 export function sha256InventoryAdvisorReport(report: InventoryAdvisorReportV1): string {

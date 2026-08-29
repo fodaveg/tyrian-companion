@@ -22,13 +22,15 @@ import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { selectInventoryMarketRoute } from './inventory-advisor-market';
 import { isInventoryKnowledgePack } from './inventory-advisor-classifier';
+import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy';
 import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
-import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
+import { evaluateInventoryContainerEconomy, isInventoryContainerPriceEvidence } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -67,10 +69,12 @@ export function isInventoryAdvisorResultForInput(
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1,
 	materialStorageCapacity?: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 	marketDepth?: InventoryMarketDepthEvidenceV1,
+	equipmentSalvage?: InventoryAdvisorEngineInputV1['equipmentSalvage'],
 ): value is InventoryAdvisorResultV1 {
 	try {
 		return isInventoryAdvisorResultForInputUnsafe(
 			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity, marketDepth,
+			equipmentSalvage,
 		);
 	} catch { return false; }
 }
@@ -84,6 +88,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 	activeOrders: ActiveTradingPostOrdersEvidenceV1 | undefined,
 	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 	marketDepth: InventoryMarketDepthEvidenceV1 | undefined,
+	equipmentSalvage: InventoryAdvisorEngineInputV1['equipmentSalvage'],
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(activeOrders)
@@ -91,6 +96,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 		|| !fresh(activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
 			input.policy.maxFutureSkewMs))) return false;
 	if (materialStorageCapacity !== undefined && !validMaterialStorageCapacity(materialStorageCapacity)) return false;
+	if (equipmentSalvage !== undefined && (!isEquipmentSalvageContext(equipmentSalvage))) return false;
 	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
 		|| marketDepth.requestedItemIds.length !== input.prices.requestedItemIds.length
 		|| !marketDepth.requestedItemIds.every((itemId, index) => itemId === input.prices.requestedItemIds[index])
@@ -203,7 +209,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy,
 					personalValuation, report.explanations)) return false;
 			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
-				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem)) return false;
+				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem,
+				knowledgePack as InventoryKnowledgePackV1 | undefined, equipmentSalvage)) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
@@ -329,6 +336,8 @@ function validDecisionAgainstInput(
 	reasonCodes: InventoryAdvisorReasonCode[],
 	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
+	knowledgePack: InventoryKnowledgePackV1 | undefined,
+	equipmentSalvage: InventoryAdvisorEngineInputV1['equipmentSalvage'],
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	const item = input.catalog.items[String(line.itemId)];
@@ -378,6 +387,18 @@ function validDecisionAgainstInput(
 			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
 	}
+	if (decision.action === 'salvage' && equipmentSalvage !== undefined && knowledgePack !== undefined) {
+		const evaluation = evaluateInventoryEquipmentEconomy(
+			input, knowledgePack.entries.find((entry) => entry.itemId === line.itemId), line.itemId,
+			decision.quantity, line.positions.filter((position) => decision.allocations
+				.some((allocation) => allocation.positionRef === position.ref)),
+			Object.values(line.coverage).every((entry) => entry === 'complete'), equipmentSalvage,
+		);
+		if (evaluation?.status === 'ready' && evaluation.action === 'salvage') {
+			return decision.ruleId === evaluation.economics.ruleId && reasonCodes.length === 1
+				&& reasonCodes[0] === 'alternative_route_exists';
+		}
+	}
 	if (!snapshotComplete(input.snapshot) || !rulePackFresh(input)) return false;
 	const matchingRules = input.rulePack.rules.filter((rule) => rule.ruleId === decision.ruleId
 		&& rule.itemId === line.itemId && rule.action === decision.action
@@ -426,6 +447,11 @@ function validMaterialStorageCapacity(value: NonNullable<InventoryAdvisorEngineI
 	return Number.isSafeInteger(value.quantity) && value.quantity >= 250 && value.quantity <= 3000
 		&& value.quantity % 250 === 0
 		&& (value.source === 'configured' || (value.source === 'minimum_guaranteed' && value.quantity === 250));
+}
+
+function isEquipmentSalvageContext(value: NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>): boolean {
+	return isEquipmentSalvagePolicy(value.policy) && isEquipmentSalvagePreferences(value.preferences)
+		&& (value.prices === null || isInventoryContainerPriceEvidence(value.prices));
 }
 
 function allocationPositionIndex(ref: string): number {

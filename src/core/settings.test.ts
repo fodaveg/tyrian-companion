@@ -7,6 +7,7 @@ import {
 	migrateSettings,
 	normalizeVaultFolder,
 	resolveMaterialStorageCapacity,
+	resolveEquipmentSalvagePreferences,
 	resolveVaultFolderInput,
 	SETTINGS_SCHEMA_VERSION,
 	shouldPersistSettingsOnLoad,
@@ -127,9 +128,9 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v9 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
+	it('migrates v2 to v10 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 9,
+			schemaVersion: 10,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
@@ -141,9 +142,9 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
 	});
 
-	it('migrates v7 to v9 with an empty manual overlay and canonicalizes valid values', () => {
+	it('migrates v7 to v10 with an empty manual overlay and canonicalizes valid values', () => {
 		expect(migrateSettings({ schemaVersion: 7 })).toMatchObject({
-			schemaVersion: 9,
+			schemaVersion: 10,
 			halloweenPersonalValuation: { version: 1, values: [] },
 		});
 		expect(migrateSettings({
@@ -171,6 +172,37 @@ describe('migrateSettings', () => {
 		const current = migrateSettings({ materialStorageCapacity: 750 });
 		expect(mergeSettingsUpdate(current, { materialStorageCapacity: 251 as never }).materialStorageCapacity).toBe(750);
 		expect(mergeSettingsUpdate(current, { materialStorageCapacity: null }).materialStorageCapacity).toBeNull();
+	});
+
+	it('keeps every salvage preference optional and rejects hostile interactive updates', () => {
+		const empty = migrateSettings({ schemaVersion: 9 });
+		expect(resolveEquipmentSalvagePreferences(empty)).toEqual({
+			version: 1, kit: null, saleStrategy: null, time: null,
+		});
+		const configured = migrateSettings({
+			salvageKit: 'silver_fed', salvageSaleStrategy: 'listing',
+			salvageSecondsPerItem: 3, salvageOpportunityCostCopperPerHour: 12_345,
+		});
+		expect(resolveEquipmentSalvagePreferences(configured)).toEqual({
+			version: 1, kit: 'silver_fed', saleStrategy: 'listing',
+			time: { secondsPerItem: 3, opportunityCostCopperPerHour: 12_345 },
+		});
+		const partial = migrateSettings({ salvageSecondsPerItem: 2 });
+		expect(resolveEquipmentSalvagePreferences(partial).time).toBeNull();
+
+		const current = migrateSettings({
+			salvageKit: 'master', salvageSaleStrategy: 'instant_sell',
+			salvageSecondsPerItem: 2, salvageOpportunityCostCopperPerHour: 10_000,
+		});
+		expect(mergeSettingsUpdate(current, {
+			salvageKit: 'future' as never,
+			salvageSaleStrategy: 'average' as never,
+			salvageSecondsPerItem: -1,
+			salvageOpportunityCostCopperPerHour: Number.MAX_SAFE_INTEGER,
+		})).toMatchObject({
+			salvageKit: 'master', salvageSaleStrategy: 'instant_sell',
+			salvageSecondsPerItem: 2, salvageOpportunityCostCopperPerHour: 10_000,
+		});
 	});
 
 	it('purges foreign, duplicate, liquid and unsafe personal values without inventing defaults', () => {

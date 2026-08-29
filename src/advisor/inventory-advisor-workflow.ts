@@ -10,6 +10,8 @@ import type { CatalogLocale } from '../catalog/public-catalog-model';
 import type { InventoryAdvisorBuiltinBundleProvider } from './inventory-advisor-builtin-bundle';
 import type { InventoryContainerEconomyPackV1 } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
+import type { EquipmentSalvagePreferencesV1 } from '../economy/equipment-salvage-economy';
+import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -35,6 +37,7 @@ export type InventoryAdvisorRules = {
 	containerEconomyPack?: InventoryContainerEconomyPackV1;
 	personalValuation?: ContainerPersonalValuationV1;
 	materialStorageCapacity?: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>;
+	equipmentSalvage?: Omit<NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>, 'prices'>;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
@@ -79,9 +82,13 @@ export class InventoryAdvisorWorkflow {
 		const asOf = new Date(this.ports.now?.() ?? Date.now()).toISOString();
 		const rules = this.ports.rules.current(asOf);
 		if (rules.status === 'unavailable') return { status: 'blocked', reason: 'missing_rules' };
-		const capture = rules.value.containerEconomyPack === undefined
+		const expectedPriceItemIds = [
+			...(rules.value.containerEconomyPack?.expectedPriceItemIds ?? []),
+			...(rules.value.equipmentSalvage === undefined ? [] : [rules.value.equipmentSalvage.policy.outputItemId]),
+		].sort((left, right) => left - right).filter((itemId, index, values) => index === 0 || itemId !== values[index - 1]);
+		const capture = expectedPriceItemIds.length === 0
 			? await this.ports.capture.capture(locale)
-			: await this.ports.capture.capture(locale, rules.value.containerEconomyPack.expectedPriceItemIds);
+			: await this.ports.capture.capture(locale, expectedPriceItemIds);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		if (capture.evidence === null) {
 			return { status: 'blocked', reason: capture.failure === 'missing_key'
@@ -136,6 +143,7 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 	provider: InventoryAdvisorBuiltinBundleProvider,
 	personalValuation?: () => ContainerPersonalValuationV1,
 	materialStorageCapacity?: () => NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>,
+	equipmentSalvagePreferences?: () => EquipmentSalvagePreferencesV1,
 ): InventoryAdvisorRulesProvider {
 	return Object.freeze({
 		current(asOf: string): InventoryAdvisorRulesAvailability {
@@ -151,6 +159,12 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 					}),
 					...(materialStorageCapacity === undefined ? {} : {
 						materialStorageCapacity: structuredClone(materialStorageCapacity()),
+					}),
+					...(equipmentSalvagePreferences === undefined ? {} : {
+						equipmentSalvage: {
+							policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
+							preferences: structuredClone(equipmentSalvagePreferences()),
+						},
 					}),
 				} }
 				: { status: 'unavailable' };
@@ -175,7 +189,7 @@ export function composeInventoryAdvisorRefresh(
 	const containerEconomy = rules.containerEconomyPack !== undefined && capture.containerPrices !== undefined
 		&& capture.containerPrices !== null ? { containerEconomy: {
 			pack: structuredClone(rules.containerEconomyPack),
-			prices: structuredClone(capture.containerPrices),
+			prices: selectSupplementalPrices(capture.containerPrices, rules.containerEconomyPack.expectedPriceItemIds),
 		} } : {};
 	const engineInput = {
 		input,
@@ -189,6 +203,13 @@ export function composeInventoryAdvisorRefresh(
 		...(rules.materialStorageCapacity === undefined ? {} : {
 			materialStorageCapacity: structuredClone(rules.materialStorageCapacity),
 		}),
+		...(rules.equipmentSalvage === undefined ? {} : {
+			equipmentSalvage: {
+				...structuredClone(rules.equipmentSalvage),
+				prices: capture.containerPrices === undefined || capture.containerPrices === null ? null
+					: selectSupplementalPrices(capture.containerPrices, [rules.equipmentSalvage.policy.outputItemId]),
+			},
+		}),
 		...containerEconomy,
 		...(!('containerEconomy' in containerEconomy) || rules.personalValuation === undefined ? {} : {
 			personalValuation: structuredClone(rules.personalValuation),
@@ -197,6 +218,23 @@ export function composeInventoryAdvisorRefresh(
 	const producerResult = classifyInventoryAdvisor(engineInput);
 	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 	return { input, result, discardContext: { engineInput, producerResult } };
+}
+
+function selectSupplementalPrices(
+	prices: NonNullable<InventoryAdvisorEvidenceCaptureResultV1['containerPrices']>,
+	itemIds: readonly number[],
+): NonNullable<InventoryAdvisorEvidenceCaptureResultV1['containerPrices']> {
+	const selected = new Set(itemIds);
+	const items = prices.items.filter((entry) => selected.has(entry.itemId));
+	const missingItemIds = prices.missingItemIds.filter((itemId) => selected.has(itemId));
+	return {
+		...structuredClone(prices),
+		requestedItemIds: [...itemIds],
+		items: structuredClone(items),
+		missingItemIds: [...missingItemIds],
+		status: prices.status === 'complete' && items.length + missingItemIds.length === itemIds.length ? 'complete'
+			: prices.status === 'unavailable' ? 'unavailable' : 'partial',
+	};
 }
 
 /** Replaceable H5.12 port. It is deliberately empty until persisted preferences are wired. */

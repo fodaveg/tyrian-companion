@@ -12,8 +12,13 @@ import {
 	type ContainerPersonalValuationV1,
 } from '../economy/container-personal-valuation';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
+import type {
+	EquipmentSalvageKit,
+	EquipmentSalvagePreferencesV1,
+	EquipmentSalvageSaleStrategy,
+} from '../economy/equipment-salvage-economy';
 
-export const SETTINGS_SCHEMA_VERSION = 9 as const;
+export const SETTINGS_SCHEMA_VERSION = 10 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -74,6 +79,11 @@ export interface TyrianSettings {
 	halloweenPersonalValuation: ContainerPersonalValuationV1;
 	/** Manual account-wide per-material cap. Null means unknown; the advisor may rely only on the guaranteed 250 floor. */
 	materialStorageCapacity: MaterialStorageCapacity | null;
+	/** Optional H9.3 inputs. Null values stay visibly outside the salvage model. */
+	salvageKit: EquipmentSalvageKit | null;
+	salvageSaleStrategy: EquipmentSalvageSaleStrategy | null;
+	salvageSecondsPerItem: number | null;
+	salvageOpportunityCostCopperPerHour: number | null;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
@@ -99,6 +109,10 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenPriceAlertCooldownHours: 24,
 	halloweenPersonalValuation: { version: 1 as const, values: [] },
 	materialStorageCapacity: null,
+	salvageKit: null,
+	salvageSaleStrategy: null,
+	salvageSecondsPerItem: null,
+	salvageOpportunityCostCopperPerHour: null,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -160,6 +174,12 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
 			?? { version: 1, values: [] },
 		materialStorageCapacity: materialStorageCapacity(data.materialStorageCapacity),
+		salvageKit: salvageKit(data.salvageKit),
+		salvageSaleStrategy: salvageSaleStrategy(data.salvageSaleStrategy),
+		salvageSecondsPerItem: optionalBoundedNonNegativeInteger(data.salvageSecondsPerItem, 3_600),
+		salvageOpportunityCostCopperPerHour: optionalBoundedNonNegativeInteger(
+			data.salvageOpportunityCostCopperPerHour, 100_000_000,
+		),
 	};
 }
 
@@ -254,11 +274,26 @@ export function mergeSettingsUpdate(
 		: safeUpdate.materialStorageCapacity === null
 			? null
 			: materialStorageCapacity(safeUpdate.materialStorageCapacity) ?? current.materialStorageCapacity;
+	const nextSalvageKit = safeUpdate.salvageKit === undefined ? current.salvageKit
+		: safeUpdate.salvageKit === null ? null : salvageKit(safeUpdate.salvageKit) ?? current.salvageKit;
+	const nextSaleStrategy = safeUpdate.salvageSaleStrategy === undefined ? current.salvageSaleStrategy
+		: safeUpdate.salvageSaleStrategy === null ? null
+			: salvageSaleStrategy(safeUpdate.salvageSaleStrategy) ?? current.salvageSaleStrategy;
+	const nextSeconds = mergeOptionalBoundedInteger(
+		current.salvageSecondsPerItem, safeUpdate.salvageSecondsPerItem, 3_600,
+	);
+	const nextOpportunityCost = mergeOptionalBoundedInteger(
+		current.salvageOpportunityCostCopperPerHour, safeUpdate.salvageOpportunityCostCopperPerHour, 100_000_000,
+	);
 	return migrateSettings({
 		...current,
 		...safeUpdate,
 		halloweenPersonalValuation: personalValuation,
 		materialStorageCapacity: materialCapacity,
+		salvageKit: nextSalvageKit,
+		salvageSaleStrategy: nextSaleStrategy,
+		salvageSecondsPerItem: nextSeconds,
+		salvageOpportunityCostCopperPerHour: nextOpportunityCost,
 		legacyOutputFolder: safeUpdate.outputFolder === undefined ? current.legacyOutputFolder : null,
 		legacyManagedAssetsRoot: safeUpdate.managedAssetsRoot === undefined ? current.legacyManagedAssetsRoot : null,
 	}, configDir);
@@ -274,9 +309,44 @@ export function resolveMaterialStorageCapacity(value: MaterialStorageCapacity | 
 		: { quantity: value, source: 'configured' };
 }
 
+/** Resolves only explicit H9.3 inputs; missing time stays outside the EV instead of becoming zero evidence. */
+export function resolveEquipmentSalvagePreferences(settings: Pick<TyrianSettings,
+	'salvageKit' | 'salvageSaleStrategy' | 'salvageSecondsPerItem' | 'salvageOpportunityCostCopperPerHour'>,
+): EquipmentSalvagePreferencesV1 {
+	return {
+		version: 1,
+		kit: settings.salvageKit,
+		saleStrategy: settings.salvageSaleStrategy,
+		time: settings.salvageSecondsPerItem === null || settings.salvageOpportunityCostCopperPerHour === null
+			? null : {
+				secondsPerItem: settings.salvageSecondsPerItem,
+				opportunityCostCopperPerHour: settings.salvageOpportunityCostCopperPerHour,
+			},
+	};
+}
+
 function materialStorageCapacity(value: unknown): MaterialStorageCapacity | null {
 	return typeof value === 'number' && MATERIAL_STORAGE_CAPACITY_SET.has(value)
 		? value as MaterialStorageCapacity : null;
+}
+
+function salvageKit(value: unknown): EquipmentSalvageKit | null {
+	return value === 'master' || value === 'mystic' || value === 'silver_fed' ? value : null;
+}
+
+function salvageSaleStrategy(value: unknown): EquipmentSalvageSaleStrategy | null {
+	return value === 'instant_sell' || value === 'listing' ? value : null;
+}
+
+function optionalBoundedNonNegativeInteger(value: unknown, maximum: number): number | null {
+	return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum
+		? value as number : null;
+}
+
+function mergeOptionalBoundedInteger(current: number | null, update: unknown, maximum: number): number | null {
+	if (update === undefined) return current;
+	if (update === null) return null;
+	return optionalBoundedNonNegativeInteger(update, maximum) ?? current;
 }
 
 /** Rewrites persisted data to the exact current schema, retaining only explicit current/legacy fields. */

@@ -29,6 +29,41 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('Inventory Advisor view', () => {
 	it.each([
+		['es', 'Economía de reciclaje de equipo', 'No incluido: faltan segundos por objeto',
+			'Límite inferior: materiales base, suerte y mejoras recicladas están excluidos'],
+		['en', 'Equipment salvage economics', 'Excluded: seconds per item',
+			'Lower bound: base materials, luck, and salvaged upgrades are excluded'],
+	] as const)('discloses the lower-bound salvage EV and missing optional time preference in %s',
+		(locale, title, time, excluded) => {
+			const mount = render(equipmentSalvageModel(), locale);
+			const copy = text(mount.elements());
+			expect(copy).toContain(title);
+			expect(copy).toContain('rare-equipment-68-ecto-v1');
+			expect(copy).toContain(time);
+			expect(copy).toContain(excluded);
+			expect(copy).toContain('gw2-wiki-ecto-yield');
+			expect(find(mount.elements(), 'details')).toHaveLength(2);
+		});
+
+	it('renders the Exotic uncertainty as review without a numeric EV', () => {
+		const model = equipmentSalvageModel();
+		model.groups[0]!.rows[0]!.action = 'review';
+		model.groups[0]!.rows[0]!.equipmentSalvage = {
+			status: 'review', reason: 'exotic_output_rate_unverified',
+			ruleId: 'exotic-equipment-68-review-v1',
+			sourceIds: ['gw2-wiki-exotic-equipment-2060139'],
+		};
+		const mount = render(model, 'es');
+		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
+		if (review === undefined) throw new Error('Expected the review visibility option.');
+		review.checked = true;
+		review.dispatch('change');
+		const copy = text(mount.elements());
+		expect(copy).toContain('no hay una tasa específica trazable para recomendar');
+		expect(copy).not.toContain('EV neto de reciclaje');
+	});
+
+	it.each([
 		['es', 'Compara venta instantánea, publicación y mercader con precios actuales.'],
 		['en', 'Compares instant sell, listing and vendor routes with current prices.'],
 	] as const)('shows the honest liquid-route banner in %s', (locale, expected) => {
@@ -929,6 +964,32 @@ function economyModel(containerEconomy: NonNullable<InventoryAdvisorViewRow['con
 		groups: [{ key: 'curated', rows: [row({
 			itemId: 36_038, name: 'Trick-or-Treat Bag', action: containerEconomy.recommendation.action,
 			containerEconomy,
+		})] }],
+	};
+}
+
+function equipmentSalvageModel(): InventoryAdvisorViewModel {
+	return {
+		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		optionalSources: null,
+		groups: [{ key: 'curated', rows: [row({
+			itemId: 10, name: 'Rare sword', action: 'salvage',
+			equipmentSalvage: {
+				status: 'ready', action: 'salvage', economics: {
+					ruleId: 'rare-equipment-68-ecto-v1', quantity: 2,
+					expectedOutputMillionths: 900_000, outputItemId: 19_721,
+					outputStrategy: 'instant_sell', outputStrategySource: 'conservative_lower_quote',
+					grossOutputMicroCopper: 1_530_000_000, kit: 'master',
+					kitSource: 'conservative_master_default', kitCostMicroCopper: 122_880_000,
+					timeCostMicroCopper: 0, timeCostSource: 'excluded_missing_preference',
+					netSalvageMicroCopper: 1_407_120_000,
+					marketAlternatives: { instantSellCopper: 170, listingCopper: 186, vendorCopper: 100,
+						bestAction: 'list', bestCopper: 186 },
+					excludedOutputs: ['base_materials', 'luck', 'upgrade_returns'],
+					sourceIds: ['gw2-api-ecto-19721', 'gw2-wiki-ecto-yield',
+						'gw2-wiki-salvage-3166722', 'gw2-wiki-salvage-kit-3121384'],
+				},
+			},
 		})] }],
 	};
 }

@@ -8,6 +8,10 @@ import type { InventoryContainerEconomyPackV1, InventoryContainerPriceEvidenceV1
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import type {
+	EquipmentSalvagePolicyV1,
+	EquipmentSalvagePreferencesV1,
+} from '../economy/equipment-salvage-economy';
 
 export const INVENTORY_KNOWLEDGE_PACK_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_ENGINE_VERSION = 1 as const;
@@ -57,6 +61,12 @@ export interface InventoryAdvisorEngineInputV1 {
 	marketDepth?: InventoryMarketDepthEvidenceV1;
 	/** Manual account setting resolved to its configured value or the guaranteed 250 floor. */
 	materialStorageCapacity?: { quantity: number; source: 'configured' | 'minimum_guaranteed' };
+	/** Immutable category rules plus explicit optional user economics; no operation port. */
+	equipmentSalvage?: {
+		policy: EquipmentSalvagePolicyV1;
+		preferences: EquipmentSalvagePreferencesV1;
+		prices: InventoryContainerPriceEvidenceV1 | null;
+	};
 }
 
 export interface InventoryAdvisorEngineAllocationV1 { positionRef: string; quantity: number; }

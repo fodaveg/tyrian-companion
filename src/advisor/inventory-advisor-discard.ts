@@ -24,7 +24,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		const reproduced = classifyInventoryAdvisor(value.engineInput);
 		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth)
+			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
 			|| canonical(reproduced) !== canonical(value.producerResult)) return invalid();
 		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) return invalid();
 		const producerResultSha256 = sha256CanonicalValue(value.producerResult);
@@ -82,7 +82,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		const publicResult = { status: result.status, report: result.report, envelope: result.envelope };
 		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth)
+			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth, value.engineInput.equipmentSalvage)
 			&& isInventoryDiscardAllowlistResultShape(result) ? result : invalid();
 	} catch { return invalid(); }
 }
@@ -139,7 +139,8 @@ function isInput(value: unknown): value is InventoryDiscardAllowlistInputV1 {
 	const actual = Object.keys(value.engineInput);
 	if (!['input', 'knowledgePack'].every((key) => actual.includes(key))
 		|| !actual.every((key) => [
-			'activeOrders', 'containerEconomy', 'input', 'knowledgePack', 'materialStorageCapacity', 'personalValuation',
+			'activeOrders', 'containerEconomy', 'equipmentSalvage', 'input', 'knowledgePack', 'marketDepth',
+			'materialStorageCapacity', 'personalValuation',
 		].includes(key))) return false;
 	if (value.engineInput.containerEconomy === undefined) return value.engineInput.personalValuation === undefined;
 	return record(value.engineInput.containerEconomy)

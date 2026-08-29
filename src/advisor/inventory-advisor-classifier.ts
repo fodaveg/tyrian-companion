@@ -24,6 +24,12 @@ import { isContainerPersonalValuation, resolveContainerPersonalValuation } from 
 import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
+import {
+	isEquipmentSalvagePolicy,
+	isEquipmentSalvagePreferences,
+	type EquipmentSalvageEconomyResultV1,
+} from '../economy/equipment-salvage-economy';
+import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -53,6 +59,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		return isInventoryAdvisorResultForInput(
 			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
 			value.activeOrders, value.materialStorageCapacity, value.marketDepth,
+			value.equipmentSalvage,
 		) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
@@ -79,7 +86,7 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
 			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation,
-			value.materialStorageCapacity, value.marketDepth))
+			value.materialStorageCapacity, value.marketDepth, value.equipmentSalvage))
 			.map((line) => applyActiveOrderPolicy(line, value.activeOrders));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
@@ -130,7 +137,8 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy'],
 	personalValuation: EngineInput['personalValuation'],
 	materialStorageCapacity: EngineInput['materialStorageCapacity'],
-	marketDepth: EngineInput['marketDepth']): InventoryAdvisorEngineLineV1 {
+	marketDepth: EngineInput['marketDepth'],
+	equipmentSalvage: EngineInput['equipmentSalvage']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
@@ -175,6 +183,21 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	const freeQuantity = freePositions.reduce((total, position) => total + (remaining.get(position.ref) ?? 0), 0);
 	if (freeQuantity === 0) return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 		ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	const salvage = categorySalvageRoute(input, knowledge, itemId, freeQuantity, freePositions, evidenceReady,
+		equipmentSalvage);
+	if (salvage !== null && salvage.action !== 'market') {
+		if (salvage.action === 'salvage') {
+			const allocations = freePositions.map((position) => ({
+				positionRef: position.ref, quantity: remaining.get(position.ref) ?? 0,
+			}));
+			for (const allocation of allocations) remaining.set(allocation.positionRef, 0);
+			decisions.push({ action: 'salvage', itemId, quantity: freeQuantity, allocations,
+				reason: salvage.reason, ruleId: salvage.ruleId });
+		} else for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0,
+			salvage.reason, salvage.ruleId);
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
 	const route = chooseRoute(input, knowledge, itemId, freeQuantity);
 	const routeEvidenceReady = evidenceReady && (route.action === 'market' || curatedKnowledgeReady);
 	if (route.action === 'review' || !routeEvidenceReady) {
@@ -310,6 +333,10 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		tp_access_unknown: 'tp_access_unknown', catalog_invalid: 'catalog_invalid', vendor_best_value: 'alternative_route_exists',
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
+		curated_salvage_economy: 'alternative_route_exists',
+		salvage_exotic_rate_unverified: 'salvage_exotic_rate_unverified',
+		salvage_mystic_cost_unmodeled: 'salvage_mystic_cost_unmodeled',
+		salvage_item_evidence_uncertain: 'salvage_item_evidence_uncertain',
 		active_buy_order: 'alternative_route_exists', active_sell_order: 'alternative_route_exists',
 		material_storage_space_available: 'material_storage_space_available',
 	};
@@ -343,6 +370,44 @@ function materialDepositContext(
 		storedQuantity,
 		spaceBefore,
 	};
+}
+
+function categorySalvageRoute(
+	input: InventoryAdvisorInputV1,
+	knowledge: InventoryKnowledgeEntryV1 | undefined,
+	itemId: number,
+	quantity: number,
+	positions: InventoryAdvisorPositionV1[],
+	evidenceReady: boolean,
+	context: EngineInput['equipmentSalvage'],
+): { action: 'salvage' | 'review' | 'market'; reason: string; ruleId: string | null } | null {
+	const evaluation = evaluateInventoryEquipmentEconomy(
+		input, knowledge, itemId, quantity, positions, evidenceReady, context,
+	);
+	return evaluation === null ? null : salvageRouteFromEvaluation(evaluation);
+}
+
+function salvageRouteFromEvaluation(
+	evaluation: EquipmentSalvageEconomyResultV1,
+): { action: 'salvage' | 'review' | 'market'; reason: string; ruleId: string | null } | null {
+	if (evaluation.status === 'not_applicable') return null;
+	if (evaluation.status === 'ready') return evaluation.action === 'salvage'
+		? { action: 'salvage', reason: 'curated_salvage_economy', ruleId: evaluation.economics.ruleId }
+		: { action: 'market', reason: 'market', ruleId: null };
+	const reasons: Record<string, string> = {
+		catalog_uncertain: 'salvage_item_evidence_uncertain',
+		item_type_uncertain: 'salvage_item_evidence_uncertain',
+		item_rarity_uncertain: 'salvage_item_evidence_uncertain',
+		item_level_uncertain: 'salvage_item_evidence_uncertain',
+		no_salvage: 'no_salvage',
+		policy_invalid_or_stale: 'rule_stale',
+		price_uncertain: 'price_partial',
+		output_price_missing: 'salvage_value_unknown',
+		exotic_output_rate_unverified: 'salvage_exotic_rate_unverified',
+		mystic_stone_cost_unmodeled: 'salvage_mystic_cost_unmodeled',
+		arithmetic_overflow: 'arithmetic_overflow',
+	};
+	return { action: 'review', reason: reasons[evaluation.reason] ?? 'rule_conflict', ruleId: null };
 }
 
 function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
@@ -516,10 +581,20 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], [
-		'containerEconomy', 'personalValuation', 'activeOrders', 'materialStorageCapacity', 'marketDepth',
+		'containerEconomy', 'personalValuation', 'activeOrders', 'materialStorageCapacity', 'marketDepth', 'equipmentSalvage',
 	])
 		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
 	const input = value.input;
+	if (value.equipmentSalvage !== undefined && (!record(value.equipmentSalvage)
+		|| !keys(value.equipmentSalvage, ['policy', 'preferences', 'prices'])
+		|| !isEquipmentSalvagePolicy(value.equipmentSalvage.policy)
+		|| !isEquipmentSalvagePreferences(value.equipmentSalvage.preferences)
+		|| (value.equipmentSalvage.prices !== null
+			&& (!isInventoryContainerPriceEvidence(value.equipmentSalvage.prices)
+				|| value.equipmentSalvage.prices.accountId !== input.snapshot.accountId
+				|| value.equipmentSalvage.prices.snapshotId !== input.snapshot.snapshotId
+				|| !fresh(value.equipmentSalvage.prices.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+					input.policy.maxFutureSkewMs))))) return false;
 	if (value.materialStorageCapacity !== undefined && (!record(value.materialStorageCapacity)
 		|| !keys(value.materialStorageCapacity, ['quantity', 'source'])
 		|| !materialCapacity(value.materialStorageCapacity.quantity)

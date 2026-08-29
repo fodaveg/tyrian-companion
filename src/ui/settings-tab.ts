@@ -28,8 +28,15 @@ import { SessionHistoryScrubController } from './session-history-scrub-controlle
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
 import { VaultFolderInputSuggest } from './vault-folder-suggest';
 import { HalloweenPersonalValuationSettings } from './halloween-personal-valuation-settings';
+import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../economy/equipment-salvage-economy';
 
 type SettingRenderer = (setting: Setting) => void;
+
+function optionalInteger(value: string, maximum: number): number | null | 'invalid' {
+	if (value.trim() === '') return null;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : 'invalid';
+}
 
 export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private connectionSetting: Setting | null = null;
@@ -286,6 +293,79 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							}
 						});
 					});
+				},
+			},
+			{
+				name: this.t('settings.salvage.kit.name'), desc: this.t('settings.salvage.kit.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('', this.t('settings.salvage.kit.default'))
+						.addOption('master', this.t('settings.salvage.kit.master'))
+						.addOption('silver_fed', this.t('settings.salvage.kit.silver_fed'))
+						.addOption('mystic', this.t('settings.salvage.kit.mystic'))
+						.setValue(this.plugin.settings.salvageKit ?? '')
+						.onChange(async (value) => {
+							await this.plugin.updateSettings({ salvageKit: value === '' ? null : value as EquipmentSalvageKit });
+						}));
+				},
+			},
+			{
+				name: this.t('settings.salvage.strategy.name'), desc: this.t('settings.salvage.strategy.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('', this.t('settings.salvage.strategy.conservative'))
+						.addOption('instant_sell', this.t('settings.salvage.strategy.instant_sell'))
+						.addOption('listing', this.t('settings.salvage.strategy.listing'))
+						.setValue(this.plugin.settings.salvageSaleStrategy ?? '')
+						.onChange(async (value) => {
+							await this.plugin.updateSettings({
+								salvageSaleStrategy: value === '' ? null : value as EquipmentSalvageSaleStrategy,
+							});
+						}));
+				},
+			},
+			{
+				name: this.t('settings.salvage.time.name'), desc: this.t('settings.salvage.time.desc'),
+				render: (setting) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status'); feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setPlaceholder(this.t('settings.salvage.time.placeholder'))
+						.setValue(this.plugin.settings.salvageSecondsPerItem === null
+							? '' : String(this.plugin.settings.salvageSecondsPerItem))
+						.onChange(async (value) => {
+							const parsed = optionalInteger(value, 3_600);
+							if (parsed === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setText(this.t('settings.salvage.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							await this.plugin.updateSettings({ salvageSecondsPerItem: parsed });
+							feedback.setText(this.t('settings.salvage.saved'));
+						}));
+				},
+			},
+			{
+				name: this.t('settings.salvage.opportunity.name'), desc: this.t('settings.salvage.opportunity.desc'),
+				render: (setting) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status'); feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setPlaceholder(this.t('settings.salvage.opportunity.placeholder'))
+						.setValue(this.plugin.settings.salvageOpportunityCostCopperPerHour === null
+							? '' : String(this.plugin.settings.salvageOpportunityCostCopperPerHour))
+						.onChange(async (value) => {
+							const parsed = optionalInteger(value, 100_000_000);
+							if (parsed === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setText(this.t('settings.salvage.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							await this.plugin.updateSettings({ salvageOpportunityCostCopperPerHour: parsed });
+							feedback.setText(this.t('settings.salvage.saved'));
+						}));
 				},
 			},
 			{
