@@ -2,6 +2,32 @@
 
 ## Vertical activa
 
+**H9.16/H9.3, comparación manual de reciclaje de equipo: implementada y aprobada mediante
+`1d04b61`, `bc1d8ed` y `b4b79ba`; pendiente de integrar en `main`.** El Asesor compara equipo Rare
+de nivel 68 o superior con sus rutas líquidas actuales mediante una EV inferior demostrada de 0,9
+ectoplasmas por objeto. La valoración excluye y declara materiales base, suerte y mejoras recuperadas;
+no los convierte en valor cero.
+
+La venta inmediata del ectoplasma exige profundidad real de pujas suficiente para toda la salida
+esperada. El anuncio usa el ask actual como referencia y no demuestra demanda ni garantiza ejecución.
+La comparación del objeto conserva las comisiones de bazar y la ruta de mercader. Solo una ventaja
+estricta del neto de reciclaje produce `salvage`; en otro caso prevalece la mejor ruta líquida.
+
+Settings v10 añade kit y estrategia de venta configurables, además de segundos por objeto y coste de
+oportunidad por hora opcionales. La ausencia de kit usa explícitamente el coste conservador del kit de
+maestro y la ausencia de estrategia usa la menor cotización neta disponible. El tiempo se incluye solo
+cuando ambos campos están presentes; si falta uno, queda fuera de la EV con procedencia
+`excluded_missing_preference` visible. El kit místico se retiene porque su coste publicado no cubre las
+Piedras de la Forja Mística.
+
+La política v1 compilada referencia la API oficial del ectoplasma y revisiones fijadas de GW2 Wiki
+para tasas y kits, tiene vigencia cerrada y se valida por SHA-256. Cada `salvageProof` enlaza el item,
+su snapshot de catálogo y la política/regla exactas; reporte y envelope vuelven a comprobar ese
+contexto. Exotic de nivel 68 o superior queda en revisión sin tasa inventada. `NoSalvage`, snapshot no
+estable, catálogo o precios incompletos, política stale y profundidad parcial fallan cerrado. No existe
+executor ni operación de reciclaje. El lote no forma parte de `0.1.13` y todavía no acredita QA visual
+o ejecución dentro de Obsidian.
+
 **H9.6/H9.15, benchmarking de clan y cambio oro-gemas: cerradas como decisiones de producto.**
 H9.6 queda descartada en el producto actual. Comparar un clan exigiría intercambio de datos o un
 backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se reconsiderará como una

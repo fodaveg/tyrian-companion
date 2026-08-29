@@ -171,6 +171,15 @@ La versión `0.1.0` valida la base técnica:
   usa el mejor precio vendedor como referencia para la pila completa, sin confundir anuncios con
   compradores ni prometer ejecución. Una captura parcial conserva el cálculo anterior de precios,
   pero marca el resultado como limitado.
+- H9.16 compara manualmente el equipo Rare de nivel 68 o superior con sus rutas líquidas actuales.
+  Usa una EV inferior source-backed de 0,9 ectoplasmas por objeto, profundidad real de pujas para la
+  venta inmediata y costes de kit; materiales base, suerte y mejoras recuperadas quedan fuera y se
+  declaran. El ask del anuncio es una referencia actual, no demanda ni garantía de ejecución.
+- H9.3 permite configurar el kit y la estrategia de venta y añadir segundos por objeto y coste de
+  oportunidad por hora. El tiempo solo entra en la EV cuando ambos datos existen; la ausencia queda
+  excluida y visible. Exotic, `NoSalvage`, evidencia incompleta, snapshot no estable, política stale o
+  profundidad parcial quedan en revisión. Toda recomendación de reciclaje es manual y no existe
+  executor.
 - H9.17 permite declarar una capacidad global por material entre 250 y 3.000, en pasos de 250. Sin
   valor configurado aplica únicamente el mínimo garantizado de 250 y muestra esa procedencia.
 - H9.18 recomienda depositar manualmente solo material suelto de personaje o compartido, después de

@@ -601,6 +601,45 @@ La composición económica conserva byte por byte la explicación y decisión `l
 
 Settings v8 persiste el overlay vacío por defecto, ordenado y sin duplicados, con independencia del toggle y de los avisos Halloween. El default y sus colecciones quedan congelados en profundidad, y cada migración o instancia recibe su propia copia mutable. El editor ES/EN es un componente separado de diez filas: vacío elimina, `0` guarda cero y un valor inválido conserva el último guardado con error inline y foco; tras el guardado asíncrono restaura el foco a la misma fila. El runtime publica el overlay nuevo solo después de confirmar `saveData`: un rechazo deja intactos memoria y Refresh posteriores. Tras persistir, consulta dinámicamente el overlay nuevo y reclasifica la última captura fresca retenida por el Inventory Advisor sin red ni nueva captura, informando ese resultado de forma discriminada; si no existe captura en memoria o la reclasificación queda bloqueada, el mensaje indica que se aplicará en el siguiente Refresh explícito.
 
+## Economía de reciclaje de equipo H9.16/H9.3
+
+`evaluateEquipmentSalvageEconomy` es un kernel puro y sin capacidades. Su política compilada v1
+`tc.equipment-salvage.rare-exotic-68-v1` fija una regla Rare de nivel mínimo 68 con 900.000
+millonésimas de ectoplasma por objeto y una regla Exotic sin tasa. La política conserva como fuentes
+el item 19721 de la API oficial y revisiones concretas de GW2 Wiki para ectoplasma, equipo Exotic,
+resultados de reciclaje y kits. Se acepta únicamente durante su vigencia y cuando su valor canónico
+coincide con el SHA-256 compilado
+`ed9b87c2d0677620aac71eb9fff96fcbb020e67b7e0a5b24eca4a6329bf38dc0`.
+
+La evaluación se aplica solo a `Armor|Back|Trinket|Weapon` sin una capacidad curada más específica.
+Rare de nivel 68 o superior calcula un límite inferior con el ectoplasma esperado; materiales base,
+suerte y mejoras recuperadas permanecen en `excludedOutputs`. Exotic queda `review` con
+`exotic_output_rate_unverified`: no se deriva una tasa genérica ni se valoran materia oscura o
+insignias. `NoSalvage`, tipo/rareza/nivel inciertos, política inválida o stale, catálogo/precios
+incompletos y snapshot no estable retienen la acción.
+
+La salida de ectoplasma puede usar venta inmediata o anuncio. Venta inmediata consume los bids de
+`/v2/commerce/listings` de mayor a menor y exige cubrir toda la cantidad esperada; una profundidad
+parcial no produce EV. Anuncio usa el ask actual con las comisiones H4.2, pero no representa demanda,
+profundidad de compradores ni garantía de ejecución. Sin estrategia configurada se elige la menor EV
+neta demostrada disponible. Las alternativas del equipo se comparan por neto de venta inmediata,
+anuncio y mercader; `salvage` solo gana por ventaja estricta.
+
+Settings schema v10 persiste cuatro entradas H9.3 opcionales. `salvageKit:null` selecciona el kit de
+maestro como default conservador explícito; el kit místico falla cerrado porque su coste conocido
+excluye las Piedras de la Forja Mística. `salvageSaleStrategy:null` conserva la selección conservadora
+de cotización inferior. El coste de tiempo solo se calcula si existen juntos
+`salvageSecondsPerItem` y `salvageOpportunityCostCopperPerHour`; cualquier ausencia produce
+`time:null`, coste fuera del modelo y procedencia `excluded_missing_preference`, nunca un dato
+rellenado. La presentación ES/EN expone estrategia, kit, costes, exclusiones, fuentes y motivos de
+revisión.
+
+Una decisión Rare autorizada incorpora `salvageProof`: item/rareza/nivel, snapshot y referencia del
+catálogo, identidad/versión/SHA-256 de la política y parámetros de la regla. Los validadores del
+reporte, la validación contextual contra el catálogo y el envelope exigen que la prueba coincida con
+el `itemId`, el `snapshotId` y la regla compilada. El resultado conserva `manual_only`,
+`sideEffects:'none'` y `requiresUserAction:true`; no existe puerto, adapter ni executor de reciclaje.
+
 ## Capacidad y depósito de materiales H9.17/H9.18
 
 Settings v9 añade `materialStorageCapacity`, nullable y cerrado a múltiplos de 250 entre 250 y 3.000.

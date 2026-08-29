@@ -1,5 +1,29 @@
 # Changelog
 
+## H9.16/H9.3 - Comparación manual de reciclaje de equipo
+
+- H9.16 añade al Asesor una comparación source-backed para equipo Rare de nivel 68 o superior. La
+  EV es un límite inferior basado solo en 0,9 ectoplasmas esperados por objeto; materiales base,
+  suerte y mejoras recuperadas quedan excluidos de forma visible, no valorados a cero.
+- La venta inmediata del ectoplasma consume la profundidad real de pujas y falla cerrado si no cubre
+  toda la salida esperada. El anuncio usa el ask actual como referencia, sin tratarlo como demanda ni
+  garantizar ejecución. La mejor alternativa del objeto conserva venta inmediata, anuncio y mercader
+  con sus comisiones reales.
+- H9.3 sube los ajustes a schema v10. Permite elegir kit, estrategia de venta y, opcionalmente, segundos
+  por objeto y coste de oportunidad por hora. Sin kit se declara el coste conservador del kit de
+  maestro; sin estrategia se usa la menor cotización neta disponible. El tiempo entra solo cuando
+  ambos campos están presentes; si falta uno, queda excluido y la UI muestra la limitación.
+- Exotic de nivel 68 o superior permanece en revisión porque la política no inventa una tasa de
+  resultados. `NoSalvage`, snapshot no estable, catálogo o precios incompletos, política inválida o
+  stale, y profundidad parcial bloquean la recomendación. El kit místico queda en revisión porque su
+  coste no incluye las Piedras de la Forja Mística.
+- La política v1 compilada conserva las fuentes codificadas de la API oficial para el ectoplasma y
+  revisiones fijadas de GW2 Wiki para resultados y kits. Su SHA-256 forma parte del contrato;
+  `salvageProof` liga objeto, snapshot de catálogo, política y regla en reporte y envelope.
+- Las acciones siguen siendo manuales, sin executor ni operación de reciclaje. Implementado y
+  aprobado mediante `1d04b61`, `bc1d8ed` y `b4b79ba`; todavía no está integrado en `main`, no forma
+  parte de `0.1.13` ni acredita QA visual o ejecución dentro de Obsidian.
+
 ## H9.6/H9.15 - Decisiones sobre clan y cambio oro-gemas
 
 - H9.6 descarta el benchmarking de clan en el producto actual. Requeriría intercambio de datos o un

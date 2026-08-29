@@ -252,6 +252,15 @@ The current `0.1.4` vertical provides:
 - H5.12 adds an explicit, foldable Inventory Advisor editor for local reservation goals and keep
   exceptions. It derives a hashed vault/account scope only after capture, uses IndexedDB CAS across
   windows, preserves drafts on conflict, and reclassifies only fresh cached evidence without a second capture.
+- H9.16/H9.3 adds a source-backed, manual Rare level 68+ equipment salvage comparison. Its lower-bound
+  EV includes only the documented 0.9 ectoplasm per item, real bid depth for instant sale, Trading Post
+  fees, kit cost, and optional configured time cost; base materials, luck, and recovered upgrades stay
+  explicitly excluded. A listing uses the current ask, not buyer depth or an execution guarantee.
+  Exotic equipment remains review-only without an invented rate. `NoSalvage`, unstable snapshots,
+  incomplete evidence, stale policy, and partial required depth fail closed. Settings schema v10 keeps
+  kit, sale strategy, seconds per item, and hourly opportunity cost optional; missing time inputs are
+  disclosed and excluded. Every Rare salvage recommendation carries a catalog/item/policy-bound proof,
+  remains manual-only, and has no salvage executor.
 - H8.1 defines a declarative, opt-in Mumble Link v2 boundary: recommended revisable defaults are
   disabled/shadow/on-when-armed, API v1 remains authoritative, every lifecycle change still needs
   human confirmation, and the future loopback frame is limited to version/nonce/sequence/tick,
