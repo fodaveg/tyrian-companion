@@ -728,7 +728,9 @@ function renderResults(
 
 type DirectInventoryAdvisorAction = Exclude<InventoryAdvisorViewFilterAction, 'keep' | 'review'>;
 
-const DIRECT_INVENTORY_ACTIONS: readonly DirectInventoryAdvisorAction[] = ['sell', 'list', 'vendor', 'salvage', 'use', 'open'];
+const DIRECT_INVENTORY_ACTIONS: readonly DirectInventoryAdvisorAction[] = [
+	'deposit_material', 'sell', 'list', 'vendor', 'salvage', 'use', 'open',
+];
 
 function renderRecommendationSummary(
 	rows: readonly InventoryAdvisorViewRow[],
@@ -1170,9 +1172,20 @@ function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator):
 }
 
 function rowContextDetails(row: InventoryAdvisorViewRow, translator: Translator): HTMLDListElement | null {
-	if (row.burden === null && row.protectionReasons.length === 0 && row.marketComparison === null) return null;
+	if (row.burden === null && row.protectionReasons.length === 0 && row.marketComparison === null
+		&& row.materialStorage == null) return null;
 	const list = createEl('dl');
 	list.className = 'tyrian-inventory-advisor__row-context';
+	if (row.materialStorage != null) addDefinition(
+		list,
+		translator.t('advisor.view.materialStorage.capacity'),
+		translator.t('advisor.view.materialStorage.value', {
+			capacity: row.materialStorage.capacity,
+			stored: row.materialStorage.storedQuantity,
+			space: row.materialStorage.spaceBefore,
+			source: translator.t(`advisor.view.materialStorage.source.${row.materialStorage.capacitySource}`),
+		}),
+	);
 	if (row.burden !== null) addDefinition(
 		list,
 		translator.t(`advisor.view.burden.${row.burden.kind}`),

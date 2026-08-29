@@ -42,7 +42,7 @@ import {
 } from './inventory-advisor-model';
 
 const ACTIONS: InventoryRecommendationAction[] = [
-	'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review', 'discard_candidate',
+	'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review', 'discard_candidate',
 ];
 const REASONS: InventoryAdvisorReasonCode[] = [
 	'snapshot_invalid', 'snapshot_scope_limited', 'identity_mismatch', 'catalog_missing',
@@ -52,7 +52,7 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'economic_activation_pending',
 	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'no_sell',
 	'no_salvage', 'salvage_value_unknown', 'delete_warning', 'alternative_route_exists',
-	'discard_not_allowlisted', 'arithmetic_overflow',
+	'material_storage_space_available', 'discard_not_allowlisted', 'arithmetic_overflow',
 ];
 
 export function isInventoryAdvisorInput(value: unknown): value is InventoryAdvisorInputV1 {
@@ -356,7 +356,8 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 			actioned += decision.quantity;
 			if (selected.some((position) => position!.state !== 'loose')) return false;
 			if (!coverageComplete(value.coverage)
-				&& !(isManualMarketAction(decision.action) && coverageSupportsManualMarket(value.coverage))) return false;
+				&& !(isManualMarketAction(decision.action) && coverageSupportsManualMarket(value.coverage))
+				&& !(decision.action === 'deposit_material' && coverageSupportsMaterialDeposit(value.coverage))) return false;
 		}
 	}
 	return [...positions.values()].every((position) => allocatedByPosition.get(position.ref) === position.quantity)
@@ -389,22 +390,38 @@ function coverageSupportsManualMarket(value: InventoryAdvisorCoverageV1): boolea
 		&& value.snapshot !== 'unknown' && value.rules !== 'unknown';
 }
 
+function coverageSupportsMaterialDeposit(value: InventoryAdvisorCoverageV1): boolean {
+	return value.snapshot === 'complete' && value.inventory === 'complete'
+		&& value.catalog === 'complete' && value.reservations === 'complete';
+}
+
 function isManualMarketAction(action: InventoryRecommendationAction): boolean {
 	return action === 'sell' || action === 'list' || action === 'vendor';
 }
 
 function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 {
-	if (!record(value) || !keys(value, [
+	if (!record(value) || !optionalKeys(value, [
 		'action', 'itemId', 'quantity', 'allocations', 'explanationRef', 'ruleId', 'safety', 'discardProof',
-	]) || !ACTIONS.includes(value.action as InventoryRecommendationAction) || !positive(value.itemId)
+	], ['materialStorage']) || !ACTIONS.includes(value.action as InventoryRecommendationAction) || !positive(value.itemId)
 		|| !positive(value.quantity) || !Array.isArray(value.allocations) || value.allocations.length === 0
 		|| !value.allocations.every(isDecisionAllocation)
 		|| !strictlySorted(value.allocations, (left, right) => left.positionRef.localeCompare(right.positionRef))
 		|| !internalRef(value.explanationRef) || (value.ruleId !== null && !identifier(value.ruleId))) return false;
 	const curated = ['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action));
+	if (value.action === 'deposit_material' ? !isMaterialStorageContext(value.materialStorage)
+		: value.materialStorage !== undefined) return false;
 	return curated === (value.ruleId !== null) && (value.action === 'discard_candidate'
 		? value.safety === 'irreversible_review_only' && isDiscardProof(value.discardProof)
 		: value.safety === 'manual_only' && value.discardProof === null);
+}
+
+function isMaterialStorageContext(value: unknown): boolean {
+	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
+		&& bounded(value.capacity, 250, 3000) && value.capacity % 250 === 0
+		&& (value.capacitySource === 'configured' || value.capacitySource === 'minimum_guaranteed')
+		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
+		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
 }
 
 function isDecisionAllocation(value: unknown): value is InventoryDecisionAllocationV1 {
@@ -709,6 +726,11 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
 	const actual = Object.keys(value).sort();
 	const sorted = [...expected].sort();
 	return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
+}
+function optionalKeys(value: Record<string, unknown>, required: string[], optional: string[]): boolean {
+	const actual = Object.keys(value);
+	return required.every((key) => actual.includes(key))
+		&& actual.every((key) => required.includes(key) || optional.includes(key));
 }
 function jsonRoundTrip(value: unknown): boolean {
 	try { return canonical(JSON.parse(JSON.stringify(value))) === canonical(value); } catch { return false; }

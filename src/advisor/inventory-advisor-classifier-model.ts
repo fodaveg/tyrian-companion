@@ -1,4 +1,9 @@
-import type { InventoryAdvisorInputV1, InventoryAdvisorPositionV1, InventoryRecommendationAction } from './inventory-advisor-model';
+import type {
+	InventoryAdvisorInputV1,
+	InventoryAdvisorPositionV1,
+	InventoryMaterialStorageDecisionContextV1,
+	InventoryRecommendationAction,
+} from './inventory-advisor-model';
 import type { InventoryContainerEconomyPackV1, InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
@@ -47,6 +52,8 @@ export interface InventoryAdvisorEngineInputV1 {
 	personalValuation?: ContainerPersonalValuationV1;
 	/** Current orders are read-only, identity-bound capture evidence. */
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1;
+	/** Manual account setting resolved to its configured value or the guaranteed 250 floor. */
+	materialStorageCapacity?: { quantity: number; source: 'configured' | 'minimum_guaranteed' };
 }
 
 export interface InventoryAdvisorEngineAllocationV1 { positionRef: string; quantity: number; }
@@ -57,6 +64,7 @@ export interface InventoryAdvisorEngineDecisionV1 {
 	allocations: InventoryAdvisorEngineAllocationV1[];
 	reason: string;
 	ruleId: string | null;
+	materialStorage?: InventoryMaterialStorageDecisionContextV1;
 }
 export interface InventoryAdvisorEngineLineV1 {
 	itemId: number;

@@ -98,6 +98,9 @@ export function buildInventoryAdvisorPresentation(
 				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
 				marketComparison: comparisonByRef.get(decision.explanationRef) ?? null,
 				burden: burdenFor(line, decision, allocations, reasonCodes),
+				...(decision.materialStorage === undefined ? {} : {
+					materialStorage: structuredClone(decision.materialStorage),
+				}),
 				irreversibleReviewOnly: presentationAction === 'discard_review',
 				discardProof: discardProof === null ? null : structuredClone(discardProof),
 				containerEconomy: containerEconomyFor(source, line, decision),
@@ -419,7 +422,8 @@ function valueFor(
 	itemId: number,
 	quantity: number,
 ): InventoryAdvisorPresentationValue {
-	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'keep' || action === 'discard_review') {
+	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'deposit_material'
+		|| action === 'keep' || action === 'discard_review') {
 		return { status: 'not_applicable', route: null };
 	}
 	const item = input.catalog.items[String(itemId)];
@@ -440,7 +444,7 @@ function valueFor(
 
 function groupFor(action: InventoryAdvisorPresentationAction): InventoryAdvisorPresentationGroup {
 	if (action === 'sell' || action === 'list' || action === 'vendor') return 'market';
-	if (action === 'use' || action === 'open' || action === 'salvage') return 'curated';
+	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'deposit_material') return 'curated';
 	return action === 'keep' ? 'keep' : 'review';
 }
 
@@ -480,7 +484,7 @@ function compareText(left: string, right: string, locale: string): number {
 
 function isPresentationAction(action: unknown): action is InventoryAdvisorPresentationAction {
 	return typeof action === 'string' && [
-		'keep', 'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'review', 'discard_review',
+		'keep', 'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'review', 'discard_review',
 	].includes(action);
 }
 

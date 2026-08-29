@@ -344,6 +344,59 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(classifyInventoryAdvisor(stale).report?.lines[0]?.decisions[0])
 			.toMatchObject({ action: 'review' });
 	});
+
+	it('deposits only the loose quantity proven to fit under the guaranteed material-storage floor', () => {
+		const input = materialStorageFixture(100, 225);
+		input.materialStorageCapacity = { quantity: 250, source: 'minimum_guaranteed' };
+
+		const result = classifyInventoryAdvisor(input);
+		const decisions = result.report?.lines[0]?.decisions ?? [];
+		expect(decisions.find((decision) => decision.action === 'deposit_material')).toMatchObject({
+			action: 'deposit_material', quantity: 25,
+			allocations: [{ positionRef: '#/positions/10/0', quantity: 25 }],
+			materialStorage: {
+				capacity: 250, capacitySource: 'minimum_guaranteed', storedQuantity: 225, spaceBefore: 25,
+			},
+		});
+		expect(decisions.reduce((total, decision) => total + decision.quantity, 0)).toBe(325);
+		expect(isInventoryAdvisorResultForInput(
+			result, input.input, input.knowledgePack, undefined, undefined, undefined, input.materialStorageCapacity,
+		)).toBe(true);
+	});
+
+	it('uses a configured cap but never recommends more than its demonstrated remaining space', () => {
+		const input = materialStorageFixture(400, 200);
+		input.materialStorageCapacity = { quantity: 500, source: 'configured' };
+
+		const deposit = classifyInventoryAdvisor(input).report?.lines[0]?.decisions
+			.find((decision) => decision.action === 'deposit_material');
+		expect(deposit).toMatchObject({ quantity: 300, materialStorage: {
+			capacity: 500, capacitySource: 'configured', storedQuantity: 200, spaceBefore: 300,
+		} });
+	});
+
+	it.each([
+		['capacity absent', (input: InventoryAdvisorEngineInputV1) => { delete input.materialStorageCapacity; }],
+		['materials partial', (input: InventoryAdvisorEngineInputV1) => {
+			input.input.snapshot.coverage.sources.materials = { status: 'partial', reason: 'unavailable' };
+		}],
+		['catalog partial', (input: InventoryAdvisorEngineInputV1) => {
+			delete input.input.catalog.coverage.materials['7'];
+		}],
+		['item ineligible', (input: InventoryAdvisorEngineInputV1) => { input.input.catalog.materials['7']!.items = []; }],
+		['storage full', (input: InventoryAdvisorEngineInputV1) => {
+			input.input.snapshot.holdings[1]!.quantity = 250;
+			input.input.snapshot.availableByItem['10'] = 350;
+			input.input.snapshot.ownedByItem['10'] = 350;
+		}],
+		['snapshot unstable', (input: InventoryAdvisorEngineInputV1) => { input.input.snapshot.quality = 'unstable'; }],
+	] as const)('fails closed when material deposit evidence is %s', (_name, mutate) => {
+		const input = materialStorageFixture(100, 200);
+		input.materialStorageCapacity = { quantity: 250, source: 'minimum_guaranteed' };
+		mutate(input);
+		expect(classifyInventoryAdvisor(input).report?.lines[0]?.decisions
+			.some((decision) => decision.action === 'deposit_material') ?? false).toBe(false);
+	});
 });
 
 function rule(ruleId: string, status: 'approved' | 'revoked') {
@@ -360,6 +413,23 @@ function fixture(): InventoryAdvisorEngineInputV1 {
 	const knowledge: InventoryKnowledgePackV1 = { schemaVersion: 1, id: 'knowledge', version: 1, publishedAt: '2026-08-01T00:00:00.000Z', reviewedAt: '2026-08-02T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z', sha256: '', sources: [{ id: 'source', url: 'https://wiki.guildwars2.com', retrievedAt: '2026-08-02T00:00:00.000Z' }], entries: [{ itemId: 10, use: { status: 'not_applicable', assertionId: 'use-none', sourceIds: ['source'] }, open: { status: 'not_applicable', assertionId: 'open-none', sourceIds: ['source'] }, salvage: { status: 'not_applicable', assertionId: 'salvage-none', sourceIds: ['source'] } }] };
 	knowledge.sha256 = sha256InventoryKnowledgePack(knowledge);
 	return { input: { version: 1, asOf: '2026-08-14T12:00:00.000Z', snapshot, catalog: { snapshotId: 'snapshot-1', locale: 'es', schemaVersion: PINNED_SCHEMA, resolvedAt: '2026-08-14T12:00:00.000Z', items: { '10': { kind: 'item', id: 10, name: 'Item', type: 'Trophy', rarity: 'Basic', level: 0, vendorValue: 1, flags: [], gameTypes: [], restrictions: [] } }, currencies: {}, materials: {}, warnings: [], coverage: { items: { '10': { status: 'resolved', source: 'network' } }, currencies: {}, materials: {} } }, prices: { version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', capturedAt: '2026-08-14T12:00:00.000Z', source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA, requestedItemIds: [10], status: 'complete', items: [{ itemId: 10, whitelisted: true, bid: { unitCopper: 20, quantity: 2 }, ask: { unitCopper: 21, quantity: 2 } }], missingItemIds: [] }, goals: [], keepExceptions: [], accountSignals: { version: 1, source: 'gw2-account-api', accountId: 'account-1', capturedAt: '2026-08-14T12:00:00.000Z', schemaVersion: PINNED_SCHEMA, tradingPostAccess: 'full', endpointCoverage: { account: evidence(), recipes: evidence(), skins: evidence(), minis: evidence(), achievements: evidence() }, unlockCoverage: 'complete', unlockedRecipes: [], unlockedSkins: [], unlockedMinis: [], achievementCoverage: 'complete', completedAchievementBits: {}, achievementProgress: [] }, rulePack, policy: { version: 1, maxSnapshotAgeMs: 900_000, maxPriceAgeMs: 900_000, maxCatalogAgeMs: 604_800_000, maxAccountSignalsAgeMs: 86_400_000, maxRulePackAgeMs: 15_552_000_000, maxFutureSkewMs: 300_000, listingMinimumAdvantageBps: 1_000 } }, knowledgePack: knowledge };
+}
+
+function materialStorageFixture(looseQuantity: number, storedQuantity: number): InventoryAdvisorEngineInputV1 {
+	const value = fixture();
+	value.input.snapshot.holdings = [
+		{ kind: 'item', itemId: 10, quantity: looseQuantity, state: 'loose',
+			location: { source: 'shared_inventory', slot: 0 }, metadata: {} },
+		{ kind: 'item', itemId: 10, quantity: storedQuantity, state: 'loose',
+			location: { source: 'materials', category: 7 }, metadata: {} },
+	];
+	value.input.snapshot.availableByItem = { '10': looseQuantity + storedQuantity };
+	value.input.snapshot.ownedByItem = { '10': looseQuantity + storedQuantity };
+	value.input.catalog.materials['7'] = {
+		kind: 'material_category', id: 7, name: 'Common materials', items: [10], order: 7,
+	};
+	value.input.catalog.coverage.materials['7'] = { status: 'resolved', source: 'network' };
+	return value;
 }
 function scopedInventoryFixture(quality: 'stable' | 'unstable'): InventoryAdvisorEngineInputV1 {
 	const value = fixture();

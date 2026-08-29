@@ -16,6 +16,7 @@ export type InventoryRecommendationAction =
 	| 'salvage'
 	| 'use'
 	| 'open'
+	| 'deposit_material'
 	| 'keep'
 	| 'review'
 	| 'discard_candidate';
@@ -48,6 +49,7 @@ export type InventoryAdvisorReasonCode =
 	| 'salvage_value_unknown'
 	| 'delete_warning'
 	| 'alternative_route_exists'
+	| 'material_storage_space_available'
 	| 'discard_not_allowlisted'
 	| 'arithmetic_overflow';
 
@@ -267,6 +269,15 @@ export interface InventoryRecommendationDecisionV1 {
 	ruleId: string | null;
 	safety: 'manual_only' | 'irreversible_review_only';
 	discardProof: InventoryDiscardProofV1 | null;
+	/** Present only for a manual material deposit recommendation. */
+	materialStorage?: InventoryMaterialStorageDecisionContextV1;
+}
+
+export interface InventoryMaterialStorageDecisionContextV1 {
+	capacity: number;
+	capacitySource: 'configured' | 'minimum_guaranteed';
+	storedQuantity: number;
+	spaceBefore: number;
 }
 
 export interface InventoryAdvisorLineV1 {

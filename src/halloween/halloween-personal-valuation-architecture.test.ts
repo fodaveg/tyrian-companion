@@ -34,12 +34,12 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		const settings = readFileSync('src/core/settings.ts', 'utf8');
 		const settingsTab = readFileSync('src/ui/settings-tab.ts', 'utf8');
 		const main = readFileSync('src/main.ts', 'utf8');
-		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 8');
+		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 9');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
 		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(
 			settingsTab.indexOf("settings.halloween.enabled.name"),
 		);
-		expect(main).toContain('createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider, personalValuation)');
+		expect(main).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\(\)/u);
 	});
 

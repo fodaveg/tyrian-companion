@@ -1,7 +1,7 @@
 import type { InventoryAdvisorEvidenceCapture, InventoryAdvisorEvidenceCaptureResultV1, InventoryAdvisorEvidenceV1 } from './inventory-advisor-evidence-model';
 import { createInventoryAdvisorInputFromEvidence } from './inventory-advisor-evidence-contract';
 import { classifyInventoryAdvisor } from './inventory-advisor-classifier';
-import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
+import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
 import { applyInventoryDiscardAllowlist } from './inventory-advisor-discard';
 import type { InventoryAdvisorPolicyV1, InventoryAdvisorRulePack, KeepExceptionV1 } from './inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -34,6 +34,7 @@ export type InventoryAdvisorRules = {
 	policy: InventoryAdvisorPolicyV1;
 	containerEconomyPack?: InventoryContainerEconomyPackV1;
 	personalValuation?: ContainerPersonalValuationV1;
+	materialStorageCapacity?: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
@@ -134,6 +135,7 @@ export class InventoryAdvisorWorkflow {
 export function createInventoryAdvisorBuiltinRulesProvider(
 	provider: InventoryAdvisorBuiltinBundleProvider,
 	personalValuation?: () => ContainerPersonalValuationV1,
+	materialStorageCapacity?: () => NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>,
 ): InventoryAdvisorRulesProvider {
 	return Object.freeze({
 		current(asOf: string): InventoryAdvisorRulesAvailability {
@@ -146,6 +148,9 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 					containerEconomyPack: loaded.bundle.economyPack,
 					...(personalValuation === undefined ? {} : {
 						personalValuation: structuredClone(personalValuation()),
+					}),
+					...(materialStorageCapacity === undefined ? {} : {
+						materialStorageCapacity: structuredClone(materialStorageCapacity()),
 					}),
 				} }
 				: { status: 'unavailable' };
@@ -177,6 +182,9 @@ export function composeInventoryAdvisorRefresh(
 		knowledgePack: structuredClone(rules.knowledgePack),
 		...(capture.activeOrders === undefined ? {} : {
 			activeOrders: structuredClone(capture.activeOrders),
+		}),
+		...(rules.materialStorageCapacity === undefined ? {} : {
+			materialStorageCapacity: structuredClone(rules.materialStorageCapacity),
 		}),
 		...containerEconomy,
 		...(!('containerEconomy' in containerEconomy) || rules.personalValuation === undefined ? {} : {

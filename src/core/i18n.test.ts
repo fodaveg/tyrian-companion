@@ -75,6 +75,7 @@ const H5_11_KEYS = [
 	'advisor.view.evidence', 'advisor.view.refreshWarning',
 	'advisor.view.action.sell', 'advisor.view.action.list', 'advisor.view.action.vendor',
 	'advisor.view.action.salvage', 'advisor.view.action.use', 'advisor.view.action.open',
+	'advisor.view.action.deposit_material',
 	'advisor.view.action.keep', 'advisor.view.action.review', 'advisor.view.action.discard_review',
 	'advisor.view.evidence.complete', 'advisor.view.evidence.limited', 'advisor.view.evidence.review',
 	'advisor.view.evidence.blocked', 'advisor.view.irreversibleReview', 'advisor.view.reviewRequired',
@@ -94,6 +95,7 @@ const H5_11_KEYS = [
 	'advisor.view.reason.price_missing', 'advisor.view.reason.price_stale', 'advisor.view.reason.price_partial',
 	'advisor.view.reason.binding_unknown', 'advisor.view.reason.tp_access_unknown',
 	'advisor.view.reason.position_not_actionable', 'advisor.view.reason.reserved_for_goal',
+	'advisor.view.reason.material_storage_space_available',
 	'advisor.view.reason.user_keep_exception', 'advisor.view.reason.rule_missing',
 	'advisor.view.reason.rule_stale', 'advisor.view.reason.rule_conflict',
 	'advisor.view.reason.economic_comparison_missing',
@@ -103,6 +105,8 @@ const H5_11_KEYS = [
 	'advisor.view.reason.salvage_value_unknown', 'advisor.view.reason.delete_warning',
 	'advisor.view.reason.alternative_route_exists', 'advisor.view.reason.discard_not_allowlisted',
 	'advisor.view.reason.arithmetic_overflow',
+	'advisor.view.materialStorage.capacity', 'advisor.view.materialStorage.value',
+	'advisor.view.materialStorage.source.configured', 'advisor.view.materialStorage.source.minimum_guaranteed',
 ] as const;
 
 function placeholders(value: string): string[] {

@@ -51,6 +51,7 @@ import type { ReservationGoal } from './economy/reservation-model';
 import {
 	mergeSettingsUpdate,
 	migrateSettings,
+	resolveMaterialStorageCapacity,
 	shouldPersistSettingsOnLoad,
 	type DetectionMode,
 	type InventoryVaultSyncLastRun,
@@ -508,6 +509,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			inventoryClient, inventoryPublicClient, inventorySnapshots,
 			() => this.settings.language,
 			() => this.settings.halloweenPersonalValuation,
+			() => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
 			this.inventoryPreferences,
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 			this.inventoryAdvisorPhaseListener,
@@ -1486,6 +1488,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousPriceHistory = priceHistorySettingsFrom(this.settings);
 		const previousHalloweenEnabled = this.settings.halloweenEnabled;
 		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
+		const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
@@ -1518,7 +1521,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.renderViews();
 		}
 		let inventoryAdvisorResult: Extract<SettingsUpdateResult, { status: 'saved' }>['inventoryAdvisor'] = 'unchanged';
-		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)) {
+		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)
+			|| previousMaterialStorageCapacity !== this.settings.materialStorageCapacity) {
 			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
 			try {
 				const reclassified = await this.inventoryAdvisor.reclassify();
@@ -1958,6 +1962,7 @@ function createInventoryAdvisorRuntime(
 	snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
 	locale: () => Locale,
 	personalValuation: () => TyrianSettings['halloweenPersonalValuation'],
+	materialStorageCapacity: () => ReturnType<typeof resolveMaterialStorageCapacity>,
 	preferences: InventoryPreferencesRuntime,
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 	phaseListener: InventoryAdvisorPhaseListenerRef,
@@ -2008,7 +2013,9 @@ function createInventoryAdvisorRuntime(
 			});
 			return loaded;
 		} },
-		rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider, personalValuation),
+		rules: createInventoryAdvisorBuiltinRulesProvider(
+			inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,
+		),
 	});
 	return new InventoryAdvisorPresentationController({
 		load: async () => {

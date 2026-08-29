@@ -1,5 +1,10 @@
 import type { ItemLocation, SourceCoverage } from '../account/storage-snapshot-model';
-import type { InventoryAdvisorCoverageV1, InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
+import type {
+	InventoryAdvisorCoverageV1,
+	InventoryAdvisorReasonCode,
+	InventoryRecommendationAction,
+	InventoryRecommendationDecisionV1,
+} from './inventory-advisor-model';
 import type { InventoryDiscardAllowlistProofV1 } from './inventory-advisor-discard-model';
 import type {
 	InventoryContainerEconomyDecisionV1,
@@ -85,6 +90,7 @@ export interface InventoryAdvisorPresentationRow {
 	value: InventoryAdvisorPresentationValue;
 	marketComparison: InventoryAdvisorMarketComparison | null;
 	burden: InventoryAdvisorBurden | null;
+	materialStorage?: InventoryRecommendationDecisionV1['materialStorage'] | null;
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryDiscardAllowlistProofV1 | null;
 	containerEconomy?: {

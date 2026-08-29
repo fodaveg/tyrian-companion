@@ -40,7 +40,7 @@ describe('H11-A architecture and UI contract', () => {
 	});
 
 	it('pins settings v8 and canonical session-note v3 evidence', () => {
-		expect(readFileSync('src/core/settings.ts', 'utf8')).toContain('SETTINGS_SCHEMA_VERSION = 8');
+		expect(readFileSync('src/core/settings.ts', 'utf8')).toContain('SETTINGS_SCHEMA_VERSION = 9');
 		expect(readFileSync('src/sessions/session-note-model.ts', 'utf8')).toContain('SESSION_NOTE_SCHEMA_VERSION = 3');
 		expect(readFileSync('src/sessions/session-note-renderer.ts', 'utf8')).toContain('tc_positive_item_deltas_json');
 	});

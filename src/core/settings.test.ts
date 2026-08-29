@@ -6,6 +6,7 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	normalizeVaultFolder,
+	resolveMaterialStorageCapacity,
 	resolveVaultFolderInput,
 	SETTINGS_SCHEMA_VERSION,
 	shouldPersistSettingsOnLoad,
@@ -126,22 +127,23 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v8 without scanning, claiming assets, price history or Halloween', () => {
+	it('migrates v2 to v9 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 8,
+			schemaVersion: 9,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
 			halloweenValueThresholdCopper: 10_000,
 			halloweenPersonalValuation: { version: 1, values: [] },
+			materialStorageCapacity: null,
 		});
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
 	});
 
-	it('migrates v7 to v8 with an empty manual overlay and canonicalizes valid values', () => {
+	it('migrates v7 to v9 with an empty manual overlay and canonicalizes valid values', () => {
 		expect(migrateSettings({ schemaVersion: 7 })).toMatchObject({
-			schemaVersion: 8,
+			schemaVersion: 9,
 			halloweenPersonalValuation: { version: 1, values: [] },
 		});
 		expect(migrateSettings({
@@ -154,6 +156,21 @@ describe('migrateSettings', () => {
 			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
 			{ outcomeKey: 'item:45176', unitCopper: 0, origin: 'manual' },
 		] });
+	});
+
+	it('fails closed for unknown material-storage upgrades and exposes the safe provenance', () => {
+		expect(migrateSettings({ schemaVersion: 8 }).materialStorageCapacity).toBeNull();
+		for (const invalid of [0, 251, 3_250, '500']) {
+			expect(migrateSettings({ materialStorageCapacity: invalid }).materialStorageCapacity).toBeNull();
+		}
+		expect(migrateSettings({ materialStorageCapacity: 250 }).materialStorageCapacity).toBe(250);
+		expect(migrateSettings({ materialStorageCapacity: 3_000 }).materialStorageCapacity).toBe(3_000);
+		expect(resolveMaterialStorageCapacity(null)).toEqual({ quantity: 250, source: 'minimum_guaranteed' });
+		expect(resolveMaterialStorageCapacity(1_000)).toEqual({ quantity: 1_000, source: 'configured' });
+
+		const current = migrateSettings({ materialStorageCapacity: 750 });
+		expect(mergeSettingsUpdate(current, { materialStorageCapacity: 251 as never }).materialStorageCapacity).toBe(750);
+		expect(mergeSettingsUpdate(current, { materialStorageCapacity: null }).materialStorageCapacity).toBeNull();
 	});
 
 	it('purges foreign, duplicate, liquid and unsafe personal values without inventing defaults', () => {

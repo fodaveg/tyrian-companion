@@ -48,7 +48,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
 		return isInventoryAdvisorResultForInput(
 			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
-			value.activeOrders,
+			value.activeOrders, value.materialStorageCapacity,
 		) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
@@ -73,7 +73,8 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
-			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation))
+			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation,
+			value.materialStorageCapacity))
 			.map((line) => applyActiveOrderPolicy(line, value.activeOrders));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
@@ -120,14 +121,18 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 
 function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number,
 	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy'],
-	personalValuation: EngineInput['personalValuation']): InventoryAdvisorEngineLineV1 {
+	personalValuation: EngineInput['personalValuation'],
+	materialStorageCapacity: EngineInput['materialStorageCapacity']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
 	const decisions: InventoryAdvisorEngineDecisionV1[] = [];
-	const add = (action: InventoryAdvisorEngineDecisionV1['action'], position: InventoryAdvisorPositionV1, quantity: number, reason: string, ruleId: string | null = null): void => {
+	const add = (action: InventoryAdvisorEngineDecisionV1['action'], position: InventoryAdvisorPositionV1, quantity: number,
+		reason: string, ruleId: string | null = null,
+		materialStorage?: InventoryAdvisorEngineDecisionV1['materialStorage']): void => {
 		if (quantity <= 0) return; remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
-		decisions.push({ action, itemId, quantity, allocations: [{ positionRef: position.ref, quantity }], reason, ruleId });
+		decisions.push({ action, itemId, quantity, allocations: [{ positionRef: position.ref, quantity }], reason, ruleId,
+			...(materialStorage === undefined ? {} : { materialStorage }) });
 	};
 	let reserveLeft = reserved;
 	for (const position of positions.filter((position) => position.state === 'loose' || position.state === 'pending_claim')) {
@@ -146,6 +151,17 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	for (const position of positions) {
 		const quantity = remaining.get(position.ref) ?? 0;
 		if (quantity > 0 && position.state !== 'loose') add('review', position, quantity, 'position_not_actionable');
+	}
+	const deposit = materialDepositContext(input, itemId, positions, materialStorageCapacity);
+	if (deposit !== null) {
+		let space = deposit.spaceBefore;
+		for (const position of positions.filter((candidate) => candidate.state === 'loose'
+			&& (candidate.source === 'character' || candidate.source === 'shared_inventory'))) {
+			const quantity = Math.min(space, remaining.get(position.ref) ?? 0);
+			add('deposit_material', position, quantity, 'material_storage_space_available', null, deposit);
+			space -= quantity;
+			if (space === 0) break;
+		}
 	}
 	const freePositions = positions.filter((position) => position.state === 'loose' && (remaining.get(position.ref) ?? 0) > 0);
 	const freeQuantity = freePositions.reduce((total, position) => total + (remaining.get(position.ref) ?? 0), 0);
@@ -217,6 +233,7 @@ function publicLine(engine: InventoryAdvisorEngineLineV1, input: InventoryAdviso
 		action: source.action, itemId: source.itemId, quantity: source.quantity,
 		allocations: source.allocations, explanationRef: `#/explanations/${engine.itemId}/${index}`,
 		ruleId: source.ruleId, safety: 'manual_only' as const, discardProof: null,
+		...(source.materialStorage === undefined ? {} : { materialStorage: structuredClone(source.materialStorage) }),
 	} })).sort((left, right) => left.decision.action.localeCompare(right.decision.action)
 		|| left.decision.explanationRef.localeCompare(right.decision.explanationRef));
 	const decisions = sources.map((entry) => entry.decision);
@@ -272,12 +289,39 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
 		active_buy_order: 'alternative_route_exists', active_sell_order: 'alternative_route_exists',
+		material_storage_space_available: 'material_storage_space_available',
 	};
 	return reasons[value] ?? 'snapshot_invalid';
 }
 function reasonOrder(left: { itemId: number | null; code: string; goalId: string | null; ruleId: string | null }, right: { itemId: number | null; code: string; goalId: string | null; ruleId: string | null }): number { return (left.itemId ?? -1) - (right.itemId ?? -1) || left.code.localeCompare(right.code) || (left.goalId ?? '').localeCompare(right.goalId ?? '') || (left.ruleId ?? '').localeCompare(right.ruleId ?? ''); }
 function uniqueReasons<T extends { itemId: number | null; code: string; goalId: string | null; ruleId: string | null }>(reasons: T[]): T[] { const seen = new Set<string>(); return reasons.filter((reason) => { const key = `${reason.itemId ?? ''}:${reason.code}:${reason.goalId ?? ''}:${reason.ruleId ?? ''}`; if (seen.has(key)) return false; seen.add(key); return true; }); }
 function publicInvalid(): InventoryAdvisorResultV1 { return { status: 'invalid', reasons: [{ code: 'snapshot_invalid', itemId: null, goalId: null, ruleId: null }], report: null, envelope: null }; }
+
+function materialDepositContext(
+	input: InventoryAdvisorInputV1,
+	itemId: number,
+	positions: InventoryAdvisorPositionV1[],
+	capacity: EngineInput['materialStorageCapacity'],
+): NonNullable<InventoryAdvisorEngineDecisionV1['materialStorage']> | null {
+	if (capacity === undefined || input.snapshot.quality !== 'stable'
+		|| input.snapshot.coverage.sources.materials.status !== 'complete') return null;
+	const itemCoverage = input.catalog.coverage.items[String(itemId)];
+	if (itemCoverage?.status !== 'resolved' || !['network', 'cache_fresh'].includes(itemCoverage.source)
+		|| !fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs)) return null;
+	const categories = Object.values(input.catalog.materials).filter((category) => category.items.includes(itemId));
+	if (categories.length !== 1) return null;
+	const categoryCoverage = input.catalog.coverage.materials[String(categories[0]!.id)];
+	if (categoryCoverage?.status !== 'resolved' || !['network', 'cache_fresh'].includes(categoryCoverage.source)) return null;
+	const storedQuantity = positions.filter((position) => position.source === 'materials')
+		.reduce((total, position) => total + position.quantity, 0);
+	const spaceBefore = Math.max(0, capacity.quantity - storedQuantity);
+	return spaceBefore === 0 ? null : {
+		capacity: capacity.quantity,
+		capacitySource: capacity.source,
+		storedQuantity,
+		spaceBefore,
+	};
+}
 
 function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
 	/* An absent curated entry withholds irreversible/use/open/salvage advice. It
@@ -448,8 +492,16 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 }
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
-	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], ['containerEconomy', 'personalValuation', 'activeOrders'])
+	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], [
+		'containerEconomy', 'personalValuation', 'activeOrders', 'materialStorageCapacity',
+	])
 		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
+	if (value.materialStorageCapacity !== undefined && (!record(value.materialStorageCapacity)
+		|| !keys(value.materialStorageCapacity, ['quantity', 'source'])
+		|| !materialCapacity(value.materialStorageCapacity.quantity)
+		|| !['configured', 'minimum_guaranteed'].includes(String(value.materialStorageCapacity.source))
+		|| (value.materialStorageCapacity.source === 'minimum_guaranteed'
+			&& value.materialStorageCapacity.quantity !== 250))) return false;
 	if (value.activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(value.activeOrders)
 		|| value.activeOrders.accountId !== value.input.snapshot.accountId
 		|| !fresh(value.activeOrders.capturedAt, value.input.asOf, value.input.policy.maxPriceAgeMs,
@@ -504,7 +556,15 @@ function line(value: unknown): value is InventoryAdvisorEngineLineV1 {
 	return positions.every((position) => totals.get(position.ref) === position.quantity) && positions.reduce((sum, position) => sum + position.quantity, 0) === value.ownedQuantity;
 }
 function position(value: unknown): value is InventoryAdvisorPositionV1 { return record(value) && keys(value, ['ref', 'holdingIndex', 'itemId', 'quantity', 'source', 'state']) && typeof value.ref === 'string' && nonNegative(value.holdingIndex) && positive(value.itemId) && positive(value.quantity) && value.ref === `#/positions/${value.itemId}/${value.holdingIndex}` && ['character', 'shared_inventory', 'bank', 'materials', 'commerce_delivery'].includes(String(value.source)) && ['loose', 'equipped_container', 'embedded_upgrade', 'embedded_infusion', 'pending_claim'].includes(String(value.state)); }
-function decision(value: unknown): value is InventoryAdvisorEngineDecisionV1 { return record(value) && keys(value, ['action', 'itemId', 'quantity', 'allocations', 'reason', 'ruleId']) && ['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review'].includes(String(value.action)) && positive(value.itemId) && positive(value.quantity) && Array.isArray(value.allocations) && value.allocations.every((allocation) => record(allocation) && keys(allocation, ['positionRef', 'quantity']) && typeof allocation.positionRef === 'string' && positive(allocation.quantity)) && typeof value.reason === 'string' && (value.ruleId === null || id(value.ruleId)); }
+function decision(value: unknown): value is InventoryAdvisorEngineDecisionV1 {
+	if (!record(value) || !optionalKeys(value, ['action', 'itemId', 'quantity', 'allocations', 'reason', 'ruleId'], ['materialStorage'])
+		|| !['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review'].includes(String(value.action))
+		|| !positive(value.itemId) || !positive(value.quantity) || !Array.isArray(value.allocations)
+		|| !value.allocations.every((allocation) => record(allocation) && keys(allocation, ['positionRef', 'quantity'])
+			&& typeof allocation.positionRef === 'string' && positive(allocation.quantity))
+		|| typeof value.reason !== 'string' || (value.ruleId !== null && !id(value.ruleId))) return false;
+	return value.action === 'deposit_material' ? materialStorageContext(value.materialStorage) : value.materialStorage === undefined;
+}
 function source(value: unknown): boolean { return record(value) && keys(value, ['id', 'url', 'retrievedAt']) && id(value.id) && typeof value.url === 'string' && value.url.startsWith('https://') && iso(value.retrievedAt); }
 function record(value: unknown): value is Record<string, unknown> { try { return typeof value === 'object' && value !== null && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null); } catch { return false; } }
 function keys(value: Record<string, unknown>, expected: string[]): boolean { const actual = Object.keys(value).sort(); const sortedExpected = [...expected].sort(); return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]); }
@@ -512,6 +572,17 @@ function optionalKeys(value: Record<string, unknown>, required: string[], option
 function id(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
+function materialCapacity(value: unknown): value is number {
+	return positive(value) && value >= 250 && value <= 3000 && value % 250 === 0;
+}
+function materialStorageContext(value: unknown): boolean {
+	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
+		&& materialCapacity(value.capacity)
+		&& ['configured', 'minimum_guaranteed'].includes(String(value.capacitySource))
+		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
+		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
+}
 function sha(value: unknown): value is string { return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value); }
 function iso(value: unknown): value is string { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value; }
 function fresh(capturedAt: string, asOf: string, maxAge: number, maxFutureSkew: number): boolean { const delta = Date.parse(asOf) - Date.parse(capturedAt); return Number.isSafeInteger(delta) && delta <= maxAge && delta >= -maxFutureSkew; }

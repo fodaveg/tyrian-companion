@@ -62,10 +62,11 @@ export function isInventoryAdvisorResultForInput(
 	containerEconomy?: InventoryAdvisorEngineInputV1['containerEconomy'],
 	personalValuation?: ContainerPersonalValuationV1,
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1,
+	materialStorageCapacity?: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 ): value is InventoryAdvisorResultV1 {
 	try {
 		return isInventoryAdvisorResultForInputUnsafe(
-			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders,
+			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity,
 		);
 	} catch { return false; }
 }
@@ -77,12 +78,14 @@ function isInventoryAdvisorResultForInputUnsafe(
 	containerEconomy: InventoryAdvisorEngineInputV1['containerEconomy'],
 	personalValuation: ContainerPersonalValuationV1 | undefined,
 	activeOrders: ActiveTradingPostOrdersEvidenceV1 | undefined,
+	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(activeOrders)
 		|| activeOrders.accountId !== input.snapshot.accountId
 		|| !fresh(activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
 			input.policy.maxFutureSkewMs))) return false;
+	if (materialStorageCapacity !== undefined && !validMaterialStorageCapacity(materialStorageCapacity)) return false;
 	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
 		|| knowledgePack.sha256 !== input.rulePack.knowledgePackSha256)) return false;
 	if (value.status === 'invalid') return true;
@@ -184,7 +187,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy,
 					personalValuation, report.explanations)) return false;
 			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
-				remainingBid, explanation?.reasonCodes ?? [])) return false;
+				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity)) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
@@ -308,6 +311,7 @@ function validDecisionAgainstInput(
 	exceptionQuantity: number,
 	remainingBid: number,
 	reasonCodes: InventoryAdvisorReasonCode[],
+	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	const item = input.catalog.items[String(line.itemId)];
@@ -318,6 +322,9 @@ function validDecisionAgainstInput(
 		input.policy.maxFutureSkewMs)) return false;
 	const holdings = decision.allocations.map((allocation) => input.snapshot.holdings[allocationPositionIndex(allocation.positionRef)]);
 	if (holdings.some((holding) => holding?.kind !== 'item')) return false;
+	if (decision.action === 'deposit_material') {
+		return validMaterialDeposit(decision, line, input, holdings, reasonCodes, materialStorageCapacity);
+	}
 	if (decision.action === 'discard_candidate') {
 		return validDiscardAgainstInput(decision, line, input, reserved, exceptionQuantity);
 	}
@@ -366,6 +373,42 @@ function validDecisionAgainstInput(
 			&& input.accountSignals.achievementCoverage === 'complete';
 	}
 	return decision.action === 'open';
+}
+
+function validMaterialDeposit(
+	decision: InventoryRecommendationDecisionV1,
+	line: InventoryAdvisorLineV1,
+	input: InventoryAdvisorInputV1,
+	holdings: Array<InventoryAdvisorInputV1['snapshot']['holdings'][number] | undefined>,
+	reasonCodes: InventoryAdvisorReasonCode[],
+	capacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+): boolean {
+	if (capacity === undefined || decision.materialStorage === undefined
+		|| decision.materialStorage.capacity !== capacity.quantity
+		|| decision.materialStorage.capacitySource !== capacity.source
+		|| reasonCodes.length !== 1 || reasonCodes[0] !== 'material_storage_space_available'
+		|| input.snapshot.quality !== 'stable' || input.snapshot.coverage.sources.materials.status !== 'complete'
+		|| !holdings.every((holding) => holding?.kind === 'item' && holding.state === 'loose'
+			&& (holding.location.source === 'character' || holding.location.source === 'shared_inventory'))) return false;
+	const categories = Object.values(input.catalog.materials).filter((category) => category.items.includes(line.itemId));
+	if (categories.length !== 1) return false;
+	const categoryCoverage = input.catalog.coverage.materials[String(categories[0]!.id)];
+	if (categoryCoverage?.status !== 'resolved' || !['network', 'cache_fresh'].includes(categoryCoverage.source)) return false;
+	const storedQuantity = input.snapshot.holdings.filter((holding) => holding.kind === 'item'
+		&& holding.itemId === line.itemId && holding.location.source === 'materials')
+		.reduce((total, holding) => total + holding.quantity, 0);
+	const space = Math.max(0, capacity.quantity - storedQuantity);
+	const totalDeposited = line.decisions.filter((candidate) => candidate.action === 'deposit_material')
+		.reduce((total, candidate) => total + candidate.quantity, 0);
+	return decision.materialStorage.storedQuantity === storedQuantity
+		&& decision.materialStorage.spaceBefore === space
+		&& totalDeposited > 0 && totalDeposited <= space;
+}
+
+function validMaterialStorageCapacity(value: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>): boolean {
+	return Number.isSafeInteger(value.quantity) && value.quantity >= 250 && value.quantity <= 3000
+		&& value.quantity % 250 === 0
+		&& (value.source === 'configured' || (value.source === 'minimum_guaranteed' && value.quantity === 250));
 }
 
 function allocationPositionIndex(ref: string): number {

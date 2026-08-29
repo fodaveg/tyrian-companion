@@ -15,7 +15,11 @@ import {
 	runConfirmedManagedAssetsRemoval,
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
-import { resolveVaultFolderInput } from '../core/settings';
+import {
+	MATERIAL_STORAGE_CAPACITIES,
+	resolveVaultFolderInput,
+	type MaterialStorageCapacity,
+} from '../core/settings';
 import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import type TyrianCompanionPlugin from '../main';
@@ -239,6 +243,49 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								});
 							}),
 					);
+				},
+			},
+			{
+				name: this.t('settings.materialStorage.name'),
+				desc: this.t(this.plugin.settings.materialStorageCapacity === null
+					? 'settings.materialStorage.desc.minimum' : 'settings.materialStorage.desc.configured'),
+				render: (setting) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addDropdown((dropdown) => {
+						dropdown.addOption('', this.t('settings.materialStorage.unknown'));
+						for (const capacity of MATERIAL_STORAGE_CAPACITIES) dropdown.addOption(
+							String(capacity), this.t('settings.materialStorage.option', { capacity }),
+						);
+						dropdown.setValue(this.plugin.settings.materialStorageCapacity === null
+							? '' : String(this.plugin.settings.materialStorageCapacity));
+						dropdown.onChange(async (value) => {
+							const numeric = value === '' ? null : Number(value);
+							if (numeric !== null && !MATERIAL_STORAGE_CAPACITIES.includes(numeric as MaterialStorageCapacity)) {
+								dropdown.selectEl.setAttr('aria-invalid', 'true');
+								feedback.setText(this.t('settings.materialStorage.invalid'));
+								return;
+							}
+							dropdown.selectEl.removeAttribute('aria-invalid');
+							dropdown.setDisabled(true);
+							feedback.setText(this.t('settings.materialStorage.saving'));
+							try {
+								const result = await this.plugin.updateSettings({
+									materialStorageCapacity: numeric as MaterialStorageCapacity | null,
+								});
+								feedback.setText(result.status === 'saved'
+									? this.t(result.inventoryAdvisor === 'reclassified'
+										? 'settings.materialStorage.saved.reclassified'
+										: 'settings.materialStorage.saved.next_refresh')
+									: this.t('settings.materialStorage.error'));
+							} catch {
+								feedback.setText(this.t('settings.materialStorage.error'));
+							} finally {
+								dropdown.setDisabled(false);
+							}
+						});
+					});
 				},
 			},
 			{

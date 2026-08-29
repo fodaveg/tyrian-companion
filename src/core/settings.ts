@@ -13,10 +13,11 @@ import {
 } from '../economy/container-personal-valuation';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
 
-export const SETTINGS_SCHEMA_VERSION = 8 as const;
+export const SETTINGS_SCHEMA_VERSION = 9 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
+export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
 
 export type InventoryVaultSyncRunStatus = 'success' | 'error';
 export type InventoryVaultSyncRunErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure';
@@ -71,6 +72,8 @@ export interface TyrianSettings {
 	halloweenPriceAlertCooldownHours: HalloweenPriceAlertCooldownHours;
 	/** Manual values for explicit non-liquid outcomes. Independent from Halloween alerts. */
 	halloweenPersonalValuation: ContainerPersonalValuationV1;
+	/** Manual account-wide per-material cap. Null means unknown; the advisor may rely only on the guaranteed 250 floor. */
+	materialStorageCapacity: MaterialStorageCapacity | null;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
@@ -95,6 +98,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
 	halloweenPersonalValuation: { version: 1 as const, values: [] },
+	materialStorageCapacity: null,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -102,6 +106,10 @@ const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
 const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
 const PRICE_HISTORY_DAILY_RETENTIONS: ReadonlySet<number> = new Set([42, 90, 180, 365]);
 const HALLOWEEN_PRICE_ALERT_COOLDOWNS: ReadonlySet<number> = new Set([6, 12, 24, 48]);
+export const MATERIAL_STORAGE_CAPACITIES: readonly MaterialStorageCapacity[] = [
+	250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000,
+];
+const MATERIAL_STORAGE_CAPACITY_SET: ReadonlySet<number> = new Set(MATERIAL_STORAGE_CAPACITIES);
 
 /** Migrates persisted settings to the current schema without retaining unknown values. */
 export function migrateSettings(data: unknown, configDir?: string): TyrianSettings {
@@ -151,6 +159,7 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			HALLOWEEN_PRICE_ALERT_COOLDOWNS, DEFAULT_SETTINGS.halloweenPriceAlertCooldownHours) as HalloweenPriceAlertCooldownHours,
 		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
 			?? { version: 1, values: [] },
+		materialStorageCapacity: materialStorageCapacity(data.materialStorageCapacity),
 	};
 }
 
@@ -240,13 +249,34 @@ export function mergeSettingsUpdate(
 	const personalValuation = safeUpdate.halloweenPersonalValuation === undefined
 		? current.halloweenPersonalValuation
 		: halloweenPersonalValuation(safeUpdate.halloweenPersonalValuation) ?? current.halloweenPersonalValuation;
+	const materialCapacity = safeUpdate.materialStorageCapacity === undefined
+		? current.materialStorageCapacity
+		: safeUpdate.materialStorageCapacity === null
+			? null
+			: materialStorageCapacity(safeUpdate.materialStorageCapacity) ?? current.materialStorageCapacity;
 	return migrateSettings({
 		...current,
 		...safeUpdate,
 		halloweenPersonalValuation: personalValuation,
+		materialStorageCapacity: materialCapacity,
 		legacyOutputFolder: safeUpdate.outputFolder === undefined ? current.legacyOutputFolder : null,
 		legacyManagedAssetsRoot: safeUpdate.managedAssetsRoot === undefined ? current.legacyManagedAssetsRoot : null,
 	}, configDir);
+}
+
+/** Resolves the optional setting without claiming that Guild Wars 2 exposes this account upgrade. */
+export function resolveMaterialStorageCapacity(value: MaterialStorageCapacity | null): {
+	quantity: MaterialStorageCapacity;
+	source: 'configured' | 'minimum_guaranteed';
+} {
+	return value === null
+		? { quantity: 250, source: 'minimum_guaranteed' }
+		: { quantity: value, source: 'configured' };
+}
+
+function materialStorageCapacity(value: unknown): MaterialStorageCapacity | null {
+	return typeof value === 'number' && MATERIAL_STORAGE_CAPACITY_SET.has(value)
+		? value as MaterialStorageCapacity : null;
 }
 
 /** Rewrites persisted data to the exact current schema, retaining only explicit current/legacy fields. */

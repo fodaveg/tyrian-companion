@@ -76,10 +76,10 @@ function isInventoryRecommendationEnvelopeUnsafe(
 }
 
 function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 {
-	if (!record(value) || !keys(value, [
+	if (!record(value) || !optionalKeys(value, [
 		'action', 'itemId', 'quantity', 'allocations', 'explanationRef', 'ruleId', 'safety', 'discardProof',
-	])) return false;
-	if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'keep', 'review', 'discard_candidate']
+	], ['materialStorage'])) return false;
+	if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review', 'discard_candidate']
 		.includes(String(value.action)) || !positive(value.itemId) || !positive(value.quantity)
 		|| !Array.isArray(value.allocations) || value.allocations.length === 0
 		|| !value.allocations.every(isAllocation)
@@ -89,10 +89,22 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 		|| (value.ruleId !== null && !identifier(value.ruleId))) return false;
 	const curated = ['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action));
 	if (curated !== (value.ruleId !== null)) return false;
+	if (value.action === 'deposit_material' ? !isMaterialStorageContext(value.materialStorage)
+		: value.materialStorage !== undefined) return false;
 	if (value.action === 'discard_candidate') {
 		return value.safety === 'irreversible_review_only' && isDiscardProof(value.discardProof);
 	}
 	return value.safety === 'manual_only' && value.discardProof === null;
+}
+
+function isMaterialStorageContext(value: unknown): boolean {
+	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
+		&& Number.isSafeInteger(value.capacity) && (value.capacity as number) >= 250
+		&& (value.capacity as number) <= 3000 && (value.capacity as number) % 250 === 0
+		&& (value.capacitySource === 'configured' || value.capacitySource === 'minimum_guaranteed')
+		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
+		&& value.spaceBefore === Math.max(0, (value.capacity as number) - value.storedQuantity);
 }
 
 function isAllocation(value: unknown): value is InventoryRecommendationDecisionV1['allocations'][number] {
@@ -136,6 +148,10 @@ function positive(value: unknown): value is number {
 	return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
+function nonNegative(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function sortedUnique(values: string[]): boolean {
 	return unique(values) && values.every((value, index) => index === 0 || values[index - 1]! < value);
 }
@@ -163,6 +179,11 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
 	const actual = Object.keys(value).sort();
 	const sorted = [...expected].sort();
 	return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
+}
+function optionalKeys(value: Record<string, unknown>, required: string[], optional: string[]): boolean {
+	const actual = Object.keys(value);
+	return required.every((key) => actual.includes(key))
+		&& actual.every((key) => required.includes(key) || optional.includes(key));
 }
 
 function jsonRoundTrip(value: unknown): boolean {
