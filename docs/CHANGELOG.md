@@ -1,5 +1,21 @@
 # Changelog
 
+## H10 - Asesor de inventario más claro y seguro
+
+- **Analizar sin escribir** vuelve a estar disponible junto a la acción principal: actualiza las
+  recomendaciones sin modificar ninguna nota del vault y evita reentradas mientras trabaja.
+- El flujo automático diferencia los fallos de captura de los de escritura, rechaza un segundo plan
+  distinto mientras existe otro en curso y vuelve a comprobar que la operación siga habilitada justo
+  antes de escribir y de guardar la última ejecución.
+- La tabla muestra menos contabilidad interna: combina lo poseído y lo disponible, elimina el número
+  de pilas y traduce la cobertura incompleta a estados comprensibles. El desglose técnico queda en el
+  modo avanzado.
+- El panel de sincronización vive en su propio módulo y toda la vista usa el mismo formateador de
+  dinero.
+- Candidato `1103807` apto tras revisión independiente y gate base verde con 124 suites y 1.742 tests,
+  todavía sin integrar ni publicar. El repo no tiene harness Playwright/e2e; la QA manual de H10.4 y
+  H10.7 y la medición de contraste AA en temas reales siguen pendientes.
+
 ## Bundle gestionado v5
 
 - `Inventory.base` y `Materials.base` registran los nombres visibles de campos de frontmatter con

@@ -2,6 +2,18 @@
 
 ## Vertical activa
 
+**H10, pulido del Asesor de inventario: candidato apto en `1103807`, todavía sin integrar ni
+publicar.** El flujo automático distingue los fallos de captura de los de escritura, rechaza planes
+concurrentes distintos y revalida el estado antes de escribir o persistir. La vista añade **Analizar
+sin escribir**, extrae el panel de sincronización, comparte un único formateador de dinero y reduce
+la tabla a la información útil para jugar, con el detalle técnico reservado al modo avanzado.
+
+La revisión independiente no encontró bloqueos y el gate base del repo quedó verde con 124 suites y
+1.742 tests. Este repo no dispone de harness Playwright/e2e. La semántica, el foco, los objetivos de
+44 px y los cortes responsive 479/480/759/760 están cubiertos por código y tests, pero el contraste
+AA no se ha medido en temas reales. H10.4 y H10.7 conservan QA manual pendiente antes de su aceptación
+humana.
+
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
 
 **H8 (Mumble v2) queda congelada por decisión de producto del 2026-08-18** hasta que cierre
