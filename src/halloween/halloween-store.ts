@@ -7,7 +7,7 @@ import {
 } from './halloween-model';
 import {
 	isHalloweenComparisonRecord,
-	type HalloweenComparisonRecordV1,
+	type HalloweenComparisonRecord,
 } from './halloween-loot-comparison';
 import {
 	createHalloweenPriceNotice,
@@ -286,7 +286,7 @@ export class IndexedDbHalloweenStore {
 		episodeId: string,
 		finalObservation: HalloweenObservationV1,
 		notice: HalloweenNoticeV1 | null,
-		comparison: HalloweenComparisonRecordV1 | null = null,
+		comparison: HalloweenComparisonRecord | null = null,
 	): Promise<HalloweenEpisodeReplacement> {
 		if (!strictObservation(finalObservation) || finalObservation.vaultId !== vaultId ||
 			finalObservation.accountRef !== accountRef || finalObservation.episodeId !== episodeId ||
@@ -377,7 +377,7 @@ export class IndexedDbHalloweenStore {
 		});
 	}
 
-	readLatestComparison(vaultId: string, accountRef: string): Promise<HalloweenComparisonRecordV1 | null> {
+	readLatestComparison(vaultId: string, accountRef: string): Promise<HalloweenComparisonRecord | null> {
 		return this.run([HALLOWEEN_COMPARISON_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_COMPARISON_STORE).index('by-scope-observed').openCursor(
 				IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']), 'prev',
@@ -399,7 +399,12 @@ export class IndexedDbHalloweenStore {
 		accountRef: string,
 		projection: HalloweenPriceValidProjection,
 		cooldownHours: HalloweenPriceAlertCooldownHours,
-	): Promise<{ notice: HalloweenPriceNoticeV1 | null; shouldNotify: boolean }> {
+	): Promise<{
+		notice: HalloweenPriceNoticeV1 | null;
+		shouldNotify: boolean;
+		accepted: boolean;
+		projection: HalloweenPriceValidProjection;
+	}> {
 		if (!isHalloweenPriceValidProjection(projection) || ![6, 12, 24, 48].includes(cooldownHours)) {
 			return Promise.reject(new HalloweenStoreError('corrupt'));
 		}
@@ -411,6 +416,16 @@ export class IndexedDbHalloweenStore {
 			request.onsuccess = () => {
 				try {
 					const prior = request.result === undefined ? null : parsePriceAlertState(request.result, vaultId, accountRef);
+					if (prior?.lastValidCapturedAtMs !== null && prior?.lastValidCapturedAtMs !== undefined &&
+						projection.capturedAtMs <= prior.lastValidCapturedAtMs) {
+						const acceptedProjection = prior.lastValidProjection;
+						if (acceptedProjection === null) throw new HalloweenStoreError('corrupt');
+						tx.oncomplete = () => resolve({
+							notice: null, shouldNotify: false, accepted: false,
+							projection: structuredClone(acceptedProjection),
+						});
+						return;
+					}
 					const crossed = projection.status === 'high' && prior?.armed === true;
 					const cooldownReady = prior === null || projection.capturedAtMs >= prior.cooldownUntilMs;
 					const dailyReady = prior?.lastNotifiedDayUtc !== projection.dayUtc;
@@ -418,14 +433,18 @@ export class IndexedDbHalloweenStore {
 					const notice = shouldNotify ? createHalloweenPriceNotice(vaultId, accountRef, projection, cooldownHours) : null;
 					if (notice !== null) notices.put(notice);
 					stateStore.put({
-						version: 1, vaultId, accountRef, itemId: 36_038,
+						version: 2, vaultId, accountRef, itemId: 36_038,
 						armed: projection.status === 'below',
 						lastValidDayUtc: projection.dayUtc,
+						lastValidCapturedAtMs: projection.capturedAtMs,
+						lastValidProjection: structuredClone(projection),
 						lastNotifiedDayUtc: notice?.dayUtc ?? prior?.lastNotifiedDayUtc ?? null,
 						cooldownUntilMs: notice === null ? prior?.cooldownUntilMs ?? 0 :
 							projection.capturedAtMs + cooldownHours * 3_600_000,
 					});
-					tx.oncomplete = () => resolve({ notice, shouldNotify });
+					tx.oncomplete = () => resolve({
+						notice, shouldNotify, accepted: true, projection: structuredClone(projection),
+					});
 				} catch (error) { reject(error); tx.abort(); }
 			};
 		});
@@ -543,7 +562,7 @@ function parseNotice(value: unknown): HalloweenNoticeV1 {
 	return structuredClone(value);
 }
 
-function parseComparison(value: unknown, vaultId: string, accountRef: string): HalloweenComparisonRecordV1 {
+function parseComparison(value: unknown, vaultId: string, accountRef: string): HalloweenComparisonRecord {
 	if (!isHalloweenComparisonRecord(value) || value.vaultId !== vaultId || value.accountRef !== accountRef) {
 		throw new HalloweenStoreError('corrupt');
 	}
@@ -559,17 +578,41 @@ function parsePriceAlertState(value: unknown, vaultId: string, accountRef: strin
 	armed: boolean;
 	lastNotifiedDayUtc: string | null;
 	cooldownUntilMs: number;
+	lastValidCapturedAtMs: number | null;
+	lastValidProjection: HalloweenPriceValidProjection | null;
 } {
-	if (!isRecord(value) || !exactKeys(value, [
-		'version', 'vaultId', 'accountRef', 'itemId', 'armed', 'lastValidDayUtc', 'lastNotifiedDayUtc', 'cooldownUntilMs',
-	]) || value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.itemId !== 36_038 ||
-		typeof value.armed !== 'boolean' || typeof value.lastValidDayUtc !== 'string' ||
-		!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastValidDayUtc) ||
+	if (!isRecord(value) || value.vaultId !== vaultId || value.accountRef !== accountRef || value.itemId !== 36_038) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	if (value.version === 1) {
+		if (!exactKeys(value, [
+			'version', 'vaultId', 'accountRef', 'itemId', 'armed', 'lastValidDayUtc', 'lastNotifiedDayUtc', 'cooldownUntilMs',
+		]) || typeof value.armed !== 'boolean' || typeof value.lastValidDayUtc !== 'string' ||
+			!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastValidDayUtc) ||
+			(value.lastNotifiedDayUtc !== null && (typeof value.lastNotifiedDayUtc !== 'string' ||
+				!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastNotifiedDayUtc))) || !safeNonNegative(value.cooldownUntilMs)) {
+			throw new HalloweenStoreError('corrupt');
+		}
+		return { armed: value.armed, lastNotifiedDayUtc: value.lastNotifiedDayUtc,
+			cooldownUntilMs: value.cooldownUntilMs, lastValidCapturedAtMs: null, lastValidProjection: null };
+	}
+	if (value.version !== 2 || !exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'itemId', 'armed', 'lastValidDayUtc', 'lastValidCapturedAtMs',
+		'lastValidProjection', 'lastNotifiedDayUtc', 'cooldownUntilMs',
+	]) || typeof value.armed !== 'boolean' || typeof value.lastValidDayUtc !== 'string' ||
+		!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastValidDayUtc) || !safeNonNegative(value.lastValidCapturedAtMs) ||
+		!isHalloweenPriceValidProjection(value.lastValidProjection) ||
+		value.lastValidProjection.capturedAtMs !== value.lastValidCapturedAtMs ||
+		value.lastValidProjection.dayUtc !== value.lastValidDayUtc || value.armed !== (value.lastValidProjection.status === 'below') ||
 		(value.lastNotifiedDayUtc !== null && (typeof value.lastNotifiedDayUtc !== 'string' ||
 			!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastNotifiedDayUtc))) || !safeNonNegative(value.cooldownUntilMs)) {
 		throw new HalloweenStoreError('corrupt');
 	}
-	return { armed: value.armed, lastNotifiedDayUtc: value.lastNotifiedDayUtc, cooldownUntilMs: value.cooldownUntilMs };
+	return {
+		armed: value.armed, lastNotifiedDayUtc: value.lastNotifiedDayUtc,
+		cooldownUntilMs: value.cooldownUntilMs, lastValidCapturedAtMs: value.lastValidCapturedAtMs,
+		lastValidProjection: structuredClone(value.lastValidProjection),
+	};
 }
 
 function validNotice(value: unknown): value is HalloweenNoticeV1 {

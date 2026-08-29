@@ -5,6 +5,9 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	it('keeps comparison pure, exact, model-pinned, and independent from notes or Vault APIs', () => {
 		const source = readFileSync('src/halloween/halloween-loot-comparison.ts', 'utf8');
 		expect(source).toContain('halloweenTrickOrTreatBagModel()');
+		expect(source).toContain('halloweenTrickOrTreatBagModelAt');
+		expect(source).toContain('modelId: model.modelId');
+		expect(source).toContain('modelVersion: model.modelVersion');
 		expect(source).toContain('BigInt(outcome.sampleUnits) * BigInt(bagsDisappearedNet)');
 		expect(source).toContain('HALLOWEEN_COMPARISON_Z_THRESHOLD_MILLI');
 		expect(source).toContain('outcome.sampleUnits');
@@ -43,6 +46,11 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		expect(store).toContain("const crossed = projection.status === 'high' && prior?.armed === true");
 		expect(store).toContain('lastNotifiedDayUtc');
 		expect(store).toContain('cooldownUntilMs');
+		expect(store).toContain('lastValidCapturedAtMs');
+		expect(store).toContain('projection.capturedAtMs <= prior.lastValidCapturedAtMs');
+		const runtime = readFileSync('src/halloween/halloween-price-alert-runtime.ts', 'utf8');
+		expect(runtime).toContain('this.project(notices, result.projection)');
+		expect(runtime).toContain('projection: null, notices: [], unreadCount: 0');
 		const notice = readFileSync('src/halloween/halloween-price-alert.ts', 'utf8');
 		expect(notice).not.toMatch(/quantity/u);
 	});
@@ -58,9 +66,9 @@ describe('H11.3 and H11.5 architecture contract', () => {
 			expect(panel + locale).toContain(state);
 		}
 		// Responsive 320/480/760 component behavior.
-		expect(styles).toContain('@media (max-width: 320px)');
-		expect(styles).toContain('@media (max-width: 480px)');
-		expect(styles).toContain('@container (max-width: 759px)');
+		for (const width of [320, 480, 760]) expect(styles).toContain(`@container (max-width: ${String(width)}px)`);
+		expect(styles).not.toMatch(/@media \(max-width: (?:320|480)px\)[^{]*\{[^}]*tyrian-companion-halloween/su);
+		expect(styles).toContain('.tyrian-inventory-advisor__recommendation-actions');
 		// Accessibility and 44px targets.
 		expect(panel).toContain("createEl('caption'");
 		expect(panel).toContain("setAttr('scope', 'col')");
@@ -72,5 +80,7 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		expect(panel).toContain('halloween.unknownItem');
 		expect(panel).toContain("state.status.startsWith('store_') ? 'alert' : 'status'");
 		expect(panel + styles).not.toMatch(/contrast (?:passes|verified)|<img|background-image/iu);
+		const settingsTab = readFileSync('src/ui/settings-tab.ts', 'utf8');
+		expect(settingsTab.match(/this\.refreshForSettingsChange\(\)/gu)?.length).toBeGreaterThanOrEqual(4);
 	});
 });

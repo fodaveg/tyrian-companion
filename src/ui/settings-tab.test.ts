@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
+import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
@@ -9,6 +10,7 @@ import {
 	projectConnectionDescription,
 	projectManagedAssetsDescription,
 } from './settings-i18n';
+import { TyrianCompanionSettingTab } from './settings-tab';
 
 describe('Settings i18n projection', () => {
 	it('keeps the connection error projection exhaustive for every gateway code', () => {
@@ -82,3 +84,79 @@ describe('Settings i18n projection', () => {
 			.toBe('Se muestra la última cuenta verificada; la comprobación actual falló. Astra.1234 · vault-key · account');
 	});
 });
+
+describe('Halloween price-alert settings wiring', () => {
+	it('rebuilds the open settings tab and immediately reflects enabled controls after every change', async () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const refresh = vi.spyOn(tab, 'refreshForSettingsChange').mockImplementation(() => undefined);
+		const definitions = () => tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[];
+		const byName = (name: string) => definitions().find((definition) => definition.name === name)!;
+		const enabledName = 'Local bag price alert';
+		const marginName = 'Minimum margin above p90';
+		const cooldownName = 'Price-alert cooldown';
+
+		expect(renderControl(byName(marginName), 'text').disabled).toBe(true);
+		expect(renderControl(byName(cooldownName), 'dropdown').disabled).toBe(true);
+		await renderControl(byName(enabledName), 'dropdown').change('on');
+		expect(plugin.settings.halloweenPriceAlertEnabled).toBe(true);
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(renderControl(byName(marginName), 'text').disabled).toBe(false);
+		expect(renderControl(byName(cooldownName), 'dropdown').disabled).toBe(false);
+
+		await renderControl(byName(marginName), 'text').change('125');
+		await renderControl(byName(cooldownName), 'dropdown').change('48');
+		expect(plugin.settings).toMatchObject({
+			halloweenPriceAlertMinimumAboveP90Bps: 125, halloweenPriceAlertCooldownHours: 48,
+		});
+		expect(refresh).toHaveBeenCalledTimes(3);
+		await renderControl(byName(enabledName), 'dropdown').change('off');
+		expect(renderControl(byName(marginName), 'text').disabled).toBe(true);
+		expect(refresh).toHaveBeenCalledTimes(4);
+	});
+});
+
+function settingsPlugin() {
+	const plugin = {
+		settings: { ...DEFAULT_SETTINGS, language: 'en' as const } as TyrianSettings,
+		updateSettings: async (update: Partial<TyrianSettings>) => { Object.assign(plugin.settings, update); },
+		previewSessionHistoryScrub: async () => undefined,
+		cancelSessionHistoryScrubPreview: () => undefined,
+		scrubSessionHistory: async () => undefined,
+		getManagedAssetsView: () => ({ status: 'ready' as const, message: 'assets_ready' as const, plan: null }),
+		getSessionHistoryView: () => ({ status: 'idle' as const, sessions: 0 }),
+		getConnectionState: () => ({ status: 'idle' as const }),
+		hasManagedAssetsRoot: () => false,
+	};
+	return plugin;
+}
+
+interface FakeControl {
+	disabled: boolean;
+	change(value: string): Promise<void>;
+}
+
+interface RenderableSettingDefinition {
+	name: string;
+	render(setting: never): void;
+}
+
+function renderControl(
+	definition: RenderableSettingDefinition,
+	kind: 'dropdown' | 'text',
+): FakeControl {
+	let listener: (value: string) => Promise<void> | void = () => undefined;
+	const component = {
+		disabled: false,
+		addOption: () => component,
+		setValue: () => component,
+		setDisabled: (disabled: boolean) => { component.disabled = disabled; return component; },
+		onChange: (next: typeof listener) => { listener = next; return component; },
+	};
+	const setting = {
+		addDropdown: (render: (control: typeof component) => unknown) => { if (kind === 'dropdown') render(component); return setting; },
+		addText: (render: (control: typeof component) => unknown) => { if (kind === 'text') render(component); return setting; },
+	};
+	definition.render(setting as never);
+	return { get disabled() { return component.disabled; }, change: async (value) => { await listener(value); } };
+}

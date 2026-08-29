@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { SessionContaminationReview } from '../sessions/session-contamination-review';
-import { buildHalloweenLootComparison, isHalloweenOutcomeDeviation } from './halloween-loot-comparison';
+import {
+	buildHalloweenLootComparison,
+	isHalloweenComparisonRecord,
+	isHalloweenOutcomeDeviation,
+} from './halloween-loot-comparison';
 
 describe('Halloween loot comparison', () => {
 	it('keeps all 18 model rows, including zero observations, in canonical order', () => {
@@ -54,6 +58,19 @@ describe('Halloween loot comparison', () => {
 		expect(result.outcomes[0]?.expectedNumerator.length).toBeGreaterThan(15);
 		expect(result.outcomes.every(({ zMilli, differenceBasisPoints }) =>
 			Number.isSafeInteger(zMilli) && Number.isSafeInteger(differenceBasisPoints))).toBe(true);
+	});
+
+	it('pins model identity while accepting the legacy record schema and rejecting unknown future models', () => {
+		const current = buildHalloweenLootComparison(input(1_100, [{ id: 36_041, delta: 4_006 }]));
+		expect(current).toMatchObject({
+			version: 2, modelId: 'halloween-trick-or-treat-bag-conservative', modelVersion: 1,
+		});
+		expect(isHalloweenComparisonRecord(current)).toBe(true);
+		const { modelId: _modelId, modelVersion: _modelVersion, ...withoutModel } = current;
+		const legacy = { ...withoutModel, version: 1 };
+		expect(isHalloweenComparisonRecord(legacy)).toBe(true);
+		expect(isHalloweenComparisonRecord({ ...current, modelVersion: 2 })).toBe(false);
+		expect(isHalloweenComparisonRecord({ ...current, modelId: 'unknown-future-model' })).toBe(false);
 	});
 });
 

@@ -53,26 +53,31 @@ export class HalloweenPriceAlertRuntime {
 		this.settings = { ...settings };
 		if (!settings.enabled || !priceHistoryActive) { this.disable(); return; }
 		if (this.disposed) return;
-		if (this.store !== null && this.loadedAccountRef === this.options.accountRef()) return;
-		if (this.store !== null) {
-			this.store.close();
-			this.store = null;
-			this.loadedAccountRef = null;
-		}
-		if (this.activation !== null) { await this.activation; return; }
+		const accountRef = this.options.accountRef();
+		if (this.store !== null && this.loadedAccountRef === accountRef) return;
 		const generation = ++this.generation;
-		this.setState({ status: 'loading' });
-		const activation = this.activate(generation).finally(() => { if (this.activation === activation) this.activation = null; });
+		this.store?.close();
+		this.store = null;
+		this.loadedAccountRef = null;
+		this.setState({
+			status: accountRef === null ? 'waiting_account' : 'loading', projection: null, notices: [], unreadCount: 0,
+		});
+		const activation = this.activateStable(generation).finally(() => {
+			if (this.activation === activation) this.activation = null;
+		});
 		this.activation = activation;
 		await activation;
 	}
 
 	async evaluate(port: HalloweenPriceHistoryPort, nowMs: number): Promise<void> {
 		if (this.activation !== null) await this.activation;
+		if (this.loadedAccountRef !== this.options.accountRef() && this.settings.enabled && !this.disposed) {
+			await this.configure(this.settings, true);
+		}
 		const store = this.store;
 		const accountRef = this.options.accountRef();
 		const generation = this.generation;
-		if (store === null || accountRef === null || !this.settings.enabled || this.disposed) return;
+		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef || !this.settings.enabled || this.disposed) return;
 		try {
 			const fromDayUtc = priceHistoryDayUtc(Math.max(0, nowMs - 30 * DAY_MS));
 			const daily = await port.readDaily(36_038, fromDayUtc);
@@ -88,7 +93,7 @@ export class HalloweenPriceAlertRuntime {
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
 			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
-			this.project(notices, projection);
+			this.project(notices, result.projection);
 			if (result.shouldNotify && result.notice !== null) this.options.onNotice?.(structuredClone(result.notice));
 		} catch (error) { if (this.owns(generation, store)) this.fail(error); }
 	}
@@ -96,15 +101,15 @@ export class HalloweenPriceAlertRuntime {
 	async acknowledge(noticeId: string): Promise<boolean> {
 		const store = this.store;
 		const accountRef = this.options.accountRef();
-		if (store === null || accountRef === null || !this.settings.enabled) return false;
+		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef || !this.settings.enabled) return false;
 		const generation = this.generation;
 		try {
 			const acknowledged = await store.acknowledgePriceNotice(
 				this.options.vaultId, accountRef, noticeId, new Date((this.options.now ?? Date.now)()).toISOString(),
 			);
-			if (!this.owns(generation, store)) return false;
+			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return false;
 			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
-			if (!this.owns(generation, store)) return false;
+			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return false;
 			this.project(notices, this.state.projection);
 			return acknowledged;
 		} catch (error) { if (this.owns(generation, store)) this.fail(error); return false; }
@@ -112,20 +117,29 @@ export class HalloweenPriceAlertRuntime {
 
 	dispose(): void { this.disposed = true; this.disable(); }
 
-	private async activate(generation: number): Promise<void> {
-		let store: IndexedDbHalloweenStore | null = null;
-		try {
-			store = await IndexedDbHalloweenStore.open(this.options.factory);
-			if (!this.current(generation)) { store.close(); return; }
-			this.store = store;
+	private async activateStable(generation: number): Promise<void> {
+		while (this.current(generation)) {
 			const accountRef = this.options.accountRef();
 			if (accountRef === null) { this.setState({ status: 'waiting_account' }); return; }
-			this.loadedAccountRef = accountRef;
-			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
-			if (this.owns(generation, store)) this.project(notices, null);
-		} catch (error) {
-			if (this.current(generation)) this.fail(error);
-			else store?.close();
+			let store: IndexedDbHalloweenStore | null = null;
+			try {
+				store = await IndexedDbHalloweenStore.open(this.options.factory);
+				if (!this.current(generation)) { store.close(); return; }
+				if (accountRef !== this.options.accountRef()) { store.close(); continue; }
+				const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
+				if (!this.current(generation)) { store.close(); return; }
+				if (accountRef !== this.options.accountRef()) { store.close(); continue; }
+				this.store = store;
+				this.loadedAccountRef = accountRef;
+				this.project(notices, null);
+				return;
+			} catch (error) {
+				store?.close();
+				if (!this.current(generation)) return;
+				if (accountRef !== this.options.accountRef()) continue;
+				this.fail(error);
+				return;
+			}
 		}
 	}
 
@@ -150,7 +164,10 @@ export class HalloweenPriceAlertRuntime {
 		this.store?.close();
 		this.store = null;
 		this.loadedAccountRef = null;
-		this.setState({ status: failure === 'future_schema' ? 'store_future' : failure === 'corrupt' ? 'store_corrupt' : 'store_unavailable' });
+		this.setState({
+			status: failure === 'future_schema' ? 'store_future' : failure === 'corrupt' ? 'store_corrupt' : 'store_unavailable',
+			projection: null, notices: [], unreadCount: 0,
+		});
 	}
 
 	private setState(update: Partial<HalloweenPriceAlertRuntimeState>): void {

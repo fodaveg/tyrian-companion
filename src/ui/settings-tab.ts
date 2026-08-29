@@ -259,7 +259,10 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
 						.setValue(this.plugin.settings.halloweenPriceAlertEnabled ? 'on' : 'off')
-						.onChange(async (value) => { await this.plugin.updateSettings({ halloweenPriceAlertEnabled: value === 'on' }); }));
+						.onChange(async (value) => {
+							await this.plugin.updateSettings({ halloweenPriceAlertEnabled: value === 'on' });
+							this.refreshForSettingsChange();
+						}));
 				},
 			},
 			{
@@ -272,6 +275,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							const margin = Number(value);
 							if (Number.isSafeInteger(margin) && margin >= 0 && margin <= 100_000) {
 								await this.plugin.updateSettings({ halloweenPriceAlertMinimumAboveP90Bps: margin });
+								this.refreshForSettingsChange();
 							}
 						}));
 				},
@@ -287,6 +291,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								const hours = Number(value);
 								if (hours === 6 || hours === 12 || hours === 24 || hours === 48) {
 									await this.plugin.updateSettings({ halloweenPriceAlertCooldownHours: hours });
+									this.refreshForSettingsChange();
 								}
 							});
 					});

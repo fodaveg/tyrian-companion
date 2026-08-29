@@ -1,8 +1,13 @@
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { SessionContaminationReview } from '../sessions/session-contamination-review';
-import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
+import {
+	HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
+	halloweenTrickOrTreatBagModel,
+	halloweenTrickOrTreatBagModelAt,
+} from '../economy/models/halloween-trick-or-treat-bag';
+import type { ContainerModelV1 } from '../economy/container-model';
 
-export const HALLOWEEN_COMPARISON_VERSION = 1 as const;
+export const HALLOWEEN_COMPARISON_VERSION = 2 as const;
 export const HALLOWEEN_COMPARISON_MINIMUM_BAGS = 1_100;
 export const HALLOWEEN_COMPARISON_Z_THRESHOLD_MILLI = 3_450;
 
@@ -25,8 +30,7 @@ export interface HalloweenComparisonOutcomeV1 {
 	deviates: boolean;
 }
 
-export interface HalloweenComparisonRecordV1 {
-	version: typeof HALLOWEEN_COMPARISON_VERSION;
+interface HalloweenComparisonRecordBase {
 	vaultId: string;
 	accountRef: string;
 	episodeId: string;
@@ -40,6 +44,19 @@ export interface HalloweenComparisonRecordV1 {
 	/** Descriptive Pearson sum multiplied by 1000 and truncated, never an inferential gate. */
 	globalPearsonMilli: string;
 }
+
+/** Records created before model identity became explicit; permanently interpreted as the original v1 model. */
+export interface HalloweenComparisonRecordLegacyV1 extends HalloweenComparisonRecordBase {
+	version: 1;
+}
+
+export interface HalloweenComparisonRecordV2 extends HalloweenComparisonRecordBase {
+	version: typeof HALLOWEEN_COMPARISON_VERSION;
+	modelId: string;
+	modelVersion: number;
+}
+
+export type HalloweenComparisonRecord = HalloweenComparisonRecordLegacyV1 | HalloweenComparisonRecordV2;
 
 export interface HalloweenComparisonInput {
 	vaultId: string;
@@ -72,7 +89,7 @@ export function isHalloweenOutcomeDeviation(input: HalloweenDeviationInput): boo
 }
 
 /** Builds a deterministic 18-row comparison without claiming that net missing bags were opened. */
-export function buildHalloweenLootComparison(input: HalloweenComparisonInput): HalloweenComparisonRecordV1 {
+export function buildHalloweenLootComparison(input: HalloweenComparisonInput): HalloweenComparisonRecordV2 {
 	const model = halloweenTrickOrTreatBagModel();
 	const bagChange = input.delta.itemChanges.find(({ id }) => id === model.containerItemId)?.delta ?? 0;
 	const bagsDisappearedNet = Number.isSafeInteger(bagChange) && bagChange < 0 ? -bagChange : 0;
@@ -107,7 +124,9 @@ export function buildHalloweenLootComparison(input: HalloweenComparisonInput): H
 		};
 	});
 	return {
-		version: 1,
+		version: HALLOWEEN_COMPARISON_VERSION,
+		modelId: model.modelId,
+		modelVersion: model.modelVersion,
 		vaultId: input.vaultId,
 		accountRef: input.accountRef,
 		episodeId: input.episodeId,
@@ -121,9 +140,17 @@ export function buildHalloweenLootComparison(input: HalloweenComparisonInput): H
 	};
 }
 
-export function isHalloweenComparisonRecord(value: unknown): value is HalloweenComparisonRecordV1 {
-	if (!record(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'episodeId', 'observedAt', 'eligible', 'reason',
-		'bagsDisappearedNet', 'minimumBags', 'outcomes', 'globalPearsonMilli']) || value.version !== 1 ||
+export function isHalloweenComparisonRecord(value: unknown): value is HalloweenComparisonRecord {
+	if (!record(value)) return false;
+	const legacy = value.version === 1 && exactKeys(value, ['version', 'vaultId', 'accountRef', 'episodeId', 'observedAt', 'eligible',
+		'reason', 'bagsDisappearedNet', 'minimumBags', 'outcomes', 'globalPearsonMilli']);
+	const current = value.version === HALLOWEEN_COMPARISON_VERSION && exactKeys(value, [
+		'version', 'modelId', 'modelVersion', 'vaultId', 'accountRef', 'episodeId', 'observedAt', 'eligible', 'reason',
+		'bagsDisappearedNet', 'minimumBags', 'outcomes', 'globalPearsonMilli',
+	]);
+	if (!legacy && !current) return false;
+	const model = comparisonModel(value, legacy);
+	if (model === null ||
 		!text(value.vaultId) || !text(value.accountRef) || !text(value.episodeId) ||
 		!iso(value.observedAt) || typeof value.eligible !== 'boolean' ||
 		(value.reason !== null && (typeof value.reason !== 'string' ||
@@ -131,7 +158,6 @@ export function isHalloweenComparisonRecord(value: unknown): value is HalloweenC
 		value.eligible !== (value.reason === null) || !nonNegativeInteger(value.bagsDisappearedNet) ||
 		value.minimumBags !== HALLOWEEN_COMPARISON_MINIMUM_BAGS || !Array.isArray(value.outcomes) || value.outcomes.length !== 18 ||
 		typeof value.globalPearsonMilli !== 'string' || !/^\d+$/u.test(value.globalPearsonMilli)) return false;
-	const model = halloweenTrickOrTreatBagModel();
 	let globalPearsonMilli = 0n;
 	for (const [index, outcome] of value.outcomes.entries()) {
 		const expectedOutcome = model.outcomes[index];
@@ -159,6 +185,12 @@ export function isHalloweenComparisonRecord(value: unknown): value is HalloweenC
 		if (expectedNumerator > 0n) globalPearsonMilli += difference * difference * 1_000n / (denominator * expectedNumerator);
 	}
 	return value.globalPearsonMilli === globalPearsonMilli.toString();
+}
+
+function comparisonModel(value: Record<string, unknown>, legacy: boolean): ContainerModelV1 | null {
+	if (legacy) return halloweenTrickOrTreatBagModelAt(HALLOWEEN_TRICK_OR_TREAT_MODEL_ID, 1);
+	if (typeof value.modelId !== 'string' || !positiveInteger(value.modelVersion)) return null;
+	return halloweenTrickOrTreatBagModelAt(value.modelId, value.modelVersion);
 }
 
 function ineligibleReason(

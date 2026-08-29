@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTranslator, type TranslationKey } from '../core/i18n';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
-import type { HalloweenComparisonRecordV1 } from '../halloween/halloween-loot-comparison';
+import type { HalloweenComparisonRecordV2 } from '../halloween/halloween-loot-comparison';
 import type { HalloweenPriceNoticeV1 } from '../halloween/halloween-price-alert';
 import { renderHalloweenAlertPanel } from './halloween-alert-panel';
 
@@ -58,8 +58,9 @@ describe('Halloween alert panel DOM', () => {
 
 	it('renders all 18 comparison rows and a quantity-free price notice with accessible table semantics', () => {
 		const mount = new FakeElement('div');
-		const comparison: HalloweenComparisonRecordV1 = {
-			version: 1, vaultId: 'vault', accountRef: 'account', episodeId: 'episode',
+		const comparison: HalloweenComparisonRecordV2 = {
+			version: 2, modelId: 'halloween-trick-or-treat-bag-conservative', modelVersion: 1,
+			vaultId: 'vault', accountRef: 'account', episodeId: 'episode',
 			observedAt: '2026-08-31T12:00:00.000Z', eligible: true, reason: null,
 			bagsDisappearedNet: 1_100, minimumBags: 1_100, globalPearsonMilli: '0',
 			outcomes: Array.from({ length: 18 }, (_, index) => ({

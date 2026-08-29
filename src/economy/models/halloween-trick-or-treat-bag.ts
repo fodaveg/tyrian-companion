@@ -7,6 +7,7 @@ import {
 
 const CONTAINERS_OPENED = 106_264;
 const OBSERVED_UNITS = 892_130;
+export const HALLOWEEN_TRICK_OR_TREAT_MODEL_ID = 'halloween-trick-or-treat-bag-conservative';
 
 interface SourceOutcome {
 	id: number;
@@ -40,7 +41,7 @@ const SOURCE_OUTCOMES: SourceOutcome[] = [
 
 const candidate: ContainerModelV1 = {
 	schemaVersion: 1,
-	modelId: 'halloween-trick-or-treat-bag-conservative',
+	modelId: HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
 	modelVersion: 1,
 	containerItemId: 36_038,
 	title: 'Trick-or-Treat Bag — conservative community model',
@@ -83,8 +84,22 @@ const candidate: ContainerModelV1 = {
 const validated = createContainerModel(candidate);
 if (validated.status !== 'ok') throw new Error('Invalid built-in Trick-or-Treat Bag model.');
 
-const BUILT_IN_MODEL = validated.model;
+const HISTORICAL_MODEL_V1 = validated.model;
+const HISTORICAL_MODELS = new Map<string, ContainerModelV1>([
+	[modelKey(HISTORICAL_MODEL_V1.modelId, HISTORICAL_MODEL_V1.modelVersion), HISTORICAL_MODEL_V1],
+]);
+const LATEST_MODEL_VERSION = 1;
 
 export function halloweenTrickOrTreatBagModel(): ContainerModelV1 {
-	return structuredClone(BUILT_IN_MODEL);
+	const model = halloweenTrickOrTreatBagModelAt(HALLOWEEN_TRICK_OR_TREAT_MODEL_ID, LATEST_MODEL_VERSION);
+	if (model === null) throw new Error('Missing latest Trick-or-Treat Bag model.');
+	return model;
 }
+
+/** Resolves an immutable historical snapshot instead of interpreting old evidence with the latest model. */
+export function halloweenTrickOrTreatBagModelAt(modelId: string, modelVersion: number): ContainerModelV1 | null {
+	const model = HISTORICAL_MODELS.get(modelKey(modelId, modelVersion));
+	return model === undefined ? null : structuredClone(model);
+}
+
+function modelKey(modelId: string, modelVersion: number): string { return `${modelId}\u0000${String(modelVersion)}`; }

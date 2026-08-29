@@ -14,13 +14,13 @@ export interface HalloweenPriceAlertSettings {
 }
 
 export interface HalloweenPriceValidProjection {
-		status: 'below' | 'high';
-		dayUtc: string;
-		bidCopper: number;
-		p90Copper: number;
-		capturedAtMs: number;
-		referenceDays: typeof HALLOWEEN_PRICE_REFERENCE_DAYS;
-		minimumAboveP90Bps: number;
+	status: 'below' | 'high';
+	dayUtc: string;
+	bidCopper: number;
+	p90Copper: number;
+	capturedAtMs: number;
+	referenceDays: typeof HALLOWEEN_PRICE_REFERENCE_DAYS;
+	minimumAboveP90Bps: number;
 }
 
 export type HalloweenPriceProjection =
@@ -51,14 +51,15 @@ export function evaluateHalloweenPrice(
 	nowMs: number,
 	minimumAboveP90Bps: number,
 ): HalloweenPriceProjection {
-	if (!Number.isSafeInteger(nowMs) || nowMs < 0 || !validMinimum(minimumAboveP90Bps)) {
+	if (!Number.isSafeInteger(nowMs) || nowMs < 0 || isoFromTimestamp(nowMs) === null || !validMinimum(minimumAboveP90Bps)) {
 		return { status: 'insufficient_history', capturedAtMs: null, missingDayUtc: null };
 	}
 	const today = priceHistoryDayUtc(nowMs);
 	const byDay = new Map(daily.filter(({ itemId }) => itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)
 		.map((entry) => [entry.dayUtc, entry]));
 	const current = byDay.get(today)?.bid;
-	if (current === null || current === undefined || priceHistoryDayUtc(current.closeCapturedAtMs) !== today) {
+	if (current === null || current === undefined || current.closeCapturedAtMs > nowMs ||
+		priceHistoryDayUtc(current.closeCapturedAtMs) !== today) {
 		return { status: 'insufficient_history', capturedAtMs: null, missingDayUtc: today };
 	}
 	const closes: number[] = [];
@@ -74,8 +75,7 @@ export function evaluateHalloweenPrice(
 	}
 	closes.sort((left, right) => left - right);
 	const p90Copper = closes[26]!;
-	const above = current.closeCopper > p90Copper &&
-		BigInt(current.closeCopper - p90Copper) * 10_000n >= BigInt(p90Copper) * BigInt(minimumAboveP90Bps);
+	const above = bidMeetsThreshold(current.closeCopper, p90Copper, minimumAboveP90Bps);
 	return {
 		status: above ? 'high' : 'below', dayUtc: today, bidCopper: current.closeCopper, p90Copper,
 		capturedAtMs: current.closeCapturedAtMs, referenceDays: 30, minimumAboveP90Bps,
@@ -106,23 +106,41 @@ export function createHalloweenPriceNotice(
 }
 
 export function isHalloweenPriceNotice(value: unknown): value is HalloweenPriceNoticeV1 {
-	return record(value) && exactKeys(value, ['version', 'vaultId', 'accountRef', 'noticeId', 'itemId', 'observedAt', 'dayUtc',
+	if (!record(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'noticeId', 'itemId', 'observedAt', 'dayUtc',
 		'wording', 'bidCopper', 'p90Copper', 'referenceDays', 'capturedAtMs', 'minimumAboveP90Bps', 'cooldownHours',
-		'acknowledgedAt']) && value.version === 1 && text(value.vaultId) && text(value.accountRef) && text(value.noticeId) &&
-		value.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID && iso(value.observedAt) && utcDay(value.dayUtc) &&
-		value.dayUtc === value.observedAt.slice(0, 10) &&
-		value.wording === 'bid_above_local_p90' && nonNegative(value.bidCopper) && nonNegative(value.p90Copper) &&
-		value.referenceDays === 30 && nonNegative(value.capturedAtMs) && validMinimum(value.minimumAboveP90Bps) &&
-		[6, 12, 24, 48].includes(value.cooldownHours as number) &&
-		(value.acknowledgedAt === null || iso(value.acknowledgedAt));
+		'acknowledgedAt']) || value.version !== 1 || !text(value.vaultId) || !text(value.accountRef) || !text(value.noticeId) ||
+		value.itemId !== HALLOWEEN_PRICE_ALERT_ITEM_ID || !iso(value.observedAt) || !utcDay(value.dayUtc) ||
+		value.wording !== 'bid_above_local_p90' || !nonNegative(value.bidCopper) || !nonNegative(value.p90Copper) ||
+		value.referenceDays !== 30 || !nonNegative(value.capturedAtMs) || !validMinimum(value.minimumAboveP90Bps) ||
+		![6, 12, 24, 48].includes(value.cooldownHours as number) ||
+		(value.acknowledgedAt !== null && !iso(value.acknowledgedAt))) return false;
+	const capturedIso = isoFromTimestamp(value.capturedAtMs);
+	return capturedIso !== null && value.observedAt === capturedIso && value.dayUtc === capturedIso.slice(0, 10) &&
+		value.noticeId === `price:${String(HALLOWEEN_PRICE_ALERT_ITEM_ID)}:${String(value.capturedAtMs)}` &&
+		bidMeetsThreshold(value.bidCopper, value.p90Copper, value.minimumAboveP90Bps);
 }
 
 export function isHalloweenPriceValidProjection(value: unknown): value is HalloweenPriceValidProjection {
-	return record(value) && exactKeys(value, ['status', 'dayUtc', 'bidCopper', 'p90Copper', 'capturedAtMs', 'referenceDays',
-		'minimumAboveP90Bps']) && (value.status === 'below' || value.status === 'high') && utcDay(value.dayUtc) &&
-		nonNegative(value.bidCopper) && nonNegative(value.p90Copper) && nonNegative(value.capturedAtMs) &&
-		value.dayUtc === new Date(value.capturedAtMs).toISOString().slice(0, 10) && value.referenceDays === 30 &&
-		validMinimum(value.minimumAboveP90Bps);
+	if (!record(value) || !exactKeys(value, ['status', 'dayUtc', 'bidCopper', 'p90Copper', 'capturedAtMs', 'referenceDays',
+		'minimumAboveP90Bps']) || (value.status !== 'below' && value.status !== 'high') || !utcDay(value.dayUtc) ||
+		!nonNegative(value.bidCopper) || !nonNegative(value.p90Copper) || !nonNegative(value.capturedAtMs) ||
+		value.referenceDays !== 30 || !validMinimum(value.minimumAboveP90Bps)) return false;
+	const capturedIso = isoFromTimestamp(value.capturedAtMs);
+	if (capturedIso === null || value.dayUtc !== capturedIso.slice(0, 10)) return false;
+	return (value.status === 'high') === bidMeetsThreshold(value.bidCopper, value.p90Copper, value.minimumAboveP90Bps);
+}
+
+function bidMeetsThreshold(bidCopper: number, p90Copper: number, minimumAboveP90Bps: number): boolean {
+	return bidCopper > p90Copper &&
+		BigInt(bidCopper - p90Copper) * 10_000n >= BigInt(p90Copper) * BigInt(minimumAboveP90Bps);
+}
+
+function isoFromTimestamp(value: unknown): string | null {
+	if (!nonNegative(value)) return null;
+	try {
+		const isoValue = new Date(value).toISOString();
+		return Number.isFinite(Date.parse(isoValue)) ? isoValue : null;
+	} catch { return null; }
 }
 
 function validMinimum(value: unknown): value is number { return nonNegative(value) && value <= 100_000; }

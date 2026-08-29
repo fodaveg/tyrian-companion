@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { isContainerModel } from '../container-model';
-import { halloweenTrickOrTreatBagModel } from './halloween-trick-or-treat-bag';
+import {
+	HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
+	halloweenTrickOrTreatBagModel,
+	halloweenTrickOrTreatBagModelAt,
+} from './halloween-trick-or-treat-bag';
 
 describe('Halloween Trick-or-Treat Bag model', () => {
 	it('is a valid, pinned and reviewable container model', () => {
@@ -52,5 +56,13 @@ describe('Halloween Trick-or-Treat Bag model', () => {
 		first.excluded[0]!.sampleUnits = 1;
 		expect(second.outcomes[0]!.sampleUnits).toBe(6_090);
 		expect(second.excluded[0]!.sampleUnits).toBe(1_121);
+	});
+
+	it('resolves historical versions independently and fails closed for an unknown future version', () => {
+		const historical = halloweenTrickOrTreatBagModelAt(HALLOWEEN_TRICK_OR_TREAT_MODEL_ID, 1);
+		expect(historical).toEqual(halloweenTrickOrTreatBagModel());
+		historical!.outcomes[0]!.sampleUnits = 0;
+		expect(halloweenTrickOrTreatBagModelAt(HALLOWEEN_TRICK_OR_TREAT_MODEL_ID, 1)?.outcomes[0]?.sampleUnits).toBe(6_090);
+		expect(halloweenTrickOrTreatBagModelAt(HALLOWEEN_TRICK_OR_TREAT_MODEL_ID, 2)).toBeNull();
 	});
 });

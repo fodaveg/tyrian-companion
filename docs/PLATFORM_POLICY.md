@@ -66,15 +66,20 @@ un reconocimiento vuelve a unread y solo entonces puede emitir uno nuevo.
 
 La comparación H11.3 es igual en Linux, macOS y Windows: usa exclusivamente el delta API final y la
 revisión humana finalizada. «Bolsas desaparecidas netas» no significa aperturas demostradas. El store
-local conserva 18 resultados ordenados, incluidos ceros, y la criba exacta BigInt del modelo fijado;
-no lee ni reconstruye comparaciones desde notas del Vault.
+local conserva 18 resultados ordenados, incluidos ceros, y la criba exacta BigInt del modelo fijado.
+Cada record nuevo guarda id/versión del modelo y se valida contra un registry histórico inmutable; el
+legacy original conserva su interpretación y una versión desconocida falla cerrada. No lee ni
+reconstruye comparaciones desde notas del Vault.
 
 El aviso H11.5 depende del histórico H9.1 ya activado. No inicia red, polling, timers ni catch-up. Usa
-el cierre bid provisional de hoy y 30 días UTC completos anteriores; cualquier hueco queda
-`insufficient_history`. El estado crossing/cooldown y sus notices son IndexedDB locales por
-vault/cuenta, no se sincronizan por Obsidian Sync y no guardan cantidad. La UI cubre 320/480/760 px,
-tabla con overflow, captions/headers, `aria-live`, foco tras ack y targets de 44 px. Usa tokens del
-tema; el contraste real claro/oscuro sigue siendo QA manual y no se afirma desde tests.
+el cierre bid provisional de hoy y 30 días UTC completos anteriores; cualquier hueco o captura futura
+queda `insufficient_history`. El estado crossing/cooldown y sus notices son IndexedDB locales por
+vault/cuenta, no se sincronizan por Obsidian Sync y no guardan cantidad. La captura durable más nueva
+manda entre ventanas; una respuesta antigua no rearma ni vuelve visible la cuenta anterior. La UI usa
+container queries a 320/480/760 px para responder también dentro de sidebars estrechos, sin alterar las
+reglas del Inventory Advisor, y conserva tabla con overflow, captions/headers, `aria-live`, foco tras
+ack y targets de 44 px. Usa tokens del tema; el contraste real claro/oscuro sigue siendo QA manual y
+no se afirma desde tests.
 
 ## Mumble Link en v2
 

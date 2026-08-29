@@ -1106,17 +1106,18 @@
 	background: var(--background-modifier-error);
 }
 
-@media (max-width: 480px) {
+@container (max-width: 480px) {
 	.tyrian-companion-halloween__notice { padding: var(--size-4-2); }
 	.tyrian-companion-halloween__notice button { inline-size: 100%; }
 }
 
-@media (max-width: 320px) {
-	.tyrian-companion-halloween { gap: var(--size-4-2); }
+@container (max-width: 320px) {
+	.tyrian-companion-halloween__comparison,
+	.tyrian-companion-halloween__price { gap: var(--size-4-2); }
 	.tyrian-companion-halloween__table-scroll { margin-inline: calc(var(--size-4-2) * -1); }
 }
 
-@container (max-width: 759px) {
+@container (max-width: 760px) {
 	.tyrian-companion-halloween__notice > ul { padding-inline-start: var(--size-4-4); }
 }
 

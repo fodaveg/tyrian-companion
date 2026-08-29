@@ -13,7 +13,7 @@ import { HalloweenBackfillError } from './halloween-note-backfill';
 import { HalloweenStoreError, IndexedDbHalloweenStore, type HalloweenStoreFailure } from './halloween-store';
 import {
 	buildHalloweenLootComparison,
-	type HalloweenComparisonRecordV1,
+	type HalloweenComparisonRecord,
 } from './halloween-loot-comparison';
 
 export type HalloweenRuntimeStatus =
@@ -25,7 +25,7 @@ export interface HalloweenRuntimeState {
 	notices: HalloweenNoticeV1[];
 	unreadCount: number;
 	lastObservedAt: string | null;
-	comparison: HalloweenComparisonRecordV1 | null;
+	comparison: HalloweenComparisonRecord | null;
 }
 
 export interface HalloweenRuntimeOptions {
