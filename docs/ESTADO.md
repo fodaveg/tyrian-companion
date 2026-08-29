@@ -2,11 +2,26 @@
 
 ## Vertical activa
 
-**H10, pulido del Asesor de inventario: candidato apto en `1103807`, todavía sin integrar ni
-publicar.** El flujo automático distingue los fallos de captura de los de escritura, rechaza planes
-concurrentes distintos y revalida el estado antes de escribir o persistir. La vista añade **Analizar
-sin escribir**, extrae el panel de sincronización, comparte un único formateador de dinero y reduce
-la tabla a la información útil para jugar, con el detalle técnico reservado al modo avanzado.
+**H9.1, histórico local de precios: candidato técnico apto en `982d5f7`, pendiente de integrar y
+publicar.** El plugin muestrea la API oficial pública `/v2/commerce/prices`, sin clave ni
+GW2Efficiency, y conserva en una IndexedDB dedicada snapshots compactos y agregados diarios UTC.
+Compacta antes de podar, aplica retenciones raw y diarias configurables mediante trabajo incremental
+acotado y calcula percentiles reproducibles sobre cierres observados, sin rellenar días ausentes.
+
+La captura es opt-in y parte desactivada. Construir el runtime o abrir el panel no toca IndexedDB ni
+red; la UI permite cargar la serie local, elegir lado y ventana, y distingue recopilación insuficiente,
+datos parciales y almacenamiento no disponible. La revisión independiente dejó el candidato listo
+para integrar y `npm run check` quedó verde con 130 ficheros y 1.804 tests, además de las suites de
+seguridad, paquete, contratos y build. Este repo no dispone de harness Playwright/e2e. Quedan como QA
+manual el contraste en temas reales de Obsidian y la coordinación multiwindow sobre IndexedDB real;
+no se afirman como verificadas ni bloquean la integración técnica.
+
+**H10, pulido del Asesor de inventario: integrado en `main` y `origin/main` mediante `21285d1`, sin
+afirmar publicación ni instalación.** El flujo automático distingue los fallos de captura de los de
+escritura, rechaza planes concurrentes distintos y revalida el estado antes de escribir o persistir.
+La vista añade **Analizar sin escribir**, extrae el panel de sincronización, comparte un único
+formateador de dinero y reduce la tabla a la información útil para jugar, con el detalle técnico
+reservado al modo avanzado.
 
 La revisión independiente no encontró bloqueos y el gate base del repo quedó verde con 124 suites y
 1.742 tests. Este repo no dispone de harness Playwright/e2e. La semántica, el foco, los objetivos de

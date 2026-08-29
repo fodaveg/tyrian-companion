@@ -1,5 +1,23 @@
 # Changelog
 
+## H9.1 - Histórico local de precios
+
+- Añadido muestreo opt-in de la API oficial pública `/v2/commerce/prices`, sin clave ni dependencia
+  de GW2Efficiency. Las peticiones se agrupan de forma secuencial en lotes de hasta 200 ids y
+  comparten el enfriamiento global ante `429`.
+- Una IndexedDB dedicada conserva snapshots compactos por slot y agregados diarios UTC por objeto.
+  La compactación ocurre antes de la poda, es idempotente y limita el trabajo incremental; las
+  retenciones raw y diarias son configurables y ampliar una retención no reconstruye datos podados.
+- Los percentiles se calculan de forma reproducible sobre cierres UTC observados, sin inventar días
+  ausentes. Antes de 42 días la serie informa historial insuficiente.
+- El panel del Asesor de inventario permite cargar la serie local, seleccionar compra o venta y elegir
+  una ventana de 42, 90 o 180 días. La construcción del runtime y el render desactivado no abren
+  IndexedDB ni consultan la red.
+- Candidato `982d5f7` listo para integrar tras revisión independiente y `npm run check` verde con 130
+  ficheros y 1.804 tests, incluidas las suites de seguridad, paquete y contratos, además del build. El
+  repo no tiene harness Playwright/e2e; quedan pendientes de QA manual el contraste en temas reales
+  de Obsidian y la coordinación multiwindow sobre IndexedDB real.
+
 ## H10 - Asesor de inventario más claro y seguro
 
 - **Analizar sin escribir** vuelve a estar disponible junto a la acción principal: actualiza las
@@ -12,9 +30,10 @@
   modo avanzado.
 - El panel de sincronización vive en su propio módulo y toda la vista usa el mismo formateador de
   dinero.
-- Candidato `1103807` apto tras revisión independiente y gate base verde con 124 suites y 1.742 tests,
-  todavía sin integrar ni publicar. El repo no tiene harness Playwright/e2e; la QA manual de H10.4 y
-  H10.7 y la medición de contraste AA en temas reales siguen pendientes.
+- Integrado en `main` y `origin/main` mediante `21285d1`, sin afirmar publicación ni instalación. La
+  revisión independiente y el gate base quedaron verdes con 124 suites y 1.742 tests. El repo no tiene
+  harness Playwright/e2e; la QA manual de H10.4 y H10.7 y la medición de contraste AA en temas reales
+  siguen pendientes.
 
 ## Bundle gestionado v5
 
