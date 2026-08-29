@@ -49,6 +49,7 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/catalog/public-catalog-client.ts',
 	'src/catalog/public-catalog-service.ts',
 	'src/core/obsidian-http.ts',
+	'src/economy/commerce-listings.ts',
 	'src/economy/price-history-capture.ts',
 	'src/halloween/halloween-evidence-service.ts',
 	'src/halloween/halloween-unlocks.ts',
