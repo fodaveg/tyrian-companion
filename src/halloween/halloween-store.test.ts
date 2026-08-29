@@ -60,11 +60,11 @@ describe('IndexedDbHalloweenStore', () => {
 		await store.enqueueNotice(notice('poll-1', [1, 2]));
 		const final = { ...notice('final', [2]), source: 'session_final' as const,
 			items: [{ itemId: 2, quantity: 9, name: null, reasons: [{ code: 'first_seen' as const }] }] };
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toMatchObject({
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [2]), final)).resolves.toMatchObject({
 			notice: { items: [{ itemId: 2, quantity: 9 }] }, changed: true, shouldNotify: false,
 		});
 		expect(await store.readNotices('vault', 'account')).toEqual([final]);
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual({
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [2]), final)).resolves.toEqual({
 			notice: null, changed: false, shouldNotify: false,
 		});
 		expect(await store.readNotices('vault', 'account')).toHaveLength(1);
@@ -88,20 +88,39 @@ describe('IndexedDbHalloweenStore', () => {
 		await store.enqueueNotice(notice('poll-notice', [1]));
 		await store.acknowledge('vault', 'account', 'poll-notice', '2026-08-29T12:02:00.000Z');
 		const final = { ...notice('final-notice', [1]), source: 'session_final' as const };
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toMatchObject({
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [1]), final)).resolves.toMatchObject({
 			notice: { acknowledgedAt: '2026-08-29T12:02:00.000Z' }, shouldNotify: false, changed: true,
 		});
 		await expect(store.recordObservation({ ...observation('late', [2]), source: 'assisted_poll' }))
 			.resolves.toEqual({ status: 'terminal', firstSeenItemIds: [] });
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual({
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [1]), final)).resolves.toEqual({
 			notice: null, changed: false, shouldNotify: false,
 		});
 
 		const finalOnly = { ...notice('other-final', [9]), episodeId: 'other', source: 'session_final' as const };
 		await store.recordObservation({ ...observation('other-observation', [9]), episodeId: 'other', source: 'session_final' });
-		await expect(store.replaceEpisodeNotice('vault', 'account', 'other', finalOnly)).resolves.toMatchObject({
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'other', finalObservation('other', [9]), finalOnly)).resolves.toMatchObject({
 			notice: { noticeId: 'other-final' }, shouldNotify: true, changed: true,
 		});
+		store.close();
+	});
+
+	it('marks final content unread and requests one foreground notice when it adds a new reason', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('ack-novel-reason'));
+		await store.recordObservation(observation('poll-reason', [1]));
+		await store.enqueueNotice(notice('poll-reason-notice', [1]));
+		await store.acknowledge('vault', 'account', 'poll-reason-notice', '2026-08-29T12:02:00.000Z');
+		const final = { ...notice('final-reason', [1]), source: 'session_final' as const,
+			items: [{ itemId: 1, quantity: 2, name: null, reasons: [
+				{ code: 'first_seen' as const }, { code: 'rare_unpriced_or_bound' as const, rarity: 'Rare' },
+			] }] };
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [1]), final))
+			.resolves.toMatchObject({ notice: { acknowledgedAt: null }, changed: true, shouldNotify: true });
+		expect((await store.readNotices('vault', 'account'))[0]?.acknowledgedAt).toBeNull();
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [1]), {
+			...final, items: [{ ...final.items[0]!, reasons: [{ code: 'valuable', netUnitCopper: 10_000,
+				thresholdCopper: 10_000 }] }],
+		})).resolves.toEqual({ notice: null, changed: false, shouldNotify: false });
 		store.close();
 	});
 
@@ -119,6 +138,19 @@ describe('IndexedDbHalloweenStore', () => {
 		const reopened = await IndexedDbHalloweenStore.open(factory, name);
 		expect(await reopened.readLearningCoverage('vault', 'account')).toBe('complete');
 		reopened.close();
+	});
+
+	it('keeps lastObservedAt monotonic when an older historical backfill arrives later', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('seen-monotonic'));
+		await store.recordObservation({ ...observation('recent-one', [1]), episodeId: 'recent-one',
+			observedAt: '2026-08-29T13:00:00.000Z' });
+		await store.recordObservation({ ...observation('recent-two', [2]), episodeId: 'recent-two',
+			observedAt: '2026-08-29T12:00:00.000Z' });
+		await store.applyBackfill('vault', 'account', [{ observationId: 'historical-one', episodeId: 'historical-one',
+			observedAt: '2026-08-29T10:00:00.000Z', coverage: 'complete', gains: [{ itemId: 1, quantity: 1 }] }],
+		'2026-08-29T13:01:00.000Z');
+		expect(await store.readRecentItemIds('vault', 'account')).toEqual([1, 2]);
+		store.close();
 	});
 
 	it('fails closed for a future database, corruption and a closed/versionchanged adapter', async () => {
@@ -198,6 +230,9 @@ function observation(id: string, ids: number[]): HalloweenObservationV1 {
 	return { version: 1, vaultId: 'vault', accountRef: 'account', observationId: id, episodeId: 'episode',
 		observedAt: '2026-08-29T12:00:00.000Z', source: 'assisted_poll', coverage: 'complete',
 		gains: ids.map((itemId) => ({ itemId, quantity: 1 })) };
+}
+function finalObservation(episodeId: string, ids: number[]): HalloweenObservationV1 {
+	return { ...observation(`final:${episodeId}`, ids), episodeId, source: 'session_final' };
 }
 function notice(noticeId: string, ids: number[]): HalloweenNoticeV1 {
 	return { version: 1, vaultId: 'vault', accountRef: 'account', noticeId, episodeId: 'episode',

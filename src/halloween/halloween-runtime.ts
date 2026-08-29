@@ -139,28 +139,44 @@ export class HalloweenRuntime {
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
 	}, generation: number, queuedAccountRef: string | null): Promise<HalloweenNoticeV1 | null> {
+		if (this.activation !== null) await this.activation;
+		if (!this.current(generation)) return null;
+		while (this.backfillFlight !== null) {
+			const backfill = this.backfillFlight;
+			await backfill;
+			if (!this.current(generation)) return null;
+		}
 		const store = this.store;
 		const accountRef = this.options.accountRef();
 		if (!this.enabled || generation !== this.generation || store === null || accountRef === null || accountRef !== queuedAccountRef ||
 			!this.online || input.delta.status === 'invalid') return null;
 		const gains = positiveObservedGains(input.delta.itemChanges);
-		if (gains.length === 0) { this.setState({ status: this.backfillPartial ? 'partial' : 'empty' }); return null; }
+		if (gains.length === 0 && input.source !== 'session_final') {
+			this.setState({ status: this.backfillPartial ? 'partial' : 'empty' });
+			return null;
+		}
 		const observedAt = input.delta.window?.to ?? new Date(this.now()).toISOString();
 		const observationId = `${input.source}:${input.delta.beforeSnapshotId ?? 'unknown'}:${input.delta.afterSnapshotId ?? 'unknown'}`;
+		const observation = {
+			version: 1 as const, vaultId: this.options.vaultId, accountRef, observationId,
+			episodeId: input.episodeId, observedAt, source: input.source,
+			coverage: input.delta.status === 'comparable' ? 'complete' as const : 'partial' as const, gains,
+		};
 		this.setState({ status: 'pending' });
 		try {
-			const receipt = await store.recordObservation({
-				version: 1, vaultId: this.options.vaultId, accountRef, observationId,
-				episodeId: input.episodeId, observedAt, source: input.source,
-				coverage: input.delta.status === 'comparable' ? 'complete' : 'partial', gains,
-			});
+			const receipt = await store.recordObservation(observation);
 			if (!this.owns(generation, store)) return null;
-			if (receipt.status === 'terminal') return null;
-			if (this.options.priceHistory?.active()) {
+			if (receipt.status === 'terminal') {
+				const notices = await store.readNotices(this.options.vaultId, accountRef);
+				if (this.owns(generation, store)) this.projectNotices(notices,
+					input.source === 'session_final' ? observedAt : this.state.lastObservedAt);
+				return null;
+			}
+			if (gains.length > 0 && this.options.priceHistory?.active()) {
 				await this.options.priceHistory.observeItemIds(gains.map(({ itemId }) => itemId));
 				if (!this.owns(generation, store)) return null;
 			}
-			const evidence = await this.options.resolveEvidence({
+			const evidence = gains.length === 0 ? [] : await this.options.resolveEvidence({
 				gains, firstSeenItemIds: receipt.firstSeenItemIds, learning: this.learning,
 			});
 			if (!this.owns(generation, store)) return null;
@@ -171,10 +187,9 @@ export class HalloweenRuntime {
 				? 'backoff' : evidence.some(({ unlocks, priceStatus, catalogStatus }) =>
 					unlocks.skinsStatus !== 'complete' || unlocks.minisStatus !== 'complete' ||
 					priceStatus === 'unavailable' || priceStatus === 'invalid' || catalogStatus !== 'complete') ? 'partial' : null;
-			this.learning = false;
 			if (items.length === 0) {
 				if (input.source === 'session_final') {
-					await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, null);
+					await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, null);
 					if (!this.owns(generation, store)) return null;
 					const notices = await store.readNotices(this.options.vaultId, accountRef);
 					if (!this.owns(generation, store)) return null;
@@ -190,7 +205,7 @@ export class HalloweenRuntime {
 				items, acknowledgedAt: null,
 			};
 			const replacement = input.source === 'session_final'
-				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, notice)
+				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, notice)
 				: null;
 			const committed = replacement?.notice ?? (input.source === 'session_final' ? null : await store.enqueueNotice(notice));
 			if (!this.owns(generation, store)) return null;
@@ -267,7 +282,7 @@ export class HalloweenRuntime {
 			if (!this.owns(generation, store)) return;
 			const learningCoverage = await store.readLearningCoverage(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store)) return;
-			this.learning = false;
+			this.learning = learningCoverage !== 'complete';
 			this.backfillPartial = learningCoverage === 'partial';
 			if (this.options.priceHistory?.active()) {
 				const recent = await store.readRecentItemIds(this.options.vaultId, accountRef, 400);
@@ -287,7 +302,7 @@ export class HalloweenRuntime {
 	): void {
 		const unreadCount = notices.filter(({ acknowledgedAt }) => acknowledgedAt === null).length;
 		this.setState({ notices, unreadCount, lastObservedAt,
-			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.learning ? 'learning' : this.backfillPartial ? 'partial' :
+			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.learning ? 'learning' :
 				notices.length > 0 ? 'ready' : 'empty') });
 	}
 

@@ -384,16 +384,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 				'notices.halloweenObserved', { count: notice.items.length })),
 			onStateChange: () => this.renderViews(),
 		});
-		const refreshHalloweenBackfill = (file: unknown): void => {
+		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
-			if (this.settings.halloweenEnabled && file instanceof TFile && file.extension === 'md' &&
-				file.path.startsWith(sessionRoot)) {
+			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
+			const renamedSessionNote = typeof oldPath === 'string' && oldPath.endsWith('.md') && oldPath.startsWith(sessionRoot);
+			if (this.settings.halloweenEnabled && (currentSessionNote || renamedSessionNote)) {
 				void this.halloween?.refreshBackfill();
 			}
 		};
 		this.registerEvent(this.app.vault.on('create', refreshHalloweenBackfill));
 		this.registerEvent(this.app.vault.on('modify', refreshHalloweenBackfill));
 		this.registerEvent(this.app.vault.on('delete', refreshHalloweenBackfill));
+		this.registerEvent(this.app.vault.on('rename', refreshHalloweenBackfill));
 		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
 		const inventorySnapshots = new RateLimitedStorageSnapshotService(
 			new StorageSnapshotService(inventoryClient),

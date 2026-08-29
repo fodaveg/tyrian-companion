@@ -7,7 +7,7 @@ import {
 } from './halloween-model';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-export const HALLOWEEN_DB_VERSION = 3;
+export const HALLOWEEN_DB_VERSION = 4;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
@@ -125,7 +125,7 @@ export class IndexedDbHalloweenStore {
 	}
 
 	recordObservation(observation: HalloweenObservationV1): Promise<HalloweenObservationReceipt> {
-		if (!isHalloweenObservation(observation)) return Promise.reject(new HalloweenStoreError('corrupt'));
+		if (!strictObservation(observation)) return Promise.reject(new HalloweenStoreError('corrupt'));
 		return this.run([
 			HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE,
 		], 'readwrite', (tx, resolve, reject) => {
@@ -167,7 +167,9 @@ export class IndexedDbHalloweenStore {
 					seenRequest.onsuccess = () => {
 						try {
 							const globallyFirst = seenRequest.result === undefined;
-							if (!globallyFirst) parseSeen(seenRequest.result, observation.vaultId, observation.accountRef, gain.itemId);
+							const priorSeen = globallyFirst ? null : parseSeen(
+								seenRequest.result, observation.vaultId, observation.accountRef, gain.itemId,
+							);
 							const episodeRequest = episodes.get([
 								observation.vaultId, observation.accountRef, observation.episodeId, gain.itemId,
 							]);
@@ -180,7 +182,8 @@ export class IndexedDbHalloweenStore {
 									const firstSeen = prior?.firstSeen ?? globallyFirst;
 									if (firstSeen) firstSeenItemIds.push(gain.itemId);
 									seen.put({ version: 1, vaultId: observation.vaultId, accountRef: observation.accountRef,
-										itemId: gain.itemId, lastObservedAt: observation.observedAt });
+										itemId: gain.itemId, lastObservedAt: priorSeen === null || priorSeen.lastObservedAt < observation.observedAt
+											? observation.observedAt : priorSeen.lastObservedAt });
 									episodes.put({ version: 2, vaultId: observation.vaultId, accountRef: observation.accountRef,
 										episodeId: observation.episodeId, itemId: gain.itemId,
 										noticeId: prior?.noticeId ?? null, firstSeen });
@@ -246,15 +249,19 @@ export class IndexedDbHalloweenStore {
 		});
 	}
 
-	/** Replaces every provisional notice for one accepted session without emitting a new foreground event. */
+	/** Seals one final delta and atomically reconciles its provisional durable notice content. */
 	replaceEpisodeNotice(
 		vaultId: string,
 		accountRef: string,
 		episodeId: string,
+		finalObservation: HalloweenObservationV1,
 		notice: HalloweenNoticeV1 | null,
 	): Promise<HalloweenEpisodeReplacement> {
-		if (notice !== null && (!validNotice(notice) || notice.vaultId !== vaultId || notice.accountRef !== accountRef ||
-			notice.episodeId !== episodeId || notice.source !== 'session_final')) {
+		if (!strictObservation(finalObservation) || finalObservation.vaultId !== vaultId ||
+			finalObservation.accountRef !== accountRef || finalObservation.episodeId !== episodeId ||
+			finalObservation.source !== 'session_final' ||
+			(notice !== null && (!validNotice(notice) || notice.vaultId !== vaultId || notice.accountRef !== accountRef ||
+			notice.episodeId !== episodeId || notice.source !== 'session_final'))) {
 			return Promise.reject(new HalloweenStoreError('corrupt'));
 		}
 		return this.run([
@@ -263,14 +270,12 @@ export class IndexedDbHalloweenStore {
 			const notices = tx.objectStore(HALLOWEEN_NOTICE_STORE);
 			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
 			const meta = tx.objectStore(HALLOWEEN_EPISODE_META_STORE);
-			const fingerprint = canonicalFinalNotice(notice);
 			const terminal = meta.get([vaultId, accountRef, episodeId]);
 			terminal.onerror = () => reject(storeError(terminal.error));
 			terminal.onsuccess = () => {
 				try {
 					if (terminal.result !== undefined) {
-						const priorMeta = parseEpisodeMeta(terminal.result, vaultId, accountRef, episodeId);
-						if (priorMeta.finalFingerprint !== fingerprint) throw new HalloweenStoreError('corrupt');
+						parseEpisodeMeta(terminal.result, vaultId, accountRef, episodeId);
 						tx.oncomplete = () => resolve({ notice: null, changed: false, shouldNotify: false });
 						return;
 					}
@@ -288,8 +293,10 @@ export class IndexedDbHalloweenStore {
 					const readNotice = (index: number): void => {
 						const noticeId = noticeIds[index];
 						if (noticeId === undefined) {
-							const acknowledged = priorNotices.length > 0 && priorNotices.every(({ acknowledgedAt }) => acknowledgedAt !== null)
-								? priorNotices.map(({ acknowledgedAt }) => acknowledgedAt!).sort().at(-1)! : null;
+							const acknowledgedNotices = priorNotices.filter((candidate) => candidate.acknowledgedAt !== null);
+							const contentRecognized = notice !== null && alertContentSubsetOf(notice, acknowledgedNotices);
+							const acknowledged = contentRecognized
+								? acknowledgedNotices.map(({ acknowledgedAt }) => acknowledgedAt!).sort().at(-1)! : null;
 							const finalized = notice === null ? null : { ...structuredClone(notice), acknowledgedAt: acknowledged };
 							for (const id of noticeIds) notices.delete([vaultId, accountRef, id]);
 							for (const record of prior) episodes.put({
@@ -304,11 +311,13 @@ export class IndexedDbHalloweenStore {
 										noticeId: finalized.noticeId, firstSeen: membership?.firstSeen ?? false });
 								}
 							}
-							meta.put({ version: 1, vaultId, accountRef, episodeId, finalFingerprint: fingerprint });
+							meta.put({ version: 2, vaultId, accountRef, episodeId,
+								finalObservation: structuredClone(finalObservation) });
 							tx.oncomplete = () => resolve({
 								notice: finalized,
 								changed: true,
-								shouldNotify: finalized !== null && noticeIds.length === 0,
+								shouldNotify: finalized !== null && (noticeIds.length === 0 ||
+									(priorNotices.every(({ acknowledgedAt }) => acknowledgedAt !== null) && !contentRecognized)),
 							});
 							return;
 						}
@@ -400,7 +409,10 @@ export class IndexedDbHalloweenStore {
 }
 
 function parseStoredObservation(value: unknown): StoredObservationV1 {
-	if (!isHalloweenObservation(value) || !isRecord(value) || !Array.isArray(value.firstSeenItemIds) ||
+	if (!isHalloweenObservation(value) || !isRecord(value) || !exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'observationId', 'episodeId', 'observedAt', 'source', 'coverage', 'gains',
+		'firstSeenItemIds',
+	]) || !Array.isArray(value.firstSeenItemIds) ||
 		!strictIds(value.firstSeenItemIds) || value.firstSeenItemIds.some((id) =>
 			!value.gains.some((gain) => gain.itemId === id))) throw new HalloweenStoreError('corrupt');
 	return structuredClone(value) as unknown as StoredObservationV1;
@@ -467,27 +479,16 @@ function parseEpisode(
 
 function parseEpisodeMeta(
 	value: unknown, vaultId: string, accountRef: string, episodeId: string,
-): { finalFingerprint: string } {
+): { finalObservation: HalloweenObservationV1 } {
 	if (!isRecord(value) || !exactKeys(value, [
-		'version', 'vaultId', 'accountRef', 'episodeId', 'finalFingerprint',
-	]) || value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
-		typeof value.finalFingerprint !== 'string' || !validFinalFingerprint(value.finalFingerprint, vaultId, accountRef, episodeId)) {
+		'version', 'vaultId', 'accountRef', 'episodeId', 'finalObservation',
+	]) || value.version !== 2 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
+		!strictObservation(value.finalObservation) || value.finalObservation.vaultId !== vaultId ||
+		value.finalObservation.accountRef !== accountRef || value.finalObservation.episodeId !== episodeId ||
+		value.finalObservation.source !== 'session_final') {
 		throw new HalloweenStoreError('corrupt');
 	}
-	return { finalFingerprint: value.finalFingerprint };
-}
-
-function validFinalFingerprint(value: string, vaultId: string, accountRef: string, episodeId: string): boolean {
-	if (value === 'none') return true;
-	try {
-		const parsed: unknown = JSON.parse(value);
-		if (!isRecord(parsed) || !exactKeys(parsed, [
-			'version', 'vaultId', 'accountRef', 'noticeId', 'episodeId', 'observedAt', 'source', 'wording', 'coverage', 'items',
-		])) return false;
-		const notice = { ...parsed, acknowledgedAt: null };
-		return validNotice(notice) && notice.vaultId === vaultId && notice.accountRef === accountRef &&
-			notice.episodeId === episodeId && notice.source === 'session_final' && canonicalFinalNotice(notice) === value;
-	} catch { return false; }
+	return { finalObservation: structuredClone(value.finalObservation) };
 }
 
 function parseMeta(value: unknown, vaultId: string, accountRef: string): 'complete' | 'partial' {
@@ -504,10 +505,25 @@ function canonicalObservation(value: HalloweenObservationV1): string {
 	return JSON.stringify({ version, vaultId, accountRef, observationId, episodeId, observedAt, source, coverage, gains });
 }
 
-function canonicalFinalNotice(value: HalloweenNoticeV1 | null): string {
-	if (value === null) return 'none';
-	const { version, vaultId, accountRef, noticeId, episodeId, observedAt, source, wording, coverage, items } = value;
-	return JSON.stringify({ version, vaultId, accountRef, noticeId, episodeId, observedAt, source, wording, coverage, items });
+function strictObservation(value: unknown): value is HalloweenObservationV1 {
+	return isRecord(value) && exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'observationId', 'episodeId', 'observedAt', 'source', 'coverage', 'gains',
+	]) && isHalloweenObservation(value);
+}
+
+function alertContentSubsetOf(finalNotice: HalloweenNoticeV1, acknowledged: readonly HalloweenNoticeV1[]): boolean {
+	const recognized = new Map<number, Set<string>>();
+	for (const notice of acknowledged) {
+		for (const item of notice.items) {
+			const reasons = recognized.get(item.itemId) ?? new Set<string>();
+			for (const reason of item.reasons) reasons.add(JSON.stringify(reason));
+			recognized.set(item.itemId, reasons);
+		}
+	}
+	return finalNotice.items.every((item) => {
+		const reasons = recognized.get(item.itemId);
+		return reasons !== undefined && item.reasons.every((reason) => reasons.has(JSON.stringify(reason)));
+	});
 }
 
 function storeError(error: DOMException | null): HalloweenStoreError {

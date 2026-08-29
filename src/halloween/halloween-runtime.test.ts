@@ -48,6 +48,22 @@ describe('HalloweenRuntime', () => {
 		runtime.dispose();
 	});
 
+	it('seals an empty session final, removes provisional unread evidence and rejects late assisted work', async () => {
+		const onNotice = vi.fn();
+		const runtime = new HalloweenRuntime(options({ onNotice }));
+		await runtime.activate();
+		await runtime.observeDelta({ delta: delta('empty-a', 'empty-poll', [1]), source: 'assisted_poll', episodeId: 'session:empty' });
+		expect(runtime.getState().unreadCount).toBe(1);
+		const emptyFinal = delta('empty-a', 'empty-final', []);
+		await expect(runtime.observeDelta({ delta: emptyFinal, source: 'session_final', episodeId: 'session:empty' })).resolves.toBeNull();
+		expect(runtime.getState()).toMatchObject({ status: 'empty', notices: [], unreadCount: 0 });
+		expect(await runtime.observeDelta({ delta: delta('empty-final', 'empty-late', [2]), source: 'assisted_poll',
+			episodeId: 'session:empty' })).toBeNull();
+		expect(runtime.getState().notices).toEqual([]);
+		expect(onNotice).toHaveBeenCalledTimes(1);
+		runtime.dispose();
+	});
+
 	it('keeps a first-seen-only alert causal when final corrects the assisted quantity', async () => {
 		const runtime = new HalloweenRuntime(options({ resolveEvidence: async ({ gains, firstSeenItemIds, learning }) =>
 			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
@@ -90,6 +106,25 @@ describe('HalloweenRuntime', () => {
 		runtime.dispose();
 	});
 
+	it('makes acknowledged provisional content unread once when final adds a new alertable item', async () => {
+		const onNotice = vi.fn();
+		const runtime = new HalloweenRuntime(options({ onNotice }));
+		await runtime.activate();
+		const provisional = await runtime.observeDelta({
+			delta: delta('novel-a', 'novel-poll', [1]), source: 'assisted_poll', episodeId: 'session:novel',
+		});
+		await runtime.acknowledge(provisional!.noticeId);
+		expect(runtime.getState().unreadCount).toBe(0);
+		const finalDelta = delta('novel-a', 'novel-final', [1, 2]);
+		const final = await runtime.observeDelta({ delta: finalDelta, source: 'session_final', episodeId: 'session:novel' });
+		expect(final?.acknowledgedAt).toBeNull();
+		expect(runtime.getState().unreadCount).toBe(1);
+		expect(onNotice).toHaveBeenCalledTimes(2);
+		await runtime.observeDelta({ delta: finalDelta, source: 'session_final', episodeId: 'session:novel' });
+		expect(onNotice).toHaveBeenCalledTimes(2);
+		runtime.dispose();
+	});
+
 	it('serializes each episode so a slow assisted poll cannot survive or enqueue after final', async () => {
 		let release!: (value: HalloweenItemEvidence[]) => void;
 		let calls = 0;
@@ -114,6 +149,39 @@ describe('HalloweenRuntime', () => {
 			episodeId: 'session:slow' })).toBeNull();
 		expect(runtime.getState().notices[0]?.items).toMatchObject([{ itemId: 2 }]);
 		runtime.dispose();
+	});
+
+	it('lets the first multiwindow final seal win for one stable delta despite different remote evidence', async () => {
+		const factory = new IDBFactory();
+		let arrivals = 0;
+		let release!: () => void;
+		const bothReady = new Promise<void>((resolve) => { release = resolve; });
+		const resolver = (rarity: 'Basic' | 'Rare') => async ({ gains }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) => {
+			arrivals += 1;
+			if (arrivals === 2) release();
+			await bothReady;
+			return gains.map(({ itemId, quantity }) => ({
+				...evidence(itemId, quantity, false, false),
+				catalog: { kind: 'item' as const, id: itemId, name: `${rarity} result`, type: 'Consumable', rarity,
+					level: 0, vendorValue: 0, flags: rarity === 'Rare' ? ['AccountBound'] : [], gameTypes: [], restrictions: [] },
+				catalogStatus: 'complete' as const,
+			}));
+		};
+		const firstNotice = vi.fn(); const secondNotice = vi.fn();
+		const first = new HalloweenRuntime(options({ factory, resolveEvidence: resolver('Basic'), onNotice: firstNotice }));
+		const second = new HalloweenRuntime(options({ factory, resolveEvidence: resolver('Rare'), onNotice: secondNotice }));
+		await Promise.all([first.activate(), second.activate()]);
+		const finalDelta = delta('window-a', 'window-final', [1]);
+		await Promise.all([
+			first.observeDelta({ delta: finalDelta, source: 'session_final', episodeId: 'session:windows' }),
+			second.observeDelta({ delta: finalDelta, source: 'session_final', episodeId: 'session:windows' }),
+		]);
+		expect(first.getState().status).not.toBe('store_corrupt');
+		expect(second.getState().status).not.toBe('store_corrupt');
+		expect(first.getState().notices).toHaveLength(1);
+		expect(second.getState().notices).toHaveLength(1);
+		expect(firstNotice.mock.calls.length + secondNotice.mock.calls.length).toBe(1);
+		first.dispose(); second.dispose();
 	});
 
 	it('does not open or feed H9.1 when disabled, and replays recent ids only when H9.1 is active', async () => {
@@ -195,6 +263,23 @@ describe('HalloweenRuntime', () => {
 		expect(loadBackfill).toHaveBeenCalledTimes(2); second.dispose();
 	});
 
+	it('keeps first-seen disabled while v2 backfill coverage remains partial', async () => {
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning),
+				netUnitCopper: null })));
+		const runtime = new HalloweenRuntime(options({
+			loadBackfill: async () => [{ observationId: 'note:v2', episodeId: 'note:v2',
+				observedAt: '2026-08-29T10:00:00.000Z', coverage: 'partial', gains: [] }],
+			resolveEvidence,
+		}));
+		await runtime.activate();
+		expect(await runtime.observeDelta({ delta: delta('partial-a', 'partial-b', [99]), source: 'assisted_poll',
+			episodeId: 'session:partial' })).toBeNull();
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [99], learning: true }));
+		expect(runtime.getState().status).toBe('partial');
+		runtime.dispose();
+	});
+
 	it('rescans idempotently while active and promotes a newly synced canonical note into seen/H9 evidence', async () => {
 		let candidates: { observationId: string; episodeId: string; observedAt: string; coverage: 'complete'; gains: { itemId: number; quantity: number }[] }[] = [];
 		const loadBackfill = vi.fn(async () => candidates);
@@ -208,6 +293,34 @@ describe('HalloweenRuntime', () => {
 		await runtime.refreshBackfill();
 		expect(history.observeItemIds).toHaveBeenLastCalledWith([42]);
 		await runtime.observeDelta({ delta: delta('sync-a', 'sync-b', [42]), source: 'assisted_poll', episodeId: 'session:after-sync' });
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [], learning: false }));
+		runtime.dispose();
+	});
+
+	it('waits for an active backfill before evaluating live first-seen evidence', async () => {
+		let release!: (value: readonly { observationId: string; episodeId: string; observedAt: string;
+			coverage: 'complete'; gains: { itemId: number; quantity: number }[] }[]) => void;
+		let calls = 0;
+		const loadBackfill = vi.fn(async () => {
+			calls += 1;
+			if (calls === 1) return [];
+			return await new Promise<readonly { observationId: string; episodeId: string; observedAt: string;
+				coverage: 'complete'; gains: { itemId: number; quantity: number }[] }[]>((resolve) => { release = resolve; });
+		});
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }: Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning)));
+		const runtime = new HalloweenRuntime(options({ loadBackfill, resolveEvidence }));
+		await runtime.activate();
+		const refreshing = runtime.refreshBackfill();
+		await vi.waitFor(() => expect(loadBackfill).toHaveBeenCalledTimes(2));
+		const live = runtime.observeDelta({ delta: delta('interleave-a', 'interleave-b', [42]), source: 'assisted_poll',
+			episodeId: 'session:interleave' });
+		await Promise.resolve();
+		expect(resolveEvidence).not.toHaveBeenCalled();
+		release([{ observationId: 'note:interleave', episodeId: 'note:interleave', observedAt: '2026-08-29T11:00:00.000Z',
+			coverage: 'complete', gains: [{ itemId: 42, quantity: 1 }] }]);
+		await refreshing;
+		await live;
 		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [], learning: false }));
 		runtime.dispose();
 	});

@@ -53,11 +53,14 @@ no recupera intervalos. El store y los ids observados son locales al dispositivo
 sincroniza la bandeja. La UI contempla 320/480/760 px, controles de 44 px y variables semánticas del
 tema; el contraste real queda para QA en temas de Obsidian y no se afirma desde tests de fuente.
 Tras el opt-in, cada activación lee automáticamente las notas de sesión canónicas explícitamente
-marcadas Halloween para reconstruir seen antes del vivo; cambios Markdown posteriores bajo la
-carpeta de sesiones vigente disparan un refresh coalescido, sin timers ni tormentas. No pide confirmación porque solo lee Vault y escribe
-IndexedDB local. Una nota v3 corrupta falla cerrada. El polling solo ingresa después de aceptar la
-sesión Halloween y el cierre serializado sella y reemplaza el episodio provisional sin duplicar el
-aviso foreground; un cierre sin provisional sí emite exactamente uno.
+marcadas Halloween para reconstruir seen antes del vivo; v2 mantiene aprendizaje parcial y no
+habilita `first_seen`. Cambios create/modify/delete/rename bajo la carpeta de sesiones vigente
+disparan un refresh coalescido, y el vivo espera ese backfill, sin timers ni tormentas. No pide
+confirmación porque solo lee Vault y escribe IndexedDB local. Una nota v3 corrupta falla cerrada. El
+polling solo ingresa después de aceptar la sesión Halloween y el cierre serializado sella y reemplaza
+el episodio provisional incluso con cero ganancias. El sello usa el delta final estable y el primer
+writer multiwindow gana. Un final sin provisional emite exactamente un aviso; contenido nuevo tras
+un reconocimiento vuelve a unread y solo entonces puede emitir uno nuevo.
 
 ## Mumble Link en v2
 
