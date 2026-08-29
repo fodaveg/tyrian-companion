@@ -2,6 +2,31 @@
 
 ## Vertical activa
 
+**H9.2, profundidad real del bazar: integrada en `main` mediante `8569139`, `2234d5f`,
+`8c280bb`, `e743405` y `f28e063`.** Cada Refresh explícito del Asesor consulta el endpoint público
+oficial `/v2/commerce/listings`, sin clave, con ids deduplicados y ordenados, lotes secuenciales de
+hasta 200 y el coordinador compartido de rate limit. El parser conserva cobertura por objeto y
+rechaza niveles duplicados, desordenados o corruptos.
+
+La venta instantánea consume las pujas reales de mayor a menor y valora únicamente la cantidad
+cubierta. Publicar usa el mejor precio vendedor observado para la pila completa: la cantidad ya
+publicada a ese precio no se presenta como capacidad de compra ni como garantía de ejecución futura.
+La profundidad se consume una sola vez por objeto agregado, aunque aparezca en varias posiciones.
+La UI ES/EN distingue profundidad completa, parcial, sin mercado y error, y muestra cantidad cubierta,
+cantidad sin cubrir y neto demostrado.
+
+Si la profundidad falta o queda incompleta, el Asesor conserva el comportamiento anterior basado en
+`/v2/commerce/prices`, pero el resultado público queda `limited`; una respuesta parcial nunca se
+disfraza de profundidad completa. El guard compartido de fronteras usa ahora el AST de TypeScript y
+cubre imports y exports estáticos, imports laterales, `import = require`, tipos `import()`, `import()`
+dinámico y `require()` cuando el specifier es literal. Su límite explícito son los specifiers
+computados u ofuscados.
+
+La revisión final de `f28e063` no encontró hallazgos. El gate completo quedó verde con 151 ficheros
+y 2.015 tests, además de seguridad, contratos, build y paquete. El lote todavía no forma parte de la
+release `0.1.13` ni acredita llamadas reales a `/v2/commerce/listings`, QA visual o ejecución dentro
+de Obsidian.
+
 **H9.17/H9.18, capacidad y depósito manual de materiales: integradas en `main` mediante `d86c526`,
 `88d2322` y `eb54e02`.** Settings v9 añade una capacidad global opcional por material entre 250 y
 3.000, en pasos de 250, con migración cerrada. El valor `null` no inventa una ampliación: aplica el

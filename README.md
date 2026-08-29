@@ -562,8 +562,10 @@ explanation references. Sell decisions require `instant_sell|vendor`, holds requ
 envelope. No public executor exists. A mechanical Vitest guard scans every production
 `*recommendation*.ts` module for forbidden clients, transports, stores, secrets, Obsidian imports,
 operation inputs and execution/order calls, including side-effect imports plus literal dynamic
-`import()` and `require()`. It does not cover computed specifiers, obfuscated property access or
-modules outside the named recommendation boundary.
+`import()` and `require()`. The shared helper uses the TypeScript AST and also covers static imports
+and exports, `import = require` and `import()` type nodes when their specifier is literal. It does not
+cover computed or obfuscated specifiers, obfuscated property access or modules outside the named
+recommendation boundary.
 
 H4.13 defines the next Inventory Advisor boundary without claiming complete account coverage.
 `supported_storage_v1` is limited to the holdings already observed by `StorageSnapshot`: character
@@ -584,7 +586,12 @@ operation verifies account identity and reads permitted unlock/progression signa
 URL restriction, malformed data and transient failure remain coverage, never empty unlock arrays.
 Its wrapper carries snapshot/catalog/price/signal TTLs, canonical completion timestamps and an
 array-order-preserving SHA-256 fingerprint; it composes into H4.13 only after freshness and identity
-validation. H4.15 now performs the next pure step: it consumes that evidence plus a dated, hashed
+validation. The same explicit Refresh also requests public `/v2/commerce/listings` depth without an
+API key, in sequential batches of at most 200 IDs. Instant sell consumes real buy levels from best to
+worst and values only covered quantity; a manual listing uses the current best ask for the whole stack
+without treating existing sell-listing quantity as buyer capacity or a fill guarantee. Missing or
+partial depth preserves the previous `/v2/commerce/prices` fallback while marking the public result
+as limited. H4.15 now performs the next pure step: it consumes that evidence plus a dated, hashed
 knowledge pack whose per-capability assertions are positive or explicitly `not_applicable`. It
 partitions every owned physical position after reservations and keep exceptions, routes non-loose or
 unknown/contradictory evidence to review, caps instant sales to demonstrated top-bid depth and never

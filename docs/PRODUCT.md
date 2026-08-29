@@ -155,6 +155,11 @@ La versión `0.1.0` valida la base técnica:
 - H9.14 agrega órdenes actuales por lado y objeto, sin IDs de transacción, y suprime únicamente la
   acción económica coincidente cuando ese lado tiene cobertura completa. Cobertura ausente o parcial
   permanece neutral.
+- H9.2 consulta la profundidad pública real de `/v2/commerce/listings` durante Refresh. La venta
+  instantánea consume las pujas de mejor a peor y muestra cuánto de la pila queda cubierto; publicar
+  usa el mejor precio vendedor como referencia para la pila completa, sin confundir anuncios con
+  compradores ni prometer ejecución. Una captura parcial conserva el cálculo anterior de precios,
+  pero marca el resultado como limitado.
 - H9.17 permite declarar una capacidad global por material entre 250 y 3.000, en pasos de 250. Sin
   valor configurado aplica únicamente el mínimo garantizado de 250 y muestra esa procedencia.
 - H9.18 recomienda depositar manualmente solo material suelto de personaje o compartido, después de

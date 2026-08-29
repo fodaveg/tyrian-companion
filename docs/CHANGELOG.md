@@ -1,5 +1,27 @@
 # Changelog
 
+## H9.2 - Profundidad real del bazar en el Asesor
+
+- Cada Refresh explícito consulta la API oficial pública `/v2/commerce/listings`, sin clave, para los
+  ids positivos ya incluidos en la valoración. Deduplica y ordena ids, usa lotes secuenciales de hasta
+  200 y comparte el enfriamiento global ante `429`.
+- El contrato conserva cobertura por objeto y falla cerrado ante niveles duplicados, desordenados o
+  corruptos. La venta instantánea recorre las pujas reales de mejor a peor y solo valora la cantidad
+  cubierta; la profundidad disponible se consume una única vez por objeto agregado.
+- Publicar valora la pila completa al mejor precio vendedor observado. La cantidad de anuncios en ese
+  nivel no se interpreta como demanda, capacidad de ejecución ni promesa de venta futura.
+- La presentación ES/EN distingue profundidad completa, parcial, sin mercado y error, con cantidad
+  cubierta, cantidad sin cubrir y neto demostrado. Si la captura falta o es incompleta, conserva el
+  fallback anterior de `/v2/commerce/prices`, pero fuerza el resultado público a `limited`.
+- El helper común de fronteras sustituye el parser por regex por el AST de TypeScript. Cubre imports y
+  exports estáticos, imports laterales, `import = require`, tipos `import()`, `import()` dinámico y
+  `require()` literales; no pretende resolver specifiers computados u ofuscados. La regresión se
+  verificó con sabotaje rojo y restauración verde.
+- Integrado en `main` mediante `8569139`, `2234d5f`, `8c280bb`, `e743405` y `f28e063`. La revisión
+  final no encontró hallazgos y el gate completo quedó verde con 151 ficheros y 2.015 tests, además
+  de seguridad, contratos, build y paquete. No forma parte de `0.1.13` ni acredita llamadas live, QA
+  visual o ejecución en Obsidian.
+
 ## H9.17/H9.18 - Capacidad y depósito manual de materiales
 
 - H9.17 sube los ajustes a schema v9 y añade una capacidad global opcional por material entre 250 y
