@@ -27,9 +27,12 @@ import type {
 } from './session';
 import {
 	createSessionContaminationReview,
+	proposeTradingPostContamination,
 	type SessionContaminationAnswers,
 	type SessionContaminationReview,
+	type SessionTradingPostContaminationProposal,
 } from './session-contamination-review';
+import type { TradingPostHistoryEvidenceV1 } from '../account/trading-post-evidence';
 import {
 	createSessionRuntimeRecord,
 	recoverableState,
@@ -126,6 +129,9 @@ export interface ManualSessionStartServiceOptions {
 	onStateChange?: () => void;
 	runtimeStore: SessionRuntimeStore;
 	priceCapture?: SessionPriceCapture;
+	tradingPostHistoryCapture?: {
+		capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1>;
+	};
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -157,6 +163,7 @@ export class ManualSessionStartService {
 	private readonly onStateChange: () => void;
 	private readonly runtimeStore: SessionRuntimeStore;
 	private readonly priceCapture: SessionPriceCapture | null;
+	private readonly tradingPostHistoryCapture: ManualSessionStartServiceOptions['tradingPostHistoryCapture'];
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -170,6 +177,7 @@ export class ManualSessionStartService {
 		this.onStateChange = options.onStateChange ?? (() => undefined);
 		this.runtimeStore = options.runtimeStore;
 		this.priceCapture = options.priceCapture ?? null;
+		this.tradingPostHistoryCapture = options.tradingPostHistoryCapture;
 	}
 
 	getState(): SessionState {
@@ -194,6 +202,29 @@ export class ManualSessionStartService {
 
 	getPriceSnapshot(): SessionPriceSnapshot | null {
 		return this.priceSnapshot === null ? null : structuredClone(this.priceSnapshot);
+	}
+
+	/** Explicit, read-only helper for the review modal. It never changes review answers or runtime state. */
+	async proposeTradingPostContamination(): Promise<SessionTradingPostContaminationProposal> {
+		if (this.state.status !== 'provisional' || this.baselineSnapshot === null || this.finalSnapshot === null) {
+			return { status: 'unavailable', reason: 'no_provisional_session', requiresHumanReview: true,
+				suggestedActivities: [] };
+		}
+		if (this.tradingPostHistoryCapture === undefined) {
+			return { status: 'unavailable', reason: 'capture_unavailable', requiresHumanReview: true,
+				suggestedActivities: [] };
+		}
+		const window = {
+			from: this.baselineSnapshot.completedAt,
+			to: this.finalSnapshot.startedAt,
+		};
+		try {
+			const evidence = await this.tradingPostHistoryCapture.capture(this.baselineSnapshot.accountId, window);
+			return proposeTradingPostContamination(evidence, this.baselineSnapshot.accountId, window);
+		} catch {
+			return { status: 'unavailable', reason: 'capture_unavailable', requiresHumanReview: true,
+				suggestedActivities: [] };
+		}
 	}
 
 	async getCompletedRuntimeRecord(): Promise<SessionRuntimeRecord | null> {

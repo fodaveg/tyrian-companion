@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { compareStorageSnapshots } from '../account/storage-delta';
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
@@ -256,6 +256,33 @@ describe('session contamination review', () => {
 		expect(proposeTradingPostContamination(historyEvidence('complete'), 'other-account', partial.window))
 			.toMatchObject({ status: 'unavailable', reason: 'identity_mismatch', suggestedActivities: [] });
 	});
+
+	it('calls history from the real provisional-session service without changing review state', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const capture = vi.fn(async (accountId: string, window: { from: string; to: string }) => {
+			const evidence = historyEvidence('complete');
+			return { ...evidence, accountId, window, events: evidence.events.map((event) => ({
+				...event, occurredAt: window.to,
+			})) };
+		});
+		const service = workflowService(runtimeStore, true, { capture });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.stop();
+
+		const beforeState = service.getState();
+		const proposal = await service.proposeTradingPostContamination();
+
+		expect(capture).toHaveBeenCalledWith(workflowCapture.snapshot.accountId, {
+			from: workflowCapture.snapshot.completedAt,
+			to: afterSnapshot().startedAt,
+		});
+		expect(proposal).toMatchObject({ status: 'ready', suggestedActivities: ['tpBuy', 'tpSell'] });
+		expect(service.getState()).toEqual(beforeState);
+		expect(service.getContaminationReview()).toBeNull();
+		await expect(service.reviewContamination(answers())).resolves.toMatchObject({
+			status: 'finalized', review: { classification: { status: 'exact' } },
+		});
+	});
 });
 
 function answers(certainty: SessionContaminationAnswers['certainty'] = 'confirmed'): SessionContaminationAnswers {
@@ -336,7 +363,11 @@ const workflowCapture: SessionStartCaptureResult = {
 	},
 };
 
-function workflowService(runtimeStore: SessionRuntimeStore, canCapture = true): ManualSessionStartService {
+function workflowService(
+	runtimeStore: SessionRuntimeStore,
+	canCapture = true,
+	tradingPostHistoryCapture?: { capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1> },
+): ManualSessionStartService {
 	return new ManualSessionStartService(
 		workflowCoordinator(),
 		{
@@ -352,6 +383,7 @@ function workflowService(runtimeStore: SessionRuntimeStore, canCapture = true): 
 			sessionId: () => workflowHandle.sessionId,
 			setInterval: () => 1,
 			clearInterval: () => undefined,
+			tradingPostHistoryCapture,
 		},
 	);
 }

@@ -17,6 +17,7 @@ import {
 	type SessionActivityKey,
 	type SessionContaminationAnswers,
 	type SessionContaminationReview,
+	type SessionTradingPostContaminationProposal,
 } from '../sessions/session-contamination-review';
 import {
 	DETECTION_CORRECTION_CAUSES,
@@ -888,9 +889,12 @@ class DetectionCorrectionModal extends Modal {
 }
 
 export class SessionContaminationReviewModal extends Modal {
+	private visible = false;
+
 	constructor(
 		app: App,
 		private readonly current: SessionContaminationAnswers | null,
+		private readonly loadTradingPostProposal: () => Promise<SessionTradingPostContaminationProposal>,
 		private readonly onSubmit: (answers: SessionContaminationAnswers) => Promise<string | null>,
 		private readonly onClosed: () => void = () => undefined,
 		private readonly getLocale: () => Locale = () => 'es',
@@ -899,10 +903,12 @@ export class SessionContaminationReviewModal extends Modal {
 	}
 
 	onClose(): void {
+		this.visible = false;
 		this.onClosed();
 	}
 
 	onOpen(): void {
+		this.visible = true;
 		this.setTitle(runtimeText(this.getLocale(), 'modal.reviewTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.reviewDetail'),
@@ -918,6 +924,7 @@ export class SessionContaminationReviewModal extends Modal {
 			label.appendText(activityLabel(key, this.getLocale()));
 			activityInputs.set(key, input);
 		}
+		this.renderTradingPostProposal(form, activityInputs);
 
 		const certaintyFieldset = form.createEl('fieldset');
 		certaintyFieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.noneSelected') });
@@ -968,6 +975,64 @@ export class SessionContaminationReviewModal extends Modal {
 			});
 		});
 		confirmed.focus();
+	}
+
+	private renderTradingPostProposal(
+		form: HTMLFormElement,
+		activityInputs: ReadonlyMap<SessionActivityKey, HTMLInputElement>,
+	): void {
+		const section = form.createEl('section', { cls: 'tyrian-companion-review__tp-evidence' });
+		section.setAttr('aria-labelledby', 'tyrian-companion-tp-evidence-heading');
+		const heading = section.createEl('h3', {
+			text: runtimeText(this.getLocale(), 'modal.tpEvidenceHeading'),
+		});
+		heading.id = 'tyrian-companion-tp-evidence-heading';
+		const status = section.createEl('p', { text: runtimeText(this.getLocale(), 'modal.tpEvidenceLoading') });
+		status.setAttr('role', 'status');
+		status.setAttr('aria-live', 'polite');
+		void this.loadTradingPostProposal().then((proposal) => {
+			if (!this.visible) return;
+			if (proposal.status === 'unavailable') {
+				status.setText(runtimeText(this.getLocale(), proposal.reason === 'coverage_incomplete'
+					? 'modal.tpEvidencePartial' : 'modal.tpEvidenceError'));
+				return;
+			}
+			if (proposal.suggestedActivities.length === 0) {
+				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceEmpty'));
+				return;
+			}
+			status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceProposal'));
+			const list = section.createEl('ul');
+			if (proposal.suggestedActivities.includes('tpBuy')) list.createEl('li', {
+				text: runtimeText(this.getLocale(), 'modal.tpEvidenceBuy', { count: proposal.eventCounts.buys }),
+			});
+			if (proposal.suggestedActivities.includes('tpSell')) list.createEl('li', {
+				text: runtimeText(this.getLocale(), 'modal.tpEvidenceSell', { count: proposal.eventCounts.sells }),
+			});
+			const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const apply = actions.createEl('button', {
+				text: runtimeText(this.getLocale(), 'modal.tpEvidenceApply'), type: 'button', cls: 'mod-cta',
+			});
+			const dismiss = actions.createEl('button', {
+				text: runtimeText(this.getLocale(), 'modal.tpEvidenceDismiss'), type: 'button',
+			});
+			apply.addEventListener('click', () => {
+				for (const activity of proposal.suggestedActivities) {
+					const input = activityInputs.get(activity);
+					if (input) input.checked = true;
+				}
+				apply.disabled = true;
+				dismiss.disabled = true;
+				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceAccepted'));
+			});
+			dismiss.addEventListener('click', () => {
+				apply.disabled = true;
+				dismiss.disabled = true;
+				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceDismissed'));
+			});
+		}).catch(() => {
+			if (this.visible) status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceError'));
+		});
 	}
 }
 

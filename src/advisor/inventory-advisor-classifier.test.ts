@@ -258,21 +258,23 @@ describe('H4.15 inventory advisor classifier', () => {
 			.toMatchObject({ action: 'review' });
 	});
 
-	it('treats truncated active orders as unknown coverage, never as a confirmed matching order', () => {
+	it.each([
+		['missing_scope', 'missing_scope'],
+		['url_restricted', 'url_restricted'],
+		['unavailable', 'request_failed'],
+		['partial', 'page_limit'],
+	] as const)('keeps prior recommendations unchanged when active-order coverage is %s', (status, reason) => {
 		const value = fixture();
-		value.activeOrders = activeOrders([{ side: 'buy', itemId: 10, quantity: 2 }]);
+		value.activeOrders = activeOrders(status === 'partial'
+			? [{ side: 'buy', itemId: 10, quantity: 2 }]
+			: []);
 		value.activeOrders.status = 'partial';
-		value.activeOrders.endpointCoverage.buy = {
-			status: 'partial', capturedAt: null, reason: 'page_limit',
-		};
+		value.activeOrders.endpointCoverage.buy = { status, capturedAt: null, reason };
 
 		const result = classifyInventoryAdvisor(value);
 
-		expect(result).toMatchObject({ status: 'limited' });
-		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
-		expect(result.report?.lines[0]?.reasons).toContainEqual({
-			code: 'price_partial', itemId: 10, goalId: null, ruleId: null,
-		});
+		expect(result).toMatchObject({ status: 'ready' });
+		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'sell' });
 	});
 
 	it('requires an approved applicable V1 assertion for use and treats revoked or conflicting claims as review', () => {

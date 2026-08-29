@@ -4,6 +4,7 @@ import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import { GuildWars2Client } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
+import { TradingPostHistoryEvidenceService } from './account/trading-post-evidence';
 import { RateLimitedStorageSnapshotService } from './account/rate-limited-storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import { PublicCatalogService } from './catalog/public-catalog-service';
@@ -525,6 +526,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
 				priceCapture: new SessionPriceSnapshotService(publicClient),
+				tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(client),
 			},
 		);
 		await this.sessions.initialize();
@@ -1729,11 +1731,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private prepareReviewIntent(): Promise<PreparedSessionCommand | null> {
 		if (this.reviewModal) return Promise.resolve(null);
+		const tradingPostProposal = this.sessions.proposeTradingPostContamination();
 		return new Promise((resolve) => {
 			let submitted = false;
 			this.reviewModal = new SessionContaminationReviewModal(
 				this.app,
 				this.sessions.getContaminationReview()?.answers ?? null,
+				() => tradingPostProposal,
 				(answers) => {
 					submitted = true;
 					resolve(async () => {

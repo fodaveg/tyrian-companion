@@ -8,6 +8,7 @@ export const TRADING_POST_EVIDENCE_VERSION = 1 as const;
 
 const PAGE_SIZE = 200;
 const MAX_PAGES = 10;
+const HISTORY_HORIZON_MS = 90 * 86_400_000;
 const CURRENT_ENDPOINTS = {
 	buy: 'commerce/transactions/current/buys',
 	sell: 'commerce/transactions/current/sells',
@@ -92,6 +93,7 @@ export function isTradingPostHistoryEvidence(value: unknown): value is TradingPo
 		|| !endpointCoverage(value.endpointCoverage) || !Array.isArray(value.events)
 		|| !value.events.every(historyEvent)) return false;
 	const typed = value as unknown as TradingPostHistoryEvidenceV1;
+	if (!recoverableWindow(typed.window, typed.capturedAt)) return false;
 	if (typed.status !== 'invalid'
 		&& typed.status !== aggregateStatus(typed.endpointCoverage.buy, typed.endpointCoverage.sell)) return false;
 	return sorted(typed.events, (left, right) => left.occurredAt.localeCompare(right.occurredAt)
@@ -137,7 +139,7 @@ export class TradingPostHistoryEvidenceService {
 		window: { from: string; to: string },
 	): Promise<TradingPostHistoryEvidenceV1> {
 		const capturedAt = new Date(this.now()).toISOString();
-		if (!text(expectedAccountId) || !validWindow(window)) {
+		if (!text(expectedAccountId) || !recoverableWindow(window, capturedAt)) {
 			return historyFailure(expectedAccountId, window, capturedAt, 'invalid');
 		}
 		let operation: GuildWars2Operation;
@@ -353,6 +355,13 @@ function positiveHeader(headers: Readonly<Record<string, string>>, name: string)
 
 function validWindow(value: { from: string; to: string }): boolean {
 	return strictIso(value.from) && strictIso(value.to) && Date.parse(value.from) <= Date.parse(value.to);
+}
+function recoverableWindow(value: { from: string; to: string }, capturedAt: string): boolean {
+	if (!validWindow(value) || !strictIso(capturedAt)) return false;
+	const from = Date.parse(value.from);
+	const to = Date.parse(value.to);
+	const captured = Date.parse(capturedAt);
+	return to <= captured && to - from <= HISTORY_HORIZON_MS && from >= captured - HISTORY_HORIZON_MS;
 }
 function endpointCoverage(value: unknown): value is Record<TradingPostEvidenceSide, TradingPostEndpointCoverageV1> {
 	return record(value) && exactKeys(value, ['buy', 'sell'])

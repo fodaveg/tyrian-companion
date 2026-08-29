@@ -9,7 +9,7 @@ import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
-import { COMPANION_VIEW_TYPE } from './ui/companion-view';
+import { COMPANION_VIEW_TYPE, SessionContaminationReviewModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
@@ -35,6 +35,20 @@ interface InventoryVaultIntentHarness {
 	};
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
+}
+
+interface ReviewIntentHarness {
+	app: unknown;
+	settings: { language: 'en' };
+	reviewModal: SessionContaminationReviewModal | null;
+	sessions: {
+		getContaminationReview(): null;
+		proposeTradingPostContamination(): Promise<{
+			status: 'ready'; requiresHumanReview: true; suggestedActivities: ['tpBuy'];
+			eventCounts: { buys: number; sells: number };
+		}>;
+	};
+	reviewSessionContamination(answers: unknown): Promise<string | null>;
 }
 
 describe('atomic settings persistence', () => {
@@ -165,6 +179,37 @@ describe('manual session start command', () => {
 		expect(startManualSession).not.toHaveBeenCalled();
 		expect(runtime.mutations).toBe(0);
 		expect(notify).not.toHaveBeenCalled();
+	});
+});
+
+describe('session review Trading Post evidence', () => {
+	it('starts the real history proposal caller when opening review without accepting any activity', async () => {
+		const proposal = vi.fn(async () => ({
+			status: 'ready' as const,
+			requiresHumanReview: true as const,
+			suggestedActivities: ['tpBuy'] as ['tpBuy'],
+			eventCounts: { buys: 1, sells: 0 },
+		}));
+		const review = vi.fn(async () => null);
+		const plugin: ReviewIntentHarness = {
+			app: {}, settings: { language: 'en' }, reviewModal: null,
+			sessions: { getContaminationReview: () => null, proposeTradingPostContamination: proposal },
+			reviewSessionContamination: review,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Isolated real plugin method harness.
+		const prepare = (TyrianCompanionPlugin.prototype as unknown as {
+			prepareReviewIntent(this: ReviewIntentHarness): Promise<PreparedSessionCommand | null>;
+		}).prepareReviewIntent;
+
+		const pending = prepare.call(plugin);
+		await flush();
+
+		expect(proposal).toHaveBeenCalledOnce();
+		expect(plugin.reviewModal).toBeInstanceOf(SessionContaminationReviewModal);
+		expect(review).not.toHaveBeenCalled();
+		plugin.reviewModal?.close();
+		await expect(pending).resolves.toBeNull();
+		expect(review).not.toHaveBeenCalled();
 	});
 });
 

@@ -51,7 +51,8 @@ export type SessionTradingPostContaminationProposal =
 	}
 	| {
 		status: 'unavailable';
-		reason: 'identity_mismatch' | 'window_mismatch' | 'coverage_incomplete' | 'evidence_invalid';
+		reason: 'identity_mismatch' | 'window_mismatch' | 'coverage_incomplete' | 'evidence_invalid'
+			| 'no_provisional_session' | 'capture_unavailable';
 		requiresHumanReview: true;
 		suggestedActivities: [];
 	};

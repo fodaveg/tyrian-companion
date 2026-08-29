@@ -70,8 +70,7 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 		]));
 		const complete = input.prices.status === 'complete'
 			&& itemIds.every((itemId) => itemEvidence.get(itemId) === true)
-			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh
-			&& (value.activeOrders === undefined || value.activeOrders.status === 'complete');
+			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
 			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation))
@@ -214,8 +213,6 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 function publicLine(engine: InventoryAdvisorEngineLineV1, input: InventoryAdvisorInputV1, plan: { assets: Array<{ key: string; coverage: string }> }) {
 	const asset = plan.assets.find((entry) => entry.key === `item:${engine.itemId}`);
 	const coverage = publicCoverage(input, engine.itemId, asset?.coverage ?? 'unknown');
-	if (engine.decisions.some((decision) => decision.reason === 'active_buy_orders_unknown'
-		|| decision.reason === 'active_sell_orders_unknown')) coverage.prices = 'limited';
 	const sources = engine.decisions.map((source, index) => ({ source, decision: {
 		action: source.action, itemId: source.itemId, quantity: source.quantity,
 		allocations: source.allocations, explanationRef: `#/explanations/${engine.itemId}/${index}`,
@@ -275,7 +272,6 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
 		active_buy_order: 'alternative_route_exists', active_sell_order: 'alternative_route_exists',
-		active_buy_orders_unknown: 'price_partial', active_sell_orders_unknown: 'price_partial',
 	};
 	return reasons[value] ?? 'snapshot_invalid';
 }
@@ -479,10 +475,7 @@ function applyActiveOrderPolicy(
 			const side = decision.action === 'sell' ? 'buy' : decision.action === 'list' ? 'sell' : null;
 			if (side === null) return decision;
 			const coverage = activeOrders.endpointCoverage[side];
-			if (coverage.status !== 'complete') {
-				return { ...decision, action: 'review' as const,
-					reason: side === 'buy' ? 'active_buy_orders_unknown' : 'active_sell_orders_unknown', ruleId: null };
-			}
+			if (coverage.status !== 'complete') return decision;
 			if (!activeOrders.orders.some((order) => order.side === side && order.itemId === line.itemId)) {
 				return decision;
 			}

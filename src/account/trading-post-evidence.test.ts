@@ -130,6 +130,20 @@ describe('trading post evidence', () => {
 		} });
 		expect((await service.capture('other-account', WINDOW)).status).toBe('invalid');
 	});
+
+	it.each([
+		[{ from: '2026-05-30T11:59:59.999Z', to: '2026-08-29T11:00:00.000Z' }, 'over 90 days'],
+		[{ from: '2026-08-29T10:00:00.000Z', to: '2026-08-29T12:00:00.001Z' }, 'future end'],
+		[{ from: '2026-05-31T11:59:59.999Z', to: '2026-06-01T12:00:00.000Z' }, 'older than the recoverable horizon'],
+	] as const)('rejects a %s history window before any API request', async (window, _label) => {
+		const requestDetailed = vi.fn();
+		const evidence = await new TradingPostHistoryEvidenceService(client(requestDetailed), () => NOW)
+			.capture('account-1', window);
+
+		expect(evidence.status).toBe('invalid');
+		expect(evidence.events).toEqual([]);
+		expect(requestDetailed).not.toHaveBeenCalled();
+	});
 });
 
 function operation(requestDetailed: (path: string) => Promise<{ status: number; headers: Record<string, string>; body: unknown }>): GuildWars2Operation {
