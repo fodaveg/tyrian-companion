@@ -45,14 +45,14 @@ process.stdout.write('release package suite: PASS\n');
 
 function testDeterministicPackage() {
 	const root = fixture('deterministic');
-	const first = packageRelease({ root, build: controlledBuild });
+	const first = packageFixture({ root, build: controlledBuild });
 	const firstArchive = readFileSync(first.archivePath);
 	const firstChecksum = readFileSync(first.checksumPath, 'utf8');
 	for (const path of RELEASE_FILES) {
 		utimesSync(resolve(root, path), new Date('2026-08-14T20:00:00Z'), new Date('2026-08-14T20:00:00Z'));
 	}
 	chmodSync(resolve(root, 'styles.css'), 0o600);
-	const second = packageRelease({ root, build: controlledBuild });
+	const second = packageFixture({ root, build: controlledBuild });
 	assert(readFileSync(second.archivePath).equals(firstArchive), 'same inputs did not produce the same archive bytes');
 	assert(readFileSync(second.checksumPath, 'utf8') === firstChecksum, 'same inputs did not produce the same checksum file');
 	assert(
@@ -67,7 +67,7 @@ function testBuildIsCausal() {
 	const root = fixture('build-causal');
 	writeFileSync(resolve(root, 'main.js'), 'stale bundle');
 	assertThrows(
-		() => packageRelease({ root, build: () => undefined }),
+		() => packageFixture({ root, build: () => undefined }),
 		'build-output-missing',
 		'no-op build did not turn red after stale main.js removal',
 	);
@@ -78,7 +78,7 @@ function testBuildIsCausal() {
 function testBuildCannotMutateInputs() {
 	const root = fixture('build-input-mutation');
 	assertThrows(
-		() => packageRelease({
+		() => packageFixture({
 			root,
 			build: (target) => {
 				controlledBuild(target);
@@ -95,13 +95,13 @@ function testMetadataAndTagFailClosed() {
 	const root = fixture('metadata');
 	writeJson(resolve(root, 'versions.json'), { '0.1.0': '1.10.0' });
 	assertThrows(
-		() => packageRelease({ root, build: controlledBuild }),
+		() => packageFixture({ root, build: controlledBuild }),
 		'versions-mismatch',
 		'versions.json mismatch did not turn red',
 	);
 	writeJson(resolve(root, 'versions.json'), { '0.1.0': '1.11.4' });
 	assertThrows(
-		() => packageRelease({
+		() => packageFixture({
 			root,
 			build: controlledBuild,
 			environment: { GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: 'v0.1.0' },
@@ -109,7 +109,7 @@ function testMetadataAndTagFailClosed() {
 		'tag-mismatch',
 		'non-exact release tag did not turn red',
 	);
-	const exactTag = packageRelease({
+	const exactTag = packageFixture({
 		root,
 		build: controlledBuild,
 		environment: { GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: '0.1.0' },
@@ -122,7 +122,7 @@ function testArtifactSecretSabotage() {
 	const credential = ['Tyr1an', 'Release', '7f9Q', 'SafeProbe'].join('-');
 	let message = '';
 	try {
-		packageRelease({
+		packageFixture({
 			root,
 			build: (target) => writeFileSync(resolve(target, 'main.js'), `const apiKey='${credential}';`),
 		});
@@ -140,7 +140,7 @@ function testArtifactSecretSabotage() {
 
 function testArchiveTamperSabotage() {
 	const root = fixture('archive-tamper');
-	const result = packageRelease({ root, build: controlledBuild });
+	const result = packageFixture({ root, build: controlledBuild });
 	const archive = Buffer.from(readFileSync(result.archivePath));
 	const marker = archive.indexOf('controlled production bundle');
 	if (marker < 0) {
@@ -163,7 +163,7 @@ function testArchiveTamperSabotage() {
 function testPersistedArchiveIsAuthority() {
 	const root = fixture('persisted-archive-authority');
 	assertThrows(
-		() => packageRelease({
+		() => packageFixture({
 			root,
 			build: controlledBuild,
 			writeArchive: (path, bytes) => {
@@ -184,7 +184,7 @@ function testPersistedArchiveIsAuthority() {
 
 function testArchiveStructureSabotage() {
 	const root = fixture('archive-structure');
-	const result = packageRelease({ root, build: controlledBuild });
+	const result = packageFixture({ root, build: controlledBuild });
 	const archive = readFileSync(result.archivePath);
 	const expected = RELEASE_FILES.map((name) => ({
 		name,
@@ -247,6 +247,10 @@ function fixture(name) {
 
 function controlledBuild(root) {
 	writeFileSync(resolve(root, 'main.js'), '/* controlled production bundle */\nmodule.exports = {};\n');
+}
+
+function packageFixture(options) {
+	return packageRelease({ environment: {}, ...options });
 }
 
 function writeJson(path, value) {

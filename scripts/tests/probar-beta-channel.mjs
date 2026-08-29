@@ -684,7 +684,7 @@ function candidateFromManifest(name, source) {
 	writeFileSync(resolve(root, 'manifest.json'), source);
 	writeJson(resolve(root, 'versions.json'), { [manifest.version]: manifest.minAppVersion });
 	writeFileSync(resolve(root, 'styles.css'), `.candidate-${name} { color: red; }\n`);
-	const result = packageRelease({ root, build: controlledBuild });
+	const result = packageRelease({ root, build: controlledBuild, environment: {} });
 	return { ...result, archiveName: basename(result.archivePath), root };
 }
 
