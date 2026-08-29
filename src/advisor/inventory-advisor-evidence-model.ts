@@ -3,7 +3,7 @@ import type { StorageSnapshotCaptureProgress } from '../account/storage-snapshot
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
-import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-evidence';
+import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
 

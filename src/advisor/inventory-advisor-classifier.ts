@@ -21,7 +21,7 @@ import {
 } from './inventory-container-economy';
 import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
-import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-evidence';
+import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {

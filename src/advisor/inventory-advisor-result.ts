@@ -26,7 +26,7 @@ import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-mo
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
-import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-evidence';
+import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }

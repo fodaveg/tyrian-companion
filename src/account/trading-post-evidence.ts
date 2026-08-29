@@ -3,8 +3,24 @@ import { allowsEndpoint } from './storage-snapshot-service';
 import { parseAccountProfile, parseTokenInfo, type TokenInfo } from './account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from './guild-wars-2-client';
 import type { TradingPostEvent } from './contamination-model';
+import {
+	isActiveTradingPostOrdersEvidence,
+	TRADING_POST_EVIDENCE_VERSION,
+	type ActiveTradingPostOrderV1,
+	type ActiveTradingPostOrdersEvidenceV1,
+	type TradingPostEndpointCoverageV1,
+	type TradingPostEndpointStatus,
+	type TradingPostEvidenceSide,
+} from './trading-post-orders-model';
 
-export const TRADING_POST_EVIDENCE_VERSION = 1 as const;
+export { isActiveTradingPostOrdersEvidence, TRADING_POST_EVIDENCE_VERSION };
+export type {
+	ActiveTradingPostOrderV1,
+	ActiveTradingPostOrdersEvidenceV1,
+	TradingPostEndpointCoverageV1,
+	TradingPostEndpointStatus,
+	TradingPostEvidenceSide,
+};
 
 const PAGE_SIZE = 200;
 const MAX_PAGES = 10;
@@ -17,38 +33,6 @@ const HISTORY_ENDPOINTS = {
 	buy: 'commerce/transactions/history/buys',
 	sell: 'commerce/transactions/history/sells',
 } as const;
-
-export type TradingPostEvidenceSide = keyof typeof CURRENT_ENDPOINTS;
-export type TradingPostEndpointStatus =
-	| 'complete'
-	| 'partial'
-	| 'missing_scope'
-	| 'url_restricted'
-	| 'unavailable'
-	| 'invalid';
-
-export interface TradingPostEndpointCoverageV1 {
-	status: TradingPostEndpointStatus;
-	capturedAt: string | null;
-	reason: 'page_limit' | 'partial_response' | 'missing_scope' | 'url_restricted'
-		| 'request_failed' | 'invalid_payload' | null;
-}
-
-export interface ActiveTradingPostOrderV1 {
-	side: TradingPostEvidenceSide;
-	itemId: number;
-	quantity: number;
-}
-
-/** Identity-bound current-order evidence. Raw transaction IDs never leave capture. */
-export interface ActiveTradingPostOrdersEvidenceV1 {
-	version: typeof TRADING_POST_EVIDENCE_VERSION;
-	accountId: string;
-	capturedAt: string;
-	status: 'complete' | 'partial' | 'unavailable';
-	endpointCoverage: Record<TradingPostEvidenceSide, TradingPostEndpointCoverageV1>;
-	orders: ActiveTradingPostOrderV1[];
-}
 
 /** Bounded 90-day history projection. It contains no transaction or API-key identifier. */
 export interface TradingPostHistoryEvidenceV1 {
@@ -63,24 +47,6 @@ export interface TradingPostHistoryEvidenceV1 {
 
 export interface TradingPostHistoryEvidenceClient {
 	beginOperation(): GuildWars2Operation;
-}
-
-export function isActiveTradingPostOrdersEvidence(
-	value: unknown,
-): value is ActiveTradingPostOrdersEvidenceV1 {
-	if (!record(value) || !exactKeys(value, [
-		'version', 'accountId', 'capturedAt', 'status', 'endpointCoverage', 'orders',
-	]) || value.version !== TRADING_POST_EVIDENCE_VERSION || !text(value.accountId)
-		|| !strictIso(value.capturedAt) || !['complete', 'partial', 'unavailable'].includes(String(value.status))
-		|| !endpointCoverage(value.endpointCoverage) || !Array.isArray(value.orders)
-		|| !value.orders.every(activeOrder)) return false;
-	const typed = value as unknown as ActiveTradingPostOrdersEvidenceV1;
-	return typed.status === aggregateStatus(typed.endpointCoverage.buy, typed.endpointCoverage.sell)
-		&& sorted(typed.orders, (left, right) => left.itemId - right.itemId
-			|| left.side.localeCompare(right.side))
-		&& new Set(typed.orders.map((order) => `${order.side}:${order.itemId}`)).size === typed.orders.length
-		&& typed.orders.every((order) => typed.endpointCoverage[order.side].status === 'complete'
-			|| typed.endpointCoverage[order.side].status === 'partial');
 }
 
 export function isTradingPostHistoryEvidence(value: unknown): value is TradingPostHistoryEvidenceV1 {
@@ -374,10 +340,6 @@ function endpointEvidence(value: unknown): value is TradingPostEndpointCoverageV
 	return value.capturedAt === null && [
 		'page_limit', 'partial_response', 'missing_scope', 'url_restricted', 'request_failed', 'invalid_payload',
 	].includes(String(value.reason));
-}
-function activeOrder(value: unknown): value is ActiveTradingPostOrderV1 {
-	return record(value) && exactKeys(value, ['side', 'itemId', 'quantity'])
-		&& (value.side === 'buy' || value.side === 'sell') && positive(value.itemId) && positive(value.quantity);
 }
 function historyEvent(value: unknown): value is TradingPostEvent {
 	return record(value) && exactKeys(value, ['kind', 'itemId', 'quantity', 'coins', 'occurredAt'])
