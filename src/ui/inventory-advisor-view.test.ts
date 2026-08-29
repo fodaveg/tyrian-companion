@@ -42,7 +42,9 @@ describe('Inventory Advisor view', () => {
 
 	it('keeps the complete card evidence surface visible at both 480px and 759px breakpoints', () => {
 		const styles = readFileSync('styles.css', 'utf8');
-		const breakpoint = styles.lastIndexOf('@container (max-width: 759px)');
+		const cardsRule = styles.indexOf('.tyrian-inventory-advisor__cards {\n\t\tdisplay: grid;');
+		expect(cardsRule).toBeGreaterThan(-1);
+		const breakpoint = styles.lastIndexOf('@container (max-width: 759px)', cardsRule);
 		const compact = styles.slice(breakpoint, styles.indexOf('@container (max-width: 479px)', breakpoint));
 		expect(compact).toMatch(/tyrian-inventory-advisor__table[\s\S]*display:\s*none/u);
 		expect(compact).toMatch(/tyrian-inventory-advisor__cards[\s\S]*display:\s*grid/u);
