@@ -8,6 +8,7 @@ import {
 	isNormalizedCatalogMaterial,
 } from '../catalog/public-catalog-validators';
 import { isReservationGoal } from '../economy/reservation';
+import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 import {
 	INVENTORY_ADVISOR_POLICY_VERSION,
 	INVENTORY_ADVISOR_SCOPE,
@@ -328,6 +329,7 @@ function isLine(value: unknown): value is InventoryAdvisorLineV1 {
 		|| !nonNegative(value.exceptionQuantity) || !nonNegative(value.retainedQuantity) || !nonNegative(value.actionedQuantity)
 		|| !nonNegative(value.unclassifiedQuantity) || !Array.isArray(value.decisions)
 		|| !value.decisions.every(isDecision) || !strictlySorted(value.decisions, decisionOrder)
+		|| !materialStorageDepositsFit(value.decisions)
 		|| !Array.isArray(value.reasons) || !value.reasons.every(isInventoryAdvisorReason)
 		|| !strictlySorted(value.reasons, reasonOrder)) return false;
 	if (value.positions.some((position) => position.itemId !== value.itemId)

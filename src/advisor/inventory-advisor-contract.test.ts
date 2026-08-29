@@ -154,7 +154,7 @@ describe('inventory advisor H4.13 contract', () => {
 			reportSha256: sha256InventoryAdvisorReport(excess),
 			decisions: structuredClone(excess.lines[0]!.decisions),
 		};
-		expect(isInventoryAdvisorReport(excess)).toBe(true);
+		expect(isInventoryAdvisorReport(excess)).toBe(false);
 		expect(isInventoryRecommendationEnvelope(forgedEnvelope)).toBe(false);
 		expect(isInventoryAdvisorResult({ status: 'ready', report: excess, envelope: forgedEnvelope })).toBe(false);
 	});
