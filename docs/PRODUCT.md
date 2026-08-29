@@ -44,6 +44,17 @@ del piloto se fijan en [Política de plataformas e integraciones](PLATFORM_POLIC
 
 Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
 
+H9.6 descarta el benchmarking de clan en el producto actual. Comparar cuentas exigiría intercambio de
+datos o un backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se podrá
+reconsiderar como iniciativa separada y opt-in, con agregación local previa, una cohorte mínima que
+impida exponer individuos y sin claves API, account IDs ni identificadores persistentes.
+
+H9.15 descarta el cambio oro-gemas como feature independiente. Los endpoints públicos oficiales
+`/v2/commerce/exchange/coins` y `/v2/commerce/exchange/gems` ofrecen una cotización puntual, pero esa
+observación aislada no permite recomendar bolsa frente a banco. Solo
+`/v2/commerce/exchange/coins` podrá reconsiderarse dentro de un futuro planificador explícito de
+capacidad: cotización temporal, acción siempre humana y ninguna persistencia de la consulta.
+
 ## Contrato de entrada v2 H8.1
 
 La integración futura nace deshabilitada y requiere opt-in. Los defaults iniciales recomendados son

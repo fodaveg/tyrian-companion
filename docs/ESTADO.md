@@ -2,6 +2,18 @@
 
 ## Vertical activa
 
+**H9.6/H9.15, benchmarking de clan y cambio oro-gemas: cerradas como decisiones de producto.**
+H9.6 queda descartada en el producto actual. Comparar un clan exigiría intercambio de datos o un
+backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se reconsiderará como una
+iniciativa separada y opt-in, con agregación local previa, cohorte mínima y sin claves API, account
+IDs ni identificadores persistentes.
+
+H9.15 tampoco será una feature independiente. Los endpoints públicos oficiales
+`/v2/commerce/exchange/coins` y `/v2/commerce/exchange/gems` permiten obtener una cotización, pero
+una observación aislada no demuestra que convenga usar la bolsa en vez del banco. Únicamente
+`/v2/commerce/exchange/coins` podrá reconsiderarse dentro de un futuro planificador explícito de
+capacidad, con cotización temporal, acción siempre humana y sin persistencia.
+
 **H9.2, profundidad real del bazar: integrada en `main` mediante `8569139`, `2234d5f`,
 `8c280bb`, `e743405` y `f28e063`.** Cada Refresh explícito del Asesor consulta el endpoint público
 oficial `/v2/commerce/listings`, sin clave, con ids deduplicados y ordenados, lotes secuenciales de

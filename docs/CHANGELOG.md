@@ -1,5 +1,17 @@
 # Changelog
 
+## H9.6/H9.15 - Decisiones sobre clan y cambio oro-gemas
+
+- H9.6 descarta el benchmarking de clan en el producto actual. Requeriría intercambio de datos o un
+  backend compartido y, con ello, reabrir privacidad y RGPD.
+- Solo podrá reconsiderarse como iniciativa separada y opt-in, con agregación local previa, cohorte
+  mínima y sin claves API, account IDs ni identificadores persistentes.
+- H9.15 descarta una feature independiente de cambio oro-gemas. Aunque
+  `/v2/commerce/exchange/coins` y `/v2/commerce/exchange/gems` son públicos, una cotización aislada
+  no permite recomendar bolsa frente a banco.
+- Únicamente `/v2/commerce/exchange/coins` podrá reconsiderarse dentro de un futuro planificador
+  explícito de capacidad, con cotización temporal, acción humana y sin persistencia.
+
 ## H9.2 - Profundidad real del bazar en el Asesor
 
 - Cada Refresh explícito consulta la API oficial pública `/v2/commerce/listings`, sin clave, para los
