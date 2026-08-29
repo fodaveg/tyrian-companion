@@ -39,8 +39,8 @@ describe('H11-A architecture and UI contract', () => {
 		expect(styles.slice(styles.indexOf('.tyrian-companion-halloween'))).not.toMatch(/#[0-9a-f]{3,8}/iu);
 	});
 
-	it('pins settings v6 and canonical session-note v3 evidence', () => {
-		expect(readFileSync('src/core/settings.ts', 'utf8')).toContain('SETTINGS_SCHEMA_VERSION = 6');
+	it('pins settings v7 and canonical session-note v3 evidence', () => {
+		expect(readFileSync('src/core/settings.ts', 'utf8')).toContain('SETTINGS_SCHEMA_VERSION = 7');
 		expect(readFileSync('src/sessions/session-note-model.ts', 'utf8')).toContain('SESSION_NOTE_SCHEMA_VERSION = 3');
 		expect(readFileSync('src/sessions/session-note-renderer.ts', 'utf8')).toContain('tc_positive_item_deltas_json');
 	});
@@ -54,7 +54,7 @@ describe('H11-A architecture and UI contract', () => {
 		expect(main).toMatch(/vault\.on\('modify',[\s\S]*refreshHalloweenBackfill/u);
 		expect(main).toMatch(/vault\.on\('rename',[\s\S]*refreshHalloweenBackfill/u);
 		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
-		expect(store).toContain('HALLOWEEN_DB_VERSION = 4');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 5');
 		expect(store).toContain("HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1'");
 		expect(store).toContain("HALLOWEEN_META_STORE = 'meta-v1'");
 	});

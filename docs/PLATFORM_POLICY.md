@@ -62,6 +62,20 @@ el episodio provisional incluso con cero ganancias. El sello usa el delta final 
 writer multiwindow gana. Un final sin provisional emite exactamente un aviso; contenido nuevo tras
 un reconocimiento vuelve a unread y solo entonces puede emitir uno nuevo.
 
+## Comparación y precio de Halloween H11-B
+
+La comparación H11.3 es igual en Linux, macOS y Windows: usa exclusivamente el delta API final y la
+revisión humana finalizada. «Bolsas desaparecidas netas» no significa aperturas demostradas. El store
+local conserva 18 resultados ordenados, incluidos ceros, y la criba exacta BigInt del modelo fijado;
+no lee ni reconstruye comparaciones desde notas del Vault.
+
+El aviso H11.5 depende del histórico H9.1 ya activado. No inicia red, polling, timers ni catch-up. Usa
+el cierre bid provisional de hoy y 30 días UTC completos anteriores; cualquier hueco queda
+`insufficient_history`. El estado crossing/cooldown y sus notices son IndexedDB locales por
+vault/cuenta, no se sincronizan por Obsidian Sync y no guardan cantidad. La UI cubre 320/480/760 px,
+tabla con overflow, captions/headers, `aria-live`, foco tras ack y targets de 44 px. Usa tokens del
+tema; el contraste real claro/oscuro sigue siendo QA manual y no se afirma desde tests.
+
 ## Mumble Link en v2
 
 H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo para

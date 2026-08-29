@@ -254,6 +254,45 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: this.t('settings.halloween.price.enabled.name'), desc: this.t('settings.halloween.price.enabled.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
+						.setValue(this.plugin.settings.halloweenPriceAlertEnabled ? 'on' : 'off')
+						.onChange(async (value) => { await this.plugin.updateSettings({ halloweenPriceAlertEnabled: value === 'on' }); }));
+				},
+			},
+			{
+				name: this.t('settings.halloween.price.margin.name'), desc: this.t('settings.halloween.price.margin.desc'),
+				render: (setting) => {
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.halloweenPriceAlertMinimumAboveP90Bps))
+						.setDisabled(!this.plugin.settings.halloweenPriceAlertEnabled)
+						.onChange(async (value) => {
+							const margin = Number(value);
+							if (Number.isSafeInteger(margin) && margin >= 0 && margin <= 100_000) {
+								await this.plugin.updateSettings({ halloweenPriceAlertMinimumAboveP90Bps: margin });
+							}
+						}));
+				},
+			},
+			{
+				name: this.t('settings.halloween.price.cooldown.name'), desc: this.t('settings.halloween.price.cooldown.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const hours of [6, 12, 24, 48] as const) dropdown.addOption(String(hours), `${String(hours)} h`);
+						dropdown.setValue(String(this.plugin.settings.halloweenPriceAlertCooldownHours))
+							.setDisabled(!this.plugin.settings.halloweenPriceAlertEnabled)
+							.onChange(async (value) => {
+								const hours = Number(value);
+								if (hours === 6 || hours === 12 || hours === 24 || hours === 48) {
+									await this.plugin.updateSettings({ halloweenPriceAlertCooldownHours: hours });
+								}
+							});
+					});
+				},
+			},
+			{
 				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown

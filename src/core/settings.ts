@@ -4,8 +4,9 @@ import type {
 	PriceHistoryIntervalMinutes,
 	PriceHistoryRawRetentionDays,
 } from '../economy/price-history-model';
+import type { HalloweenPriceAlertCooldownHours } from '../halloween/halloween-price-alert';
 
-export const SETTINGS_SCHEMA_VERSION = 6 as const;
+export const SETTINGS_SCHEMA_VERSION = 7 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -57,6 +58,10 @@ export interface TyrianSettings {
 	/** Halloween observation and alerts are an explicit opt-in. */
 	halloweenEnabled: boolean;
 	halloweenValueThresholdCopper: number;
+	/** Local bid-vs-p90 alert. It cannot activate price history. */
+	halloweenPriceAlertEnabled: boolean;
+	halloweenPriceAlertMinimumAboveP90Bps: number;
+	halloweenPriceAlertCooldownHours: HalloweenPriceAlertCooldownHours;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -77,12 +82,16 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	priceHistoryDailyRetentionDays: 180,
 	halloweenEnabled: false,
 	halloweenValueThresholdCopper: 10_000,
+	halloweenPriceAlertEnabled: false,
+	halloweenPriceAlertMinimumAboveP90Bps: 0,
+	halloweenPriceAlertCooldownHours: 24,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
 const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
 const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
 const PRICE_HISTORY_DAILY_RETENTIONS: ReadonlySet<number> = new Set([42, 90, 180, 365]);
+const HALLOWEEN_PRICE_ALERT_COOLDOWNS: ReadonlySet<number> = new Set([6, 12, 24, 48]);
 
 /** Migrates persisted settings to the current schema without retaining unknown values. */
 export function migrateSettings(data: unknown, configDir?: string): TyrianSettings {
@@ -124,7 +133,17 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		halloweenEnabled: data.halloweenEnabled === true,
 		halloweenValueThresholdCopper: safeNonNegativeInteger(data.halloweenValueThresholdCopper,
 			DEFAULT_SETTINGS.halloweenValueThresholdCopper),
+		halloweenPriceAlertEnabled: data.halloweenPriceAlertEnabled === true,
+		halloweenPriceAlertMinimumAboveP90Bps: boundedNonNegativeInteger(
+			data.halloweenPriceAlertMinimumAboveP90Bps, DEFAULT_SETTINGS.halloweenPriceAlertMinimumAboveP90Bps, 100_000,
+		),
+		halloweenPriceAlertCooldownHours: enumNumber(data.halloweenPriceAlertCooldownHours,
+			HALLOWEEN_PRICE_ALERT_COOLDOWNS, DEFAULT_SETTINGS.halloweenPriceAlertCooldownHours) as HalloweenPriceAlertCooldownHours,
 	};
+}
+
+function boundedNonNegativeInteger(value: unknown, fallback: number, maximum: number): number {
+	return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum ? value as number : fallback;
 }
 
 function safeNonNegativeInteger(value: unknown, fallback: number): number {

@@ -88,9 +88,9 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v6 without scanning, claiming assets, price history or Halloween', () => {
+	it('migrates v2 to v7 without scanning, claiming assets, price history or Halloween', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 6,
+			schemaVersion: 7,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
@@ -98,6 +98,27 @@ describe('migrateSettings', () => {
 		});
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
+	});
+
+	it('keeps the Halloween p90 alert opt-in and sanitizes its margin and cooldown', () => {
+		expect(migrateSettings({
+			halloweenPriceAlertEnabled: true,
+			halloweenPriceAlertMinimumAboveP90Bps: 1_250,
+			halloweenPriceAlertCooldownHours: 48,
+		})).toMatchObject({
+			halloweenPriceAlertEnabled: true,
+			halloweenPriceAlertMinimumAboveP90Bps: 1_250,
+			halloweenPriceAlertCooldownHours: 48,
+		});
+		expect(migrateSettings({
+			halloweenPriceAlertEnabled: 'yes',
+			halloweenPriceAlertMinimumAboveP90Bps: 100_001,
+			halloweenPriceAlertCooldownHours: 7,
+		})).toMatchObject({
+			halloweenPriceAlertEnabled: false,
+			halloweenPriceAlertMinimumAboveP90Bps: 0,
+			halloweenPriceAlertCooldownHours: 24,
+		});
 	});
 
 	it('validates every price-history option and keeps opt-in explicit', () => {

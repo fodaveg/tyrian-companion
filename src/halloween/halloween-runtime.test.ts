@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import type { StorageDelta } from '../account/storage-delta-model';
+import type { SessionContaminationReview } from '../sessions/session-contamination-review';
 import type { HalloweenItemEvidence } from './halloween-model';
 import { HalloweenBackfillError } from './halloween-note-backfill';
 import { HalloweenRuntime } from './halloween-runtime';
@@ -45,6 +46,21 @@ describe('HalloweenRuntime', () => {
 		expect(runtime.getState().unreadCount).toBe(1);
 		expect(await runtime.acknowledge(notice!.noticeId)).toBe(true);
 		expect(runtime.getState().unreadCount).toBe(0);
+		runtime.dispose();
+	});
+
+	it('persists and projects the eligible 18-row comparison only from a reviewed final delta', async () => {
+		const runtime = new HalloweenRuntime(options());
+		await runtime.activate();
+		const finalDelta = delta('comparison-a', 'comparison-b', [36_041]);
+		finalDelta.itemChanges.unshift({ id: 36_038, before: 1_100, after: 0, delta: -1_100 });
+		await runtime.observeDelta({
+			delta: finalDelta, source: 'session_final', episodeId: 'session:comparison', review: confirmedOpenReview(),
+		});
+		expect(runtime.getState().comparison).toMatchObject({
+			eligible: true, reason: null, bagsDisappearedNet: 1_100,
+		});
+		expect(runtime.getState().comparison?.outcomes).toHaveLength(18);
 		runtime.dispose();
 	});
 
@@ -484,6 +500,16 @@ function delta(before: string, after: string, ids: number[]): StorageDelta {
 		window: { from: '2026-08-29T11:59:00.000Z', to: '2026-08-29T12:00:00.000Z' }, surface: 'core_only', currencySurface: 'unavailable',
 		reasons: [], warnings: [], itemChanges: ids.map((id) => ({ id, before: 0, after: 1, delta: 1 })), currencyChanges: [],
 		availabilityChanges: [], compositionChanges: [] };
+}
+
+function confirmedOpenReview(): SessionContaminationReview {
+	return {
+		version: 1, reviewedAt: '2026-08-29T12:00:01.000Z',
+		answers: { certainty: 'confirmed', activities: { open: true, salvage: false, consume: false, craft: false,
+			tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false } },
+		declaration: { status: 'activities', activities: ['open'] },
+		boundary: {} as SessionContaminationReview['boundary'], classification: {} as SessionContaminationReview['classification'],
+	};
 }
 
 function openRaw(factory: IDBFactory): Promise<IDBDatabase> {

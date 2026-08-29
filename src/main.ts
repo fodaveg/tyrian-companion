@@ -25,6 +25,10 @@ import { HalloweenEvidenceService } from './halloween/halloween-evidence-service
 import { scanHalloweenSessionNotes } from './halloween/halloween-note-backfill';
 import { HalloweenRuntime, type HalloweenRuntimeState } from './halloween/halloween-runtime';
 import { HalloweenUnlockService } from './halloween/halloween-unlocks';
+import {
+	HalloweenPriceAlertRuntime,
+	type HalloweenPriceAlertRuntimeState,
+} from './halloween/halloween-price-alert-runtime';
 import type { PriceHistorySettings, PriceHistorySide, PriceHistoryWindowDays } from './economy/price-history-model';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
 import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
@@ -171,6 +175,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private priceHistory: PriceHistoryRuntime | null = null;
 	private halloween: HalloweenRuntime | null = null;
+	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	private halloweenAccountRef: string | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
@@ -348,12 +353,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
 		// inventory advisor, or price history blocks every other caller until it clears.
 		const rateLimitCoordinator = new RateLimitCoordinator();
+		this.halloweenPriceAlert = new HalloweenPriceAlertRuntime({
+			factory: window.indexedDB, vaultId,
+			accountRef: () => this.halloweenAccountRef,
+			onNotice: () => new Notice(translateRuntime(createTranslator(this.settings.language),
+				'notices.halloweenPriceHigh')),
+			onStateChange: () => this.renderViews(),
+		});
 		this.priceHistory = new PriceHistoryRuntime({
 			factory: window.indexedDB,
 			vaultId,
 			gateway: publicClient,
 			rateLimit: rateLimitCoordinator,
 			onStateChange: () => this.renderInventoryAdvisorViews(),
+			afterCompaction: async (port) => {
+				await this.halloweenPriceAlert?.evaluate({
+					readDaily: async (itemId, fromDayUtc) => await port.readDaily(itemId, fromDayUtc),
+				}, port.nowMs);
+			},
 		});
 		const halloweenEvidence = new HalloweenEvidenceService(
 			publicClient,
@@ -596,6 +613,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.halloween.activate();
 			this.halloween.setOnline(navigator.onLine);
 		}
+		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
 		this.renderInventoryAdvisorViews();
 		// Heals a root left behind by a folder change made before this version shipped the
@@ -614,6 +632,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
 		this.halloween?.dispose();
+		this.halloweenPriceAlert?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -674,8 +693,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.halloween?.getState() ?? disabledHalloweenState();
 	}
 
+	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
+		return this.halloweenPriceAlert?.getState() ?? disabledHalloweenPriceAlertState();
+	}
+
 	async acknowledgeHalloweenNotice(noticeId: string): Promise<boolean> {
 		const acknowledged = await this.halloween?.acknowledge(noticeId) ?? false;
+		this.renderViews();
+		return acknowledged;
+	}
+
+	async acknowledgeHalloweenPriceNotice(noticeId: string): Promise<boolean> {
+		const acknowledged = await this.halloweenPriceAlert?.acknowledge(noticeId) ?? false;
 		this.renderViews();
 		return acknowledged;
 	}
@@ -684,11 +713,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		delta: StorageDelta,
 		source: 'assisted_poll' | 'session_final',
 		episodeId: string,
+		review?: Parameters<HalloweenRuntime['observeDelta']>[0]['review'],
 	): Promise<void> {
 		if (!this.settings.halloweenEnabled || this.halloween === null || delta.status === 'invalid' || delta.accountId === null) return;
 		const accountRef = await this.switchHalloweenAccount(delta.accountId);
 		if (accountRef !== this.halloweenAccountRef) return;
-		await this.halloween.observeDelta({ delta, source, episodeId });
+		await this.halloween.observeDelta({ delta, source, episodeId, review });
 	}
 
 	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
@@ -708,6 +738,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			return accountRef;
 		}
 		this.halloweenAccountRef = accountRef;
+		await this.halloweenPriceAlert?.configure(
+			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled,
+		);
 		if (!this.settings.halloweenEnabled || this.halloween === null) return accountRef;
 		this.halloween.disable();
 		await this.halloween.activate();
@@ -1297,11 +1330,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return 'Session history scrub is active.';
 		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
-		if (result.status !== 'failed' && sessionNoteEventDeclarationFromDetectionSummary(
+		if (result.status === 'finalized' && sessionNoteEventDeclarationFromDetectionSummary(
 			result.state.sessionId, this.detectionQuality.getSessionSummary(result.state.sessionId),
 		)?.event === 'halloween') {
 			const delta = this.sessions.getProvisionalDelta();
-			if (delta) await this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`);
+			if (delta) await this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`, result.review);
 		}
 		this.renderViews();
 		return result.status === 'failed' ? result.message : null;
@@ -1466,6 +1499,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.connection.reset();
 			this.halloweenAccountRef = null;
 			this.halloween?.disable();
+			await this.halloweenPriceAlert?.configure(halloweenPriceAlertSettingsFrom(this.settings), false);
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();
 		}
@@ -1488,6 +1522,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.halloween.activate();
 			this.halloween.setOnline(navigator.onLine);
 		}
+		await this.halloweenPriceAlert?.configure(
+			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled,
+		);
 		if (previousLanguage !== this.settings.language || secretChanged || previousOutputFolder !== this.settings.outputFolder ||
 			previousManagedAssetsRoot !== this.settings.managedAssetsRoot || previousLegacyOutputFolder !== this.settings.legacyOutputFolder ||
 			previousLegacyManagedAssetsRoot !== this.settings.legacyManagedAssetsRoot) {
@@ -1820,7 +1857,11 @@ function disabledPriceHistoryState(): PriceHistoryRuntimeState {
 }
 
 function disabledHalloweenState(): HalloweenRuntimeState {
-	return { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null };
+	return { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null };
+}
+
+function disabledHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState {
+	return { status: 'disabled', projection: null, notices: [], unreadCount: 0 };
 }
 
 function connectionScopes(state: ConnectionState): string[] {
@@ -1833,6 +1874,14 @@ function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySetting
 		intervalMinutes: settings.priceHistoryIntervalMinutes,
 		rawRetentionDays: settings.priceHistoryRawRetentionDays,
 		dailyRetentionDays: settings.priceHistoryDailyRetentionDays,
+	};
+}
+
+function halloweenPriceAlertSettingsFrom(settings: TyrianSettings) {
+	return {
+		enabled: settings.halloweenEnabled && settings.halloweenPriceAlertEnabled,
+		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
+		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
 }
 

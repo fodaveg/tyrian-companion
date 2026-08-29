@@ -1076,9 +1076,44 @@
 	min-inline-size: 44px;
 }
 
+.tyrian-companion-halloween__comparison,
+.tyrian-companion-halloween__price {
+	display: grid;
+	gap: var(--size-4-2);
+	min-inline-size: 0;
+}
+
+.tyrian-companion-halloween__table-scroll {
+	max-inline-size: 100%;
+	overflow-x: auto;
+}
+
+.tyrian-companion-halloween__table-scroll table {
+	inline-size: 100%;
+	min-inline-size: 44rem;
+	border-collapse: collapse;
+}
+
+.tyrian-companion-halloween__table-scroll th,
+.tyrian-companion-halloween__table-scroll td {
+	padding: var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+	text-align: start;
+	vertical-align: top;
+}
+
+.tyrian-companion-halloween__table-scroll .is-deviation {
+	background: var(--background-modifier-error);
+}
+
 @media (max-width: 480px) {
 	.tyrian-companion-halloween__notice { padding: var(--size-4-2); }
 	.tyrian-companion-halloween__notice button { inline-size: 100%; }
+}
+
+@media (max-width: 320px) {
+	.tyrian-companion-halloween { gap: var(--size-4-2); }
+	.tyrian-companion-halloween__table-scroll { margin-inline: calc(var(--size-4-2) * -1); }
 }
 
 @container (max-width: 759px) {

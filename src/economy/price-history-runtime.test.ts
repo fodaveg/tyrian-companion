@@ -75,6 +75,20 @@ describe('PriceHistoryRuntime', () => {
 		runtime.dispose();
 	});
 
+	it('offers a local read-only daily port only after a successful capture and compaction', async () => {
+		const scheduler = new FakeScheduler();
+		const afterCompaction = vi.fn(async (port: {
+			readDaily(itemId: number, fromDayUtc: string): Promise<PriceHistoryDailyV1[]>;
+		}) => { await port.readDaily(36_038, '1970-01-01'); });
+		const runtime = createRuntime(new IDBFactory(), vi.fn(async (path: string) => response(path)), scheduler,
+			() => 1_800_001, () => undefined, `vault-port-${crypto.randomUUID()}`, afterCompaction);
+		await runtime.activate(ENABLED);
+		expect(afterCompaction).not.toHaveBeenCalled();
+		await scheduler.poll();
+		expect(afterCompaction).toHaveBeenCalledOnce();
+		runtime.dispose();
+	});
+
 	it('projects offline and backoff states without opening another store', async () => {
 		const scheduler = new FakeScheduler();
 		const runtime = createRuntime(new IDBFactory(), vi.fn(async (path: string) => response(path)), scheduler);
@@ -215,9 +229,10 @@ function createRuntime(
 	now: () => number = () => 1_000,
 	onStateChange: () => void = () => undefined,
 	vaultId = `vault-${crypto.randomUUID()}`,
+	afterCompaction?: ConstructorParameters<typeof PriceHistoryRuntime>[0]['afterCompaction'],
 ): PriceHistoryRuntime {
 	return new PriceHistoryRuntime({
-		factory, vaultId,
+		factory, vaultId, afterCompaction,
 		gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now }), now, onStateChange,
 		scheduler: (poll, onStateChange) => {
 			scheduler.poll = poll; scheduler.onStateChange = onStateChange;

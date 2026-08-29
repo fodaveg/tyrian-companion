@@ -183,6 +183,63 @@ describe('configured notes root', () => {
 });
 
 describe('Halloween production gating', () => {
+	it('does not seal a Halloween episode when contamination review is saved but finalization fails', async () => {
+		const observeHalloweenDelta = vi.fn(async () => undefined);
+		const runtimeLease = { release: vi.fn() };
+		const harness = {
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => runtimeLease },
+			sessions: {
+				reviewContamination: vi.fn(async () => ({
+					status: 'reviewed' as const,
+					state: { version: SESSION_STATE_VERSION, status: 'provisional' as const, sessionId: 'session-review-only' },
+					review: {},
+				})),
+				getProvisionalDelta: vi.fn(() => ({ status: 'comparable' } as StorageDelta)),
+			},
+			detectionQuality: { getSessionSummary: () => ({ classification: { event: 'halloween' } }) },
+			observeHalloweenDelta,
+			renderViews: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewSessionContamination(this: typeof harness, answers: unknown): Promise<string | null>;
+		}).reviewSessionContamination;
+		await expect(review.call(harness, {})).resolves.toBeNull();
+		expect(observeHalloweenDelta).not.toHaveBeenCalled();
+		expect(harness.sessions.getProvisionalDelta).not.toHaveBeenCalled();
+		expect(runtimeLease.release).toHaveBeenCalledOnce();
+	});
+
+	it('passes the review and stable delta to session_final only after finalization succeeds', async () => {
+		const proposal = halloweenProposal();
+		const accepted = createAcceptedDetectionEvent('start', 'session-final', '2026-08-13T08:00:03.000Z', proposal);
+		if (!accepted) throw new Error('Invalid accepted Halloween fixture.');
+		const summary = summarizeSessionDetectionQuality([accepted], 'session-final');
+		const stableDelta = { status: 'comparable' } as StorageDelta;
+		const reviewEvidence = { answers: { certainty: 'confirmed' } };
+		const observeHalloweenDelta = vi.fn(async () => undefined);
+		const harness = {
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
+			sessions: {
+				reviewContamination: vi.fn(async () => ({ status: 'finalized' as const,
+					state: { version: SESSION_STATE_VERSION, status: 'complete' as const, sessionId: 'session-final' },
+					review: reviewEvidence })),
+				getProvisionalDelta: vi.fn(() => stableDelta),
+			},
+			detectionQuality: { getSessionSummary: () => summary },
+			observeHalloweenDelta,
+			renderViews: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewSessionContamination(this: typeof harness, answers: unknown): Promise<string | null>;
+		}).reviewSessionContamination;
+		await review.call(harness, {});
+		expect(observeHalloweenDelta).toHaveBeenCalledWith(
+			stableDelta, 'session_final', 'session:session-final', reviewEvidence,
+		);
+	});
+
 	it('discards idle and unaccepted activity, then promotes only an accepted canonical Halloween session', async () => {
 		const delta = { status: 'comparable' } as StorageDelta;
 		const observeHalloweenDelta = vi.fn(async () => undefined);

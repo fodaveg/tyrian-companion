@@ -40,6 +40,10 @@ export interface PriceHistoryRuntimeOptions {
 	rateLimit: RateLimitCoordinator;
 	now?: () => number;
 	onStateChange?: () => void;
+	afterCompaction?: (input: {
+		nowMs: number;
+		readDaily(itemId: number, fromDayUtc: string): Promise<PriceHistoryDailyV1[]>;
+	}) => Promise<void>;
 	scheduler?: (poll: () => Promise<ApiPollOutcome>, onStateChange: (state: Readonly<ApiPollSchedulerState>) => void) => ApiPollScheduler;
 }
 
@@ -216,6 +220,15 @@ export class PriceHistoryRuntime {
 			return { kind: 'fatal' };
 		}
 		if (!this.owns(generation, store)) return { kind: 'success' };
+		if (this.options.afterCompaction !== undefined) {
+			try {
+				await this.options.afterCompaction({
+					nowMs: this.now(),
+					readDaily: async (itemId, fromDayUtc) => await store.readDaily(this.options.vaultId, itemId, fromDayUtc),
+				});
+			} catch { /* Downstream local projections cannot stop price sampling. */ }
+			if (!this.owns(generation, store)) return { kind: 'success' };
+		}
 		this.setState({
 			status: result.snapshot.status === 'partial' ? 'partial' : 'collecting',
 			lastSampleAtMs: result.snapshot.capturedAtMs,

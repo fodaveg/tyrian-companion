@@ -1,4 +1,5 @@
 import type { StorageDelta } from '../account/storage-delta-model';
+import type { SessionContaminationReview } from '../sessions/session-contamination-review';
 import { evaluateHalloweenItems } from './halloween-policy';
 import {
 	positiveObservedGains,
@@ -10,6 +11,10 @@ import {
 } from './halloween-model';
 import { HalloweenBackfillError } from './halloween-note-backfill';
 import { HalloweenStoreError, IndexedDbHalloweenStore, type HalloweenStoreFailure } from './halloween-store';
+import {
+	buildHalloweenLootComparison,
+	type HalloweenComparisonRecordV1,
+} from './halloween-loot-comparison';
 
 export type HalloweenRuntimeStatus =
 	| 'disabled' | 'loading' | 'learning' | 'empty' | 'pending' | 'unread' | 'ready'
@@ -20,6 +25,7 @@ export interface HalloweenRuntimeState {
 	notices: HalloweenNoticeV1[];
 	unreadCount: number;
 	lastObservedAt: string | null;
+	comparison: HalloweenComparisonRecordV1 | null;
 }
 
 export interface HalloweenRuntimeOptions {
@@ -53,7 +59,9 @@ export class HalloweenRuntime {
 	private learning = true;
 	private backfillPartial = false;
 	private disposed = false;
-	private state: HalloweenRuntimeState = { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null };
+	private state: HalloweenRuntimeState = {
+		status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null,
+	};
 
 	constructor(private readonly options: HalloweenRuntimeOptions) {}
 
@@ -83,7 +91,7 @@ export class HalloweenRuntime {
 		this.store = null;
 		this.learning = true;
 		this.backfillPartial = false;
-		this.setState({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null });
+		this.setState({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null });
 	}
 
 	setOnline(online: boolean): void {
@@ -113,6 +121,7 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
+		review?: SessionContaminationReview;
 	}): Promise<HalloweenNoticeV1 | null> {
 		const accountRef = this.options.accountRef();
 		const generation = this.generation;
@@ -129,6 +138,7 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
+		review?: SessionContaminationReview;
 	}, generation: number, queuedAccountRef: string | null): Promise<HalloweenNoticeV1 | null> {
 		if (this.activation !== null) await this.activation;
 		if (!this.current(generation)) return null;
@@ -158,14 +168,21 @@ export class HalloweenRuntime {
 			episodeId: input.episodeId, observedAt, source: input.source,
 			coverage: input.delta.status === 'comparable' ? 'complete' as const : 'partial' as const, gains,
 		};
+		const comparison = input.source === 'session_final' ? buildHalloweenLootComparison({
+			vaultId: this.options.vaultId, accountRef, episodeId: input.episodeId,
+			delta: input.delta, review: input.review ?? null,
+		}) : null;
 		this.setState({ status: 'pending' });
 		try {
 			const receipt = await store.recordObservation(observation);
 			if (!this.owns(generation, store)) return null;
 			if (receipt.status === 'terminal') {
-				const notices = await store.readNotices(this.options.vaultId, accountRef);
+				const [notices, persistedComparison] = await Promise.all([
+					store.readNotices(this.options.vaultId, accountRef),
+					store.readLatestComparison(this.options.vaultId, accountRef),
+				]);
 				if (this.owns(generation, store)) this.projectNotices(notices,
-					input.source === 'session_final' ? observedAt : this.state.lastObservedAt);
+					input.source === 'session_final' ? observedAt : this.state.lastObservedAt, null, persistedComparison);
 				return null;
 			}
 			if (gains.length > 0 && this.options.priceHistory?.active()) {
@@ -185,11 +202,14 @@ export class HalloweenRuntime {
 					priceStatus === 'unavailable' || priceStatus === 'invalid' || catalogStatus !== 'complete') ? 'partial' : null;
 			if (items.length === 0) {
 				if (input.source === 'session_final') {
-					await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, null);
+					await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, null, comparison);
 					if (!this.owns(generation, store)) return null;
-					const notices = await store.readNotices(this.options.vaultId, accountRef);
+					const [notices, persistedComparison] = await Promise.all([
+						store.readNotices(this.options.vaultId, accountRef),
+						store.readLatestComparison(this.options.vaultId, accountRef),
+					]);
 					if (!this.owns(generation, store)) return null;
-					this.projectNotices(notices, observedAt, evidenceState);
+					this.projectNotices(notices, observedAt, evidenceState, persistedComparison);
 				} else this.setState({ status: evidenceState ?? (this.backfillPartial ? 'partial' : 'empty'), lastObservedAt: observedAt });
 				return null;
 			}
@@ -201,13 +221,16 @@ export class HalloweenRuntime {
 				items, acknowledgedAt: null,
 			};
 			const replacement = input.source === 'session_final'
-				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, notice)
+				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, observation, notice, comparison)
 				: null;
 			const committed = replacement?.notice ?? (input.source === 'session_final' ? null : await store.enqueueNotice(notice));
 			if (!this.owns(generation, store)) return null;
-			const notices = await store.readNotices(this.options.vaultId, accountRef);
+			const [notices, persistedComparison] = await Promise.all([
+				store.readNotices(this.options.vaultId, accountRef),
+				input.source === 'session_final' ? store.readLatestComparison(this.options.vaultId, accountRef) : Promise.resolve(this.state.comparison),
+			]);
 			if (!this.owns(generation, store)) return null;
-			this.projectNotices(notices, observedAt, evidenceState);
+			this.projectNotices(notices, observedAt, evidenceState, persistedComparison);
 			if (committed && (input.source !== 'session_final' || replacement?.shouldNotify)) {
 				this.options.onNotice?.(structuredClone(committed));
 			}
@@ -256,9 +279,12 @@ export class HalloweenRuntime {
 			if (accountRef === null) { this.projectNotices([]); return; }
 			await this.refreshBackfill();
 			if (!this.owns(generation, opened)) return;
-			const notices = await opened.readNotices(this.options.vaultId, accountRef);
+			const [notices, comparison] = await Promise.all([
+				opened.readNotices(this.options.vaultId, accountRef),
+				opened.readLatestComparison(this.options.vaultId, accountRef),
+			]);
 			if (!this.owns(generation, opened)) return;
-			this.projectNotices(notices);
+			this.projectNotices(notices, this.state.lastObservedAt, null, comparison);
 		} catch (error) {
 			if (this.current(generation) && (opened === null || opened === this.store)) this.storeFailure(error);
 			else opened?.close();
@@ -325,9 +351,10 @@ export class HalloweenRuntime {
 		notices: HalloweenNoticeV1[],
 		lastObservedAt = this.state.lastObservedAt,
 		evidenceState: HalloweenRuntimeStatus | null = null,
+		comparison = this.state.comparison,
 	): void {
 		const unreadCount = notices.filter(({ acknowledgedAt }) => acknowledgedAt === null).length;
-		this.setState({ notices, unreadCount, lastObservedAt,
+		this.setState({ notices, unreadCount, lastObservedAt, comparison,
 			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.learning ? 'learning' :
 				notices.length > 0 ? 'ready' : 'empty') });
 	}

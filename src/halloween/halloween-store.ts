@@ -5,15 +5,30 @@ import {
 	type HalloweenNoticeV1,
 	type HalloweenObservationV1,
 } from './halloween-model';
+import {
+	isHalloweenComparisonRecord,
+	type HalloweenComparisonRecordV1,
+} from './halloween-loot-comparison';
+import {
+	createHalloweenPriceNotice,
+	isHalloweenPriceNotice,
+	isHalloweenPriceValidProjection,
+	type HalloweenPriceAlertCooldownHours,
+	type HalloweenPriceNoticeV1,
+	type HalloweenPriceValidProjection,
+} from './halloween-price-alert';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-export const HALLOWEEN_DB_VERSION = 4;
+export const HALLOWEEN_DB_VERSION = 5;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
 export const HALLOWEEN_EPISODE_STORE = 'notice-episodes-v1';
 export const HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1';
 export const HALLOWEEN_META_STORE = 'meta-v1';
+export const HALLOWEEN_COMPARISON_STORE = 'loot-comparisons-v1';
+export const HALLOWEEN_PRICE_ALERT_STORE = 'price-alert-state-v1';
+export const HALLOWEEN_PRICE_NOTICE_STORE = 'price-notices-v1';
 
 export type HalloweenStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
@@ -75,6 +90,21 @@ export class IndexedDbHalloweenStore {
 				}
 				if (!db.objectStoreNames.contains(HALLOWEEN_META_STORE)) {
 					db.createObjectStore(HALLOWEEN_META_STORE, { keyPath: ['vaultId', 'accountRef'] });
+				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_COMPARISON_STORE)) {
+					const comparisons = db.createObjectStore(HALLOWEEN_COMPARISON_STORE, {
+						keyPath: ['vaultId', 'accountRef', 'episodeId'],
+					});
+					comparisons.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
+				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_PRICE_ALERT_STORE)) {
+					db.createObjectStore(HALLOWEEN_PRICE_ALERT_STORE, { keyPath: ['vaultId', 'accountRef', 'itemId'] });
+				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_PRICE_NOTICE_STORE)) {
+					const priceNotices = db.createObjectStore(HALLOWEEN_PRICE_NOTICE_STORE, {
+						keyPath: ['vaultId', 'accountRef', 'noticeId'],
+					});
+					priceNotices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
 				}
 			};
 			request.onerror = () => fail(new HalloweenStoreError(request.error?.name === 'VersionError' ? 'future_schema' : 'unavailable'));
@@ -256,20 +286,24 @@ export class IndexedDbHalloweenStore {
 		episodeId: string,
 		finalObservation: HalloweenObservationV1,
 		notice: HalloweenNoticeV1 | null,
+		comparison: HalloweenComparisonRecordV1 | null = null,
 	): Promise<HalloweenEpisodeReplacement> {
 		if (!strictObservation(finalObservation) || finalObservation.vaultId !== vaultId ||
 			finalObservation.accountRef !== accountRef || finalObservation.episodeId !== episodeId ||
 			finalObservation.source !== 'session_final' ||
 			(notice !== null && (!validNotice(notice) || notice.vaultId !== vaultId || notice.accountRef !== accountRef ||
-			notice.episodeId !== episodeId || notice.source !== 'session_final'))) {
+			notice.episodeId !== episodeId || notice.source !== 'session_final')) ||
+			(comparison !== null && (!isHalloweenComparisonRecord(comparison) || comparison.vaultId !== vaultId ||
+				comparison.accountRef !== accountRef || comparison.episodeId !== episodeId))) {
 			return Promise.reject(new HalloweenStoreError('corrupt'));
 		}
 		return this.run([
-			HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE,
+			HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_EPISODE_META_STORE, HALLOWEEN_COMPARISON_STORE,
 		], 'readwrite', (tx, resolve, reject) => {
 			const notices = tx.objectStore(HALLOWEEN_NOTICE_STORE);
 			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
 			const meta = tx.objectStore(HALLOWEEN_EPISODE_META_STORE);
+			const comparisons = tx.objectStore(HALLOWEEN_COMPARISON_STORE);
 			const terminal = meta.get([vaultId, accountRef, episodeId]);
 			terminal.onerror = () => reject(storeError(terminal.error));
 			terminal.onsuccess = () => {
@@ -313,6 +347,7 @@ export class IndexedDbHalloweenStore {
 							}
 							meta.put({ version: 2, vaultId, accountRef, episodeId,
 								finalObservation: structuredClone(finalObservation) });
+							if (comparison !== null) comparisons.put(structuredClone(comparison));
 							tx.oncomplete = () => resolve({
 								notice: finalized,
 								changed: true,
@@ -338,6 +373,91 @@ export class IndexedDbHalloweenStore {
 					readNotice(0);
 				} catch (error) { reject(error); tx.abort(); }
 			};
+			};
+		});
+	}
+
+	readLatestComparison(vaultId: string, accountRef: string): Promise<HalloweenComparisonRecordV1 | null> {
+		return this.run([HALLOWEEN_COMPARISON_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_COMPARISON_STORE).index('by-scope-observed').openCursor(
+				IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']), 'prev',
+			);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const value: unknown = request.result === null ? undefined : request.result.value as unknown;
+					const comparison = value === undefined ? null : parseComparison(value, vaultId, accountRef);
+					tx.oncomplete = () => resolve(comparison);
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	/** Atomically applies one valid below/high evaluation and durable crossing suppression. */
+	commitPriceProjection(
+		vaultId: string,
+		accountRef: string,
+		projection: HalloweenPriceValidProjection,
+		cooldownHours: HalloweenPriceAlertCooldownHours,
+	): Promise<{ notice: HalloweenPriceNoticeV1 | null; shouldNotify: boolean }> {
+		if (!isHalloweenPriceValidProjection(projection) || ![6, 12, 24, 48].includes(cooldownHours)) {
+			return Promise.reject(new HalloweenStoreError('corrupt'));
+		}
+		return this.run([HALLOWEEN_PRICE_ALERT_STORE, HALLOWEEN_PRICE_NOTICE_STORE], 'readwrite', (tx, resolve, reject) => {
+			const stateStore = tx.objectStore(HALLOWEEN_PRICE_ALERT_STORE);
+			const notices = tx.objectStore(HALLOWEEN_PRICE_NOTICE_STORE);
+			const request = stateStore.get([vaultId, accountRef, 36_038]);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const prior = request.result === undefined ? null : parsePriceAlertState(request.result, vaultId, accountRef);
+					const crossed = projection.status === 'high' && prior?.armed === true;
+					const cooldownReady = prior === null || projection.capturedAtMs >= prior.cooldownUntilMs;
+					const dailyReady = prior?.lastNotifiedDayUtc !== projection.dayUtc;
+					const shouldNotify = crossed && cooldownReady && dailyReady;
+					const notice = shouldNotify ? createHalloweenPriceNotice(vaultId, accountRef, projection, cooldownHours) : null;
+					if (notice !== null) notices.put(notice);
+					stateStore.put({
+						version: 1, vaultId, accountRef, itemId: 36_038,
+						armed: projection.status === 'below',
+						lastValidDayUtc: projection.dayUtc,
+						lastNotifiedDayUtc: notice?.dayUtc ?? prior?.lastNotifiedDayUtc ?? null,
+						cooldownUntilMs: notice === null ? prior?.cooldownUntilMs ?? 0 :
+							projection.capturedAtMs + cooldownHours * 3_600_000,
+					});
+					tx.oncomplete = () => resolve({ notice, shouldNotify });
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	readPriceNotices(vaultId: string, accountRef: string): Promise<HalloweenPriceNoticeV1[]> {
+		return this.run([HALLOWEEN_PRICE_NOTICE_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_PRICE_NOTICE_STORE).index('by-scope-observed')
+				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, '\uffff']));
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const result = request.result.map(parsePriceNotice).sort((left, right) => right.observedAt.localeCompare(left.observedAt));
+					tx.oncomplete = () => resolve(result);
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	acknowledgePriceNotice(vaultId: string, accountRef: string, noticeId: string, acknowledgedAt: string): Promise<boolean> {
+		if (!isIso(acknowledgedAt)) return Promise.reject(new HalloweenStoreError('corrupt'));
+		return this.run([HALLOWEEN_PRICE_NOTICE_STORE], 'readwrite', (tx, resolve, reject) => {
+			const store = tx.objectStore(HALLOWEEN_PRICE_NOTICE_STORE);
+			const request = store.get([vaultId, accountRef, noticeId]);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					if (request.result === undefined) { tx.oncomplete = () => resolve(false); return; }
+					const notice = parsePriceNotice(request.result);
+					store.put({ ...notice, acknowledgedAt });
+					tx.oncomplete = () => resolve(true);
+				} catch (error) { reject(error); tx.abort(); }
 			};
 		});
 	}
@@ -421,6 +541,35 @@ function parseStoredObservation(value: unknown): StoredObservationV1 {
 function parseNotice(value: unknown): HalloweenNoticeV1 {
 	if (!validNotice(value)) throw new HalloweenStoreError('corrupt');
 	return structuredClone(value);
+}
+
+function parseComparison(value: unknown, vaultId: string, accountRef: string): HalloweenComparisonRecordV1 {
+	if (!isHalloweenComparisonRecord(value) || value.vaultId !== vaultId || value.accountRef !== accountRef) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return structuredClone(value);
+}
+
+function parsePriceNotice(value: unknown): HalloweenPriceNoticeV1 {
+	if (!isHalloweenPriceNotice(value)) throw new HalloweenStoreError('corrupt');
+	return structuredClone(value);
+}
+
+function parsePriceAlertState(value: unknown, vaultId: string, accountRef: string): {
+	armed: boolean;
+	lastNotifiedDayUtc: string | null;
+	cooldownUntilMs: number;
+} {
+	if (!isRecord(value) || !exactKeys(value, [
+		'version', 'vaultId', 'accountRef', 'itemId', 'armed', 'lastValidDayUtc', 'lastNotifiedDayUtc', 'cooldownUntilMs',
+	]) || value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.itemId !== 36_038 ||
+		typeof value.armed !== 'boolean' || typeof value.lastValidDayUtc !== 'string' ||
+		!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastValidDayUtc) ||
+		(value.lastNotifiedDayUtc !== null && (typeof value.lastNotifiedDayUtc !== 'string' ||
+			!/^\d{4}-\d{2}-\d{2}$/u.test(value.lastNotifiedDayUtc))) || !safeNonNegative(value.cooldownUntilMs)) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return { armed: value.armed, lastNotifiedDayUtc: value.lastNotifiedDayUtc, cooldownUntilMs: value.cooldownUntilMs };
 }
 
 function validNotice(value: unknown): value is HalloweenNoticeV1 {
