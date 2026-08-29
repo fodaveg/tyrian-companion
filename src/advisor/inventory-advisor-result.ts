@@ -27,6 +27,7 @@ import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifi
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
+import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
@@ -65,10 +66,11 @@ export function isInventoryAdvisorResultForInput(
 	personalValuation?: ContainerPersonalValuationV1,
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1,
 	materialStorageCapacity?: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+	marketDepth?: InventoryMarketDepthEvidenceV1,
 ): value is InventoryAdvisorResultV1 {
 	try {
 		return isInventoryAdvisorResultForInputUnsafe(
-			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity,
+			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders, materialStorageCapacity, marketDepth,
 		);
 	} catch { return false; }
 }
@@ -81,6 +83,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 	personalValuation: ContainerPersonalValuationV1 | undefined,
 	activeOrders: ActiveTradingPostOrdersEvidenceV1 | undefined,
 	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+	marketDepth: InventoryMarketDepthEvidenceV1 | undefined,
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
 	if (activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(activeOrders)
@@ -88,6 +91,10 @@ function isInventoryAdvisorResultForInputUnsafe(
 		|| !fresh(activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
 			input.policy.maxFutureSkewMs))) return false;
 	if (materialStorageCapacity !== undefined && !validMaterialStorageCapacity(materialStorageCapacity)) return false;
+	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
+		|| marketDepth.requestedItemIds.length !== input.prices.requestedItemIds.length
+		|| !marketDepth.requestedItemIds.every((itemId, index) => itemId === input.prices.requestedItemIds[index])
+		|| !fresh(marketDepth.capturedAt, input.asOf, input.policy.maxPriceAgeMs, input.policy.maxFutureSkewMs))) return false;
 	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
 		|| knowledgePack.sha256 !== input.rulePack.knowledgePackSha256)) return false;
 	if (value.status === 'invalid') return true;
@@ -147,6 +154,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 		const catalogComplete = catalogCoverage?.status === 'resolved'
 			&& ['network', 'cache_fresh'].includes(catalogCoverage.source)
 			&& fresh(input.catalog.resolvedAt, input.asOf, input.policy.maxCatalogAgeMs, input.policy.maxFutureSkewMs);
+		const depthItem = marketDepth?.items.find((entry) => entry.itemId === line.itemId);
 		const pricesComplete = input.prices.requestedItemIds.includes(line.itemId)
 			&& (input.prices.items.some((entry) => entry.itemId === line.itemId)
 				|| input.prices.missingItemIds.includes(line.itemId))
@@ -163,7 +171,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 			snapshot: snapshotComplete(input.snapshot) ? 'complete' : 'limited',
 			inventory: planAsset?.coverage === 'complete' ? 'complete' : planAsset?.coverage === 'limited' ? 'limited' : 'unknown',
 			catalog: catalogComplete ? 'complete' : catalogCoverage ? 'limited' : 'unknown',
-			prices: pricesComplete ? 'complete' : input.prices.status === 'partial' ? 'limited' : 'unknown',
+			prices: pricesComplete ? 'complete'
+				: input.prices.status === 'partial' ? 'limited' : 'unknown',
 			reservations: planAsset?.coverage === 'complete' ? 'complete' : planAsset?.coverage === 'limited' ? 'limited' : 'unknown',
 			accountSignals: signalsComplete ? 'complete' : signalsFresh ? 'limited' : 'unknown',
 			rules: rulesComplete ? 'complete' : 'limited',
@@ -172,8 +181,11 @@ function isInventoryAdvisorResultForInputUnsafe(
 		const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
 		const sold = line.decisions.filter((decision) => decision.action === 'sell')
 			.reduce((total, decision) => total + decision.quantity, 0);
-		if (sold > (price?.bid?.quantity ?? 0)) return false;
-		let remainingBid = price?.bid?.quantity ?? 0;
+		const demonstratedBid = depthItem?.coverage === 'complete'
+			? depthItem.buys.reduce((total, level) => total + level.quantity, 0)
+			: price?.bid?.quantity ?? 0;
+		if (!Number.isSafeInteger(demonstratedBid) || sold > demonstratedBid) return false;
+		let remainingBid = demonstratedBid;
 		for (const decision of line.decisions) {
 			const explanation = report.explanations.find((entry) => entry.ref === decision.explanationRef);
 			const withheld = withheldEconomicReason(input, knowledgePack as InventoryKnowledgePackV1 | undefined, decision, line.itemId);
@@ -189,7 +201,7 @@ function isInventoryAdvisorResultForInputUnsafe(
 					knowledgePack as InventoryKnowledgePackV1 | undefined, containerEconomy,
 					personalValuation, report.explanations)) return false;
 			} else if (!validDecisionAgainstInput(decision, line, input, reserved, expectedException,
-				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity)) return false;
+				remainingBid, explanation?.reasonCodes ?? [], materialStorageCapacity, depthItem)) return false;
 			if (decision.action === 'sell') remainingBid -= decision.quantity;
 		}
 	}
@@ -314,6 +326,7 @@ function validDecisionAgainstInput(
 	remainingBid: number,
 	reasonCodes: InventoryAdvisorReasonCode[],
 	materialStorageCapacity: InventoryAdvisorEngineInputV1['materialStorageCapacity'],
+	marketDepth: InventoryMarketDepthEvidenceV1['items'][number] | undefined,
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
 	const item = input.catalog.items[String(line.itemId)];
@@ -336,13 +349,13 @@ function validDecisionAgainstInput(
 			|| input.accountSignals.tradingPostAccess === 'unknown'
 			|| (input.accountSignals.tradingPostAccess === 'free_to_play' && !price.whitelisted)) return false;
 		const side = decision.action === 'sell' ? price.bid : price.ask;
-		if (side === null || !holdings.every((holding) => {
+		if ((marketDepth === undefined && side === null) || !holdings.every((holding) => {
 			const result = classifyItemLiquidity(holding, item, 'available');
 			return result.status === 'ok' && result.classification.tradingPost.status === 'eligible';
 		})) return false;
 		const holding = holdings[0];
 		if (!holding || holding.kind !== 'item') return false;
-		const selection = selectInventoryMarketRoute({ holding, item, price,
+		const selection = selectInventoryMarketRoute({ holding, item, price, marketDepth,
 			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
 			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === decision.action && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;
@@ -358,7 +371,7 @@ function validDecisionAgainstInput(
 		})) return false;
 		const holding = holdings[0];
 		if (!holding || holding.kind !== 'item') return false;
-		const selection = selectInventoryMarketRoute({ holding, item, price,
+		const selection = selectInventoryMarketRoute({ holding, item, price, marketDepth,
 			tradingPostAccess: input.accountSignals.tradingPostAccess, quantity: decision.quantity,
 			allowSell: remainingBid >= decision.quantity, listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 		return selection.action === 'vendor' && reasonCodes.length === 1 && reasonCodes[0] === selection.reason;

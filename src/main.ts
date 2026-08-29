@@ -506,7 +506,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(window.indexedDB)), vaultId,
 		);
 		this.inventoryAdvisor = createInventoryAdvisorRuntime(
-			inventoryClient, inventoryPublicClient, inventorySnapshots,
+			inventoryClient, inventoryPublicClient, inventorySnapshots, rateLimitCoordinator,
 			() => this.settings.language,
 			() => this.settings.halloweenPersonalValuation,
 			() => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
@@ -1960,6 +1960,7 @@ function createInventoryAdvisorRuntime(
 	client: GuildWars2Client,
 	publicClient: GuildWars2PublicCatalogClient,
 	snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
+	rateLimitCoordinator: RateLimitCoordinator,
 	locale: () => Locale,
 	personalValuation: () => TyrianSettings['halloweenPersonalValuation'],
 	materialStorageCapacity: () => ReturnType<typeof resolveMaterialStorageCapacity>,
@@ -1992,7 +1993,7 @@ function createInventoryAdvisorRuntime(
 					Date.now, async (receipt) => {
 						latestCaptureReceipt = structuredClone(receipt);
 						await writeCaptureReceipt(receipt);
-					},
+					}, rateLimitCoordinator,
 				);
 			}
 			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {

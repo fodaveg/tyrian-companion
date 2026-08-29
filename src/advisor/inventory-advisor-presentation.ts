@@ -10,6 +10,7 @@ import type {
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
+import { valueCompetitiveListing, valueInstantSellDepth } from '../economy/commerce-listings';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import {
@@ -65,7 +66,9 @@ export function buildInventoryAdvisorPresentation(
 		const reservationByItemId = new Map(reservationPlan.plan.assets
 			.filter((asset) => asset.key.startsWith('item:')).map((asset) => [asset.id, asset]));
 		const rows = result.report.lines.flatMap((line) => {
-			const comparisonByRef = marketComparisonsForLine(source.input, line);
+			const marketDepth = contextual ? source.discardContext.engineInput.marketDepth?.items
+				.find((entry) => entry.itemId === line.itemId) : undefined;
+			const comparisonByRef = marketComparisonsForLine(source.input, line, marketDepth);
 			const protectionByRef = protectionReasonsByDecision(
 				source.input, line, reservationByItemId.get(line.itemId), explanationByRef,
 			);
@@ -95,7 +98,7 @@ export function buildInventoryAdvisorPresentation(
 				protectionReasons: protectionByRef.get(decision.explanationRef) ?? [],
 				coverage: { ...line.coverage },
 				group: groupFor(presentationAction),
-				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
+				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity, marketDepth),
 				marketComparison: comparisonByRef.get(decision.explanationRef) ?? null,
 				burden: burdenFor(line, decision, allocations, reasonCodes),
 				...(decision.materialStorage === undefined ? {} : {
@@ -255,14 +258,38 @@ function burdenFor(
 function marketComparisonsForLine(
 	input: InventoryAdvisorInputV1,
 	line: InventoryAdvisorLineV1,
+	marketDepth?: NonNullable<InventoryAdvisorEngineInputV1['marketDepth']>['items'][number],
 ): ReadonlyMap<string, InventoryAdvisorMarketComparison> {
 	const result = new Map<string, InventoryAdvisorMarketComparison>();
 	const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
 	let bidRemaining = price?.bid?.quantity ?? 0;
 	const ordered = line.decisions
-		.filter((decision) => decision.action === 'sell' || decision.action === 'list')
+		.filter((decision) => decision.action === 'sell' || decision.action === 'list' || decision.action === 'vendor')
 		.sort((left, right) => explanationIndex(left.explanationRef) - explanationIndex(right.explanationRef));
 	for (const decision of ordered) {
+		if (marketDepth !== undefined) {
+			const instant = marketDepth.coverage === 'complete'
+				? valueInstantSellDepth(marketDepth.buys, decision.quantity) : null;
+			const listing = marketDepth.coverage === 'complete'
+				? valueCompetitiveListing(marketDepth.sells, decision.quantity) : null;
+			const comparable = instant?.status === 'complete' && listing?.status === 'complete';
+			const instantSellCopper = instant?.netCopper ?? null;
+			const listingCopper = listing?.netCopper ?? null;
+			const differenceCopper = comparable && instantSellCopper !== null && listingCopper !== null
+				? safeDifference(listingCopper, instantSellCopper) : null;
+			const depthStatus = marketDepth.coverage !== 'complete' ? 'error'
+				: marketDepth.buys.length === 0 && marketDepth.sells.length === 0 ? 'no_market'
+					: instant?.status === 'partial' ? 'partial' : 'complete';
+			result.set(decision.explanationRef, {
+				instantSellCopper, listingCopper, differenceCopper,
+				differenceBasisPoints: differenceCopper === null || instantSellCopper === null || instantSellCopper <= 0
+					? null : safeBasisPoints(differenceCopper, instantSellCopper),
+				depthStatus,
+				coveredQuantity: instant?.coveredQuantity ?? 0,
+				uncoveredQuantity: instant?.uncoveredQuantity ?? decision.quantity,
+			});
+			continue;
+		}
 		const instantAvailable = decision.action === 'sell' || bidRemaining >= decision.quantity;
 		const instantSellCopper = instantAvailable && price?.bid !== null && price?.bid !== undefined
 			? tradingPostNet('instant_sell', price.bid.unitCopper, decision.quantity) : null;
@@ -421,6 +448,7 @@ function valueFor(
 	action: InventoryAdvisorPresentationAction,
 	itemId: number,
 	quantity: number,
+	marketDepth?: NonNullable<InventoryAdvisorEngineInputV1['marketDepth']>['items'][number],
 ): InventoryAdvisorPresentationValue {
 	if (action === 'use' || action === 'open' || action === 'salvage' || action === 'deposit_material'
 		|| action === 'keep' || action === 'discard_review') {
@@ -435,6 +463,15 @@ function valueFor(
 			: { status: 'unavailable', route: null };
 	}
 	const price = priceByItemId.get(itemId);
+	if (marketDepth !== undefined) {
+		if (marketDepth.coverage !== 'complete') return { status: 'unavailable', route: null };
+		const demonstrated = action === 'sell'
+			? valueInstantSellDepth(marketDepth.buys, quantity)
+			: valueCompetitiveListing(marketDepth.sells, quantity);
+		return demonstrated.status === 'complete' && demonstrated.netCopper !== null
+			? { status: 'available', copper: demonstrated.netCopper, route: action === 'sell' ? 'instant_sell' : 'listing' }
+			: { status: 'unavailable', route: null };
+	}
 	const side = action === 'sell' ? price?.bid : action === 'list' ? price?.ask : null;
 	if (side === null || side === undefined) return { status: 'unavailable', route: null };
 	const value = createTradingPostValueWithPolicy(action === 'sell' ? 'instant_sell' : 'listing', side.unitCopper, quantity);

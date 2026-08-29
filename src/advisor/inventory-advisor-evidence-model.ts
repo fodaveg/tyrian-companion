@@ -4,6 +4,7 @@ import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
+import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
 
@@ -132,7 +133,8 @@ export type InventoryAdvisorCaptureReceiptSink = (
 export type InventoryAdvisorEvidenceCaptureResultV1 =
 	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1;
 		containerPrices?: InventoryContainerPriceEvidenceV1 | null;
-		activeOrders?: ActiveTradingPostOrdersEvidenceV1 }
+		activeOrders?: ActiveTradingPostOrdersEvidenceV1;
+		marketDepth?: InventoryMarketDepthEvidenceV1 }
 	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null;
 		activeOrders?: undefined; failure?: InventoryAdvisorEvidenceFailure };
 

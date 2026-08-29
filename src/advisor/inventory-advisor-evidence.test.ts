@@ -540,7 +540,10 @@ function clientFor(options: { permissions: string[]; urls: string[] | undefined;
 }
 
 function publicGateway(response: (ids: number[]) => unknown[]): PublicCatalogGateway {
-	return { requestDetailed: async (path) => ({ status: 200, headers: {}, body: response(idsFrom(path)) }) };
+	return { requestDetailed: async (path) => ({ status: 200, headers: {}, body: path.startsWith('commerce/listings?')
+		? idsFrom(path).map((id) => ({ id, buys: [{ listings: 1, unit_price: id + 10, quantity: 1 }],
+			sells: [{ listings: 1, unit_price: id + 11, quantity: 1 }] }))
+		: response(idsFrom(path)) }) };
 }
 function idsFrom(path: string): number[] { return new URLSearchParams(path.split('?')[1]).get('ids')!.split(',').map(Number); }
 function pricePayload(id: number, nullSides = false): Record<string, unknown> {

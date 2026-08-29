@@ -185,6 +185,34 @@ describe('H4.15 inventory advisor classifier', () => {
 		]);
 	});
 
+	it('uses full buy depth for instant sale and never treats sell listings as buyer capacity', () => {
+		const full = marketDepthFixture(4);
+		full.marketDepth = depth([
+			{ unitCopper: 100, quantity: 2 }, { unitCopper: 90, quantity: 2 },
+		], [{ unitCopper: 101, quantity: 1 }]);
+		expect(classifyInventoryAdvisor(full).report?.lines[0]?.decisions).toMatchObject([
+			{ action: 'sell', quantity: 4 },
+		]);
+
+		const insufficient = marketDepthFixture(4);
+		insufficient.marketDepth = depth([{ unitCopper: 100, quantity: 2 }], [{ unitCopper: 101, quantity: 1 }]);
+		expect(classifyInventoryAdvisor(insufficient).report?.lines[0]?.decisions).toMatchObject([
+			{ action: 'list', quantity: 4 },
+		]);
+	});
+
+	it('does not let unavailable market depth change a curated non-economic action', () => {
+		const input = marketDepthFixture(2);
+		input.input.rulePack.rules = [rule('use-10', 'approved')];
+		input.input.rulePack.sha256 = sha256InventoryRulePack(input.input.rulePack);
+		input.knowledgePack.entries[0]!.use = { status: 'applicable', ruleId: 'use-10', sourceIds: ['source'] };
+		input.knowledgePack.sha256 = sha256InventoryKnowledgePack(input.knowledgePack);
+		input.marketDepth = { ...depth([], []), status: 'unavailable', items: [
+			{ itemId: 10, coverage: 'unavailable', buys: [], sells: [] },
+		] };
+		expect(classifyInventoryAdvisor(input).report?.lines[0]?.decisions[0]).toMatchObject({ action: 'use' });
+	});
+
 	it('uses top-bid depth globally across two positions and observes free-to-play whitelisting', () => {
 		const split = fixture();
 		split.input.snapshot.holdings[0]!.quantity = 1;
@@ -439,6 +467,24 @@ function materialStorageFixture(looseQuantity: number, storedQuantity: number): 
 	};
 	value.input.catalog.coverage.materials['7'] = { status: 'resolved', source: 'network' };
 	return value;
+}
+
+function marketDepthFixture(quantity: number): InventoryAdvisorEngineInputV1 {
+	const value = fixture();
+	value.input.snapshot.holdings[0]!.quantity = quantity;
+	value.input.snapshot.availableByItem = { '10': quantity };
+	value.input.snapshot.ownedByItem = { '10': quantity };
+	value.input.prices.items[0] = { itemId: 10, whitelisted: true,
+		bid: { unitCopper: 100, quantity }, ask: { unitCopper: 101, quantity: 1 } };
+	return value;
+}
+
+function depth(
+	buys: Array<{ unitCopper: number; quantity: number }>,
+	sells: Array<{ unitCopper: number; quantity: number }>,
+): NonNullable<InventoryAdvisorEngineInputV1['marketDepth']> {
+	return { version: 1, capturedAt: '2026-08-14T12:00:00.000Z', source: 'gw2-commerce-listings',
+		requestedItemIds: [10], status: 'complete', items: [{ itemId: 10, coverage: 'complete', buys, sells }] };
 }
 
 function materialDepositEngineResult(quantity: number): InventoryAdvisorEngineResultV1 {

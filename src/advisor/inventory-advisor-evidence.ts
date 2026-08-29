@@ -37,6 +37,8 @@ import {
 	isInventoryContainerPriceEvidence,
 	type InventoryContainerPriceEvidenceV1,
 } from './inventory-container-economy';
+import { captureInventoryMarketDepth } from '../economy/commerce-listings';
+import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 
 const BATCH_SIZE = 200;
 const SNAPSHOT_TTL_MS = 15 * 60_000;
@@ -65,6 +67,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		private readonly publicGateway: PublicCatalogGateway,
 		private readonly now: () => number = Date.now,
 		private readonly captureReceipt: InventoryAdvisorCaptureReceiptSink = () => undefined,
+		private readonly rateLimit?: Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>,
 	) {}
 
 	capture(
@@ -136,13 +139,17 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 					snapshot,
 				);
 			}
-			const [catalog, prices, accountContext, containerPrices] = await Promise.all([
+			const [catalog, market, accountContext, containerPrices] = await Promise.all([
 				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
-				captureInventoryPrices(snapshot, this.publicGateway, this.now()).finally(reportCatalogOrPrice),
+				Promise.all([
+					captureInventoryPrices(snapshot, this.publicGateway, this.now()),
+					captureInventoryMarketDepth(ids(snapshot.availableByItem), this.publicGateway, this.now(), this.rateLimit),
+				]).finally(reportCatalogOrPrice),
 				captureAccountContext(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
 				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
 					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now())).finally(reportCatalogOrPrice),
 			]);
+			const [prices, marketDepth] = market;
 			const { accountSignals, activeOrders } = accountContext;
 			const coverage: InventoryAdvisorEvidenceCoverageV1 = {
 				snapshot: snapshotCoverage(snapshot),
@@ -171,8 +178,9 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				? { status: 'unavailable', evidence: null }
 			: { status: coverage.snapshot === 'complete' && coverage.catalog === 'complete' && coverage.prices === 'complete'
 					&& coverage.accountSignals === 'complete' && activeOrders.status === 'complete'
+					&& marketDepth.status === 'complete'
 					&& (containerPrices === null || containerPrices.status === 'complete')
-					? 'complete' : 'partial', evidence, containerPrices, activeOrders };
+					? 'complete' : 'partial', evidence, containerPrices, activeOrders, marketDepth };
 			return await this.finishCapture(result, snapshot);
 		} catch (error) {
 			if (error instanceof HttpTransportError && error.status === 429) {

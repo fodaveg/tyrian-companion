@@ -7,6 +7,7 @@ import type {
 import type { InventoryContainerEconomyPackV1, InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
+import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 
 export const INVENTORY_KNOWLEDGE_PACK_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_ENGINE_VERSION = 1 as const;
@@ -52,6 +53,8 @@ export interface InventoryAdvisorEngineInputV1 {
 	personalValuation?: ContainerPersonalValuationV1;
 	/** Current orders are read-only, identity-bound capture evidence. */
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1;
+	/** Public, keyless order-book depth captured by the same explicit refresh. */
+	marketDepth?: InventoryMarketDepthEvidenceV1;
 	/** Manual account setting resolved to its configured value or the guaranteed 250 floor. */
 	materialStorageCapacity?: { quantity: number; source: 'configured' | 'minimum_guaranteed' };
 }

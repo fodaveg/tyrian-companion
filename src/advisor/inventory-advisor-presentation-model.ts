@@ -65,6 +65,9 @@ export interface InventoryAdvisorMarketComparison {
 	listingCopper: number | null;
 	differenceCopper: number | null;
 	differenceBasisPoints: number | null;
+	depthStatus?: 'complete' | 'partial' | 'no_market' | 'error';
+	coveredQuantity?: number;
+	uncoveredQuantity?: number;
 }
 
 export interface InventoryAdvisorBurden {

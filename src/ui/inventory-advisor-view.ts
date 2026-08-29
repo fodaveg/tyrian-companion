@@ -1217,6 +1217,19 @@ function rowContextDetails(row: InventoryAdvisorViewRow, translator: Translator)
 	}
 	const comparison = row.marketComparison;
 	if (comparison !== null) {
+		if (comparison.depthStatus !== undefined) addDefinition(
+			list,
+			translator.t('advisor.view.marketDepth.status'),
+			translator.t(`advisor.view.marketDepth.status.${comparison.depthStatus}`),
+		);
+		if (comparison.coveredQuantity !== undefined && comparison.uncoveredQuantity !== undefined) addDefinition(
+			list,
+			translator.t('advisor.view.marketDepth.coverage'),
+			translator.t('advisor.view.marketDepth.coverageValue', {
+				covered: comparison.coveredQuantity,
+				uncovered: comparison.uncoveredQuantity,
+			}),
+		);
 		addDefinition(list, translator.t('advisor.view.marketComparison.instant'),
 			priceOrFallback(comparison.instantSellCopper, 'unavailable', translator));
 		addDefinition(list, translator.t('advisor.view.marketComparison.listing'),

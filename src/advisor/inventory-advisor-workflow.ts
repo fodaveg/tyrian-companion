@@ -183,6 +183,9 @@ export function composeInventoryAdvisorRefresh(
 		...(capture.activeOrders === undefined ? {} : {
 			activeOrders: structuredClone(capture.activeOrders),
 		}),
+		...(capture.marketDepth === undefined ? {} : {
+			marketDepth: structuredClone(capture.marketDepth),
+		}),
 		...(rules.materialStorageCapacity === undefined ? {} : {
 			materialStorageCapacity: structuredClone(rules.materialStorageCapacity),
 		}),

@@ -23,6 +23,7 @@ import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-a
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -49,7 +50,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
 		return isInventoryAdvisorResultForInput(
 			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
-			value.activeOrders, value.materialStorageCapacity,
+			value.activeOrders, value.materialStorageCapacity, value.marketDepth,
 		) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
@@ -70,12 +71,13 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 			recommendationEvidenceReady(input, plan.plan, itemId),
 		]));
 		const complete = input.prices.status === 'complete'
+			&& (value.marketDepth === undefined || value.marketDepth.status === 'complete')
 			&& itemIds.every((itemId) => itemEvidence.get(itemId) === true)
 			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
 			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation,
-			value.materialStorageCapacity))
+			value.materialStorageCapacity, value.marketDepth))
 			.map((line) => applyActiveOrderPolicy(line, value.activeOrders));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
@@ -125,7 +127,8 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePackV1, itemId: number, reserved: number,
 	evidenceReady: boolean, curatedKnowledgeReady: boolean, economy: EngineInput['containerEconomy'],
 	personalValuation: EngineInput['personalValuation'],
-	materialStorageCapacity: EngineInput['materialStorageCapacity']): InventoryAdvisorEngineLineV1 {
+	materialStorageCapacity: EngineInput['materialStorageCapacity'],
+	marketDepth: EngineInput['marketDepth']): InventoryAdvisorEngineLineV1 {
 	const positions = input.snapshot.holdings.map((holding, holdingIndex) => ({ holding, holdingIndex })).filter((entry) => entry.holding.kind === 'item' && entry.holding.itemId === itemId)
 		.map(({ holding, holdingIndex }) => ({ ref: `#/positions/${itemId}/${holdingIndex}`, holdingIndex, itemId, quantity: holding.quantity, source: holding.location.source, state: holding.state }));
 	const remaining = new Map(positions.map((position) => [position.ref, position.quantity]));
@@ -214,6 +217,18 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
+	if (marketDepth !== undefined) {
+		const market = marketAction(input, freePositions[0]!, freeQuantity, itemId, true, evidenceReady,
+			marketDepth.items.find((entry) => entry.itemId === itemId));
+		const allocations = freePositions.map((position) => ({
+			positionRef: position.ref, quantity: remaining.get(position.ref) ?? 0,
+		}));
+		for (const allocation of allocations) remaining.set(allocation.positionRef, 0);
+		decisions.push({ action: market.action, itemId, quantity: freeQuantity, allocations,
+			reason: market.reason, ruleId: null });
+		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
+			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
+	}
 	let bidRemaining = input.prices.items.find((entry) => entry.itemId === itemId)?.bid?.quantity ?? 0;
 	for (const position of freePositions) {
 		const quantity = remaining.get(position.ref) ?? 0; if (quantity === 0) continue;
@@ -274,7 +289,8 @@ function publicCoverage(input: InventoryAdvisorInputV1, itemId: number, reservat
 	const snapshot = input.snapshot.quality === 'stable' && inventorySnapshotCoverageComplete(input);
 	return {
 		snapshot: snapshot ? 'complete' : 'limited', inventory: reservation === 'complete' ? 'complete' : reservation === 'limited' ? 'limited' : 'unknown',
-		catalog: catalog ? 'complete' : catalogCoverage ? 'limited' : 'unknown', prices: prices ? 'complete' : input.prices.status === 'partial' ? 'limited' : 'unknown',
+		catalog: catalog ? 'complete' : catalogCoverage ? 'limited' : 'unknown', prices: prices ? 'complete'
+			: input.prices.status === 'partial' ? 'limited' : 'unknown',
 		reservations: reservation === 'complete' ? 'complete' : reservation === 'limited' ? 'limited' : 'unknown', accountSignals: signals ? 'complete' : signalsFresh ? 'limited' : 'unknown', rules: rules ? 'complete' : 'limited',
 	};
 }
@@ -439,10 +455,11 @@ function economyReason(reason: string): string {
 	return reasons[reason] ?? 'rule_conflict';
 }
 
-function marketAction(input: InventoryAdvisorInputV1, position: InventoryAdvisorPositionV1, quantity: number, itemId: number, allowSell: boolean, evidenceReady: boolean): { action: 'sell' | 'list' | 'vendor' | 'keep' | 'review'; reason: string } {
+function marketAction(input: InventoryAdvisorInputV1, position: InventoryAdvisorPositionV1, quantity: number, itemId: number, allowSell: boolean, evidenceReady: boolean,
+	marketDepth?: NonNullable<EngineInput['marketDepth']>['items'][number]): { action: 'sell' | 'list' | 'vendor' | 'keep' | 'review'; reason: string } {
 	if (!evidenceReady) return { action: 'review', reason: 'evidence_incomplete' };
 	const holding = input.snapshot.holdings[position.holdingIndex]!; const item = input.catalog.items[String(itemId)]!; const price = input.prices.items.find((entry) => entry.itemId === itemId);
-	const selection = selectInventoryMarketRoute({ holding, item, price,
+	const selection = selectInventoryMarketRoute({ holding, item, price, marketDepth,
 		tradingPostAccess: input.accountSignals.tradingPostAccess, quantity, allowSell,
 		listingMinimumAdvantageBps: input.policy.listingMinimumAdvantageBps });
 	return { action: selection.action, reason: selection.reason };
@@ -496,9 +513,10 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], [
-		'containerEconomy', 'personalValuation', 'activeOrders', 'materialStorageCapacity',
+		'containerEconomy', 'personalValuation', 'activeOrders', 'materialStorageCapacity', 'marketDepth',
 	])
 		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
+	const input = value.input;
 	if (value.materialStorageCapacity !== undefined && (!record(value.materialStorageCapacity)
 		|| !keys(value.materialStorageCapacity, ['quantity', 'source'])
 		|| !materialCapacity(value.materialStorageCapacity.quantity)
@@ -506,9 +524,14 @@ function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 		|| (value.materialStorageCapacity.source === 'minimum_guaranteed'
 			&& value.materialStorageCapacity.quantity !== 250))) return false;
 	if (value.activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(value.activeOrders)
-		|| value.activeOrders.accountId !== value.input.snapshot.accountId
-		|| !fresh(value.activeOrders.capturedAt, value.input.asOf, value.input.policy.maxPriceAgeMs,
-			value.input.policy.maxFutureSkewMs))) return false;
+		|| value.activeOrders.accountId !== input.snapshot.accountId
+		|| !fresh(value.activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+			input.policy.maxFutureSkewMs))) return false;
+	if (value.marketDepth !== undefined && (!isInventoryMarketDepthEvidence(value.marketDepth)
+		|| value.marketDepth.requestedItemIds.length !== input.prices.requestedItemIds.length
+		|| !value.marketDepth.requestedItemIds.every((itemId, index) => itemId === input.prices.requestedItemIds[index])
+		|| !fresh(value.marketDepth.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+			input.policy.maxFutureSkewMs))) return false;
 	const economy = value.containerEconomy;
 	if (economy !== undefined && (!record(economy) || !keys(economy, ['pack', 'prices'])
 		|| !isInventoryContainerEconomyPack(economy.pack)

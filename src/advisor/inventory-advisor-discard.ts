@@ -24,7 +24,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		const reproduced = classifyInventoryAdvisor(value.engineInput);
 		if (!isInventoryAdvisorResultForInput(value.producerResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity)
+			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth)
 			|| canonical(reproduced) !== canonical(value.producerResult)) return invalid();
 		if (value.producerResult.status === 'invalid' || value.producerResult.report === null || value.producerResult.envelope === null) return invalid();
 		const producerResultSha256 = sha256CanonicalValue(value.producerResult);
@@ -82,7 +82,7 @@ export function applyInventoryDiscardAllowlist(value: unknown): InventoryDiscard
 		const publicResult = { status: result.status, report: result.report, envelope: result.envelope };
 		return isInventoryAdvisorResultForInput(publicResult, value.engineInput.input, value.engineInput.knowledgePack,
 			value.engineInput.containerEconomy, value.engineInput.personalValuation, value.engineInput.activeOrders,
-			value.engineInput.materialStorageCapacity)
+			value.engineInput.materialStorageCapacity, value.engineInput.marketDepth)
 			&& isInventoryDiscardAllowlistResultShape(result) ? result : invalid();
 	} catch { return invalid(); }
 }
