@@ -6,7 +6,8 @@ import type { ApiPollOutcome, ApiPollSchedulerState } from '../sessions/api-poll
 import type { ApiPollScheduler } from '../sessions/api-poll-scheduler';
 import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { PriceHistoryRuntime } from './price-history-runtime';
-import { PRICE_HISTORY_DB_NAME, type PriceHistorySettings } from './price-history-model';
+import { PRICE_HISTORY_DB_NAME, type PriceHistoryDailyV1, type PriceHistorySettings } from './price-history-model';
+import { IndexedDbPriceHistoryStore } from './price-history-store';
 
 const ENABLED: PriceHistorySettings = { enabled: true, intervalMinutes: 15, rawRetentionDays: 7, dailyRetentionDays: 180 };
 
@@ -91,6 +92,56 @@ describe('PriceHistoryRuntime', () => {
 		expect(scheduler.start).not.toHaveBeenCalled();
 		runtime.dispose();
 	});
+
+	it('does not commit or publish a delayed poll after the runtime is disabled', async () => {
+		const factory = new IDBFactory();
+		const scheduler = new FakeScheduler();
+		const changed = vi.fn();
+		const responseReady = deferred<void>();
+		const requestDetailed = vi.fn(async (path: string) => { await responseReady.promise; return response(path); });
+		const runtime = createRuntime(factory, requestDetailed, scheduler, () => 1_800_001, changed, 'vault-delayed');
+		await runtime.activate(ENABLED);
+		const poll = scheduler.poll();
+		await vi.waitFor(() => expect(requestDetailed).toHaveBeenCalledOnce());
+		await runtime.configure({ ...ENABLED, enabled: false });
+		const changesAfterDisable = changed.mock.calls.length;
+		responseReady.resolve();
+		await expect(poll).resolves.toEqual({ kind: 'success' });
+		expect(runtime.getState().status).toBe('disabled');
+		expect(changed).toHaveBeenCalledTimes(changesAfterDisable);
+		const store = await IndexedDbPriceHistoryStore.open(factory);
+		expect(await store.readSnapshots('vault-delayed')).toEqual([]);
+		store.close();
+		runtime.dispose();
+	});
+
+	it('fences older series reads and suppresses a delayed read after dispose', async () => {
+		const scheduler = new FakeScheduler();
+		const changed = vi.fn();
+		const runtime = createRuntime(new IDBFactory(), vi.fn(async (path: string) => response(path)), scheduler, () => 1_800_001, changed);
+		await runtime.activate(ENABLED);
+		const first = deferred<PriceHistoryDailyV1[]>();
+		const second = deferred<PriceHistoryDailyV1[]>();
+		const afterDispose = deferred<PriceHistoryDailyV1[]>();
+		const read = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'readDaily')
+			.mockImplementation(async (_vaultId, itemId) => await (itemId === 1 ? first.promise : itemId === 2 ? second.promise : afterDispose.promise));
+		const firstLoad = runtime.loadSeries(1, 'bid', 42);
+		const secondLoad = runtime.loadSeries(2, 'ask', 90);
+		second.resolve([daily(2)]);
+		await secondLoad;
+		expect(runtime.getState()).toMatchObject({ selectedItemId: 2, selectedSide: 'ask', windowDays: 90 });
+		first.resolve([daily(1)]);
+		await firstLoad;
+		expect(runtime.getState()).toMatchObject({ selectedItemId: 2, selectedSide: 'ask', windowDays: 90 });
+		const delayedLoad = runtime.loadSeries(3, 'bid', 42);
+		runtime.dispose();
+		const changesAfterDispose = changed.mock.calls.length;
+		afterDispose.resolve([daily(3)]);
+		await delayedLoad;
+		expect(runtime.getState().selectedItemId).toBe(2);
+		expect(changed).toHaveBeenCalledTimes(changesAfterDispose);
+		read.mockRestore();
+	});
 });
 
 class FakeScheduler {
@@ -113,15 +164,30 @@ function createRuntime(
 	requestDetailed: ReturnType<typeof vi.fn>,
 	scheduler: FakeScheduler,
 	now: () => number = () => 1_000,
+	onStateChange: () => void = () => undefined,
+	vaultId = `vault-${crypto.randomUUID()}`,
 ): PriceHistoryRuntime {
 	return new PriceHistoryRuntime({
-		factory, vaultId: `vault-${crypto.randomUUID()}`,
-		gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now }), now,
+		factory, vaultId,
+		gateway: { requestDetailed }, rateLimit: new RateLimitCoordinator({ now }), now, onStateChange,
 		scheduler: (poll, onStateChange) => {
 			scheduler.poll = poll; scheduler.onStateChange = onStateChange;
 			return scheduler as unknown as ApiPollScheduler;
 		},
 	});
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	return { promise: new Promise<T>((done) => { resolve = done; }), resolve };
+}
+
+function daily(itemId: number): PriceHistoryDailyV1 {
+	return {
+		version: 1, vaultId: 'vault', itemId, dayUtc: '1970-01-01', snapshotCount: 1, partialSnapshotCount: 0,
+		bid: { count: 1, minCopper: itemId, maxCopper: itemId, medianCopperX2: itemId * 2, closeCopper: itemId, closeCapturedAtMs: 1 },
+		ask: { count: 1, minCopper: itemId, maxCopper: itemId, medianCopperX2: itemId * 2, closeCopper: itemId, closeCapturedAtMs: 1 },
+	};
 }
 
 function response(path: string) {

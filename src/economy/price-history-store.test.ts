@@ -67,9 +67,49 @@ describe('IndexedDbPriceHistoryStore', () => {
 		expect(first).toMatchObject({ dailyRecords: 2, prunedSnapshots: 1 });
 		expect(await store.readSnapshots('vault')).toHaveLength(1);
 		expect(await store.readDaily('vault', 36_038, '2026-01-01')).toHaveLength(2);
+		expect((await store.compactAndPrune('vault', now, 7, 180)).dailyRecords).toBe(0);
 		const second = await store.compactAndPrune('vault', now, 7, 5);
 		expect(second.prunedDaily).toBe(1);
 		expect((await store.compactAndPrune('vault', now, 7, 5)).prunedDaily).toBe(0);
+		store.close();
+	});
+
+	it('preserves the complete UTC boundary day across repeated compaction and pruning cycles', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('boundary-day'));
+		const early = Date.parse('2026-08-22T01:00:00.000Z');
+		const late = Date.parse('2026-08-22T20:00:00.000Z');
+		for (const [capturedAt, bid] of [[early, 100], [late, 300]] as const) {
+			const claim = await store.claimSlot('vault', capturedAt, `owner-${String(bid)}`, capturedAt);
+			if (claim.status !== 'acquired') throw new Error('lease missing');
+			await store.commitSlot(claim.lease, { ...snapshot('vault', capturedAt, capturedAt), items: [[36_038, bid, bid + 10]] });
+		}
+		await store.compactAndPrune('vault', Date.parse('2026-08-29T12:00:00.000Z'), 7, 180);
+		expect(await store.readSnapshots('vault')).toHaveLength(2);
+		await store.compactAndPrune('vault', Date.parse('2026-08-30T12:00:00.000Z'), 7, 180);
+		expect(await store.readSnapshots('vault')).toHaveLength(0);
+		expect((await store.readDaily('vault', 36_038, '2026-08-22'))[0]).toMatchObject({
+			snapshotCount: 2, partialSnapshotCount: 0,
+			bid: { count: 2, minCopper: 100, maxCopper: 300, medianCopperX2: 400, closeCopper: 300 },
+		});
+		expect((await store.compactAndPrune('vault', Date.parse('2026-08-31T12:00:00.000Z'), 7, 180)).dailyRecords).toBe(0);
+		expect((await store.readDaily('vault', 36_038, '2026-08-22'))[0]?.snapshotCount).toBe(2);
+		store.close();
+	});
+
+	it('persists per-item partiality for missing ids without tainting present items', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('per-item-partial'));
+		const capturedAt = Date.parse('2026-08-29T12:00:00.000Z');
+		const claim = await store.claimSlot('vault', capturedAt, 'owner', capturedAt);
+		if (claim.status !== 'acquired') throw new Error('lease missing');
+		await store.commitSlot(claim.lease, {
+			...snapshot('vault', capturedAt, capturedAt), status: 'partial',
+			items: [[36_038, 100, 110]], missingItemIds: [36_041],
+		});
+		await store.compactAndPrune('vault', capturedAt, 7, 180);
+		expect((await store.readDaily('vault', 36_038, '2026-08-29'))[0]?.partialSnapshotCount).toBe(0);
+		expect((await store.readDaily('vault', 36_041, '2026-08-29'))[0]).toMatchObject({
+			snapshotCount: 1, partialSnapshotCount: 1, bid: null, ask: null,
+		});
 		store.close();
 	});
 

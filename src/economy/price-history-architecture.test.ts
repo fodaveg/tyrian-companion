@@ -52,6 +52,14 @@ describe('H9.1 price-history architecture boundary', () => {
 		expect(source('src/economy/price-history-store.ts')).not.toMatch(/MemoryPriceHistory|fallback/iu);
 	});
 
+	it('keeps compaction on the linear tuple aggregator without nested item scans or snapshot fan-out', () => {
+		const store = source('src/economy/price-history-store.ts');
+		const compaction = store.slice(store.indexOf('\tcompactAndPrune('), store.indexOf('\n\tclose(): void'));
+		expect(compaction).toContain('buildPriceHistoryDailyAggregates(vaultId, raw)');
+		expect(compaction).not.toMatch(/\.find\s*\(|snapshots\s*:\s*\[\]/u);
+		expect(compaction).toContain('sameDaily(');
+	});
+
 	it.each([
 		'import { SecretStorage } from \'obsidian\';',
 		'const accountId = "personal";',

@@ -32,8 +32,8 @@ export function priceHistorySvg(daily: readonly PriceHistoryDailyV1[], side: Pri
 	const ranges = points.filter(({ value }) => value !== null).map(({ index, value }) =>
 		`<line class="price-range" x1="${x(index)}" y1="${y(value!.minCopper)}" x2="${x(index)}" y2="${y(value!.maxCopper)}"/>`,
 	).join('');
-	const median = segmentedPaths(points, (value) => value.medianCopperX2 / 2, x, y, 'price-median');
-	const close = segmentedPaths(points, (value) => value.closeCopper, x, y, 'price-close');
+	const median = segmentedPaths(points, (value) => value.medianCopperX2 / 2, x, y, 'price-median', 'circle');
+	const close = segmentedPaths(points, (value) => value.closeCopper, x, y, 'price-close', 'square');
 	return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-hidden="true"><g>${ranges}${median}${close}</g></svg>`;
 }
 
@@ -154,6 +154,7 @@ function segmentedPaths(
 	x: (index: number) => number,
 	y: (value: number) => number,
 	className: string,
+	marker: 'circle' | 'square',
 ): string {
 	const segments: string[][] = [];
 	let current: string[] = [];
@@ -168,7 +169,13 @@ function segmentedPaths(
 		previousDay = point.value === null ? null : day;
 	}
 	if (current.length > 0) segments.push(current);
-	return segments.map((segment) => `<polyline class="${className}" points="${segment.join(' ')}"/>`).join('');
+	return segments.map((segment) => {
+		if (segment.length > 1) return `<polyline class="${className}" points="${segment.join(' ')}"/>`;
+		const [pointX, pointY] = segment[0]!.split(',');
+		return marker === 'circle'
+			? `<circle class="${className}-marker" cx="${pointX}" cy="${pointY}" r="5"/>`
+			: `<rect class="${className}-marker" x="${round(Number(pointX) - 4)}" y="${round(Number(pointY) - 4)}" width="8" height="8"/>`;
+	}).join('');
 }
 
 function labelledSelect(text: string, options: Array<{ value: string; label: string }>, selected: string): { label: HTMLLabelElement; select: HTMLSelectElement } {
@@ -219,6 +226,23 @@ function priceHistorySvgElement(daily: readonly PriceHistoryDailyV1[], side: Pri
 		polyline.setAttribute('class', match[1]!);
 		polyline.setAttribute('points', match[2]!);
 		group.append(polyline);
+	}
+	for (const match of source.matchAll(/<circle class="([^"]+)" cx="([^"]+)" cy="([^"]+)" r="([^"]+)"\/>/gu)) {
+		const circle = document.createElementNS(namespace, 'circle');
+		circle.setAttribute('class', match[1]!);
+		circle.setAttribute('cx', match[2]!);
+		circle.setAttribute('cy', match[3]!);
+		circle.setAttribute('r', match[4]!);
+		group.append(circle);
+	}
+	for (const match of source.matchAll(/<rect class="([^"]+)" x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"\/>/gu)) {
+		const rect = document.createElementNS(namespace, 'rect');
+		rect.setAttribute('class', match[1]!);
+		rect.setAttribute('x', match[2]!);
+		rect.setAttribute('y', match[3]!);
+		rect.setAttribute('width', match[4]!);
+		rect.setAttribute('height', match[5]!);
+		group.append(rect);
 	}
 	svg.append(group);
 	return svg;

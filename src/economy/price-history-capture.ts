@@ -61,6 +61,7 @@ export class PriceHistoryCaptureService {
 			const requestedIds = watch.map(({ itemId }) => itemId).sort((left, right) => left - right);
 			const tuples: PriceHistoryTuple[] = [];
 			const missing = new Set<number>();
+			let incompleteSides = false;
 			for (const batch of chunks(requestedIds, PRICE_HISTORY_MAX_BATCH_SIZE)) {
 				const requested = new Set(batch);
 				let response;
@@ -87,6 +88,7 @@ export class PriceHistoryCaptureService {
 				}
 				if (!validPriceEnvelope(response.body, requested)) return { status: 'invalid_payload' };
 				const parsed = parsePublicTradingPostPriceBatch(response.body, requested);
+				incompleteSides ||= parsed.incompleteSides || parsed.items.some(({ bid, ask }) => bid === null || ask === null);
 				const rawIds = new Set((response.body as Array<{ id: number }>).map(({ id }) => id));
 				if (parsed.missing.some((id) => rawIds.has(id))) return { status: 'invalid_payload' };
 				for (const item of parsed.items) tuples.push([item.itemId, item.bid?.unitCopper ?? null, item.ask?.unitCopper ?? null]);
@@ -97,7 +99,7 @@ export class PriceHistoryCaptureService {
 			const snapshot: PriceHistorySnapshotV1 = {
 				version: 1, vaultId, slotStartMs, capturedAtMs: this.now(),
 				intervalMs: priceHistoryIntervalMs(intervalMinutes),
-				status: missingItemIds.length === 0 ? 'complete' : 'partial',
+				status: missingItemIds.length === 0 && !incompleteSides ? 'complete' : 'partial',
 				items: tuples, missingItemIds,
 			};
 			const committed = await store.commitSlot(claim.lease, snapshot);

@@ -677,6 +677,18 @@
 	stroke-width: 3;
 }
 
+.tyrian-price-history__chart .price-median-marker {
+	fill: var(--background-primary);
+	stroke: var(--text-accent);
+	stroke-width: 2;
+}
+
+.tyrian-price-history__chart .price-close-marker {
+	fill: var(--interactive-accent);
+	stroke: var(--background-primary);
+	stroke-width: 1;
+}
+
 .tyrian-price-history__table-overflow {
 	overflow-x: auto;
 }

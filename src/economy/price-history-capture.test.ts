@@ -51,6 +51,16 @@ describe('PriceHistoryCaptureService', () => {
 		store.close();
 	});
 
+	it('marks incomplete quote sides partial even when no item id is omitted', async () => {
+		const store = await opened('incomplete-sides');
+		const gateway: PublicCatalogGateway = { requestDetailed: async (path) => response(idsFromPath(path), 36_038) };
+		const result = await new PriceHistoryCaptureService(gateway, new RateLimitCoordinator(), 'owner', () => 100)
+			.capture(store, 'vault', 0, 15);
+		expect(result).toMatchObject({ status: 'partial', snapshot: { status: 'partial', missingItemIds: [] } });
+		expect((await store.readSnapshots('vault'))[0]?.items[0]).toEqual([36_038, null, 36_238]);
+		store.close();
+	});
+
 	it.each([
 		['extra', (ids: number[]) => [...priceRows(ids), row(999_999)]],
 		['duplicate', (ids: number[]) => [...priceRows(ids), row(ids[0]!) ]],

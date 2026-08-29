@@ -11,7 +11,20 @@ afterEach(() => vi.unstubAllGlobals());
 describe('price-history panel', () => {
 	it('renders the SVG byte-for-byte and splits lines across missing UTC days', () => {
 		const svg = priceHistorySvg([daily('2026-08-01', 100), daily('2026-08-02', 120), daily('2026-08-04', 140)], 'ask');
-		expect(svg).toBe('<svg viewBox="0 0 760 240" width="100%" role="img" aria-hidden="true"><g><line class="price-range" x1="28" y1="212" x2="28" y2="212"/><line class="price-range" x1="380" y1="120" x2="380" y2="120"/><line class="price-range" x1="732" y1="28" x2="732" y2="28"/><polyline class="price-median" points="28,212 380,120"/><polyline class="price-median" points="732,28"/><polyline class="price-close" points="28,212 380,120"/><polyline class="price-close" points="732,28"/></g></svg>');
+		expect(svg).toBe('<svg viewBox="0 0 760 240" width="100%" role="img" aria-hidden="true"><g><line class="price-range" x1="28" y1="212" x2="28" y2="212"/><line class="price-range" x1="380" y1="120" x2="380" y2="120"/><line class="price-range" x1="732" y1="28" x2="732" y2="28"/><polyline class="price-median" points="28,212 380,120"/><circle class="price-median-marker" cx="732" cy="28" r="5"/><polyline class="price-close" points="28,212 380,120"/><rect class="price-close-marker" x="728" y="24" width="8" height="8"/></g></svg>');
+	});
+
+	it('renders visible DOM markers for a one-day or isolated observation', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('collecting'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const elements = walk(mount.container);
+		const median = elements.find((element) => element.tag === 'circle');
+		const close = elements.find((element) => element.tag === 'rect');
+		expect(median?.attributes).toEqual(new Map([['class', 'price-median-marker'], ['cx', '28'], ['cy', '212'], ['r', '5']]));
+		expect(close?.attributes).toEqual(new Map([['class', 'price-close-marker'], ['x', '24'], ['y', '208'], ['width', '8'], ['height', '8']]));
 	});
 
 	it.each([[320, 'stacked'], [480, 'two-column'], [760, 'wide']] as const)(

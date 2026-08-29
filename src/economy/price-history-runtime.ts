@@ -52,6 +52,8 @@ export class PriceHistoryRuntime {
 	private store: IndexedDbPriceHistoryStore | null = null;
 	private settings: PriceHistorySettings = { ...DEFAULT_PRICE_HISTORY_SETTINGS };
 	private activation: Promise<void> | null = null;
+	private generation = 0;
+	private seriesGeneration = 0;
 	private disposed = false;
 	private state: PriceHistoryRuntimeState = {
 		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
@@ -78,8 +80,10 @@ export class PriceHistoryRuntime {
 			return Promise.resolve();
 		}
 		if (this.activation) return this.activation;
+		const generation = ++this.generation;
+		this.seriesGeneration += 1;
 		this.setState({ status: 'loading' });
-		const activation = this.activateInternal().finally(() => { if (this.activation === activation) this.activation = null; });
+		const activation = this.activateInternal(generation).finally(() => { if (this.activation === activation) this.activation = null; });
 		this.activation = activation;
 		return activation;
 	}
@@ -89,66 +93,90 @@ export class PriceHistoryRuntime {
 		this.settings = { ...settings };
 		if (!settings.enabled) { this.disable(); return; }
 		if (!wasEnabled || this.store === null) { await this.activate(settings); return; }
+		const generation = ++this.generation;
+		this.seriesGeneration += 1;
+		const store = this.store;
 		this.scheduler.updateInterval(priceHistoryIntervalMs(settings.intervalMinutes));
 		try {
-			await this.store.compactAndPrune(this.options.vaultId, this.now(), settings.rawRetentionDays, settings.dailyRetentionDays);
-			this.emit();
-		} catch (error) { this.storeFailure(error); }
+			await store.compactAndPrune(this.options.vaultId, this.now(), settings.rawRetentionDays, settings.dailyRetentionDays);
+			if (this.owns(generation, store)) this.emit();
+		} catch (error) { if (this.owns(generation, store)) this.storeFailure(error); }
 	}
 
 	setOnline(online: boolean): void { if (this.store !== null) this.scheduler.setOnline(online); }
 	notifyWake(): void { if (this.store !== null) this.scheduler.notifyWake(); }
 
 	async observeSessionItemIds(itemIds: readonly number[]): Promise<void> {
-		if (this.store === null || !this.settings.enabled) return;
+		const store = this.store;
+		if (store === null || !this.settings.enabled) return;
+		const generation = this.generation;
 		try {
-			await this.store.observeItems(this.options.vaultId, itemIds, this.now());
-			const watch = await this.store.readWatchList(this.options.vaultId);
+			await store.observeItems(this.options.vaultId, itemIds, this.now());
+			if (!this.owns(generation, store)) return;
+			const watch = await store.readWatchList(this.options.vaultId);
+			if (!this.owns(generation, store)) return;
 			this.setState({ watchItemIds: watch.map(({ itemId }) => itemId), selectedItemId: this.state.selectedItemId ?? watch[0]?.itemId ?? null });
-		} catch (error) { this.storeFailure(error); }
+		} catch (error) { if (this.owns(generation, store)) this.storeFailure(error); }
 	}
 
 	async loadSeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
-		if (this.store === null || !this.settings.enabled) return;
+		const store = this.store;
+		if (store === null || !this.settings.enabled) return;
+		const generation = this.generation;
+		const seriesGeneration = ++this.seriesGeneration;
 		const from = priceHistoryDayUtc(Math.max(0, this.now() - windowDays * DAY_MS));
 		try {
-			const daily = await this.store.readDaily(this.options.vaultId, itemId, from);
+			const daily = await store.readDaily(this.options.vaultId, itemId, from);
+			if (!this.owns(generation, store) || seriesGeneration !== this.seriesGeneration) return;
 			this.setState({
 				selectedItemId: itemId, selectedSide: side, windowDays, daily,
 				status: daily.length >= 42 ? (daily.some(({ partialSnapshotCount }) => partialSnapshotCount > 0) ? 'partial' : 'ready') : 'collecting',
 				provisionalDayUtc: daily.at(-1)?.dayUtc === priceHistoryDayUtc(this.now()) ? priceHistoryDayUtc(this.now()) : null,
 			});
-		} catch (error) { this.storeFailure(error); }
+		} catch (error) {
+			if (this.owns(generation, store) && seriesGeneration === this.seriesGeneration) this.storeFailure(error);
+		}
 	}
 
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.generation += 1;
+		this.seriesGeneration += 1;
+		this.activation = null;
 		this.scheduler.dispose();
 		this.store?.close();
 		this.store = null;
 	}
 
-	private async activateInternal(): Promise<void> {
+	private async activateInternal(generation: number): Promise<void> {
+		let opened: IndexedDbPriceHistoryStore | null = null;
 		try {
-			const store = await IndexedDbPriceHistoryStore.open(this.options.factory);
-			if (this.disposed || !this.settings.enabled) { store.close(); return; }
-			this.store = store;
-			const watch = await store.ensureSeedWatchList(this.options.vaultId, this.now());
-			await store.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
+			opened = await IndexedDbPriceHistoryStore.open(this.options.factory);
+			if (!this.current(generation)) { opened.close(); return; }
+			this.store = opened;
+			const watch = await opened.ensureSeedWatchList(this.options.vaultId, this.now());
+			if (!this.owns(generation, opened)) return;
+			await opened.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
+			if (!this.owns(generation, opened)) return;
 			this.setState({
 				status: 'collecting', watchItemIds: watch.map(({ itemId }) => itemId),
 				selectedItemId: watch[0]?.itemId ?? null,
 			});
 			this.scheduler.start(priceHistoryIntervalMs(this.settings.intervalMinutes));
-		} catch (error) { this.storeFailure(error); }
+		} catch (error) {
+			if (this.current(generation) && (opened === null || this.store === opened)) this.storeFailure(error);
+			else opened?.close();
+		}
 	}
 
 	private async poll(): Promise<ApiPollOutcome> {
 		const store = this.store;
 		if (store === null || !this.settings.enabled) return { kind: 'fatal' };
+		const generation = this.generation;
 		const intervalMs = priceHistoryIntervalMs(this.settings.intervalMinutes);
 		const result = await this.capture.capture(store, this.options.vaultId, priceHistorySlotStart(this.now(), intervalMs), this.settings.intervalMinutes);
+		if (!this.owns(generation, store)) return { kind: 'success' };
 		if (result.status === 'rate_limited') return { kind: 'rate_limited', retryAfterMs: result.retryAfterMs };
 		if (result.status === 'transient_failure') return { kind: 'transient_failure' };
 		if (result.status === 'invalid_payload' || result.status === 'store_unavailable') {
@@ -159,9 +187,10 @@ export class PriceHistoryRuntime {
 		try {
 			await store.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
 		} catch (error) {
-			this.storeFailure(error);
+			if (this.owns(generation, store)) this.storeFailure(error);
 			return { kind: 'fatal' };
 		}
+		if (!this.owns(generation, store)) return { kind: 'success' };
 		this.setState({
 			status: result.snapshot.status === 'partial' ? 'partial' : 'collecting',
 			lastSampleAtMs: result.snapshot.capturedAtMs,
@@ -172,6 +201,7 @@ export class PriceHistoryRuntime {
 	}
 
 	private projectScheduler(scheduler: Readonly<ApiPollSchedulerState>): void {
+		if (this.disposed || !this.settings.enabled || this.store === null) return;
 		const projected: Partial<PriceHistoryRuntimeState> = { nextCaptureAtMs: scheduler.nextRunAt };
 		if (scheduler.status === 'paused_offline') projected.status = 'offline';
 		else if (scheduler.status === 'backoff') projected.status = 'backoff';
@@ -181,6 +211,9 @@ export class PriceHistoryRuntime {
 	}
 
 	private disable(): void {
+		this.generation += 1;
+		this.seriesGeneration += 1;
+		this.activation = null;
 		this.scheduler.stop();
 		this.store?.close();
 		this.store = null;
@@ -192,16 +225,29 @@ export class PriceHistoryRuntime {
 
 	private storeFailure(error: unknown): void {
 		const failure: PriceHistoryStoreFailure = error instanceof PriceHistoryStoreError ? error.failure : 'unavailable';
-		this.scheduler.stop();
-		this.store?.close();
+		this.generation += 1;
+		this.seriesGeneration += 1;
+		this.activation = null;
+		const store = this.store;
 		this.store = null;
+		store?.close();
+		this.scheduler.stop();
 		this.setState({ status: failure === 'future_schema' ? 'store_future' : failure === 'corrupt' ? 'store_corrupt' : 'store_unavailable' });
 	}
 
 	private setState(update: Partial<PriceHistoryRuntimeState>): void {
+		if (this.disposed) return;
 		this.state = { ...this.state, ...update };
 		this.emit();
 	}
 
 	private emit(): void { try { this.onStateChange(); } catch { /* UI observers do not own the runtime. */ } }
+
+	private current(generation: number): boolean {
+		return !this.disposed && this.settings.enabled && generation === this.generation;
+	}
+
+	private owns(generation: number, store: IndexedDbPriceHistoryStore): boolean {
+		return this.current(generation) && this.store === store;
+	}
 }

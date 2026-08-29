@@ -13,7 +13,7 @@ import {
 	type PriceHistorySnapshotV1,
 	type PriceHistoryWatchItemV1,
 } from './price-history-model';
-import { aggregatePriceHistoryDay } from './price-history-statistics';
+import { buildPriceHistoryDailyAggregates } from './price-history-statistics';
 
 const DAY_MS = 86_400_000;
 
@@ -233,7 +233,7 @@ export class IndexedDbPriceHistoryStore {
 		rawRetentionDays: number,
 		dailyRetentionDays: number,
 	): Promise<PriceHistoryCompactionResult> {
-		const rawCutoff = nowMs - rawRetentionDays * DAY_MS;
+		const rawCutoffDay = priceHistoryDayUtc(Math.max(0, nowMs - rawRetentionDays * DAY_MS));
 		const dailyCutoff = priceHistoryDayUtc(Math.max(0, nowMs - dailyRetentionDays * DAY_MS));
 		return this.transaction([PRICE_HISTORY_SNAPSHOT_STORE, PRICE_HISTORY_DAILY_STORE], 'readwrite', (transaction, resolve, reject) => {
 			const snapshotsStore = transaction.objectStore(PRICE_HISTORY_SNAPSHOT_STORE);
@@ -245,28 +245,24 @@ export class IndexedDbPriceHistoryStore {
 			const continueWhenReady = (): void => {
 				if (raw === null || existingDaily === null) return;
 				try {
-					const groups = new Map<string, { itemId: number; dayUtc: string; snapshots: PriceHistorySnapshotV1[] }>();
-					for (const snapshot of raw) {
-						const dayUtc = priceHistoryDayUtc(snapshot.capturedAtMs);
-						for (const [itemId] of snapshot.items) {
-							const key = `${String(itemId)}:${dayUtc}`;
-							const group = groups.get(key) ?? { itemId, dayUtc, snapshots: [] };
-							group.snapshots.push(snapshot);
-							groups.set(key, group);
+					const existingByKey = new Map(existingDaily.map((entry) => [dailyKey(entry.itemId, entry.dayUtc), entry]));
+					let dailyRecords = 0;
+					for (const aggregate of buildPriceHistoryDailyAggregates(vaultId, raw)) {
+						if (aggregate.dayUtc < dailyCutoff) continue;
+						if (!sameDaily(existingByKey.get(dailyKey(aggregate.itemId, aggregate.dayUtc)), aggregate)) {
+							dailyStore.put(aggregate);
+							dailyRecords += 1;
 						}
 					}
-					for (const group of groups.values()) {
-						dailyStore.put(aggregatePriceHistoryDay(vaultId, group.itemId, group.dayUtc, group.snapshots));
-					}
 					let prunedSnapshots = 0;
-					for (const snapshot of raw) if (snapshot.capturedAtMs < rawCutoff) {
+					for (const snapshot of raw) if (priceHistoryDayUtc(snapshot.capturedAtMs) < rawCutoffDay) {
 						snapshotsStore.delete([vaultId, snapshot.slotStartMs]); prunedSnapshots += 1;
 					}
 					let prunedDaily = 0;
 					for (const entry of existingDaily) if (entry.dayUtc < dailyCutoff) {
 						dailyStore.delete([vaultId, entry.itemId, entry.dayUtc]); prunedDaily += 1;
 					}
-					transaction.oncomplete = () => resolve({ dailyRecords: groups.size, prunedSnapshots, prunedDaily });
+					transaction.oncomplete = () => resolve({ dailyRecords, prunedSnapshots, prunedDaily });
 				} catch (error) { reject(error); transaction.abort(); }
 			};
 			snapshotRequest.onerror = () => reject(storeFailure(snapshotRequest.error));
@@ -337,8 +333,10 @@ function parseSnapshot(value: unknown): PriceHistorySnapshotV1 {
 		throw new PriceHistoryStoreError('corrupt');
 	}
 	const itemIds = items.map((entry) => (entry as unknown[])[0] as number);
+	const incompleteSides = items.some((entry) => (entry as unknown[])[1] === null || (entry as unknown[])[2] === null);
 	if (!ascending(itemIds) || !ascending(missing) || itemIds.some((id) => missing.includes(id))
-		|| (value.status === 'complete' && missing.length > 0)) throw new PriceHistoryStoreError('corrupt');
+		|| (value.status === 'complete' && (missing.length > 0 || incompleteSides))
+		|| (value.status === 'partial' && missing.length === 0 && !incompleteSides)) throw new PriceHistoryStoreError('corrupt');
 	return structuredClone(value) as unknown as PriceHistorySnapshotV1;
 }
 
@@ -374,3 +372,20 @@ function text(value: unknown): value is string { return typeof value === 'string
 function utcDay(value: unknown): value is string { return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)); }
 function ascending(values: number[]): boolean { return values.every((value, index) => index === 0 || values[index - 1]! < value); }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+
+function dailyKey(itemId: number, dayUtc: string): string { return `${String(itemId)}:${dayUtc}`; }
+
+function sameDaily(left: PriceHistoryDailyV1 | undefined, right: PriceHistoryDailyV1): boolean {
+	return left !== undefined
+		&& left.version === right.version && left.vaultId === right.vaultId && left.itemId === right.itemId
+		&& left.dayUtc === right.dayUtc && left.snapshotCount === right.snapshotCount
+		&& left.partialSnapshotCount === right.partialSnapshotCount
+		&& sameSide(left.bid, right.bid) && sameSide(left.ask, right.ask);
+}
+
+function sameSide(left: PriceHistoryDailyV1['bid'], right: PriceHistoryDailyV1['bid']): boolean {
+	return left === null ? right === null : right !== null
+		&& left.count === right.count && left.minCopper === right.minCopper && left.maxCopper === right.maxCopper
+		&& left.medianCopperX2 === right.medianCopperX2 && left.closeCopper === right.closeCopper
+		&& left.closeCapturedAtMs === right.closeCapturedAtMs;
+}

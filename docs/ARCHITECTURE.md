@@ -132,12 +132,17 @@ La coordinación multi-ventana reclama cada slot en una transacción IndexedDB c
 commit exige el lease vigente, por lo que un writer stale no puede sustituir una captura ya cercada;
 la misma clave de slot hace el commit idempotente. Respuestas con ids extra o duplicados y payloads
 malformados detienen el runtime sin persistir la captura. Omisiones legítimas —incluido un lote 404—,
-items sin una cotización y respuestas parciales se conservan de forma honesta como `partial`.
+items con cualquier lado nulo/incompleto y respuestas parciales se conservan de forma honesta como
+`partial`. La parcialidad diaria se atribuye por item: un id omitido no contamina los items completos
+presentes en el mismo snapshot.
 Versiones futuras, records corruptos, bloqueo y cuota fallan cerrados: esta base nunca cae a memoria.
 
 `compactAndPrune` calcula antes de podar los agregados UTC por item/día. Cada lado bid/ask guarda
 count, min, max, cierre temporal y `medianCopperX2`, que representa exactamente medianas con N par.
-La operación es idempotente y separa retención raw 2/7/14/30 días —7 por defecto— de retención diaria
+Una sola pasada lineal por tuples e ids ausentes construye los acumuladores; la selección
+median-of-medians y el cierre no reescanean snapshots por item. Solo se escriben agregados nuevos o
+cambiados. La poda raw retiene completo el día UTC frontera, de modo que su agregado final no puede
+ser sustituido después por una fracción del mismo día. La operación es idempotente y separa retención raw 2/7/14/30 días —7 por defecto— de retención diaria
 42/90/180/365 —180 por defecto—. Ampliar una retención no reconstruye datos ya podados. El cálculo de
 percentiles es puro, no rellena huecos y devuelve `insufficient_history` antes de 42 días observados;
 H9.1 no emite alertas, que pertenecen a H11.5.
@@ -145,8 +150,13 @@ H9.1 no emite alertas, que pertenecen a H11.5.
 El panel vive entre sincronización y resultados, separado de `inventory-sync-panel-view.ts`. Solo un
 control explícito lee series locales. El SVG determinista usa `viewBox` y `width:100%`, rompe líneas en
 huecos y diferencia min/max, mediana y cierre mediante patrón además de color; `figure/figcaption` y
-una tabla HTML plegable ofrecen la representación equivalente. Los estados disabled/loading/no
+marcadores circle/square mantienen visibles días únicos y segmentos aislados. Una tabla HTML plegable
+ofrece la representación equivalente. Los estados disabled/loading/no
 samples/collecting/ready/partial/offline/backoff, payload inválido y fallos de store son explícitos.
+
+El runtime cerca activación, configuración, polling, watch y lecturas de series mediante una
+generation propia además de la del scheduler. Disable, dispose o una selección posterior invalidan
+los awaits anteriores antes de que puedan escribir, cerrar el store vigente o publicar estado/UI.
 
 ## Frontera de plataforma e integración
 
