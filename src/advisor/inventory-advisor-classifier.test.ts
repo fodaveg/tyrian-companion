@@ -229,6 +229,52 @@ describe('H4.15 inventory advisor classifier', () => {
 			.toContainEqual(expect.objectContaining({ code: 'rule_stale' }));
 	});
 
+	it('suppresses only the market recommendation corresponding to an active order side', () => {
+		const selling = fixture();
+		selling.activeOrders = activeOrders([
+			{ side: 'sell', itemId: 10, quantity: 2 },
+		]);
+		expect(classifyInventoryAdvisor(selling).report?.lines[0]?.decisions[0])
+			.toMatchObject({ action: 'sell' });
+		selling.activeOrders = activeOrders([
+			{ side: 'buy', itemId: 10, quantity: 2 },
+		]);
+		expect(classifyInventoryAdvisor(selling).report?.lines[0]?.decisions[0])
+			.toMatchObject({ action: 'review' });
+
+		const listing = fixture();
+		listing.input.prices.items[0] = {
+			itemId: 10, whitelisted: true, bid: null, ask: { unitCopper: 21, quantity: 2 },
+		};
+		listing.activeOrders = activeOrders([
+			{ side: 'buy', itemId: 10, quantity: 2 },
+		]);
+		expect(classifyInventoryAdvisor(listing).report?.lines[0]?.decisions[0])
+			.toMatchObject({ action: 'list' });
+		listing.activeOrders = activeOrders([
+			{ side: 'sell', itemId: 10, quantity: 2 },
+		]);
+		expect(classifyInventoryAdvisor(listing).report?.lines[0]?.decisions[0])
+			.toMatchObject({ action: 'review' });
+	});
+
+	it('treats truncated active orders as unknown coverage, never as a confirmed matching order', () => {
+		const value = fixture();
+		value.activeOrders = activeOrders([{ side: 'buy', itemId: 10, quantity: 2 }]);
+		value.activeOrders.status = 'partial';
+		value.activeOrders.endpointCoverage.buy = {
+			status: 'partial', capturedAt: null, reason: 'page_limit',
+		};
+
+		const result = classifyInventoryAdvisor(value);
+
+		expect(result).toMatchObject({ status: 'limited' });
+		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
+		expect(result.report?.lines[0]?.reasons).toContainEqual({
+			code: 'price_partial', itemId: 10, goalId: null, ruleId: null,
+		});
+	});
+
 	it('requires an approved applicable V1 assertion for use and treats revoked or conflicting claims as review', () => {
 		const applicable = fixture();
 		applicable.input.rulePack.rules = [rule('use-10', 'approved')];
@@ -337,3 +383,13 @@ function scopedInventoryFixture(quality: 'stable' | 'unstable'): InventoryAdviso
 }
 function coverage(): SnapshotCoverage { return { sources: { characters: { status: 'complete' }, shared_inventory: { status: 'complete' }, bank: { status: 'complete' }, materials: { status: 'complete' }, wallet: { status: 'complete' }, commerce_delivery: { status: 'complete' } }, characters: {} }; }
 function evidence() { return { status: 'complete' as const, capturedAt: '2026-08-14T12:00:00.000Z', reason: null }; }
+function activeOrders(orders: NonNullable<InventoryAdvisorEngineInputV1['activeOrders']>['orders']): NonNullable<InventoryAdvisorEngineInputV1['activeOrders']> {
+	return {
+		version: 1,
+		accountId: 'account-1',
+		capturedAt: '2026-08-14T12:00:00.000Z',
+		status: 'complete',
+		endpointCoverage: { buy: evidence(), sell: evidence() },
+		orders,
+	};
+}

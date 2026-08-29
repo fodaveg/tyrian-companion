@@ -9,6 +9,7 @@ import {
 } from '../account/storage-snapshot-model';
 import { parseAccountProfile, parseTokenInfo, type AccountProfile, type TokenInfo } from '../account/account-service';
 import { MissingApiKeyError, type GuildWars2Operation } from '../account/guild-wars-2-client';
+import { captureActiveTradingPostOrders } from '../account/trading-post-evidence';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
@@ -135,13 +136,14 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 					snapshot,
 				);
 			}
-			const [catalog, prices, accountSignals, containerPrices] = await Promise.all([
+			const [catalog, prices, accountContext, containerPrices] = await Promise.all([
 				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
 				captureInventoryPrices(snapshot, this.publicGateway, this.now()).finally(reportCatalogOrPrice),
-				captureAccountSignals(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
+				captureAccountContext(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
 				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
 					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now())).finally(reportCatalogOrPrice),
 			]);
+			const { accountSignals, activeOrders } = accountContext;
 			const coverage: InventoryAdvisorEvidenceCoverageV1 = {
 				snapshot: snapshotCoverage(snapshot),
 				catalog: catalogCoverage(catalog, snapshot),
@@ -168,8 +170,9 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				&& coverage.accountSignals === 'unavailable'
 				? { status: 'unavailable', evidence: null }
 			: { status: coverage.snapshot === 'complete' && coverage.catalog === 'complete' && coverage.prices === 'complete'
-					&& coverage.accountSignals === 'complete' && (containerPrices === null || containerPrices.status === 'complete')
-					? 'complete' : 'partial', evidence, containerPrices };
+					&& coverage.accountSignals === 'complete' && activeOrders.status === 'complete'
+					&& (containerPrices === null || containerPrices.status === 'complete')
+					? 'complete' : 'partial', evidence, containerPrices, activeOrders };
 			return await this.finishCapture(result, snapshot);
 		} catch (error) {
 			if (error instanceof HttpTransportError && error.status === 429) {
@@ -212,6 +215,11 @@ function captureReceiptFor(
 			: structuredClone(result.evidence.coverage),
 		evidenceDetails: result.evidence === null ? null : evidenceDetails(result.evidence),
 		containerPrices: result.containerPrices?.status ?? 'not_requested',
+		activeOrders: result.evidence === null || result.activeOrders === undefined ? null : {
+			status: result.activeOrders.status,
+			buys: result.activeOrders.endpointCoverage.buy.status,
+			sells: result.activeOrders.endpointCoverage.sell.status,
+		},
 		workflow: null,
 		snapshot: snapshot === null ? null : {
 			quality: snapshot.quality,
@@ -375,21 +383,25 @@ async function capturePriceItems(
 	return { status: missingItemIds.length === 0 ? 'complete' : items.length === 0 ? 'unavailable' : 'partial', items, missingItemIds };
 }
 
-async function captureAccountSignals(
+async function captureAccountContext(
 	operation: GuildWars2Operation,
 	accountId: string,
 	token: TokenInfo,
 	accountAccess: string[],
 	now: () => number,
-): Promise<AccountSignalsV1> {
+): Promise<{
+	accountSignals: AccountSignalsV1;
+	activeOrders: Awaited<ReturnType<typeof captureActiveTradingPostOrders>>;
+}> {
 	const permitted = (scope: string, endpoint: string): EndpointPermission => !token.permissions.includes(scope) ? 'missing_scope'
 		: token.urls !== undefined && token.urls.length > 0 && !allowsEndpoint(token.urls, `/v2/${endpoint}`)
 			? 'url_restricted' : 'complete';
-	const [recipes, skins, minis, achievements] = await Promise.all([
+	const [recipes, skins, minis, achievements, activeOrders] = await Promise.all([
 		captureIdList(operation, permitted('unlocks', 'account/recipes'), 'account/recipes', now),
 		captureIdList(operation, permitted('unlocks', 'account/skins'), 'account/skins', now),
 		captureIdList(operation, permitted('unlocks', 'account/minis'), 'account/minis', now),
 		captureAchievementBits(operation, permitted('progression', 'account/achievements'), now),
+		captureActiveTradingPostOrders(operation, accountId, token, now),
 	]);
 	const unlockResults = [recipes, skins, minis];
 	const completedAt = now();
@@ -397,13 +409,14 @@ async function captureAccountSignals(
 		: unlockResults.every((entry) => entry.coverage !== 'complete') ? 'unavailable' : 'partial';
 	const achievementCoverage = achievements.coverage === 'complete' ? 'complete' : 'unavailable';
 	const accountEvidence = endpointEvidence('complete', new Date(completedAt).toISOString(), null);
-	return {
+	const accountSignals: AccountSignalsV1 = {
 		version: INVENTORY_ADVISOR_VERSION, source: 'gw2-account-api', accountId, capturedAt: new Date(completedAt).toISOString(), schemaVersion: PINNED_SCHEMA,
 		tradingPostAccess: tradingPostAccess(accountAccess),
 		endpointCoverage: { account: accountEvidence, recipes: recipes.evidence, skins: skins.evidence, minis: minis.evidence, achievements: achievements.evidence }, unlockCoverage,
 		unlockedRecipes: recipes.value, unlockedSkins: skins.value, unlockedMinis: minis.value,
 		achievementCoverage, completedAchievementBits: achievements.bits, achievementProgress: achievements.progress,
 	};
+	return { accountSignals, activeOrders };
 }
 
 type EndpointPermission = 'complete' | 'missing_scope' | 'url_restricted';

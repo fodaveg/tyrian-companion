@@ -3,6 +3,7 @@ import type { StorageSnapshotCaptureProgress } from '../account/storage-snapshot
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-advisor-model';
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
+import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-evidence';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
 
@@ -77,6 +78,11 @@ export interface InventoryAdvisorCaptureReceiptV1 {
 		prices: { requested: number; captured: number; missing: number };
 	} | null;
 	containerPrices: 'complete' | 'partial' | 'unavailable' | 'not_requested';
+	activeOrders?: {
+		status: ActiveTradingPostOrdersEvidenceV1['status'];
+		buys: ActiveTradingPostOrdersEvidenceV1['endpointCoverage']['buy']['status'];
+		sells: ActiveTradingPostOrdersEvidenceV1['endpointCoverage']['sell']['status'];
+	} | null;
 	workflow: {
 		status: 'progress';
 		stage: 'preferences' | 'classification';
@@ -125,9 +131,10 @@ export type InventoryAdvisorCaptureReceiptSink = (
 
 export type InventoryAdvisorEvidenceCaptureResultV1 =
 	| { status: 'complete' | 'partial'; evidence: InventoryAdvisorEvidenceV1;
-		containerPrices?: InventoryContainerPriceEvidenceV1 | null }
+		containerPrices?: InventoryContainerPriceEvidenceV1 | null;
+		activeOrders?: ActiveTradingPostOrdersEvidenceV1 }
 	| { status: 'unavailable' | 'invalid'; evidence: null; containerPrices?: null;
-		failure?: InventoryAdvisorEvidenceFailure };
+		activeOrders?: undefined; failure?: InventoryAdvisorEvidenceFailure };
 
 /** Adds the catalog/prices leg (always 4 concurrent requests) to the storage capture's own counters. */
 export interface InventoryAdvisorCaptureProgress extends StorageSnapshotCaptureProgress {

@@ -26,6 +26,9 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(result.evidence?.catalog.coverage.items).toHaveProperty('11');
 		expect(result.evidence?.prices.requestedItemIds).toEqual([10, 11]);
 		expect(result.evidence?.accountSignals).toMatchObject({ unlockedRecipes: [1, 2], unlockedSkins: [3], unlockedMinis: [4] });
+		expect(result.activeOrders).toMatchObject({ status: 'complete', orders: [], endpointCoverage: {
+			buy: { status: 'complete' }, sell: { status: 'complete' },
+		} });
 		expect(isInventoryAdvisorEvidence(result.evidence)).toBe(true);
 		expect(snapshot).toEqual(before);
 	});
@@ -232,6 +235,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			evidenceCoverage: null,
 			evidenceDetails: null,
 			containerPrices: 'not_requested',
+			activeOrders: null,
 			workflow: null,
 			snapshot: {
 				quality: 'partial',
@@ -352,6 +356,10 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		const service = new InventoryAdvisorEvidenceService({ beginOperation: () => operation }, snapshotCapture(snapshot), { resolve: async () => catalogFor(snapshot) }, publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW);
 		const result = await service.capture('es');
 		expect(result.evidence?.accountSignals).toMatchObject({ unlockedRecipes: [], unlockedSkins: null, unlockedMinis: null, completedAchievementBits: null, achievementProgress: null });
+		expect(result.activeOrders).toMatchObject({ status: 'unavailable', orders: [], endpointCoverage: {
+			buy: { status: 'missing_scope' }, sell: { status: 'missing_scope' },
+		} });
+		expect(result.status).toBe('partial');
 		expect(request.mock.calls.map(([path]) => path)).not.toContain('account/skins?v=2024-07-20T01%3A00%3A00.000Z');
 		expect(request.mock.calls.map(([path]) => path)).not.toContain('account/achievements?v=2024-07-20T01%3A00%3A00.000Z');
 	});
@@ -523,6 +531,7 @@ function clientFor(options: { permissions: string[]; urls: string[] | undefined;
 				if (path.startsWith('account/skins')) return [3];
 				if (path.startsWith('account/minis')) return [4];
 				if (path.startsWith('account/achievements')) return [{ id: 7, done: true, current: 2, max: 2, repeated: 0, bits: [1, 2] }];
+				if (path.startsWith('commerce/transactions/current/')) return [];
 				throw new Error(`unexpected ${path}`);
 			};
 			return { request, requestDetailed: async (path: string) => ({ status: 200, headers: {}, body: await request(path) }) };

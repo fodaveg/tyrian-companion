@@ -175,6 +175,9 @@ export function composeInventoryAdvisorRefresh(
 	const engineInput = {
 		input,
 		knowledgePack: structuredClone(rules.knowledgePack),
+		...(capture.activeOrders === undefined ? {} : {
+			activeOrders: structuredClone(capture.activeOrders),
+		}),
 		...containerEconomy,
 		...(!('containerEconomy' in containerEconomy) || rules.personalValuation === undefined ? {} : {
 			personalValuation: structuredClone(rules.personalValuation),

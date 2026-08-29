@@ -7,6 +7,9 @@ import type {
 } from '../account/contamination-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	isTradingPostHistoryEvidence,
+} from '../account/trading-post-evidence';
 
 export const SESSION_CONTAMINATION_REVIEW_VERSION = 1 as const;
 
@@ -38,6 +41,20 @@ export interface SessionContaminationReview {
 	boundary: BoundaryEvidence;
 	classification: SessionDeltaClassification | LegacySessionDeltaClassification;
 }
+
+export type SessionTradingPostContaminationProposal =
+	| {
+		status: 'ready';
+		requiresHumanReview: true;
+		suggestedActivities: Array<'tpBuy' | 'tpSell'>;
+		eventCounts: { buys: number; sells: number };
+	}
+	| {
+		status: 'unavailable';
+		reason: 'identity_mismatch' | 'window_mismatch' | 'coverage_incomplete' | 'evidence_invalid';
+		requiresHumanReview: true;
+		suggestedActivities: [];
+	};
 
 export interface LegacySessionDeltaClassification extends Omit<SessionDeltaClassification, 'version' | 'permissions'> {
 	version: 1;
@@ -103,6 +120,40 @@ export function isSessionContaminationAnswers(value: unknown): value is SessionC
 	const activities = value.activities;
 	if (!isRecord(activities) || !hasOnlyKeys(activities, SESSION_ACTIVITY_KEYS)) return false;
 	return SESSION_ACTIVITY_KEYS.every((key) => typeof activities[key] === 'boolean');
+}
+
+/**
+ * Projects complete history into review suggestions only. It never changes the
+ * user's answers or feeds events directly into session classification.
+ */
+export function proposeTradingPostContamination(
+	evidence: unknown,
+	expectedAccountId: string,
+	expectedWindow: { from: string; to: string },
+): SessionTradingPostContaminationProposal {
+	if (!isTradingPostHistoryEvidence(evidence)) return unavailableProposal('evidence_invalid');
+	if (evidence.accountId !== expectedAccountId) return unavailableProposal('identity_mismatch');
+	if (evidence.window.from !== expectedWindow.from || evidence.window.to !== expectedWindow.to) {
+		return unavailableProposal('window_mismatch');
+	}
+	if (evidence.status !== 'complete') return unavailableProposal('coverage_incomplete');
+	const buys = evidence.events.filter((event) => event.kind === 'buy').length;
+	const sells = evidence.events.filter((event) => event.kind === 'sell').length;
+	return {
+		status: 'ready',
+		requiresHumanReview: true,
+		suggestedActivities: [
+			...(buys > 0 ? ['tpBuy' as const] : []),
+			...(sells > 0 ? ['tpSell' as const] : []),
+		],
+		eventCounts: { buys, sells },
+	};
+}
+
+function unavailableProposal(
+	reason: Extract<SessionTradingPostContaminationProposal, { status: 'unavailable' }>['reason'],
+): SessionTradingPostContaminationProposal {
+	return { status: 'unavailable', reason, requiresHumanReview: true, suggestedActivities: [] };
 }
 
 function declarationFromAnswers(answers: SessionContaminationAnswers): UserDeclaration {

@@ -26,6 +26,7 @@ import type { InventoryKnowledgePackV1 } from './inventory-advisor-classifier-mo
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
+import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-evidence';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -60,10 +61,11 @@ export function isInventoryAdvisorResultForInput(
 	knowledgePack?: unknown,
 	containerEconomy?: InventoryAdvisorEngineInputV1['containerEconomy'],
 	personalValuation?: ContainerPersonalValuationV1,
+	activeOrders?: ActiveTradingPostOrdersEvidenceV1,
 ): value is InventoryAdvisorResultV1 {
 	try {
 		return isInventoryAdvisorResultForInputUnsafe(
-			value, input, knowledgePack, containerEconomy, personalValuation,
+			value, input, knowledgePack, containerEconomy, personalValuation, activeOrders,
 		);
 	} catch { return false; }
 }
@@ -74,8 +76,13 @@ function isInventoryAdvisorResultForInputUnsafe(
 	knowledgePack: unknown,
 	containerEconomy: InventoryAdvisorEngineInputV1['containerEconomy'],
 	personalValuation: ContainerPersonalValuationV1 | undefined,
+	activeOrders: ActiveTradingPostOrdersEvidenceV1 | undefined,
 ): value is InventoryAdvisorResultV1 {
 	if (!isInventoryAdvisorInput(input) || !isInventoryAdvisorResult(value)) return false;
+	if (activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(activeOrders)
+		|| activeOrders.accountId !== input.snapshot.accountId
+		|| !fresh(activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+			input.policy.maxFutureSkewMs))) return false;
 	if (input.rulePack.schemaVersion === 2 && (!isInventoryKnowledgePack(knowledgePack)
 		|| knowledgePack.sha256 !== input.rulePack.knowledgePackSha256)) return false;
 	if (value.status === 'invalid') return true;
@@ -92,6 +99,14 @@ function isInventoryAdvisorResultForInputUnsafe(
 	if (report.lines.length !== expectedIds.length
 		|| report.lines.some((line, index) => line.itemId !== expectedIds[index])) return false;
 	for (const line of report.lines) {
+		if (activeOrders !== undefined) {
+			const buyConflict = activeOrders.endpointCoverage.buy.status !== 'complete'
+				|| activeOrders.orders.some((order) => order.side === 'buy' && order.itemId === line.itemId);
+			const sellConflict = activeOrders.endpointCoverage.sell.status !== 'complete'
+				|| activeOrders.orders.some((order) => order.side === 'sell' && order.itemId === line.itemId);
+			if ((buyConflict && line.decisions.some((decision) => decision.action === 'sell'))
+				|| (sellConflict && line.decisions.some((decision) => decision.action === 'list'))) return false;
+		}
 		if (line.ownedQuantity !== input.snapshot.ownedByItem[String(line.itemId)]
 			|| line.availableQuantity !== (input.snapshot.availableByItem[String(line.itemId)] ?? 0)) return false;
 		const expectedPositions = input.snapshot.holdings
@@ -139,11 +154,16 @@ function isInventoryAdvisorResultForInputUnsafe(
 			&& input.accountSignals.tradingPostAccess !== 'unknown';
 		const rulesComplete = rulePackFresh(input)
 			&& Date.parse(input.asOf) <= Date.parse(input.rulePack.validUntil) + input.policy.maxFutureSkewMs;
+		const activeOrdersLimited = activeOrders !== undefined
+			&& (activeOrders.endpointCoverage.buy.status !== 'complete'
+				|| activeOrders.endpointCoverage.sell.status !== 'complete')
+			&& line.reasons.some((reason) => reason.code === 'price_partial');
 		const expectedCoverage = {
 			snapshot: snapshotComplete(input.snapshot) ? 'complete' : 'limited',
 			inventory: planAsset?.coverage === 'complete' ? 'complete' : planAsset?.coverage === 'limited' ? 'limited' : 'unknown',
 			catalog: catalogComplete ? 'complete' : catalogCoverage ? 'limited' : 'unknown',
-			prices: pricesComplete ? 'complete' : input.prices.status === 'partial' ? 'limited' : 'unknown',
+			prices: pricesComplete && !activeOrdersLimited ? 'complete' : input.prices.status === 'partial'
+				|| activeOrdersLimited ? 'limited' : 'unknown',
 			reservations: planAsset?.coverage === 'complete' ? 'complete' : planAsset?.coverage === 'limited' ? 'limited' : 'unknown',
 			accountSignals: signalsComplete ? 'complete' : signalsFresh ? 'limited' : 'unknown',
 			rules: rulesComplete ? 'complete' : 'limited',

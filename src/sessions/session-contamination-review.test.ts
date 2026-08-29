@@ -11,8 +11,10 @@ import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-r
 import {
 	createSessionContaminationReview,
 	isSessionContaminationReview,
+	proposeTradingPostContamination,
 	type SessionContaminationAnswers,
 } from './session-contamination-review';
+import type { TradingPostHistoryEvidenceV1 } from '../account/trading-post-evidence';
 import type { SessionStartCaptureResult } from './session-start-capture';
 
 const REVIEWED_AT = '2026-08-13T12:00:00.000Z';
@@ -218,6 +220,42 @@ describe('session contamination review', () => {
 
 		expect({ before, after, delta, input }).toEqual(originals);
 	});
+
+	it('proposes complete TP history for human review without accepting or classifying it automatically', () => {
+		const { before, after, delta } = fixtures();
+		const input = answers();
+		const evidence = historyEvidence('complete');
+		const originals = structuredClone({ input, evidence });
+
+		const proposal = proposeTradingPostContamination(evidence, 'account-1', evidence.window);
+		const unchangedReview = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
+
+		expect(proposal).toEqual({
+			status: 'ready',
+			requiresHumanReview: true,
+			suggestedActivities: ['tpBuy', 'tpSell'],
+			eventCounts: { buys: 1, sells: 1 },
+		});
+		expect(unchangedReview).toMatchObject({
+			answers: { activities: { tpBuy: false, tpSell: false } },
+			classification: { status: 'exact' },
+		});
+		expect({ input, evidence }).toEqual(originals);
+	});
+
+	it('fails closed and proposes nothing when TP history coverage is incomplete', () => {
+		const partial = historyEvidence('partial');
+		partial.endpointCoverage.sell = { status: 'partial', capturedAt: null, reason: 'page_limit' };
+
+		expect(proposeTradingPostContamination(partial, 'account-1', partial.window)).toEqual({
+			status: 'unavailable',
+			reason: 'coverage_incomplete',
+			requiresHumanReview: true,
+			suggestedActivities: [],
+		});
+		expect(proposeTradingPostContamination(historyEvidence('complete'), 'other-account', partial.window))
+			.toMatchObject({ status: 'unavailable', reason: 'identity_mismatch', suggestedActivities: [] });
+	});
 });
 
 function answers(certainty: SessionContaminationAnswers['certainty'] = 'confirmed'): SessionContaminationAnswers {
@@ -247,6 +285,24 @@ function fixtures() {
 	});
 	const delta = compareStorageSnapshots(before, after);
 	return { before, after, delta };
+}
+
+function historyEvidence(status: 'complete' | 'partial'): TradingPostHistoryEvidenceV1 {
+	return {
+		version: 1,
+		accountId: 'account-1',
+		capturedAt: '2026-08-29T12:00:00.000Z',
+		window: { from: '2026-08-29T10:00:00.000Z', to: '2026-08-29T11:00:00.000Z' },
+		status,
+		endpointCoverage: {
+			buy: { status: 'complete', capturedAt: '2026-08-29T12:00:00.000Z', reason: null },
+			sell: { status: 'complete', capturedAt: '2026-08-29T12:00:00.000Z', reason: null },
+		},
+		events: [
+			{ kind: 'buy', itemId: 10, quantity: 1, coins: 100, occurredAt: '2026-08-29T10:30:00.000Z' },
+			{ kind: 'sell', itemId: 11, quantity: 2, coins: 200, occurredAt: '2026-08-29T10:45:00.000Z' },
+		],
+	};
 }
 
 const workflowHandle: ActiveSessionLeaseHandle = {

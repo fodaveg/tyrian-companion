@@ -21,6 +21,7 @@ import {
 } from './inventory-container-economy';
 import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
+import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-evidence';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -47,6 +48,7 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		const result: InventoryAdvisorResultV1 = { status: coverage === 'complete' ? 'ready' : 'limited', report, envelope };
 		return isInventoryAdvisorResultForInput(
 			result, input, value.knowledgePack, value.containerEconomy, value.personalValuation,
+			value.activeOrders,
 		) ? result : publicInvalid();
 	} catch { return publicInvalid(); }
 }
@@ -68,10 +70,12 @@ function classifyInventoryAdvisorEngine(value: unknown): InventoryAdvisorEngineR
 		]));
 		const complete = input.prices.status === 'complete'
 			&& itemIds.every((itemId) => itemEvidence.get(itemId) === true)
-			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh;
+			&& knowledgeReady && input.snapshot.quality === 'stable' && inputRulesFresh
+			&& (value.activeOrders === undefined || value.activeOrders.status === 'complete');
 		const lines = itemIds.map((itemId) => classifyLine(input, knowledgePack, itemId,
 			plan.plan.assets.find((asset) => asset.key === `item:${itemId}`)?.protectedAvailable ?? 0,
-			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation));
+			itemEvidence.get(itemId) === true, knowledgeReady, value.containerEconomy, value.personalValuation))
+			.map((line) => applyActiveOrderPolicy(line, value.activeOrders));
 		const report = { version: INVENTORY_ADVISOR_ENGINE_VERSION, scope: 'supported_storage_v1' as const,
 			accountId: input.snapshot.accountId, snapshotId: input.snapshot.snapshotId, asOf: input.asOf,
 			knowledgePack: { id: knowledgePack.id, version: knowledgePack.version, sha256: knowledgePack.sha256 }, lines };
@@ -210,6 +214,8 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 function publicLine(engine: InventoryAdvisorEngineLineV1, input: InventoryAdvisorInputV1, plan: { assets: Array<{ key: string; coverage: string }> }) {
 	const asset = plan.assets.find((entry) => entry.key === `item:${engine.itemId}`);
 	const coverage = publicCoverage(input, engine.itemId, asset?.coverage ?? 'unknown');
+	if (engine.decisions.some((decision) => decision.reason === 'active_buy_orders_unknown'
+		|| decision.reason === 'active_sell_orders_unknown')) coverage.prices = 'limited';
 	const sources = engine.decisions.map((source, index) => ({ source, decision: {
 		action: source.action, itemId: source.itemId, quantity: source.quantity,
 		allocations: source.allocations, explanationRef: `#/explanations/${engine.itemId}/${index}`,
@@ -268,6 +274,8 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 		tp_access_unknown: 'tp_access_unknown', catalog_invalid: 'catalog_invalid', vendor_best_value: 'alternative_route_exists',
 		instant_sell_best_value: 'alternative_route_exists', listing_advantage_met: 'alternative_route_exists', listing_only_route: 'alternative_route_exists', no_supported_route: 'no_sell',
 		curated_use: 'alternative_route_exists', curated_open: 'alternative_route_exists', curated_salvage: 'alternative_route_exists',
+		active_buy_order: 'alternative_route_exists', active_sell_order: 'alternative_route_exists',
+		active_buy_orders_unknown: 'price_partial', active_sell_orders_unknown: 'price_partial',
 	};
 	return reasons[value] ?? 'snapshot_invalid';
 }
@@ -444,8 +452,12 @@ function rulePackUsableForCapability(input: InventoryAdvisorInputV1): boolean {
 }
 function knowledgeFresh(pack: InventoryKnowledgePackV1, input: InventoryAdvisorInputV1): boolean { return fresh(pack.reviewedAt, input.asOf, input.policy.maxRulePackAgeMs, input.policy.maxFutureSkewMs) && Date.parse(pack.publishedAt) <= Date.parse(pack.reviewedAt) && Date.parse(input.asOf) <= Date.parse(pack.validUntil) + input.policy.maxFutureSkewMs; }
 function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
-	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], ['containerEconomy', 'personalValuation'])
+	if (!record(value) || !optionalKeys(value, ['input', 'knowledgePack'], ['containerEconomy', 'personalValuation', 'activeOrders'])
 		|| !isInventoryAdvisorInput(value.input) || !isInventoryKnowledgePack(value.knowledgePack)) return false;
+	if (value.activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(value.activeOrders)
+		|| value.activeOrders.accountId !== value.input.snapshot.accountId
+		|| !fresh(value.activeOrders.capturedAt, value.input.asOf, value.input.policy.maxPriceAgeMs,
+			value.input.policy.maxFutureSkewMs))) return false;
 	const economy = value.containerEconomy;
 	if (economy !== undefined && (!record(economy) || !keys(economy, ['pack', 'prices'])
 		|| !isInventoryContainerEconomyPack(economy.pack)
@@ -454,6 +466,30 @@ function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 	if (economy === undefined || !isContainerPersonalValuation(value.personalValuation)) return false;
 	const validatedEconomy = economy as NonNullable<EngineInput['containerEconomy']>;
 	return resolveContainerPersonalValuation(validatedEconomy.pack.model, value.personalValuation).status === 'ok';
+}
+
+function applyActiveOrderPolicy(
+	line: InventoryAdvisorEngineLineV1,
+	activeOrders: InventoryAdvisorEngineInputV1['activeOrders'],
+): InventoryAdvisorEngineLineV1 {
+	if (activeOrders === undefined) return line;
+	return {
+		...line,
+		decisions: line.decisions.map((decision) => {
+			const side = decision.action === 'sell' ? 'buy' : decision.action === 'list' ? 'sell' : null;
+			if (side === null) return decision;
+			const coverage = activeOrders.endpointCoverage[side];
+			if (coverage.status !== 'complete') {
+				return { ...decision, action: 'review' as const,
+					reason: side === 'buy' ? 'active_buy_orders_unknown' : 'active_sell_orders_unknown', ruleId: null };
+			}
+			if (!activeOrders.orders.some((order) => order.side === side && order.itemId === line.itemId)) {
+				return decision;
+			}
+			return { ...decision, action: 'review' as const,
+				reason: side === 'buy' ? 'active_buy_order' : 'active_sell_order', ruleId: null };
+		}),
+	};
 }
 function ids(input: InventoryAdvisorInputV1): number[] { return Object.entries(input.snapshot.ownedByItem).filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort((a, b) => a - b); }
 function invalid(): InventoryAdvisorEngineResultV1 { return { status: 'invalid', report: null, envelope: null }; }
