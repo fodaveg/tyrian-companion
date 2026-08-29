@@ -2,6 +2,38 @@
 
 ## Vertical activa
 
+**H11-B, comparación H11.3 y aviso de precio H11.5: candidato técnico apto en `5ce118b`
+de `codex/h11b-comparison-price-alerts`, pendiente de integrar y publicar.** H11.3 solo sella el
+delta `session_final` cuando la revisión termina como `finalized`; el resultado intermedio `reviewed`
+ya no puede sellar como final una revisión guardada cuya finalización falló. La elegibilidad exige
+sesión Halloween, delta comparable, certeza confirmada, `open=true`, todas las demás actividades
+falsas y descenso neto del item `36038`. La cantidad se presenta como **bolsas desaparecidas netas**,
+sin afirmar que sean aperturas demostradas.
+
+La comparación persiste atómicamente los 18 outcomes del modelo, incluidos los ceros, y reproduce la
+criba con `BigInt`: `n>=1100`, expectativa `E>=20`, diferencia mínima del 10% y `|z|>=3,45`. Los
+records nuevos guardan `modelId` y `modelVersion` y se resuelven contra un registry histórico; el
+legacy conserva su modelo original y las versiones desconocidas fallan cerradas. El panel distingue
+todavía no finalizada, ignorada con razón, recopilando, muestra suficiente sin desviación, desviación
+y fallo de almacenamiento, y muestra la tabla completa de resultados.
+
+H11.5 evalúa solo el item `36038` desde el puerto local de H9.1: compara la puja actual con el p90
+nearest-rank, posición 27, de los 30 días UTC completos inmediatamente anteriores. Un día ausente,
+una puja nula, una captura futura, datos inválidos o la falta del cierre de hoy producen
+`insufficient_history`. El anti-spam durable y multiwindow solo avisa en el cruce `below→high`, como
+máximo una vez por día UTC y después del cooldown; solo un `below` válido rearma, y
+`lastValidCapturedAtMs` impide que una evaluación antigua sobrescriba una decisión más nueva. Apagar
+H9.1 deja el runtime `disabled`: una activación o callback anterior no puede reabrirlo ni emitir.
+Ajustes sube a schema v7 con el aviso desactivado, margen mínimo configurable y cooldown
+6/12/24/48 h. El panel expone estados, bandeja y reconocimiento; `Notice` solo se emite desde el
+adaptador foreground.
+
+La revisión independiente declaró apto `5ce118b` y `npm run check` quedó verde con 144 ficheros y
+1.912 tests, además de seguridad, paquete, contratos y build. H11.3 necesita acumular al menos 1.100
+bolsas desaparecidas netas antes de poder concluir desviaciones y H11.5 necesita 30 cierres UTC
+completos. Quedan pendientes la QA visual y de contraste en temas reales de Obsidian y la entrega
+live de `Notice`; no se afirma publicación, release ni instalación.
+
 **H11-A, alertas de Halloween H11.1/H11.2/H11.4: candidato técnico apto en `c867488`, pendiente
 de integrar y publicar.** El runtime opt-in consume únicamente deltas positivos de sesiones
 Halloween aceptadas y genera alertas revisables por valor, rareza, primera observación y desbloqueo

@@ -1,5 +1,35 @@
 # Changelog
 
+## H11-B - Comparación de botín y aviso de precio de Halloween
+
+- H11.3 solo conserva una comparación desde un delta `session_final` cuya revisión terminó como
+  `finalized`. Corregido el caso en que `reviewed`, una revisión guardada pero no finalizada, podía
+  sellar el episodio como final.
+- La elegibilidad exige sesión Halloween, delta comparable, certeza confirmada, `open=true`, todas las
+  demás actividades falsas y descenso neto del item `36038`. La UI dice **bolsas desaparecidas netas**
+  porque el cambio de inventario no demuestra aperturas.
+- Cada comparación persiste atómicamente los 18 outcomes del modelo, incluidos los ceros. La criba
+  reproducible usa `BigInt` y exige `n>=1100`, `E>=20`, diferencia mínima del 10% y `|z|>=3,45`.
+  `modelId` y `modelVersion` resuelven un registry histórico; legacy conserva su interpretación y una
+  versión desconocida falla cerrada.
+- El panel diferencia todavía no finalizada, ignorada con razón, recopilando, muestra suficiente sin
+  desviación, desviación y fallo de almacenamiento, y presenta los 18 resultados.
+- H11.5 usa la puja actual del item `36038` y el p90 nearest-rank, posición 27, de los 30 días UTC
+  completos inmediatamente anteriores. Cualquier hueco, puja nula, captura futura, dato inválido o
+  cierre actual ausente produce `insufficient_history`.
+- El anti-spam durable y multiwindow solo emite en un cruce `below→high`, como máximo una vez por día
+  UTC y tras el cooldown. Solo un `below` válido rearma; `lastValidCapturedAtMs` hace monotónica la
+  decisión y evita que una evaluación antigua pise otra más nueva. Apagar H9.1 deja el runtime
+  `disabled` y cerca activaciones y callbacks anteriores para que no reabran el store ni emitan.
+- Ajustes sube a schema v7 con el aviso desactivado, margen mínimo configurable y cooldown
+  6/12/24/48 h. El panel comparte bandeja y reconocimiento de Halloween; `Notice` pertenece al
+  adaptador foreground.
+- Candidato `5ce118b` de `codex/h11b-comparison-price-alerts` apto tras revisión independiente y
+  `npm run check` verde con 144 ficheros y 1.912 tests, incluidas seguridad, paquete, contratos y
+  build. H11.3 necesita acumular 1.100 bolsas netas y H11.5 necesita 30 cierres UTC completos. Quedan
+  pendientes la QA visual y de contraste y la entrega live de `Notice` en Obsidian; no se afirma
+  publicación, release ni instalación.
+
 ## H11-A - Alertas de Halloween, lista empírica y catálogo de desbloqueos
 
 - Añadido un runtime opt-in que acepta solo deltas positivos de sesiones Halloween y clasifica
