@@ -2,6 +2,28 @@
 
 ## Vertical activa
 
+**H11-A, alertas de Halloween H11.1/H11.2/H11.4: candidato técnico apto en `c867488`, pendiente
+de integrar y publicar.** El runtime opt-in consume únicamente deltas positivos de sesiones
+Halloween aceptadas y genera alertas revisables por valor, rareza, primera observación y desbloqueo
+de skin o mini. Un inbox/outbox durable agrega cada episodio en un solo `Notice`, deduplica polling y
+cierre de sesión, reconcilia resultados provisionales con el delta terminal y conserva el
+reconocimiento solo cuando el contenido final sigue siendo un subconjunto válido.
+
+La lista empírica se aprende de forma incremental y canónica, con backfill de notas de sesión antes
+del tráfico vivo. Las notas nuevas suben a schema v3; las v1, que carecen de `tc_event`, no alimentan
+`seen`, y las v2 de Halloween sin deltas exactos permanecen como aprendizaje `partial` sin habilitar
+`first_seen`. El normalizador de catálogo v3 conserva `details.skins[]` y `details.minipet_id`, y las
+señales de desbloqueo solo se emiten cuando la cobertura autenticada de la dimensión correspondiente
+es completa.
+
+Halloween parte desactivado en ajustes schema v6, con umbral de valor configurable y consultas de
+unlocks opcionales. Su IndexedDB dedicada falla cerrada y queda separada por vault y cuenta. Cuando
+H9.1 está activo, el bridge añade al histórico los ids positivos observados, incluido el backfill
+reciente, sin activarlo por su cuenta. La revisión independiente declaró apto `c867488` y
+`npm run check` quedó verde con 138 ficheros y 1.877 tests, además de seguridad, paquete, contratos y
+build. No se han verificado todavía el aspecto en temas reales de Obsidian, la entrega real de
+`Notice` ni las llamadas live a la API; no se afirma publicación, release ni instalación.
+
 **H9.1, histórico local de precios: candidato técnico apto en `982d5f7`, pendiente de integrar y
 publicar.** El plugin muestrea la API oficial pública `/v2/commerce/prices`, sin clave ni
 GW2Efficiency, y conserva en una IndexedDB dedicada snapshots compactos y agregados diarios UTC.
