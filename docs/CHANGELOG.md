@@ -3,16 +3,19 @@
 ## H11-A - Alertas de Halloween, lista empírica y catálogo de desbloqueos
 
 - Añadido un runtime opt-in que acepta solo deltas positivos de sesiones Halloween y clasifica
-  alertas por umbral de valor, rareza, primera observación y desbloqueo de skin o mini. Un inbox/outbox
-  durable agrega cada episodio en un único `Notice`, deduplica polling y cierre y reconcilia la alerta
-  provisional con el delta terminal.
+  alertas por umbral de valor, rareza, primera observación y desbloqueo de skin o mini. Rare+ solo
+  alerta con ausencia de cotización demostrada o vinculación. El inbox/outbox deduplica cada objeto
+  dentro del episodio; el polling puede emitir avisos provisionales y el cierre los sustituye por una
+  alerta final.
 - La lista empírica se aprende de forma incremental y canónica. El backfill se ejecuta antes del vivo
   sobre notas Halloween válidas: schema v3 aporta deltas exactos; v1 no tiene `tc_event` y no se usa
   para `seen`; v2 sin deltas exactos queda `partial` y no habilita `first_seen`.
-- El catálogo normalizado v3 conserva `details.skins[]` y `details.minipet_id`. La señal de unlock
-  exige cobertura completa de skins o minis y distingue una skin aplicable de una ya desbloqueada.
+- El catálogo normalizado v3 conserva `details.skins[]` y transforma el `minipet_id` de la API cruda
+  en `details.minipetId`. La señal de unlock exige cobertura completa de skins o minis y distingue
+  una skin aplicable de una ya desbloqueada.
 - Ajustes sube a schema v6 con Halloween desactivado, umbral configurable y lectura autenticada de
-  unlocks opcional. La IndexedDB dedicada falla cerrada y separa vault y cuenta.
+  unlocks opcional. La IndexedDB dedicada falla cerrada y separa vault y cuenta; tanto `seen` como el
+  inbox son locales al dispositivo y no se sincronizan entre instalaciones.
 - Si H9.1 está activo, el bridge incorpora al watch los ids positivos observados y los del backfill
   reciente, sin activar el histórico de precios automáticamente.
 - Candidato `c867488` apto tras revisión independiente y `npm run check` verde con 138 ficheros y
