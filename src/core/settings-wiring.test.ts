@@ -15,6 +15,7 @@ describe('settings migration wiring', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
 		const method = source.slice(source.indexOf('async updateSettings'), source.indexOf('private async loadSettings'));
 		expect(method).toContain('mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir)');
-		expect(method).toContain('await this.saveData(this.settings)');
+		expect(method).toContain('await this.saveData(nextSettings)');
+		expect(method.indexOf('await this.saveData(nextSettings)')).toBeLessThan(method.indexOf('this.settings = nextSettings'));
 	});
 });

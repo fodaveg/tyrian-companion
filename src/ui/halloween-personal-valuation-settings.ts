@@ -5,17 +5,25 @@ import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick
 
 export interface HalloweenPersonalValuationSettingsPorts {
 	value(): ContainerPersonalValuationV1;
-	save(value: ContainerPersonalValuationV1): Promise<void>;
+	save(value: ContainerPersonalValuationV1): Promise<PersonalValuationSaveOutcome>;
 	translator(): Translator;
 }
 
-type RowFeedback = 'saved' | 'removed' | 'save_failed' | null;
+export type PersonalValuationSaveOutcome = 'reclassified' | 'next_refresh';
+type RowFeedback =
+	| 'saved_reclassified'
+	| 'saved_next_refresh'
+	| 'removed_reclassified'
+	| 'removed_next_refresh'
+	| 'save_failed'
+	| null;
 
 /** Separate Settings editor for the ten explicit, manually valued outcomes. */
 export class HalloweenPersonalValuationSettings {
 	private busyKey: string | null = null;
 	private feedback = new Map<string, RowFeedback>();
 	private mount: HTMLElement | null = null;
+	private inputs = new Map<string, HTMLInputElement>();
 
 	constructor(private readonly ports: HalloweenPersonalValuationSettingsPorts) {}
 
@@ -23,6 +31,7 @@ export class HalloweenPersonalValuationSettings {
 		this.mount = container;
 		const translator = this.ports.translator();
 		container.replaceChildren();
+		this.inputs.clear();
 		container.classList.add('tyrian-personal-valuation');
 		const model = halloweenTrickOrTreatBagModel();
 		const outcomes = model.outcomes.filter((outcome) => outcome.valuationPolicy === 'excluded');
@@ -66,6 +75,7 @@ export class HalloweenPersonalValuationSettings {
 			}));
 			input.setAttribute('aria-describedby', errorId);
 			input.disabled = this.busyKey !== null;
+			this.inputs.set(outcome.key, input);
 
 			const remove = row.createEl('button');
 			remove.type = 'button';
@@ -135,13 +145,18 @@ export class HalloweenPersonalValuationSettings {
 		const container = this.mount;
 		if (container !== null) this.render(container);
 		try {
-			await this.ports.save(candidate);
-			this.feedback.set(outcomeKey, unitCopper === null ? 'removed' : 'saved');
+			const outcome = await this.ports.save(candidate);
+			this.feedback.set(outcomeKey, unitCopper === null
+				? outcome === 'reclassified' ? 'removed_reclassified' : 'removed_next_refresh'
+				: outcome === 'reclassified' ? 'saved_reclassified' : 'saved_next_refresh');
 		} catch {
 			this.feedback.set(outcomeKey, 'save_failed');
 		} finally {
 			this.busyKey = null;
-			if (container !== null) this.render(container);
+			if (container !== null) {
+				this.render(container);
+				this.inputs.get(outcomeKey)?.focus();
+			}
 		}
 	}
 }

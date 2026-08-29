@@ -1,7 +1,7 @@
 import type { App, PluginManifest } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
-import TyrianCompanionPlugin from './main';
+import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import type { ConnectionState } from './account/connection-service';
 import { genericManagedAssets } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
@@ -18,6 +18,8 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
 import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
 import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
+import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
+import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
 
 interface StartIntentHarness {
 	app: unknown;
@@ -34,6 +36,97 @@ interface InventoryVaultIntentHarness {
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
 }
+
+describe('atomic settings persistence', () => {
+	it('keeps the persisted personal overlay in memory and in the next Refresh rules after save rejection', async () => {
+		const settings = {
+			...DEFAULT_SETTINGS,
+			halloweenPersonalValuation: { version: 1 as const, values: [
+				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' as const },
+			] },
+		};
+		const saveData = vi.fn(async () => { throw new Error('persistence unavailable'); });
+		const reclassify = vi.fn();
+		const harness = {
+			runtimeReady: true,
+			settings,
+			app: { vault: { configDir: 'test-config-dir' } },
+			saveData,
+			inventoryAdvisor: { reclassify },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+			updateSettings(
+				this: typeof harness,
+				update: Partial<TyrianSettings>,
+			): Promise<SettingsUpdateResult>;
+		}).updateSettings;
+
+		await expect(updateSettings.call(harness, {
+			halloweenPersonalValuation: { version: 1, values: [
+				{ outcomeKey: 'item:36031', unitCopper: 500, origin: 'manual' },
+			] },
+		})).rejects.toThrow('persistence unavailable');
+
+		expect(harness.settings.halloweenPersonalValuation.values[0]?.unitCopper).toBe(25);
+		expect(reclassify).not.toHaveBeenCalled();
+		const refreshRules = createInventoryAdvisorBuiltinRulesProvider(
+			inventoryAdvisorBuiltinBundleProvider,
+			() => harness.settings.halloweenPersonalValuation,
+		).current('2026-08-16T05:23:00.000Z');
+		expect(refreshRules).toMatchObject({
+			status: 'available',
+			value: { personalValuation: { values: [{ unitCopper: 25 }] } },
+		});
+	});
+
+	it.each([
+		['ready', 'reclassified'],
+		['loading', 'next_refresh'],
+		['blocked', 'next_refresh'],
+	] as const)('reports %s reclassification truthfully as %s after persistence', async (viewStatus, expected) => {
+		const events: string[] = [];
+		const settings: TyrianSettings = {
+			...DEFAULT_SETTINGS,
+			halloweenPersonalValuation: { version: 1, values: [
+				{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+			] },
+		};
+		const harness = {
+			runtimeReady: true,
+			settings,
+			app: { vault: { configDir: 'test-config-dir' } },
+			saveData: vi.fn(async () => {
+				events.push('persist');
+				expect(harness.settings.halloweenPersonalValuation.values[0]?.unitCopper).toBe(25);
+			}),
+			inventoryAdvisor: { reclassify: vi.fn(async () => {
+				events.push('reclassify');
+				return { status: viewStatus };
+			}) },
+			halloween: null,
+			halloweenPriceAlert: null,
+			priceHistory: null,
+			renderInventoryAdvisorViews: vi.fn(),
+			renderViews: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+			updateSettings(
+				this: typeof harness,
+				update: Partial<TyrianSettings>,
+			): Promise<SettingsUpdateResult>;
+		}).updateSettings;
+
+		await expect(updateSettings.call(harness, {
+			halloweenPersonalValuation: { version: 1, values: [
+				{ outcomeKey: 'item:36031', unitCopper: 500, origin: 'manual' },
+			] },
+		})).resolves.toEqual({ status: 'saved', inventoryAdvisor: expected });
+		expect(events).toEqual(['persist', 'reclassify']);
+		expect(harness.settings.halloweenPersonalValuation.values[0]?.unitCopper).toBe(500);
+	});
+});
 
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {
@@ -490,7 +583,7 @@ interface ManagedAssetsRootHarness {
 	renderViews(): void;
 	renderInventoryAdvisorViews(): void;
 	applyManagedAssets(): Promise<void>;
-	updateSettings(update: Partial<TyrianSettings>): Promise<void>;
+	updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	relocateManagedAssets(): Promise<unknown>;
 	reconcileManagedAssetsRoot(): Promise<void>;
 	ensureManagedAssetsAuthority(): Promise<boolean>;
@@ -511,7 +604,7 @@ function buildManagedAssetsRootHarness(
 ): ManagedAssetsRootHarness {
 	const proto = TyrianCompanionPlugin.prototype as unknown as {
 		applyManagedAssets(this: ManagedAssetsRootHarness): Promise<void>;
-		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<void>;
+		updateSettings(this: ManagedAssetsRootHarness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 		relocateManagedAssets(this: ManagedAssetsRootHarness): Promise<unknown>;
 		reconcileManagedAssetsRoot(this: ManagedAssetsRootHarness): Promise<void>;
 		ensureManagedAssetsAuthority(this: ManagedAssetsRootHarness): Promise<boolean>;

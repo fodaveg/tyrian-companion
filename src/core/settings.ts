@@ -73,7 +73,7 @@ export interface TyrianSettings {
 	halloweenPersonalValuation: ContainerPersonalValuationV1;
 }
 
-export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
+export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	schemaVersion: SETTINGS_SCHEMA_VERSION,
 	apiKeySecret: '',
 	language: 'es',
@@ -106,7 +106,7 @@ const HALLOWEEN_PRICE_ALERT_COOLDOWNS: ReadonlySet<number> = new Set([6, 12, 24,
 /** Migrates persisted settings to the current schema without retaining unknown values. */
 export function migrateSettings(data: unknown, configDir?: string): TyrianSettings {
 	if (!isRecord(data)) {
-		return { ...DEFAULT_SETTINGS };
+		return cloneDefaultSettings();
 	}
 
 	return {
@@ -152,6 +152,22 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
 			?? { version: 1, values: [] },
 	};
+}
+
+/** Returns an independent mutable settings instance without sharing the frozen nested defaults. */
+function cloneDefaultSettings(): TyrianSettings {
+	return {
+		...DEFAULT_SETTINGS,
+		halloweenPersonalValuation: { version: 1, values: [] },
+	};
+}
+
+function deepFreeze<T>(value: T): T {
+	if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+		for (const nested of Object.values(value)) deepFreeze(nested);
+		Object.freeze(value);
+	}
+	return value;
 }
 
 /** Accepts only a closed V1 overlay bound to the current explicit Halloween outcome set. */

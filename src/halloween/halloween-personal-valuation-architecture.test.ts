@@ -40,7 +40,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 			settingsTab.indexOf("settings.halloween.enabled.name"),
 		);
 		expect(main).toContain('createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider, personalValuation)');
-		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(this\.settings\)[\s\S]*inventoryAdvisor\.reclassify\(\)/u);
+		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\(\)/u);
 	});
 
 	it('covers the seven UI axes and makes no asset or contrast claim', () => {
@@ -55,7 +55,8 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		expect(personalStyles).toMatch(/var\(--/u);
 		expect(personalStyles).not.toMatch(/#[0-9a-f]{3,8}/iu);
 		// Empty, zero, valid, invalid, saving and removed states.
-		for (const state of ['empty', 'invalid', 'saving', 'saved', 'removed']) expect(component + locale).toContain(state);
+		for (const state of ['empty', 'invalid', 'saving', 'saved_reclassified', 'saved_next_refresh',
+			'removed_reclassified', 'removed_next_refresh']) expect(component + locale).toContain(state);
 		expect(tests).toContain("unitCopper: 0");
 		// Responsive behavior belongs to the component at 320/480/760.
 		for (const width of [320, 480, 760]) expect(personalStyles).toContain(`@container (max-width: ${String(width)}px)`);
@@ -67,7 +68,8 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		// Real long labels, large values, ten rows and explicit feedback are covered in DOM tests. Assets are N/A.
 		expect(tests).toContain('toHaveLength(10)');
 		expect(tests).toContain('Number.MAX_SAFE_INTEGER');
-		expect(component).toContain("feedback.set(outcomeKey, unitCopper === null ? 'removed' : 'saved')");
+		expect(component).toContain("this.inputs.get(outcomeKey)?.focus()");
+		expect(component).toContain("'saved_next_refresh'");
 		expect(component + personalStyles).not.toMatch(/<img|createElement\('img'\)|\.svg|\.png|contrast (?:passes|verified)/iu);
 	});
 

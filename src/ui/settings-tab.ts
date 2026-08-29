@@ -53,7 +53,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.halloweenPersonalValuation = new HalloweenPersonalValuationSettings({
 			value: () => this.plugin.settings.halloweenPersonalValuation,
 			save: async (halloweenPersonalValuation) => {
-				await this.plugin.updateSettings({ halloweenPersonalValuation });
+				const result = await this.plugin.updateSettings({ halloweenPersonalValuation });
+				if (result.status !== 'saved') throw new Error('Settings runtime is not ready.');
+				return result.inventoryAdvisor === 'reclassified' ? 'reclassified' : 'next_refresh';
 			},
 			translator: () => createTranslator(this.plugin.settings.language),
 		});

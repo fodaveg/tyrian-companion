@@ -14,6 +14,44 @@ import {
 const NESTED_CONFIG_DIR = `config/.${'obsidian'}`;
 
 describe('migrateSettings', () => {
+	it('deep-freezes defaults and returns isolated nested valuation instances', () => {
+		expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
+		expect(Object.isFrozen(DEFAULT_SETTINGS.halloweenPersonalValuation)).toBe(true);
+		expect(Object.isFrozen(DEFAULT_SETTINGS.halloweenPersonalValuation.values)).toBe(true);
+		const shallowCopy = { ...DEFAULT_SETTINGS };
+		expect(() => shallowCopy.halloweenPersonalValuation.values.push({
+			outcomeKey: 'item:36031', unitCopper: 1, origin: 'manual',
+		})).toThrow();
+
+		const first = migrateSettings(null);
+		const second = migrateSettings(undefined);
+		first.halloweenPersonalValuation.values.push({
+			outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual',
+		});
+		expect(second.halloweenPersonalValuation.values).toEqual([]);
+		expect(DEFAULT_SETTINGS.halloweenPersonalValuation.values).toEqual([]);
+	});
+
+	it('clones a persisted valuation instead of retaining its nested values array', () => {
+		const persisted = { halloweenPersonalValuation: { version: 1 as const, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' as const },
+		] } };
+		const migrated = migrateSettings(persisted);
+		persisted.halloweenPersonalValuation.values[0]!.unitCopper = 50;
+		expect(migrated.halloweenPersonalValuation.values[0]?.unitCopper).toBe(25);
+	});
+
+	it('isolates nested valuation values between successive settings instances', () => {
+		const current = migrateSettings({ halloweenPersonalValuation: { version: 1, values: [
+			{ outcomeKey: 'item:36031', unitCopper: 25, origin: 'manual' },
+		] } });
+		const updated = mergeSettingsUpdate(current, { preferredCharacter: 'Kasmeer' });
+		expect(updated.halloweenPersonalValuation).not.toBe(current.halloweenPersonalValuation);
+		expect(updated.halloweenPersonalValuation.values).not.toBe(current.halloweenPersonalValuation.values);
+		updated.halloweenPersonalValuation.values[0]!.unitCopper = 50;
+		expect(current.halloweenPersonalValuation.values[0]?.unitCopper).toBe(25);
+	});
+
 	it('migrates the unversioned 0.1.0 settings idempotently', () => {
 		const migrated = migrateSettings({ apiKeySecret: 'gw2-primary' });
 

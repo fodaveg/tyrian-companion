@@ -48,7 +48,6 @@ import {
 import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
 import {
-	DEFAULT_SETTINGS,
 	mergeSettingsUpdate,
 	migrateSettings,
 	shouldPersistSettingsOnLoad,
@@ -154,8 +153,12 @@ export type SessionHistoryView =
 	| { status: 'scrubbing' | 'scrub_stale'; sessions: number; erased: number; alreadyAbsent: number }
 	| { status: 'erased' | 'already_absent'; sessions: 0; erased: number; alreadyAbsent: number };
 
+export type SettingsUpdateResult =
+	| { status: 'blocked'; reason: 'runtime_starting' }
+	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
+
 export default class TyrianCompanionPlugin extends Plugin {
-	settings: TyrianSettings = { ...DEFAULT_SETTINGS };
+	settings: TyrianSettings = migrateSettings(null);
 	private connection!: ConnectionService;
 	private sessions!: ManualSessionStartService;
 	private assistedDetection!: AssistedDetectionService;
@@ -1465,8 +1468,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
-	async updateSettings(settings: Partial<TyrianSettings>): Promise<void> {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
+	async updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
+		if (!this.runtimeReady) {
+			this.notifyRuntimeStarting();
+			return { status: 'blocked', reason: 'runtime_starting' };
+		}
 		const previousSecret = this.settings.apiKeySecret;
 		const previousDetectionMode = this.settings.detectionMode;
 		const previousPollingInterval = this.settings.pollingIntervalMinutes;
@@ -1480,6 +1486,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
+		// Publish the new runtime view only after its durable write succeeds. A rejected
+		// save therefore leaves every subsequent Refresh on the last persisted overlay.
+		await this.saveData(nextSettings);
 		this.settings = nextSettings;
 		if (previousLanguage !== nextSettings.language) {
 			// Catalog names and deterministic ordering are locale-specific. A locale change
@@ -1506,10 +1515,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();
 		}
-		await this.saveData(this.settings);
+		let inventoryAdvisorResult: Extract<SettingsUpdateResult, { status: 'saved' }>['inventoryAdvisor'] = 'unchanged';
 		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)) {
 			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
-			await this.inventoryAdvisor.reclassify();
+			try {
+				const reclassified = await this.inventoryAdvisor.reclassify();
+				inventoryAdvisorResult = reclassified.status === 'ready' || reclassified.status === 'limited' ||
+					reclassified.status === 'empty' ? 'reclassified' : 'next_refresh';
+			} catch {
+				inventoryAdvisorResult = 'next_refresh';
+			}
 			this.renderInventoryAdvisorViews();
 		}
 		const nextPriceHistory = priceHistorySettingsFrom(this.settings);
@@ -1548,6 +1563,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
 		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot();
+		return { status: 'saved', inventoryAdvisor: inventoryAdvisorResult };
 	}
 
 	private async loadSettings(): Promise<void> {

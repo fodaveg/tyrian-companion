@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator, type Locale } from '../core/i18n';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
-import { HalloweenPersonalValuationSettings } from './halloween-personal-valuation-settings';
+import {
+	HalloweenPersonalValuationSettings,
+	type PersonalValuationSaveOutcome,
+} from './halloween-personal-valuation-settings';
 
 describe('Halloween personal valuation Settings DOM', () => {
 	it.each(['es', 'en'] as const)('renders ten real outcome rows, summary and outside-model warning in %s', (locale) => {
@@ -43,7 +46,7 @@ describe('Halloween personal valuation Settings DOM', () => {
 		input.dispatch('change');
 		await flush();
 		expect(harness.value.values).toEqual([]);
-		expect(harness.text()).toContain('Value removed.');
+		expect(harness.text()).toContain('Value removed and the in-memory capture was reclassified.');
 
 		input = harness.inputs()[0]!;
 		input.value = '5';
@@ -54,7 +57,7 @@ describe('Halloween personal valuation Settings DOM', () => {
 		remove.dispatch('click');
 		await flush();
 		expect(harness.value.values).toEqual([]);
-		expect(harness.text()).toContain('Value removed.');
+		expect(harness.text()).toContain('Value removed and the in-memory capture was reclassified.');
 	});
 
 	it('keeps the last saved value, marks an inline alert and restores focus for invalid input', async () => {
@@ -102,7 +105,32 @@ describe('Halloween personal valuation Settings DOM', () => {
 		expect(harness.text()).toContain('Saving…');
 		release();
 		await flush();
-		expect(harness.text()).toContain('Saved and reclassified without a new capture.');
+		expect(harness.text()).toContain('Saved and reclassified from the in-memory capture.');
+	});
+
+	it.each([
+		['es', 'Guardado. Se aplicará en el próximo Refresh.'],
+		['en', 'Saved. It will apply on the next Refresh.'],
+	] as const)('reports a saved value for the next Refresh in %s when no fresh capture was reclassified', async (locale, message) => {
+		const harness = mount(locale, undefined, undefined, 'next_refresh');
+		const input = harness.inputs()[0]!;
+		input.value = '125';
+		input.dispatch('change');
+		await flush();
+		expect(harness.text()).toContain(message);
+	});
+
+	it('restores keyboard focus to the edited row after its asynchronous rerender', async () => {
+		const harness = mount('en');
+		const before = harness.inputs()[4]!;
+		before.focus();
+		before.value = '125';
+		before.dispatch('change');
+		await flush();
+		const after = harness.inputs()[4]!;
+		expect(after).not.toBe(before);
+		expect(after.id).toBe(before.id);
+		expect(after.focused).toBe(true);
 	});
 
 	it('restores the saved value and announces an inline alert when persistence fails', async () => {
@@ -133,6 +161,7 @@ function mount(
 	locale: Locale,
 	initial: ContainerPersonalValuationV1 = { version: 1, values: [] },
 	pending?: Promise<void>,
+	outcome: PersonalValuationSaveOutcome = 'reclassified',
 ) {
 	const document = new FakeDocument();
 	const container = document.createElement('div');
@@ -140,6 +169,7 @@ function mount(
 	const save = vi.fn(async (next: ContainerPersonalValuationV1) => {
 		if (pending) await pending;
 		value = structuredClone(next);
+		return outcome;
 	});
 	const component = new HalloweenPersonalValuationSettings({
 		value: () => structuredClone(value), save, translator: () => createTranslator(locale),
