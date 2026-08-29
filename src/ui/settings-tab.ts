@@ -16,6 +16,7 @@ import {
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
 import { resolveVaultFolderInput } from '../core/settings';
+import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import type TyrianCompanionPlugin from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
@@ -53,8 +54,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.renderSettings();
 	}
 
-	/** Rebuilds an open tab after changing only its presentation locale. */
+	/** Rebuilds an open tab after changing presentation-dependent settings. */
 	refreshForLocaleChange(): void {
+		this.refreshForSettingsChange();
+	}
+
+	refreshForSettingsChange(): void {
 		if (this.containerEl.isConnected) this.renderSettings();
 	}
 
@@ -223,6 +228,49 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								});
 							}),
 					);
+				},
+			},
+			{
+				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('off', this.t('settings.priceHistory.disable'))
+						.addOption('on', this.t('settings.priceHistory.enable'))
+						.setValue(this.plugin.settings.priceHistoryEnabled ? 'on' : 'off')
+						.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryEnabled: value === 'on' }); }));
+				},
+			},
+			{
+				name: this.t('settings.priceHistory.interval.name'), desc: this.t('settings.priceHistory.interval.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const minutes of [5, 15, 30, 60]) dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
+						dropdown.setValue(String(this.plugin.settings.priceHistoryIntervalMinutes))
+							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
+							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryIntervalMinutes: Number(value) as PriceHistoryIntervalMinutes }); });
+					});
+				},
+			},
+			{
+				name: this.t('settings.priceHistory.raw.name'), desc: this.t('settings.priceHistory.raw.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const days of [2, 7, 14, 30]) dropdown.addOption(String(days), this.t('priceHistory.days', { days }));
+						dropdown.setValue(String(this.plugin.settings.priceHistoryRawRetentionDays))
+							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
+							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryRawRetentionDays: Number(value) as PriceHistoryRawRetentionDays }); });
+					});
+				},
+			},
+			{
+				name: this.t('settings.priceHistory.daily.name'), desc: this.t('settings.priceHistory.daily.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						for (const days of [42, 90, 180, 365]) dropdown.addOption(String(days), this.t('priceHistory.days', { days }));
+						dropdown.setValue(String(this.plugin.settings.priceHistoryDailyRetentionDays))
+							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
+							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryDailyRetentionDays: Number(value) as PriceHistoryDailyRetentionDays }); });
+					});
 				},
 			},
 			{

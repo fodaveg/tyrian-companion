@@ -12,6 +12,7 @@ const INVENTORY_ADVISOR_FILES = [
 	...inventoryAdvisorFiles('src/advisor'),
 	...inventoryAdvisorFiles('src/ui'),
 	{ file: 'inventory-sync-panel-view.ts', path: 'src/ui/inventory-sync-panel-view.ts' },
+	{ file: 'price-history-panel-view.ts', path: 'src/ui/price-history-panel-view.ts' },
 ].sort((left, right) => left.path.localeCompare(right.path))
 	.map((entry) => ({ ...entry, source: readFileSync(entry.path, 'utf8') }));
 
@@ -27,6 +28,7 @@ const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/ui/inventory-advisor-controller.ts',
 	'src/ui/inventory-advisor-view-model.ts',
 	'src/ui/inventory-sync-panel-view.ts',
+	'src/ui/price-history-panel-view.ts',
 ]);
 
 const PRESENTATION_FILES = INVENTORY_ADVISOR_FILES
@@ -48,22 +50,28 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
-			'../economy/reservation-model', './inventory-advisor-view-model', './inventory-advisor-view',
+			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
+			'./inventory-advisor-view-model', './inventory-advisor-view',
 			'./inventory-vault-sync-run-controller'],
 			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel',
 				'actions.createInventoryPreferencesEditorSession', 'preferenceSession.current', 'preferenceSession.load',
 				'preferenceSession.upsertGoal', 'preferenceSession.removeGoal', 'preferenceSession.upsertKeepException', 'preferenceSession.removeKeepException',
 				'actions.getInventoryVaultSyncRunState', 'actions.hasManagedAssetsRoot', 'actions.refreshInventoryAdvisor',
-				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync'],
+				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync',
+				'actions.getPriceHistoryState', 'actions.enablePriceHistory', 'actions.loadPriceHistorySeries'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', './inventory-advisor-view-model',
-			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view'],
+			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {
 		imports: ['../core/i18n', './inventory-vault-sync-controller', './inventory-vault-sync-run-controller'],
+		portCalls: [],
+	}],
+	['src/ui/price-history-panel-view.ts', {
+		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model'],
 		portCalls: [],
 	}],
 ]);
@@ -96,6 +104,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/ui/inventory-advisor-view-model.ts',
 			'src/ui/inventory-advisor-view.ts',
 			'src/ui/inventory-sync-panel-view.ts',
+			'src/ui/price-history-panel-view.ts',
 		]);
 		expect(PRESENTATION_FILES.map(({ path }) => path)).toEqual([...PRESENTATION_DOMAIN_ALLOWLIST].sort());
 		for (const { path, source } of PRESENTATION_FILES) {
@@ -126,6 +135,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-view.ts',
 			'src/ui/inventory-sync-panel-view.ts',
+			'src/ui/price-history-panel-view.ts',
 		]) {
 			const source = readFileSync(path, 'utf8');
 			expect(boundarySourceAllowed(path, source)).toBe(true);

@@ -20,6 +20,8 @@ import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { createTranslator, type Locale } from './core/i18n';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
+import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
+import type { PriceHistorySettings, PriceHistorySide, PriceHistoryWindowDays } from './economy/price-history-model';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
 import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
@@ -163,6 +165,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private readonly inventoryAdvisorCaptureProgressListener: InventoryAdvisorCaptureProgressListenerRef = { current: null };
 	private walletVaultSync!: WalletVaultSyncController;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
+	private priceHistory: PriceHistoryRuntime | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -266,16 +269,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.registerDomEvent(window, 'online', () => {
 			if (!this.runtimeReady) return;
 			this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+			this.priceHistory?.setOnline(true);
 		});
 		this.registerDomEvent(window, 'offline', () => {
 			if (!this.runtimeReady) return;
 			this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
+			this.priceHistory?.setOnline(false);
 		});
 		this.registerDomEvent(document, 'visibilitychange', () => {
 			if (!this.runtimeReady || document.visibilityState !== 'visible') return;
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
 				void this.reconcilePendingProposals().then(() => this.renderViews());
 			}
+			this.priceHistory?.notifyWake();
 		});
 
 		this.app.workspace.onLayoutReady(() => { void this.initializeRuntime(); });
@@ -331,9 +337,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator();
-		// One shared cooldown: a 429 seen by the session capture, assisted detection, or the
-		// inventory advisor blocks the other two until the shared cooldown clears.
+		// One shared cooldown: a 429 seen by session capture, assisted detection,
+		// inventory advisor, or price history blocks every other caller until it clears.
 		const rateLimitCoordinator = new RateLimitCoordinator();
+		this.priceHistory = new PriceHistoryRuntime({
+			factory: window.indexedDB,
+			vaultId,
+			gateway: publicClient,
+			rateLimit: rateLimitCoordinator,
+			onStateChange: () => this.renderInventoryAdvisorViews(),
+		});
 		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
 		const inventorySnapshots = new RateLimitedStorageSnapshotService(
 			new StorageSnapshotService(inventoryClient),
@@ -523,7 +536,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
+		if (this.settings.priceHistoryEnabled) {
+			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
+			this.priceHistory.setOnline(navigator.onLine);
+		}
 		this.renderViews();
+		this.renderInventoryAdvisorViews();
 		// Heals a root left behind by a folder change made before this version shipped the
 		// auto-relocation above (David's own install: notes three folders deep, Bases still at
 		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.
@@ -538,6 +556,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.inventoryVaultSyncRun?.dispose();
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
+		this.priceHistory?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -585,6 +604,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel {
 		return this.runtimeReady ? this.inventoryAdvisor.open() : buildInventoryAdvisorViewModel(null);
+	}
+
+	getPriceHistoryState(): PriceHistoryRuntimeState {
+		return this.priceHistory?.getState() ?? disabledPriceHistoryState();
+	}
+
+	async enablePriceHistory(): Promise<void> {
+		await this.updateSettings({ priceHistoryEnabled: true });
+	}
+
+	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
+		if (!this.runtimeReady || this.priceHistory === null) { this.notifyRuntimeStarting(); return; }
+		await this.priceHistory.loadSeries(itemId, side, windowDays);
+		this.renderInventoryAdvisorViews();
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {
@@ -1206,6 +1239,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const runtimeLease = this.requireRuntimeMutationLease();
 			const result = await this.sessions.stop().finally(() => runtimeLease.release());
 			if (result.status === 'stopped') {
+				const priceSnapshot = this.sessions.getPriceSnapshot();
+				void this.priceHistory?.observeSessionItemIds([
+					...result.delta.itemChanges.map(({ id }) => id),
+					...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
+					...(priceSnapshot?.missingItemIds ?? []),
+				]);
 				void this.detectionQuality.recordAccepted(
 					'stop',
 					result.state.sessionId,
@@ -1289,6 +1328,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousManagedAssetsRoot = this.settings.managedAssetsRoot;
 		const previousLegacyOutputFolder = this.settings.legacyOutputFolder;
 		const previousLegacyManagedAssetsRoot = this.settings.legacyManagedAssetsRoot;
+		const previousPriceHistory = priceHistorySettingsFrom(this.settings);
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		this.settings = nextSettings;
@@ -1315,6 +1355,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.renderViews();
 		}
 		await this.saveData(this.settings);
+		const nextPriceHistory = priceHistorySettingsFrom(this.settings);
+		if (this.priceHistory !== null && JSON.stringify(previousPriceHistory) !== JSON.stringify(nextPriceHistory)) {
+			await this.priceHistory.configure(nextPriceHistory);
+			this.priceHistory.setOnline(navigator.onLine);
+			this.settingTab.refreshForSettingsChange();
+			this.renderInventoryAdvisorViews();
+		}
 		if (previousLanguage !== this.settings.language || secretChanged || previousOutputFolder !== this.settings.outputFolder ||
 			previousManagedAssetsRoot !== this.settings.managedAssetsRoot || previousLegacyOutputFolder !== this.settings.legacyOutputFolder ||
 			previousLegacyManagedAssetsRoot !== this.settings.legacyManagedAssetsRoot) {
@@ -1638,6 +1685,22 @@ const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	},
 	lastSnapshotAt: null,
 };
+
+function disabledPriceHistoryState(): PriceHistoryRuntimeState {
+	return {
+		status: 'disabled', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
+		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null,
+	};
+}
+
+function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySettings {
+	return {
+		enabled: settings.priceHistoryEnabled,
+		intervalMinutes: settings.priceHistoryIntervalMinutes,
+		rawRetentionDays: settings.priceHistoryRawRetentionDays,
+		dailyRetentionDays: settings.priceHistoryDailyRetentionDays,
+	};
+}
 
 /** Identical to a brand-new editor session before its first `load()`. */
 const IDLE_PREFERENCES_STATE: InventoryPreferencesEditorState = { status: 'not_loaded', goals: [], keepExceptions: [] };

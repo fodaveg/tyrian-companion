@@ -77,6 +77,9 @@ H6.6 benchmark -> payloads GW2 deterministas -> snapshot normalizado -> delta ->
 public catalog service -> public GW2 client -> core HTTP
 	                  -> cache adapter
 
+price history runtime -> public GW2 client + shared rate-limit coordinator
+	                  -> dedicated IndexedDB (raw + daily + watch + lease/fence)
+
 economy monetary contract -> valores unitarios, cantidades y CatalogItem validado (puro, sin I/O)
 
 reservation engine -> objetivos + balance final -> plan + overlay H4.5 (puro, sin I/O)
@@ -107,6 +110,43 @@ H3.5 añade `ApiPollScheduler` como una primitiva independiente de snapshots y d
 El scheduler usa un único `setTimeout` por deadline y mantiene una sola promesa de polling en vuelo. El siguiente intervalo empieza después de resolver la consulta, por lo que una API lenta no acumula trabajo. Cambiar intervalo, pasar offline, despertar, detener o disponer incrementa una generación: timers y completions antiguos no pueden rearmar el ciclo. Volver online o despertar introduce un retraso de reanudación y nunca reproduce ticks perdidos.
 
 Los resultados forman una unión cerrada: éxito, offline, rate limit, fallo transitorio o fatal. `apiPollOutcomeFromError` traduce únicamente `HttpTransportError` saneado: network/timeout y `500|502|503|504` son transitorios, `429` conserva `retryAfterMs`, y autenticación, respuestas no recuperables o errores desconocidos fallan cerrados. Los fallos transitorios usan backoff exponencial acotado con jitter; un éxito reinicia el contador. La detección de sleep contrasta deadline de reloj de pared y monotónico, descarta la ejecución tardía y programa una sola reanudación fresca.
+
+## Histórico local de precios H9.1
+
+`PriceHistoryRuntime` reutiliza ese scheduler, el `GuildWars2PublicCatalogClient` y el
+`RateLimitCoordinator` compartido para consultar únicamente el endpoint público oficial
+`/v2/commerce/prices`; no usa clave ni GW2Efficiency. Construir runtime, abrir Inventory Advisor o
+renderizar su panel no abre IndexedDB ni llama a red. El ajuste v5 es opt-in y parte desactivado; al
+activarlo usa 15 minutos por defecto y admite 5/15/30/60. Online/offline, visibility/wake y dispose
+cercan el ciclo; tras sleep se captura solo el slot actual y nunca se sintetizan intervalos perdidos.
+
+La IndexedDB dedicada `tyrian-companion-price-history` v1 contiene `snapshots-v1`, `daily-v1`,
+`watch-v1` y `meta-v1`. Un snapshot se identifica por `[vaultId, slotStartMs]`, guarda tuples
+ordenadas `[itemId,bidCopper|null,askCopper|null]`, hora real, intervalo, cobertura complete/partial y
+los ids ausentes. No guarda cuenta, clave, personaje, nombres, rutas ni cantidades de listings. La
+watch list empieza con `36038, 36041, 105402, 48715, 73474`, incorpora ids positivos observados al
+cerrar sesiones, conserva siempre las semillas y limita la cardinalidad a 400. Cada petición lleva
+como máximo 200 ids y los lotes se ejecutan de forma secuencial.
+
+La coordinación multi-ventana reclama cada slot en una transacción IndexedDB con lease y fence. Un
+commit exige el lease vigente, por lo que un writer stale no puede sustituir una captura ya cercada;
+la misma clave de slot hace el commit idempotente. Respuestas con ids extra o duplicados y payloads
+malformados detienen el runtime sin persistir la captura. Omisiones legítimas —incluido un lote 404—,
+items sin una cotización y respuestas parciales se conservan de forma honesta como `partial`.
+Versiones futuras, records corruptos, bloqueo y cuota fallan cerrados: esta base nunca cae a memoria.
+
+`compactAndPrune` calcula antes de podar los agregados UTC por item/día. Cada lado bid/ask guarda
+count, min, max, cierre temporal y `medianCopperX2`, que representa exactamente medianas con N par.
+La operación es idempotente y separa retención raw 2/7/14/30 días —7 por defecto— de retención diaria
+42/90/180/365 —180 por defecto—. Ampliar una retención no reconstruye datos ya podados. El cálculo de
+percentiles es puro, no rellena huecos y devuelve `insufficient_history` antes de 42 días observados;
+H9.1 no emite alertas, que pertenecen a H11.5.
+
+El panel vive entre sincronización y resultados, separado de `inventory-sync-panel-view.ts`. Solo un
+control explícito lee series locales. El SVG determinista usa `viewBox` y `width:100%`, rompe líneas en
+huecos y diferencia min/max, mediana y cierre mediante patrón además de color; `figure/figcaption` y
+una tabla HTML plegable ofrecen la representación equivalente. Los estados disabled/loading/no
+samples/collecting/ready/partial/offline/backoff, payload inválido y fallos de store son explícitos.
 
 ## Frontera de plataforma e integración
 
@@ -498,7 +538,7 @@ La carga del plugin solo lee ese record local: no adquiere lease, no inicia hear
 
 ## Ajustes y migración
 
-El esquema actual es `4`. `migrateSettings` convierte de forma idempotente los datos anteriores, descarta propiedades desconocidas y valida enums e intervalos. La migración v2→v3 añadió `managedAssetsRoot:null`; v4 separa los destinos portables de `legacyOutputFolder`/`legacyManagedAssetsRoot`. La reescritura canónica de ajustes conserva solo esos campos legacy autorizados y elimina cualquier propiedad desconocida. Si un valor relativo antes aceptado deja de ser portable —nombre reservado o longitud— queda retenido read-only como legacy, no puede producir notas ni assets nuevos ni alterar el puntero durable. Move/Remove siempre inspeccionan la raíz esperada aunque el puntero ya la nombre: el manifiesto debe ser owned y exacto, y Move exige además `ready` antes de aplicar destino; un puntero que nombra otra raíz es conflicto. Si Remove ya dejó ese manifiesto exacto detached y se perdió su respuesta, el retry solo confirma ese terminal con puntero inicial vacío, sin adoptar ni tocar Vault, y vuelve a leer el puntero para exigir estado, generación y raíz idénticos tras la inspección. Con un puntero aún en la raíz esperada, Remove retoma su transición normal y solo entonces lo libera. La autoridad para carreras continúa exclusivamente en el puntero IndexedDB: la migración nunca lo modifica. La carpeta de salida solo acepta segmentos relativos separados por `/`: normaliza a NFC en vez de rechazar NFD, y sigue rechazando navegación, controles y surrogates sin emparejar, barras inversas, `:*?"<>|`, punto o espacio final, nombres Windows reservados, rutas absolutas y el directorio de configuración real del vault. `resolveVaultFolderInput` valida un valor tecleado en Ajustes con el mismo contrato pero sin el fallback de `normalizeVaultFolder`: un rechazo legítimo se muestra junto al campo y nunca sustituye en silencio el valor guardado por el default.
+El esquema actual es `5`. `migrateSettings` convierte de forma idempotente los datos anteriores, descarta propiedades desconocidas y valida enums e intervalos. La migración v2→v3 añadió `managedAssetsRoot:null`; v4 separa los destinos portables de `legacyOutputFolder`/`legacyManagedAssetsRoot`; v5 añade el histórico de precios desactivado con intervalo 15 minutos, raw 7 días y diario 180 días. La reescritura canónica de ajustes conserva solo esos campos legacy autorizados y elimina cualquier propiedad desconocida. Si un valor relativo antes aceptado deja de ser portable —nombre reservado o longitud— queda retenido read-only como legacy, no puede producir notas ni assets nuevos ni alterar el puntero durable. Move/Remove siempre inspeccionan la raíz esperada aunque el puntero ya la nombre: el manifiesto debe ser owned y exacto, y Move exige además `ready` antes de aplicar destino; un puntero que nombra otra raíz es conflicto. Si Remove ya dejó ese manifiesto exacto detached y se perdió su respuesta, el retry solo confirma ese terminal con puntero inicial vacío, sin adoptar ni tocar Vault, y vuelve a leer el puntero para exigir estado, generación y raíz idénticos tras la inspección. Con un puntero aún en la raíz esperada, Remove retoma su transición normal y solo entonces lo libera. La autoridad para carreras continúa exclusivamente en el puntero IndexedDB: la migración nunca lo modifica. La carpeta de salida solo acepta segmentos relativos separados por `/`: normaliza a NFC en vez de rechazar NFD, y sigue rechazando navegación, controles y surrogates sin emparejar, barras inversas, `:*?"<>|`, punto o espacio final, nombres Windows reservados, rutas absolutas y el directorio de configuración real del vault. `resolveVaultFolderInput` valida un valor tecleado en Ajustes con el mismo contrato pero sin el fallback de `normalizeVaultFolder`: un rechazo legítimo se muestra junto al campo y nunca sustituye en silencio el valor guardado por el default.
 
 `outputFolder` es la única raíz que el usuario elige: también gobierna dónde viven Bases y plantillas, no solo notas. `managedAssetsRoot` dejó de poder quedar divergido sin que el plugin reaccione. Un cambio explícito de carpeta con assets ya instalados dispara `reconcileManagedAssetsRoot`, que reubica Bases/plantillas al nuevo destino con la misma `ManagedAssetsLifecycle.move` journaled del botón manual "Mover" —nunca una copia paralela—, y dos raíces vuelven a quedar iguales tras un `updateSettings` con `outputFolder` cambiado. La misma reconciliación corre una vez al terminar `initializeRuntime`, sin bloquear el arranque, para curar una instalación que ya empezó divergida (una raíz de assets que nunca siguió un cambio de carpeta posterior a H5.8). Move solo borra los bytes de origen después de instalar en destino y se niega sobre un root modificado/ajeno/en conflicto, así que una reconciliación bloqueada deja ambas raíces exactamente como estaban —nunca a medias— y sigue mostrando la divergencia y el botón "Mover" manual en Ajustes. Un `Notice` avisa del resultado (reubicado o bloqueado) porque mover ficheros del vault sin que el usuario lo vea al abrir Obsidian se consideró peor que avisar después del hecho. Una raíz legacy queda deliberadamente fuera de esta reconciliación automática: solo se adopta mediante el Move explícito ya documentado, nunca por sí sola al arrancar.
 
@@ -569,4 +609,4 @@ Antes de ampliar la vertical actual hay que decidir:
 - Qué formatos de nota adicionales, fuera del contrato H5.4 de sesión completa, puede escribir el plugin.
 - Cómo recuperar automáticamente cambios de roster/`404` durante una captura sin ocultar cobertura parcial.
 - Cómo coordinar un cooldown `429` global entre las peticiones paralelas de una captura.
-- Cómo complementar la declaración H3.9 con historial personal del Trading Post sin convertirlo en actividad inferida.
+- Cómo incorporar en una fase futura el historial **personal** del Trading Post a H3.9 sin confundirlo con el histórico público local H9.1 ni convertirlo en actividad inferida.

@@ -3,6 +3,7 @@ import { setIcon } from 'obsidian';
 import type { Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { inventorySyncPanel, inventorySyncSummaryParams } from './inventory-sync-panel-view';
+import { renderPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -50,6 +51,8 @@ export interface InventoryAdvisorViewInteractions {
 		onConfirm: () => void | Promise<void>;
 		onCancel: () => void;
 	};
+	/** Local-only history. Reading storage and enabling polling require an explicit callback. */
+	priceHistory?: PriceHistoryPanelInteractions;
 }
 
 export interface InventoryAdvisorViewFilters {
@@ -472,7 +475,8 @@ function mountInventoryAdvisorView(
 	character.addEventListener('change', updateFilters);
 	sortSelect.addEventListener('change', updateFilters);
 	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
-	section.append(heading, intro, iconDisclosure, controls, state, syncSection);
+	const priceHistory = createDiv();
+	section.append(heading, intro, iconDisclosure, syncSection, priceHistory, controls, state);
 	if (preferencesEditor !== null) section.append(preferencesEditor.element);
 	section.append(results);
 	container.replaceChildren(section);
@@ -552,6 +556,7 @@ function mountInventoryAdvisorView(
 				syncStatusPanel.setAttribute('role', 'alert');
 			} else syncStatusPanel.removeAttribute('role');
 		}
+		renderPriceHistoryPanel(priceHistory, translator, interactions.priceHistory);
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));

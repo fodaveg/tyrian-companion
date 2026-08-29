@@ -1,6 +1,11 @@
 import { normalizeVaultRelativePath } from './vault-path';
+import type {
+	PriceHistoryDailyRetentionDays,
+	PriceHistoryIntervalMinutes,
+	PriceHistoryRawRetentionDays,
+} from '../economy/price-history-model';
 
-export const SETTINGS_SCHEMA_VERSION = 4 as const;
+export const SETTINGS_SCHEMA_VERSION = 5 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -44,6 +49,11 @@ export interface TyrianSettings {
 	legacyManagedAssetsRoot: string | null;
 	/** Last outcome of the one-click inventory Vault sync. Null before any run, or on a pre-0.1.7 install. */
 	inventorySyncLastRun: InventoryVaultSyncLastRun | null;
+	/** Public-price sampling is opt-in and remains device-local in IndexedDB. */
+	priceHistoryEnabled: boolean;
+	priceHistoryIntervalMinutes: PriceHistoryIntervalMinutes;
+	priceHistoryRawRetentionDays: PriceHistoryRawRetentionDays;
+	priceHistoryDailyRetentionDays: PriceHistoryDailyRetentionDays;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -58,9 +68,16 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	legacyOutputFolder: null,
 	legacyManagedAssetsRoot: null,
 	inventorySyncLastRun: null,
+	priceHistoryEnabled: false,
+	priceHistoryIntervalMinutes: 15,
+	priceHistoryRawRetentionDays: 7,
+	priceHistoryDailyRetentionDays: 180,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
+const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
+const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
+const PRICE_HISTORY_DAILY_RETENTIONS: ReadonlySet<number> = new Set([42, 90, 180, 365]);
 
 /** Migrates persisted settings to the current schema without retaining unknown values. */
 export function migrateSettings(data: unknown, configDir?: string): TyrianSettings {
@@ -92,7 +109,18 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		legacyManagedAssetsRoot: legacyVaultFolder(data.legacyManagedAssetsRoot, configDir) ??
 			legacyVaultFolder(data.managedAssetsRoot, configDir),
 		inventorySyncLastRun: inventoryVaultSyncLastRun(data.inventorySyncLastRun),
+		priceHistoryEnabled: data.priceHistoryEnabled === true,
+		priceHistoryIntervalMinutes: enumNumber(data.priceHistoryIntervalMinutes, PRICE_HISTORY_INTERVALS,
+			DEFAULT_SETTINGS.priceHistoryIntervalMinutes) as PriceHistoryIntervalMinutes,
+		priceHistoryRawRetentionDays: enumNumber(data.priceHistoryRawRetentionDays, PRICE_HISTORY_RAW_RETENTIONS,
+			DEFAULT_SETTINGS.priceHistoryRawRetentionDays) as PriceHistoryRawRetentionDays,
+		priceHistoryDailyRetentionDays: enumNumber(data.priceHistoryDailyRetentionDays, PRICE_HISTORY_DAILY_RETENTIONS,
+			DEFAULT_SETTINGS.priceHistoryDailyRetentionDays) as PriceHistoryDailyRetentionDays,
 	};
+}
+
+function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: number): number {
+	return typeof value === 'number' && allowed.has(value) ? value : fallback;
 }
 
 const SYNC_RUN_STATUSES: ReadonlySet<string> = new Set(['success', 'error']);

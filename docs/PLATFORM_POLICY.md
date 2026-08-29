@@ -20,13 +20,31 @@ plataforma primaria. La compatibilidad móvil sigue fuera de alcance.
 
 El MVP puede consultar exclusivamente endpoints oficiales de Guild Wars 2. La carga del plugin y
 la apertura de la vista permanecen sin red; una conexión, una captura manual o el armado explícito
-de la detección asistida son las únicas puertas de entrada a las consultas ya descritas en
+de la detección asistida y la activación explícita del histórico público de precios son las únicas
+puertas de entrada a las consultas ya descritas en
 [Arquitectura](ARCHITECTURE.md).
 
 El MVP no integra Mumble Link, no inspecciona el cliente de juego y no depende de Steam, Proton o
 CrossOver para obtener evidencia. Inicio y parada asistidos siguen siendo propuestas: una persona
 debe aceptarlas o descartarlas. Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar
 cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera del companion.
+
+## Histórico público de precios H9.1
+
+H9.1 conserva el mismo contrato portable: únicamente consulta la API oficial pública
+`/v2/commerce/prices`, sin clave, GW2Efficiency, proceso del juego ni adapter específico de Steam,
+Proton, CrossOver o Windows. Parte desactivado. Construcción, carga y apertura del panel no abren su
+IndexedDB ni hacen red; el polling empieza solo tras opt-in y runtime ready. Linux, macOS y Windows
+comparten intervalos 5/15/30/60, retenciones 2/7/14/30 raw y 42/90/180/365 diarias, lotes secuenciales
+de hasta 200 ids y el cooldown global.
+
+Offline pausa el scheduler; volver online, recuperar visibilidad o despertar programa una captura
+fresca del slot actual, nunca una ráfaga de catch-up. El almacenamiento es IndexedDB local por
+identidad hash de vault y no crea notas ni depende de Obsidian Sync. Un fallo futuro/corrupto,
+bloqueo o cuota se muestra y detiene la captura, sin fallback a memoria. La QA de presentación debe
+revisar 320/480/760 px en temas claro y oscuro: controles apilados, SVG fluido, tabla con overflow,
+targets de 44 px, foco visible y estados disabled/loading/empty/partial/offline/backoff/error. La
+estructura accesible está automatizada; el contraste AA no se afirma sin medir los temas reales.
 
 ## Mumble Link en v2
 

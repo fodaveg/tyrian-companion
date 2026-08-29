@@ -88,13 +88,39 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v4 without scanning or claiming managed assets', () => {
+	it('migrates v2 to v5 without scanning, claiming assets, or opting into price history', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 4,
+			schemaVersion: 5,
 			managedAssetsRoot: null,
+			priceHistoryEnabled: false,
 		});
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
+	});
+
+	it('validates every price-history option and keeps opt-in explicit', () => {
+		expect(migrateSettings({
+			priceHistoryEnabled: true,
+			priceHistoryIntervalMinutes: 5,
+			priceHistoryRawRetentionDays: 30,
+			priceHistoryDailyRetentionDays: 365,
+		})).toMatchObject({
+			priceHistoryEnabled: true,
+			priceHistoryIntervalMinutes: 5,
+			priceHistoryRawRetentionDays: 30,
+			priceHistoryDailyRetentionDays: 365,
+		});
+		expect(migrateSettings({
+			priceHistoryEnabled: 'yes',
+			priceHistoryIntervalMinutes: 1,
+			priceHistoryRawRetentionDays: 365,
+			priceHistoryDailyRetentionDays: 7,
+		})).toMatchObject({
+			priceHistoryEnabled: false,
+			priceHistoryIntervalMinutes: 15,
+			priceHistoryRawRetentionDays: 7,
+			priceHistoryDailyRetentionDays: 180,
+		});
 	});
 
 	it('retains b05e656 legacy paths in the canonical rewrite', () => {

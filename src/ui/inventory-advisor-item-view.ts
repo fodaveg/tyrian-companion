@@ -7,6 +7,8 @@ import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
+import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 
 export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 
@@ -29,12 +31,16 @@ export interface InventoryAdvisorViewActions {
 	confirmInventoryVaultSync?(): Promise<void>;
 	/** Discards a pending destructive plan without writing anything. */
 	cancelInventoryVaultSync?(): void;
+	getPriceHistoryState?(): PriceHistoryRuntimeState;
+	enablePriceHistory?(): Promise<void>;
+	loadPriceHistorySeries?(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void>;
 }
 
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
 export class InventoryAdvisorItemView extends ItemView {
 	private preferencesBusy = false;
 	private analysisBusy = false;
+	private priceHistoryBusy = false;
 	private closed = false;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
 
@@ -66,6 +72,17 @@ export class InventoryAdvisorItemView extends ItemView {
 				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),
 				onCancel: () => { this.actions.cancelInventoryVaultSync!(); this.render(); },
 			};
+		const priceHistory = this.actions.getPriceHistoryState === undefined
+			|| this.actions.enablePriceHistory === undefined
+			|| this.actions.loadPriceHistorySeries === undefined
+			? undefined : {
+				state: this.actions.getPriceHistoryState(),
+				itemLabels: Object.fromEntries(model.groups.flatMap(({ rows }) => rows.map(({ itemId, name }) => [itemId, name]))),
+				busy: this.priceHistoryBusy,
+				onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
+				onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) =>
+					this.runPriceHistoryAction(() => this.actions.loadPriceHistorySeries!(itemId, side, windowDays)),
+			};
 		renderInventoryAdvisorView(
 			this.contentEl,
 			model,
@@ -80,6 +97,7 @@ export class InventoryAdvisorItemView extends ItemView {
 				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertKeepException(keepException); }),
 				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
 				inventorySync: sync,
+				priceHistory,
 			},
 		);
 	}
@@ -103,6 +121,14 @@ export class InventoryAdvisorItemView extends ItemView {
 			this.analysisBusy = false;
 			this.render();
 		}
+	}
+
+	private async runPriceHistoryAction(action: () => Promise<void>): Promise<void> {
+		if (this.closed || this.priceHistoryBusy) return;
+		this.priceHistoryBusy = true;
+		this.render();
+		try { await action(); }
+		finally { this.priceHistoryBusy = false; this.render(); }
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {
