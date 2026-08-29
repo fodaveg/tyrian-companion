@@ -26,6 +26,31 @@ describe('Halloween price alert runtime', () => {
 		expect(open).not.toHaveBeenCalled();
 	});
 
+	it('does not let an evaluate waiting on stale activation re-enable H9.1 after it is switched off', async () => {
+		const factory = new IDBFactory();
+		const heldStore = await IndexedDbHalloweenStore.open(factory, `h11-price-held-${crypto.randomUUID()}`);
+		const opening = deferred<IndexedDbHalloweenStore>();
+		const open = vi.spyOn(IndexedDbHalloweenStore, 'open').mockImplementation(async () => await opening.promise);
+		const onNotice = vi.fn();
+		const runtime = new HalloweenPriceAlertRuntime({
+			factory, vaultId: 'vault', accountRef: () => 'account', onNotice,
+		});
+		const settings = { enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 as const };
+		const configuring = runtime.configure(settings, true);
+		expect(open).toHaveBeenCalledOnce();
+		const readDaily = vi.fn(async () => history(40));
+		const evaluation = runtime.evaluate({ readDaily }, NOW);
+		await runtime.configure(settings, false);
+		expect(runtime.getState()).toEqual({ status: 'disabled', projection: null, notices: [], unreadCount: 0 });
+		opening.resolve(heldStore);
+		await Promise.all([configuring, evaluation]);
+		expect(open).toHaveBeenCalledOnce();
+		expect(readDaily).not.toHaveBeenCalled();
+		expect(onNotice).not.toHaveBeenCalled();
+		expect(runtime.getState()).toEqual({ status: 'disabled', projection: null, notices: [], unreadCount: 0 });
+		open.mockRestore(); runtime.dispose();
+	});
+
 	it('emits only a durable below-to-high crossing, at most once per day, and requires a valid below to rearm', async () => {
 		const factory = new IDBFactory();
 		const onNotice = vi.fn();

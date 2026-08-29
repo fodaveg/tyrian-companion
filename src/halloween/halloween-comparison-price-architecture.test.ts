@@ -51,6 +51,9 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		const runtime = readFileSync('src/halloween/halloween-price-alert-runtime.ts', 'utf8');
 		expect(runtime).toContain('this.project(notices, result.projection)');
 		expect(runtime).toContain('projection: null, notices: [], unreadCount: 0');
+		expect(runtime).toContain('private priceHistoryActive = false');
+		expect(runtime).toContain('this.evaluationContextCurrent(generation, accountRef, priceHistoryActive)');
+		expect(runtime).not.toContain('this.configure(this.settings, true)');
 		const notice = readFileSync('src/halloween/halloween-price-alert.ts', 'utf8');
 		expect(notice).not.toMatch(/quantity/u);
 	});

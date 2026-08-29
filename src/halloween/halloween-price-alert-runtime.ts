@@ -38,6 +38,7 @@ export class HalloweenPriceAlertRuntime {
 	private store: IndexedDbHalloweenStore | null = null;
 	private activation: Promise<void> | null = null;
 	private settings: HalloweenPriceAlertSettings = { enabled: false, minimumAboveP90Bps: 0, cooldownHours: 24 };
+	private priceHistoryActive = false;
 	private generation = 0;
 	private loadedAccountRef: string | null = null;
 	private disposed = false;
@@ -51,6 +52,7 @@ export class HalloweenPriceAlertRuntime {
 
 	async configure(settings: HalloweenPriceAlertSettings, priceHistoryActive: boolean): Promise<void> {
 		this.settings = { ...settings };
+		this.priceHistoryActive = priceHistoryActive;
 		if (!settings.enabled || !priceHistoryActive) { this.disable(); return; }
 		if (this.disposed) return;
 		const accountRef = this.options.accountRef();
@@ -70,13 +72,19 @@ export class HalloweenPriceAlertRuntime {
 	}
 
 	async evaluate(port: HalloweenPriceHistoryPort, nowMs: number): Promise<void> {
-		if (this.activation !== null) await this.activation;
-		if (this.loadedAccountRef !== this.options.accountRef() && this.settings.enabled && !this.disposed) {
-			await this.configure(this.settings, true);
+		let generation = this.generation;
+		let accountRef = this.options.accountRef();
+		const priceHistoryActive = this.priceHistoryActive;
+		const activation = this.activation;
+		if (activation !== null) await activation;
+		if (!this.evaluationContextCurrent(generation, accountRef, priceHistoryActive)) return;
+		if (this.loadedAccountRef !== accountRef) {
+			await this.configure(this.settings, this.priceHistoryActive);
+			generation = this.generation;
+			accountRef = this.options.accountRef();
+			if (!this.evaluationContextCurrent(generation, accountRef, this.priceHistoryActive)) return;
 		}
 		const store = this.store;
-		const accountRef = this.options.accountRef();
-		const generation = this.generation;
 		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef || !this.settings.enabled || this.disposed) return;
 		try {
 			const fromDayUtc = priceHistoryDayUtc(Math.max(0, nowMs - 30 * DAY_MS));
@@ -101,7 +109,8 @@ export class HalloweenPriceAlertRuntime {
 	async acknowledge(noticeId: string): Promise<boolean> {
 		const store = this.store;
 		const accountRef = this.options.accountRef();
-		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef || !this.settings.enabled) return false;
+		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef ||
+			!this.settings.enabled || !this.priceHistoryActive) return false;
 		const generation = this.generation;
 		try {
 			const acknowledged = await store.acknowledgePriceNotice(
@@ -115,7 +124,7 @@ export class HalloweenPriceAlertRuntime {
 		} catch (error) { if (this.owns(generation, store)) this.fail(error); return false; }
 	}
 
-	dispose(): void { this.disposed = true; this.disable(); }
+	dispose(): void { this.disposed = true; this.priceHistoryActive = false; this.disable(); }
 
 	private async activateStable(generation: number): Promise<void> {
 		while (this.current(generation)) {
@@ -176,7 +185,14 @@ export class HalloweenPriceAlertRuntime {
 		try { this.options.onStateChange?.(); } catch { /* UI observers do not own the runtime. */ }
 	}
 
-	private current(generation: number): boolean { return !this.disposed && this.settings.enabled && generation === this.generation; }
+	private current(generation: number): boolean {
+		return !this.disposed && this.settings.enabled && this.priceHistoryActive && generation === this.generation;
+	}
+
+	private evaluationContextCurrent(generation: number, accountRef: string | null, priceHistoryActive: boolean): boolean {
+		return priceHistoryActive && priceHistoryActive === this.priceHistoryActive &&
+			accountRef === this.options.accountRef() && this.current(generation);
+	}
 	private owns(generation: number, store: IndexedDbHalloweenStore): boolean {
 		return this.current(generation) && this.store === store;
 	}
