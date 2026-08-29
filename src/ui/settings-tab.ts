@@ -231,6 +231,29 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				name: this.t('settings.halloween.enabled.name'), desc: this.t('settings.halloween.enabled.desc'),
+				render: (setting) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
+						.setValue(this.plugin.settings.halloweenEnabled ? 'on' : 'off')
+						.onChange(async (value) => { await this.plugin.updateSettings({ halloweenEnabled: value === 'on' }); }));
+				},
+			},
+			{
+				name: this.t('settings.halloween.threshold.name'), desc: this.t('settings.halloween.threshold.desc'),
+				render: (setting) => {
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.halloweenValueThresholdCopper))
+						.setDisabled(!this.plugin.settings.halloweenEnabled)
+						.onChange(async (value) => {
+							const threshold = Number(value);
+							if (Number.isSafeInteger(threshold) && threshold >= 0) {
+								await this.plugin.updateSettings({ halloweenValueThresholdCopper: threshold });
+							}
+						}));
+				},
+			},
+			{
 				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown

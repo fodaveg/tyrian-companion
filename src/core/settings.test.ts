@@ -88,11 +88,13 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v5 without scanning, claiming assets, or opting into price history', () => {
+	it('migrates v2 to v6 without scanning, claiming assets, price history or Halloween', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 5,
+			schemaVersion: 6,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
+			halloweenEnabled: false,
+			halloweenValueThresholdCopper: 10_000,
 		});
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: 'Games/GW2' }).managedAssetsRoot).toBe('Games/GW2');
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();

@@ -39,10 +39,11 @@ import {
 	type CompanionStatusProjection,
 } from './companion-status-model';
 import { renderLootPresentationView } from './loot-presentation-view';
+import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
-export interface CompanionActions {
+export interface CompanionActions extends HalloweenAlertPanelActions {
 	getLocale(): Locale;
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
@@ -136,6 +137,7 @@ export class TyrianCompanionView extends ItemView {
 		this.renderStatusRail(contentEl, projection);
 		const loot = this.actions.getLootPresentation();
 		if (loot) renderLootPresentationView(contentEl, loot);
+		renderHalloweenAlertPanel(contentEl, this.actions, (key, params) => this.t(key as RuntimeTranslationKey, params));
 
 		const account = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		account.createEl('summary', { text: this.t('view.accountConnection') });

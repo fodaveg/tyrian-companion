@@ -5,7 +5,7 @@ import type {
 	PriceHistoryRawRetentionDays,
 } from '../economy/price-history-model';
 
-export const SETTINGS_SCHEMA_VERSION = 5 as const;
+export const SETTINGS_SCHEMA_VERSION = 6 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -54,6 +54,9 @@ export interface TyrianSettings {
 	priceHistoryIntervalMinutes: PriceHistoryIntervalMinutes;
 	priceHistoryRawRetentionDays: PriceHistoryRawRetentionDays;
 	priceHistoryDailyRetentionDays: PriceHistoryDailyRetentionDays;
+	/** Halloween observation and alerts are an explicit opt-in. */
+	halloweenEnabled: boolean;
+	halloweenValueThresholdCopper: number;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
@@ -72,6 +75,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = Object.freeze({
 	priceHistoryIntervalMinutes: 15,
 	priceHistoryRawRetentionDays: 7,
 	priceHistoryDailyRetentionDays: 180,
+	halloweenEnabled: false,
+	halloweenValueThresholdCopper: 10_000,
 });
 
 const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
@@ -116,7 +121,14 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			DEFAULT_SETTINGS.priceHistoryRawRetentionDays) as PriceHistoryRawRetentionDays,
 		priceHistoryDailyRetentionDays: enumNumber(data.priceHistoryDailyRetentionDays, PRICE_HISTORY_DAILY_RETENTIONS,
 			DEFAULT_SETTINGS.priceHistoryDailyRetentionDays) as PriceHistoryDailyRetentionDays,
+		halloweenEnabled: data.halloweenEnabled === true,
+		halloweenValueThresholdCopper: safeNonNegativeInteger(data.halloweenValueThresholdCopper,
+			DEFAULT_SETTINGS.halloweenValueThresholdCopper),
 	};
+}
+
+function safeNonNegativeInteger(value: unknown, fallback: number): number {
+	return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : fallback;
 }
 
 function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: number): number {

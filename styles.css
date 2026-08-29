@@ -1052,3 +1052,39 @@
 		scroll-behavior: auto;
 	}
 }
+.tyrian-companion-halloween {
+	display: grid;
+	gap: var(--size-4-3);
+	margin-block: var(--size-4-4);
+	container-type: inline-size;
+}
+
+.tyrian-companion-halloween__notice {
+	border: 1px solid var(--background-modifier-border);
+	border-inline-start: 4px solid var(--color-orange);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-3);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-halloween__notice.is-read {
+	border-inline-start-color: var(--background-modifier-border);
+}
+
+.tyrian-companion-halloween__notice button {
+	min-block-size: 44px;
+	min-inline-size: 44px;
+}
+
+@media (max-width: 480px) {
+	.tyrian-companion-halloween__notice { padding: var(--size-4-2); }
+	.tyrian-companion-halloween__notice button { inline-size: 100%; }
+}
+
+@container (max-width: 759px) {
+	.tyrian-companion-halloween__notice > ul { padding-inline-start: var(--size-4-4); }
+}
+
+@container (max-width: 479px) {
+	.tyrian-companion-halloween__notice { border-inline-start-width: 3px; }
+}

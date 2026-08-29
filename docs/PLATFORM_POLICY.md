@@ -46,6 +46,13 @@ revisar 320/480/760 px en temas claro y oscuro: controles apilados, SVG fluido, 
 targets de 44 px, foco visible y estados disabled/loading/empty/partial/offline/backoff/error. La
 estructura accesible está automatizada; el contraste AA no se afirma sin medir los temas reales.
 
+## Alertas de Halloween H11-A
+
+Desactivadas no abren su IndexedDB, no consultan catálogo/precios/unlocks y no crean timers. Offline
+no recupera intervalos. El store y los ids observados son locales al dispositivo y Obsidian Sync no
+sincroniza la bandeja. La UI contempla 320/480/760 px, controles de 44 px y variables semánticas del
+tema; el contraste real queda para QA en temas de Obsidian y no se afirma desde tests de fuente.
+
 ## Mumble Link en v2
 
 H8.1 cumple el prerrequisito documental y de modelos. H8.2 mantiene un spike no productivo para
