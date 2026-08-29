@@ -102,9 +102,9 @@ export class HalloweenRuntime {
 			return this.backfillFlight;
 		}
 		const generation = this.generation;
-		const token = {};
-		const flight = this.runBackfill(token, generation, store, accountRef);
-		this.backfillToken = token;
+		const flightMarker = {};
+		const flight = this.runBackfill(flightMarker, generation, store, accountRef);
+		this.backfillToken = flightMarker;
 		this.backfillFlight = flight;
 		return flight;
 	}
@@ -266,7 +266,7 @@ export class HalloweenRuntime {
 	}
 
 	private async runBackfill(
-		token: object,
+		flightMarker: object,
 		generation: number,
 		store: IndexedDbHalloweenStore,
 		accountRef: string,
@@ -276,7 +276,7 @@ export class HalloweenRuntime {
 		} catch (error) {
 			if (this.owns(generation, store)) this.storeFailure(error);
 		} finally {
-			if (this.backfillToken === token) {
+			if (this.backfillToken === flightMarker) {
 				this.backfillToken = null;
 				this.backfillFlight = null;
 			}
