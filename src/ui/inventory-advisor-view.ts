@@ -159,9 +159,10 @@ export function sortInventoryAdvisorRows(
 	sort: InventoryAdvisorViewSort,
 	locale = 'en',
 ): InventoryAdvisorViewRow[] {
+	const burdenByItem = aggregateInventoryBurden(rows);
 	return [...rows].sort((left, right) => {
 		if (sort === 'value_desc') {
-			const burden = compareBurden(left, right);
+			const burden = compareBurden(left, right, burdenByItem);
 			if (burden !== 0) return burden;
 			const value = rowCopper(right) - rowCopper(left);
 			if (value !== 0) return value;
@@ -172,12 +173,36 @@ export function sortInventoryAdvisorRows(
 	});
 }
 
-function compareBurden(left: InventoryAdvisorViewRow, right: InventoryAdvisorViewRow): number {
-	if (left.burden === null && right.burden === null) return 0;
-	if (left.burden === null) return 1;
-	if (right.burden === null) return -1;
-	return right.burden.occupiedSlots - left.burden.occupiedSlots
-		|| right.burden.quantity - left.burden.quantity;
+function aggregateInventoryBurden(
+	rows: readonly InventoryAdvisorViewRow[],
+): ReadonlyMap<number, { occupiedSlots: number; quantity: number }> {
+	const positionsByItem = new Map<number, Set<string>>();
+	const quantityByItem = new Map<number, number>();
+	for (const row of rows) {
+		if (row.burden === null) continue;
+		const positions = positionsByItem.get(row.itemId) ?? new Set<string>();
+		for (const allocation of row.allocations) positions.add(allocation.positionRef);
+		positionsByItem.set(row.itemId, positions);
+		quantityByItem.set(row.itemId, (quantityByItem.get(row.itemId) ?? 0) + row.quantity);
+	}
+	return new Map([...positionsByItem].map(([itemId, positions]) => [itemId, {
+		occupiedSlots: positions.size,
+		quantity: quantityByItem.get(itemId) ?? 0,
+	}]));
+}
+
+function compareBurden(
+	left: InventoryAdvisorViewRow,
+	right: InventoryAdvisorViewRow,
+	burdenByItem: ReadonlyMap<number, { occupiedSlots: number; quantity: number }>,
+): number {
+	const leftBurden = burdenByItem.get(left.itemId);
+	const rightBurden = burdenByItem.get(right.itemId);
+	if (leftBurden === undefined && rightBurden === undefined) return 0;
+	if (leftBurden === undefined) return 1;
+	if (rightBurden === undefined) return -1;
+	return rightBurden.occupiedSlots - leftBurden.occupiedSlots
+		|| rightBurden.quantity - leftBurden.quantity;
 }
 
 /** Calculates visible value concentration in the same descending order used by the queue. */

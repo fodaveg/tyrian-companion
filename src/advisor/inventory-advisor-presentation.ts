@@ -66,7 +66,9 @@ export function buildInventoryAdvisorPresentation(
 			.filter((asset) => asset.key.startsWith('item:')).map((asset) => [asset.id, asset]));
 		const rows = result.report.lines.flatMap((line) => {
 			const comparisonByRef = marketComparisonsForLine(source.input, line);
-			const exceptionReasons = appliedKeepExceptions(source.input, line);
+			const protectionByRef = protectionReasonsByDecision(
+				source.input, line, reservationByItemId.get(line.itemId), explanationByRef,
+			);
 			return line.decisions.map((decision) => {
 			const presentationAction = decision.action === 'discard_candidate' ? 'discard_review' : decision.action;
 			if (!isPresentationAction(presentationAction)) throw new Error('Unsupported presentation action.');
@@ -90,9 +92,7 @@ export function buildInventoryAdvisorPresentation(
 				quantity: decision.quantity,
 				allocations,
 				reasonCodes: [...reasonCodes],
-				protectionReasons: protectionReasonsFor(
-					source.input, decision.action, reasonCodes, reservationByItemId.get(line.itemId), exceptionReasons,
-				),
+				protectionReasons: protectionByRef.get(decision.explanationRef) ?? [],
 				coverage: { ...line.coverage },
 				group: groupFor(presentationAction),
 				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
@@ -128,10 +128,16 @@ export function buildInventoryAdvisorPresentation(
 	} catch { return invalidInventoryAdvisorPresentation(); }
 }
 
-function protectionReasonsFor(
+interface ProtectionSegment {
+	positionRef: string;
+	remainingQuantity: number;
+	reason: InventoryAdvisorProtectionReason;
+}
+
+/** Replays producer allocation order and intersects each protection cause with its exact decision slice. */
+function protectionReasonsByDecision(
 	input: InventoryAdvisorInputV1,
-	action: InventoryRecommendationDecisionV1['action'],
-	reasonCodes: readonly InventoryAdvisorReasonCode[],
+	line: InventoryAdvisorLineV1,
 	reservation: {
 		allocations: Array<{
 			goalId: string;
@@ -141,58 +147,87 @@ function protectionReasonsFor(
 			intendedUse: 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
 		}>;
 	} | undefined,
-	exceptions: readonly InventoryAdvisorProtectionReason[],
-): InventoryAdvisorProtectionReason[] {
-	if (action !== 'keep') return [];
-	if (reasonCodes.includes('reserved_for_goal')) {
-		return (reservation?.allocations ?? []).flatMap((allocation) => {
-			if (allocation.protectedAvailable <= 0) return [];
-			const goal = input.goals.find((candidate) => candidate.goalId === allocation.goalId);
-			return goal === undefined ? [] : [{
-				kind: 'reservation_goal' as const,
-				id: goal.goalId,
-				title: goal.title,
-				quantity: allocation.protectedAvailable,
-				reason: allocation.reason,
-				basis: allocation.basis,
-				intendedUse: allocation.intendedUse,
-			}];
-		});
-	}
-	return reasonCodes.includes('user_keep_exception')
-		? exceptions.map((reason) => structuredClone(reason)) : [];
-}
-
-/** Replays the pure allocation order so a keep row can name only exceptions that protected units. */
-function appliedKeepExceptions(
-	input: InventoryAdvisorInputV1,
-	line: InventoryAdvisorLineV1,
-): InventoryAdvisorProtectionReason[] {
+	explanations: ReadonlyMap<string, { reasonCodes: InventoryAdvisorReasonCode[] }>,
+): ReadonlyMap<string, InventoryAdvisorProtectionReason[]> {
 	const remaining = new Map(line.positions.map((position) => [position.ref, position.quantity]));
-	let reserveLeft = line.reservedQuantity;
-	for (const position of line.positions.filter((candidate) => candidate.state === 'loose' || candidate.state === 'pending_claim')) {
-		const quantity = Math.min(reserveLeft, remaining.get(position.ref) ?? 0);
-		remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
-		reserveLeft -= quantity;
+	const segments: ProtectionSegment[] = [];
+	for (const allocation of reservation?.allocations ?? []) {
+		if (allocation.protectedAvailable <= 0) continue;
+		const goal = input.goals.find((candidate) => candidate.goalId === allocation.goalId);
+		if (goal === undefined) continue;
+		allocateProtection(line, remaining, allocation.protectedAvailable, true, {
+			kind: 'reservation_goal', id: goal.goalId, title: goal.title, quantity: 0,
+			reason: allocation.reason, basis: allocation.basis, intendedUse: allocation.intendedUse,
+		}, segments);
 	}
-	const reasons: InventoryAdvisorProtectionReason[] = [];
 	for (const exception of input.keepExceptions.filter((candidate) => candidate.status === 'active'
 		&& candidate.itemId === line.itemId)) {
-		let needed = exception.quantity.mode === 'all' ? Number.MAX_SAFE_INTEGER : exception.quantity.value;
-		let protectedQuantity = 0;
-		for (const position of line.positions) {
-			if (exception.basis === 'available' && position.state !== 'loose' && position.state !== 'pending_claim') continue;
-			const quantity = Math.min(needed, remaining.get(position.ref) ?? 0);
-			remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
-			needed -= quantity;
-			protectedQuantity += quantity;
-		}
-		if (protectedQuantity > 0) reasons.push({
-			kind: 'keep_exception', id: exception.exceptionId, quantity: protectedQuantity,
+		allocateProtection(
+			line,
+			remaining,
+			exception.quantity.mode === 'all' ? Number.MAX_SAFE_INTEGER : exception.quantity.value,
+			exception.basis === 'available',
+			{ kind: 'keep_exception', id: exception.exceptionId, quantity: 0,
 			reason: exception.reason, basis: exception.basis,
-		});
+			},
+			segments,
+		);
 	}
-	return reasons;
+	const result = new Map<string, InventoryAdvisorProtectionReason[]>();
+	for (const decision of [...line.decisions].sort((left, right) =>
+		explanationIndex(left.explanationRef) - explanationIndex(right.explanationRef))) {
+		if (decision.action !== 'keep') continue;
+		const reasonCodes = explanations.get(decision.explanationRef)?.reasonCodes ?? [];
+		const kind = reasonCodes.includes('reserved_for_goal') ? 'reservation_goal'
+			: reasonCodes.includes('user_keep_exception') ? 'keep_exception' : null;
+		if (kind === null) continue;
+		const reasons = intersectProtection(decision, kind, segments);
+		if (reasons.length > 0) result.set(decision.explanationRef, reasons);
+	}
+	return result;
+}
+
+function allocateProtection(
+	line: InventoryAdvisorLineV1,
+	remaining: Map<string, number>,
+	requested: number,
+	availableOnly: boolean,
+	reason: InventoryAdvisorProtectionReason,
+	segments: ProtectionSegment[],
+): void {
+	let needed = requested;
+	for (const position of line.positions) {
+		if (availableOnly && position.state !== 'loose' && position.state !== 'pending_claim') continue;
+		const quantity = Math.min(needed, remaining.get(position.ref) ?? 0);
+		if (quantity <= 0) continue;
+		remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
+		needed -= quantity;
+		segments.push({ positionRef: position.ref, remainingQuantity: quantity, reason: { ...reason, quantity } });
+	}
+}
+
+function intersectProtection(
+	decision: InventoryRecommendationDecisionV1,
+	kind: InventoryAdvisorProtectionReason['kind'],
+	segments: ProtectionSegment[],
+): InventoryAdvisorProtectionReason[] {
+	const reasons = new Map<string, InventoryAdvisorProtectionReason>();
+	for (const allocation of decision.allocations) {
+		let remaining = allocation.quantity;
+		for (const segment of segments) {
+			if (remaining <= 0) break;
+			if (segment.positionRef !== allocation.positionRef || segment.reason.kind !== kind
+				|| segment.remainingQuantity <= 0) continue;
+			const quantity = Math.min(remaining, segment.remainingQuantity);
+			remaining -= quantity;
+			segment.remainingQuantity -= quantity;
+			const current = reasons.get(segment.reason.id);
+			reasons.set(segment.reason.id, current === undefined
+				? { ...segment.reason, quantity }
+				: { ...current, quantity: current.quantity + quantity });
+		}
+	}
+	return [...reasons.values()];
 }
 
 function burdenFor(

@@ -8,6 +8,7 @@ import { sha256InventoryRulePack } from './inventory-advisor-contract';
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { buildInventoryAdvisorViewModel } from '../ui/inventory-advisor-view-model';
+import { sortInventoryAdvisorRows } from '../ui/inventory-advisor-view';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 
 describe('H5.11 inventory advisor presentation', () => {
@@ -136,6 +137,88 @@ describe('H5.11 inventory advisor presentation', () => {
 		expect(retainedRow).toMatchObject({
 			action: 'keep', burden: { kind: 'retained', quantity: 2, occupiedSlots: 1 },
 		});
+	});
+
+	it('aggregates every burden position of one produced item before comparing it with gold value', () => {
+		const value = source();
+		value.input.snapshot.holdings[0]!.quantity = 1;
+		for (const slot of [1, 2]) value.input.snapshot.holdings.push({
+			kind: 'item', itemId: 10, quantity: 1, state: 'loose',
+			location: { source: 'bank', slot }, metadata: {},
+		});
+		value.input.snapshot.ownedByItem['10'] = 3;
+		value.input.snapshot.availableByItem['10'] = 3;
+		value.input.catalog.items['10'] = {
+			...value.input.catalog.items['10']!, name: 'Zeta tres huecos', vendorValue: 0,
+		};
+		value.input.prices.items[0] = { itemId: 10, whitelisted: true, bid: null, ask: null };
+		addItemLine(value, 11);
+		value.input.prices.items.find((entry) => entry.itemId === 11)!.bid = {
+			unitCopper: 1_000_000, quantity: 1,
+		};
+		addItemLine(value, 12);
+		value.input.snapshot.holdings.push({
+			kind: 'item', itemId: 12, quantity: 1, state: 'loose',
+			location: { source: 'bank', slot: 13 }, metadata: {},
+		});
+		value.input.snapshot.ownedByItem['12'] = 2;
+		value.input.snapshot.availableByItem['12'] = 2;
+		value.input.catalog.items['12'] = {
+			...value.input.catalog.items['12']!, name: 'Alpha dos huecos', vendorValue: 0,
+		};
+		value.knowledgePack.sha256 = sha256InventoryKnowledgePack(value.knowledgePack);
+
+		const rows = buildInventoryAdvisorViewModel(project(value)).groups.flatMap((group) => group.rows);
+		const ordered = sortInventoryAdvisorRows(rows, 'value_desc', 'es');
+
+		expect(ordered.slice(0, 3).every((row) => row.itemId === 10)).toBe(true);
+		expect(new Set(ordered.slice(0, 3).flatMap((row) => row.allocations.map((entry) => entry.positionRef))).size).toBe(3);
+		expect(ordered.slice(3, 5).every((row) => row.itemId === 12)).toBe(true);
+		expect(ordered.at(-1)?.itemId).toBe(11);
+	});
+
+	it('intersects multiple goals and exceptions with each produced decision allocation', () => {
+		const value = source();
+		value.input.snapshot.holdings[0]!.quantity = 2;
+		value.input.snapshot.holdings.push({
+			kind: 'item', itemId: 10, quantity: 4, state: 'loose',
+			location: { source: 'bank', slot: 1 }, metadata: {},
+		});
+		value.input.snapshot.ownedByItem['10'] = 6;
+		value.input.snapshot.availableByItem['10'] = 6;
+		value.input.prices.items[0]!.bid = { unitCopper: 20, quantity: 6 };
+		value.input.goals = [
+			{ schemaVersion: 1, goalId: 'goal-a', title: 'Objetivo A', status: 'active', priority: 200,
+				reason: 'achievement', requirements: [{ key: 'item:10', namespace: 'item', id: 10,
+					targetQuantity: 1, creditedQuantity: 0, basis: 'available', intendedUse: 'exchange' }] },
+			{ schemaVersion: 1, goalId: 'goal-b', title: 'Objetivo B', status: 'active', priority: 100,
+				reason: 'purchase', requirements: [{ key: 'item:10', namespace: 'item', id: 10,
+					targetQuantity: 2, creditedQuantity: 0, basis: 'available', intendedUse: 'consume' }] },
+		];
+		value.input.keepExceptions = [
+			{ version: 1, exceptionId: 'exception-a', itemId: 10, status: 'active', basis: 'available',
+				quantity: { mode: 'minimum', value: 1 }, reason: 'gift' },
+			{ version: 1, exceptionId: 'exception-b', itemId: 10, status: 'active', basis: 'available',
+				quantity: { mode: 'minimum', value: 1 }, reason: 'build' },
+		];
+
+		const result = classifyInventoryAdvisor(value);
+		expect(result.status).not.toBe('invalid');
+		const keepRows = buildInventoryAdvisorPresentation({ input: value.input, result }).groups.flatMap((group) => group.rows)
+			.filter((row) => row.action === 'keep');
+		const protectedRows = keepRows.flatMap((row) => row.protectionReasons.map((reason) => ({
+			row: row.id, rowQuantity: row.quantity, id: reason.id, quantity: reason.quantity,
+		})));
+
+		expect(protectedRows).toEqual([
+			{ row: '#/explanations/10/0', rowQuantity: 2, id: 'goal-a', quantity: 1 },
+			{ row: '#/explanations/10/0', rowQuantity: 2, id: 'goal-b', quantity: 1 },
+			{ row: '#/explanations/10/1', rowQuantity: 1, id: 'goal-b', quantity: 1 },
+			{ row: '#/explanations/10/2', rowQuantity: 1, id: 'exception-a', quantity: 1 },
+			{ row: '#/explanations/10/3', rowQuantity: 1, id: 'exception-b', quantity: 1 },
+		]);
+		expect(keepRows.every((row) => row.protectionReasons
+			.reduce((sum, reason) => sum + reason.quantity, 0) <= row.quantity)).toBe(true);
 	});
 
 	it('preserves both demonstrated market nets and withholds absent counterparts for H9.13', () => {
