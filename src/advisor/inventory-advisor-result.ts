@@ -101,6 +101,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 	const report = value.report;
 	if (report.accountId !== input.snapshot.accountId || report.snapshotId !== input.snapshot.snapshotId
 		|| report.asOf !== input.asOf || canonical(report.rulePack) !== canonical(input.rulePack)) return false;
+	if (marketDepth !== undefined && marketDepth.status !== 'complete'
+		&& (value.status !== 'limited' || report.coverage !== 'limited')) return false;
 	const balanceResult = buildInventoryAdvisorReservationBalance(input.snapshot);
 	if (balanceResult.status !== 'ok') return false;
 	const planResult = createReservationPlan({ goals: input.goals, balance: balanceResult.balance });

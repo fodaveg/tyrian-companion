@@ -32,10 +32,10 @@ export function selectInventoryMarketRoute(input: InventoryMarketSelectionInputV
 	const depthReady = input.marketDepth?.coverage === 'complete';
 	const depthSell = depthReady ? valueInstantSellDepth(input.marketDepth!.buys, input.quantity) : null;
 	const depthList = depthReady ? valueCompetitiveListing(input.marketDepth!.sells, input.quantity) : null;
-	const sell = input.marketDepth === undefined && tradingPost && input.allowSell && input.price?.bid !== null
+	const sell = !depthReady && tradingPost && input.allowSell && input.price?.bid !== null
 		&& input.price !== undefined && input.price.bid.quantity >= input.quantity
 		? createTradingPostValueWithPolicy('instant_sell', input.price.bid.unitCopper, input.quantity) : null;
-	const list = input.marketDepth === undefined && tradingPost && input.price?.ask !== null && input.price !== undefined
+	const list = !depthReady && tradingPost && input.price?.ask !== null && input.price !== undefined
 		? createTradingPostValueWithPolicy('listing', input.price.ask.unitCopper, input.quantity) : null;
 	const sellNet = !tradingPost || !input.allowSell ? null
 		: depthSell?.status === 'complete' ? depthSell.netCopper

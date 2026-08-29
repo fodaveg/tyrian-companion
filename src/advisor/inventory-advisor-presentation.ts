@@ -263,22 +263,20 @@ function marketComparisonsForLine(
 	const result = new Map<string, InventoryAdvisorMarketComparison>();
 	const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
 	let bidRemaining = price?.bid?.quantity ?? 0;
+	let fallbackDepthRemaining = bidRemaining;
 	const ordered = line.decisions
 		.filter((decision) => decision.action === 'sell' || decision.action === 'list' || decision.action === 'vendor')
 		.sort((left, right) => explanationIndex(left.explanationRef) - explanationIndex(right.explanationRef));
 	for (const decision of ordered) {
-		if (marketDepth !== undefined) {
-			const instant = marketDepth.coverage === 'complete'
-				? valueInstantSellDepth(marketDepth.buys, decision.quantity) : null;
-			const listing = marketDepth.coverage === 'complete'
-				? valueCompetitiveListing(marketDepth.sells, decision.quantity) : null;
+		if (marketDepth?.coverage === 'complete') {
+			const instant = valueInstantSellDepth(marketDepth.buys, decision.quantity);
+			const listing = valueCompetitiveListing(marketDepth.sells, decision.quantity);
 			const comparable = instant?.status === 'complete' && listing?.status === 'complete';
 			const instantSellCopper = instant?.netCopper ?? null;
 			const listingCopper = listing?.netCopper ?? null;
 			const differenceCopper = comparable && instantSellCopper !== null && listingCopper !== null
 				? safeDifference(listingCopper, instantSellCopper) : null;
-			const depthStatus = marketDepth.coverage !== 'complete' ? 'error'
-				: marketDepth.buys.length === 0 && marketDepth.sells.length === 0 ? 'no_market'
+			const depthStatus = marketDepth.buys.length === 0 && marketDepth.sells.length === 0 ? 'no_market'
 					: instant?.status === 'partial' ? 'partial' : 'complete';
 			result.set(decision.explanationRef, {
 				instantSellCopper, listingCopper, differenceCopper,
@@ -300,11 +298,18 @@ function marketComparisonsForLine(
 			? null : safeDifference(listingCopper, instantSellCopper);
 		const differenceBasisPoints = differenceCopper === null || instantSellCopper === null || instantSellCopper <= 0
 			? null : safeBasisPoints(differenceCopper, instantSellCopper);
+		const fallbackCovered = Math.min(decision.quantity, fallbackDepthRemaining);
+		fallbackDepthRemaining -= fallbackCovered;
 		result.set(decision.explanationRef, {
 			instantSellCopper,
 			listingCopper,
 			differenceCopper,
 			differenceBasisPoints,
+			...(marketDepth === undefined ? {} : {
+				depthStatus: 'error' as const,
+				coveredQuantity: fallbackCovered,
+				uncoveredQuantity: decision.quantity - fallbackCovered,
+			}),
 		});
 	}
 	return result;
@@ -463,8 +468,7 @@ function valueFor(
 			: { status: 'unavailable', route: null };
 	}
 	const price = priceByItemId.get(itemId);
-	if (marketDepth !== undefined) {
-		if (marketDepth.coverage !== 'complete') return { status: 'unavailable', route: null };
+	if (marketDepth?.coverage === 'complete') {
 		const demonstrated = action === 'sell'
 			? valueInstantSellDepth(marketDepth.buys, quantity)
 			: valueCompetitiveListing(marketDepth.sells, quantity);

@@ -201,6 +201,29 @@ describe('H4.15 inventory advisor classifier', () => {
 		]);
 	});
 
+	it.each(['unavailable', 'invalid'] as const)(
+		'keeps the legacy prices route but limits the result when requested depth is %s',
+		(itemCoverage) => {
+			const legacy = marketDepthFixture(4);
+			legacy.input.prices.items[0] = { itemId: 10, whitelisted: true,
+				bid: { unitCopper: 100, quantity: 2 }, ask: { unitCopper: 120, quantity: 1 } };
+			const expected = classifyInventoryAdvisor(legacy);
+			expect(expected.status).toBe('ready');
+			if (expected.status === 'invalid') throw new Error('Expected legacy result.');
+
+			const withFailedDepth = structuredClone(legacy);
+			withFailedDepth.marketDepth = {
+				...depth([], []), status: 'unavailable',
+				items: [{ itemId: 10, coverage: itemCoverage, buys: [], sells: [] }],
+			};
+			const result = classifyInventoryAdvisor(withFailedDepth);
+			expect(result.status).toBe('limited');
+			if (result.status === 'invalid') throw new Error('Expected limited result.');
+			expect(result.report.coverage).toBe('limited');
+			expect(result.report.lines[0]?.decisions.map(({ action, quantity }) => ({ action, quantity })))
+				.toEqual(expected.report.lines[0]?.decisions.map(({ action, quantity }) => ({ action, quantity })));
+		});
+
 	it('does not let unavailable market depth change a curated non-economic action', () => {
 		const input = marketDepthFixture(2);
 		input.input.rulePack.rules = [rule('use-10', 'approved')];

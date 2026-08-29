@@ -37,7 +37,9 @@ export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResult
 		if (plan.status !== 'ok') return publicInvalid();
 		const publicLines = engine.report.lines.map((line) => publicLine(line, input, plan.plan));
 		const lines = publicLines.map((entry) => entry.line);
-		const coverage: 'complete' | 'limited' = lines.every((line) => Object.values(line.coverage).every((entry) => entry === 'complete')) ? 'complete' : 'limited';
+		const depthComplete = value.marketDepth === undefined || value.marketDepth.status === 'complete';
+		const coverage: 'complete' | 'limited' = depthComplete
+			&& lines.every((line) => Object.values(line.coverage).every((entry) => entry === 'complete')) ? 'complete' : 'limited';
 		const report = {
 			version: 1 as const, scope: 'supported_storage_v1' as const, accountId: input.snapshot.accountId,
 			snapshotId: input.snapshot.snapshotId, asOf: input.asOf, coverage, lines,
@@ -217,9 +219,10 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
-	if (marketDepth !== undefined) {
+	const itemMarketDepth = marketDepth?.items.find((entry) => entry.itemId === itemId);
+	if (itemMarketDepth?.coverage === 'complete') {
 		const market = marketAction(input, freePositions[0]!, freeQuantity, itemId, true, evidenceReady,
-			marketDepth.items.find((entry) => entry.itemId === itemId));
+			itemMarketDepth);
 		const allocations = freePositions.map((position) => ({
 			positionRef: position.ref, quantity: remaining.get(position.ref) ?? 0,
 		}));
