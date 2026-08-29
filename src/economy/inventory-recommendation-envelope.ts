@@ -5,6 +5,7 @@ import {
 	isInventoryAdvisorReport,
 	sha256InventoryAdvisorReport,
 } from '../advisor/inventory-advisor-contract';
+import { materialStorageDepositsFit } from './material-storage-deposit-validation';
 
 export const INVENTORY_RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
@@ -71,6 +72,7 @@ function isInventoryRecommendationEnvelopeUnsafe(
 		&& isRulePackRef(value.rulePack)
 		&& Array.isArray(value.decisions)
 		&& value.decisions.every(isDecision)
+		&& materialStorageDepositsFit(value.decisions)
 		&& unique(value.decisions.map((decision) => decision.explanationRef))
 		&& jsonRoundTrip(value);
 }

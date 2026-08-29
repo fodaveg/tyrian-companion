@@ -5,7 +5,11 @@ import {
 	classifyInventoryAdvisor, isInventoryAdvisorEngineResult,
 	isInventoryKnowledgePack, sha256InventoryKnowledgePack,
 } from './inventory-advisor-classifier';
-import type { InventoryAdvisorEngineInputV1, InventoryKnowledgePackV1 } from './inventory-advisor-classifier-model';
+import type {
+	InventoryAdvisorEngineInputV1,
+	InventoryAdvisorEngineResultV1,
+	InventoryKnowledgePackV1,
+} from './inventory-advisor-classifier-model';
 import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
@@ -375,6 +379,11 @@ describe('H4.15 inventory advisor classifier', () => {
 		} });
 	});
 
+	it('validates the aggregate material-deposit budget across multiple engine decisions', () => {
+		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25))).toBe(true);
+		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(30))).toBe(false);
+	});
+
 	it.each([
 		['capacity absent', (input: InventoryAdvisorEngineInputV1) => { delete input.materialStorageCapacity; }],
 		['materials partial', (input: InventoryAdvisorEngineInputV1) => {
@@ -430,6 +439,32 @@ function materialStorageFixture(looseQuantity: number, storedQuantity: number): 
 	};
 	value.input.catalog.coverage.materials['7'] = { status: 'resolved', source: 'network' };
 	return value;
+}
+
+function materialDepositEngineResult(quantity: number): InventoryAdvisorEngineResultV1 {
+	const materialStorage = {
+		capacity: 250, capacitySource: 'minimum_guaranteed' as const, storedQuantity: 200, spaceBefore: 50,
+	};
+	return {
+		status: 'ready',
+		report: {
+			version: 1, scope: 'supported_storage_v1', accountId: 'account-1', snapshotId: 'snapshot-1',
+			asOf: '2026-08-14T12:00:00.000Z', knowledgePack: { id: 'knowledge', version: 1, sha256: '0'.repeat(64) },
+			lines: [{
+				itemId: 10, name: 'Material', ownedQuantity: quantity * 2,
+				positions: [0, 1].map((holdingIndex) => ({
+					ref: `#/positions/10/${String(holdingIndex)}`, holdingIndex, itemId: 10, quantity,
+					source: 'shared_inventory' as const, state: 'loose' as const,
+				})),
+				decisions: [0, 1].map((holdingIndex) => ({
+					action: 'deposit_material' as const, itemId: 10, quantity,
+					allocations: [{ positionRef: `#/positions/10/${String(holdingIndex)}`, quantity }],
+					reason: 'material_storage_space_available', ruleId: null, materialStorage,
+				})),
+			}],
+		},
+		envelope: { execution: 'manual_in_game', sideEffects: 'none', requiresUserAction: true },
+	};
 }
 function scopedInventoryFixture(quality: 'stable' | 'unstable'): InventoryAdvisorEngineInputV1 {
 	const value = fixture();

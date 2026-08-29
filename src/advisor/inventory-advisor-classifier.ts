@@ -22,6 +22,7 @@ import {
 import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
+import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 
 /** Pure H4.15 classifier producing the public H4.13 report and manual envelope. */
 export function classifyInventoryAdvisor(value: unknown): InventoryAdvisorResultV1 {
@@ -115,7 +116,9 @@ export function isInventoryAdvisorEngineResult(value: unknown): value is Invento
 		const report = value.report;
 		if (!keys(report, ['version', 'scope', 'accountId', 'snapshotId', 'asOf', 'knowledgePack', 'lines']) || report.version !== 1 || report.scope !== 'supported_storage_v1'
 			|| !Array.isArray(report.lines) || !report.lines.every(line) || !sorted(report.lines, (a, b) => a.itemId - b.itemId)) return false;
-		return report.lines.every((item) => item.decisions.flatMap((decision) => decision.allocations).reduce((sum, allocation) => sum + allocation.quantity, 0) === item.ownedQuantity);
+		return materialStorageDepositsFit(report.lines.flatMap((item) => item.decisions))
+			&& report.lines.every((item) => item.decisions.flatMap((decision) => decision.allocations)
+				.reduce((sum, allocation) => sum + allocation.quantity, 0) === item.ownedQuantity);
 	} catch { return false; }
 }
 

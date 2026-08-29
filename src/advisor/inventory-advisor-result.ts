@@ -27,6 +27,7 @@ import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifi
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
+import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
 	try { return isInventoryAdvisorResultUnsafe(value); } catch { return false; }
@@ -45,7 +46,8 @@ function isInventoryAdvisorResultUnsafe(value: unknown): value is InventoryAdvis
 		|| !isInventoryRecommendationEnvelope(value.envelope)) return false;
 	const report = value.report;
 	const envelope = value.envelope;
-	if (report.accountId !== envelope.accountId || report.snapshotId !== envelope.snapshotId
+	if (!materialStorageDepositsFit(report.lines.flatMap((line) => line.decisions))
+		|| report.accountId !== envelope.accountId || report.snapshotId !== envelope.snapshotId
 		|| sha256InventoryAdvisorReport(report) !== envelope.reportSha256
 		|| !sameRulePack(report.rulePack, envelope.rulePack)
 		|| canonical(report.lines.flatMap((line) => line.decisions)) !== canonical(envelope.decisions)) return false;

@@ -13,6 +13,7 @@ import {
 	isInventoryAdvisorReport,
 	isInventoryAdvisorRulePack,
 	isInventoryPriceSnapshot,
+	sha256InventoryAdvisorReport,
 	sha256InventoryRulePack,
 	validDecisionAgainstInput,
 } from './inventory-advisor-contract';
@@ -137,6 +138,25 @@ describe('inventory advisor H4.13 contract', () => {
 				capturedAt: '2026-01-01T00:00:00.000Z' },
 		})).toBe(false);
 		expect(isInventoryAdvisorResult({ status: 'limited', report, envelope })).toBe(false);
+	});
+
+	it('rejects aggregate material deposits above the shared item budget and accepts its exact limit', () => {
+		const exact = materialDepositReport(25);
+		const exactEnvelope = createInventoryRecommendationEnvelope(exact);
+		expect(isInventoryAdvisorReport(exact)).toBe(true);
+		expect(exactEnvelope).not.toBeNull();
+		expect(isInventoryRecommendationEnvelope(exactEnvelope)).toBe(true);
+		expect(isInventoryAdvisorResult({ status: 'ready', report: exact, envelope: exactEnvelope })).toBe(true);
+
+		const excess = materialDepositReport(30);
+		const forgedEnvelope = {
+			...exactEnvelope!,
+			reportSha256: sha256InventoryAdvisorReport(excess),
+			decisions: structuredClone(excess.lines[0]!.decisions),
+		};
+		expect(isInventoryAdvisorReport(excess)).toBe(true);
+		expect(isInventoryRecommendationEnvelope(forgedEnvelope)).toBe(false);
+		expect(isInventoryAdvisorResult({ status: 'ready', report: excess, envelope: forgedEnvelope })).toBe(false);
 	});
 
 	it('rejects quantity tampering, non-actionable positions and incomplete destructive evidence', () => {
@@ -359,6 +379,37 @@ function reportFixture(): InventoryAdvisorReportV1 {
 			{ ref: '#/explanations/vendor', itemId: 10, action: 'vendor', reasonCodes: ['alternative_route_exists'],
 				evidenceRefs: ['#/evidence/catalog'], ruleId: null },
 		],
+	};
+}
+
+function materialDepositReport(quantity: number): InventoryAdvisorReportV1 {
+	const materialStorage = {
+		capacity: 250, capacitySource: 'minimum_guaranteed' as const, storedQuantity: 200, spaceBefore: 50,
+	};
+	return {
+		...reportFixture(),
+		lines: [{
+			itemId: 10, name: 'Material', ownedQuantity: quantity * 2, availableQuantity: quantity * 2,
+			positions: [0, 1].map((holdingIndex) => ({
+				ref: `#/positions/10/${String(holdingIndex)}`, holdingIndex, itemId: 10, quantity,
+				source: 'shared_inventory' as const, state: 'loose' as const,
+			})),
+			coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete',
+				reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
+			reservedQuantity: 0, exceptionQuantity: 0, retainedQuantity: 0,
+			actionedQuantity: quantity * 2, unclassifiedQuantity: 0,
+			decisions: ['a', 'b'].map((suffix, holdingIndex) => ({
+				action: 'deposit_material' as const, itemId: 10, quantity,
+				allocations: [{ positionRef: `#/positions/10/${String(holdingIndex)}`, quantity }],
+				explanationRef: `#/explanations/deposit-${suffix}`, ruleId: null,
+				safety: 'manual_only' as const, discardProof: null, materialStorage,
+			})),
+			reasons: [{ code: 'material_storage_space_available', itemId: 10, goalId: null, ruleId: null }],
+		}],
+		explanations: ['a', 'b'].map((suffix) => ({
+			ref: `#/explanations/deposit-${suffix}`, itemId: 10, action: 'deposit_material' as const,
+			reasonCodes: ['material_storage_space_available' as const], evidenceRefs: ['#/evidence/catalog'], ruleId: null,
+		})),
 	};
 }
 
