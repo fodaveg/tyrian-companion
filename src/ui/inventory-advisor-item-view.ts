@@ -13,6 +13,7 @@ export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 export interface InventoryAdvisorViewActions {
 	getInventoryAdvisorLocale(): Locale;
 	getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
+	refreshInventoryAdvisor?(): Promise<void>;
 	createInventoryPreferencesEditorSession?(): InventoryPreferencesEditorSession;
 	loadInventoryPreferences?(): Promise<void>;
 	upsertInventoryGoal?(goal: ReservationGoal): Promise<void>;
@@ -48,21 +49,25 @@ export class InventoryAdvisorItemView extends ItemView {
 
 	render(): void {
 		if (this.closed) return;
+		const model = this.actions.getInventoryAdvisorViewModel();
 		const sync = this.actions.getInventoryVaultSyncRunState === undefined
 			|| this.actions.runInventoryVaultSync === undefined
 			|| this.actions.confirmInventoryVaultSync === undefined
 			|| this.actions.cancelInventoryVaultSync === undefined
+			|| this.actions.refreshInventoryAdvisor === undefined
 			? undefined
 			: {
 				state: this.actions.getInventoryVaultSyncRunState(),
 				assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
+				analysisBusy: model.status === 'loading',
+				onAnalyze: () => this.runInventorySyncAction(() => this.actions.refreshInventoryAdvisor!()),
 				onRun: () => this.runInventorySyncAction(() => this.actions.runInventoryVaultSync!()),
 				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),
 				onCancel: () => { this.actions.cancelInventoryVaultSync!(); this.render(); },
 			};
 		renderInventoryAdvisorView(
 			this.contentEl,
-			this.actions.getInventoryAdvisorViewModel(),
+			model,
 			createTranslator(this.actions.getInventoryAdvisorLocale()),
 			undefined,
 			{
@@ -80,8 +85,11 @@ export class InventoryAdvisorItemView extends ItemView {
 
 	private async runInventorySyncAction(action: () => Promise<void>): Promise<void> {
 		if (this.closed) return;
-		this.render();
-		try { await action(); }
+		try {
+			const operation = action();
+			this.render();
+			await operation;
+		}
 		finally { this.render(); }
 	}
 

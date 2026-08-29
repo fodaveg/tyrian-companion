@@ -239,6 +239,7 @@ export async function prepareInventoryVaultSyncInput(
 /** Plans and applies only versioned Tyrian inventory notes below one portable Vault root. */
 export class InventoryVaultSyncService {
 	private flight: Promise<InventoryVaultSyncResult> | null = null;
+	private flightPlanKey: string | null = null;
 
 	constructor(
 		private readonly vault: InventoryVaultPort,
@@ -320,11 +321,20 @@ export class InventoryVaultSyncService {
 	 * the plan's own total. It is never a substitute for the returned result.
 	 */
 	apply(plan: InventoryVaultSyncPlan, onStep?: (completed: number, total: number) => void): Promise<InventoryVaultSyncResult> {
-		if (this.flight) return this.flight;
+		const planKey = JSON.stringify(plan);
+		if (this.flight) {
+			return this.flightPlanKey === planKey
+				? this.flight
+				: Promise.resolve({ status: 'invalid', message: 'Another inventory plan is already being applied.' });
+		}
 		const flight = this.applyInternal(plan, onStep).finally(() => {
-			if (this.flight === flight) this.flight = null;
+			if (this.flight === flight) {
+				this.flight = null;
+				this.flightPlanKey = null;
+			}
 		});
 		this.flight = flight;
+		this.flightPlanKey = planKey;
 		return flight;
 	}
 

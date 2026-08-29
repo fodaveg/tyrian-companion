@@ -117,6 +117,30 @@ describe('durable inventory Vault commands', () => {
 	});
 });
 
+describe('inventory analysis-only action', () => {
+	it('renders loading immediately and settles the ordinary advisor refresh without a Vault writer', async () => {
+		const pending = deferred<void>();
+		const refresh = vi.fn(() => pending.promise);
+		const render = vi.fn();
+		const plugin = {
+			runtimeReady: true,
+			inventoryAdvisor: { refresh },
+			renderInventoryAdvisorViews: render,
+			notifyRuntimeStarting: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
+		}).refreshInventoryAdvisor;
+		const operation = invoke.call(plugin);
+		expect(refresh).toHaveBeenCalledOnce();
+		expect(render).toHaveBeenCalledOnce();
+		pending.resolve(undefined);
+		await operation;
+		expect(render).toHaveBeenCalledTimes(2);
+	});
+});
+
 describe('one-click inventory sync outcome persistence', () => {
 	it('merges the fresh outcome into settings and saves the whole object, leaving unrelated fields untouched', async () => {
 		const saved: unknown[] = [];

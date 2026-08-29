@@ -163,6 +163,22 @@ describe('inventory Vault projection', () => {
 });
 
 describe('inventory Vault preview and apply', () => {
+	it('rejects a distinct plan while another apply is in flight instead of borrowing its result', async () => {
+		const vault = new PausingInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const firstPlan = await service.preview(ROOT, await oneBankInput());
+		const secondInput = await oneBankInput();
+		secondInput.capturedAt = '2026-08-25T08:01:00.000Z';
+		const secondPlan = await service.preview(ROOT, secondInput);
+		const first = service.apply(firstPlan);
+		await vault.createStarted;
+		await expect(service.apply(secondPlan)).resolves.toEqual({
+			status: 'invalid', message: 'Another inventory plan is already being applied.',
+		});
+		vault.resumeCreate();
+		await expect(first).resolves.toMatchObject({ status: 'applied' });
+	});
+
 	it('keeps preview read-only and converges through explicit idempotent apply', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
@@ -553,5 +569,26 @@ class MemoryInventoryVault implements InventoryVaultPort {
 			this.contents.set(file.path, next);
 		}
 		return next;
+	}
+}
+
+class PausingInventoryVault extends MemoryInventoryVault {
+	readonly createStarted: Promise<void>;
+	private signalCreateStarted!: () => void;
+	private readonly createResumed: Promise<void>;
+	private signalCreateResumed!: () => void;
+
+	constructor() {
+		super();
+		this.createStarted = new Promise((resolve) => { this.signalCreateStarted = resolve; });
+		this.createResumed = new Promise((resolve) => { this.signalCreateResumed = resolve; });
+	}
+
+	resumeCreate(): void { this.signalCreateResumed(); }
+
+	override async create(path: string, content: string): Promise<InventoryVaultFile> {
+		this.signalCreateStarted();
+		await this.createResumed;
+		return await super.create(path, content);
 	}
 }

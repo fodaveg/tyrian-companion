@@ -121,6 +121,7 @@ export class InventoryVaultOneClickSyncController {
 		this.captureProgress = null;
 		this.maxPercent = 0;
 		this.enter({ status: 'running', ...this.progressFor('capture', startedAt) }, generation);
+		let plan: InventoryVaultSyncPlan;
 		try {
 			await this.ports.refreshAdvisor(
 				(phase) => {
@@ -134,11 +135,16 @@ export class InventoryVaultOneClickSyncController {
 			);
 			if (this.stale(generation)) return this.current();
 			this.enter({ status: 'running', ...this.progressFor('preview', startedAt) }, generation);
-			const plan = await this.ports.previewSync();
+			plan = await this.ports.previewSync();
 			if (this.stale(generation)) return this.current();
-			await this.afterPreview(plan, startedAt, generation);
 		} catch {
 			this.settle('error', 'capture_unavailable', startedAt, generation);
+			return this.current();
+		}
+		try {
+			await this.afterPreview(plan, startedAt, generation);
+		} catch {
+			this.settle('error', 'unexpected_failure', startedAt, generation);
 		}
 		return this.current();
 	}
@@ -201,12 +207,23 @@ export class InventoryVaultOneClickSyncController {
 		startedAt: number,
 		generation: number,
 	): Promise<void> {
+		const disabledBeforeWrite = this.ports.disabledReason();
+		if (disabledBeforeWrite !== null) {
+			this.plan = null;
+			this.enter({ status: 'disabled', reason: disabledBeforeWrite }, generation);
+			return;
+		}
 		this.enter({ status: 'running', ...this.progressForApply(0, plan.steps.length, startedAt) }, generation);
 		const result = await this.ports.applySync(plan, (completed, total) => {
 			this.enter({ status: 'running', ...this.progressForApply(completed, total, startedAt) }, generation);
 		});
 		if (this.stale(generation)) return;
 		this.plan = null;
+		const disabledBeforePersist = this.ports.disabledReason();
+		if (disabledBeforePersist !== null) {
+			this.enter({ status: 'disabled', reason: disabledBeforePersist }, generation);
+			return;
+		}
 		if (result.status === 'applied' || result.status === 'unchanged') {
 			this.settle('success', null, startedAt, generation, summary);
 		} else if (result.status === 'conflict' || result.status === 'invalid') {
@@ -225,6 +242,12 @@ export class InventoryVaultOneClickSyncController {
 		summary: InventoryVaultSyncPlanSummary | null = null,
 	): void {
 		if (this.disposed || generation !== this.generation) return;
+		const disabledBeforePersist = this.ports.disabledReason();
+		if (disabledBeforePersist !== null) {
+			this.plan = null;
+			this.enter({ status: 'disabled', reason: disabledBeforePersist }, generation);
+			return;
+		}
 		const outcome: InventoryVaultSyncLastRun = {
 			status, finishedAt: new Date(this.now()).toISOString(),
 			durationMs: Math.max(0, this.now() - startedAt), summary, error: reason,

@@ -67,6 +67,7 @@ const H5_11_KEYS = [
 	'advisor.view.sort', 'advisor.view.sort.value_desc', 'advisor.view.sort.quantity_desc', 'advisor.view.sort.name_asc',
 	'advisor.view.item', 'advisor.view.owned', 'advisor.view.available', 'advisor.view.quantity',
 	'advisor.view.stacks', 'advisor.view.unitValue', 'advisor.view.evidenceDetail',
+	'advisor.view.advancedDetails', 'advisor.view.ownershipDifference',
 	'advisor.view.coverage.snapshot', 'advisor.view.coverage.inventory', 'advisor.view.coverage.catalog',
 	'advisor.view.coverage.prices', 'advisor.view.coverage.reservations', 'advisor.view.coverage.accountSignals',
 	'advisor.view.coverage.rules',

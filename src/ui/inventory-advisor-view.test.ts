@@ -273,6 +273,28 @@ describe('Inventory Advisor view', () => {
 		expect(text(mount.elements())).toContain('2 sin precio');
 	});
 
+	it('uses one price-or-fallback contract for row totals, unit values, and aggregate value', () => {
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'market', rows: [
+				row({ itemId: 1, name: 'Con precio', action: 'sell', quantity: 3, value: { status: 'available', route: 'instant_sell', copper: 123 } }),
+				row({ itemId: 2, name: 'Sin precio', action: 'sell', quantity: 3, value: { status: 'unavailable', route: null } }),
+				row({ itemId: 3, name: 'No aplica', action: 'sell', quantity: 3, value: { status: 'not_applicable', route: null } }),
+			] }],
+		};
+		const mount = render(model);
+		const rowText = (name: string): string => {
+			const tableRow = find(mount.elements(), 'tr').find((candidate) => text(walk(candidate)).includes(name));
+			if (tableRow === undefined) throw new Error(`Missing table row ${name}.`);
+			return text(walk(tableRow));
+		};
+		expect(rowText('Con precio')).toContain('0 oro · 0 plata · 41 cobre');
+		expect(rowText('Con precio')).toContain('0 oro · 1 plata · 23 cobre');
+		expect(rowText('Sin precio').match(/No disponible/gu)).toHaveLength(2);
+		expect(rowText('No aplica').match(/No aplica/gu)?.length).toBeGreaterThanOrEqual(2);
+		expect(text(mount.elements())).toContain('Valor conocido: 0 oro · 1 plata · 23 cobre');
+	});
+
 	it('distinguishes a read empty optional store from unavailable or restricted stores', () => {
 		const model = readyModel();
 		model.groups = [];
@@ -304,7 +326,7 @@ describe('Inventory Advisor view', () => {
 		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
 		const subtotal = only(byClass(mount.elements(), 'tyrian-inventory-advisor__subtotal'));
 		expect(walk(subtotal).map((cell) => cell.textContent)).toEqual(
-			expect.arrayContaining(['Subtotal · 2 objetos', '10', '2', '0 oro · 10 plata · 0 cobre']),
+			expect.arrayContaining(['Subtotal · 2 objetos', '10', '0 oro · 10 plata · 0 cobre']),
 		);
 		const sortSelect = find(mount.elements(), 'select')[3];
 		if (sortSelect === undefined) throw new Error('Expected the sort control.');
@@ -314,7 +336,7 @@ describe('Inventory Advisor view', () => {
 			.toEqual([true, false]);
 	});
 
-	it('names the exact coverage axes that are not complete', () => {
+	it('keeps three readable evidence states in normal mode and the exact axes in an advanced disclosure', () => {
 		const mount = render({
 			...readyModel(),
 			groups: [{ key: 'market', rows: [row({
@@ -322,7 +344,23 @@ describe('Inventory Advisor view', () => {
 				coverage: { ...coverage('complete'), prices: 'limited', rules: 'unknown' },
 			})] }],
 		});
-		expect(text(mount.elements())).toContain('Limitada (precios, reglas)');
+		const details = find(mount.elements(), 'details');
+		expect(details.length).toBeGreaterThan(0);
+		expect(details.some((entry) => walk(entry).some((element) => element.textContent === 'Detalles técnicos'))).toBe(true);
+		expect(details.some((entry) => walk(entry).some((element) => element.textContent === 'Limitada (precios, reglas)'))).toBe(true);
+	});
+
+	it('removes stack noise and combines owned and available quantities in table and card layouts', () => {
+		const model = readyModel();
+		model.groups[0]!.rows[0]!.reasonCodes = ['position_not_actionable'];
+		const mount = render(model);
+		const columnLabels = find(mount.elements(), 'th')
+			.filter((element) => element.scope === 'col')
+			.map((element) => element.textContent);
+		expect(columnLabels).toHaveLength(9);
+		expect(columnLabels).not.toContain('Pilas');
+		expect(columnLabels).not.toContain('Disponible');
+		expect(text(mount.elements())).toContain('3 (0 disponibles)');
 	});
 
 	it('shows direct actions by default and keeps preserve/review context explicitly opt-in', () => {
@@ -357,7 +395,8 @@ describe('Inventory Advisor view', () => {
 		const mount = render(model);
 		const allText = text(mount.elements());
 		expect(allText).toContain('Qué hacer ahora');
-		expect(allText).toContain('Objetos distintos: 3 · Unidades: 9 · Pilas: 3');
+		expect(allText).toContain('Objetos distintos: 3 · Unidades: 9');
+		expect(allText).not.toContain('Pilas:');
 		expect(allText).toContain('Valor conocido: 3 oro · 74 plata · 44 cobre');
 		expect(allText).toContain('Todos los objetos visibles tienen precio demostrado.');
 		expect(allText).toContain('Vender ya');
@@ -527,6 +566,35 @@ describe('Inventory Advisor view', () => {
 		expect(onRun).toHaveBeenCalledOnce();
 		expect(onConfirm).not.toHaveBeenCalled();
 		expect(onCancel).not.toHaveBeenCalled();
+	});
+
+	it('offers a neutral analysis-only action with accessible idle, loading, and disabled states', () => {
+		const onAnalyze = vi.fn();
+		const onRun = vi.fn();
+		const interactions: InventoryAdvisorViewInteractions = {
+			inventorySync: {
+				state: { status: 'idle', lastRun: null }, assetsInstalled: true,
+				analysisBusy: false, onAnalyze, onRun, onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		const analysis = only(find(mount.elements(), 'button').filter((button) => button.textContent === 'Analizar sin escribir'));
+		expect(analysis.className).not.toContain('mod-cta');
+		expect(analysis.attributes.get('aria-label')).toBe('Analizar sin escribir');
+		expect(analysis.disabled).toBe(false);
+		analysis.dispatch('click');
+		expect(onAnalyze).toHaveBeenCalledOnce();
+		expect(onRun).not.toHaveBeenCalled();
+
+		interactions.inventorySync!.analysisBusy = true;
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, { ...readyModel(), status: 'loading' }, createTranslator('es'), undefined, interactions);
+		expect(analysis.textContent).toBe('Analizando…');
+		expect(analysis.disabled).toBe(true);
+
+		interactions.inventorySync!.analysisBusy = false;
+		interactions.inventorySync!.state = { status: 'disabled', reason: 'missing_key' };
+		renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator('es'), undefined, interactions);
+		expect(analysis.disabled).toBe(true);
 	});
 
 	it('pauses for explicit confirmation on a destructive plan, disables the button, and forwards confirm/cancel only from their own controls', () => {

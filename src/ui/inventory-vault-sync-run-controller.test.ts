@@ -254,6 +254,45 @@ describe('inventory Vault one-click sync controller', () => {
 		expect(JSON.stringify(finished)).not.toMatch(/secret|403/u);
 	});
 
+	it('reports an automatic apply failure as an unexpected write failure, never as capture unavailable', async () => {
+		const ports = portsFor({
+			previewSync: vi.fn(async () => planWith(['create'])),
+			applySync: vi.fn(async () => { throw new Error('vault write failed'); }),
+		});
+		const { controller } = harness(ports);
+		const final = await controller.run();
+		expect(final).toMatchObject({ status: 'idle', lastRun: { status: 'error', error: 'unexpected_failure' } });
+	});
+
+	it('fails closed before writing when the disabled reason changes during refresh', async () => {
+		let disabledReason: 'missing_key' | null = null;
+		const finished: InventoryVaultSyncLastRun[] = [];
+		const ports = portsFor({
+			disabledReason: () => disabledReason,
+			refreshAdvisor: vi.fn(async () => { disabledReason = 'missing_key'; }),
+		});
+		const { controller } = harness(ports, null, (outcome) => finished.push(outcome));
+		expect(await controller.run()).toEqual({ status: 'disabled', reason: 'missing_key' });
+		expect(ports.applySync).not.toHaveBeenCalled();
+		expect(finished).toEqual([]);
+	});
+
+	it('does not persist a successful last run when the sync becomes disabled during apply', async () => {
+		let disabledReason: 'unsafe_root' | null = null;
+		const finished: InventoryVaultSyncLastRun[] = [];
+		const ports = portsFor({
+			disabledReason: () => disabledReason,
+			applySync: vi.fn(async () => {
+				disabledReason = 'unsafe_root';
+				return { status: 'applied', created: 1, updated: 0, deactivated: 0 } as const;
+			}),
+		});
+		const { controller } = harness(ports, null, (outcome) => finished.push(outcome));
+		expect(await controller.run()).toEqual({ status: 'disabled', reason: 'unsafe_root' });
+		expect(ports.applySync).toHaveBeenCalledOnce();
+		expect(finished).toEqual([]);
+	});
+
 	it.each(['missing_key', 'legacy_root', 'unsafe_root'] as const)(
 		'reports disabled for %s and never calls a port',
 		async (reason) => {

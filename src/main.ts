@@ -612,7 +612,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async refreshInventoryAdvisor(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		await this.inventoryAdvisor.refresh();
+		const operation = this.inventoryAdvisor.refresh();
+		this.renderInventoryAdvisorViews();
+		await operation;
 		this.renderInventoryAdvisorViews();
 	}
 

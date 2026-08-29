@@ -75,6 +75,23 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(run).toHaveBeenCalledOnce();
 	});
 
+	it('wires Analyze without writing to the ordinary advisor refresh and never to the Vault sync', async () => {
+		installDom();
+		const analyze = vi.fn(async () => undefined);
+		const run = vi.fn(async () => undefined);
+		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, analyze, run });
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		const button = find(view.contentEl as unknown as FakeElement, 'button')
+			.find((candidate) => candidate.textContent === 'Analizar sin escribir');
+		if (!button) throw new Error('The analysis-only button was not mounted.');
+		button.dispatch('click');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(analyze).toHaveBeenCalledOnce();
+		expect(run).not.toHaveBeenCalled();
+	});
+
 	it('forwards confirm and cancel only from their own buttons while a destructive plan awaits confirmation', async () => {
 		installDom();
 		const confirm = vi.fn(async () => undefined);
@@ -153,11 +170,13 @@ function actions(
 		run?: () => Promise<void>;
 		confirm?: () => Promise<void>;
 		cancel?: () => void;
+		analyze?: () => Promise<void>;
 	},
 ): { value: InventoryAdvisorViewActions } {
 	const base: InventoryAdvisorViewActions = {
 		getInventoryAdvisorLocale: locale,
 		getInventoryAdvisorViewModel: readyModel,
+		refreshInventoryAdvisor: sync?.analyze ?? (async () => undefined),
 	};
 	if (sync === undefined) return { value: base };
 	return { value: {

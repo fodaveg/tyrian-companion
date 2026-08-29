@@ -1,8 +1,8 @@
 import { setIcon } from 'obsidian';
 
-import type { TranslationParams, Translator } from '../core/i18n';
-import type { InventoryVaultSyncPlanSummary } from './inventory-vault-sync-controller';
-import type { InventoryVaultSyncRunPhase, InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import type { Translator } from '../core/i18n';
+import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import { inventorySyncPanel, inventorySyncSummaryParams } from './inventory-sync-panel-view';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
@@ -44,6 +44,8 @@ export interface InventoryAdvisorViewInteractions {
 	inventorySync?: {
 		state: InventoryVaultSyncRunState;
 		assetsInstalled: boolean;
+		analysisBusy?: boolean;
+		onAnalyze?: () => void | Promise<void>;
 		onRun: () => void | Promise<void>;
 		onConfirm: () => void | Promise<void>;
 		onCancel: () => void;
@@ -285,6 +287,13 @@ function mountInventoryAdvisorView(
 	const syncButtonText = createSpan();
 	syncButton.append(syncButtonIcon, syncButtonText);
 	syncButton.addEventListener('click', () => { void interactions.inventorySync?.onRun(); });
+	const syncAnalyze = createEl('button');
+	syncAnalyze.type = 'button';
+	syncAnalyze.className = 'tyrian-inventory-advisor__analyze-button';
+	syncAnalyze.addEventListener('click', () => { void interactions.inventorySync?.onAnalyze?.(); });
+	const syncPrimaryActions = createDiv();
+	syncPrimaryActions.className = 'tyrian-inventory-advisor__sync-actions tyrian-inventory-advisor__sync-primary-actions';
+	syncPrimaryActions.append(syncButton, syncAnalyze);
 	const syncConfirm = createDiv();
 	syncConfirm.className = 'tyrian-inventory-advisor__sync-confirm';
 	const syncConfirmTitle = createEl('strong');
@@ -326,7 +335,7 @@ function mountInventoryAdvisorView(
 		syncStatusSummary, syncStatusLastRunNote, syncStatusFinishedAt,
 	);
 	syncSection.append(
-		syncHeading, syncIntro, syncNotice, syncAssetsHint, syncButton, syncConfirm,
+		syncHeading, syncIntro, syncNotice, syncAssetsHint, syncPrimaryActions, syncConfirm,
 		syncStatusHeading, syncStatusPanel,
 	);
 	const state = createEl('p');
@@ -499,7 +508,7 @@ function mountInventoryAdvisorView(
 			const historicalSummary = sync.state.status === 'idle' ? sync.state.lastRun?.summary ?? null : null;
 			syncNoticeLastRun.hidden = historicalSummary === null;
 			if (historicalSummary !== null) {
-				syncNoticeLastRun.textContent = translator.t('advisor.sync.noticeLastRun', summaryParams(historicalSummary));
+				syncNoticeLastRun.textContent = translator.t('advisor.sync.noticeLastRun', inventorySyncSummaryParams(historicalSummary));
 			}
 			syncAssetsHint.textContent = translator.t('advisor.sync.assetsHint');
 			syncAssetsHint.hidden = sync.assetsInstalled;
@@ -507,13 +516,18 @@ function mountInventoryAdvisorView(
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
 			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
 			syncButton.disabled = busy || sync.state.status === 'confirm' || sync.state.status === 'disabled';
-			syncSection.setAttribute('aria-busy', String(busy));
+			syncAnalyze.hidden = sync.onAnalyze === undefined;
+			syncAnalyze.textContent = translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze');
+			syncAnalyze.setAttribute('aria-label', translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze'));
+			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.state.status === 'confirm'
+				|| (sync.state.status === 'disabled' && sync.state.reason === 'missing_key');
+			syncSection.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
 
 			syncConfirm.hidden = sync.state.status !== 'confirm';
 			if (sync.state.status === 'confirm') {
 				syncConfirmTitle.textContent = translator.t('advisor.sync.confirmTitle');
 				syncConfirmBody.textContent = translator.t('advisor.sync.confirmBody', { deactivate: sync.state.summary.deactivate });
-				syncConfirmSummary.textContent = translator.t('advisor.sync.summaryLine', summaryParams(sync.state.summary));
+				syncConfirmSummary.textContent = translator.t('advisor.sync.summaryLine', inventorySyncSummaryParams(sync.state.summary));
 			}
 			syncConfirmApply.textContent = translator.t('advisor.sync.confirmApply');
 			syncConfirmCancel.textContent = translator.t('common.cancel');
@@ -574,94 +588,6 @@ function mountInventoryAdvisorView(
 	};
 	update(model, translator, interactions);
 	return { update };
-}
-
-/** Everything the Estado panel renders, derived only from the run state (never a timer). */
-interface InventorySyncPanelProjection {
-	readonly tone: 'error' | 'success' | 'normal';
-	readonly statusWord: string;
-	readonly message: string;
-	readonly percent: number;
-	readonly progressLabel: string;
-	readonly summaryLine: string | null;
-	readonly lastRunNote: string | null;
-	readonly finishedAtLine: string | null;
-}
-
-const EMPTY_SYNC_SUMMARY: InventoryVaultSyncPlanSummary = {
-	positions: 0, create: 0, update: 0, unchanged: 0, deactivate: 0, conflicts: 0,
-};
-
-/** Named summary interfaces have no index signature; this gives `t()` a plain params object. */
-function summaryParams(summary: InventoryVaultSyncPlanSummary): TranslationParams {
-	return {
-		positions: summary.positions, create: summary.create, update: summary.update,
-		unchanged: summary.unchanged, deactivate: summary.deactivate, conflicts: summary.conflicts,
-	};
-}
-
-function inventorySyncPanel(state: InventoryVaultSyncRunState, translator: Translator): InventorySyncPanelProjection {
-	const progressLabel = (percent: number, completed: number | null, total: number | null, phase: InventoryVaultSyncRunPhase | null): string =>
-		completed !== null && total !== null && phase !== null
-			? translator.t('advisor.sync.progressWithTotal', { percent, completed, total, phase: translator.t(`advisor.sync.phaseShort.${phase}`) })
-			: translator.t('advisor.sync.progressPercentOnly', { percent });
-	if (state.status === 'disabled') return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.disabled'),
-		message: translator.t(`advisor.sync.state.disabled.${state.reason}`),
-		percent: 0, progressLabel: progressLabel(0, null, null, null),
-		summaryLine: null, lastRunNote: null, finishedAtLine: null,
-	};
-	if (state.status === 'running') {
-		// The elapsed seconds and the running counters change far more often than the
-		// phase or capture step; both stay out of `message` (the aria-live text) and
-		// only widen `progressLabel` (rendered outside the live region, see the mount
-		// site: `syncStatusSmall` carries `aria-live="off"`).
-		const elapsedSeconds = Math.floor(state.elapsedMs / 1000);
-		const captureLegLabel = state.captureStep === 'characters' && state.captureLeg !== null
-			? ` · ${translator.t('advisor.sync.captureCharactersCount', { completed: state.captureLeg.completed, total: state.captureLeg.total })}`
-			: '';
-		return {
-			tone: 'normal', statusWord: translator.t('advisor.sync.status.running'),
-			message: state.phase === 'capture' && state.captureStep !== null
-				? translator.t(`advisor.sync.captureStep.${state.captureStep}`)
-				: translator.t(`advisor.sync.phase.${state.phase}`),
-			percent: state.percent,
-			progressLabel: `${progressLabel(state.percent, state.completed, state.total, state.phase)}`
-				+ `${captureLegLabel} · ${translator.t('advisor.sync.elapsed', { seconds: elapsedSeconds })}`,
-			summaryLine: null, lastRunNote: null, finishedAtLine: null,
-		};
-	}
-	if (state.status === 'confirm') return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.confirm'),
-		message: translator.t('advisor.sync.confirmBody', { deactivate: state.summary.deactivate }),
-		percent: 80, progressLabel: progressLabel(80, null, null, null),
-		summaryLine: translator.t('advisor.sync.summaryLine', summaryParams(state.summary)), lastRunNote: null, finishedAtLine: null,
-	};
-	if (state.status === 'conflict') return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.conflict'),
-		message: translator.t('advisor.sync.state.conflict'),
-		percent: 100, progressLabel: progressLabel(100, null, null, null),
-		summaryLine: state.summary === null ? null : translator.t('advisor.sync.summaryLine', summaryParams(state.summary)),
-		lastRunNote: null, finishedAtLine: null,
-	};
-	const lastRun = state.lastRun;
-	if (lastRun === null) return {
-		tone: 'normal', statusWord: translator.t('advisor.sync.status.idle'),
-		message: translator.t('advisor.sync.idle'),
-		percent: 0, progressLabel: progressLabel(0, null, null, null),
-		summaryLine: null, lastRunNote: null, finishedAtLine: null,
-	};
-	const percent = lastRun.status === 'success' ? 100 : 0;
-	return {
-		tone: lastRun.status, statusWord: translator.t(`advisor.sync.status.${lastRun.status}`),
-		message: lastRun.status === 'success'
-			? translator.t('advisor.sync.lastRun.success', summaryParams(lastRun.summary ?? EMPTY_SYNC_SUMMARY))
-			: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`),
-		percent, progressLabel: progressLabel(percent, null, null, null),
-		summaryLine: lastRun.summary === null ? null : translator.t('advisor.sync.summaryLine', summaryParams(lastRun.summary)),
-		lastRunNote: translator.t('advisor.sync.lastRunNote'),
-		finishedAtLine: translator.t('advisor.sync.lastRunFinishedAt', { finishedAt: lastRun.finishedAt }),
-	};
 }
 
 function optionalSourceCoverageLabel(
@@ -741,7 +667,7 @@ function renderRecommendationSummary(
 	const totals = summarizeInventoryAdvisorRows(rows);
 	const intro = createEl('p');
 	intro.textContent = translator.t('advisor.view.recommendationIntro', {
-		items: totals.items, quantity: totals.units, stacks: totals.stacks,
+		items: totals.items, quantity: totals.units,
 	});
 	const valueLine = createEl('p');
 	valueLine.className = 'tyrian-inventory-advisor__recommendation-value';
@@ -823,12 +749,12 @@ function renderTable(
 }
 
 const TABLE_COLUMNS = [
-	'item', 'quantity', 'stacks', 'action', 'unitValue', 'value',
-	'owned', 'available', 'location', 'evidence', 'explanation',
+	'item', 'quantity', 'action', 'unitValue', 'value',
+	'owned', 'location', 'evidence', 'explanation',
 ] as const;
 
-const NUMERIC_TABLE_COLUMNS: readonly string[] = ['quantity', 'stacks', 'unitValue', 'value', 'owned', 'available'];
-const WIDE_TABLE_COLUMNS: readonly string[] = ['owned', 'available', 'location', 'evidence', 'explanation'];
+const NUMERIC_TABLE_COLUMNS: readonly string[] = ['quantity', 'unitValue', 'value', 'owned'];
+const WIDE_TABLE_COLUMNS: readonly string[] = ['owned', 'location', 'evidence', 'explanation'];
 
 function tableColumnClass(label: string): string {
 	return [
@@ -844,12 +770,10 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	appendItemIdentity(item, row);
 	tableRow.append(item);
 	appendCell(tableRow, String(row.quantity), tableColumnClass('quantity'));
-	appendCell(tableRow, String(row.allocations.length), tableColumnClass('stacks'));
 	tableRow.append(decisionCell(row, translator));
 	appendCell(tableRow, unitValueLabel(row, translator), tableColumnClass('unitValue'));
 	appendCell(tableRow, valueLabel(row, translator), tableColumnClass('value'));
-	appendCell(tableRow, String(row.ownedQuantity), tableColumnClass('owned'));
-	appendCell(tableRow, String(row.availableQuantity), tableColumnClass('available'));
+	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
 	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
 	tableRow.append(evidenceCell(row.coverage, translator));
 	appendCell(tableRow, explanationLabel(row, translator), tableColumnClass('explanation'));
@@ -869,14 +793,12 @@ function renderSubtotalRow(
 	label.textContent = translator.t('advisor.view.subtotal', { items: totals.items });
 	subtotalRow.append(label);
 	appendCell(subtotalRow, String(totals.units), tableColumnClass('quantity'));
-	appendCell(subtotalRow, String(totals.stacks), tableColumnClass('stacks'));
 	appendCell(subtotalRow, '', '');
 	appendCell(subtotalRow, '', tableColumnClass('unitValue'));
 	appendCell(subtotalRow, totals.pricedItems === 0
 		? translator.t('advisor.view.value.unavailable')
 		: formatInventoryAdvisorCopper(totals.knownCopper, translator), tableColumnClass('value'));
 	appendCell(subtotalRow, '', tableColumnClass('owned'));
-	appendCell(subtotalRow, '', tableColumnClass('available'));
 	appendCell(subtotalRow, '', tableColumnClass('location'));
 	appendCell(subtotalRow, totals.unpricedItems === 0 ? '' : translator.t('advisor.view.unpricedShort', {
 		items: totals.unpricedItems,
@@ -898,7 +820,11 @@ function decisionCell(row: InventoryAdvisorViewRow, translator: Translator): HTM
 function evidenceCell(coverage: InventoryAdvisorViewCoverage, translator: Translator): HTMLTableCellElement {
 	const cell = createEl('td');
 	cell.className = `tyrian-inventory-advisor__wide-only tyrian-inventory-advisor__evidence tyrian-inventory-advisor__evidence--${evidenceGroup(coverage)}`;
-	cell.textContent = evidenceLabel(coverage, translator);
+	const summary = createSpan();
+	summary.textContent = evidenceLabel(coverage, translator);
+	cell.append(summary);
+	const advanced = advancedEvidenceDetails(coverage, translator);
+	if (advanced !== null) cell.append(advanced);
 	return cell;
 }
 
@@ -923,15 +849,15 @@ function renderCards(
 			appendItemIdentity(heading, row);
 			article.append(recommendation, heading);
 			const list = createEl('dl');
-			addDefinition(list, translator.t('advisor.view.owned'), String(row.ownedQuantity));
-			addDefinition(list, translator.t('advisor.view.available'), String(row.availableQuantity));
+			addDefinition(list, translator.t('advisor.view.owned'), ownershipLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.quantity'), String(row.quantity));
-			addDefinition(list, translator.t('advisor.view.stacks'), String(row.allocations.length));
 			addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
 			addDefinition(list, translator.t('advisor.view.explanation'), explanationLabel(row, translator));
 			article.append(list);
+			const advanced = advancedEvidenceDetails(row.coverage, translator);
+			if (advanced !== null) article.append(advanced);
 			cards.append(article);
 		}
 	}
@@ -1068,15 +994,24 @@ function assertNeverLocation(value: never): never {
 }
 
 function valueLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
-	if (row.value.status === 'available') return formatInventoryAdvisorCopper(row.value.copper, translator);
-	return translator.t(`advisor.view.value.${row.value.status}`);
+	return row.value.status === 'available'
+		? priceOrFallback(row.value.copper, 'unavailable', translator)
+		: priceOrFallback(null, row.value.status, translator);
 }
 
 /** Derives the per-unit figure from the demonstrated net total; it never re-prices an item. */
 function unitValueLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
-	if (row.value.status !== 'available') return translator.t(`advisor.view.value.${row.value.status}`);
-	if (row.quantity <= 0) return translator.t('advisor.view.value.unavailable');
-	return formatInventoryAdvisorCopper(Math.floor(row.value.copper / row.quantity), translator);
+	if (row.value.status !== 'available') return priceOrFallback(null, row.value.status, translator);
+	return priceOrFallback(row.quantity <= 0 ? null : Math.floor(row.value.copper / row.quantity), 'unavailable', translator);
+}
+
+/** Formats demonstrated copper, otherwise preserving the caller's exact fallback copy. */
+function priceOrFallback(
+	copper: number | null,
+	fallback: Exclude<InventoryAdvisorViewRow['value']['status'], 'available'>,
+	translator: Translator,
+): string {
+	return copper === null ? translator.t(`advisor.view.value.${fallback}`) : formatInventoryAdvisorCopper(copper, translator);
 }
 
 function formatInventoryAdvisorCopper(copper: number, translator: Translator): string {
@@ -1089,8 +1024,17 @@ function formatInventoryAdvisorCopper(copper: number, translator: Translator): s
 
 function aggregateInventoryAdvisorValue(rows: readonly InventoryAdvisorViewRow[], translator: Translator): string {
 	const available = rows.filter((row) => row.value.status === 'available');
-	if (available.length === 0) return translator.t('advisor.view.value.unavailable');
-	return formatInventoryAdvisorCopper(available.reduce((total, row) => total + (row.value.status === 'available' ? row.value.copper : 0), 0), translator);
+	const copper = available.length === 0 ? null
+		: available.reduce((total, row) => total + (row.value.status === 'available' ? row.value.copper : 0), 0);
+	return priceOrFallback(copper, 'unavailable', translator);
+}
+
+function ownershipLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
+	return row.ownedQuantity === row.availableQuantity
+		? String(row.ownedQuantity)
+		: translator.t('advisor.view.ownershipDifference', {
+			owned: row.ownedQuantity, available: row.availableQuantity,
+		});
 }
 
 function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
@@ -1108,14 +1052,29 @@ const COVERAGE_AXES = [
 	'snapshot', 'inventory', 'catalog', 'prices', 'reservations', 'accountSignals', 'rules',
 ] as const;
 
-/** Names the exact axes that are not complete instead of hiding them behind one word. */
+/** Keeps the normal surface to one of three user-facing evidence messages. */
 function evidenceLabel(coverage: InventoryAdvisorViewCoverage, translator: Translator): string {
-	const level = translator.t(`advisor.view.evidence.${evidenceGroup(coverage)}`);
+	return translator.t(`advisor.view.evidence.${evidenceGroup(coverage)}`);
+}
+
+/** Exposes internal axes only behind an explicit advanced disclosure. */
+function advancedEvidenceDetails(
+	coverage: InventoryAdvisorViewCoverage,
+	translator: Translator,
+): HTMLDetailsElement | null {
 	const incomplete = COVERAGE_AXES.filter((axis) => coverage[axis] !== 'complete');
-	if (incomplete.length === 0) return level;
-	return translator.t('advisor.view.evidenceDetail', {
-		level, axes: incomplete.map((axis) => translator.t(`advisor.view.coverage.${axis}`)).join(', '),
+	if (incomplete.length === 0) return null;
+	const details = createEl('details');
+	details.className = 'tyrian-inventory-advisor__advanced-evidence';
+	const summary = createEl('summary');
+	summary.textContent = translator.t('advisor.view.advancedDetails');
+	const detail = createEl('p');
+	detail.textContent = translator.t('advisor.view.evidenceDetail', {
+		level: evidenceLabel(coverage, translator),
+		axes: incomplete.map((axis) => translator.t(`advisor.view.coverage.${axis}`)).join(', '),
 	});
+	details.append(summary, detail);
+	return details;
 }
 
 function groupLabel(key: string, groupBy: InventoryAdvisorViewGroupBy, translator: Translator): string {
