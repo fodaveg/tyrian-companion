@@ -66,6 +66,7 @@ export interface InventoryAdvisorEngineInputV1 {
 		policy: EquipmentSalvagePolicyV1;
 		preferences: EquipmentSalvagePreferencesV1;
 		prices: InventoryContainerPriceEvidenceV1 | null;
+		marketDepth: InventoryMarketDepthEvidenceV1 | null;
 	};
 }
 

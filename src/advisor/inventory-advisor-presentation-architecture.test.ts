@@ -54,7 +54,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard', './inventory-advisor-model',
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
 			'./inventory-advisor-builtin-bundle', './inventory-container-economy', '../economy/container-personal-valuation',
-			'../economy/equipment-salvage-economy', '../economy/models/equipment-salvage-policy'],
+			'../economy/equipment-salvage-economy', '../economy/models/equipment-salvage-policy',
+			'../economy/commerce-listings'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {

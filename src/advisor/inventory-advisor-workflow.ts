@@ -12,6 +12,7 @@ import type { InventoryContainerEconomyPackV1 } from './inventory-container-econ
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import type { EquipmentSalvagePreferencesV1 } from '../economy/equipment-salvage-economy';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
+import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -37,7 +38,7 @@ export type InventoryAdvisorRules = {
 	containerEconomyPack?: InventoryContainerEconomyPackV1;
 	personalValuation?: ContainerPersonalValuationV1;
 	materialStorageCapacity?: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>;
-	equipmentSalvage?: Omit<NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>, 'prices'>;
+	equipmentSalvage?: Omit<NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>, 'prices' | 'marketDepth'>;
 };
 export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
@@ -198,7 +199,7 @@ export function composeInventoryAdvisorRefresh(
 			activeOrders: structuredClone(capture.activeOrders),
 		}),
 		...(capture.marketDepth === undefined ? {} : {
-			marketDepth: structuredClone(capture.marketDepth),
+			marketDepth: selectSupplementalMarketDepth(capture.marketDepth, input.prices.requestedItemIds),
 		}),
 		...(rules.materialStorageCapacity === undefined ? {} : {
 			materialStorageCapacity: structuredClone(rules.materialStorageCapacity),
@@ -208,6 +209,8 @@ export function composeInventoryAdvisorRefresh(
 				...structuredClone(rules.equipmentSalvage),
 				prices: capture.containerPrices === undefined || capture.containerPrices === null ? null
 					: selectSupplementalPrices(capture.containerPrices, [rules.equipmentSalvage.policy.outputItemId]),
+				marketDepth: capture.marketDepth === undefined ? null
+					: selectSupplementalMarketDepth(capture.marketDepth, [rules.equipmentSalvage.policy.outputItemId]),
 			},
 		}),
 		...containerEconomy,
@@ -218,6 +221,22 @@ export function composeInventoryAdvisorRefresh(
 	const producerResult = classifyInventoryAdvisor(engineInput);
 	const result = applyInventoryDiscardAllowlist({ engineInput, producerResult });
 	return { input, result, discardContext: { engineInput, producerResult } };
+}
+
+function selectSupplementalMarketDepth(
+	marketDepth: InventoryMarketDepthEvidenceV1,
+	itemIds: readonly number[],
+): InventoryMarketDepthEvidenceV1 {
+	const items = itemIds.map((itemId) => marketDepth.items.find((entry) => entry.itemId === itemId) ?? {
+		itemId, coverage: 'missing' as const, buys: [], sells: [],
+	});
+	const complete = items.filter((item) => item.coverage === 'complete').length;
+	return {
+		...structuredClone(marketDepth),
+		requestedItemIds: [...itemIds],
+		items: structuredClone(items),
+		status: complete === items.length ? 'complete' : complete === 0 ? 'unavailable' : 'partial',
+	};
 }
 
 function selectSupplementalPrices(

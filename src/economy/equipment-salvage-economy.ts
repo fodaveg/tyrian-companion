@@ -1,8 +1,11 @@
 import { createCatalogVendorValue, createTradingPostValueWithPolicy } from './gw2-fees';
 import type { CatalogItem } from '../catalog/public-catalog-model';
+import { sha256CanonicalValue } from '../core/canonical-sha256';
+import type { CommerceListingLevelV1 } from './commerce-listings';
 
 export const EQUIPMENT_SALVAGE_MODEL_VERSION = 1 as const;
 export const ECTOPLASM_ITEM_ID = 19_721 as const;
+export const EQUIPMENT_SALVAGE_POLICY_V1_SHA256 = 'ed9b87c2d0677620aac71eb9fff96fcbb020e67b7e0a5b24eca4a6329bf38dc0' as const;
 
 export type EquipmentSalvageKit = 'master' | 'mystic' | 'silver_fed';
 export type EquipmentSalvageSaleStrategy = 'instant_sell' | 'listing';
@@ -63,6 +66,7 @@ export interface EquipmentSalvageEconomyInputV1 {
 	output: {
 		itemId: typeof ECTOPLASM_ITEM_ID;
 		instantSellUnitCopper: number | null;
+		instantSellLevels: CommerceListingLevelV1[] | null;
 		listingUnitCopper: number | null;
 	};
 	policy: EquipmentSalvagePolicyV1;
@@ -147,21 +151,19 @@ export function evaluateEquipmentSalvageEconomy(value: unknown): EquipmentSalvag
 		}
 		if (value.priceCoverage !== 'complete') return review('price_uncertain', rule.ruleId);
 
-		const outputRoute = selectOutputRoute(value.output, preferences.saleStrategy);
-		if (outputRoute === null) return review('output_price_missing', rule.ruleId);
+		const outputRoute = selectOutputRoute(
+			value.output, preferences.saleStrategy, rule.expectedOutputMillionths * quantity,
+		);
+		if (outputRoute.status !== 'ready') return review(outputRoute.reason, rule.ruleId);
 		const kit = preferences.kit ?? 'master';
 		const kitModel = policy.kits.find((candidate) => candidate.id === kit);
 		if (kitModel === undefined) return review('policy_invalid_or_stale', rule.ruleId);
 		if (kitModel.costCoverage !== 'complete') return review('mystic_stone_cost_unmodeled', rule.ruleId);
 
-		const outputValue = createTradingPostValueWithPolicy(outputRoute.strategy, outputRoute.unitCopper, 1);
-		if (outputValue.status !== 'ok') return review('arithmetic_overflow', rule.ruleId);
-		const grossOutput = safeBigInt(
-			BigInt(outputValue.value.netCopper) * BigInt(rule.expectedOutputMillionths) * BigInt(quantity),
-		);
+		const grossOutput = outputRoute.grossOutputMicroCopper;
 		const kitCost = safeBigInt(BigInt(kitModel.costPerUseMicroCopper) * BigInt(quantity));
 		const timeCost = timeCostMicroCopper(preferences.time, quantity);
-		if (grossOutput === null || kitCost === null || timeCost === null) {
+		if (kitCost === null || timeCost === null) {
 			return review('arithmetic_overflow', rule.ruleId);
 		}
 		const netSalvage = grossOutput - kitCost - timeCost;
@@ -212,7 +214,8 @@ export function isEquipmentSalvagePolicy(value: unknown): value is EquipmentSalv
 		&& policy.outputSourceIds.every((sourceId) => sourceIds.includes(sourceId))
 		&& policy.rules.map((entry) => entry.rarity).join(',') === 'Rare,Exotic'
 		&& policy.kits.map((entry) => entry.id).join(',') === 'master,mystic,silver_fed'
-		&& [...policy.rules, ...policy.kits].every((entry) => entry.sourceIds.every((sourceId) => sourceIds.includes(sourceId)));
+		&& [...policy.rules, ...policy.kits].every((entry) => entry.sourceIds.every((sourceId) => sourceIds.includes(sourceId)))
+		&& sha256CanonicalValue(policy) === EQUIPMENT_SALVAGE_POLICY_V1_SHA256;
 }
 
 export function isEquipmentSalvagePreferences(value: unknown): value is EquipmentSalvagePreferencesV1 {
@@ -231,7 +234,7 @@ function isInput(value: unknown): value is EquipmentSalvageEconomyInputV1 {
 		|| !['complete', 'uncertain'].includes(String(value.catalogCoverage))
 		|| !['complete', 'uncertain'].includes(String(value.priceCoverage))
 		|| !quotes(value.market, ['instantSellUnitCopper', 'listingUnitCopper', 'vendorUnitCopper'])
-		|| !quotes(value.output, ['itemId', 'instantSellUnitCopper', 'listingUnitCopper'])
+		|| !salvageOutput(value.output)
 		|| value.output.itemId !== ECTOPLASM_ITEM_ID || !isEquipmentSalvagePolicy(value.policy)
 		|| !isEquipmentSalvagePreferences(value.preferences)) return false;
 	return Date.parse(value.asOf) >= Date.parse(value.policy.publishedAt)
@@ -268,21 +271,64 @@ function marketAlternatives(
 function selectOutputRoute(
 	output: EquipmentSalvageEconomyInputV1['output'],
 	strategy: EquipmentSalvageSaleStrategy | null,
-): { strategy: EquipmentSalvageSaleStrategy; unitCopper: number } | null {
+	expectedOutputMicroQuantity: number,
+): { status: 'ready'; strategy: EquipmentSalvageSaleStrategy; grossOutputMicroCopper: number }
+	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
+	const instant = instantSellOutputValue(output, expectedOutputMicroQuantity);
+	const listing = listingOutputValue(output.listingUnitCopper, expectedOutputMicroQuantity);
 	if (strategy !== null) {
-		const unitCopper = strategy === 'instant_sell' ? output.instantSellUnitCopper : output.listingUnitCopper;
-		return unitCopper === null ? null : { strategy, unitCopper };
+		const selected = strategy === 'instant_sell' ? instant : listing;
+		return selected.status === 'ready' ? { ...selected, strategy } : selected;
 	}
+	if (output.instantSellUnitCopper !== null && instant.status === 'review') return instant;
 	const candidates = [
-		output.instantSellUnitCopper === null ? null : { strategy: 'instant_sell' as const, unitCopper: output.instantSellUnitCopper },
-		output.listingUnitCopper === null ? null : { strategy: 'listing' as const, unitCopper: output.listingUnitCopper },
+		instant.status === 'ready' ? { ...instant, strategy: 'instant_sell' as const } : null,
+		listing.status === 'ready' ? { ...listing, strategy: 'listing' as const } : null,
 	].filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-		.map((entry) => {
-			const valued = createTradingPostValueWithPolicy(entry.strategy, entry.unitCopper, 1);
-			return valued.status === 'ok' ? { ...entry, net: valued.value.netCopper } : null;
-		}).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-		.sort((left, right) => left.net - right.net || left.strategy.localeCompare(right.strategy));
-	return candidates[0] === undefined ? null : { strategy: candidates[0].strategy, unitCopper: candidates[0].unitCopper };
+		.sort((left, right) => left.grossOutputMicroCopper - right.grossOutputMicroCopper
+			|| left.strategy.localeCompare(right.strategy));
+	if (candidates[0] !== undefined) return candidates[0];
+	return (instant.status === 'review' && instant.reason === 'arithmetic_overflow')
+		|| (listing.status === 'review' && listing.reason === 'arithmetic_overflow')
+		? { status: 'review', reason: 'arithmetic_overflow' }
+		: { status: 'review', reason: 'output_price_missing' };
+}
+
+function instantSellOutputValue(
+	output: EquipmentSalvageEconomyInputV1['output'],
+	expectedOutputMicroQuantity: number,
+): { status: 'ready'; grossOutputMicroCopper: number }
+	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
+	if (output.instantSellUnitCopper === null) return { status: 'review', reason: 'output_price_missing' };
+	if (output.instantSellLevels === null) return { status: 'review', reason: 'output_price_missing' };
+	let remaining = BigInt(expectedOutputMicroQuantity);
+	let total = 0n;
+	for (const level of output.instantSellLevels) {
+		const value = createTradingPostValueWithPolicy('instant_sell', level.unitCopper, 1);
+		if (value.status !== 'ok') return { status: 'review', reason: 'arithmetic_overflow' };
+		const take = remaining < BigInt(level.quantity) * 1_000_000n
+			? remaining : BigInt(level.quantity) * 1_000_000n;
+		total += BigInt(value.value.netCopper) * take;
+		remaining -= take;
+		if (remaining === 0n) break;
+	}
+	if (remaining > 0n) return { status: 'review', reason: 'output_price_missing' };
+	const grossOutputMicroCopper = safeBigInt(total);
+	return grossOutputMicroCopper === null ? { status: 'review', reason: 'arithmetic_overflow' }
+		: { status: 'ready', grossOutputMicroCopper };
+}
+
+function listingOutputValue(
+	unitCopper: number | null,
+	expectedOutputMicroQuantity: number,
+): { status: 'ready'; grossOutputMicroCopper: number }
+	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
+	if (unitCopper === null) return { status: 'review', reason: 'output_price_missing' };
+	const value = createTradingPostValueWithPolicy('listing', unitCopper, 1);
+	if (value.status !== 'ok') return { status: 'review', reason: 'arithmetic_overflow' };
+	const grossOutputMicroCopper = safeBigInt(BigInt(value.value.netCopper) * BigInt(expectedOutputMicroQuantity));
+	return grossOutputMicroCopper === null ? { status: 'review', reason: 'arithmetic_overflow' }
+		: { status: 'ready', grossOutputMicroCopper };
 }
 
 function timeCostMicroCopper(time: EquipmentSalvagePreferencesV1['time'], quantity: number): number | null {
@@ -332,6 +378,22 @@ function kit(value: unknown): boolean {
 function quotes(value: unknown, expected: string[]): value is Record<string, number | null> {
 	return record(value) && exactKeys(value, expected)
 		&& expected.filter((key) => key !== 'itemId').every((key) => value[key] === null || positive(value[key]));
+}
+
+function salvageOutput(value: unknown): value is EquipmentSalvageEconomyInputV1['output'] {
+	if (!record(value) || !exactKeys(value, [
+		'itemId', 'instantSellUnitCopper', 'instantSellLevels', 'listingUnitCopper',
+	]) || value.itemId !== ECTOPLASM_ITEM_ID
+		|| (value.instantSellUnitCopper !== null && !positive(value.instantSellUnitCopper))
+		|| (value.listingUnitCopper !== null && !positive(value.listingUnitCopper))
+		|| (value.instantSellLevels !== null && (!Array.isArray(value.instantSellLevels)
+			|| !value.instantSellLevels.every((level) => record(level) && exactKeys(level, ['unitCopper', 'quantity'])
+				&& positive(level.unitCopper) && positive(level.quantity))))) return false;
+	if (value.instantSellLevels === null) return true;
+	const levels = value.instantSellLevels as CommerceListingLevelV1[];
+	if (!levels.every((level, index) => index === 0 || levels[index - 1]!.unitCopper > level.unitCopper)) return false;
+	return levels.length === 0 ? value.instantSellUnitCopper === null
+		: value.instantSellUnitCopper === levels[0]!.unitCopper;
 }
 
 function record(value: unknown): value is Record<string, unknown> {

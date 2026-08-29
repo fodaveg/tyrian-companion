@@ -34,6 +34,7 @@ export function evaluateInventoryEquipmentEconomy(
 	if (item === undefined) return { status: 'review', reason: 'catalog_uncertain', ruleId: null };
 	const price = input.prices.items.find((entry) => entry.itemId === itemId);
 	const ectoplasm = context.prices?.items.find((entry) => entry.itemId === ECTOPLASM_ITEM_ID);
+	const ectoplasmDepth = context.marketDepth?.items.find((entry) => entry.itemId === ECTOPLASM_ITEM_ID);
 	const catalogEvidence = input.catalog.coverage.items[String(itemId)];
 	const catalogComplete = catalogEvidence?.status === 'resolved'
 		&& ['network', 'cache_fresh'].includes(catalogEvidence.source)
@@ -73,6 +74,8 @@ export function evaluateInventoryEquipmentEconomy(
 		output: {
 			itemId: ECTOPLASM_ITEM_ID,
 			instantSellUnitCopper: ectoplasm?.bid?.unitCopper ?? null,
+			instantSellLevels: ectoplasmDepth?.coverage === 'complete'
+				? structuredClone(ectoplasmDepth.buys) : null,
 			listingUnitCopper: ectoplasm?.ask?.unitCopper ?? null,
 		},
 		policy: context.policy,

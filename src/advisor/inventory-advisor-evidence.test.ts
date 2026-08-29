@@ -84,6 +84,9 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			missingItemIds: [],
 		});
 		expect(result.containerPrices?.items.map((item) => item.itemId)).toEqual(requested);
+		if (result.status !== 'complete' && result.status !== 'partial') throw new Error('Expected captured evidence.');
+		expect(result.marketDepth?.requestedItemIds).toEqual(requested);
+		expect(result.marketDepth?.items.every((item) => item.coverage === 'complete')).toBe(true);
 		await expect(serviceFor(snapshot, catalogFor(snapshot, 'en'), gateway).capture('en', [...requested].reverse()))
 			.resolves.toEqual({ status: 'invalid', evidence: null, containerPrices: null });
 	});

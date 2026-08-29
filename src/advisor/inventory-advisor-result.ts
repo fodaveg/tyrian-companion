@@ -451,7 +451,10 @@ function validMaterialStorageCapacity(value: NonNullable<InventoryAdvisorEngineI
 
 function isEquipmentSalvageContext(value: NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>): boolean {
 	return isEquipmentSalvagePolicy(value.policy) && isEquipmentSalvagePreferences(value.preferences)
-		&& (value.prices === null || isInventoryContainerPriceEvidence(value.prices));
+		&& (value.prices === null || isInventoryContainerPriceEvidence(value.prices))
+		&& (value.marketDepth === null || (isInventoryMarketDepthEvidence(value.marketDepth)
+			&& value.marketDepth.requestedItemIds.length === 1
+			&& value.marketDepth.requestedItemIds[0] === value.policy.outputItemId));
 }
 
 function allocationPositionIndex(ref: string): number {

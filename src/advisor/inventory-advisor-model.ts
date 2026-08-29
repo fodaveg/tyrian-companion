@@ -272,8 +272,20 @@ export interface InventoryRecommendationDecisionV1 {
 	ruleId: string | null;
 	safety: 'manual_only' | 'irreversible_review_only';
 	discardProof: InventoryDiscardProofV1 | null;
+	/** Source-bound proof required only for the built-in equipment salvage exception. */
+	salvageProof?: InventoryEquipmentSalvageProofV1;
 	/** Present only for a manual material deposit recommendation. */
 	materialStorage?: InventoryMaterialStorageDecisionContextV1;
+}
+
+export interface InventoryEquipmentSalvageProofV1 {
+	item: { rarity: 'Rare'; level: number };
+	policy: { id: string; version: 1; sha256: string };
+	rule: {
+		ruleId: 'rare-equipment-68-ecto-v1';
+		minimumLevel: 68;
+		expectedOutputMillionths: 900_000;
+	};
 }
 
 export interface InventoryMaterialStorageDecisionContextV1 {

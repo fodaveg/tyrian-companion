@@ -10,9 +10,13 @@ import type {
 	InventoryAdvisorEngineResultV1,
 	InventoryKnowledgePackV1,
 } from './inventory-advisor-classifier-model';
-import { isInventoryAdvisorInput, sha256InventoryRulePack } from './inventory-advisor-contract';
+import type { InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
+import { isInventoryAdvisorInput, isInventoryAdvisorReport, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
-import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
+import {
+	createInventoryRecommendationEnvelope,
+	isInventoryRecommendationEnvelope,
+} from '../economy/inventory-recommendation-envelope';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
 import { isInventoryContainerPriceEvidence } from './inventory-container-economy';
@@ -475,12 +479,67 @@ describe('H4.15 inventory advisor classifier', () => {
 		});
 		expect(result.report?.lines[0]?.decisions).toMatchObject([{
 			action: 'salvage', quantity: 2, ruleId: 'rare-equipment-68-ecto-v1', safety: 'manual_only',
+			salvageProof: {
+				item: { rarity: 'Rare', level: 80 },
+				policy: { id: EQUIPMENT_SALVAGE_POLICY_V1.id, version: 1 },
+				rule: { ruleId: 'rare-equipment-68-ecto-v1', minimumLevel: 68, expectedOutputMillionths: 900_000 },
+			},
 		}]);
 		expect(isInventoryAdvisorResultForInput(
 			result, input.input, input.knowledgePack, undefined, undefined, undefined, undefined, undefined,
 			input.equipmentSalvage,
 		)).toBe(true);
+
+		for (const mutate of [
+			(decision: InventoryRecommendationDecisionV1) => { delete decision.salvageProof; },
+			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.item.rarity = 'Exotic' as 'Rare';
+			},
+			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.item.level = 1;
+			},
+			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.policy.sha256 = '0'.repeat(64);
+			},
+		]) {
+			const hostile = structuredClone(result.report!);
+			mutate(hostile.lines[0]!.decisions[0]!);
+			expect(isInventoryAdvisorReport(hostile)).toBe(false);
+		}
+		const hostileEnvelope = structuredClone(result.envelope!);
+		delete hostileEnvelope.decisions[0]!.salvageProof;
+		expect(isInventoryRecommendationEnvelope(hostileEnvelope)).toBe(false);
 	});
+
+	it.each(['unstable', 'stable_owned_placement_changed'] as const)(
+		'withholds salvage for a %s snapshot without dropping independent market lines', (quality) => {
+			const input = equipmentSalvageFixture('Rare');
+			input.input.snapshot.quality = quality;
+			input.input.snapshot.passes = quality === 'unstable' ? 3 : 2;
+			input.input.snapshot.holdings.push({
+				kind: 'item', itemId: 11, quantity: 1, state: 'loose',
+				location: { source: 'shared_inventory', slot: 1 }, metadata: {},
+			});
+			input.input.snapshot.availableByItem['11'] = 1;
+			input.input.snapshot.ownedByItem['11'] = 1;
+			input.input.catalog.items['11'] = {
+				kind: 'item', id: 11, name: 'Market trophy', type: 'Trophy', rarity: 'Basic', level: 0,
+				vendorValue: 1, flags: [], gameTypes: [], restrictions: [],
+			};
+			input.input.catalog.coverage.items['11'] = { status: 'resolved', source: 'network' };
+			input.input.prices.requestedItemIds = [10, 11];
+			input.input.prices.items.push({
+				itemId: 11, whitelisted: true,
+				bid: { unitCopper: 20, quantity: 1 }, ask: { unitCopper: 30, quantity: 1 },
+			});
+			const result = classifyInventoryAdvisor(input);
+			expect(result.status).not.toBe('invalid');
+			expect(result.report?.lines.find((line) => line.itemId === 10)?.decisions)
+				.toMatchObject([{ action: 'review' }]);
+			expect(result.report?.lines.find((line) => line.itemId === 11)?.decisions)
+				.toMatchObject([{ action: 'list' }]);
+		},
+	);
 
 	it('keeps Exotic and uncertain/forbidden equipment in explicit review', () => {
 		const exotic = equipmentSalvageFixture('Exotic');
@@ -541,6 +600,12 @@ function equipmentSalvageFixture(rarity: 'Rare' | 'Exotic'): InventoryAdvisorEng
 	value.equipmentSalvage = {
 		policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
 		preferences: { version: 1, kit: null, saleStrategy: null, time: null },
+		marketDepth: {
+			version: 1, capturedAt: asOf, source: 'gw2-commerce-listings', requestedItemIds: [19_721],
+			status: 'complete', items: [{ itemId: 19_721, coverage: 'complete',
+				buys: [{ unitCopper: 1_000, quantity: 10_000 }],
+				sells: [{ unitCopper: 1_050, quantity: 10_000 }] }],
+		},
 		prices: {
 			version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', schemaVersion: PINNED_SCHEMA,
 			capturedAt: asOf, source: 'gw2-commerce-prices', requestedItemIds: [19_721], status: 'complete',

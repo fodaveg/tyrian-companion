@@ -489,6 +489,12 @@ function equipmentSalvageSource(rarity: 'Rare' | 'Exotic'): InventoryAdvisorEngi
 	value.equipmentSalvage = {
 		policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
 		preferences: { version: 1, kit: null, saleStrategy: null, time: null },
+		marketDepth: {
+			version: 1, capturedAt: asOf, source: 'gw2-commerce-listings', requestedItemIds: [19_721],
+			status: 'complete', items: [{ itemId: 19_721, coverage: 'complete',
+				buys: [{ unitCopper: 1_000, quantity: 10_000 }],
+				sells: [{ unitCopper: 1_050, quantity: 10_000 }] }],
+		},
 		prices: {
 			version: 1, accountId: 'account-1', snapshotId: 'snapshot-1', capturedAt: asOf,
 			source: 'gw2-commerce-prices', schemaVersion: PINNED_SCHEMA, requestedItemIds: [19_721],

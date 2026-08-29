@@ -10,6 +10,7 @@ import {
 import { isReservationGoal } from '../economy/reservation';
 import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
+import { EQUIPMENT_SALVAGE_POLICY_V1_SHA256 } from '../economy/equipment-salvage-economy';
 import {
 	INVENTORY_ADVISOR_POLICY_VERSION,
 	INVENTORY_ADVISOR_SCOPE,
@@ -285,6 +286,8 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 		if (!explanation || explanation.itemId !== decision.itemId || explanation.action !== decision.action
 			|| explanation.ruleId !== decision.ruleId) return false;
 		const rulePack = value.rulePack;
+		if (decision.ruleId === EQUIPMENT_SALVAGE_POLICY_V1.rules[0].ruleId
+			&& !isBuiltinEquipmentSalvageRule(decision)) return false;
 		if (decision.ruleId !== null && !rulePack.rules.some((rule) => isEnabledApplicableRule(rulePack, rule)
 			&& rule.ruleId === decision.ruleId && rule.itemId === decision.itemId && rule.action === decision.action)
 			&& !isBuiltinEquipmentSalvageRule(decision)) return false;
@@ -301,8 +304,8 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 }
 
 function isBuiltinEquipmentSalvageRule(decision: InventoryRecommendationDecisionV1): boolean {
-	return decision.action === 'salvage' && EQUIPMENT_SALVAGE_POLICY_V1.rules.some((rule) =>
-		rule.expectedOutputMillionths !== null && rule.ruleId === decision.ruleId);
+	return decision.action === 'salvage' && isEquipmentSalvageProof(decision.salvageProof)
+		&& decision.salvageProof.rule.ruleId === decision.ruleId;
 }
 
 export function sha256InventoryAdvisorReport(report: InventoryAdvisorReportV1): string {
@@ -412,7 +415,7 @@ function isManualMarketAction(action: InventoryRecommendationAction): boolean {
 function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 {
 	if (!record(value) || !optionalKeys(value, [
 		'action', 'itemId', 'quantity', 'allocations', 'explanationRef', 'ruleId', 'safety', 'discardProof',
-	], ['materialStorage']) || !ACTIONS.includes(value.action as InventoryRecommendationAction) || !positive(value.itemId)
+	], ['materialStorage', 'salvageProof']) || !ACTIONS.includes(value.action as InventoryRecommendationAction) || !positive(value.itemId)
 		|| !positive(value.quantity) || !Array.isArray(value.allocations) || value.allocations.length === 0
 		|| !value.allocations.every(isDecisionAllocation)
 		|| !strictlySorted(value.allocations, (left, right) => left.positionRef.localeCompare(right.positionRef))
@@ -420,9 +423,26 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 	const curated = ['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action));
 	if (value.action === 'deposit_material' ? !isMaterialStorageContext(value.materialStorage)
 		: value.materialStorage !== undefined) return false;
+	if (value.salvageProof !== undefined && (value.action !== 'salvage'
+		|| !isEquipmentSalvageProof(value.salvageProof))) return false;
 	return curated === (value.ruleId !== null) && (value.action === 'discard_candidate'
 		? value.safety === 'irreversible_review_only' && isDiscardProof(value.discardProof)
 		: value.safety === 'manual_only' && value.discardProof === null);
+}
+
+function isEquipmentSalvageProof(value: unknown): value is NonNullable<InventoryRecommendationDecisionV1['salvageProof']> {
+	if (!record(value) || !keys(value, ['item', 'policy', 'rule'])
+		|| !record(value.item) || !keys(value.item, ['rarity', 'level'])
+		|| value.item.rarity !== 'Rare' || !nonNegative(value.item.level) || value.item.level < 68
+		|| !record(value.policy) || !keys(value.policy, ['id', 'version', 'sha256'])
+		|| value.policy.id !== EQUIPMENT_SALVAGE_POLICY_V1.id || value.policy.version !== 1
+		|| value.policy.sha256 !== EQUIPMENT_SALVAGE_POLICY_V1_SHA256
+		|| !record(value.rule) || !keys(value.rule, [
+			'ruleId', 'minimumLevel', 'expectedOutputMillionths',
+		])) return false;
+	const rareRule = EQUIPMENT_SALVAGE_POLICY_V1.rules[0];
+	return value.rule.ruleId === rareRule.ruleId && value.rule.minimumLevel === rareRule.minimumLevel
+		&& value.rule.expectedOutputMillionths === rareRule.expectedOutputMillionths;
 }
 
 function isMaterialStorageContext(value: unknown): boolean {

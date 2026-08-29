@@ -6,6 +6,8 @@ import {
 	sha256InventoryAdvisorReport,
 } from '../advisor/inventory-advisor-contract';
 import { materialStorageDepositsFit } from './material-storage-deposit-validation';
+import { EQUIPMENT_SALVAGE_POLICY_V1 } from './models/equipment-salvage-policy';
+import { EQUIPMENT_SALVAGE_POLICY_V1_SHA256 } from './equipment-salvage-economy';
 
 export const INVENTORY_RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
@@ -80,7 +82,7 @@ function isInventoryRecommendationEnvelopeUnsafe(
 function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 {
 	if (!record(value) || !optionalKeys(value, [
 		'action', 'itemId', 'quantity', 'allocations', 'explanationRef', 'ruleId', 'safety', 'discardProof',
-	], ['materialStorage'])) return false;
+	], ['materialStorage', 'salvageProof'])) return false;
 	if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review', 'discard_candidate']
 		.includes(String(value.action)) || !positive(value.itemId) || !positive(value.quantity)
 		|| !Array.isArray(value.allocations) || value.allocations.length === 0
@@ -91,12 +93,29 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 		|| (value.ruleId !== null && !identifier(value.ruleId))) return false;
 	const curated = ['salvage', 'use', 'open', 'discard_candidate'].includes(String(value.action));
 	if (curated !== (value.ruleId !== null)) return false;
+	if (value.ruleId === EQUIPMENT_SALVAGE_POLICY_V1.rules[0].ruleId
+		&& !isEquipmentSalvageProof(value.salvageProof)) return false;
 	if (value.action === 'deposit_material' ? !isMaterialStorageContext(value.materialStorage)
 		: value.materialStorage !== undefined) return false;
+	if (value.salvageProof !== undefined && (value.action !== 'salvage'
+		|| !isEquipmentSalvageProof(value.salvageProof))) return false;
 	if (value.action === 'discard_candidate') {
 		return value.safety === 'irreversible_review_only' && isDiscardProof(value.discardProof);
 	}
 	return value.safety === 'manual_only' && value.discardProof === null;
+}
+
+function isEquipmentSalvageProof(value: unknown): boolean {
+	if (!record(value) || !keys(value, ['item', 'policy', 'rule'])
+		|| !record(value.item) || !keys(value.item, ['rarity', 'level'])
+		|| value.item.rarity !== 'Rare' || !nonNegative(value.item.level) || value.item.level < 68
+		|| !record(value.policy) || !keys(value.policy, ['id', 'version', 'sha256'])
+		|| value.policy.id !== EQUIPMENT_SALVAGE_POLICY_V1.id || value.policy.version !== 1
+		|| value.policy.sha256 !== EQUIPMENT_SALVAGE_POLICY_V1_SHA256
+		|| !record(value.rule) || !keys(value.rule, ['ruleId', 'minimumLevel', 'expectedOutputMillionths'])) return false;
+	const rareRule = EQUIPMENT_SALVAGE_POLICY_V1.rules[0];
+	return value.rule.ruleId === rareRule.ruleId && value.rule.minimumLevel === rareRule.minimumLevel
+		&& value.rule.expectedOutputMillionths === rareRule.expectedOutputMillionths;
 }
 
 function isMaterialStorageContext(value: unknown): boolean {

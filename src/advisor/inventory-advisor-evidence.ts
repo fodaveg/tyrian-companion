@@ -143,7 +143,10 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
 				Promise.all([
 					captureInventoryPrices(snapshot, this.publicGateway, this.now()),
-					captureInventoryMarketDepth(ids(snapshot.availableByItem), this.publicGateway, this.now(), this.rateLimit),
+					captureInventoryMarketDepth(
+						uniqueIds([...ids(snapshot.availableByItem), ...containerPriceItemIds]),
+						this.publicGateway, this.now(), this.rateLimit,
+					),
 				]).finally(reportCatalogOrPrice),
 				captureAccountContext(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
 				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
@@ -530,6 +533,7 @@ function normalizeSupplementalIds(values: readonly number[]): number[] | null {
 	return [...values];
 }
 function ids(values: Record<string, number>): number[] { return Object.entries(values).filter(([, quantity]) => quantity > 0).map(([id]) => Number(id)).sort(numberOrder); }
+function uniqueIds(values: readonly number[]): number[] { return [...new Set(values)].sort(numberOrder); }
 function chunks<T>(values: T[], size: number): T[][] { const result: T[][] = []; for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size)); return result; }
 function numberOrder(left: number, right: number): number { return left - right; }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }

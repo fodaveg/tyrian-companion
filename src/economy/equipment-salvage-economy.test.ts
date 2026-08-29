@@ -79,7 +79,8 @@ describe('equipment salvage economy', () => {
 		['unknown rarity', (input: EquipmentSalvageEconomyInputV1) => { input.item.rarity = 'FutureRarity'; }, 'item_rarity_uncertain'],
 		['uncertain prices', (input: EquipmentSalvageEconomyInputV1) => { input.priceCoverage = 'uncertain'; }, 'price_uncertain'],
 		['missing output quote', (input: EquipmentSalvageEconomyInputV1) => {
-			input.output.instantSellUnitCopper = null; input.output.listingUnitCopper = null;
+			input.output.instantSellUnitCopper = null; input.output.instantSellLevels = [];
+			input.output.listingUnitCopper = null;
 		}, 'output_price_missing'],
 		['Mystic stone opportunity cost', (input: EquipmentSalvageEconomyInputV1) => { input.preferences.kit = 'mystic'; }, 'mystic_stone_cost_unmodeled'],
 	] as const)('returns review for %s', (_label, mutate, reason) => {
@@ -107,6 +108,54 @@ describe('equipment salvage economy', () => {
 			status: 'review', reason: 'policy_invalid_or_stale',
 		});
 	});
+
+	it.each([
+		['a one-microcopper Master cost', (policy: EquipmentSalvageEconomyInputV1['policy']) => {
+			policy.kits[0]!.costPerUseMicroCopper = 1;
+		}],
+		['complete Mystic cost coverage', (policy: EquipmentSalvageEconomyInputV1['policy']) => {
+			policy.kits[1]!.costCoverage = 'complete';
+		}],
+		['a changed validity date', (policy: EquipmentSalvageEconomyInputV1['policy']) => {
+			policy.validUntil = '2027-02-26T00:00:00.000Z';
+		}],
+		['a changed source URL', (policy: EquipmentSalvageEconomyInputV1['policy']) => {
+			policy.sources[0]!.url = 'https://example.invalid/forged';
+		}],
+	] as const)('rejects an otherwise well-formed unauthorized policy with %s', (_label, mutate) => {
+		const policy = structuredClone(EQUIPMENT_SALVAGE_POLICY_V1);
+		mutate(policy);
+		expect(isEquipmentSalvagePolicy(policy)).toBe(false);
+		expect(evaluateEquipmentSalvageEconomy({ ...fixture(), policy })).toMatchObject({
+			status: 'review', reason: 'policy_invalid_or_stale',
+		});
+	});
+
+	it('consumes demonstrated ectoplasm bid depth instead of extrapolating the best bid', () => {
+		const input = fixture();
+		input.quantity = 3;
+		input.preferences.saleStrategy = 'instant_sell';
+		input.output.instantSellLevels = [
+			{ unitCopper: 1_000, quantity: 1 },
+			{ unitCopper: 900, quantity: 2 },
+		];
+		const result = evaluateEquipmentSalvageEconomy(input);
+		expect(result).toMatchObject({ status: 'ready', economics: {
+			outputStrategy: 'instant_sell', grossOutputMicroCopper: 2_150_500_000,
+		} });
+	});
+
+	it.each([
+		['partial', [{ unitCopper: 1_000, quantity: 1 }]],
+		['absent', null],
+	] as const)('withholds instant-sell salvage EV when ectoplasm depth is %s', (_label, levels) => {
+		const input = fixture();
+		input.preferences.saleStrategy = 'instant_sell';
+		input.output.instantSellLevels = levels === null ? null : levels.map((level) => ({ ...level }));
+		expect(evaluateEquipmentSalvageEconomy(input)).toMatchObject({
+			status: 'review', reason: 'output_price_missing',
+		});
+	});
 });
 
 function fixture(): EquipmentSalvageEconomyInputV1 {
@@ -118,7 +167,12 @@ function fixture(): EquipmentSalvageEconomyInputV1 {
 		catalogCoverage: 'complete',
 		priceCoverage: 'complete',
 		market: { instantSellUnitCopper: 800, listingUnitCopper: 800, vendorUnitCopper: 500 },
-		output: { itemId: 19_721, instantSellUnitCopper: 1_000, listingUnitCopper: 1_050 },
+		output: {
+			itemId: 19_721,
+			instantSellUnitCopper: 1_000,
+			instantSellLevels: [{ unitCopper: 1_000, quantity: 10_000 }],
+			listingUnitCopper: 1_050,
+		},
 		policy: structuredClone(EQUIPMENT_SALVAGE_POLICY_V1),
 		preferences: { version: 1, kit: null, saleStrategy: null, time: null },
 	};
