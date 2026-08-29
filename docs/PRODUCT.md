@@ -149,6 +149,12 @@ La versión `0.1.0` valida la base técnica:
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
 - H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H3.9 posee las preguntas y persistencia, mientras H2.7 sigue sin UI, red ni valoración.
+- H9.8 consulta hasta 90 días de historial personal del bazar dentro de la ventana exacta de la sesión
+  y solo prepara una propuesta en el modal H3.9. Cobertura incompleta no propone actividad y la
+  contaminación sigue requiriendo confirmación humana.
+- H9.14 agrega órdenes actuales por lado y objeto, sin IDs de transacción, y suprime únicamente la
+  acción económica coincidente cuando ese lado tiene cobertura completa. Cobertura ausente o parcial
+  permanece neutral.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 
@@ -157,7 +163,6 @@ La versión `0.1.0` valida la base técnica:
 - Sincronización periódica independiente del armado o panel/agregación del historial durable de sesiones finalizadas.
 - Cálculo agregado de patrimonio total; el inventario durable conserva únicamente el precio actual
   de venta instantánea de cada fila.
-- Consulta automática del historial personal del bazar; H3.9 usa por ahora declaración explícita.
 - Panel histórico agregado de precisión/recall; H3.10 conserva observaciones locales, pero todavía no calcula métricas de población ni sincroniza telemetría.
 - Escritura libre o automática de notas del vault; las notas de sesión, assets, historial e inventario
   solo cambian mediante sus operaciones explícitas y validadas.

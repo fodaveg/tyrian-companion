@@ -14,7 +14,7 @@ trátala como un secreto: contiene acceso a datos privados de la cuenta.
    | --- | --- | --- |
    | Solo comprobar conexión | `account` | Valida la clave y muestra la cuenta; no puede iniciar una sesión. |
    | Mínimo funcional v1 | `account`, `characters`, `inventories`, `builds` | Capturas estables, inventario principal, personaje y build activo para sesiones manuales/asistidas. |
-   | Recomendado para toda la beta actual | Los cuatro anteriores + `wallet`, `tradingpost`, `progression`, `unlocks` | Añade monedas, entregas del bazar y señales de logros/recetas/skins/minis para mejorar cobertura y revisión. |
+   | Recomendado para toda la beta actual | Los cuatro anteriores + `wallet`, `tradingpost`, `progression`, `unlocks` | Añade monedas, entregas, órdenes actuales e historial reciente del bazar, además de señales de logros/recetas/skins/minis para mejorar cobertura y revisión. |
 
    No hacen falta `guilds`, `pvp` ni `wvw`. ArenaNet no deja ampliar los permisos de una clave ya
    creada: para cambiar el perfil, crea otra y revoca la anterior.
@@ -37,13 +37,20 @@ endpoints está en [API:API key](https://wiki.guildwars2.com/wiki/API_key) y
 - `wallet`: monedas de la cuenta, usadas por la sincronización de cartera al vault (`Wallet.base`) y
   por la comparación de snapshots; sin él, la captura de cartera falla de forma explícita y esa
   superficie queda no disponible.
-- `tradingpost`: entregas pendientes y señal de acceso al bazar. Los precios públicos no usan clave.
+- `tradingpost`: entregas pendientes, órdenes actuales e historial reciente de compras y ventas. El
+  Asesor usa `/v2/commerce/transactions/current/buys` y `current/sells` para evitar una recomendación
+  que choque con una orden activa, únicamente cuando el lado correspondiente tiene cobertura
+  completa. El modal de revisión puede consultar `history/buys` y `history/sells` dentro de la
+  ventana exacta de la sesión, con un máximo de 90 días, y solo propone marcar actividad para que la
+  confirmes. Los precios públicos no usan clave.
 - `progression`: logros utilizados como evidencia opcional del Inventory Advisor.
 - `unlocks`: recetas, skins y minis como evidencia opcional del Inventory Advisor y de las alertas de Halloween. Halloween consulta `/v2/account/skins` y `/v2/account/minis` solo al estar activado; cada tipo se evalúa con cobertura independiente y nunca afirma que falte un desbloqueo en una dimensión ausente o fallida.
 
 Los cuatro permisos del perfil mínimo son necesarios para el flujo completo de sesión, aunque una
 mera comprobación de conexión acepte una clave con solo `account`. Los cuatro adicionales mejoran la
-cobertura, pero una ausencia nunca se rellena con suposiciones.
+cobertura, pero una ausencia nunca se rellena con suposiciones. Sin `tradingpost`, o con cobertura
+parcial, las órdenes no suprimen acciones y el historial no propone contaminación; la revisión
+manual sigue disponible.
 
 ## Revocar o rotar una clave
 

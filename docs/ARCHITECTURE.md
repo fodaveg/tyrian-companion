@@ -656,4 +656,3 @@ Antes de ampliar la vertical actual hay que decidir:
 - Qué formatos de nota adicionales, fuera del contrato H5.4 de sesión completa, puede escribir el plugin.
 - Cómo recuperar automáticamente cambios de roster/`404` durante una captura sin ocultar cobertura parcial.
 - Cómo coordinar un cooldown `429` global entre las peticiones paralelas de una captura.
-- Cómo incorporar en una fase futura el historial **personal** del Trading Post a H3.9 sin confundirlo con el histórico público local H9.1 ni convertirlo en actividad inferida.

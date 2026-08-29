@@ -2,6 +2,23 @@
 
 ## Vertical activa
 
+**H9.8/H9.14, evidencia personal del bazar: integrada en `main` mediante `3e84514`, `ed7f8b8` y el
+fix `f825621`.** H9.14 consulta las órdenes actuales de compra y venta durante el Refresh explícito
+del Asesor. Una orden de compra activa suprime únicamente la recomendación coincidente de vender al
+instante; una orden de venta activa suprime únicamente la recomendación de publicar. La supresión
+exige cobertura `complete` del lado correspondiente. Cobertura `missing`, `partial` o no disponible
+es neutral y no retira ninguna acción.
+
+H9.8 consulta como máximo 90 días de compras y ventas completadas dentro de la ventana exacta de la
+sesión. El resultado solo prepara una propuesta dentro del modal de revisión: David puede aplicarla,
+ignorarla o modificar las respuestas antes de guardar. La evidencia incompleta no propone actividad
+y nunca entra directamente en la clasificación. Los IDs crudos de transacción no salen de la
+captura, no hay persistencia del historial y ninguna ruta compra, vende, publica o cancela órdenes.
+
+La revisión final de `f825621` no encontró hallazgos. El gate completo quedó verde con 149 ficheros
+y 1.988 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma parte de
+la release `0.1.13` ni acredita QA visual o llamadas reales a la API desde Obsidian.
+
 **H9.10-H9.13, prioridades visibles del inventario: integradas en `main` mediante `06919f4` y
 `762d67f`.** H9.10 identifica el peso muerto retenido y lo pendiente sin clasificar, conserva las
 posiciones exactas que ocupan espacio y muestra sus unidades y huecos ocupados. El orden principal
@@ -452,7 +469,9 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 5. Cerrado por H6.13 (`abea4e1`): un personaje que devuelve `404` (`missing_character`) entre pasada base y de cierre se excluye de las dos proyecciones y el delta pasa a `limited` con el aviso `character_unobserved`, en vez de invalidar el delta entero de la cuenta. Un `500` (`unavailable`) sigue invalidando el delta entero. Decisión de producto pendiente de ratificar por David: si ese criterio del 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP; hoy queda etiquetado `#v1` sin que él lo haya decidido.
 6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. Queda pendiente el copy de superficie por razón en `failureLabel()` de `src/ui/companion-status-model.ts` para los fallos de inicio y fin de sesión, que hoy leen el mensaje genérico: la conexión sí muestra el enfriamiento mientras corre. Va con la QA visual de H6.9.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
-8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9. Ya tiene tarea en Lumbre: H9.8.
+8. ~~Consultar el historial TP para complementar la declaración manual H3.9.~~ Cerrado por H9.8
+   (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
+   completo de hasta 90 días, pero solo la confirmación humana modifica la revisión.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
 10. Instalar/actualizar `0.1.13` desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal

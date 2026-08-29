@@ -380,7 +380,7 @@ remain human QA even when the package and CI gates are green.
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
-session**, **Stop session**, **Arm assisted detection**, **Refresh inventory advisor**, or
+session**, **Stop session**, **Review session**, **Arm assisted detection**, **Refresh inventory advisor**, or
 **Preview inventory Vault sync**
 is explicitly selected. Loading the plugin or opening a non-inventory view reads only local recovery
 state and does not make network requests. The Inventory Advisor may load visible public item icons
@@ -397,11 +397,20 @@ without confirmation.
 At **Stop session**, the plugin sends only gained numeric item IDs to the official public
 `/v2/commerce/prices` endpoint; it does not attach the API key, account, character, or quantities.
 
+An explicit Inventory Advisor Refresh also reads current Trading Post buys and sells when the key
+allows it. Complete buy-side evidence suppresses only a conflicting sell-now action, and complete
+sell-side evidence suppresses only a conflicting listing action. Missing or partial coverage is
+neutral. Raw transaction IDs never leave capture, and the plugin never creates, changes, or cancels
+an order.
+
 The contamination review asks whether containers were opened, items were salvaged or consumed,
 crafting/conversion occurred, purchases or sales happened through the Trading Post or vendors,
 transfers occurred, or other account activity took place. A declared activity always produces a
-contaminated result. “Not sure” remains estimated and provisional. Trading Post history is not queried
-yet, so the user declaration is explicit rather than inferred.
+contaminated result. “Not sure” remains estimated and provisional. The review modal may query up to
+90 days of completed Trading Post history within the exact session window. Complete evidence can
+only propose purchase or sale answers; the user must apply or dismiss the proposal and may edit every
+answer before saving. Missing, partial, or invalid history remains neutral, raw transaction IDs are
+not retained, and the evidence never operates on the Trading Post.
 
 Detection-quality observations use a separate local IndexedDB database. The permitted set is the
 event/session/proposal identifiers, phase, outcome, mode, cause, boundary window, uncertainty,

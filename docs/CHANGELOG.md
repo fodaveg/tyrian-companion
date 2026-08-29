@@ -1,5 +1,22 @@
 # Changelog
 
+## H9.8/H9.14 - Evidencia personal del bazar
+
+- H9.14 captura las órdenes actuales de compra y venta durante el Refresh explícito del Asesor y las
+  agrega por lado y objeto sin conservar IDs de transacción. Una compra activa suprime solo la acción
+  coincidente de vender al instante y una venta activa suprime solo la acción de publicar.
+- La supresión exige cobertura `complete` del endpoint correspondiente. Permiso ausente, restricción
+  de URL, respuesta parcial o captura no disponible son neutrales y no eliminan recomendaciones.
+- H9.8 consulta compras y ventas completadas dentro de la ventana exacta de la sesión, acotada a 90
+  días. La evidencia completa prepara una propuesta en el modal de revisión; aplicarla, ignorarla y
+  editar las respuestas siguen bajo confirmación humana.
+- Los IDs crudos de transacción no salen de la captura, el historial no se persiste y ninguna ruta
+  opera sobre el bazar. La evidencia ausente, parcial o inválida no infiere contaminación.
+- Integrado en `main` mediante `3e84514`, `ed7f8b8` y el fix `f825621`. La revisión final no encontró
+  hallazgos y el gate completo quedó verde con 149 ficheros y 1.988 tests, además de seguridad,
+  contratos, build y paquete. No forma parte de `0.1.13` ni acredita QA visual o llamadas reales a
+  la API desde Obsidian.
+
 ## H9.10-H9.13 - Prioridades visibles del inventario
 
 - H9.10 distingue peso muerto retenido y posiciones pendientes sin clasificar, conserva la
