@@ -10,7 +10,7 @@ import type {
 	InventoryAdvisorEngineResultV1,
 	InventoryKnowledgePackV1,
 } from './inventory-advisor-classifier-model';
-import type { InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
+import type { InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
 import { isInventoryAdvisorInput, isInventoryAdvisorReport, sha256InventoryRulePack } from './inventory-advisor-contract';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
 import {
@@ -480,7 +480,8 @@ describe('H4.15 inventory advisor classifier', () => {
 		expect(result.report?.lines[0]?.decisions).toMatchObject([{
 			action: 'salvage', quantity: 2, ruleId: 'rare-equipment-68-ecto-v1', safety: 'manual_only',
 			salvageProof: {
-				item: { rarity: 'Rare', level: 80 },
+				item: { itemId: 10, rarity: 'Rare', level: 80 },
+				catalog: { snapshotId: 'snapshot-1', itemRef: '#/items/10' },
 				policy: { id: EQUIPMENT_SALVAGE_POLICY_V1.id, version: 1 },
 				rule: { ruleId: 'rare-equipment-68-ecto-v1', minimumLevel: 68, expectedOutputMillionths: 900_000 },
 			},
@@ -499,6 +500,15 @@ describe('H4.15 inventory advisor classifier', () => {
 				decision.salvageProof!.item.level = 1;
 			},
 			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.item.itemId = 11;
+			},
+			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.catalog.snapshotId = 'other-snapshot';
+			},
+			(decision: InventoryRecommendationDecisionV1) => {
+				decision.salvageProof!.catalog.itemRef = '#/items/11';
+			},
+			(decision: InventoryRecommendationDecisionV1) => {
 				decision.salvageProof!.policy.sha256 = '0'.repeat(64);
 			},
 		]) {
@@ -509,6 +519,23 @@ describe('H4.15 inventory advisor classifier', () => {
 		const hostileEnvelope = structuredClone(result.envelope!);
 		delete hostileEnvelope.decisions[0]!.salvageProof;
 		expect(isInventoryRecommendationEnvelope(hostileEnvelope)).toBe(false);
+
+		const transferred = transferSalvageReport(result.report!, 11);
+		expect(transferred.lines[0]!.decisions[0]).toMatchObject({
+			itemId: 11, salvageProof: { item: { itemId: 10, rarity: 'Rare', level: 80 } },
+		});
+		expect(isInventoryAdvisorReport(transferred)).toBe(false);
+
+		const catalogMismatch = structuredClone(result.report!);
+		catalogMismatch.lines[0]!.decisions[0]!.salvageProof!.item.level = 81;
+		expect(isInventoryAdvisorReport(catalogMismatch)).toBe(true);
+		const catalogMismatchEnvelope = createInventoryRecommendationEnvelope(catalogMismatch);
+		expect(catalogMismatchEnvelope).not.toBeNull();
+		expect(isInventoryAdvisorResultForInput(
+			{ status: 'ready', report: catalogMismatch, envelope: catalogMismatchEnvelope! },
+			input.input, input.knowledgePack, undefined, undefined, undefined, undefined, undefined,
+			input.equipmentSalvage,
+		)).toBe(false);
 	});
 
 	it.each(['unstable', 'stable_owned_placement_changed'] as const)(
@@ -558,6 +585,31 @@ describe('H4.15 inventory advisor classifier', () => {
 		});
 	});
 });
+
+function transferSalvageReport(report: InventoryAdvisorReportV1, itemId: number): InventoryAdvisorReportV1 {
+	const transferred = structuredClone(report);
+	const line = transferred.lines[0]!;
+	line.itemId = itemId;
+	line.name = 'Other Rare sword';
+	for (const position of line.positions) {
+		position.itemId = itemId;
+		position.ref = `#/positions/${itemId}/${position.holdingIndex}`;
+	}
+	for (const decision of line.decisions) {
+		decision.itemId = itemId;
+		decision.explanationRef = `#/explanations/${itemId}/0`;
+		for (const allocation of decision.allocations) {
+			allocation.positionRef = `#/positions/${itemId}/0`;
+		}
+	}
+	for (const reason of line.reasons) reason.itemId = itemId;
+	for (const reason of transferred.reasons) reason.itemId = itemId;
+	for (const explanation of transferred.explanations) {
+		explanation.itemId = itemId;
+		explanation.ref = `#/explanations/${itemId}/0`;
+	}
+	return transferred;
+}
 
 function rule(ruleId: string, status: 'approved' | 'revoked') {
 	return { ruleId, itemId: 10, action: 'use' as const, status, assertion: 'applicable' as const,

@@ -97,7 +97,13 @@ export function validDecisionAgainstInput(input: unknown, decision: unknown): bo
 		if (!isInventoryAdvisorInputUnsafe(input) || !isDecision(decision)) return false;
 		if (!['sell', 'list', 'vendor', 'salvage', 'use', 'open'].includes(decision.action)) return true;
 		const coverage = input.catalog.coverage.items[String(decision.itemId)];
-		return coverage?.status === 'resolved' && (coverage.source === 'network' || coverage.source === 'cache_fresh');
+		if (coverage?.status !== 'resolved' || (coverage.source !== 'network' && coverage.source !== 'cache_fresh')) return false;
+		if (decision.salvageProof === undefined) return decision.ruleId !== EQUIPMENT_SALVAGE_POLICY_V1.rules[0].ruleId;
+		const item = input.catalog.items[String(decision.itemId)];
+		return decision.action === 'salvage' && item !== undefined
+			&& equipmentSalvageProofMatchesDecision(decision, input.catalog.snapshotId)
+			&& decision.salvageProof.item.rarity === item.rarity
+			&& decision.salvageProof.item.level === item.level;
 	});
 }
 
@@ -287,10 +293,10 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 			|| explanation.ruleId !== decision.ruleId) return false;
 		const rulePack = value.rulePack;
 		if (decision.ruleId === EQUIPMENT_SALVAGE_POLICY_V1.rules[0].ruleId
-			&& !isBuiltinEquipmentSalvageRule(decision)) return false;
+			&& !isBuiltinEquipmentSalvageRule(decision, value.snapshotId)) return false;
 		if (decision.ruleId !== null && !rulePack.rules.some((rule) => isEnabledApplicableRule(rulePack, rule)
 			&& rule.ruleId === decision.ruleId && rule.itemId === decision.itemId && rule.action === decision.action)
-			&& !isBuiltinEquipmentSalvageRule(decision)) return false;
+			&& !isBuiltinEquipmentSalvageRule(decision, value.snapshotId)) return false;
 		if (decision.action === 'discard_candidate'
 			&& decision.discardProof?.rulePackSha256 !== value.rulePack.sha256) return false;
 	}
@@ -303,9 +309,10 @@ function isInventoryAdvisorReportUnsafe(value: unknown): value is InventoryAdvis
 	return jsonRoundTrip(value);
 }
 
-function isBuiltinEquipmentSalvageRule(decision: InventoryRecommendationDecisionV1): boolean {
+function isBuiltinEquipmentSalvageRule(decision: InventoryRecommendationDecisionV1, snapshotId: string): boolean {
 	return decision.action === 'salvage' && isEquipmentSalvageProof(decision.salvageProof)
-		&& decision.salvageProof.rule.ruleId === decision.ruleId;
+		&& decision.salvageProof.rule.ruleId === decision.ruleId
+		&& equipmentSalvageProofMatchesDecision(decision, snapshotId);
 }
 
 export function sha256InventoryAdvisorReport(report: InventoryAdvisorReportV1): string {
@@ -431,9 +438,12 @@ function isDecision(value: unknown): value is InventoryRecommendationDecisionV1 
 }
 
 function isEquipmentSalvageProof(value: unknown): value is NonNullable<InventoryRecommendationDecisionV1['salvageProof']> {
-	if (!record(value) || !keys(value, ['item', 'policy', 'rule'])
-		|| !record(value.item) || !keys(value.item, ['rarity', 'level'])
-		|| value.item.rarity !== 'Rare' || !nonNegative(value.item.level) || value.item.level < 68
+	if (!record(value) || !keys(value, ['item', 'catalog', 'policy', 'rule'])
+		|| !record(value.item) || !keys(value.item, ['itemId', 'rarity', 'level'])
+		|| !positive(value.item.itemId) || value.item.rarity !== 'Rare'
+		|| !nonNegative(value.item.level) || value.item.level < 68
+		|| !record(value.catalog) || !keys(value.catalog, ['snapshotId', 'itemRef'])
+		|| !text(value.catalog.snapshotId) || !internalRef(value.catalog.itemRef)
 		|| !record(value.policy) || !keys(value.policy, ['id', 'version', 'sha256'])
 		|| value.policy.id !== EQUIPMENT_SALVAGE_POLICY_V1.id || value.policy.version !== 1
 		|| value.policy.sha256 !== EQUIPMENT_SALVAGE_POLICY_V1_SHA256
@@ -443,6 +453,16 @@ function isEquipmentSalvageProof(value: unknown): value is NonNullable<Inventory
 	const rareRule = EQUIPMENT_SALVAGE_POLICY_V1.rules[0];
 	return value.rule.ruleId === rareRule.ruleId && value.rule.minimumLevel === rareRule.minimumLevel
 		&& value.rule.expectedOutputMillionths === rareRule.expectedOutputMillionths;
+}
+
+function equipmentSalvageProofMatchesDecision(
+	decision: InventoryRecommendationDecisionV1,
+	snapshotId: string,
+): decision is InventoryRecommendationDecisionV1 & { salvageProof: NonNullable<InventoryRecommendationDecisionV1['salvageProof']> } {
+	const proof = decision.salvageProof;
+	return isEquipmentSalvageProof(proof) && proof.item.itemId === decision.itemId
+		&& proof.catalog.snapshotId === snapshotId
+		&& proof.catalog.itemRef === `#/items/${decision.itemId}`;
 }
 
 function isMaterialStorageContext(value: unknown): boolean {

@@ -9,6 +9,7 @@ import {
 	isApprovedApplicableCapability,
 	isEnabledApplicableRule,
 	sha256InventoryAdvisorReport,
+	validDecisionAgainstInput as validPublicDecisionAgainstInput,
 } from './inventory-advisor-contract';
 import type {
 	InventoryAdvisorInputV1,
@@ -340,6 +341,7 @@ function validDecisionAgainstInput(
 	equipmentSalvage: InventoryAdvisorEngineInputV1['equipmentSalvage'],
 ): boolean {
 	if (decision.action === 'keep' || decision.action === 'review') return true;
+	if (!validPublicDecisionAgainstInput(input, decision)) return false;
 	const item = input.catalog.items[String(line.itemId)];
 	const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
 	const catalogCoverage = input.catalog.coverage.items[String(line.itemId)];

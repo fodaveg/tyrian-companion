@@ -279,7 +279,8 @@ export interface InventoryRecommendationDecisionV1 {
 }
 
 export interface InventoryEquipmentSalvageProofV1 {
-	item: { rarity: 'Rare'; level: number };
+	item: { itemId: number; rarity: 'Rare'; level: number };
+	catalog: { snapshotId: string; itemRef: string };
 	policy: { id: string; version: 1; sha256: string };
 	rule: {
 		ruleId: 'rare-equipment-68-ecto-v1';

@@ -294,7 +294,15 @@ function publicLine(
 		...(source.materialStorage === undefined ? {} : { materialStorage: structuredClone(source.materialStorage) }),
 		...(source.action !== 'salvage' || source.reason !== 'curated_salvage_economy'
 			|| equipmentSalvage === undefined ? {} : { salvageProof: {
-				item: { rarity: 'Rare' as const, level: input.catalog.items[String(source.itemId)]!.level },
+				item: {
+					itemId: source.itemId,
+					rarity: 'Rare' as const,
+					level: input.catalog.items[String(source.itemId)]!.level,
+				},
+				catalog: {
+					snapshotId: input.catalog.snapshotId,
+					itemRef: `#/items/${source.itemId}`,
+				},
 				policy: {
 					id: equipmentSalvage.policy.id,
 					version: equipmentSalvage.policy.version,
