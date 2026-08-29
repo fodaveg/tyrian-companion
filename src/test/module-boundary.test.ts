@@ -40,6 +40,14 @@ describe('module boundary specifier parser', () => {
 		]);
 	});
 
+	it('keeps import-equals and import-type literals with comments', () => {
+		const source = `
+			import fs = require(/* import-equals trivia */ 'node:fs');
+			type Stats = import(/* import-type trivia */ 'node:fs/promises').Stats;
+		`;
+		expect(moduleSpecifiers(source)).toEqual(['node:fs', 'node:fs/promises']);
+	});
+
 	it('ignores module-like text and computed specifiers', () => {
 		const source = `
 			const text = "import 'string-only'";
@@ -47,6 +55,8 @@ describe('module boundary specifier parser', () => {
 			const moduleName = 'computed-module';
 			void import(moduleName);
 			require(moduleName);
+			import computed = require(moduleName);
+			type Computed = import(moduleName).Stats;
 		`;
 		expect(moduleSpecifiers(source)).toEqual([]);
 	});

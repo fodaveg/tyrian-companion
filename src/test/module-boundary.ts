@@ -18,6 +18,10 @@ export function moduleSpecifiers(source: string): string[] {
 	const visit = (node: ts.Node): void => {
 		if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
 			record(node, node.moduleSpecifier);
+		} else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+			record(node, node.moduleReference.expression);
+		} else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+			record(node, node.argument.literal);
 		} else if (ts.isCallExpression(node)) {
 			if (node.expression.kind === ts.SyntaxKind.ImportKeyword
 				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
