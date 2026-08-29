@@ -2,6 +2,23 @@
 
 ## Vertical activa
 
+**H9.17/H9.18, capacidad y depósito manual de materiales: integradas en `main` mediante `d86c526`,
+`88d2322` y `eb54e02`.** Settings v9 añade una capacidad global opcional por material entre 250 y
+3.000, en pasos de 250, con migración cerrada. El valor `null` no inventa una ampliación: aplica el
+mínimo garantizado de 250 y conserva `minimum_guaranteed` como procedencia visible; un valor elegido
+se presenta como `configured`.
+
+`deposit_material` es una recomendación manual y sin efectos laterales. Solo consume posiciones
+`loose` de personaje o inventario compartido después de asignar reservas y excepciones. Exige
+snapshot estable, cobertura completa de materiales, pertenencia a una única categoría demostrada y
+catálogo completo y fresco. La cantidad agregada recomendada para cada objeto nunca supera
+`capacity - stored`; capacidad llena, cobertura incompleta, dato stale o pertenencia ambigua dejan la
+ruta sin recomendar.
+
+La revisión final de `eb54e02` no encontró hallazgos. El gate completo quedó verde con 149 ficheros
+y 1.999 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma parte de
+la release `0.1.13` ni acredita QA visual o ejecución dentro de Obsidian.
+
 **H9.8/H9.14, evidencia personal del bazar: integrada en `main` mediante `3e84514`, `ed7f8b8` y el
 fix `f825621`.** H9.14 consulta las órdenes actuales de compra y venta durante el Refresh explícito
 del Asesor. Una orden de compra activa suprime únicamente la recomendación coincidente de vender al

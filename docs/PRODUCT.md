@@ -155,6 +155,11 @@ La versión `0.1.0` valida la base técnica:
 - H9.14 agrega órdenes actuales por lado y objeto, sin IDs de transacción, y suprime únicamente la
   acción económica coincidente cuando ese lado tiene cobertura completa. Cobertura ausente o parcial
   permanece neutral.
+- H9.17 permite declarar una capacidad global por material entre 250 y 3.000, en pasos de 250. Sin
+  valor configurado aplica únicamente el mínimo garantizado de 250 y muestra esa procedencia.
+- H9.18 recomienda depositar manualmente solo material suelto de personaje o compartido, después de
+  reservas y excepciones y con cobertura y frescura completas. La suma nunca supera el hueco
+  demostrado y el plugin no ejecuta el depósito.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 

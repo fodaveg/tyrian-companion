@@ -1,5 +1,22 @@
 # Changelog
 
+## H9.17/H9.18 - Capacidad y depósito manual de materiales
+
+- H9.17 sube los ajustes a schema v9 y añade una capacidad global opcional por material entre 250 y
+  3.000, en pasos de 250. `null` usa el mínimo garantizado de 250 y la UI distingue la procedencia
+  `minimum_guaranteed` de una capacidad `configured`.
+- H9.18 añade `deposit_material` como recomendación manual sin efectos laterales. Solo usa posiciones
+  `loose` de personaje o inventario compartido después de proteger reservas y excepciones.
+- La ruta exige snapshot estable, materiales completos, pertenencia inequívoca a una categoría y
+  catálogo completo y fresco. Capacidad llena, cobertura parcial, dato stale o membresía ambigua no
+  producen recomendación.
+- Clasificador, reporte, envelope y guards validan en conjunto que la suma de depósitos de cada
+  objeto no supere `capacity - stored`; no existe executor ni operación sobre la cuenta.
+- Integrado en `main` mediante `d86c526`, `88d2322` y `eb54e02`. La revisión final no encontró
+  hallazgos y el gate completo quedó verde con 149 ficheros y 1.999 tests, además de seguridad,
+  contratos, build y paquete. No forma parte de `0.1.13` ni acredita QA visual o ejecución en
+  Obsidian.
+
 ## H9.8/H9.14 - Evidencia personal del bazar
 
 - H9.14 captura las órdenes actuales de compra y venta durante el Refresh explícito del Asesor y las

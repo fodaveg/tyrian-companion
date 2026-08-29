@@ -108,10 +108,16 @@ the basic inventory. **Sort by** reorders what you are actually looking at, each
 own subtotal, and items without a demonstrated price are counted apart instead of being added to the
 known value as if they were worth zero.
 
+Settings lets you declare the account-wide capacity of each material in steps of 250, from 250 to
+3,000. Leaving it unknown uses only the guaranteed minimum of 250 and labels that source explicitly.
+With stable, complete, and fresh material evidence, the advisor can recommend **Deposit material**
+for loose items in character bags or shared inventory after reservations and keep exceptions. The
+total recommendation never exceeds the demonstrated free capacity for that material.
+
 Coverage is deliberately conservative. A row can remain **Review** because prices, unlock evidence,
 binding, a curated rule, or an economic comparison is incomplete. `discard_review` is never an
-instruction to destroy an item, and the plugin has no sell, vendor, salvage, open, use, or destroy
-executor. Check every action in Guild Wars 2 yourself.
+instruction to destroy an item, and the plugin has no sell, vendor, salvage, open, use, deposit, or
+destroy executor. Check every action in Guild Wars 2 yourself.
 
 ### Durable inventory Bases
 

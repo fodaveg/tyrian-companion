@@ -601,6 +601,23 @@ La composición económica conserva byte por byte la explicación y decisión `l
 
 Settings v8 persiste el overlay vacío por defecto, ordenado y sin duplicados, con independencia del toggle y de los avisos Halloween. El default y sus colecciones quedan congelados en profundidad, y cada migración o instancia recibe su propia copia mutable. El editor ES/EN es un componente separado de diez filas: vacío elimina, `0` guarda cero y un valor inválido conserva el último guardado con error inline y foco; tras el guardado asíncrono restaura el foco a la misma fila. El runtime publica el overlay nuevo solo después de confirmar `saveData`: un rechazo deja intactos memoria y Refresh posteriores. Tras persistir, consulta dinámicamente el overlay nuevo y reclasifica la última captura fresca retenida por el Inventory Advisor sin red ni nueva captura, informando ese resultado de forma discriminada; si no existe captura en memoria o la reclasificación queda bloqueada, el mensaje indica que se aplicará en el siguiente Refresh explícito.
 
+## Capacidad y depósito de materiales H9.17/H9.18
+
+Settings v9 añade `materialStorageCapacity`, nullable y cerrado a múltiplos de 250 entre 250 y 3.000.
+La migración conserva `null`; la composición lo proyecta como `{quantity:250,
+source:'minimum_guaranteed'}` y una elección explícita como `configured`. El origen viaja en cada
+decisión y se muestra en la UI, por lo que el mínimo conservador nunca parece una capacidad conocida
+de la cuenta.
+
+H9.18 calcula `deposit_material` después de reservas y excepciones y solo sobre posiciones `loose`
+de `character` o `shared_inventory`. Requiere snapshot `stable`, cobertura de materiales `complete`,
+item y categoría resueltos desde red o caché fresca, catálogo dentro de TTL y pertenencia exacta a
+una categoría. `storedQuantity` procede exclusivamente de las posiciones de `materials`; el
+presupuesto por objeto es `max(0, capacity - storedQuantity)`. Un guard compartido por resultado,
+reporte y envelope exige que la suma de todas sus decisiones de depósito no exceda ese presupuesto.
+La acción conserva `manual_only`, `sideEffects:'none'` y `requiresUserAction:true`; no existe puerto
+ni adapter que deposite en la cuenta.
+
 ## Inventario durable en Vault
 
 `InventoryVaultCaptureService` reutiliza una `GuildWars2Operation` obtenida de `GuildWars2Client`, la
