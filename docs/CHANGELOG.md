@@ -1,5 +1,24 @@
 # Changelog
 
+## H11.6 - Valoración personal de resultados no líquidos de Halloween
+
+- Añadido un overlay manual separado del modelo y de sus hashes para valorar en cobre los diez
+  resultados explícitos no líquidos de la bolsa de Halloween. El cero es un valor conocido; una fila
+  vacía sigue siendo ausencia de valoración.
+- La resolución usa `BigInt`, distingue cobertura `none`, `partial` y `complete`, y falla cerrada ante
+  claves desconocidas o no elegibles, duplicados, campos extra y desbordamientos. El EV y la decisión
+  líquidos no cambian; una cobertura parcial solo presenta el límite inferior conocido y la decisión
+  personal requiere los diez valores.
+- Ajustes sube a schema v8 con migración cerrada, orden canónico, valores por defecto aislados y un
+  editor ES/EN para guardar o retirar cada valor. La escritura durable precede a la publicación del
+  nuevo overlay en memoria, por lo que un fallo de `saveData` conserva el último estado persistido.
+- Guardar intenta reclasificar la captura fresca del Asesor en memoria y sin red. El editor diferencia
+  `reclassified` de `next_refresh`, conserva el feedback por fila y restaura el foco después de cada
+  operación.
+- Integrado en `main` y `origin/main` mediante `17da38f`, con revisión independiente sin hallazgos y
+  `npm run check` verde con 147 ficheros y 1.961 tests, además de seguridad, contratos y build. No se
+  afirman valores introducidos por David, QA visual, publicación, release ni instalación.
+
 ## H11-B - Comparación de botín y aviso de precio de Halloween
 
 - H11.3 solo conserva una comparación desde un delta `session_final` cuya revisión terminó como

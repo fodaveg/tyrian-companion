@@ -2,6 +2,24 @@
 
 ## Vertical activa
 
+**H11.6, valoración personal de resultados no líquidos de Halloween: integrada en `main` y
+`origin/main` mediante `17da38f`, sin afirmar publicación, instalación ni QA visual.** Un overlay
+manual separado del modelo permite valorar en cobre los diez resultados explícitos que el EV líquido
+de la bolsa excluye. Ajustes sube a schema v8 con migración cerrada, valores por defecto aislados y un
+editor ES/EN que acepta el cero explícito, rechaza entradas inválidas y restaura el foco después de
+guardar o retirar un valor.
+
+La cobertura distingue `none`, `partial` y `complete`. El EV y la decisión líquidos permanecen
+intactos; una cobertura parcial solo expone el límite inferior conocido y la valoración personal no
+puede cambiar la recomendación hasta completar los diez valores. Claves ajenas, duplicados, campos
+extra y desbordamientos fallan cerrados.
+
+La persistencia publica el overlay nuevo al runtime únicamente después de que `saveData` termine. Si
+existe una captura fresca, el Asesor la reclasifica en memoria sin consultar la red; si no puede
+hacerlo, el editor informa `next_refresh`. El resultado `reclassified` confirma la reclasificación
+local. La revisión independiente no encontró hallazgos y `npm run check` quedó verde sobre `17da38f`
+con 147 ficheros y 1.961 tests, además de seguridad, contratos y build.
+
 **H11-B, comparación H11.3 y aviso de precio H11.5: candidato técnico apto en `5ce118b`
 de `codex/h11b-comparison-price-alerts`, pendiente de integrar y publicar.** H11.3 solo sella el
 delta `session_final` cuando la revisión termina como `finalized`; el resultado intermedio `reviewed`
