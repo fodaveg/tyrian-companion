@@ -42,6 +42,26 @@ describe('PriceHistoryRuntime', () => {
 		expect(scheduler.dispose).toHaveBeenCalledTimes(1);
 	});
 
+	it('applies configure changes interleaved with a deferred store open without abandoning activation', async () => {
+		const factory = new IDBFactory();
+		const opened = await IndexedDbPriceHistoryStore.open(factory);
+		const openReady = deferred<IndexedDbPriceHistoryStore>();
+		const open = vi.spyOn(IndexedDbPriceHistoryStore, 'open').mockImplementation(async () => await openReady.promise);
+		const scheduler = new FakeScheduler();
+		const runtime = createRuntime(factory, vi.fn(async (path: string) => response(path)), scheduler);
+		const activation = runtime.activate(ENABLED);
+		const configuration = runtime.configure({ ...ENABLED, intervalMinutes: 5, rawRetentionDays: 2, dailyRetentionDays: 42 });
+		expect(runtime.getState().status).toBe('loading');
+		expect(scheduler.start).not.toHaveBeenCalled();
+		openReady.resolve(opened);
+		await Promise.all([activation, configuration]);
+		expect(runtime.getState().status).toBe('collecting');
+		expect(scheduler.start).toHaveBeenCalledWith(300_000);
+		expect(scheduler.updateInterval).toHaveBeenCalledWith(300_000);
+		runtime.dispose();
+		open.mockRestore();
+	});
+
 	it('captures one current slot per poll and does not synthesize missed intervals', async () => {
 		const scheduler = new FakeScheduler();
 		const requestDetailed = vi.fn(async (path: string) => response(path));
@@ -134,13 +154,42 @@ describe('PriceHistoryRuntime', () => {
 		await firstLoad;
 		expect(runtime.getState()).toMatchObject({ selectedItemId: 2, selectedSide: 'ask', windowDays: 90 });
 		const delayedLoad = runtime.loadSeries(3, 'bid', 42);
+		expect(runtime.getState().selectedItemId).toBe(3);
 		runtime.dispose();
 		const changesAfterDispose = changed.mock.calls.length;
 		afterDispose.resolve([daily(3)]);
 		await delayedLoad;
-		expect(runtime.getState().selectedItemId).toBe(2);
+		expect(runtime.getState().selectedItemId).toBe(3);
 		expect(changed).toHaveBeenCalledTimes(changesAfterDispose);
 		read.mockRestore();
+	});
+
+	it('does not let a poll refresh of A supersede an explicit B selection during deferred compaction', async () => {
+		const scheduler = new FakeScheduler();
+		const runtime = createRuntime(new IDBFactory(), vi.fn(async (path: string) => response(path)), scheduler, () => 1_800_001);
+		await runtime.activate(ENABLED);
+		const compactionReady = deferred<Awaited<ReturnType<IndexedDbPriceHistoryStore['compactAndPrune']>>>();
+		const compact = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'compactAndPrune')
+			.mockImplementation(async () => await compactionReady.promise);
+		const seriesReady = deferred<PriceHistoryDailyV1[]>();
+		const read = vi.spyOn(IndexedDbPriceHistoryStore.prototype, 'readDaily')
+			.mockImplementation(async () => await seriesReady.promise);
+		const poll = scheduler.poll();
+		await vi.waitFor(() => expect(compact).toHaveBeenCalledOnce());
+		const selected = runtime.loadSeries(36_041, 'bid', 90);
+		expect(runtime.getState()).toMatchObject({ selectedItemId: 36_041, selectedSide: 'bid', windowDays: 90, status: 'loading' });
+		compactionReady.resolve({
+			dailyRecords: 0, prunedSnapshots: 0, prunedDaily: 0,
+			compactedDays: 1, peakSnapshotsPerDay: 1, peakSnapshotTuplesPerDay: 5,
+		});
+		await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+		expect(read.mock.calls.every(([, itemId]) => itemId === 36_041)).toBe(true);
+		seriesReady.resolve([daily(36_041)]);
+		await Promise.all([selected, poll]);
+		expect(runtime.getState()).toMatchObject({ selectedItemId: 36_041, selectedSide: 'bid', windowDays: 90 });
+		read.mockRestore();
+		compact.mockRestore();
+		runtime.dispose();
 	});
 });
 

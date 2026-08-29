@@ -75,11 +75,11 @@ export class PriceHistoryRuntime {
 		if (this.disposed) return Promise.reject(new Error('Price-history runtime is disposed.'));
 		this.settings = { ...settings };
 		if (!settings.enabled) { this.disable(); return Promise.resolve(); }
+		if (this.activation) return this.activation;
 		if (this.store !== null) {
 			this.scheduler.updateInterval(priceHistoryIntervalMs(settings.intervalMinutes));
 			return Promise.resolve();
 		}
-		if (this.activation) return this.activation;
 		const generation = ++this.generation;
 		this.seriesGeneration += 1;
 		this.setState({ status: 'loading' });
@@ -92,10 +92,23 @@ export class PriceHistoryRuntime {
 		const wasEnabled = this.settings.enabled;
 		this.settings = { ...settings };
 		if (!settings.enabled) { this.disable(); return; }
+		if (this.activation !== null) {
+			const activation = this.activation;
+			await activation;
+			if (this.disposed || !this.settings.enabled || this.store === null) return;
+			await this.configureActiveStore();
+			return;
+		}
 		if (!wasEnabled || this.store === null) { await this.activate(settings); return; }
+		await this.configureActiveStore();
+	}
+
+	private async configureActiveStore(): Promise<void> {
+		const store = this.store;
+		if (store === null) return;
+		const settings = { ...this.settings };
 		const generation = ++this.generation;
 		this.seriesGeneration += 1;
-		const store = this.store;
 		this.scheduler.updateInterval(priceHistoryIntervalMs(settings.intervalMinutes));
 		try {
 			await store.compactAndPrune(this.options.vaultId, this.now(), settings.rawRetentionDays, settings.dailyRetentionDays);
@@ -124,6 +137,18 @@ export class PriceHistoryRuntime {
 		if (store === null || !this.settings.enabled) return;
 		const generation = this.generation;
 		const seriesGeneration = ++this.seriesGeneration;
+		this.setState({ selectedItemId: itemId, selectedSide: side, windowDays, daily: [], status: 'loading', provisionalDayUtc: null });
+		await this.readSeries(store, generation, seriesGeneration, itemId, side, windowDays);
+	}
+
+	private async readSeries(
+		store: IndexedDbPriceHistoryStore,
+		generation: number,
+		seriesGeneration: number,
+		itemId: number,
+		side: PriceHistorySide,
+		windowDays: PriceHistoryWindowDays,
+	): Promise<void> {
 		const from = priceHistoryDayUtc(Math.max(0, this.now() - windowDays * DAY_MS));
 		try {
 			const daily = await store.readDaily(this.options.vaultId, itemId, from);
@@ -196,8 +221,15 @@ export class PriceHistoryRuntime {
 			lastSampleAtMs: result.snapshot.capturedAtMs,
 			provisionalDayUtc: priceHistoryDayUtc(result.snapshot.capturedAtMs),
 		});
-		if (this.state.selectedItemId !== null) await this.loadSeries(this.state.selectedItemId, this.state.selectedSide, this.state.windowDays);
+		await this.refreshSelectedSeries(store, generation);
 		return { kind: 'success' };
+	}
+
+	private async refreshSelectedSeries(store: IndexedDbPriceHistoryStore, generation: number): Promise<void> {
+		const { selectedItemId, selectedSide, windowDays } = this.state;
+		if (selectedItemId === null) return;
+		const seriesGeneration = ++this.seriesGeneration;
+		await this.readSeries(store, generation, seriesGeneration, selectedItemId, selectedSide, windowDays);
 	}
 
 	private projectScheduler(scheduler: Readonly<ApiPollSchedulerState>): void {

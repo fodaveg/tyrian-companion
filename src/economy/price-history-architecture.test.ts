@@ -52,12 +52,20 @@ describe('H9.1 price-history architecture boundary', () => {
 		expect(source('src/economy/price-history-store.ts')).not.toMatch(/MemoryPriceHistory|fallback/iu);
 	});
 
-	it('keeps compaction on the linear tuple aggregator without nested item scans or snapshot fan-out', () => {
+	it('keeps compaction linear and peak memory bounded to one UTC day', () => {
 		const store = source('src/economy/price-history-store.ts');
-		const compaction = store.slice(store.indexOf('\tcompactAndPrune('), store.indexOf('\n\tclose(): void'));
-		expect(compaction).toContain('buildPriceHistoryDailyAggregates(vaultId, raw)');
-		expect(compaction).not.toMatch(/\.find\s*\(|snapshots\s*:\s*\[\]/u);
-		expect(compaction).toContain('sameDaily(');
+		const compaction = store.slice(store.indexOf('\tasync compactAndPrune('), store.indexOf('\n\tprivate ensureIncrementalCompactionMarkers'));
+		const compactDay = store.slice(store.indexOf('\tprivate compactDirtyDay('), store.indexOf('\n\tprivate pruneSnapshotsBefore'));
+		const readDaily = store.slice(store.indexOf('\treadDaily('), store.indexOf('\n\n\t/** Compacts'));
+		expect(compaction).toContain('this.nextDirtyDay(vaultId)');
+		expect(compaction).toContain('this.pruneSnapshotsBefore(');
+		expect(compactDay).toContain("index('by-vault-captured').getAll(capturedRange(");
+		expect(compactDay).toContain("index('by-vault-day').getAll(IDBKeyRange.only(");
+		expect(compactDay).toContain('buildPriceHistoryDailyAggregates(vaultId, raw)');
+		expect(compactDay).toContain('sameDaily(');
+		expect(readDaily).toContain("'by-vault-item-day'");
+		expect(compaction + compactDay).not.toMatch(/keyRangeForVault|\.find\s*\(|snapshots\s*:\s*\[\]/u);
+		expect(store.slice(store.indexOf('\tprivate pruneSnapshotsBefore'), store.indexOf('\n\tclose(): void'))).toContain('.openCursor(range)');
 	});
 
 	it.each([

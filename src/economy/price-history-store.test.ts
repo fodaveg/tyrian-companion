@@ -113,6 +113,25 @@ describe('IndexedDbPriceHistoryStore', () => {
 		store.close();
 	});
 
+	it('bounds peak compaction memory to one UTC day across the maximum raw window and watch size', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('bounded-compaction'));
+		const firstDay = Date.parse('2026-07-30T12:00:00.000Z');
+		for (let day = 0; day <= 30; day += 1) {
+			const capturedAt = firstDay + day * 86_400_000;
+			const claim = await store.claimSlot('vault', capturedAt, `owner-${String(day)}`, capturedAt);
+			if (claim.status !== 'acquired') throw new Error('lease missing');
+			const itemCount = day === 15 ? 400 : 1;
+			await store.commitSlot(claim.lease, {
+				...snapshot('vault', capturedAt, capturedAt),
+				items: Array.from({ length: itemCount }, (_, index) => [index + 1, index, index + 1]),
+			});
+		}
+		const result = await store.compactAndPrune('vault', firstDay + 30 * 86_400_000, 30, 365);
+		expect(result).toMatchObject({ compactedDays: 31, peakSnapshotsPerDay: 1, peakSnapshotTuplesPerDay: 400 });
+		expect(await store.readDaily('vault', 400, '2026-01-01')).toHaveLength(1);
+		store.close();
+	});
+
 	it('fails closed for a future schema and corrupt rows', async () => {
 		const factory = new IDBFactory();
 		const futureName = databaseName('future');

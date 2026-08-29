@@ -137,7 +137,11 @@ items con cualquier lado nulo/incompleto y respuestas parciales se conservan de 
 presentes en el mismo snapshot.
 Versiones futuras, records corruptos, bloqueo y cuota fallan cerrados: esta base nunca cae a memoria.
 
-`compactAndPrune` calcula antes de podar los agregados UTC por item/día. Cada lado bid/ask guarda
+Cada commit marca como sucio su día UTC y `compactAndPrune` consume esos días de uno en uno antes de
+podar. La migración inicial recorre el store primario con cursor, valida un snapshot cada vez y marca
+el raw previo sin materializarlo completo; las lecturas de agregados se
+acotan al item/ventana seleccionado y la poda usa cursores. Así, ni los 30 días raw ni los 365 días
+diarios del vault se materializan juntos en memoria. Cada lado bid/ask guarda
 count, min, max, cierre temporal y `medianCopperX2`, que representa exactamente medianas con N par.
 Una sola pasada lineal por tuples e ids ausentes construye los acumuladores; la selección
 median-of-medians y el cierre no reescanean snapshots por item. Solo se escriben agregados nuevos o
@@ -147,8 +151,10 @@ ser sustituido después por una fracción del mismo día. La operación es idemp
 percentiles es puro, no rellena huecos y devuelve `insufficient_history` antes de 42 días observados;
 H9.1 no emite alertas, que pertenecen a H11.5.
 
-El panel vive entre sincronización y resultados, separado de `inventory-sync-panel-view.ts`. Solo un
-control explícito lee series locales. El SVG determinista usa `viewBox` y `width:100%`, rompe líneas en
+El panel vive entre sincronización y resultados, separado de `inventory-sync-panel-view.ts`. Una
+selección explícita fija de inmediato la intención y lee su serie local; tras una captura correcta el
+runtime refresca únicamente esa selección vigente. Abrir o renderizar la vista no abre IndexedDB ni
+lee series si el opt-in sigue desactivado. El SVG determinista usa `viewBox` y `width:100%`, rompe líneas en
 huecos y diferencia min/max, mediana y cierre mediante patrón además de color; `figure/figcaption` y
 marcadores circle/square mantienen visibles días únicos y segmentos aislados. Una tabla HTML plegable
 ofrece la representación equivalente. Los estados disabled/loading/no
