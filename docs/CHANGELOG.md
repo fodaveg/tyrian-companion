@@ -1,5 +1,16 @@
 # Changelog
 
+## Release beta 0.1.13
+
+- Publicada el 2026-08-29 la
+  [GitHub Release `0.1.13`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13) desde el
+  tag y commit `1fe6c4ca2e0b0713f7c71e27a6f24c8f425fa42a`.
+- BRAT dispone de `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP
+  reproducible tiene SHA-256
+  `133cb03e5b8bbcd694065360fce37620bf1bc8cfa208d69908d5c73e864ba9f2`.
+- La publicación hace instalable la beta, pero no acredita todavía instalación, actualización, QA
+  visual ni entrega real de avisos en Obsidian.
+
 ## H11.6 - Valoración personal de resultados no líquidos de Halloween
 
 - Añadido un overlay manual separado del modelo y de sus hashes para valorar en cobre los diez

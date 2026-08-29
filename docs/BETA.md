@@ -2,9 +2,12 @@
 
 ## Estado actual
 
-La automatización prepara candidatos verificables, pero **no existe todavía una release publicada ni
-un canal BRAT activo**. La instalación, primera carga y actualización dentro de Obsidian siguen
-pendientes de QA humana en Linux, macOS y Windows. Un artifact verde de CI no demuestra esos flujos.
+La beta pública actual es
+[`0.1.13`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13), tag y commit
+`1fe6c4ca2e0b0713f7c71e27a6f24c8f425fa42a`. La release adjunta `manifest.json`, `main.js` y
+`styles.css` como assets individuales, por lo que el canal BRAT está activo. La instalación, primera
+carga y actualización dentro de Obsidian siguen pendientes de QA humana en Linux, macOS y Windows.
+Una release publicada o un artifact verde de CI no demuestran esos flujos.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de
@@ -50,7 +53,7 @@ Referencias del contrato:
    ```sh
    node install-beta.mjs install \
      --vault "/ruta/a/una-bóveda-desechable" \
-     --archive "tyrian-companion-0.1.4.zip" \
+     --archive "tyrian-companion-0.1.13.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -94,14 +97,16 @@ señalado. Si el origen, hash, contenido o versión no coinciden, no se instala 
 usar una bóveda desechable; la bóveda canónica queda fuera de este procedimiento. El flag de cierre es
 una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
-## Activación futura de BRAT
+## Canal BRAT publicado
 
-BRAT solo se habilitará después de que el release owner cree una GitHub Release —opcionalmente marcada
-como prerelease— cuyo tag sea idéntico a `manifest.version` y adjunte como assets individuales
-`manifest.json`, `main.js` y `styles.css`. El ZIP puede adjuntarse además para instalación manual, pero
-no sustituye esos tres assets.
+La release pública `0.1.13` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
+adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
+usarse para instalación manual y su SHA-256 es
+`133cb03e5b8bbcd694065360fce37620bf1bc8cfa208d69908d5c73e864ba9f2`; no sustituye los tres assets
+que descarga BRAT.
 
-Antes de anunciar el canal se debe descargar de nuevo la release publicada, verificar su SHA y sus tres
-assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde una versión
-anterior. Hasta completar esa evidencia, la formulación correcta es «canal preparado; publicación,
-instalación y actualización pendientes».
+Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.13`. Antes de
+dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
+sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
+una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT
+publicado; instalación y actualización pendientes de QA humana».

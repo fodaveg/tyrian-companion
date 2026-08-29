@@ -1,9 +1,8 @@
 # Soporte y reporte seguro de errores
 
-Tyrian Companion todavía es una beta no publicada. El canal de soporte es el formulario **Bug
-report** del repositorio que indique el coordinador de la beta. Si ese repositorio no está disponible,
-envía al coordinador solo el mismo conjunto mínimo y redactado; no abras un canal alternativo con más
-datos.
+Tyrian Companion es una beta pública. El canal de soporte es el formulario **Bug report** del
+repositorio. Si el repositorio no está disponible, envía al coordinador solo el mismo conjunto mínimo
+y redactado; no abras un canal alternativo con más datos.
 
 ## Antes de informar
 
@@ -11,7 +10,7 @@ datos.
    del artifact probado.
 2. Anota la versión de Obsidian, el sistema y el entorno real: Linux + Steam/Proton, macOS +
    CrossOver, Windows u otro desktop.
-3. Indica el origen de instalación: artifact manual o build local. BRAT no está activo todavía.
+3. Indica el origen de instalación: BRAT, artifact manual o build local.
 4. Indica el modo de detección (`Off/manual`, asistido armado o asistido desarmado) y la fase visible
    de sesión (`idle`, `starting`, `active`, `stopping`, `provisional/review`, `complete` o
    `recovery/error`).

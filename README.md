@@ -21,18 +21,21 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.4` is an unpublished beta candidate. There is no active BRAT channel or GitHub Release yet.
-> Install only an artifact supplied for a named commit, and use a disposable vault until the manual
-> platform matrix is complete.
+> `0.1.13` is a public beta distributed through its GitHub Release and the active BRAT channel.
+> Installation, update, and runtime QA in Obsidian are still pending across the platform matrix, so
+> use a disposable vault while validating it.
 
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
-[Release identity](docs/IDENTITY.md). The repository remains private until the explicit publication
-gate; the current decision does not create a GitHub Release or activate BRAT.
+[Release identity](docs/IDENTITY.md). The repository and the
+[`0.1.13` beta release](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13) are public,
+and its three plugin assets are available to BRAT.
 
 ## Install a beta candidate
 
-Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha256` and
-`install-beta.mjs` files from the same named CI artifact.
+Requirements: desktop Obsidian `1.11.4` or newer. For BRAT, add
+`fodaveg/tyrian-companion`; BRAT installs the individual `manifest.json`, `main.js`, and `styles.css`
+assets from release `0.1.13`. For the guarded manual path, Node.js 22 and the ZIP, `.sha256`, and
+`install-beta.mjs` files must come from the same named CI artifact.
 
 1. Confirm the artifact belongs to the commit you intend to test. The checksum proves integrity, not
    who produced the artifact.
@@ -41,7 +44,7 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    ```sh
    node install-beta.mjs install \
      --vault "/path/to/disposable-vault" \
-     --archive "tyrian-companion-0.1.4.zip" \
+     --archive "tyrian-companion-0.1.13.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -61,7 +64,7 @@ Requirements: desktop Obsidian `1.11.4` or newer, Node.js 22, and the ZIP, `.sha
    a farming session also requires `characters`, `inventories`, and `builds`.
 6. Open the command palette and run **Open companion**. This opens the Companion view, not Settings.
 
-The full install, update, rollback, and future BRAT procedure is in the [beta guide](docs/BETA.md).
+The full BRAT, manual install, update, and rollback procedure is in the [beta guide](docs/BETA.md).
 
 ## First farming session
 

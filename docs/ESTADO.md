@@ -2,8 +2,16 @@
 
 ## Vertical activa
 
+**Release beta `0.1.13` publicada el 2026-08-29.** El tag y commit
+`1fe6c4ca2e0b0713f7c71e27a6f24c8f425fa42a` están disponibles en la
+[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13). BRAT puede
+instalarla porque la release adjunta `manifest.json`, `main.js` y `styles.css` como assets
+individuales. El ZIP reproducible tiene SHA-256
+`133cb03e5b8bbcd694065360fce37620bf1bc8cfa208d69908d5c73e864ba9f2`. La publicación no acredita
+todavía la instalación, actualización, QA visual ni entrega real de avisos dentro de Obsidian.
+
 **H11.6, valoración personal de resultados no líquidos de Halloween: integrada en `main` y
-`origin/main` mediante `17da38f`, sin afirmar publicación, instalación ni QA visual.** Un overlay
+`origin/main` mediante `17da38f` e incluida en `0.1.13`, sin afirmar instalación ni QA visual.** Un overlay
 manual separado del modelo permite valorar en cobre los diez resultados explícitos que el EV líquido
 de la bolsa excluye. Ajustes sube a schema v8 con migración cerrada, valores por defecto aislados y un
 editor ES/EN que acepta el cero explícito, rechaza entradas inválidas y restaura el foco después de
@@ -20,8 +28,8 @@ hacerlo, el editor informa `next_refresh`. El resultado `reclassified` confirma 
 local. La revisión independiente no encontró hallazgos y `npm run check` quedó verde sobre `17da38f`
 con 147 ficheros y 1.961 tests, además de seguridad, contratos y build.
 
-**H11-B, comparación H11.3 y aviso de precio H11.5: candidato técnico apto en `5ce118b`
-de `codex/h11b-comparison-price-alerts`, pendiente de integrar y publicar.** H11.3 solo sella el
+**H11-B, comparación H11.3 y aviso de precio H11.5: integrado en `main` e incluido en `0.1.13`.**
+H11.3 solo sella el
 delta `session_final` cuando la revisión termina como `finalized`; el resultado intermedio `reviewed`
 ya no puede sellar como final una revisión guardada cuya finalización falló. La elegibilidad exige
 sesión Halloween, delta comparable, certeza confirmada, `open=true`, todas las demás actividades
@@ -50,10 +58,10 @@ La revisión independiente declaró apto `5ce118b` y `npm run check` quedó verd
 1.912 tests, además de seguridad, paquete, contratos y build. H11.3 necesita acumular al menos 1.100
 bolsas desaparecidas netas antes de poder concluir desviaciones y H11.5 necesita 30 cierres UTC
 completos. Quedan pendientes la QA visual y de contraste en temas reales de Obsidian y la entrega
-live de `Notice`; no se afirma publicación, release ni instalación.
+live de `Notice`; la inclusión en `0.1.13` no acredita instalación ni esa entrega real.
 
-**H11-A, alertas de Halloween H11.1/H11.2/H11.4: candidato técnico apto en `c867488`, pendiente
-de integrar y publicar.** El runtime opt-in consume únicamente deltas positivos de sesiones
+**H11-A, alertas de Halloween H11.1/H11.2/H11.4: integrado en `main` e incluido en `0.1.13`.** El
+runtime opt-in consume únicamente deltas positivos de sesiones
 Halloween aceptadas y genera alertas revisables por valor, rareza, primera observación y desbloqueo
 de skin o mini. La rareza Rare+ solo alerta cuando existe ausencia de cotización demostrada o el
 objeto está vinculado. Un inbox/outbox durable deduplica cada objeto dentro del episodio; durante el
@@ -75,10 +83,11 @@ reciente, sin activarlo por su cuenta. Tanto `seen` como el inbox de IndexedDB s
 dispositivo y no se sincronizan entre instalaciones. La revisión independiente declaró apto
 `c867488` y `npm run check` quedó verde con 138 ficheros y 1.877 tests, además de seguridad, paquete,
 contratos y build. No se han verificado todavía el aspecto en temas reales de Obsidian, la entrega
-real de `Notice` ni las llamadas live a la API; no se afirma publicación, release ni instalación.
+real de `Notice` ni las llamadas live a la API; la inclusión en `0.1.13` no acredita esas pruebas ni
+la instalación.
 
-**H9.1, histórico local de precios: candidato técnico apto en `982d5f7`, pendiente de integrar y
-publicar.** El plugin muestrea la API oficial pública `/v2/commerce/prices`, sin clave ni
+**H9.1, histórico local de precios: integrado en `main` e incluido en `0.1.13`.** El plugin muestrea
+la API oficial pública `/v2/commerce/prices`, sin clave ni
 GW2Efficiency, y conserva en una IndexedDB dedicada snapshots compactos y agregados diarios UTC.
 Compacta antes de podar, aplica retenciones raw y diarias configurables mediante trabajo incremental
 acotado y calcula percentiles reproducibles sobre cierres observados, sin rellenar días ausentes.
@@ -91,8 +100,8 @@ seguridad, paquete, contratos y build. Este repo no dispone de harness Playwrigh
 manual el contraste en temas reales de Obsidian y la coordinación multiwindow sobre IndexedDB real;
 no se afirman como verificadas ni bloquean la integración técnica.
 
-**H10, pulido del Asesor de inventario: integrado en `main` y `origin/main` mediante `21285d1`, sin
-afirmar publicación ni instalación.** El flujo automático distingue los fallos de captura de los de
+**H10, pulido del Asesor de inventario: integrado en `main` y `origin/main` mediante `21285d1` e
+incluido en `0.1.13`, sin afirmar instalación.** El flujo automático distingue los fallos de captura de los de
 escritura, rechaza planes concurrentes distintos y revalida el estado antes de escribir o persistir.
 La vista añade **Analizar sin escribir**, extrae el panel de sincronización, comparte un único
 formateador de dinero y reduce la tabla a la información útil para jugar, con el detalle técnico
@@ -136,17 +145,18 @@ verificado que el contrato sigue mordiendo con una copia no revisada real. `tsco
 pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
 al build vía esbuild.
 
-**H7.4 está implementado técnicamente y H7.5 dispone de un canal manual guardado, sin publicación.** El release package parte de
-un build nuevo, contiene únicamente `manifest.json`, `main.js` y `styles.css`, valida versiones y tag,
-escanea los bytes staged y genera ZIP reproducible + SHA-256 con prueba causal. CI conserva permisos de
-solo lectura, recrea un staging enumerado y sube exactamente ZIP, checksum e instalador tras el gate.
+**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.13` mediante GitHub Release y BRAT.** El
+release package parte de un build nuevo, contiene únicamente `manifest.json`, `main.js` y
+`styles.css`, valida versiones y tag, escanea los bytes staged y genera ZIP reproducible + SHA-256
+con prueba causal. CI conserva permisos de solo lectura, recrea un staging enumerado y sube
+exactamente ZIP, checksum e instalador tras el gate.
 El instalador verifica de nuevo paquete e identidad, serializa instalaciones, revalida directorios y
 estado antes de operar, escribe solo los tres ficheros gestionados y revierte fallos bajo la misma
 autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
 en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
 y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
-ajeno. No se ha creado tag ni GitHub Release, BRAT no está
-activo y la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
+ajeno. El tag y la GitHub Release `0.1.13` publican los tres assets individuales requeridos por BRAT;
+la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
 soportadas.
 
 **H7.2, H7.3 y H7.6 están implementados técnicamente, sin afirmar QA humana.** El README conduce desde
@@ -158,12 +168,11 @@ issue form cerrado con versión, plataforma, origen, detección, fase y reproduc
 identidad, rutas, inventario/snapshots, IndexedDB y salida sin redactar. El contrato ejecutable y sus
 sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 
-**H7.1 fija la identidad de release, sin publicar.** El ID `tyrian-companion`, el nombre
+**H7.1 fija la identidad de la release publicada.** El ID `tyrian-companion`, el nombre
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio sigue privado: H7.9 debe repetir el censo, auditar el historial y autorizar
-explícitamente el cambio de visibilidad y la release.
+El repositorio y la release `0.1.13` son públicos desde el 2026-08-29.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -428,5 +437,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. Consultar en una fase posterior el historial TP para complementar la declaración manual H3.9. Ya tiene tarea en Lumbre: H9.8.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-10. Descargar el artifact del SHA integrado, verificar el checksum e instalar/actualizar el plugin en una bóveda desechable por plataforma; solo después podrá el release owner publicar la release y activar BRAT.
+10. Instalar/actualizar `0.1.13` desde BRAT en una bóveda desechable por plataforma, verificar que los
+    tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
+    BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
