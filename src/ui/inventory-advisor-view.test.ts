@@ -8,6 +8,7 @@ import {
 	formatInventoryAdvisorLocation,
 	groupInventoryAdvisorRows,
 	inventoryAdvisorCharacters,
+	inventoryAdvisorValueConcentration,
 	inventoryAdvisorViewLayout,
 	renderInventoryAdvisorView,
 	renderInventoryAdvisorViewFromPort,
@@ -381,6 +382,87 @@ describe('Inventory Advisor view', () => {
 		sortSelect.dispatch('change');
 		expect(find(mount.elements(), 'article').map((card) => walk(card).some((element) => element.textContent === 'Bajo valor')))
 			.toEqual([true, false]);
+	});
+
+	it('puts the rows that free the most occupied slots before high-gold rows in the default priority', () => {
+		const valuable = row({
+			id: '#/explanations/1/0', itemId: 1, name: 'Mucho oro', action: 'sell',
+			value: { status: 'available', route: 'instant_sell', copper: 1_000_000 },
+		});
+		const deadWeight = row({
+			id: '#/explanations/2/0', itemId: 2, name: 'Tres huecos', action: 'review', quantity: 30,
+			allocations: [
+				allocation('#/positions/2/0', 10), allocation('#/positions/2/1', 10), allocation('#/positions/2/2', 10),
+			],
+			burden: { kind: 'unclassified', quantity: 30, occupiedSlots: 3 },
+		});
+		const oneSlot = row({
+			id: '#/explanations/3/0', itemId: 3, name: 'Un hueco', action: 'keep', quantity: 250,
+			burden: { kind: 'retained', quantity: 250, occupiedSlots: 1 },
+		});
+
+		expect(sortInventoryAdvisorRows([valuable, oneSlot, deadWeight], 'value_desc', 'es')
+			.map((entry) => entry.itemId)).toEqual([2, 3, 1]);
+	});
+
+	it('shows value concentration in value-desc order against the existing visible total', () => {
+		const rows = [
+			row({ id: '#/explanations/1/0', itemId: 1, name: 'Top', action: 'sell',
+				value: { status: 'available', route: 'instant_sell', copper: 900 } }),
+			row({ id: '#/explanations/2/0', itemId: 2, name: 'Tail', action: 'sell',
+				value: { status: 'available', route: 'instant_sell', copper: 100 } }),
+		];
+		expect([...inventoryAdvisorValueConcentration(rows)]).toEqual([
+			['#/explanations/1/0', { shareBasisPoints: 9_000, cumulativeBasisPoints: 9_000 }],
+			['#/explanations/2/0', { shareBasisPoints: 1_000, cumulativeBasisPoints: 10_000 }],
+		]);
+		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
+		expect(text(mount.elements())).toContain('90% del valor conocido · 90% acumulado');
+		expect(text(mount.elements())).toContain('10% del valor conocido · 100% acumulado');
+	});
+
+	it('renders concrete protection, occupied burden, and only demonstrated sell-vs-list values in both locales', () => {
+		const model: InventoryAdvisorViewModel = {
+			...readyModel(),
+			groups: [{ key: 'market', rows: [row({
+				id: '#/explanations/1/0', itemId: 1, name: 'Comparable', action: 'list',
+				value: { status: 'available', route: 'listing', copper: 51 },
+				marketComparison: {
+					instantSellCopper: 34, listingCopper: 51,
+					differenceCopper: 17, differenceBasisPoints: 5_000,
+				},
+			})] }, { key: 'keep', rows: [row({
+				id: '#/explanations/2/0', itemId: 2, name: 'Reservado', action: 'keep',
+				protectionReasons: [{
+					kind: 'reservation_goal', id: 'goal', title: 'Legendaria', quantity: 4,
+					reason: 'achievement', basis: 'available', intendedUse: 'exchange',
+				}],
+			})] }, { key: 'review', rows: [row({
+				id: '#/explanations/3/0', itemId: 3, name: 'Pendiente', action: 'review',
+				burden: { kind: 'unclassified', quantity: 3, occupiedSlots: 1 },
+			})] }],
+		};
+		for (const locale of ['es', 'en'] as const) {
+			const mount = render(model, locale);
+			const contextOptions = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(-2);
+			for (const input of contextOptions) { input.checked = true; input.dispatch('change'); }
+			const allText = text(mount.elements());
+			if (locale === 'es') {
+				expect(allText).toContain('Reserva: Legendaria');
+				expect(allText).toContain('4 unidades · Logro · base Disponible · destino Canjear');
+				expect(allText).toContain('Pendiente sin clasificar');
+				expect(allText).toContain('1 huecos ocupados · 3 unidades');
+				expect(allText).toContain('Diferencia al publicar');
+				expect(allText).toContain('+0 oro · 0 plata · 17 cobre (+50%)');
+			} else {
+				expect(allText).toContain('Reservation: Legendaria');
+				expect(allText).toContain('4 units · Achievement · Available basis · intended for Exchange');
+				expect(allText).toContain('Pending classification');
+				expect(allText).toContain('1 occupied slots · 3 units');
+				expect(allText).toContain('Listing difference');
+				expect(allText).toContain('+0 gold · 0 silver · 17 copper (+50%)');
+			}
+		}
 	});
 
 	it('keeps three readable evidence states in normal mode and the exact axes in an advanced disclosure', () => {
@@ -938,7 +1020,8 @@ function row(overrides: Partial<InventoryAdvisorViewRow>): InventoryAdvisorViewR
 		id: '#/explanations/1/0', itemId, name: 'Object', icon: null, ownedQuantity: 5, availableQuantity: 3,
 		action: 'review', quantity: 3,
 		allocations: [allocation(`#/positions/${String(itemId)}/0`, 3)],
-		reasonCodes: ['rule_missing'], value: { status: 'unavailable', route: null },
+		reasonCodes: ['rule_missing'], protectionReasons: [], value: { status: 'unavailable', route: null },
+		marketComparison: null, burden: null,
 		coverage: coverage('complete'), irreversibleReviewOnly: false, discardProof: null,
 		...overrides,
 	};

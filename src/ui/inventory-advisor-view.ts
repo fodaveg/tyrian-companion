@@ -84,6 +84,11 @@ export interface InventoryAdvisorViewTotals {
 	readonly unpricedItems: number;
 }
 
+export interface InventoryAdvisorValueConcentration {
+	readonly shareBasisPoints: number;
+	readonly cumulativeBasisPoints: number;
+}
+
 /** Reserved option value for "every carried bag plus the shared inventory". */
 export const ALL_CHARACTERS = 'all';
 
@@ -156,6 +161,8 @@ export function sortInventoryAdvisorRows(
 ): InventoryAdvisorViewRow[] {
 	return [...rows].sort((left, right) => {
 		if (sort === 'value_desc') {
+			const burden = compareBurden(left, right);
+			if (burden !== 0) return burden;
 			const value = rowCopper(right) - rowCopper(left);
 			if (value !== 0) return value;
 		}
@@ -163,6 +170,44 @@ export function sortInventoryAdvisorRows(
 		return compareDisplayText(left.name, right.name, locale) || left.itemId - right.itemId
 			|| compareDisplayText(left.id, right.id, 'en');
 	});
+}
+
+function compareBurden(left: InventoryAdvisorViewRow, right: InventoryAdvisorViewRow): number {
+	if (left.burden === null && right.burden === null) return 0;
+	if (left.burden === null) return 1;
+	if (right.burden === null) return -1;
+	return right.burden.occupiedSlots - left.burden.occupiedSlots
+		|| right.burden.quantity - left.burden.quantity;
+}
+
+/** Calculates visible value concentration in the same descending order used by the queue. */
+export function inventoryAdvisorValueConcentration(
+	rows: readonly InventoryAdvisorViewRow[],
+): ReadonlyMap<string, InventoryAdvisorValueConcentration> {
+	const priced = rows.filter((row) => row.value.status === 'available');
+	const total = priced.reduce((sum, row) => row.value.status === 'available' ? safeCopperSum(sum, row.value.copper) : null, 0 as number | null);
+	if (total === null || total <= 0) return new Map();
+	const result = new Map<string, InventoryAdvisorValueConcentration>();
+	let cumulative = 0;
+	for (const row of sortInventoryAdvisorRows(priced, 'value_desc')) {
+		if (row.value.status !== 'available') continue;
+		cumulative += row.value.copper;
+		result.set(row.id, {
+			shareBasisPoints: copperRatioBasisPoints(row.value.copper, total),
+			cumulativeBasisPoints: copperRatioBasisPoints(cumulative, total),
+		});
+	}
+	return result;
+}
+
+function safeCopperSum(total: number | null, copper: number): number | null {
+	if (total === null) return null;
+	const next = total + copper;
+	return Number.isSafeInteger(next) ? next : null;
+}
+
+function copperRatioBasisPoints(copper: number, total: number): number {
+	return Number(BigInt(copper) * 10_000n / BigInt(total));
 }
 
 /**
@@ -650,8 +695,9 @@ function renderResults(
 		return content;
 	}
 	const groups = groupInventoryAdvisorRows(rows, groupBy);
-	content.append(renderTable(groups, groupBy, translator));
-	content.append(renderCards(groups, groupBy, translator));
+	const concentration = inventoryAdvisorValueConcentration(rows);
+	content.append(renderTable(groups, groupBy, translator, concentration));
+	content.append(renderCards(groups, groupBy, translator, concentration));
 	return content;
 }
 
@@ -720,6 +766,7 @@ function renderTable(
 	groups: readonly InventoryAdvisorViewGroup[],
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
+	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
 ): HTMLTableElement {
 	const table = createEl('table');
 	table.className = 'tyrian-inventory-advisor__table';
@@ -747,7 +794,7 @@ function renderTable(
 		groupCell.textContent = groupLabel(group.key, groupBy, translator);
 		groupRow.append(groupCell);
 		body.append(groupRow);
-		for (const row of group.rows) body.append(renderTableRow(row, translator));
+		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null));
 		body.append(renderSubtotalRow(group.rows, translator));
 		table.append(body);
 	}
@@ -769,7 +816,11 @@ function tableColumnClass(label: string): string {
 	].filter((entry) => entry.length > 0).join(' ');
 }
 
-function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): HTMLTableRowElement {
+function renderTableRow(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+	concentration: InventoryAdvisorValueConcentration | null,
+): HTMLTableRowElement {
 	const tableRow = createEl('tr');
 	const item = createEl('th');
 	item.scope = 'row';
@@ -778,7 +829,7 @@ function renderTableRow(row: InventoryAdvisorViewRow, translator: Translator): H
 	appendCell(tableRow, String(row.quantity), tableColumnClass('quantity'));
 	tableRow.append(decisionCell(row, translator));
 	appendCell(tableRow, unitValueLabel(row, translator), tableColumnClass('unitValue'));
-	appendCell(tableRow, valueLabel(row, translator), tableColumnClass('value'));
+	appendCell(tableRow, valueWithConcentrationLabel(row, concentration, translator), tableColumnClass('value'));
 	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
 	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
 	tableRow.append(evidenceCell(row.coverage, translator));
@@ -840,6 +891,8 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 	const explanation = createEl('p');
 	explanation.textContent = explanationLabel(row, translator);
 	cell.append(explanation);
+	const context = rowContextDetails(row, translator);
+	if (context !== null) cell.append(context);
 	const economy = containerEconomyDetails(row, translator);
 	if (economy !== null) cell.append(economy);
 	return cell;
@@ -849,6 +902,7 @@ function renderCards(
 	groups: readonly InventoryAdvisorViewGroup[],
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
+	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
 ): HTMLElement {
 	const cards = createDiv();
 	cards.className = 'tyrian-inventory-advisor__cards';
@@ -857,11 +911,12 @@ function renderCards(
 		groupHeading.textContent = groupLabel(group.key, groupBy, translator);
 		cards.append(groupHeading);
 		for (const row of group.rows) {
+			const rowConcentration = concentration.get(row.id) ?? null;
 			const article = createEl('article');
 			article.className = 'tyrian-inventory-advisor__card';
 			const recommendation = createEl('p');
 			recommendation.className = `tyrian-inventory-advisor__card-decision tyrian-inventory-advisor__badge--${row.action}`;
-			recommendation.textContent = `${decisionLabel(row, translator)} · ${valueLabel(row, translator)}`;
+			recommendation.textContent = `${decisionLabel(row, translator)} · ${valueWithConcentrationLabel(row, rowConcentration, translator)}`;
 			const heading = createEl('h4');
 			appendItemIdentity(heading, row);
 			article.append(recommendation, heading);
@@ -873,6 +928,8 @@ function renderCards(
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
 			addDefinition(list, translator.t('advisor.view.explanation'), explanationLabel(row, translator));
 			article.append(list);
+			const context = rowContextDetails(row, translator);
+			if (context !== null) article.append(context);
 			const advanced = advancedEvidenceDetails(row.coverage, translator);
 			if (advanced !== null) article.append(advanced);
 			const economy = containerEconomyDetails(row, translator);
@@ -935,6 +992,14 @@ function scopeRow(row: InventoryAdvisorViewRow, filters: InventoryAdvisorViewFil
 		...row,
 		quantity,
 		allocations: structuredClone(allocations),
+		protectionReasons: quantity === row.quantity ? structuredClone(row.protectionReasons) : [],
+		marketComparison: quantity === row.quantity && row.marketComparison !== null
+			? { ...row.marketComparison } : null,
+		burden: row.burden === null ? null : {
+			...row.burden,
+			quantity,
+			occupiedSlots: new Set(allocations.map((allocation) => allocation.positionRef)).size,
+		},
 		value: row.value.status === 'available' && row.quantity > 0
 			? { ...row.value, copper: Math.floor(row.value.copper * quantity / row.quantity) }
 			: { ...row.value },
@@ -1018,6 +1083,18 @@ function valueLabel(row: InventoryAdvisorViewRow, translator: Translator): strin
 		: priceOrFallback(null, row.value.status, translator);
 }
 
+function valueWithConcentrationLabel(
+	row: InventoryAdvisorViewRow,
+	concentration: InventoryAdvisorValueConcentration | null,
+	translator: Translator,
+): string {
+	const value = valueLabel(row, translator);
+	return concentration === null ? value : `${value} · ${translator.t('advisor.view.valueConcentration', {
+		share: formatBasisPoints(concentration.shareBasisPoints, translator),
+		cumulative: formatBasisPoints(concentration.cumulativeBasisPoints, translator),
+	})}`;
+}
+
 /** Derives the per-unit figure from the demonstrated net total; it never re-prices an item. */
 function unitValueLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
 	if (row.value.status !== 'available') return priceOrFallback(null, row.value.status, translator);
@@ -1065,6 +1142,72 @@ function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator):
 	return row.reasonCodes.length === 0
 		? translator.t('advisor.view.noExplanation')
 		: row.reasonCodes.map((code) => translator.t(`advisor.view.reason.${code}`)).join(' · ');
+}
+
+function rowContextDetails(row: InventoryAdvisorViewRow, translator: Translator): HTMLDListElement | null {
+	if (row.burden === null && row.protectionReasons.length === 0 && row.marketComparison === null) return null;
+	const list = createEl('dl');
+	list.className = 'tyrian-inventory-advisor__row-context';
+	if (row.burden !== null) addDefinition(
+		list,
+		translator.t(`advisor.view.burden.${row.burden.kind}`),
+		translator.t('advisor.view.burden.value', {
+			slots: row.burden.occupiedSlots,
+			quantity: row.burden.quantity,
+		}),
+	);
+	for (const reason of row.protectionReasons) {
+		if (reason.kind === 'reservation_goal') addDefinition(
+			list,
+			translator.t('advisor.view.protection.goal', { title: reason.title }),
+			translator.t('advisor.view.protection.goalValue', {
+				quantity: reason.quantity,
+				reason: translator.t(`advisor.preferences.reason.${reason.reason}`),
+				basis: translator.t(`advisor.preferences.basis.${reason.basis}`),
+				use: translator.t(`advisor.preferences.intendedUse.${reason.intendedUse}`),
+			}),
+		);
+		else addDefinition(
+			list,
+			translator.t('advisor.view.protection.exception'),
+			translator.t('advisor.view.protection.exceptionValue', {
+				quantity: reason.quantity,
+				reason: translator.t(`advisor.preferences.reason.${reason.reason}`),
+				basis: translator.t(`advisor.preferences.basis.${reason.basis}`),
+			}),
+		);
+	}
+	const comparison = row.marketComparison;
+	if (comparison !== null) {
+		addDefinition(list, translator.t('advisor.view.marketComparison.instant'),
+			priceOrFallback(comparison.instantSellCopper, 'unavailable', translator));
+		addDefinition(list, translator.t('advisor.view.marketComparison.listing'),
+			priceOrFallback(comparison.listingCopper, 'unavailable', translator));
+		addDefinition(list, translator.t('advisor.view.marketComparison.difference'),
+			comparison.differenceCopper === null ? translator.t('advisor.view.value.unavailable')
+				: translator.t('advisor.view.marketComparison.differenceValue', {
+					value: signedCopper(comparison.differenceCopper, translator),
+					percent: comparison.differenceBasisPoints === null
+						? translator.t('advisor.view.value.unavailable')
+						: signedBasisPoints(comparison.differenceBasisPoints, translator),
+				}));
+	}
+	return list;
+}
+
+function signedCopper(copper: number, translator: Translator): string {
+	const sign = copper > 0 ? '+' : copper < 0 ? '−' : '';
+	return `${sign}${formatInventoryAdvisorCopper(Math.abs(copper), translator)}`;
+}
+
+function signedBasisPoints(basisPoints: number, translator: Translator): string {
+	const sign = basisPoints > 0 ? '+' : basisPoints < 0 ? '−' : '';
+	return `${sign}${formatBasisPoints(Math.abs(basisPoints), translator)}%`;
+}
+
+function formatBasisPoints(basisPoints: number, translator: Translator): string {
+	return new Intl.NumberFormat(translator.locale, { maximumFractionDigits: 2 })
+		.format(basisPoints / 100);
 }
 
 /** H11.6 disclosure. It adds no statistical interval and never hides the liquid-only baseline. */

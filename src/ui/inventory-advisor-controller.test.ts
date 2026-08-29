@@ -339,10 +339,11 @@ function namedPresentation(name: string) {
 			id: `#/fixtures/${name}`, itemId: 10, name, icon: null, ownedQuantity: 1, availableQuantity: 1,
 			action: 'review' as const, quantity: 1,
 			allocations: [{ positionRef: '#/positions/10/0', quantity: 1, location: { source: 'bank' as const, slot: 0 } }],
-			reasonCodes: [], coverage: { snapshot: 'complete' as const, inventory: 'complete' as const,
+			reasonCodes: [], protectionReasons: [], coverage: { snapshot: 'complete' as const, inventory: 'complete' as const,
 				catalog: 'complete' as const, prices: 'complete' as const, reservations: 'complete' as const,
 				accountSignals: 'complete' as const, rules: 'complete' as const },
-			group: 'review' as const, value: { status: 'unavailable' as const, route: null }, irreversibleReviewOnly: false as const,
+			group: 'review' as const, value: { status: 'unavailable' as const, route: null }, marketComparison: null,
+			burden: null, irreversibleReviewOnly: false as const,
 			discardProof: null,
 		}] }],
 	};

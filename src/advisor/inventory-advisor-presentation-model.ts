@@ -37,6 +37,37 @@ export interface InventoryAdvisorPresentationAllocation {
 	location: ItemLocation;
 }
 
+export type InventoryAdvisorProtectionReason =
+	| {
+		kind: 'reservation_goal';
+		id: string;
+		title: string;
+		quantity: number;
+		reason: 'achievement' | 'purchase' | 'personal';
+		basis: 'owned' | 'available';
+		intendedUse: 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
+	}
+	| {
+		kind: 'keep_exception';
+		id: string;
+		quantity: number;
+		reason: 'user_keep' | 'build' | 'gift' | 'collection' | 'custom';
+		basis: 'owned' | 'available';
+	};
+
+export interface InventoryAdvisorMarketComparison {
+	instantSellCopper: number | null;
+	listingCopper: number | null;
+	differenceCopper: number | null;
+	differenceBasisPoints: number | null;
+}
+
+export interface InventoryAdvisorBurden {
+	kind: 'retained' | 'unclassified';
+	quantity: number;
+	occupiedSlots: number;
+}
+
 export interface InventoryAdvisorPresentationRow {
 	id: string;
 	itemId: number;
@@ -48,9 +79,12 @@ export interface InventoryAdvisorPresentationRow {
 	quantity: number;
 	allocations: InventoryAdvisorPresentationAllocation[];
 	reasonCodes: InventoryAdvisorReasonCode[];
+	protectionReasons: InventoryAdvisorProtectionReason[];
 	coverage: InventoryAdvisorCoverageV1;
 	group: InventoryAdvisorPresentationGroup;
 	value: InventoryAdvisorPresentationValue;
+	marketComparison: InventoryAdvisorMarketComparison | null;
+	burden: InventoryAdvisorBurden | null;
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryDiscardAllowlistProofV1 | null;
 	containerEconomy?: {

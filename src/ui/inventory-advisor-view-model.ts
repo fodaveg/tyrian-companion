@@ -14,7 +14,10 @@ export interface InventoryAdvisorViewRow {
 	quantity: number;
 	allocations: InventoryAdvisorPresentationRow['allocations'];
 	reasonCodes: InventoryAdvisorPresentationRow['reasonCodes'];
+	protectionReasons: InventoryAdvisorPresentationRow['protectionReasons'];
 	value: InventoryAdvisorPresentationRow['value'];
+	marketComparison: InventoryAdvisorPresentationRow['marketComparison'];
+	burden: InventoryAdvisorPresentationRow['burden'];
 	coverage: InventoryAdvisorPresentationRow['coverage'];
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryAdvisorPresentationRow['discardProof'];
@@ -60,7 +63,9 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 				id: row.id,
 				itemId: row.itemId, name: row.name, icon: row.icon, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
 				action: row.action, quantity: row.quantity, allocations: structuredClone(row.allocations),
-				reasonCodes: [...row.reasonCodes], value: { ...row.value }, coverage: { ...row.coverage },
+				reasonCodes: [...row.reasonCodes], protectionReasons: structuredClone(row.protectionReasons),
+				value: { ...row.value }, marketComparison: row.marketComparison === null ? null : { ...row.marketComparison },
+				burden: row.burden === null ? null : { ...row.burden }, coverage: { ...row.coverage },
 				irreversibleReviewOnly: row.irreversibleReviewOnly,
 				discardProof: row.discardProof === null ? null : structuredClone(row.discardProof),
 				containerEconomy: row.containerEconomy == null ? null : structuredClone(row.containerEconomy),

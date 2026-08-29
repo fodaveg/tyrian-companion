@@ -10,14 +10,18 @@ import type {
 	InventoryRecommendationDecisionV1,
 } from './inventory-advisor-model';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
+import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import {
 	INVENTORY_ADVISOR_PRESENTATION_VERSION,
 	type InventoryAdvisorPresentation,
 	type InventoryAdvisorPresentationAction,
+	type InventoryAdvisorBurden,
 	type InventoryAdvisorPresentationFilters,
 	type InventoryAdvisorPresentationGroup,
+	type InventoryAdvisorMarketComparison,
 	type InventoryAdvisorPresentationOptions,
+	type InventoryAdvisorProtectionReason,
 	type InventoryAdvisorPresentationRow,
 	type InventoryAdvisorPresentationValue,
 } from './inventory-advisor-presentation-model';
@@ -54,7 +58,16 @@ export function buildInventoryAdvisorPresentation(
 		const proofByRef = new Map(contextual ? source.result.proofs.map((proof) => [proof.explanationRef, proof]) : []);
 		const explanationByRef = new Map(result.report.explanations.map((entry) => [entry.ref, entry]));
 		const priceByItemId = new Map(source.input.prices.items.map((entry) => [entry.itemId, entry]));
-		const rows = result.report.lines.flatMap((line) => line.decisions.map((decision) => {
+		const balance = buildInventoryAdvisorReservationBalance(source.input.snapshot);
+		const reservationPlan = balance.status === 'ok'
+			? createReservationPlan({ goals: source.input.goals, balance: balance.balance }) : { status: 'invalid' as const };
+		if (reservationPlan.status !== 'ok') throw new Error('Reservation context is invalid.');
+		const reservationByItemId = new Map(reservationPlan.plan.assets
+			.filter((asset) => asset.key.startsWith('item:')).map((asset) => [asset.id, asset]));
+		const rows = result.report.lines.flatMap((line) => {
+			const comparisonByRef = marketComparisonsForLine(source.input, line);
+			const exceptionReasons = appliedKeepExceptions(source.input, line);
+			return line.decisions.map((decision) => {
 			const presentationAction = decision.action === 'discard_candidate' ? 'discard_review' : decision.action;
 			if (!isPresentationAction(presentationAction)) throw new Error('Unsupported presentation action.');
 			const reasonCodes = explanationByRef.get(decision.explanationRef)?.reasonCodes;
@@ -77,14 +90,20 @@ export function buildInventoryAdvisorPresentation(
 				quantity: decision.quantity,
 				allocations,
 				reasonCodes: [...reasonCodes],
+				protectionReasons: protectionReasonsFor(
+					source.input, decision.action, reasonCodes, reservationByItemId.get(line.itemId), exceptionReasons,
+				),
 				coverage: { ...line.coverage },
 				group: groupFor(presentationAction),
 				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity),
+				marketComparison: comparisonByRef.get(decision.explanationRef) ?? null,
+				burden: burdenFor(line, decision, allocations, reasonCodes),
 				irreversibleReviewOnly: presentationAction === 'discard_review',
 				discardProof: discardProof === null ? null : structuredClone(discardProof),
 				containerEconomy: containerEconomyFor(source, line, decision),
 			} satisfies InventoryAdvisorPresentationRow;
-		}));
+			});
+		});
 		const filtered = rows.filter((row) => matchesFilters(row, options.filters, source.input.catalog.locale));
 		const ordered = [...filtered].sort((left, right) => compareRows(
 			left, right, options.sort ?? 'value_desc', source.input.catalog.locale,
@@ -107,6 +126,148 @@ export function buildInventoryAdvisorPresentation(
 				: { status: 'unavailable' },
 		};
 	} catch { return invalidInventoryAdvisorPresentation(); }
+}
+
+function protectionReasonsFor(
+	input: InventoryAdvisorInputV1,
+	action: InventoryRecommendationDecisionV1['action'],
+	reasonCodes: readonly InventoryAdvisorReasonCode[],
+	reservation: {
+		allocations: Array<{
+			goalId: string;
+			protectedAvailable: number;
+			reason: 'achievement' | 'purchase' | 'personal';
+			basis: 'owned' | 'available';
+			intendedUse: 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
+		}>;
+	} | undefined,
+	exceptions: readonly InventoryAdvisorProtectionReason[],
+): InventoryAdvisorProtectionReason[] {
+	if (action !== 'keep') return [];
+	if (reasonCodes.includes('reserved_for_goal')) {
+		return (reservation?.allocations ?? []).flatMap((allocation) => {
+			if (allocation.protectedAvailable <= 0) return [];
+			const goal = input.goals.find((candidate) => candidate.goalId === allocation.goalId);
+			return goal === undefined ? [] : [{
+				kind: 'reservation_goal' as const,
+				id: goal.goalId,
+				title: goal.title,
+				quantity: allocation.protectedAvailable,
+				reason: allocation.reason,
+				basis: allocation.basis,
+				intendedUse: allocation.intendedUse,
+			}];
+		});
+	}
+	return reasonCodes.includes('user_keep_exception')
+		? exceptions.map((reason) => structuredClone(reason)) : [];
+}
+
+/** Replays the pure allocation order so a keep row can name only exceptions that protected units. */
+function appliedKeepExceptions(
+	input: InventoryAdvisorInputV1,
+	line: InventoryAdvisorLineV1,
+): InventoryAdvisorProtectionReason[] {
+	const remaining = new Map(line.positions.map((position) => [position.ref, position.quantity]));
+	let reserveLeft = line.reservedQuantity;
+	for (const position of line.positions.filter((candidate) => candidate.state === 'loose' || candidate.state === 'pending_claim')) {
+		const quantity = Math.min(reserveLeft, remaining.get(position.ref) ?? 0);
+		remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
+		reserveLeft -= quantity;
+	}
+	const reasons: InventoryAdvisorProtectionReason[] = [];
+	for (const exception of input.keepExceptions.filter((candidate) => candidate.status === 'active'
+		&& candidate.itemId === line.itemId)) {
+		let needed = exception.quantity.mode === 'all' ? Number.MAX_SAFE_INTEGER : exception.quantity.value;
+		let protectedQuantity = 0;
+		for (const position of line.positions) {
+			if (exception.basis === 'available' && position.state !== 'loose' && position.state !== 'pending_claim') continue;
+			const quantity = Math.min(needed, remaining.get(position.ref) ?? 0);
+			remaining.set(position.ref, (remaining.get(position.ref) ?? 0) - quantity);
+			needed -= quantity;
+			protectedQuantity += quantity;
+		}
+		if (protectedQuantity > 0) reasons.push({
+			kind: 'keep_exception', id: exception.exceptionId, quantity: protectedQuantity,
+			reason: exception.reason, basis: exception.basis,
+		});
+	}
+	return reasons;
+}
+
+function burdenFor(
+	line: InventoryAdvisorLineV1,
+	decision: InventoryRecommendationDecisionV1,
+	allocations: InventoryAdvisorPresentationRow['allocations'],
+	reasonCodes: readonly InventoryAdvisorReasonCode[],
+): InventoryAdvisorBurden | null {
+	const kind = decision.action === 'review' && line.unclassifiedQuantity >= decision.quantity
+		? 'unclassified'
+		: decision.action === 'keep' && line.retainedQuantity >= decision.quantity
+			&& !reasonCodes.includes('reserved_for_goal') && !reasonCodes.includes('user_keep_exception')
+			? 'retained' : null;
+	return kind === null ? null : {
+		kind,
+		quantity: decision.quantity,
+		occupiedSlots: new Set(allocations.map((allocation) => allocation.positionRef)).size,
+	};
+}
+
+/** Preserves both demonstrated market routes and consumes finite bid depth once across comparisons. */
+function marketComparisonsForLine(
+	input: InventoryAdvisorInputV1,
+	line: InventoryAdvisorLineV1,
+): ReadonlyMap<string, InventoryAdvisorMarketComparison> {
+	const result = new Map<string, InventoryAdvisorMarketComparison>();
+	const price = input.prices.items.find((candidate) => candidate.itemId === line.itemId);
+	let bidRemaining = price?.bid?.quantity ?? 0;
+	const ordered = line.decisions
+		.filter((decision) => decision.action === 'sell' || decision.action === 'list')
+		.sort((left, right) => explanationIndex(left.explanationRef) - explanationIndex(right.explanationRef));
+	for (const decision of ordered) {
+		const instantAvailable = decision.action === 'sell' || bidRemaining >= decision.quantity;
+		const instantSellCopper = instantAvailable && price?.bid !== null && price?.bid !== undefined
+			? tradingPostNet('instant_sell', price.bid.unitCopper, decision.quantity) : null;
+		if (instantAvailable) bidRemaining = Math.max(0, bidRemaining - decision.quantity);
+		const listingCopper = price?.ask === null || price?.ask === undefined
+			? null : tradingPostNet('listing', price.ask.unitCopper, decision.quantity);
+		const differenceCopper = instantSellCopper === null || listingCopper === null
+			? null : safeDifference(listingCopper, instantSellCopper);
+		const differenceBasisPoints = differenceCopper === null || instantSellCopper === null || instantSellCopper <= 0
+			? null : safeBasisPoints(differenceCopper, instantSellCopper);
+		result.set(decision.explanationRef, {
+			instantSellCopper,
+			listingCopper,
+			differenceCopper,
+			differenceBasisPoints,
+		});
+	}
+	return result;
+}
+
+function explanationIndex(ref: string): number {
+	const match = /\/(\d+)$/u.exec(ref);
+	return match === null ? Number.MAX_SAFE_INTEGER : Number(match[1]);
+}
+
+function tradingPostNet(
+	route: 'instant_sell' | 'listing',
+	unitCopper: number,
+	quantity: number,
+): number | null {
+	const value = createTradingPostValueWithPolicy(route, unitCopper, quantity);
+	return value.status === 'ok' ? value.value.netCopper : null;
+}
+
+function safeDifference(left: number, right: number): number | null {
+	const difference = left - right;
+	return Number.isSafeInteger(difference) ? difference : null;
+}
+
+function safeBasisPoints(difference: number, baseline: number): number | null {
+	const value = BigInt(difference) * 10_000n / BigInt(baseline);
+	return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER)
+		? Number(value) : null;
 }
 
 function containerEconomyFor(

@@ -101,6 +101,70 @@ describe('H5.11 inventory advisor presentation', () => {
 		expect(reservedRow?.reasonCodes).toEqual([]);
 	});
 
+	it('projects occupied inventory burden and the concrete protection configuration for H9.10 and H9.12', () => {
+		const reserved = source();
+		reserved.input.goals = [{
+			schemaVersion: 1, goalId: 'legendary-goal', title: 'Armadura legendaria', status: 'active',
+			priority: 100, reason: 'achievement',
+			requirements: [{ key: 'item:10', namespace: 'item', id: 10, targetQuantity: 1,
+				creditedQuantity: 0, basis: 'available', intendedUse: 'exchange' }],
+		}];
+		const reservedRow = project(reserved).groups.flatMap((group) => group.rows)
+			.find((row) => row.reasonCodes.includes('reserved_for_goal'));
+		expect(reservedRow?.protectionReasons).toEqual([{
+			kind: 'reservation_goal', id: 'legendary-goal', title: 'Armadura legendaria', quantity: 1,
+			reason: 'achievement', basis: 'available', intendedUse: 'exchange',
+		}]);
+		expect(reservedRow?.burden).toBeNull();
+
+		const excepted = source();
+		excepted.input.keepExceptions = [{
+			version: 1, exceptionId: 'gift-one', itemId: 10, status: 'active', basis: 'available',
+			quantity: { mode: 'minimum', value: 1 }, reason: 'gift',
+		}];
+		const exceptionRow = project(excepted).groups.flatMap((group) => group.rows)
+			.find((row) => row.reasonCodes.includes('user_keep_exception'));
+		expect(exceptionRow?.protectionReasons).toEqual([{
+			kind: 'keep_exception', id: 'gift-one', quantity: 1, reason: 'gift', basis: 'available',
+		}]);
+		expect(exceptionRow?.burden).toBeNull();
+
+		const retained = source();
+		retained.input.catalog.items['10'] = { ...retained.input.catalog.items['10']!, vendorValue: 0 };
+		retained.input.prices.items[0] = { itemId: 10, whitelisted: true, bid: null, ask: null };
+		const retainedRow = onlyRow(retained);
+		expect(retainedRow).toMatchObject({
+			action: 'keep', burden: { kind: 'retained', quantity: 2, occupiedSlots: 1 },
+		});
+	});
+
+	it('preserves both demonstrated market nets and withholds absent counterparts for H9.13', () => {
+		const comparable = source();
+		comparable.input.prices.items[0] = {
+			itemId: 10, whitelisted: true,
+			bid: { unitCopper: 20, quantity: 2 }, ask: { unitCopper: 30, quantity: 2 },
+		};
+		expect(onlyRow(comparable)).toMatchObject({
+			action: 'list',
+			marketComparison: {
+				instantSellCopper: 34, listingCopper: 51,
+				differenceCopper: 17, differenceBasisPoints: 5_000,
+			},
+		});
+
+		const askOnly = source();
+		askOnly.input.prices.items[0] = {
+			itemId: 10, whitelisted: true, bid: null, ask: { unitCopper: 30, quantity: 2 },
+		};
+		expect(onlyRow(askOnly)).toMatchObject({
+			action: 'list',
+			marketComparison: {
+				instantSellCopper: null, listingCopper: 51,
+				differenceCopper: null, differenceBasisPoints: null,
+			},
+		});
+	});
+
 	it('does not let filters hide limited safety state and uses the catalog locale for deterministic names', () => {
 		const limited = source();
 		limited.input.rulePack = {

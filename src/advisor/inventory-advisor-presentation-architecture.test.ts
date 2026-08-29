@@ -38,7 +38,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/advisor/inventory-advisor-presentation.ts', {
 		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
-			'./inventory-advisor-presentation-model', '../economy/item-liquidity', './inventory-container-economy'],
+			'./inventory-advisor-presentation-model', '../economy/item-liquidity', '../economy/reservation',
+			'./inventory-container-economy'],
 		portCalls: [],
 	}],
 	['src/advisor/inventory-advisor-workflow.ts', {
