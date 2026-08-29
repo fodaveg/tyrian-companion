@@ -75,21 +75,40 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(run).toHaveBeenCalledOnce();
 	});
 
-	it('wires Analyze without writing to the ordinary advisor refresh and never to the Vault sync', async () => {
+	it('keeps analysis busy over a retained ready model and prevents overlapping analysis or sync', async () => {
 		installDom();
-		const analyze = vi.fn(async () => undefined);
+		let finishAnalysis!: () => void;
+		const pending = new Promise<void>((resolve) => { finishAnalysis = resolve; });
+		const analyze = vi.fn(() => pending);
 		const run = vi.fn(async () => undefined);
 		const viewActions = actions(() => 'es', { state: { status: 'idle', lastRun: null }, analyze, run });
 		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await view.onOpen();
-		const button = find(view.contentEl as unknown as FakeElement, 'button')
+		const analysisButton = find(view.contentEl as unknown as FakeElement, 'button')
 			.find((candidate) => candidate.textContent === 'Analizar sin escribir');
-		if (!button) throw new Error('The analysis-only button was not mounted.');
-		button.dispatch('click');
-		await Promise.resolve();
+		const syncButton = find(view.contentEl as unknown as FakeElement, 'button')
+			.find((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario'));
+		if (!analysisButton || !syncButton) throw new Error('The inventory action buttons were not mounted.');
+		analysisButton.dispatch('click');
+		expect(analyze).toHaveBeenCalledOnce();
+		expect(analysisButton.textContent).toBe('Analizando…');
+		expect(analysisButton.disabled).toBe(true);
+		expect(syncButton.disabled).toBe(true);
+
+		// The fake DOM deliberately dispatches disabled controls, so these calls prove
+		// the ItemView guard itself prevents overlap instead of trusting the browser.
+		analysisButton.dispatch('click');
+		syncButton.dispatch('click');
 		await Promise.resolve();
 		expect(analyze).toHaveBeenCalledOnce();
 		expect(run).not.toHaveBeenCalled();
+
+		finishAnalysis();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(analysisButton.textContent).toBe('Analizar sin escribir');
+		expect(analysisButton.disabled).toBe(false);
+		expect(syncButton.disabled).toBe(false);
 	});
 
 	it('forwards confirm and cancel only from their own buttons while a destructive plan awaits confirmation', async () => {

@@ -34,6 +34,7 @@ export interface InventoryAdvisorViewActions {
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
 export class InventoryAdvisorItemView extends ItemView {
 	private preferencesBusy = false;
+	private analysisBusy = false;
 	private closed = false;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
 
@@ -59,8 +60,8 @@ export class InventoryAdvisorItemView extends ItemView {
 			: {
 				state: this.actions.getInventoryVaultSyncRunState(),
 				assetsInstalled: this.actions.hasManagedAssetsRoot?.() ?? false,
-				analysisBusy: model.status === 'loading',
-				onAnalyze: () => this.runInventorySyncAction(() => this.actions.refreshInventoryAdvisor!()),
+				analysisBusy: this.analysisBusy,
+				onAnalyze: () => this.runInventoryAnalysisAction(() => this.actions.refreshInventoryAdvisor!()),
 				onRun: () => this.runInventorySyncAction(() => this.actions.runInventoryVaultSync!()),
 				onConfirm: () => this.runInventorySyncAction(() => this.actions.confirmInventoryVaultSync!()),
 				onCancel: () => { this.actions.cancelInventoryVaultSync!(); this.render(); },
@@ -84,13 +85,24 @@ export class InventoryAdvisorItemView extends ItemView {
 	}
 
 	private async runInventorySyncAction(action: () => Promise<void>): Promise<void> {
-		if (this.closed) return;
+		if (this.closed || this.analysisBusy) return;
 		try {
 			const operation = action();
 			this.render();
 			await operation;
 		}
 		finally { this.render(); }
+	}
+
+	private async runInventoryAnalysisAction(action: () => Promise<void>): Promise<void> {
+		if (this.closed || this.analysisBusy) return;
+		this.analysisBusy = true;
+		this.render();
+		try { await action(); }
+		finally {
+			this.analysisBusy = false;
+			this.render();
+		}
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {

@@ -515,7 +515,8 @@ function mountInventoryAdvisorView(
 			const busy = sync.state.status === 'running';
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
 			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
-			syncButton.disabled = busy || sync.state.status === 'confirm' || sync.state.status === 'disabled';
+			syncButton.disabled = busy || sync.analysisBusy === true
+				|| sync.state.status === 'confirm' || sync.state.status === 'disabled';
 			syncAnalyze.hidden = sync.onAnalyze === undefined;
 			syncAnalyze.textContent = translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze');
 			syncAnalyze.setAttribute('aria-label', translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze'));
