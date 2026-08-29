@@ -2,6 +2,7 @@ import type { StorageDelta } from '../account/storage-delta-model';
 import { evaluateHalloweenItems } from './halloween-policy';
 import {
 	positiveObservedGains,
+	type HalloweenBackfillCandidate,
 	type HalloweenItemEvidence,
 	type HalloweenNoticeV1,
 	type HalloweenObservationSource,
@@ -30,6 +31,7 @@ export interface HalloweenRuntimeOptions {
 		learning: boolean;
 	}) => Promise<HalloweenItemEvidence[]>;
 	policy: () => HalloweenPolicy;
+	loadBackfill?: (accountRef: string) => Promise<readonly HalloweenBackfillCandidate[]>;
 	priceHistory?: { active(): boolean; observeItemIds(itemIds: readonly number[]): Promise<void> };
 	onNotice?: (notice: HalloweenNoticeV1) => void;
 	onStateChange?: () => void;
@@ -44,6 +46,7 @@ export class HalloweenRuntime {
 	private enabled = false;
 	private online = true;
 	private learning = true;
+	private backfillPartial = false;
 	private disposed = false;
 	private state: HalloweenRuntimeState = { status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null };
 
@@ -70,6 +73,7 @@ export class HalloweenRuntime {
 		this.store?.close();
 		this.store = null;
 		this.learning = true;
+		this.backfillPartial = false;
 		this.setState({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null });
 	}
 
@@ -88,7 +92,7 @@ export class HalloweenRuntime {
 		const accountRef = this.options.accountRef();
 		if (!this.enabled || store === null || accountRef === null || !this.online || input.delta.status === 'invalid') return null;
 		const gains = positiveObservedGains(input.delta.itemChanges);
-		if (gains.length === 0) { this.setState({ status: 'empty' }); return null; }
+		if (gains.length === 0) { this.setState({ status: this.backfillPartial ? 'partial' : 'empty' }); return null; }
 		const generation = this.generation;
 		const observedAt = input.delta.window?.to ?? new Date(this.now()).toISOString();
 		const observationId = `${input.source}:${input.delta.beforeSnapshotId ?? 'unknown'}:${input.delta.afterSnapshotId ?? 'unknown'}`;
@@ -109,22 +113,36 @@ export class HalloweenRuntime {
 			});
 			if (!this.owns(generation, store)) return null;
 			const items = evaluateHalloweenItems(evidence, this.options.policy());
-			const evidenceState: HalloweenRuntimeStatus | null = evidence.some(({ unlocks }) => unlocks.status === 'rate_limited')
-				? 'backoff' : evidence.some(({ unlocks }) => unlocks.status !== 'complete') ? 'partial' : null;
+			const evidenceState: HalloweenRuntimeStatus | null = evidence.some(({ unlocks, priceStatus }) =>
+				unlocks.status === 'rate_limited' || priceStatus === 'rate_limited')
+				? 'backoff' : evidence.some(({ unlocks, priceStatus }) => unlocks.status !== 'complete' ||
+					priceStatus === 'unavailable' || priceStatus === 'invalid') ? 'partial' : null;
 			this.learning = false;
-			if (items.length === 0) { this.setState({ status: evidenceState ?? 'empty', lastObservedAt: observedAt }); return null; }
+			if (items.length === 0) {
+				if (input.source === 'session_final') {
+					await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, null);
+					if (!this.owns(generation, store)) return null;
+					const notices = await store.readNotices(this.options.vaultId, accountRef);
+					if (!this.owns(generation, store)) return null;
+					this.projectNotices(notices, observedAt, evidenceState);
+				} else this.setState({ status: evidenceState ?? (this.backfillPartial ? 'partial' : 'empty'), lastObservedAt: observedAt });
+				return null;
+			}
 			const notice: HalloweenNoticeV1 = {
 				version: 1, vaultId: this.options.vaultId, accountRef,
-				noticeId: observationId, episodeId: input.episodeId, observedAt, source: input.source,
-				wording: 'observed_change', coverage: input.delta.status === 'comparable' ? 'complete' : 'partial',
+				noticeId: input.source === 'session_final' ? `${input.episodeId}:final` : observationId,
+				episodeId: input.episodeId, observedAt, source: input.source,
+				wording: 'observed_change', coverage: input.delta.status === 'comparable' && evidenceState === null ? 'complete' : 'partial',
 				items, acknowledgedAt: null,
 			};
-			const committed = await store.enqueueNotice(notice);
+			const committed = input.source === 'session_final'
+				? await store.replaceEpisodeNotice(this.options.vaultId, accountRef, input.episodeId, notice)
+				: await store.enqueueNotice(notice);
 			if (!this.owns(generation, store)) return null;
 			const notices = await store.readNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store)) return null;
-			this.projectNotices(notices, observedAt);
-			if (committed) this.options.onNotice?.(structuredClone(committed));
+			this.projectNotices(notices, observedAt, evidenceState);
+			if (committed && input.source !== 'session_final') this.options.onNotice?.(structuredClone(committed));
 			return committed;
 		} catch (error) {
 			if (this.owns(generation, store)) this.storeFailure(error);
@@ -164,6 +182,19 @@ export class HalloweenRuntime {
 			this.store = opened;
 			const accountRef = this.options.accountRef();
 			if (accountRef === null) { this.projectNotices([]); return; }
+			let learningCoverage = await opened.readLearningCoverage(this.options.vaultId, accountRef);
+			if (!this.owns(generation, opened)) return;
+			if (learningCoverage === null) {
+				const candidates = [...(await this.options.loadBackfill?.(accountRef) ?? [])]
+					.sort((left, right) => left.observedAt.localeCompare(right.observedAt) ||
+						left.observationId.localeCompare(right.observationId));
+				if (!this.owns(generation, opened)) return;
+				await opened.applyBackfill(this.options.vaultId, accountRef, candidates, new Date(this.now()).toISOString());
+				if (!this.owns(generation, opened)) return;
+				learningCoverage = candidates.some(({ coverage }) => coverage === 'partial') ? 'partial' : 'complete';
+			}
+			this.learning = false;
+			this.backfillPartial = learningCoverage === 'partial';
 			const notices = await opened.readNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, opened)) return;
 			this.projectNotices(notices);
@@ -177,10 +208,15 @@ export class HalloweenRuntime {
 		}
 	}
 
-	private projectNotices(notices: HalloweenNoticeV1[], lastObservedAt = this.state.lastObservedAt): void {
+	private projectNotices(
+		notices: HalloweenNoticeV1[],
+		lastObservedAt = this.state.lastObservedAt,
+		evidenceState: HalloweenRuntimeStatus | null = null,
+	): void {
 		const unreadCount = notices.filter(({ acknowledgedAt }) => acknowledgedAt === null).length;
 		this.setState({ notices, unreadCount, lastObservedAt,
-			status: unreadCount > 0 ? 'unread' : this.learning ? 'learning' : notices.length > 0 ? 'ready' : 'empty' });
+			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.learning ? 'learning' : this.backfillPartial ? 'partial' :
+				notices.length > 0 ? 'ready' : 'empty') });
 	}
 
 	private storeFailure(error: unknown): void {

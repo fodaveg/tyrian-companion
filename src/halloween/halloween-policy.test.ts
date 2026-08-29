@@ -6,7 +6,7 @@ import type { HalloweenItemEvidence } from './halloween-model';
 describe('Halloween alert policy', () => {
 	it('aggregates valuable, rare, first-seen, skin and mini reasons deterministically', () => {
 		const result = evaluateHalloweenItem(evidence({
-			quantity: 2, netUnitCopper: 10_000, bound: true, firstSeen: true, learning: false,
+			quantity: 2, netUnitCopper: 10_000, priceStatus: 'unavailable', bound: true, firstSeen: true, learning: false,
 			catalog: item('Rare', { skins: [4, 3], minipetId: 9 }),
 			unlocks: { status: 'complete', unlockedSkinIds: [3], unlockedMiniIds: [], retryAfterMs: null },
 		}));
@@ -31,6 +31,14 @@ describe('Halloween alert policy', () => {
 		}))).toBeNull();
 	});
 
+	it('alerts Rare+ only for a demonstrated no-quote state, never for unavailable or invalid prices', () => {
+		for (const priceStatus of ['unavailable', 'invalid', 'rate_limited'] as const) {
+			expect(evaluateHalloweenItem(evidence({ catalog: item('Rare'), priceStatus }))).toBeNull();
+		}
+		expect(evaluateHalloweenItem(evidence({ catalog: item('Rare'), priceStatus: 'no_quote' })))
+			.toMatchObject({ reasons: [{ code: 'rare_unpriced_or_bound' }] });
+	});
+
 	it('applies the threshold per unit and rejects unsafe copper values', () => {
 		expect(evaluateHalloweenItem(evidence({ quantity: 3, netUnitCopper: 9_999 }))).toBeNull();
 		expect(evaluateHalloweenItem(evidence({ netUnitCopper: Number.MAX_SAFE_INTEGER + 1 }))).toBeNull();
@@ -38,7 +46,7 @@ describe('Halloween alert policy', () => {
 });
 
 function evidence(patch: Partial<HalloweenItemEvidence>): HalloweenItemEvidence {
-	return { itemId: 1, quantity: 1, catalog: item('Basic'), netUnitCopper: null, bound: false,
+	return { itemId: 1, quantity: 1, catalog: item('Basic'), netUnitCopper: null, priceStatus: 'no_quote', bound: false,
 		firstSeen: false, learning: false,
 		unlocks: { status: 'complete', unlockedSkinIds: [], unlockedMiniIds: [], retryAfterMs: null }, ...patch };
 }

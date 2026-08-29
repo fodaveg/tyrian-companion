@@ -41,7 +41,7 @@ describe('Halloween evidence service', () => {
 			Array.from({ length: 200 }, (_, index) => index + 1), [201],
 		]);
 		expect(evidence[0]).toMatchObject({
-			itemId: 1, quantity: 2, netUnitCopper: 85, bound: false, firstSeen: true,
+			itemId: 1, quantity: 2, netUnitCopper: 85, priceStatus: 'quote', bound: false, firstSeen: true,
 			catalog: { details: { skins: [799, 800], minipetId: 700 } },
 			unlocks: { status: 'complete', unlockedSkinIds: [799], unlockedMiniIds: [700] },
 		});
@@ -56,7 +56,7 @@ describe('Halloween evidence service', () => {
 			gains: [{ itemId: 1, quantity: 3 }], firstSeenItemIds: [], learning: true,
 			scopes: ['unlocks'], locale: 'en',
 		})).resolves.toMatchObject([{
-			itemId: 1, quantity: 3, catalog: null, netUnitCopper: null, bound: false,
+			itemId: 1, quantity: 3, catalog: null, netUnitCopper: null, priceStatus: 'invalid', bound: false,
 		}]);
 	});
 
@@ -67,12 +67,55 @@ describe('Halloween evidence service', () => {
 			throw new HttpTransportError('http', 429, 4_000, 'limited');
 		} }, unlocks({ 'account/skins': [], 'account/minis': [] }, rateLimit), rateLimit);
 
-		await service.resolve({
+		const evidence = await service.resolve({
 			gains: [{ itemId: 1, quantity: 1 }], firstSeenItemIds: [], learning: false,
 			scopes: ['unlocks'], locale: 'en',
 		});
+		expect(evidence[0]?.priceStatus).toBe('rate_limited');
 		expect(rateLimit.status()).toMatchObject({ active: true, remainingMs: 4_000 });
 		now += 4_000;
+	});
+
+	it('distinguishes no quote, opt-out, invalid payload and offline coverage', async () => {
+		const gateway: PublicCatalogGateway = { requestDetailed: async (path) => {
+			if (path.startsWith('items?')) return response(idsFrom(path).map(itemPayload));
+			const ids = idsFrom(path);
+			if (ids.includes(4)) throw new HttpTransportError('network', null, null, 'offline');
+			return response([
+				{ id: 2, whitelisted: false, buys: { quantity: 1, unit_price: 50_000 }, sells: { quantity: 1, unit_price: 60_000 } },
+				{ id: 3, whitelisted: true, buys: { quantity: 1 }, sells: { quantity: 1, unit_price: 1 } },
+			]);
+		} };
+		const service = new HalloweenEvidenceService(gateway, unlocks({
+			'account/skins': [], 'account/minis': [],
+		}), new RateLimitCoordinator());
+		const first = await service.resolve({ gains: [1, 2, 3].map((itemId) => ({ itemId, quantity: 1 })),
+			firstSeenItemIds: [], learning: false, scopes: ['unlocks'], locale: 'en' });
+		expect(first.map(({ priceStatus }) => priceStatus)).toEqual(['no_quote', 'no_quote', 'invalid']);
+		expect(first[1]?.netUnitCopper).toBe(12); // vendor only; whitelisted=false TP bid is ignored
+		const offline = await service.resolve({ gains: [{ itemId: 4, quantity: 1 }], firstSeenItemIds: [],
+			learning: false, scopes: ['unlocks'], locale: 'en' });
+		expect(offline[0]?.priceStatus).toBe('unavailable');
+	});
+
+	it('does not turn an ambiguously malformed batch entry into demonstrated no-quote evidence', async () => {
+		const service = new HalloweenEvidenceService({ requestDetailed: async (path) => response(
+			path.startsWith('items?') ? [itemPayload(1)] : [{ id: '1', whitelisted: true }],
+		) }, unlocks({ 'account/skins': [], 'account/minis': [] }), new RateLimitCoordinator());
+		const evidence = await service.resolve({ gains: [{ itemId: 1, quantity: 1 }], firstSeenItemIds: [],
+			learning: false, scopes: ['unlocks'], locale: 'en' });
+		expect(evidence[0]?.priceStatus).toBe('invalid');
+	});
+
+	it('keeps an ask-only market as quote coverage without inventing an instant-sale value', async () => {
+		const service = new HalloweenEvidenceService({ requestDetailed: async (path) => response(path.startsWith('items?')
+			? [itemPayload(1)] : [{ id: 1, whitelisted: true, buys: { quantity: 0, unit_price: 0 },
+				sells: { quantity: 1, unit_price: 20_000 } }]) }, unlocks({
+			'account/skins': [], 'account/minis': [],
+		}), new RateLimitCoordinator());
+		const evidence = await service.resolve({ gains: [{ itemId: 1, quantity: 1 }], firstSeenItemIds: [],
+			learning: false, scopes: ['unlocks'], locale: 'en' });
+		expect(evidence[0]).toMatchObject({ priceStatus: 'quote', netUnitCopper: 12 });
 	});
 });
 

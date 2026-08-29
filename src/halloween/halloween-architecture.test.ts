@@ -44,4 +44,15 @@ describe('H11-A architecture and UI contract', () => {
 		expect(readFileSync('src/sessions/session-note-model.ts', 'utf8')).toContain('SESSION_NOTE_SCHEMA_VERSION = 3');
 		expect(readFileSync('src/sessions/session-note-renderer.ts', 'utf8')).toContain('tc_positive_item_deltas_json');
 	});
+
+	it('wires opt-in note backfill and accepted-session gating into production composition', () => {
+		const main = readFileSync('src/main.ts', 'utf8');
+		expect(main).toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
+		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
+		expect(main).toContain("`session:${session.sessionId}`");
+		expect(main).toContain("`session:${result.state.sessionId}`");
+		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 2');
+		expect(store).toContain("HALLOWEEN_META_STORE = 'meta-v1'");
+	});
 });

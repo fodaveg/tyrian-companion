@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import {
 	HALLOWEEN_EPISODE_STORE, HALLOWEEN_NOTICE_STORE, HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE,
+	HALLOWEEN_DB_VERSION, HALLOWEEN_META_STORE,
 	IndexedDbHalloweenStore,
 	halloweenStoreFailureFrom,
 } from './halloween-store';
@@ -18,8 +19,8 @@ describe('IndexedDbHalloweenStore', () => {
 		expect(await store.recordObservation(observation('one', [1, 2]))).toEqual({ status: 'duplicate', firstSeenItemIds: [1, 2] });
 		expect(await store.recordObservation(observation('two', [2, 3]))).toEqual({ status: 'recorded', firstSeenItemIds: [3] });
 		store.close();
-		const db = await openRaw(factory, name, 1);
-		for (const child of [HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE]) {
+		const db = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		for (const child of [HALLOWEEN_OBSERVATION_STORE, HALLOWEEN_SEEN_STORE, HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE, HALLOWEEN_META_STORE]) {
 			expect(db.objectStoreNames.contains(child)).toBe(true);
 		}
 		db.close();
@@ -53,16 +54,46 @@ describe('IndexedDbHalloweenStore', () => {
 		store.close();
 	});
 
+	it('replaces provisional episode evidence atomically at session final without a second notice', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('replace'));
+		await store.enqueueNotice(notice('poll-1', [1, 2]));
+		const final = { ...notice('final', [2]), source: 'session_final' as const,
+			items: [{ itemId: 2, quantity: 9, name: null, reasons: [{ code: 'first_seen' as const }] }] };
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toMatchObject({
+			items: [{ itemId: 2, quantity: 9 }],
+		});
+		expect(await store.readNotices('vault', 'account')).toEqual([final]);
+		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', final)).resolves.toEqual(final);
+		expect(await store.readNotices('vault', 'account')).toHaveLength(1);
+		store.close();
+	});
+
+	it('persists backfill completion and rebuilds the durable seen union idempotently', async () => {
+		const factory = new IDBFactory(); const name = dbName('backfill');
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		expect(await store.readLearningCoverage('vault', 'account')).toBeNull();
+		const candidates = [{ observationId: 'note:a', episodeId: 'note-session:a', observedAt: '2026-08-29T12:00:00.000Z',
+			coverage: 'complete' as const, gains: [{ itemId: 2, quantity: 3 }, { itemId: 4, quantity: 1 }] }];
+		expect(await store.applyBackfill('vault', 'account', candidates, '2026-08-29T12:01:00.000Z')).toEqual([2, 4]);
+		expect(await store.applyBackfill('vault', 'account', candidates, '2026-08-29T12:02:00.000Z')).toEqual([2, 4]);
+		expect(await store.readLearningCoverage('vault', 'account')).toBe('complete');
+		expect(await store.readRecentItemIds('vault', 'account')).toEqual([2, 4]);
+		store.close();
+		const reopened = await IndexedDbHalloweenStore.open(factory, name);
+		expect(await reopened.readLearningCoverage('vault', 'account')).toBe('complete');
+		reopened.close();
+	});
+
 	it('fails closed for a future database, corruption and a closed/versionchanged adapter', async () => {
 		const factory = new IDBFactory();
 		const future = dbName('future');
-		(await openRaw(factory, future, 2)).close();
-		await expect(IndexedDbHalloweenStore.open(factory, future, 1)).rejects.toMatchObject({ failure: 'future_schema' });
+		(await openRaw(factory, future, HALLOWEEN_DB_VERSION + 1)).close();
+		await expect(IndexedDbHalloweenStore.open(factory, future)).rejects.toMatchObject({ failure: 'future_schema' });
 
 		const corruptName = dbName('corrupt');
 		const store = await IndexedDbHalloweenStore.open(factory, corruptName);
 		store.close();
-		const raw = await openRaw(factory, corruptName, 1);
+		const raw = await openRaw(factory, corruptName, HALLOWEEN_DB_VERSION);
 		const tx = raw.transaction(HALLOWEEN_SEEN_STORE, 'readwrite');
 		tx.objectStore(HALLOWEEN_SEEN_STORE).put({ vaultId: 'vault', accountRef: 'account', itemId: 8, bad: true });
 		await transactionDone(tx); raw.close();
@@ -75,17 +106,40 @@ describe('IndexedDbHalloweenStore', () => {
 	it('closes on versionchange, rejects blocked upgrades and classifies quota without fallback', async () => {
 		const factory = new IDBFactory();
 		const changedName = dbName('versionchange');
-		const current = await IndexedDbHalloweenStore.open(factory, changedName, 1);
-		const upgraded = await IndexedDbHalloweenStore.open(factory, changedName, 2);
+		const current = await IndexedDbHalloweenStore.open(factory, changedName);
+		const upgraded = await IndexedDbHalloweenStore.open(factory, changedName, HALLOWEEN_DB_VERSION + 1);
 		await expect(current.readNotices('vault', 'account')).rejects.toMatchObject({ failure: 'unavailable' });
 		upgraded.close();
 
 		const blockedName = dbName('blocked');
-		const initialized = await IndexedDbHalloweenStore.open(factory, blockedName, 1); initialized.close();
-		const blocker = await openRaw(factory, blockedName, 1);
-		await expect(IndexedDbHalloweenStore.open(factory, blockedName, 2)).rejects.toMatchObject({ failure: 'blocked' });
+		const initialized = await IndexedDbHalloweenStore.open(factory, blockedName); initialized.close();
+		const blocker = await openRaw(factory, blockedName, HALLOWEEN_DB_VERSION);
+		await expect(IndexedDbHalloweenStore.open(factory, blockedName, HALLOWEEN_DB_VERSION + 1)).rejects.toMatchObject({ failure: 'blocked' });
 		blocker.close();
 		expect(halloweenStoreFailureFrom(new DOMException('quota', 'QuotaExceededError'))).toBe('quota');
+	});
+
+	it('fails closed on sabotaged episode and seen records instead of treating them as dedupe hits', async () => {
+		const factory = new IDBFactory(); const name = dbName('sabotage');
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		await store.enqueueNotice(notice('n1', [1])); store.close();
+		const raw = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		let tx = raw.transaction(HALLOWEEN_EPISODE_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_EPISODE_STORE).put({ version: 99, vaultId: 'vault', accountRef: 'account', episodeId: 'episode', itemId: 1, noticeId: 'n1' });
+		await transactionDone(tx);
+		tx = raw.transaction(HALLOWEEN_SEEN_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_SEEN_STORE).put({ version: 1, vaultId: 'other', accountRef: 'account', itemId: 7, lastObservedAt: '2026-08-29T12:00:00.000Z' });
+		await transactionDone(tx); raw.close();
+		const reopened = await IndexedDbHalloweenStore.open(factory, name);
+		await expect(reopened.enqueueNotice(notice('n2', [1]))).rejects.toMatchObject({ failure: 'corrupt' });
+		// A key-scoped record with an extra field is also corruption.
+		const rawAgain = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		const seenTx = rawAgain.transaction(HALLOWEEN_SEEN_STORE, 'readwrite');
+		seenTx.objectStore(HALLOWEEN_SEEN_STORE).put({ version: 1, vaultId: 'vault', accountRef: 'account', itemId: 7,
+			lastObservedAt: '2026-08-29T12:00:00.000Z', extra: true });
+		await transactionDone(seenTx); rawAgain.close();
+		await expect(reopened.readRecentItemIds('vault', 'account')).rejects.toMatchObject({ failure: 'corrupt' });
+		reopened.close();
 	});
 });
 

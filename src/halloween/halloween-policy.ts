@@ -26,7 +26,7 @@ export function evaluateHalloweenItem(
 	}
 	const rarity = evidence.catalog?.rarity;
 	if (rarity !== undefined && (RARITY_RANK[rarity] ?? -1) >= RARITY_RANK.Rare! &&
-		(evidence.bound || evidence.netUnitCopper === null)) {
+		(evidence.bound || evidence.priceStatus === 'no_quote')) {
 		reasons.push({ code: 'rare_unpriced_or_bound', rarity });
 	}
 	if (evidence.firstSeen && !evidence.learning) reasons.push({ code: 'first_seen' });

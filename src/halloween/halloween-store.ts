@@ -1,16 +1,18 @@
 import {
 	isHalloweenObservation,
 	type HalloweenAlertItem,
+	type HalloweenBackfillCandidate,
 	type HalloweenNoticeV1,
 	type HalloweenObservationV1,
 } from './halloween-model';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-export const HALLOWEEN_DB_VERSION = 1;
+export const HALLOWEEN_DB_VERSION = 2;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
 export const HALLOWEEN_EPISODE_STORE = 'notice-episodes-v1';
+export const HALLOWEEN_META_STORE = 'meta-v1';
 
 export type HalloweenStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
@@ -61,6 +63,9 @@ export class IndexedDbHalloweenStore {
 				if (!db.objectStoreNames.contains(HALLOWEEN_EPISODE_STORE)) {
 					db.createObjectStore(HALLOWEEN_EPISODE_STORE, { keyPath: ['vaultId', 'accountRef', 'episodeId', 'itemId'] });
 				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_META_STORE)) {
+					db.createObjectStore(HALLOWEEN_META_STORE, { keyPath: ['vaultId', 'accountRef'] });
+				}
 			};
 			request.onerror = () => fail(new HalloweenStoreError(request.error?.name === 'VersionError' ? 'future_schema' : 'unavailable'));
 			request.onblocked = () => fail(new HalloweenStoreError('blocked'));
@@ -70,6 +75,42 @@ export class IndexedDbHalloweenStore {
 				resolve(new IndexedDbHalloweenStore(request.result));
 			};
 			function fail(error: HalloweenStoreError): void { if (!settled) reject(error); settled = true; }
+		});
+	}
+
+	async applyBackfill(
+		vaultId: string,
+		accountRef: string,
+		candidates: readonly HalloweenBackfillCandidate[],
+		completedAt: string,
+	): Promise<number[]> {
+		if (!isIso(completedAt) || !strictBackfill(candidates)) throw new HalloweenStoreError('corrupt');
+		const ids = new Set<number>();
+		for (const candidate of candidates) {
+			candidate.gains.forEach(({ itemId }) => ids.add(itemId));
+			await this.recordObservation({
+				version: 1, vaultId, accountRef, source: 'legacy_backfill', ...structuredClone(candidate),
+			});
+		}
+		await this.run([HALLOWEEN_META_STORE], 'readwrite', (tx, resolve) => {
+			tx.objectStore(HALLOWEEN_META_STORE).put({ version: 1, vaultId, accountRef, completedAt,
+				coverage: candidates.some(({ coverage }) => coverage === 'partial') ? 'partial' : 'complete' });
+			tx.oncomplete = () => resolve(undefined);
+		});
+		return [...ids].sort((left, right) => left - right);
+	}
+
+	readLearningCoverage(vaultId: string, accountRef: string): Promise<'complete' | 'partial' | null> {
+		return this.run([HALLOWEEN_META_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_META_STORE).get([vaultId, accountRef]);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					if (request.result === undefined) { tx.oncomplete = () => resolve(null); return; }
+					const coverage = parseMeta(request.result, vaultId, accountRef);
+					tx.oncomplete = () => resolve(coverage);
+				} catch (error) { reject(error); tx.abort(); }
+			};
 		});
 	}
 
@@ -100,11 +141,13 @@ export class IndexedDbHalloweenStore {
 					const request = seen.get([observation.vaultId, observation.accountRef, gain.itemId]);
 					request.onerror = () => reject(storeError(request.error));
 					request.onsuccess = () => {
-						if (request.result === undefined) firstSeenItemIds.push(gain.itemId);
-						else parseSeen(request.result, observation.vaultId, observation.accountRef, gain.itemId);
-						seen.put({ version: 1, vaultId: observation.vaultId, accountRef: observation.accountRef,
-							itemId: gain.itemId, lastObservedAt: observation.observedAt });
-						visit(index + 1);
+						try {
+							if (request.result === undefined) firstSeenItemIds.push(gain.itemId);
+							else parseSeen(request.result, observation.vaultId, observation.accountRef, gain.itemId);
+							seen.put({ version: 1, vaultId: observation.vaultId, accountRef: observation.accountRef,
+								itemId: gain.itemId, lastObservedAt: observation.observedAt });
+							visit(index + 1);
+						} catch (error) { reject(error); tx.abort(); }
 					};
 				};
 				try { visit(0); } catch (error) { reject(error); tx.abort(); }
@@ -129,15 +172,55 @@ export class IndexedDbHalloweenStore {
 				const request = episodes.get(key);
 				request.onerror = () => reject(storeError(request.error));
 				request.onsuccess = () => {
-					if (request.result === undefined) {
-						retained.push(structuredClone(item));
-						episodes.put({ version: 1, vaultId: notice.vaultId, accountRef: notice.accountRef,
-							episodeId: notice.episodeId, itemId: item.itemId, noticeId: notice.noticeId });
-					}
-					visit(index + 1);
+					try {
+						if (request.result === undefined) {
+							retained.push(structuredClone(item));
+							episodes.put({ version: 1, vaultId: notice.vaultId, accountRef: notice.accountRef,
+								episodeId: notice.episodeId, itemId: item.itemId, noticeId: notice.noticeId });
+						} else parseEpisode(request.result, notice.vaultId, notice.accountRef, notice.episodeId, item.itemId);
+						visit(index + 1);
+					} catch (error) { reject(error); tx.abort(); }
 				};
 			};
 			try { visit(0); } catch (error) { reject(error); tx.abort(); }
+		});
+	}
+
+	/** Replaces every provisional notice for one accepted session without emitting a new foreground event. */
+	replaceEpisodeNotice(
+		vaultId: string,
+		accountRef: string,
+		episodeId: string,
+		notice: HalloweenNoticeV1 | null,
+	): Promise<HalloweenNoticeV1 | null> {
+		if (notice !== null && (!validNotice(notice) || notice.vaultId !== vaultId || notice.accountRef !== accountRef ||
+			notice.episodeId !== episodeId || notice.source !== 'session_final')) {
+			return Promise.reject(new HalloweenStoreError('corrupt'));
+		}
+		return this.run([HALLOWEEN_NOTICE_STORE, HALLOWEEN_EPISODE_STORE], 'readwrite', (tx, resolve, reject) => {
+			const notices = tx.objectStore(HALLOWEEN_NOTICE_STORE);
+			const episodes = tx.objectStore(HALLOWEEN_EPISODE_STORE);
+			const request = episodes.getAll(IDBKeyRange.bound(
+				[vaultId, accountRef, episodeId, 0],
+				[vaultId, accountRef, episodeId, Number.MAX_SAFE_INTEGER],
+			));
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const prior = request.result.map((value) => parseEpisode(value, vaultId, accountRef, episodeId));
+					for (const record of prior) {
+						notices.delete([vaultId, accountRef, record.noticeId]);
+						episodes.delete([vaultId, accountRef, episodeId, record.itemId]);
+					}
+					if (notice !== null) {
+						notices.put(structuredClone(notice));
+						for (const item of notice.items) episodes.put({
+							version: 1, vaultId, accountRef, episodeId, itemId: item.itemId, noticeId: notice.noticeId,
+						});
+					}
+					tx.oncomplete = () => resolve(notice === null ? null : structuredClone(notice));
+				} catch (error) { reject(error); tx.abort(); }
+			};
 		});
 	}
 
@@ -163,12 +246,8 @@ export class IndexedDbHalloweenStore {
 			request.onerror = () => reject(storeError(request.error));
 			request.onsuccess = () => {
 				try {
-					const records = request.result.map((value) => {
-						if (!isRecord(value) || !Number.isSafeInteger(value.itemId) || !isIso(value.lastObservedAt)) {
-							throw new HalloweenStoreError('corrupt');
-						}
-						return { itemId: value.itemId as number, lastObservedAt: value.lastObservedAt };
-					}).sort((a, b) => b.lastObservedAt.localeCompare(a.lastObservedAt) || a.itemId - b.itemId)
+					const records = request.result.map((value) => parseSeen(value, vaultId, accountRef))
+						.sort((a, b) => b.lastObservedAt.localeCompare(a.lastObservedAt) || a.itemId - b.itemId)
 						.slice(0, Math.max(0, Math.min(400, limit))).map(({ itemId }) => itemId);
 					tx.oncomplete = () => resolve(records);
 				} catch (error) { reject(error); tx.abort(); }
@@ -252,9 +331,32 @@ function validAlertReason(value: unknown): boolean {
 	return value.code === 'mini_not_unlocked' && exactKeys(value, ['code', 'miniId']) && positiveInteger(value.miniId);
 }
 
-function parseSeen(value: unknown, vaultId: string, accountRef: string, itemId: number): void {
-	if (!isRecord(value) || value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef ||
-		value.itemId !== itemId || !isIso(value.lastObservedAt)) throw new HalloweenStoreError('corrupt');
+function parseSeen(value: unknown, vaultId: string, accountRef: string, itemId?: number): { itemId: number; lastObservedAt: string } {
+	if (!isRecord(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'itemId', 'lastObservedAt']) ||
+		value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef ||
+		!positiveInteger(value.itemId) || (itemId !== undefined && value.itemId !== itemId) || !isIso(value.lastObservedAt)) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return { itemId: value.itemId, lastObservedAt: value.lastObservedAt };
+}
+
+function parseEpisode(
+	value: unknown, vaultId: string, accountRef: string, episodeId: string, itemId?: number,
+): { itemId: number; noticeId: string } {
+	if (!isRecord(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'episodeId', 'itemId', 'noticeId']) ||
+		value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || value.episodeId !== episodeId ||
+		!positiveInteger(value.itemId) || (itemId !== undefined && value.itemId !== itemId) ||
+		typeof value.noticeId !== 'string' || value.noticeId.length === 0) throw new HalloweenStoreError('corrupt');
+	return { itemId: value.itemId, noticeId: value.noticeId };
+}
+
+function parseMeta(value: unknown, vaultId: string, accountRef: string): 'complete' | 'partial' {
+	if (!isRecord(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'completedAt', 'coverage']) ||
+		value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || !isIso(value.completedAt) ||
+		(value.coverage !== 'complete' && value.coverage !== 'partial')) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return value.coverage;
 }
 
 function canonicalObservation(value: HalloweenObservationV1): string {
@@ -288,6 +390,22 @@ function safeNonNegative(value: unknown): value is number {
 
 function positiveInteger(value: unknown): value is number {
 	return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function strictBackfill(value: readonly HalloweenBackfillCandidate[]): boolean {
+	const ids = new Set<string>();
+	for (const candidate of value) {
+		if (typeof candidate.observationId !== 'string' || candidate.observationId.length === 0 || ids.has(candidate.observationId) ||
+			typeof candidate.episodeId !== 'string' || candidate.episodeId.length === 0 || !isIso(candidate.observedAt) ||
+			(candidate.coverage !== 'complete' && candidate.coverage !== 'partial') || !strictGains(candidate.gains)) return false;
+		ids.add(candidate.observationId);
+	}
+	return true;
+}
+
+function strictGains(value: readonly { itemId: number; quantity: number }[]): boolean {
+	return value.every((gain, index) => positiveInteger(gain.itemId) && positiveInteger(gain.quantity) &&
+		(index === 0 || value[index - 1]!.itemId < gain.itemId));
 }
 
 function strictIds(value: unknown[]): value is number[] {

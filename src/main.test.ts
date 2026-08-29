@@ -15,6 +15,9 @@ import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import type { SessionStartInput } from './sessions/session-start-capture';
+import type { StorageDelta } from './account/storage-delta-model';
+import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
+import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
 
 interface StartIntentHarness {
 	app: unknown;
@@ -179,6 +182,37 @@ describe('configured notes root', () => {
 	});
 });
 
+describe('Halloween production gating', () => {
+	it('discards idle and unaccepted activity, then promotes only an accepted canonical Halloween session', async () => {
+		const delta = { status: 'comparable' } as StorageDelta;
+		const observeHalloweenDelta = vi.fn(async () => undefined);
+		let session: SessionState = { version: SESSION_STATE_VERSION, status: 'idle' };
+		let summary = null as ReturnType<typeof summarizeSessionDetectionQuality>;
+		const harness = {
+			sessions: { getState: () => session },
+			detectionQuality: { getSessionSummary: () => summary },
+			observeHalloweenDelta,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
+		const observe = (TyrianCompanionPlugin.prototype as unknown as {
+			observeAcceptedHalloweenDelta(this: typeof harness, value: StorageDelta): Promise<void>;
+		}).observeAcceptedHalloweenDelta;
+		await observe.call(harness, delta);
+		session = { version: SESSION_STATE_VERSION, status: 'active', sessionId: 'session-halloween' } as SessionState;
+		await observe.call(harness, delta);
+		expect(observeHalloweenDelta).not.toHaveBeenCalled();
+
+		const proposal = halloweenProposal();
+		const accepted = createAcceptedDetectionEvent(
+			'start', 'session-halloween', '2026-08-13T08:00:03.000Z', proposal,
+		);
+		if (!accepted) throw new Error('Invalid accepted Halloween fixture.');
+		summary = summarizeSessionDetectionQuality([accepted], 'session-halloween');
+		await observe.call(harness, delta);
+		expect(observeHalloweenDelta).toHaveBeenCalledWith(delta, 'assisted_poll', 'session:session-halloween');
+	});
+});
+
 describe('managed-assets root reconciliation', () => {
 	it('relocates already-installed Bases when the output folder changes, and equalizes both roots', async () => {
 		const vault = new MemoryAssetVault();
@@ -259,6 +293,19 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((done) => { resolve = done; });
 	return { promise, resolve };
+}
+
+function halloweenProposal(): RelevantStartProposal {
+	const ruleSet = { id: 'halloween.trick-or-treat-bag', version: 1 };
+	const firstSignal = { accountId: 'account', beforeSnapshotId: 'before', afterSnapshotId: 'middle',
+		window: { from: '2026-08-13T08:00:00.000Z', to: '2026-08-13T08:00:01.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }] };
+	const confirmationSignal = { accountId: 'account', beforeSnapshotId: 'middle', afterSnapshotId: 'after',
+		window: { from: '2026-08-13T08:00:01.000Z', to: '2026-08-13T08:00:02.000Z' },
+		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }] };
+	return { version: 1, proposalId: `relevant-start:${ruleSet.id}:1:before:after`, accountId: 'account', ruleSet,
+		possibleStart: { ...firstSignal.window, uncertaintyMs: 1_000 }, evidenceQuality: 'complete',
+		confirmedAt: confirmationSignal.window.to, firstSignal, confirmationSignal };
 }
 
 interface RuntimeReadyHarness {

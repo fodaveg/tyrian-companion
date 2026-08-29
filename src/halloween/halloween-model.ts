@@ -36,10 +36,20 @@ export interface HalloweenItemEvidence {
 	catalog: CatalogItem | null;
 	/** Best demonstrated liquid or vendor value per unit, after modeled fees. */
 	netUnitCopper: number | null;
+	/** Closed TP coverage. Only `no_quote` proves that a market quote is absent. */
+	priceStatus: 'quote' | 'no_quote' | 'unavailable' | 'invalid' | 'rate_limited';
 	bound: boolean;
 	firstSeen: boolean;
 	learning: boolean;
 	unlocks: HalloweenUnlockEvidence;
+}
+
+export interface HalloweenBackfillCandidate {
+	observationId: string;
+	episodeId: string;
+	observedAt: string;
+	coverage: HalloweenObservationCoverage;
+	gains: HalloweenObservedGain[];
 }
 
 export type HalloweenAlertReason =

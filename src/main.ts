@@ -22,6 +22,7 @@ import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { HalloweenEvidenceService } from './halloween/halloween-evidence-service';
+import { scanHalloweenSessionNotes } from './halloween/halloween-note-backfill';
 import { HalloweenRuntime, type HalloweenRuntimeState } from './halloween/halloween-runtime';
 import { HalloweenUnlockService } from './halloween/halloween-unlocks';
 import type { PriceHistorySettings, PriceHistorySide, PriceHistoryWindowDays } from './economy/price-history-model';
@@ -367,6 +368,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 				scopes: connectionScopes(this.connection.getState()),
 			}),
 			policy: () => ({ valueThresholdCopper: this.settings.halloweenValueThresholdCopper }),
+			loadBackfill: async (accountRef) => await scanHalloweenSessionNotes({
+				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Halloween backfill note is not a file.');
+					return await this.app.vault.read(target);
+				},
+			}, accountRef),
 			priceHistory: {
 				active: () => this.settings.priceHistoryEnabled,
 				observeItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
@@ -543,8 +552,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			snapshots,
 			getSessionState: () => this.sessions.getState(),
 			onStateChange: () => this.refreshBackgroundIndicators(),
-			onObservedDelta: (delta, episodeId) => {
-				void this.observeHalloweenDelta(delta, 'assisted_poll', episodeId);
+			onObservedDelta: (delta) => {
+				void this.observeAcceptedHalloweenDelta(delta);
 			},
 			onProposal: async (proposal) => {
 				const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
@@ -668,6 +677,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const accountRef = await this.switchHalloweenAccount(delta.accountId);
 		if (accountRef !== this.halloweenAccountRef) return;
 		await this.halloween.observeDelta({ delta, source, episodeId });
+	}
+
+	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
+		const session = this.sessions.getState();
+		if (session.status !== 'active') return;
+		const declaration = sessionNoteEventDeclarationFromDetectionSummary(
+			session.sessionId, this.detectionQuality.getSessionSummary(session.sessionId),
+		);
+		if (declaration?.event !== 'halloween') return;
+		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
 	}
 
 	private async switchHalloweenAccount(accountId: string): Promise<string> {
@@ -1266,7 +1285,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return 'Session history scrub is active.';
 		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
-		if (result.status !== 'failed') {
+		if (result.status !== 'failed' && sessionNoteEventDeclarationFromDetectionSummary(
+			result.state.sessionId, this.detectionQuality.getSessionSummary(result.state.sessionId),
+		)?.event === 'halloween') {
 			const delta = this.sessions.getProvisionalDelta();
 			if (delta) void this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`);
 		}
@@ -1365,7 +1386,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (runtimeLease === null) throw new Error('Session history scrub is active.');
 			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
 			if (result.status === 'started') {
-				void this.detectionQuality.recordAccepted(
+				await this.detectionQuality.recordAccepted(
 					'start',
 					result.state.sessionId,
 					result.state.baseline.completedAt,
@@ -1376,7 +1397,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 							to: result.state.baseline.completedAt,
 						},
 					},
-				).then(() => this.renderViews());
+				);
+				this.renderViews();
 				this.assistedDetection.dismissProposal();
 				if (intent && pendingClaim) {
 					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {

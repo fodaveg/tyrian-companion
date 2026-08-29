@@ -4,11 +4,16 @@ import { parseCatalogItems } from '../catalog/public-catalog-parsers';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { HttpTransportError, type HttpResponse } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
-import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
+import { parsePublicTradingPostPriceBatch, type PublicTradingPostItemPrice } from '../economy/session-price-snapshot';
 import type { HalloweenItemEvidence } from './halloween-model';
 import type { HalloweenUnlockService } from './halloween-unlocks';
 
 const MAX_BATCH = 200;
+
+interface PriceCoverage {
+	status: HalloweenItemEvidence['priceStatus'];
+	price: PublicTradingPostItemPrice | null;
+}
 
 export class HalloweenEvidenceService {
 	constructor(
@@ -31,14 +36,15 @@ export class HalloweenEvidenceService {
 		const firstSeen = new Set(input.firstSeenItemIds);
 		return input.gains.map(({ itemId, quantity }) => {
 			const item = catalog.get(itemId) ?? null;
-			const price = prices.get(itemId) ?? null;
+			const price = prices.get(itemId) ?? { status: 'unavailable' as const, price: null };
 			const bound = item !== null && item.flags.some((flag) =>
 				flag === 'AccountBound' || flag === 'SoulbindOnAcquire');
-			const instantUnit = !bound && price?.bid ? safePercent(price.bid.unitCopper, 85) : null;
+			const instantUnit = !bound && price.status === 'quote' && price.price?.bid
+				? safePercent(price.price.bid.unitCopper, 85) : null;
 			const vendorUnit = item !== null && item.vendorValue > 0 && !item.flags.includes('NoSell') ? item.vendorValue : null;
 			return {
 				itemId, quantity, catalog: item,
-				netUnitCopper: maximum(instantUnit, vendorUnit), bound,
+				netUnitCopper: maximum(instantUnit, vendorUnit), priceStatus: price.status, bound,
 				firstSeen: firstSeen.has(itemId), learning: input.learning, unlocks,
 			};
 		});
@@ -58,16 +64,23 @@ export class HalloweenEvidenceService {
 		return items;
 	}
 
-	private async capturePrices(ids: number[]): Promise<Map<number, ReturnType<typeof parsePublicTradingPostPriceBatch>['items'][number]>> {
-		const items = new Map<number, ReturnType<typeof parsePublicTradingPostPriceBatch>['items'][number]>();
+	private async capturePrices(ids: number[]): Promise<Map<number, PriceCoverage>> {
+		const items = new Map<number, PriceCoverage>();
 		for (const batch of chunks(ids, MAX_BATCH)) {
 			try {
 				const response = await this.requestDetailed(
 					`commerce/prices?ids=${batch.join(',')}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
 				);
-				if (response.status !== 200 && response.status !== 206) continue;
-				for (const price of parsePublicTradingPostPriceBatch(response.body, new Set(batch)).items) items.set(price.itemId, price);
-			} catch { /* unresolved price evidence stays null */ }
+				if (response.status !== 200 && response.status !== 206) {
+					for (const id of batch) items.set(id, { status: 'unavailable', price: null });
+					continue;
+				}
+				const parsed = classifyPriceBatch(response.body, batch);
+				for (const [id, coverage] of parsed) items.set(id, coverage);
+			} catch (error) {
+				const status = error instanceof HttpTransportError && error.status === 429 ? 'rate_limited' : 'unavailable';
+				for (const id of batch) items.set(id, { status, price: null });
+			}
 		}
 		return items;
 	}
@@ -83,6 +96,29 @@ export class HalloweenEvidenceService {
 	}
 }
 
+function classifyPriceBatch(body: unknown, ids: number[]): Map<number, PriceCoverage> {
+	const result = new Map<number, PriceCoverage>(ids.map((id) => [id, { status: 'no_quote', price: null }]));
+	if (!Array.isArray(body)) return new Map<number, PriceCoverage>(ids.map((id) => [id, { status: 'invalid', price: null }]));
+	const requested = new Set(ids);
+	const seen = new Set<number>();
+	let ambiguousInvalid = false;
+	for (const entry of body) {
+		if (!isRecord(entry) || !positiveInteger(entry.id)) { ambiguousInvalid = true; continue; }
+		if (!requested.has(entry.id)) continue;
+		const id = entry.id;
+		if (seen.has(id)) { result.set(id, { status: 'invalid', price: null }); continue; }
+		seen.add(id);
+		const parsed = parsePublicTradingPostPriceBatch([entry], new Set([id])).items[0];
+		if (!parsed) { result.set(id, { status: 'invalid', price: null }); continue; }
+		if (!parsed.whitelisted || (parsed.bid === null && parsed.ask === null)) result.set(id, { status: 'no_quote', price: null });
+		else result.set(id, { status: 'quote', price: parsed });
+	}
+	if (ambiguousInvalid) {
+		for (const id of ids) if (result.get(id)?.status === 'no_quote') result.set(id, { status: 'invalid', price: null });
+	}
+	return result;
+}
+
 function safePercent(value: number, percent: number): number | null {
 	const result = BigInt(value) * BigInt(percent) / 100n;
 	return result > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(result);
@@ -94,4 +130,12 @@ function chunks<T>(values: T[], size: number): T[][] {
 	const result: T[][] = [];
 	for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
 	return result;
+}
+
+function positiveInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
