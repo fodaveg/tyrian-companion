@@ -1,5 +1,31 @@
 # Changelog
 
+## H12.2 - Auditoría y dirección UI/UX del plugin
+
+- Censadas las tres superficies principales —Sesión, Inventario y Ajustes—, el panel común de 16
+  acciones y los nueve modales/confirmaciones existentes. La propuesta conserva los contratos
+  funcionales actuales y corrige la composición, la jerarquía y el feedback antes de tocar
+  producción.
+- Companion separa sesión, detección, inventario general, Halloween y cuenta. La detección deja de
+  presentarse como una capacidad general: el ruleset actual observa específicamente la Bolsa de
+  truco o trato `#36038`, mientras el Advisor se actualiza mediante una acción manual distinta y el
+  histórico de precios mantiene su propio intervalo.
+- La señal asistida muestra el triplete temporal completo —última comprobación, resultado y
+  próxima—, incluido el caso normal «consulta correcta, sin señal». El botín de otros objetos solo
+  aparece tras la frontera final y la revisión; Halloween queda como módulo opcional y no como
+  identidad de toda la página.
+- Inventario organiza actualización, análisis, filtros, preferencias e histórico como tareas
+  diferenciadas. Ajustes usa navegación local entre cuatro categorías y separa mantenimiento
+  destructivo de la configuración ordinaria.
+- El sistema compartido documenta tokens, piezas, estados, feedback y responsive por componente.
+  El mockup navegable cubre siete escenarios reales, claro/oscuro, 16 acciones, las cuatro
+  categorías de Ajustes y anchos desde 390 hasta 1.440 px; en móvil el panel de acciones se pliega
+  sin perder ninguna operación.
+- La QA standalone midió targets de 44 px y contraste: texto secundario claro 5,09:1, estados claros
+  al menos 6,25:1 y texto secundario oscuro 7,82:1. Las capturas Firefox validaron escritorio,
+  tablet y móvil. La aprobación visual dentro de temas reales de Obsidian sigue pendiente y la
+  propuesta no modifica todavía el código de producción.
+
 ## H6.17 - Diagnóstico local exhaustivo
 
 - Añadido logging JSONL local, append-only y fail-open bajo el directorio de configuración del

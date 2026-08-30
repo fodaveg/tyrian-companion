@@ -2,6 +2,24 @@
 
 ## Vertical activa
 
+**H12.2, auditoría y dirección UI/UX: propuesta completa, pendiente de aprobación antes de
+producción.** Se han censado Sesión, Inventario, Ajustes, el panel compartido de 16 acciones y nueve
+modales/confirmaciones. Los entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
+`docs/design/H12.2-mockup.html`.
+
+La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
+inventario de sesión, Halloween y cuenta. El alcance real queda explícito: el polling asistido de
+desarrollo cada dos minutos busca la señal de la Bolsa de truco o trato `#36038`; no refresca todo el
+inventario ni detecta farmeo general. El Inventory Advisor se actualiza manualmente y el histórico
+de precio usa su propia cadencia.
+
+El mockup navega entre las tres vistas, cuatro categorías de Ajustes y siete escenarios reales;
+conserva las 16 acciones, claro/oscuro y responsive hasta 390 px. La QA standalone con Firefox cubre
+1.440, 1.280, 900 y 390 px, estados activo/sin clave/error/proceso largo/textos extremos, targets de
+44 px y ratios AA medidos. Esta evidencia valida la propuesta fuera del plugin, no su fidelidad ni
+contraste dentro de temas reales de Obsidian. No se ha cambiado código de producción, instalado una
+beta, integrado en `main`, hecho push ni creado una release.
+
 **H6.17, diagnóstico local exhaustivo: candidato en cierre para `0.1.15`.** El plugin incorpora un
 writer JSONL local fail-open y rotativo (5×2 MiB), contrato cerrado con secuencia y correlación,
 saneado positivo central y spans para las acciones foreground/background. Settings v11 deja la
