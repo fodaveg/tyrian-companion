@@ -1,5 +1,20 @@
 # Changelog
 
+## Release beta 0.1.16 - H12 y canal BRAT
+
+- Publicada el 2026-08-30 la
+  [GitHub Release `0.1.16`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.16) desde el
+  tag y commit `18312cd00888851ca382fe4f185bb1d53d4f5cc2`.
+- H12.1 incorpora el panel visible con paridad completa para las 16 acciones de paleta. H12.2 publica
+  la auditoría y el mockup navegable de Sesión, Inventario y Ajustes como dirección pendiente de QA
+  visual dentro de Obsidian.
+- Los runs de CI de `main` `33305605914` y del tag `33305740475` terminaron en verde.
+- La release contiene exactamente `manifest.json`, `main.js`, `styles.css`,
+  `tyrian-companion-0.1.16.zip` y `tyrian-companion-0.1.16.zip.sha256`. El ZIP reproducible tiene
+  SHA-256 `b0c2efc7861b01ebb2d5f6d280095e21d6a92952be56a3fbf72defd8ccdf293c`.
+- El canal BRAT está publicado. La instalación o actualización efectiva en Obsidian, la QA visual
+  con sus temas y la comprobación con datos reales de Guild Wars 2 siguen pendientes de QA humana.
+
 ## H12.2 - Auditoría y dirección UI/UX del plugin
 
 - Censadas las tres superficies principales —Sesión, Inventario y Ajustes—, el panel común de 16
@@ -23,8 +38,8 @@
   sin perder ninguna operación.
 - La QA standalone midió targets de 44 px y contraste: texto secundario claro 5,09:1, estados claros
   al menos 6,25:1 y texto secundario oscuro 7,82:1. Las capturas Firefox validaron escritorio,
-  tablet y móvil. La aprobación visual dentro de temas reales de Obsidian sigue pendiente y la
-  propuesta no modifica todavía el código de producción.
+  tablet y móvil. La auditoría y el mockup están publicados en `0.1.16`; su aprobación visual dentro
+  de temas reales de Obsidian y la implementación completa de esa dirección siguen pendientes.
 
 ## H6.17 - Diagnóstico local exhaustivo
 

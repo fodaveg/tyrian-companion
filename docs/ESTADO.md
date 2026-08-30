@@ -2,9 +2,18 @@
 
 ## Vertical activa
 
-**H12.2, auditoría y dirección UI/UX: propuesta completa, pendiente de aprobación antes de
-producción.** Se han censado Sesión, Inventario, Ajustes, el panel compartido de 16 acciones y nueve
-modales/confirmaciones. Los entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
+**Release beta `0.1.16` publicada el 2026-08-30; H12 entregado al canal BRAT.** El tag y commit
+`18312cd00888851ca382fe4f185bb1d53d4f5cc2` están disponibles en la
+[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.16). Los runs
+de CI de `main` [`33305605914`](https://github.com/fodaveg/tyrian-companion/actions/runs/33305605914)
+y del tag [`33305740475`](https://github.com/fodaveg/tyrian-companion/actions/runs/33305740475)
+terminaron en verde. La release publica los cinco assets exactos `manifest.json`, `main.js`,
+`styles.css`, `tyrian-companion-0.1.16.zip` y `tyrian-companion-0.1.16.zip.sha256`; el ZIP tiene
+SHA-256 `b0c2efc7861b01ebb2d5f6d280095e21d6a92952be56a3fbf72defd8ccdf293c`.
+
+H12.1 incorpora en la release el panel visible con paridad 16/16 frente a la paleta. H12.2 deja
+censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confirmaciones; sus
+entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
 La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
@@ -17,14 +26,15 @@ El mockup navega entre las tres vistas, cuatro categorías de Ajustes y siete es
 conserva las 16 acciones, claro/oscuro y responsive hasta 390 px. La QA standalone con Firefox cubre
 1.440, 1.280, 900 y 390 px, estados activo/sin clave/error/proceso largo/textos extremos, targets de
 44 px y ratios AA medidos. Esta evidencia valida la propuesta fuera del plugin, no su fidelidad ni
-contraste dentro de temas reales de Obsidian. No se ha cambiado código de producción, instalado una
-beta, integrado en `main`, hecho push ni creado una release.
+contraste dentro de temas reales de Obsidian. El canal BRAT está publicado, pero la instalación o
+actualización efectiva en Obsidian, la fidelidad del rediseño en sus temas y la comprobación con
+datos reales de Guild Wars 2 siguen pendientes de QA humana.
 
-**H6.17, diagnóstico local exhaustivo: candidato en cierre para `0.1.15`.** El plugin incorpora un
-writer JSONL local fail-open y rotativo (5×2 MiB), contrato cerrado con secuencia y correlación,
-saneado positivo central y spans para las acciones foreground/background. Settings v11 deja la
-captura `debug` activada por defecto en beta, expone salud y retención, y ofrece copy/export/clear
-explícitos; Companion hace visible una degradación sin bloquear la acción principal.
+**H6.17, diagnóstico local exhaustivo: integrado y publicado en `0.1.15` y `0.1.16`.** El plugin
+incorpora un writer JSONL local fail-open y rotativo (5×2 MiB), contrato cerrado con secuencia y
+correlación, saneado positivo central y spans para las acciones foreground/background. Settings v11
+deja la captura `debug` activada por defecto en beta, expone salud y retención, y ofrece
+copy/export/clear explícitos; Companion hace visible una degradación sin bloquear la acción principal.
 
 La composición cubre lifecycle, ajustes, UI/comandos, red GW2 y reintentos, sesiones y detección,
 Asesor, histórico de precios, Halloween, assets, persistencia, avisos y errores globales. H8/Mumble
@@ -35,12 +45,12 @@ cualquier cambio.
 El árbol final supera 155 suites y 2.106 tests, lint, TypeScript/build, escáner de seguridad, censo
 de observabilidad y contratos de release. El benchmark H6 queda dentro de presupuesto —mediana
 226 ms, p95 231 ms y 1,14 MiB máximos de heap retenido acumulado— y su sabotaje determinista vuelve
-rojo. La integración en `0.1.15` exige además revisión independiente como último gate. La instalación
+rojo. La integración superó además la revisión independiente como último gate. La instalación
 en Obsidian real y la reproducción live de fallo de API/escritura/IndexedDB/helper/aviso siguen
 siendo aceptación manual y no se declararán realizadas desde el repositorio.
 
-**H9.16/H9.3, comparación manual de reciclaje de equipo: implementada y aprobada mediante
-`1d04b61`, `bc1d8ed` y `b4b79ba`; pendiente de integrar en `main`.** El Asesor compara equipo Rare
+**H9.16/H9.3, comparación manual de reciclaje de equipo: integrada en `main` y publicada en
+`0.1.16` mediante `1d04b61`, `bc1d8ed` y `b4b79ba`.** El Asesor compara equipo Rare
 de nivel 68 o superior con sus rutas líquidas actuales mediante una EV inferior demostrada de 0,9
 ectoplasmas por objeto. La valoración excluye y declara materiales base, suerte y mejoras recuperadas;
 no los convierte en valor cero.
@@ -62,8 +72,8 @@ para tasas y kits, tiene vigencia cerrada y se valida por SHA-256. Cada `salvage
 su snapshot de catálogo y la política/regla exactas; reporte y envelope vuelven a comprobar ese
 contexto. Exotic de nivel 68 o superior queda en revisión sin tasa inventada. `NoSalvage`, snapshot no
 estable, catálogo o precios incompletos, política stale y profundidad parcial fallan cerrado. No existe
-executor ni operación de reciclaje. El lote no forma parte de `0.1.13` y todavía no acredita QA visual
-o ejecución dentro de Obsidian.
+executor ni operación de reciclaje. Su publicación en `0.1.16` todavía no acredita QA visual o
+ejecución dentro de Obsidian.
 
 **H9.6/H9.15, benchmarking de clan y cambio oro-gemas: cerradas como decisiones de producto.**
 H9.6 queda descartada en el producto actual. Comparar un clan exigiría intercambio de datos o un
@@ -98,9 +108,8 @@ dinámico y `require()` cuando el specifier es literal. Su límite explícito so
 computados u ofuscados.
 
 La revisión final de `f28e063` no encontró hallazgos. El gate completo quedó verde con 151 ficheros
-y 2.015 tests, además de seguridad, contratos, build y paquete. El lote todavía no forma parte de la
-release `0.1.13` ni acredita llamadas reales a `/v2/commerce/listings`, QA visual o ejecución dentro
-de Obsidian.
+y 2.015 tests, además de seguridad, contratos, build y paquete. El lote está publicado en `0.1.16`,
+pero no acredita llamadas reales a `/v2/commerce/listings`, QA visual o ejecución dentro de Obsidian.
 
 **H9.17/H9.18, capacidad y depósito manual de materiales: integradas en `main` mediante `d86c526`,
 `88d2322` y `eb54e02`.** Settings v9 añade una capacidad global opcional por material entre 250 y
@@ -116,8 +125,8 @@ catálogo completo y fresco. La cantidad agregada recomendada para cada objeto n
 ruta sin recomendar.
 
 La revisión final de `eb54e02` no encontró hallazgos. El gate completo quedó verde con 149 ficheros
-y 1.999 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma parte de
-la release `0.1.13` ni acredita QA visual o ejecución dentro de Obsidian.
+y 1.999 tests, además de seguridad, contratos, build y paquete. El lote está publicado en `0.1.16`,
+pero no acredita QA visual o ejecución dentro de Obsidian.
 
 **H9.8/H9.14, evidencia personal del bazar: integrada en `main` mediante `3e84514`, `ed7f8b8` y el
 fix `f825621`.** H9.14 consulta las órdenes actuales de compra y venta durante el Refresh explícito
@@ -133,8 +142,8 @@ y nunca entra directamente en la clasificación. Los IDs crudos de transacción 
 captura, no hay persistencia del historial y ninguna ruta compra, vende, publica o cancela órdenes.
 
 La revisión final de `f825621` no encontró hallazgos. El gate completo quedó verde con 149 ficheros
-y 1.988 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma parte de
-la release `0.1.13` ni acredita QA visual o llamadas reales a la API desde Obsidian.
+y 1.988 tests, además de seguridad, contratos, build y paquete. El lote está publicado en `0.1.16`,
+pero no acredita QA visual o llamadas reales a la API desde Obsidian.
 
 **H9.10-H9.13, prioridades visibles del inventario: integradas en `main` mediante `06919f4` y
 `762d67f`.** H9.10 identifica el peso muerto retenido y lo pendiente sin clasificar, conserva las
@@ -150,16 +159,8 @@ del mercado que falta.
 
 La información aparece en tabla y tarjetas, con copy ES/EN y sin perder la procedencia al filtrar por
 ubicación. La revisión final de `762d67f` no encontró hallazgos. El gate completo quedó verde con 147
-ficheros y 1.968 tests, además de seguridad, contratos, build y paquete. Este lote todavía no forma
-parte de la release `0.1.13` ni acredita QA visual o instalación en Obsidian.
-
-**Release beta `0.1.13` publicada el 2026-08-29.** El tag y commit
-`1fe6c4ca2e0b0713f7c71e27a6f24c8f425fa42a` están disponibles en la
-[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13). BRAT puede
-instalarla porque la release adjunta `manifest.json`, `main.js` y `styles.css` como assets
-individuales. El ZIP reproducible tiene SHA-256
-`133cb03e5b8bbcd694065360fce37620bf1bc8cfa208d69908d5c73e864ba9f2`. La publicación no acredita
-todavía la instalación, actualización, QA visual ni entrega real de avisos dentro de Obsidian.
+ficheros y 1.968 tests, además de seguridad, contratos, build y paquete. El lote está publicado en
+`0.1.16`, pero no acredita QA visual o instalación en Obsidian.
 
 **H11.6, valoración personal de resultados no líquidos de Halloween: integrada en `main` y
 `origin/main` mediante `17da38f` e incluida en `0.1.13`, sin afirmar instalación ni QA visual.** Un overlay
@@ -296,7 +297,7 @@ verificado que el contrato sigue mordiendo con una copia no revisada real. `tsco
 pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
 al build vía esbuild.
 
-**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.13` mediante GitHub Release y BRAT.** El
+**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.16` mediante GitHub Release y BRAT.** El
 release package parte de un build nuevo, contiene únicamente `manifest.json`, `main.js` y
 `styles.css`, valida versiones y tag, escanea los bytes staged y genera ZIP reproducible + SHA-256
 con prueba causal. CI conserva permisos de solo lectura, recrea un staging enumerado y sube
@@ -306,7 +307,7 @@ estado antes de operar, escribe solo los tres ficheros gestionados y revierte fa
 autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
 en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
 y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
-ajeno. El tag y la GitHub Release `0.1.13` publican los tres assets individuales requeridos por BRAT;
+ajeno. El tag y la GitHub Release `0.1.16` publican los tres assets individuales requeridos por BRAT;
 la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
 soportadas.
 
@@ -323,7 +324,7 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio y la release `0.1.13` son públicos desde el 2026-08-29.
+El repositorio es público desde el 2026-08-29 y la release actual `0.1.16` desde el 2026-08-30.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -590,7 +591,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
    (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
    completo de hasta 90 días, pero solo la confirmación humana modifica la revisión.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-10. Instalar/actualizar `0.1.13` desde BRAT en una bóveda desechable por plataforma, verificar que los
+10. Instalar/actualizar `0.1.16` desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
