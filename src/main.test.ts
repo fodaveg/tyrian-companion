@@ -17,6 +17,7 @@ import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { COMPANION_VIEW_TYPE, SessionContaminationReviewModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
+import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
@@ -333,8 +334,37 @@ describe('durable inventory Vault commands', () => {
 });
 
 describe('inventory analysis-only action', () => {
+	it('notifies when an explicit refresh cannot resolve the selected API key', async () => {
+		const emitNotice = vi.fn();
+		const plugin = {
+			runtimeReady: true,
+			settings: { language: 'es' as const },
+			inventoryAdvisor: {
+				refresh: vi.fn(async () => ({
+					status: 'blocked' as const,
+					blockedReason: 'credential_unavailable' as const,
+				})),
+			},
+			renderInventoryAdvisorViews: vi.fn(),
+			notifyRuntimeStarting: vi.fn(),
+			emitNotice,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+			refreshInventoryAdvisor(this: typeof plugin): Promise<void>;
+		}).refreshInventoryAdvisor;
+
+		await invoke.call(plugin);
+
+		expect(emitNotice).toHaveBeenCalledOnce();
+		expect(emitNotice).toHaveBeenCalledWith(
+			'La clave seleccionada ya no está disponible en el almacén seguro de Obsidian. Vuelve a seleccionarla en los ajustes.',
+			'inventory_advisor_missing_key',
+		);
+	});
+
 	it('renders loading immediately and settles the ordinary advisor refresh without a Vault writer', async () => {
-		const pending = deferred<void>();
+		const pending = deferred<InventoryAdvisorViewModel>();
 		const refresh = vi.fn(() => pending.promise);
 		const render = vi.fn();
 		const plugin = {
@@ -350,7 +380,7 @@ describe('inventory analysis-only action', () => {
 		const operation = invoke.call(plugin);
 		expect(refresh).toHaveBeenCalledOnce();
 		expect(render).toHaveBeenCalledOnce();
-		pending.resolve(undefined);
+		pending.resolve({ status: 'empty', title: 'Inventory advisor', detail: 'Empty.', groups: [] });
 		await operation;
 		expect(render).toHaveBeenCalledTimes(2);
 	});

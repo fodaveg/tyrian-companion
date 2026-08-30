@@ -187,7 +187,7 @@ export interface LocalDebugExportPreview {
 
 type NoticeDiagnosticSource =
 	| 'halloween_price_alert'
-	| 'halloween_observation'
+	| 'halloween_observation' | 'inventory_advisor_missing_key'
 	| 'wallet_sync'
 	| 'proposal_unavailable'
 	| 'proposal_review_failed'
@@ -1168,7 +1168,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const operation = this.inventoryAdvisor.refresh({}, context);
 		this.renderInventoryAdvisorViews();
-		await operation;
+		const model = await operation; if (model.status === 'blocked' && model.blockedReason === 'credential_unavailable') this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'advisor.view.blockedReason.credential_unavailable'), 'inventory_advisor_missing_key');
 		this.renderInventoryAdvisorViews();
 		};
 		await (this.localDebugActions?.run(
