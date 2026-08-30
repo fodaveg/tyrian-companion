@@ -122,6 +122,29 @@ describe('Halloween price-alert settings wiring', () => {
 	});
 });
 
+describe('assisted-detection polling settings', () => {
+	it('offers and selects the two-minute beta cadence', () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Polling interval');
+		if (definition === undefined) throw new Error('Expected polling interval setting.');
+
+		const control = renderControl(definition, 'dropdown');
+
+		expect(plugin.settings.pollingIntervalMinutes).toBe(2);
+		expect(control.options).toContain('2');
+		expect(control.value).toBe('2');
+
+		plugin.settings.pollingIntervalMinutes = 60;
+		const existing = renderControl(definition, 'dropdown');
+		expect(existing.value).toBe('60');
+		return expect(existing.change('2')).resolves.toBeUndefined().then(() => {
+			expect(plugin.settings.pollingIntervalMinutes).toBe(2);
+		});
+	});
+});
+
 describe('local diagnostics settings', () => {
 	it('projects degraded writer health as an alert with bounded operational details', () => {
 		const status: LocalDebugStatus = {
@@ -175,6 +198,8 @@ function settingsPlugin() {
 
 interface FakeControl {
 	disabled: boolean;
+	options: readonly string[];
+	value: string;
 	change(value: string): Promise<void>;
 }
 
@@ -188,10 +213,12 @@ function renderControl(
 	kind: 'dropdown' | 'text',
 ): FakeControl {
 	let listener: (value: string) => Promise<void> | void = () => undefined;
+	let selectedValue = '';
+	const options: string[] = [];
 	const component = {
 		disabled: false,
-		addOption: () => component,
-		setValue: () => component,
+		addOption: (value: string) => { options.push(value); return component; },
+		setValue: (value: string) => { selectedValue = value; return component; },
 		setDisabled: (disabled: boolean) => { component.disabled = disabled; return component; },
 		onChange: (next: typeof listener) => { listener = next; return component; },
 	};
@@ -200,5 +227,10 @@ function renderControl(
 		addText: (render: (control: typeof component) => unknown) => { if (kind === 'text') render(component); return setting; },
 	};
 	definition.render(setting as never);
-	return { get disabled() { return component.disabled; }, change: async (value) => { await listener(value); } };
+	return {
+		get disabled() { return component.disabled; },
+		get value() { return selectedValue; },
+		options,
+		change: async (value) => { await listener(value); },
+	};
 }

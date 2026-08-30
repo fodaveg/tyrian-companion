@@ -97,7 +97,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	language: 'es',
 	outputFolder: 'Tyrian Companion',
 	preferredCharacter: '',
-	pollingIntervalMinutes: 60,
+	// Beta-only fast feedback. Raise this before public distribution.
+	pollingIntervalMinutes: 2,
 	detectionMode: 'off',
 	debugLoggingEnabled: true,
 	debugLoggingLevel: 'debug',
@@ -122,7 +123,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	salvageOpportunityCostCopperPerHour: null,
 });
 
-const POLLING_INTERVALS = new Set([15, 30, 60, 120, 240]);
+const POLLING_INTERVALS = new Set([2, 15, 30, 60, 120, 240]);
 const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
 const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
 const PRICE_HISTORY_DAILY_RETENTIONS: ReadonlySet<number> = new Set([42, 90, 180, 365]);

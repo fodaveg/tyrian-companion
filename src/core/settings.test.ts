@@ -85,9 +85,10 @@ describe('migrateSettings', () => {
 		).toMatchObject({
 			language: 'es',
 			preferredCharacter: 'Kasmeer',
-			pollingIntervalMinutes: 60,
+			pollingIntervalMinutes: 2,
 			detectionMode: 'off',
 		});
+		expect(migrateSettings({ pollingIntervalMinutes: 2 })).toMatchObject({ pollingIntervalMinutes: 2 });
 	});
 
 	it('keeps only the SecretStorage name', () => {

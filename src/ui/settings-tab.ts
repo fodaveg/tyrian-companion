@@ -227,7 +227,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
-						for (const minutes of [15, 30, 60, 120, 240]) {
+					for (const minutes of [2, 15, 30, 60, 120, 240]) {
 							dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
 						}
 						dropdown
