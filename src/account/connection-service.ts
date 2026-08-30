@@ -3,6 +3,7 @@ import {
 	type AccountGateway,
 	type ConnectionDetails,
 } from './account-service';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export type WarningReason = 'future_capabilities' | 'stale_connection';
 
@@ -42,7 +43,7 @@ export class ConnectionService {
 		this.state = { status: 'idle' };
 	}
 
-	check(): Promise<ConnectionState> {
+	check(parent?: ResolvedLocalDebugActionContext): Promise<ConnectionState> {
 		if (this.inFlight?.runId === this.runId) {
 			return this.inFlight.promise;
 		}
@@ -54,15 +55,18 @@ export class ConnectionService {
 
 		const activeRunId = ++this.runId;
 		this.state = { status: 'checking' };
-		const promise = this.run(activeRunId);
+		const promise = this.run(activeRunId, parent);
 		this.inFlight = { runId: activeRunId, promise };
 		return promise;
 	}
 
-	private async run(activeRunId: number): Promise<ConnectionState> {
+	private async run(
+		activeRunId: number,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<ConnectionState> {
 		let nextState: ConnectionState;
 		try {
-			const details = await this.gateway.checkConnection();
+			const details = await this.gateway.checkConnection(parent);
 			nextState = this.connectedState(details);
 		} catch (error) {
 			nextState = this.failedState(error);

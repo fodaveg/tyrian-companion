@@ -1,11 +1,48 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
+import type {
+	LocalDebugActionContext,
+	LocalDebugEventContext,
+	ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 import type { ManagedAssetsResult } from './managed-assets';
 import { ManagedAssetsLifecycle } from './managed-assets-lifecycle';
 import { IndexedDbManagedAssetsPointerStore, MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
 
 describe('ManagedAssetsLifecycle', () => {
+	it('records apply outcomes with the supplied action identity and no root metadata', async () => {
+		const diagnostics = diagnosticHarness();
+		const parent = actionContext('settings-action', 'settings-correlation');
+		const lifecycle = new ManagedAssetsLifecycle(
+			new FakeManager(), new MemoryManagedAssetsPointerStore(), diagnostics,
+		);
+
+		await expect(lifecycle.install('Private root', parent)).resolves.toMatchObject({ status: 'applied' });
+
+		expect(diagnostics.created).toBe(1);
+		expect(diagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'success']);
+		expect(diagnostics.events).toEqual(expect.arrayContaining([
+			expect.objectContaining({
+				action: 'managed_assets_apply', component: 'assets',
+				actionId: 'generated-1', correlationId: 'settings-correlation',
+			}),
+		]));
+		expect(JSON.stringify(diagnostics.events)).not.toContain('Private root');
+	});
+
+	it('records a deliberate storage failure without changing the thrown error', async () => {
+		const diagnostics = diagnosticHarness();
+		const failure = new Error('injected pointer failure');
+		const pointer = new MemoryManagedAssetsPointerStore();
+		pointer.read = async () => { throw failure; };
+		const lifecycle = new ManagedAssetsLifecycle(new FakeManager(), pointer, diagnostics);
+
+		await expect(lifecycle.install('A')).rejects.toBe(failure);
+		expect(diagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+		expect(diagnostics.events.at(-1)).toMatchObject({ code: 'storage_failure', state: 'unavailable' });
+	});
+
 	it('coordinates two installs so only one durable root wins', async () => {
 		const pointer = new MemoryManagedAssetsPointerStore();
 		const manager = new FakeManager();
@@ -226,4 +263,30 @@ function ok(status: 'applied' | 'detached', ownership: 'created' | 'existing'): 
 function inspection(root: string, manifestStatus: 'ready' | 'applying' | 'missing') {
 	return { root, manifestPath: `${root}/Tyrian Companion Assets.json`, manifest: null,
 		manifestStatus, bundleVersion: 1, locale: 'es' as const, assets: [] };
+}
+
+function actionContext(actionId: string, correlationId: string): ResolvedLocalDebugActionContext {
+	return { component: 'settings', action: 'command_execute', actionId, correlationId };
+}
+
+function diagnosticHarness(): {
+	createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext;
+	event(context: LocalDebugEventContext): void;
+	events: LocalDebugEventContext[];
+	created: number;
+} {
+	const harness = {
+		events: [] as LocalDebugEventContext[],
+		created: 0,
+		createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext {
+			if (context.actionId === undefined) this.created += 1;
+			const actionId = context.actionId ?? `generated-${this.created}`;
+			return {
+				...context, actionId,
+				correlationId: context.correlationId ?? context.parent?.correlationId ?? context.parent?.actionId ?? actionId,
+			};
+		},
+		event(context: LocalDebugEventContext): void { this.events.push(context); },
+	};
+	return harness;
 }

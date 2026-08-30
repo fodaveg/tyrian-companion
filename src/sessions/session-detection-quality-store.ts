@@ -3,6 +3,10 @@ import {
 	isDetectionQualityEvent,
 	type DetectionQualityEvent,
 } from './session-detection-quality';
+import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceContext,
+} from '../core/local-debug-persistence';
 
 export const DETECTION_QUALITY_DB_NAME = 'tyrian-companion-detection-quality';
 export const DETECTION_QUALITY_DB_VERSION = 1;
@@ -18,8 +22,8 @@ export type DetectionQualityAppendResult =
 	| { status: 'error'; code: 'conflict' | 'corrupt' | 'unavailable' };
 
 export interface DetectionQualityStore {
-	load(): Promise<DetectionQualityLoadResult>;
-	append(event: DetectionQualityEvent): Promise<DetectionQualityAppendResult>;
+	load(context?: LocalDebugPersistenceContext): Promise<DetectionQualityLoadResult>;
+	append(event: DetectionQualityEvent, context?: LocalDebugPersistenceContext): Promise<DetectionQualityAppendResult>;
 	close(): void;
 }
 
@@ -67,41 +71,54 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 	constructor(
 		private readonly factory: IDBFactory,
 		private readonly databaseName = DETECTION_QUALITY_DB_NAME,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
-	async load(): Promise<DetectionQualityLoadResult> {
+	async load(context?: LocalDebugPersistenceContext): Promise<DetectionQualityLoadResult> {
+		const attempt = this.diagnostics.begin('detection_quality', 'read', context);
 		try {
-			const values = await this.getAll();
-			if (values.length === 0) return { status: 'empty' };
-			if (!values.every(isDetectionQualityEvent)) return { status: 'error', code: 'corrupt' };
+			const values = await this.getAll(context);
+			if (values.length === 0) { attempt.skip(); return { status: 'empty' }; }
+			if (!values.every(isDetectionQualityEvent)) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
+			attempt.success();
 			return {
 				status: 'loaded',
 				events: values.map((value) => structuredClone(value)).sort(compareDetectionQualityEvents),
 			};
 		} catch {
+			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
 
-	async append(event: DetectionQualityEvent): Promise<DetectionQualityAppendResult> {
-		if (!isDetectionQualityEvent(event)) return { status: 'error', code: 'corrupt' };
+	async append(event: DetectionQualityEvent, context?: LocalDebugPersistenceContext): Promise<DetectionQualityAppendResult> {
+		const attempt = this.diagnostics.begin('detection_quality', 'write', context);
+		if (!isDetectionQualityEvent(event)) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
 		try {
-			return await this.appendTransaction(event);
+			const result = await this.appendTransaction(event, context);
+			if (result.status === 'saved') attempt.success();
+			else if (result.status === 'duplicate') attempt.skip();
+			else attempt.failure('validation_failed');
+			return result;
 		} catch {
+			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
 
 	close(): void {
+		const attempt = this.diagnostics.begin('detection_quality', 'close');
 		this.unavailable = true;
 		this.database?.close();
 		this.database = null;
+		attempt.success();
 	}
 
-	private async open(): Promise<IDBDatabase> {
+	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Detection quality storage is unavailable.');
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
+		const attempt = this.diagnostics.begin('detection_quality', 'open', context);
 		const opening = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = this.factory.open(this.databaseName, DETECTION_QUALITY_DB_VERSION);
 			let settled = false;
@@ -135,14 +152,19 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 		});
 		this.opening = opening;
 		try {
-			return await opening;
+			const database = await opening;
+			attempt.success();
+			return database;
+		} catch (error) {
+			attempt.failure();
+			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;
 		}
 	}
 
-	private async getAll(): Promise<unknown[]> {
-		const database = await this.open();
+	private async getAll(context?: LocalDebugPersistenceContext): Promise<unknown[]> {
+		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {
@@ -160,8 +182,11 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 		});
 	}
 
-	private async appendTransaction(event: DetectionQualityEvent): Promise<DetectionQualityAppendResult> {
-		const database = await this.open();
+	private async appendTransaction(
+		event: DetectionQualityEvent,
+		context?: LocalDebugPersistenceContext,
+	): Promise<DetectionQualityAppendResult> {
+		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {

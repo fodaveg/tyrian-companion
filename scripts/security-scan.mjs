@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import * as ts from 'typescript';
 
 /** Textual baseline with AST-closed TypeScript import boundaries. */
-export const SECURITY_SCANNER_VERSION = 14;
+export const SECURITY_SCANNER_VERSION = 15;
 
 const MUMBLE_V2_SPAWN_CAPABILITY_SHA256 = 'a12bff26711472e5637bd2a8e9205ccc16a6b76e7f08b7cc7668d83dc070f77d';
 const MUMBLE_V2_PROCESS_ADAPTER_SOURCE_SHA256 = '72f4dfc5052f386a75aa321305936f1223e6e94fd6c9454ba047b0b2097775f6';
@@ -42,6 +42,7 @@ const ALLOWED_SYNTHETIC_CREDENTIALS = new Set([
 ]);
 const CONSOLE_REFERENCE_PATTERN = /\bconsole\b/u;
 const LOGGER_CALL_PATTERN = /\b(?:logger|telemetry)\s*(?:\?\.)?\s*(?:\.|\[)/iu;
+const RENAMED_LOG_METHOD_PATTERN = /(?:\?\.\s*|\.\s*|\[\s*['"])(?:debug|info|warn|error|log)(?:['"]\s*\])?\s*\(/iu;
 const MUMBLE_HELPER_PATTERN = /mumble/iu;
 const REVIEWED_MUMBLE_CONTRACT_FILES = new Set([
 	'src/platform/mumble-v2-client.ts',
@@ -142,7 +143,7 @@ export function scanSecurityBoundaries(root = process.cwd()) {
 			if (CONSOLE_REFERENCE_PATTERN.test(source)) {
 				findings.push({ rule: 'production-console-log', path: file.relative });
 			}
-			if (LOGGER_CALL_PATTERN.test(source)) {
+			if (LOGGER_CALL_PATTERN.test(source) || RENAMED_LOG_METHOD_PATTERN.test(source)) {
 				findings.push({ rule: 'production-logger-log', path: file.relative });
 			}
 			if ((MUMBLE_HELPER_PATTERN.test(file.relative) || MUMBLE_HELPER_PATTERN.test(source))

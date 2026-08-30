@@ -17,6 +17,10 @@ import {
 	type HalloweenPriceNoticeV1,
 	type HalloweenPriceValidProjection,
 } from './halloween-price-alert';
+import {
+	LocalDebugPersistenceProbe,
+	localDebugStorageFailureCode,
+} from '../core/local-debug-persistence';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
 export const HALLOWEEN_DB_VERSION = 5;
@@ -58,7 +62,10 @@ export interface HalloweenEpisodeReplacement {
 export class IndexedDbHalloweenStore {
 	private closed = false;
 
-	constructor(private readonly database: IDBDatabase) {
+	constructor(
+		private readonly database: IDBDatabase,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
+	) {
 		database.onversionchange = () => { this.closed = true; database.close(); };
 	}
 
@@ -66,7 +73,9 @@ export class IndexedDbHalloweenStore {
 		factory: IDBFactory,
 		databaseName = HALLOWEEN_DB_NAME,
 		databaseVersion = HALLOWEEN_DB_VERSION,
+		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbHalloweenStore> {
+		const attempt = diagnostics.begin('halloween', 'open');
 		return new Promise((resolve, reject) => {
 			const request = factory.open(databaseName, databaseVersion);
 			let settled = false;
@@ -112,9 +121,13 @@ export class IndexedDbHalloweenStore {
 			request.onsuccess = () => {
 				if (settled) { request.result.close(); return; }
 				settled = true;
-				resolve(new IndexedDbHalloweenStore(request.result));
+				attempt.success();
+				resolve(new IndexedDbHalloweenStore(request.result, diagnostics));
 			};
-			function fail(error: HalloweenStoreError): void { if (!settled) reject(error); settled = true; }
+			function fail(error: HalloweenStoreError): void {
+				if (!settled) { attempt.failure(localDebugStorageFailureCode(error)); reject(error); }
+				settled = true;
+			}
 		});
 	}
 
@@ -529,20 +542,39 @@ export class IndexedDbHalloweenStore {
 		});
 	}
 
-	close(): void { this.closed = true; this.database.close(); }
+	close(): void {
+		const attempt = this.diagnostics.begin('halloween', 'close');
+		this.closed = true;
+		this.database.close();
+		attempt.success();
+	}
 
 	private run<T>(
 		stores: string[], mode: IDBTransactionMode,
 		body: (transaction: IDBTransaction, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
 	): Promise<T> {
-		if (this.closed) return Promise.reject(new HalloweenStoreError('unavailable'));
+		const attempt = this.diagnostics.begin('halloween', mode === 'readonly' ? 'read' : 'transaction');
+		if (this.closed) {
+			attempt.failure();
+			return Promise.reject(new HalloweenStoreError('unavailable'));
+		}
 		return new Promise((resolve, reject) => {
+			const resolveObserved = (value: T): void => { attempt.success(); resolve(value); };
+			const rejectObserved = (reason: unknown): void => {
+				const error = reason instanceof Error ? reason : new HalloweenStoreError('unavailable');
+				attempt.failure(localDebugStorageFailureCode(error));
+				reject(error);
+			};
 			let tx: IDBTransaction;
 			try { tx = this.database.transaction(stores, mode); }
-			catch { reject(new HalloweenStoreError('unavailable')); return; }
-			tx.onerror = () => reject(storeError(tx.error));
-			tx.onabort = () => reject(storeError(tx.error));
-			body(tx, resolve, reject);
+			catch { rejectObserved(new HalloweenStoreError('unavailable')); return; }
+			tx.onerror = () => rejectObserved(storeError(tx.error));
+			tx.onabort = () => rejectObserved(storeError(tx.error));
+			try {
+				body(tx, resolveObserved, rejectObserved);
+			} catch (error) {
+				rejectObserved(error);
+			}
 		});
 	}
 }

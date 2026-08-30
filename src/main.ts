@@ -1,4 +1,6 @@
-import { Menu, Notice, Plugin, TFile } from 'obsidian';
+import { Menu, Notice, Platform, Plugin, TFile } from 'obsidian';
+// @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
+import { shell } from 'electron';
 
 import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
@@ -19,6 +21,24 @@ import { ObsidianRequestTransport } from './core/obsidian-http';
 import { RateLimitCoordinator } from './core/rate-limit-coordinator';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import { createTranslator, type Locale } from './core/i18n';
+import {
+	localDebugDirectory,
+	type LocalDebugAction,
+	type LocalDebugComponent,
+	type LocalDebugStatus,
+} from './core/local-debug-contract';
+import {
+	LocalDebugActionRunner,
+	startLocalDebugAction,
+	type LocalDebugActionContext,
+	type ResolvedLocalDebugActionContext,
+} from './core/local-debug-action-runner';
+import { LocalDebugLogger } from './core/local-debug-logger';
+import {
+	createLocalDebugPersistenceSink,
+	LocalDebugPersistenceProbe,
+} from './core/local-debug-persistence';
+import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { translateRuntime } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
@@ -160,6 +180,23 @@ export type SettingsUpdateResult =
 	| { status: 'blocked'; reason: 'runtime_starting' }
 	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
 
+export interface LocalDebugExportPreview {
+	readonly included: readonly ['logs', 'version', 'platform', 'settings'];
+	readonly excluded: readonly ['secret_name', 'character', 'paths', 'payloads'];
+}
+
+type NoticeDiagnosticSource =
+	| 'halloween_price_alert'
+	| 'halloween_observation'
+	| 'wallet_sync'
+	| 'proposal_unavailable'
+	| 'proposal_review_failed'
+	| 'pending_start_failed'
+	| 'plugin_starting'
+	| 'managed_assets_relocated'
+	| 'managed_assets_blocked'
+	| 'session_command';
+
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = migrateSettings(null);
 	private connection!: ConnectionService;
@@ -170,7 +207,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
 	private sessionHistory!: SessionHistoryService;
-	private readonly lootPresentation = new LootPresentationCache(() => this.renderViews());
+	private lootPresentation = new LootPresentationCache(() => this.renderViews());
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private inventoryVaultSync!: InventoryVaultSyncController;
 	private inventoryVaultSyncRun!: InventoryVaultOneClickSyncController;
@@ -205,6 +242,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private runtimeReady = false;
 	/** True once `onunload` has run; guards the deferred boot tail against writing after teardown. */
 	private unloaded = false;
+	/** Local diagnostics remain optional and fail-open throughout teardown and isolated unit harnesses. */
+	private localDebug: LocalDebugLogger | null = null;
+	private localDebugActions: LocalDebugActionRunner | null = null;
+	private localDebugShutdown: Promise<void> | null = null;
 
 	/**
 	 * Boot is split so that Obsidian can restore a saved `tyrian-companion-*` leaf
@@ -214,7 +255,26 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * afterwards, off `workspace.onLayoutReady`, in `initializeRuntime`.
 	 */
 	async onload(): Promise<void> {
-		await this.loadSettings();
+		let settingsLoadFailure: unknown = null;
+		try { await this.loadSettings(); }
+		catch (error) {
+			this.settings = migrateSettings(null, this.app.vault.configDir);
+			settingsLoadFailure = error;
+		}
+		const localDebugInitialization = this.initializeLocalDebug(settingsLoadFailure === null);
+		if (settingsLoadFailure !== null) {
+			await localDebugInitialization;
+			this.localDebugActions?.event({
+				component: 'settings', action: 'settings_load', level: 'error', phase: 'failure', code: 'storage_failure',
+				message: settingsLoadFailure,
+			});
+			await this.localDebug?.flush();
+			throw settingsLoadFailure instanceof Error ? settingsLoadFailure : new Error('Settings load failed.');
+		}
+		await this.localDebugActions!.run({
+			component: 'plugin', action: 'plugin_load',
+			details: { commandCount: SESSION_COMMAND_IDS.length + 10, viewCount: 2 },
+		}, async () => {
 
 		this.registerView(
 			COMPANION_VIEW_TYPE,
@@ -231,7 +291,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			id: 'open-companion',
 			name: createTranslator(this.settings.language).t('commands.openCompanion'),
 			callback: () => {
-				void this.activateView();
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'ui', action: 'command_execute', state: 'open_companion' },
+					() => this.activateView());
 			},
 		});
 		this.addCommand({
@@ -247,35 +309,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.addCommand({
 			id: 'preview-inventory-vault-sync',
 			name: createTranslator(this.settings.language).t('commands.previewInventoryVault'),
-			callback: () => { void this.previewInventoryVaultSync(true); },
+			callback: () => { consumeRecorded(this.previewInventoryVaultSync(true)); },
 		});
 		this.addCommand({
 			id: 'apply-inventory-vault-sync',
 			name: createTranslator(this.settings.language).t('commands.applyInventoryVault'),
 			checkCallback: (checking) => {
 				const available = this.inventoryVaultSync.canApply();
-				if (!checking && available) void this.applyInventoryVaultSync();
+				if (!checking && available) consumeRecorded(this.applyInventoryVaultSync());
 				return available;
 			},
 		});
 		this.addCommand({
 			id: 'preview-wallet-vault-sync',
 			name: createTranslator(this.settings.language).t('commands.previewWalletVault'),
-			callback: () => { void this.previewWalletVaultSync(); },
+			callback: () => { consumeRecorded(this.previewWalletVaultSync()); },
 		});
 		this.addCommand({
 			id: 'apply-wallet-vault-sync',
 			name: createTranslator(this.settings.language).t('commands.applyWalletVault'),
 			checkCallback: (checking) => {
 				const available = this.walletVaultSync.canApply();
-				if (!checking && available) void this.applyWalletVaultSync();
+				if (!checking && available) consumeRecorded(this.applyWalletVaultSync());
 				return available;
 			},
 		});
 		this.addCommand({
 			id: 'arm-assisted-detection',
 			name: createTranslator(this.settings.language).t('commands.armDetection'),
-			callback: () => { void this.armAssistedDetection(); },
+			callback: () => { consumeRecorded(this.armAssistedDetection()); },
 		});
 		this.addCommand({
 			id: 'disarm-assisted-detection',
@@ -283,27 +345,119 @@ export default class TyrianCompanionPlugin extends Plugin {
 			callback: () => this.disarmAssistedDetection(),
 		});
 		this.setupSessionCommands();
+		this.registerDomEvent(window, 'error', (event) => {
+			let failure: unknown = event;
+			if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
+				const errorEvent = event as unknown as { readonly error: unknown; readonly message: string };
+				failure = errorEvent.error ?? errorEvent.message;
+			}
+			this.localDebugActions?.event({
+				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
+				code: 'unknown_failure', state: 'window_error', message: failure,
+			});
+		});
+		this.registerDomEvent(window, 'unhandledrejection', (event) => {
+			let failure: unknown = event;
+			if (typeof PromiseRejectionEvent !== 'undefined' && event instanceof PromiseRejectionEvent) {
+				failure = (event as unknown as { readonly reason: unknown }).reason;
+			}
+			this.localDebugActions?.event({
+				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
+				code: 'unknown_failure', state: 'unhandled_rejection', message: failure,
+			});
+		});
 		this.registerDomEvent(window, 'online', () => {
-			if (!this.runtimeReady) return;
-			this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
-			this.priceHistory?.setOnline(true);
-			this.halloween?.setOnline(true);
+			const handle = () => {
+				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state: 'online' };
+				this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+				this.priceHistory?.setOnline(true);
+				this.halloween?.setOnline(true);
+				return { state: 'online' };
+			};
+			if (this.localDebugActions) this.localDebugActions.runSync(
+				{ component: 'detection', action: 'detection_poll', state: 'connectivity_change' }, handle,
+			);
+			else handle();
 		});
 		this.registerDomEvent(window, 'offline', () => {
-			if (!this.runtimeReady) return;
-			this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
-			this.priceHistory?.setOnline(false);
-			this.halloween?.setOnline(false);
+			const handle = () => {
+				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state: 'offline' };
+				this.runRuntimeMutation(() => this.assistedDetection.setOnline(false));
+				this.priceHistory?.setOnline(false);
+				this.halloween?.setOnline(false);
+				return { state: 'offline' };
+			};
+			if (this.localDebugActions) this.localDebugActions.runSync(
+				{ component: 'detection', action: 'detection_poll', state: 'connectivity_change' }, handle,
+			);
+			else handle();
 		});
 		this.registerDomEvent(document, 'visibilitychange', () => {
 			if (!this.runtimeReady || document.visibilityState !== 'visible') return;
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
-				void this.reconcilePendingProposals().then(() => this.renderViews());
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'detection', action: 'detection_poll', state: 'wake' },
+					async () => { await this.reconcilePendingProposals(); this.renderViews(); });
 			}
 			this.priceHistory?.notifyWake();
 		});
 
-		this.app.workspace.onLayoutReady(() => { void this.initializeRuntime(); });
+		this.app.workspace.onLayoutReady(() => {
+			this.localDebugActions?.fireAndForget(
+				{ component: 'plugin', action: 'plugin_load', state: 'runtime_initialize' },
+				() => this.initializeRuntime(),
+			);
+		});
+		});
+		await localDebugInitialization;
+	}
+
+	/** Composes the writer only after persisted settings and the configured vault directory are known. */
+	private async initializeLocalDebug(settingsLoaded: boolean): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		const storage: LocalDebugStoragePort = {
+			exists: async (path) => await adapter.exists(path),
+			read: async (path) => await adapter.read(path),
+			write: async (path, data) => { await adapter.write(path, data); },
+			append: async (path, data) => { await adapter.append(path, data); },
+			mkdir: async (path) => { await adapter.mkdir(path); },
+			remove: async (path) => { await adapter.remove(path); },
+			rename: async (path, destination) => { await adapter.rename(path, destination); },
+		};
+		this.localDebug = new LocalDebugLogger({
+			enabled: this.settings.debugLoggingEnabled,
+			minimumLevel: this.settings.debugLoggingLevel,
+			pluginVersion: this.manifest.version,
+			writer: new LocalDebugJsonlWriter({
+				storage,
+				directory: localDebugDirectory(this.app.vault.configDir),
+			}),
+		});
+		this.localDebugActions = new LocalDebugActionRunner({ diagnostics: this.localDebug });
+		this.lootPresentation = new LootPresentationCache(
+			() => this.renderViews(),
+			this.persistenceDiagnostics('session', 'session_review'),
+		);
+		await this.localDebugActions.run(
+			{ component: 'local_debug', action: 'debug_initialize' },
+			async () => await this.localDebug!.initialize(),
+		);
+		if (settingsLoaded) this.localDebugActions.event({
+			component: 'settings', action: 'settings_load', level: 'info', phase: 'success', code: 'ok',
+			details: { schemaVersion: this.settings.schemaVersion },
+		});
+	}
+
+	/** Creates one data-free persistence bridge; an unavailable logger leaves a true no-op probe. */
+	private persistenceDiagnostics(
+		component: LocalDebugComponent,
+		action: LocalDebugAction,
+	): LocalDebugPersistenceProbe {
+		return this.localDebugActions === null
+			? new LocalDebugPersistenceProbe()
+			: new LocalDebugPersistenceProbe({
+				sink: createLocalDebugPersistenceSink(this.localDebugActions, component, action),
+			});
 	}
 
 	/**
@@ -341,41 +495,62 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const adapter = this.app.vault.adapter as unknown as { getBasePath?: () => string };
 		const canonicalVaultIdentity = adapter.getBasePath?.() ?? `${this.app.vault.getName()}\0${this.app.vault.configDir}`;
 		const vaultId = await sha256Text(canonicalVaultIdentity.normalize('NFC'));
-		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(window.indexedDB, vaultId);
-		this.managedAssetsLifecycle = new ManagedAssetsLifecycle(this.managedAssets, this.managedAssetsPointer);
+		this.managedAssetsPointer = new IndexedDbManagedAssetsPointerStore(
+			window.indexedDB,
+			vaultId,
+			undefined,
+			this.persistenceDiagnostics('assets', 'managed_assets_apply'),
+		);
+		this.managedAssetsLifecycle = new ManagedAssetsLifecycle(
+			this.managedAssets,
+			this.managedAssetsPointer,
+			this.localDebugActions ?? undefined,
+		);
 
 		const apiKeyProvider = new ObsidianApiKeyProvider(
 			this.app,
 			() => this.settings.apiKeySecret,
 		);
-		const transport = new ObsidianRequestTransport();
+		const transport = new ObsidianRequestTransport({ diagnostics: this.localDebugActions ?? undefined });
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
-		const inventoryTransport = new ObsidianRequestTransport({ timeoutMs: 30_000 });
+		const inventoryTransport = new ObsidianRequestTransport({
+			timeoutMs: 30_000,
+			diagnostics: this.localDebugActions ?? undefined,
+		});
 		const inventoryClient = new GuildWars2Client(inventoryTransport, apiKeyProvider);
 		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
-		const coordinator = new ActiveSessionLeaseCoordinator();
+		const coordinator = new ActiveSessionLeaseCoordinator({
+			diagnostics: this.persistenceDiagnostics('session', 'session_start'),
+		});
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
 		// inventory advisor, or price history blocks every other caller until it clears.
-		const rateLimitCoordinator = new RateLimitCoordinator();
+		const rateLimitCoordinator = new RateLimitCoordinator({ diagnostics: this.localDebugActions ?? undefined });
+		const catalogDiagnostics = this.persistenceDiagnostics('inventory', 'inventory_refresh');
 		this.halloweenPriceAlert = new HalloweenPriceAlertRuntime({
 			factory: window.indexedDB, vaultId,
+			diagnostics: this.localDebugActions ?? undefined,
+			persistenceDiagnostics: this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			accountRef: () => this.halloweenAccountRef,
-			onNotice: () => new Notice(translateRuntime(createTranslator(this.settings.language),
-				'notices.halloweenPriceHigh')),
+			onNotice: () => this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.halloweenPriceHigh'),
+				'halloween_price_alert',
+			),
 			onStateChange: () => this.renderViews(),
 		});
 		this.priceHistory = new PriceHistoryRuntime({
 			factory: window.indexedDB,
 			vaultId,
+			diagnostics: this.localDebugActions ?? undefined,
+			persistenceDiagnostics: this.persistenceDiagnostics('price_history', 'price_history_capture'),
 			gateway: publicClient,
 			rateLimit: rateLimitCoordinator,
 			onStateChange: () => this.renderInventoryAdvisorViews(),
 			afterCompaction: async (port) => {
 				await this.halloweenPriceAlert?.evaluate({
 					readDaily: async (itemId, fromDayUtc) => await port.readDaily(itemId, fromDayUtc),
-				}, port.nowMs);
+				}, port.nowMs, port.actionContext);
 			},
 		});
 		const halloweenEvidence = new HalloweenEvidenceService(
@@ -385,6 +560,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		this.halloween = new HalloweenRuntime({
 			factory: window.indexedDB, vaultId,
+			diagnostics: this.localDebugActions ?? undefined,
+			persistenceDiagnostics: this.persistenceDiagnostics('halloween', 'halloween_refresh'),
 			accountRef: () => this.halloweenAccountRef,
 			resolveEvidence: async ({ gains, firstSeenItemIds, learning }) => await halloweenEvidence.resolve({
 				gains, firstSeenItemIds, learning, locale: this.settings.language,
@@ -403,8 +580,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 				active: () => this.settings.priceHistoryEnabled,
 				observeItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
 			},
-			onNotice: (notice) => new Notice(translateRuntime(createTranslator(this.settings.language),
-				'notices.halloweenObserved', { count: notice.items.length })),
+			onNotice: (notice) => this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.halloweenObserved', { count: notice.items.length }),
+				'halloween_observation',
+			),
 			onStateChange: () => this.renderViews(),
 		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
@@ -412,7 +591,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
 			const renamedSessionNote = typeof oldPath === 'string' && oldPath.endsWith('.md') && oldPath.startsWith(sessionRoot);
 			if (this.settings.halloweenEnabled && (currentSessionNote || renamedSessionNote)) {
-				void this.halloween?.refreshBackfill();
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'halloween', action: 'halloween_backfill' },
+					async () => { await this.halloween?.refreshBackfill(); });
 			}
 		};
 		this.registerEvent(this.app.vault.on('create', refreshHalloweenBackfill));
@@ -446,7 +627,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				inventoryVaultCapture = new InventoryVaultCaptureService(
 					inventoryClient,
 					inventorySnapshots,
-					new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter()),
+					new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics })),
 					inventoryPublicClient,
 				);
 			}
@@ -472,7 +653,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 			this.settings.inventorySyncLastRun,
 			() => this.renderInventoryAdvisorViews(),
-			(outcome) => { void this.recordInventorySyncOutcome(outcome); },
+			(outcome) => { fireAndForgetLocal(this.localDebugActions,
+				{ component: 'settings', action: 'settings_save', state: 'inventory_sync_outcome' },
+				() => this.recordInventorySyncOutcome(outcome)); },
 		);
 		const walletVaultWriter = new WalletVaultSyncService({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
@@ -504,7 +687,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
 		this.inventoryPreferences = new InventoryPreferencesRuntime(
-			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(window.indexedDB)), vaultId,
+			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(
+				window.indexedDB,
+				undefined,
+				{
+					read: this.persistenceDiagnostics('advisor', 'inventory_preferences_read'),
+					write: this.persistenceDiagnostics('advisor', 'inventory_preferences_write'),
+				},
+			)),
+			vaultId,
+			this.localDebugActions ?? undefined,
 		);
 		this.inventoryAdvisor = createInventoryAdvisorRuntime(
 			inventoryClient, inventoryPublicClient, inventorySnapshots, rateLimitCoordinator,
@@ -516,6 +708,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
 			this.inventoryAdvisorPhaseListener,
 			this.inventoryAdvisorCaptureProgressListener,
+			catalogDiagnostics,
+			this.localDebugActions,
 		);
 		this.sessions = new ManualSessionStartService(
 			coordinator,
@@ -525,10 +719,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 					const session = this.sessions.getState();
 					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
-					if (session.status === 'complete') void this.refreshLootPresentation();
-					if (this.pendingProposals) void this.reconcilePendingProposals();
+					if (session.status === 'complete') fireAndForgetLocal(this.localDebugActions,
+						{ component: 'session', action: 'session_finish', state: 'loot_projection' },
+						() => this.refreshLootPresentation());
+					if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
+						{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
+						() => this.reconcilePendingProposals());
 				},
-				runtimeStore: new IndexedDbSessionRuntimeStore(window.indexedDB),
+				runtimeStore: new IndexedDbSessionRuntimeStore(
+					window.indexedDB,
+					undefined,
+					this.persistenceDiagnostics('session', 'session_recover'),
+				),
 				priceCapture: new SessionPriceSnapshotService(publicClient),
 				tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(client),
 			},
@@ -574,11 +776,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		});
 		this.detectionQuality = new DetectionQualityRecorder(
-			new IndexedDbDetectionQualityStore(window.indexedDB),
+			new IndexedDbDetectionQualityStore(
+				window.indexedDB,
+				undefined,
+				this.persistenceDiagnostics('detection', 'detection_proposal'),
+			),
 		);
-		void this.detectionQuality.initialize().then(() => this.renderViews());
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
+			async () => { await this.detectionQuality.initialize(); this.renderViews(); });
 		this.pendingProposals = new PendingProposalService(
-			new IndexedDbPendingProposalStore(window.indexedDB),
+			new IndexedDbPendingProposalStore(
+				window.indexedDB,
+				undefined,
+				this.persistenceDiagnostics('detection', 'detection_proposal'),
+			),
 			crypto.randomUUID(),
 			undefined,
 			() => this.refreshBackgroundIndicators(),
@@ -587,13 +799,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
 			clearInterval: (handle) => window.clearInterval(handle),
 		});
-		void this.pendingProposals.initialize().then(() => this.reconcilePendingProposals());
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
+			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
 		this.assistedDetection = new AssistedDetectionService({
 			snapshots,
+			diagnostics: this.localDebugActions ?? undefined,
 			getSessionState: () => this.sessions.getState(),
 			onStateChange: () => this.refreshBackgroundIndicators(),
 			onObservedDelta: (delta) => {
-				void this.observeAcceptedHalloweenDelta(delta);
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'halloween', action: 'halloween_refresh' },
+					() => this.observeAcceptedHalloweenDelta(delta));
 			},
 			onProposal: async (proposal) => {
 				const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
@@ -630,10 +847,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// Heals a root left behind by a folder change made before this version shipped the
 		// auto-relocation above (David's own install: notes three folders deep, Bases still at
 		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.
-		void this.reconcileManagedAssetsRoot();
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'vault', action: 'vault_write', state: 'managed_assets_reconcile' },
+			() => this.reconcileManagedAssetsRoot());
 	}
 
 	onunload(): void {
+		this.localDebugShutdown = this.shutdownRuntime().catch(() => undefined);
+	}
+
+	/** Exposes the host-initiated async drain to tests and orderly embedding environments. */
+	async awaitLocalDebugShutdown(): Promise<void> {
+		await this.localDebugShutdown;
+	}
+
+	/** Disposes product runtimes, records the unload terminal, then drains that and the flush terminal. */
+	private async shutdownRuntime(): Promise<void> {
+		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
@@ -654,7 +884,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.pendingProposals?.dispose();
 		this.sessionHistory?.dispose();
 		this.managedAssetsPointer?.close();
-		void this.sessions?.dispose();
+		if (this.sessions) await this.sessions.dispose();
+		};
+		if (this.localDebugActions) await this.localDebugActions.run(
+			{ component: 'plugin', action: 'plugin_unload' }, dispose,
+		);
+		else await dispose();
+		const diagnostics = this.localDebug;
+		if (diagnostics && this.localDebugActions) {
+			await this.localDebugActions.run(
+				{ component: 'local_debug', action: 'debug_flush' }, async () => { await diagnostics.flush(); },
+			);
+			// The runner's terminal record is queued after its callback resolves.
+			await diagnostics.flush();
+		} else if (diagnostics) {
+			await diagnostics.flush();
+		}
 	}
 
 	getConnectionState(): ConnectionState {
@@ -662,18 +907,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async checkConnection(): Promise<ConnectionState> {
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ConnectionState> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return { status: 'idle' }; }
-		const check = this.connection.check();
+		const check = this.connection.check(context);
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		const state = await check;
 		if (state.status === 'connected' || state.status === 'warning') {
-			await this.switchHalloweenAccount(state.details.account.id);
+			await this.switchHalloweenAccount(state.details.account.id, context);
 		}
-		void this.reconcilePendingProposals();
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_proposal', state: 'connection_reconcile' },
+			() => this.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
 		return state;
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'connection', action: 'connection_check' }, perform,
+		) ?? perform());
 	}
 
 	getSessionState(): SessionState {
@@ -686,6 +938,122 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getLocale() {
 		return this.settings.language;
+	}
+
+	/** Returns only the bounded health projection intended for visible diagnostics UI. */
+	getLocalDebugStatus(): LocalDebugStatus {
+		return this.localDebug?.status() ?? {
+			enabled: this.settings.debugLoggingEnabled,
+			minimumLevel: this.settings.debugLoggingLevel,
+			state: this.settings.debugLoggingEnabled ? 'degraded' : 'disabled',
+			path: `${localDebugDirectory(this.app.vault.configDir)}/`,
+			bytes: 0,
+			fileCount: 0,
+			lastEventAt: null,
+			droppedRecords: 0,
+			errorCode: this.settings.debugLoggingEnabled ? 'logger_failure' : null,
+			queuedRecords: 0,
+			recoveredTails: 0,
+		};
+	}
+
+	/** Emits a lightweight view lifecycle event without coupling the view to the logger implementation. */
+	localDebugViewEvent(phase: 'open' | 'close'): void {
+		this.localDebugActions?.event({
+			component: 'ui', action: 'view_render', level: 'info', phase: 'success', code: 'ok',
+			state: phase, details: { surface: 'companion' },
+		});
+	}
+
+	/** Navigates from a degraded Companion warning to this plugin's diagnostics settings. */
+	openLocalDebugSettings(): void {
+		const open = (): void => {
+			const host = this.app as typeof this.app & { setting?: { open(): void; openTabById(id: string): void } };
+			host.setting?.open();
+			host.setting?.openTabById(this.manifest.id);
+		};
+		if (this.localDebugActions) this.localDebugActions.runSync(
+			{ component: 'ui', action: 'command_execute', state: 'open_debug_settings' }, open,
+		);
+		else open();
+	}
+
+	/** Opens the resolved desktop directory through Electron without exposing it to diagnostic records. */
+	async openLocalDebugFolder(): Promise<boolean> {
+		const run = async (): Promise<boolean> => {
+			const adapter = this.app.vault.adapter as unknown as { getFullPath?: (path: string) => string };
+			const fullPath = adapter.getFullPath?.(this.getLocalDebugStatus().path.replace(/\/$/u, ''));
+			if (!fullPath) return false;
+			const desktopShell = shell as unknown as { openPath(path: string): Promise<string> };
+			return (await desktopShell.openPath(fullPath)) === '';
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'support', action: 'command_execute', state: 'open_debug_folder' }, run,
+		) ?? run());
+	}
+
+	/** Copies at most the requested number of newest records after removing process-local identifiers. */
+	async copyLocalDebugEntries(limit = 50): Promise<number> {
+		const run = async (): Promise<number> => {
+			const jsonl = safeLocalDebugJsonl(await this.localDebug?.exportSanitized() ?? '', limit);
+			if (jsonl.length === 0) return 0;
+			await navigator.clipboard.writeText(jsonl);
+			return jsonl.trimEnd().split('\n').length;
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'support', action: 'debug_export', details: { recordCount: limit } }, run,
+		) ?? run());
+	}
+
+	/** Declares the exact closed export contents before any local file is created. */
+	previewLocalDebugExport(): LocalDebugExportPreview {
+		return {
+			included: ['logs', 'version', 'platform', 'settings'],
+			excluded: ['secret_name', 'character', 'paths', 'payloads'],
+		};
+	}
+
+	/** Creates one support package locally with an explicit non-secret settings allowlist. */
+	async exportLocalDebugPackage(): Promise<string | null> {
+		const run = async (): Promise<string | null> => {
+			const logsJsonl = safeLocalDebugJsonl(await this.localDebug?.exportSanitized() ?? '');
+			if (logsJsonl.length === 0) return null;
+			const baseName = `diagnostic-export-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
+			const directory = `${this.settings.outputFolder}/diagnostics`;
+			const supportPackage = {
+				schemaVersion: 1,
+				pluginVersion: this.manifest.version,
+				platform: diagnosticPlatform(),
+				settings: {
+					schemaVersion: this.settings.schemaVersion,
+					language: this.settings.language,
+					pollingIntervalMinutes: this.settings.pollingIntervalMinutes,
+					detectionMode: this.settings.detectionMode,
+					debugLoggingEnabled: this.settings.debugLoggingEnabled,
+					debugLoggingLevel: this.settings.debugLoggingLevel,
+				},
+				logsJsonl,
+			};
+			await ensureAdapterDirectory(this.app.vault.adapter, directory);
+			let suffix = 0;
+			let path = `${directory}/${baseName}.json`;
+			while (await this.app.vault.adapter.exists(path)) {
+				suffix += 1;
+				path = `${directory}/${baseName}-${String(suffix)}.json`;
+			}
+			await this.app.vault.adapter.write(path, `${JSON.stringify(supportPackage, null, '\t')}\n`);
+			return path;
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'support', action: 'debug_export' }, run,
+		) ?? run());
+	}
+
+	/** Clears retained JSONL logs only; the logger remains configured for future actions. */
+	async clearLocalDebugLogs(): Promise<boolean> {
+		// Clear is deliberately the one diagnostic control that is not wrapped in an
+		// action: a terminal emitted after `clear()` would immediately recreate a log.
+		return await this.localDebug?.clear() ?? false;
 	}
 
 	getInventoryAdvisorLocale() {
@@ -742,19 +1110,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
 	}
 
-	private async switchHalloweenAccount(accountId: string): Promise<string> {
+	private async switchHalloweenAccount(
+		accountId: string,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<string> {
 		const accountRef = await sha256Text(accountId);
 		if (accountRef === this.halloweenAccountRef) {
-			if (this.settings.halloweenEnabled && this.halloween !== null) await this.halloween.activate();
+			if (this.settings.halloweenEnabled && this.halloween !== null) await this.halloween.activate(parent);
 			return accountRef;
 		}
 		this.halloweenAccountRef = accountRef;
 		await this.halloweenPriceAlert?.configure(
-			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled,
+			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,
 		);
 		if (!this.settings.halloweenEnabled || this.halloween === null) return accountRef;
-		this.halloween.disable();
-		await this.halloween.activate();
+		this.halloween.disable(parent);
+		await this.halloween.activate(parent);
 		this.halloween.setOnline(navigator.onLine);
 		return accountRef;
 	}
@@ -793,11 +1164,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async refreshInventoryAdvisor(): Promise<void> {
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const operation = this.inventoryAdvisor.refresh();
+		const operation = this.inventoryAdvisor.refresh({}, context);
 		this.renderInventoryAdvisorViews();
 		await operation;
 		this.renderInventoryAdvisorViews();
+		};
+		await (this.localDebugActions?.run(
+			{ component: 'inventory', action: 'inventory_refresh' }, perform,
+		) ?? perform());
 	}
 
 	/**
@@ -825,17 +1201,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
 	async runInventoryVaultSync(): Promise<void> {
-		await this.inventoryVaultSyncRun.run();
+		const perform = async () => { await this.inventoryVaultSyncRun.run(); };
+		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
-		await this.inventoryVaultSyncRun.confirm();
+		const perform = async () => { await this.inventoryVaultSyncRun.confirm(); };
+		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
 	/** Discards a pending destructive plan without writing anything. */
 	cancelInventoryVaultSync(): void {
-		this.inventoryVaultSyncRun.cancel();
+		if (this.localDebugActions) this.localDebugActions.runSync(
+			{ component: 'inventory', action: 'inventory_sync' }, () => this.inventoryVaultSyncRun.cancel(),
+		);
+		else this.inventoryVaultSyncRun.cancel();
 	}
 
 	private async recordInventorySyncOutcome(outcome: InventoryVaultSyncLastRun): Promise<void> {
@@ -844,18 +1225,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async previewInventoryVaultSync(openView = false): Promise<void> {
+		const perform = async (): Promise<void> => {
 		if (openView) await this.activateInventoryAdvisorView();
 		const operation = this.inventoryVaultSync.preview();
 		this.renderInventoryAdvisorViews();
 		await operation;
 		this.renderInventoryAdvisorViews();
+		};
+		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_preview' }, perform) ?? perform());
 	}
 
 	async applyInventoryVaultSync(): Promise<void> {
+		const perform = async (): Promise<void> => {
 		const operation = this.inventoryVaultSync.apply();
 		this.renderInventoryAdvisorViews();
 		await operation;
 		this.renderInventoryAdvisorViews();
+		};
+		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
 	/** Every note this plugin writes follows the explicit output folder, never the managed-assets pointer. */
@@ -872,13 +1259,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async previewWalletVaultSync(): Promise<void> {
+		const perform = async (): Promise<void> => {
 		const state = await this.walletVaultSync.preview();
-		new Notice(this.walletVaultSyncNoticeText(state));
+		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+		};
+		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_preview' }, perform) ?? perform());
 	}
 
 	async applyWalletVaultSync(): Promise<void> {
+		const perform = async (): Promise<void> => {
 		const state = await this.walletVaultSync.apply();
-		new Notice(this.walletVaultSyncNoticeText(state));
+		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+		};
+		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_sync' }, perform) ?? perform());
 	}
 
 	private walletVaultSyncNoticeText(state: WalletVaultSyncViewState): string {
@@ -974,22 +1367,34 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
+		const perform = async (): Promise<boolean> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return false; }
 		try {
 			if (!await this.pendingProposals.acknowledge(intent)) {
-				new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'));
+				this.emitNotice(
+					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
+					'proposal_unavailable',
+				);
 				return false;
 			}
 			await this.activateView();
 			this.renderViews();
 			return true;
 		} catch {
-			new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'));
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
+				'proposal_review_failed',
+			);
 			return false;
 		}
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'detection', action: 'detection_proposal', state: 'review' }, perform,
+		) ?? perform());
 	}
 
 	async dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void> {
+		const perform = async (): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const claim = await this.acquirePendingIntent(intent);
 		try {
@@ -1002,6 +1407,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			claim.stopRenewal();
 			this.renderViews();
 		}
+		};
+		await (this.localDebugActions?.run(
+			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
+		) ?? perform());
 	}
 
 	openPendingSessionStart(intent: PendingProposalIntent): void {
@@ -1011,7 +1420,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.app,
 			this.settings.preferredCharacter,
 			() => this.settings.language,
-			(input) => { void this.startManualSession(input, intent).catch(() => new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'))); },
+			(input) => { fireAndForgetLocal(this.localDebugActions,
+				{ component: 'session', action: 'session_start' },
+				async () => {
+					try { await this.startManualSession(input, intent); }
+					catch (error) {
+						this.emitNotice(
+							translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'),
+							'pending_start_failed',
+						);
+						throw error;
+					}
+				}); },
 			() => { this.startModal = null; },
 		);
 		this.startModal.open();
@@ -1024,6 +1444,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async armAssistedDetection(): Promise<void> {
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return;
@@ -1038,20 +1459,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 			(session.status === 'idle' && recovery.status !== 'none')
 		) return;
 		this.renderViews();
-		await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000);
+			await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
 		this.renderViews();
 		} finally { runtimeLease.release(); }
+		};
+		await (this.localDebugActions?.run({ component: 'detection', action: 'detection_arm' }, perform) ?? perform());
 	}
 
 	disarmAssistedDetection(): void {
+		const perform = (): void => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		this.runRuntimeMutation(() => {
 			this.assistedDetection.disarm();
 			this.renderViews();
 		});
+		};
+		if (this.localDebugActions) this.localDebugActions.runSync(
+			{ component: 'detection', action: 'detection_disarm' }, perform,
+		);
+		else perform();
 	}
 
 	async dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void> {
+		const perform = async (): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return;
@@ -1059,19 +1489,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const detection = this.assistedDetection.getState();
 		const session = this.sessions.getState();
 		if (detection.status === 'start_proposed') {
-			void this.detectionQuality.recordDismissed('start', null, cause, detection.proposal)
-				.then(() => this.renderViews());
+			fireAndForgetLocal(this.localDebugActions,
+				{ component: 'detection', action: 'detection_proposal', state: 'dismiss_start' },
+				async () => { await this.detectionQuality.recordDismissed('start', null, cause, detection.proposal); this.renderViews(); });
 		} else if (detection.status === 'stop_proposed') {
 			const observed = session.status === 'error' ? session.failedState : session;
 			const sessionId = observed.status === 'active' ? observed.sessionId : null;
 			if (sessionId) {
-				void this.detectionQuality.recordDismissed('stop', sessionId, cause, detection.proposal)
-					.then(() => this.renderViews());
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'detection', action: 'detection_proposal', state: 'dismiss_stop' },
+					async () => { await this.detectionQuality.recordDismissed('stop', sessionId, cause, detection.proposal); this.renderViews(); });
 			}
 		}
 		this.assistedDetection.dismissProposal();
 		this.renderViews();
 		} finally { runtimeLease.release(); }
+		};
+		await (this.localDebugActions?.run(
+			{ component: 'detection', action: 'detection_proposal', state: 'dismiss' }, perform,
+		) ?? perform());
 	}
 
 	getSessionStartFailure(): SessionStartFailure | null {
@@ -1189,7 +1625,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Tells the user an action was ignored because `initializeRuntime` has not finished yet. */
 	private notifyRuntimeStarting(): void {
-		new Notice(translateRuntime(createTranslator(this.settings.language), 'notices.pluginStarting'));
+		this.emitNotice(
+			translateRuntime(createTranslator(this.settings.language), 'notices.pluginStarting'),
+			'plugin_starting',
+		);
+	}
+
+	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
+	private emitNotice(message: string, source: NoticeDiagnosticSource): void {
+		const deliver = (): void => { new Notice(message); };
+		if (this.localDebugActions) this.localDebugActions.runSync(
+			{ component: 'notification', action: 'notification_emit', state: source },
+			deliver,
+		);
+		else deliver();
 	}
 
 	private runRuntimeMutation(operation: () => void): boolean {
@@ -1251,12 +1700,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Returns `null` only when the move was never attempted (runtime not ready, or the durable
 	 * pointer could not be confirmed to match the retained root first). */
-	async relocateManagedAssets(): Promise<ManagedAssetsLifecycleResult | null> {
+	async relocateManagedAssets(parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult | null> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return null; }
 		const destination = this.settings.outputFolder;
 		const legacyRoot = this.settings.legacyManagedAssetsRoot;
-		if (!await this.ensureManagedAssetsAuthority()) return null;
-		const result = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined));
+		if (!await this.ensureManagedAssetsAuthority(parent)) return null;
+		const result = await this.runManagedAssetsLifecycle(
+			() => this.managedAssetsLifecycle.move(destination, legacyRoot ?? undefined, parent),
+		);
 		if ('root' in result && (legacyRoot === null || result.status === 'relocated' && result.root === destination)) {
 			await this.updateSettings({ managedAssetsRoot: result.root });
 		}
@@ -1290,24 +1741,32 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * adopting one only ever happens through an explicit lifecycle Move, and this must not turn
 	 * that into something that fires on its own the next time Obsidian starts.
 	 */
-	private async reconcileManagedAssetsRoot(): Promise<void> {
+	private async reconcileManagedAssetsRoot(parent?: ResolvedLocalDebugActionContext): Promise<void> {
 		if (this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
-		const result = await this.relocateManagedAssets();
+		const result = await this.relocateManagedAssets(parent);
 		if (result === null) return;
 		const translator = createTranslator(this.settings.language);
 		if (result.status === 'relocated') {
-			new Notice(translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }));
+			this.emitNotice(
+				translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }),
+				'managed_assets_relocated',
+			);
 		} else if (result.status !== 'unchanged') {
-			new Notice(translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'));
+			this.emitNotice(
+				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
+				'managed_assets_blocked',
+			);
 		}
 	}
 
-	private async ensureManagedAssetsAuthority(): Promise<boolean> {
+	private async ensureManagedAssetsAuthority(parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
 		if (this.settings.legacyManagedAssetsRoot !== null) return true;
 		const mirroredRoot = this.settings.managedAssetsRoot;
 		if (!mirroredRoot) return true;
-		const adopted = await this.runManagedAssetsLifecycle(() => this.managedAssetsLifecycle.install(mirroredRoot));
+		const adopted = await this.runManagedAssetsLifecycle(
+			() => this.managedAssetsLifecycle.install(mirroredRoot, parent),
+		);
 		return 'root' in adopted && adopted.root === mirroredRoot;
 	}
 
@@ -1338,6 +1797,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
+		const perform = async (): Promise<string | null> => {
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return 'Session history scrub is active.';
 		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
@@ -1349,18 +1809,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		this.renderViews();
 		return result.status === 'failed' ? result.message : null;
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'session', action: 'session_review' }, perform,
+		) ?? perform());
 	}
 
 	openSessionReview(): void {
-		void this.sessionCommands.run('review-session');
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'session', action: 'session_review' }, () => this.sessionCommands.run('review-session'));
 	}
 
 	confirmClearCompletedSession(): void {
-		void this.sessionCommands.run('clear-completed-session');
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'session', action: 'session_clear' }, () => this.sessionCommands.run('clear-completed-session'));
 	}
 
 	async resetCompletedSession(): Promise<void> {
-		return this.sessionCommands.run('clear-completed-session');
+		const perform = async () => await this.sessionCommands.run('clear-completed-session');
+		return await (this.localDebugActions?.run({ component: 'session', action: 'session_clear' }, perform) ?? perform());
 	}
 
 	getSessionRecoveryState(): SessionRecoveryState {
@@ -1368,19 +1835,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async recoverSession(): Promise<void> {
-		return this.sessionDispatch.recover();
+		const perform = async () => await this.sessionDispatch.recover();
+		return await (this.localDebugActions?.run({ component: 'session', action: 'session_recover' }, perform) ?? perform());
 	}
 
 	async discardRecoveredSession(): Promise<void> {
-		return this.sessionDispatch.discard();
+		const perform = async () => await this.sessionDispatch.discard();
+		return await (this.localDebugActions?.run({ component: 'session', action: 'session_discard' }, perform) ?? perform());
 	}
 
 	confirmDiscardRecoveredSession(): void {
-		void this.sessionCommands.run('discard-saved-session');
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'session', action: 'session_discard' }, () => this.sessionCommands.run('discard-saved-session'));
 	}
 
 	async stopManualSession(): Promise<void> {
-		return this.sessionDispatch.finish();
+		const perform = async () => await this.sessionDispatch.finish();
+		return await (this.localDebugActions?.run({ component: 'session', action: 'session_finish' }, perform) ?? perform());
 	}
 
 	private async performStopManualSession(intent?: PendingProposalIntent): Promise<void> {
@@ -1395,12 +1866,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const result = await this.sessions.stop().finally(() => runtimeLease.release());
 			if (result.status === 'stopped') {
 				const priceSnapshot = this.sessions.getPriceSnapshot();
-				void this.priceHistory?.observeSessionItemIds([
-					...result.delta.itemChanges.map(({ id }) => id),
-					...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
-					...(priceSnapshot?.missingItemIds ?? []),
-				]);
-				void this.detectionQuality.recordAccepted(
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'inventory', action: 'inventory_refresh', state: 'price_history_observe' },
+					async () => { await this.priceHistory?.observeSessionItemIds([
+						...result.delta.itemChanges.map(({ id }) => id),
+						...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
+						...(priceSnapshot?.missingItemIds ?? []),
+					]); });
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'detection', action: 'detection_proposal', state: 'accept_stop' },
+					async () => { await this.detectionQuality.recordAccepted(
 					'stop',
 					result.state.sessionId,
 					result.state.finalSnapshot.completedAt,
@@ -1411,7 +1886,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 							to: result.state.finalSnapshot.completedAt,
 						},
 					},
-				).then(() => this.renderViews());
+					); this.renderViews(); });
 				this.assistedDetection.disarm('session_stopped');
 				if (intent && pendingClaim) {
 					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
@@ -1427,7 +1902,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	openManualSessionStart(): void {
-		void this.sessionCommands.run('start-farming-session');
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'session', action: 'session_start' }, () => this.sessionCommands.run('start-farming-session'));
 	}
 
 	private async startManualSession(input: SessionStartInput, intent?: PendingProposalIntent): Promise<void> {
@@ -1475,6 +1951,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
+		const debugLoggingWasEnabled = this.settings.debugLoggingEnabled;
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<SettingsUpdateResult> => {
 		if (!this.runtimeReady) {
 			this.notifyRuntimeStarting();
 			return { status: 'blocked', reason: 'runtime_starting' };
@@ -1518,8 +1996,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.runRuntimeMutation(() => this.assistedDetection.disarm('connection_changed'));
 			this.connection.reset();
 			this.halloweenAccountRef = null;
-			this.halloween?.disable();
-			await this.halloweenPriceAlert?.configure(halloweenPriceAlertSettingsFrom(this.settings), false);
+			this.halloween?.disable(context);
+			await this.halloweenPriceAlert?.configure(halloweenPriceAlertSettingsFrom(this.settings), false, context);
 			this.settingTab.refreshConnectionRow();
 			this.renderViews();
 		}
@@ -1529,7 +2007,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			|| previousSalvagePreferences !== JSON.stringify(resolveEquipmentSalvagePreferences(this.settings))) {
 			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
 			try {
-				const reclassified = await this.inventoryAdvisor.reclassify();
+				const reclassified = await this.inventoryAdvisor.reclassify({}, context);
 				inventoryAdvisorResult = reclassified.status === 'ready' || reclassified.status === 'limited' ||
 					reclassified.status === 'empty' ? 'reclassified' : 'next_refresh';
 			} catch {
@@ -1539,24 +2017,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		const nextPriceHistory = priceHistorySettingsFrom(this.settings);
 		if (this.priceHistory !== null && JSON.stringify(previousPriceHistory) !== JSON.stringify(nextPriceHistory)) {
-			await this.priceHistory.configure(nextPriceHistory);
+			await this.priceHistory.configure(nextPriceHistory, context);
 			this.priceHistory.setOnline(navigator.onLine);
 			this.settingTab.refreshForSettingsChange();
 			this.renderInventoryAdvisorViews();
 		}
 		if (this.halloween !== null && previousHalloweenEnabled !== this.settings.halloweenEnabled) {
 			if (this.settings.halloweenEnabled) {
-				await this.halloween.activate();
+				await this.halloween.activate(context);
 				this.halloween.setOnline(navigator.onLine);
-			} else this.halloween.disable();
+			} else this.halloween.disable(context);
 			this.settingTab.refreshForSettingsChange();
 		}
 		if (this.halloween !== null && secretChanged && this.settings.halloweenEnabled) {
-			await this.halloween.activate();
+			await this.halloween.activate(context);
 			this.halloween.setOnline(navigator.onLine);
 		}
 		await this.halloweenPriceAlert?.configure(
-			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled,
+			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, context,
 		);
 		if (previousLanguage !== this.settings.language || secretChanged || previousOutputFolder !== this.settings.outputFolder ||
 			previousManagedAssetsRoot !== this.settings.managedAssetsRoot || previousLegacyOutputFolder !== this.settings.legacyOutputFolder ||
@@ -1572,8 +2050,28 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (previousLanguage !== this.settings.language || secretChanged) this.renderInventoryAdvisorViews();
 		// An explicit folder change takes Bases/templates with it, so the selector stays the
 		// single source of truth without a separate manual step.
-		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot();
+		if (previousOutputFolder !== this.settings.outputFolder) await this.reconcileManagedAssetsRoot(context);
 		return { status: 'saved', inventoryAdvisor: inventoryAdvisorResult };
+		};
+		let result: SettingsUpdateResult;
+		try {
+			result = await (this.localDebugActions?.run({
+				component: 'settings', action: 'settings_save',
+				details: { changedKeys: Object.keys(settings).sort() },
+			}, perform) ?? perform());
+		} finally {
+			const debugLoggingIsEnabled = this.settings.debugLoggingEnabled;
+			if (this.localDebug) {
+				if (debugLoggingWasEnabled && !debugLoggingIsEnabled) await this.localDebug.flush();
+				this.localDebug.setMinimumLevel(this.settings.debugLoggingLevel);
+				this.localDebug.setEnabled(debugLoggingIsEnabled);
+				if (!debugLoggingWasEnabled && debugLoggingIsEnabled) this.localDebugActions?.event({
+					component: 'settings', action: 'settings_save', level: 'info', phase: 'success', code: 'ok',
+					state: 'debug_logging_enabled', details: { changedKeys: ['debugLoggingEnabled'] },
+				});
+			}
+		}
+		return result!;
 	}
 
 	private async loadSettings(): Promise<void> {
@@ -1640,7 +2138,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const claimed = await this.pendingProposals.claim(intent, operationId);
 		if (claimed.status !== 'claimed' && claimed.status !== 'already_claimed') throw new Error('Proposal claim failed.');
 		const stopRenewal = this.pendingClaimRenewals.start(() => {
-			void this.pendingProposals.renew(intent, operationId);
+			fireAndForgetLocal(this.localDebugActions,
+				{ component: 'detection', action: 'detection_proposal', state: 'renew_claim' },
+				() => this.pendingProposals.renew(intent, operationId));
 		}, 60_000);
 		return {
 			proposal: claimed.proposal,
@@ -1666,7 +2166,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			getLocale: () => this.settings.language,
 			prepare: (id) => this.prepareSessionCommand(id),
-			notify: (message) => { new Notice(message); },
+			notify: (message) => { this.emitNotice(message, 'session_command'); },
 		});
 		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
 		registerSessionPalette(
@@ -1681,7 +2181,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				if (!this.runtimeReady) return false;
 				const state = this.pendingProposals.getState();
 				const available = projectPendingProposalUi(state, this.settings.language).commandAvailable;
-				if (!checking && available && state.next) void this.reviewPendingProposal(proposalIntent(state.next));
+				if (!checking && available && state.next) consumeRecorded(this.reviewPendingProposal(proposalIntent(state.next)));
 				return available;
 			},
 		});
@@ -1697,16 +2197,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (this.pendingProposals.getState().pendingCount > 0) {
 			const next = this.pendingProposals.getState().next;
 			menu.addItem((item) => item.setTitle(translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending')).setIcon('inbox')
-				.onClick(() => { if (next) void this.reviewPendingProposal(proposalIntent(next)); }));
+				.onClick(() => { if (next) consumeRecorded(this.reviewPendingProposal(proposalIntent(next))); }));
 			menu.addSeparator();
 		}
 		for (const entry of projectSessionMenu(this.sessionCommands.available(), this.settings.language)) {
 			if (entry.type === 'separator') menu.addSeparator();
 			else if (entry.type === 'open') {
-				menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(() => { void this.activateView(); }));
+				menu.addItem((item) => item.setTitle(entry.title).setIcon(entry.icon).onClick(() => {
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'ui', action: 'command_execute', state: 'open_companion' }, () => this.activateView());
+				}));
 			} else {
 				menu.addItem((item) => item.setTitle(entry.command.name).setIcon(entry.command.icon)
-					.onClick(() => { void this.sessionCommands.run(entry.command.id); }));
+					.onClick(() => { fireAndForgetLocal(this.localDebugActions,
+						{ component: 'session', action: 'command_execute', state: entry.command.id },
+						() => this.sessionCommands.run(entry.command.id)); }));
 			}
 		}
 		menu.showAtMouseEvent(event);
@@ -1867,10 +2372,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private inventoryAdvisorCommandCallbacks(): { open: () => void; refresh: () => void } {
-		return createInventoryAdvisorCommandCallbacks({
-			open: () => this.activateInventoryAdvisorView(),
-			refresh: () => this.refreshInventoryAdvisor(),
-		});
+		return {
+			open: () => fireAndForgetLocal(this.localDebugActions,
+				{ component: 'ui', action: 'command_execute', state: 'open_inventory_advisor' },
+				() => this.activateInventoryAdvisorView()),
+			refresh: () => consumeRecorded(this.refreshInventoryAdvisor()),
+		};
 	}
 }
 
@@ -1945,8 +2452,8 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 	refresh(): void | Promise<void>;
 }): { open: () => void; refresh: () => void } {
 	return {
-		open: () => { void actions.open(); },
-		refresh: () => { void actions.refresh(); },
+		open: () => { Promise.resolve().then(() => actions.open()).catch(() => undefined); },
+		refresh: () => { Promise.resolve().then(() => actions.refresh()).catch(() => undefined); },
 	};
 }
 
@@ -1973,6 +2480,8 @@ function createInventoryAdvisorRuntime(
 	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
 	phaseListener: InventoryAdvisorPhaseListenerRef,
 	captureProgressListener: InventoryAdvisorCaptureProgressListenerRef,
+	catalogDiagnostics: LocalDebugPersistenceProbe,
+	diagnostics: LocalDebugActionRunner | null,
 ): InventoryAdvisorPresentationController {
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
 	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
@@ -1984,15 +2493,28 @@ function createInventoryAdvisorRuntime(
 	};
 	const writeWorkflowReceipt = async (
 		workflow: NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>,
+		parent?: ResolvedLocalDebugActionContext,
 	): Promise<void> => {
 		const receipt = latestCaptureReceipt ?? emptyInventoryAdvisorCaptureReceipt();
-		try { await writeCaptureReceipt({ ...receipt, workflow }); }
-		catch { /* Local diagnostics must never become an advisor dependency. */ }
+		const span = startLocalDebugAction(diagnostics ?? undefined, {
+			component: 'advisor', action: 'inventory_advisor_refresh', state: 'workflow_receipt',
+			...(parent === undefined ? {} : {
+				parent: { actionId: parent.actionId, correlationId: parent.correlationId },
+			}),
+		});
+		try {
+			await writeCaptureReceipt({ ...receipt, workflow });
+			span.success('workflow_receipt_written');
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'workflow_receipt_failed');
+			/* Local receipt persistence must never become an advisor dependency. */
+		}
 	};
 	const inventoryWorkflow = new InventoryAdvisorWorkflow({
-		capture: { capture: async (captureLocale, expectedPriceItemIds) => {
+		diagnostics: diagnostics ?? undefined,
+		capture: { capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) => {
 			if (inventoryEvidence === null) {
-				const catalogCache = await createCatalogCacheAdapter();
+				const catalogCache = await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics });
 				inventoryEvidence = new InventoryAdvisorEvidenceService(
 					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
 					Date.now, async (receipt) => {
@@ -2003,20 +2525,20 @@ function createInventoryAdvisorRuntime(
 			}
 			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {
 				captureProgressListener.current?.(progress);
-			});
+			}, actionContext);
 		} },
-		preferences: { load: async (capture) => {
+		preferences: { load: async (capture, parent) => {
 			enterWorkflowStage('preferences');
 			await writeWorkflowReceipt({
 				status: 'progress', stage: 'preferences',
 				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
-			});
-			const loaded = await preferences.load(capture);
+			}, parent);
+			const loaded = await preferences.load(capture, parent);
 			enterWorkflowStage('classification');
 			await writeWorkflowReceipt({
 				status: 'progress', stage: 'classification',
 				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
-			});
+			}, parent);
 			return loaded;
 		} },
 		rules: createInventoryAdvisorBuiltinRulesProvider(
@@ -2025,22 +2547,22 @@ function createInventoryAdvisorRuntime(
 		),
 	});
 	return new InventoryAdvisorPresentationController({
-		load: async () => {
+		load: async (parent) => {
 			latestCaptureReceipt = null;
 			workflowStartedAt = Date.now();
 			enterWorkflowStage('capture');
 			try {
-				const result = await inventoryWorkflow.refresh(locale());
-				await writeWorkflowReceipt(inventoryAdvisorWorkflowReceipt(result));
+				const result = await inventoryWorkflow.refresh(locale(), parent);
+				await writeWorkflowReceipt(inventoryAdvisorWorkflowReceipt(result), parent);
 				return result;
 			} catch (error) {
 				await writeWorkflowReceipt(inventoryAdvisorWorkflowFailureReceipt(
 					error, workflowStage, Math.max(0, Date.now() - workflowStartedAt),
-				));
+				), parent);
 				throw error;
 			}
 		},
-		reclassify: () => inventoryWorkflow.reclassify(),
+		reclassify: (parent) => inventoryWorkflow.reclassify(parent),
 		invalidate: () => inventoryWorkflow.invalidate(),
 	});
 }
@@ -2151,4 +2673,54 @@ function scrubResultView(result: SessionHistoryScrubResult): SessionHistoryView 
 				: result.status === 'conflict' ? 'scrub_conflict' : 'scrub_unavailable',
 		sessions: 0, erased: result.erased, alreadyAbsent: result.alreadyAbsent,
 	};
+}
+
+/** Retains valid sanitized records, including the internal IDs required to reconstruct one action. */
+function safeLocalDebugJsonl(value: string, newestLimit?: number): string {
+	const records: string[] = [];
+	for (const line of value.split('\n')) {
+		if (line.length === 0) continue;
+		try {
+			const parsed: unknown = JSON.parse(line);
+			if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
+			records.push(JSON.stringify(parsed));
+		} catch { /* the core export boundary already reports corrupt retained lines */ }
+	}
+	const selected = newestLimit === undefined ? records : records.slice(-Math.max(0, newestLimit));
+	return selected.length === 0 ? '' : `${selected.join('\n')}\n`;
+}
+
+/** Creates each missing portable segment so package writes remain create-only outside log rotation. */
+async function ensureAdapterDirectory(
+	adapter: { exists(path: string): Promise<boolean>; mkdir(path: string): Promise<void> },
+	directory: string,
+): Promise<void> {
+	let current = '';
+	for (const segment of directory.split('/')) {
+		current = current.length === 0 ? segment : `${current}/${segment}`;
+		if (!await adapter.exists(current)) await adapter.mkdir(current);
+	}
+}
+
+/** Keeps export metadata intentionally coarse and stable across host versions. */
+function diagnosticPlatform(): 'linux' | 'macos' | 'windows' | 'unknown' {
+	if (Platform?.isLinux) return 'linux';
+	if (Platform?.isMacOS) return 'macos';
+	if (Platform?.isWin) return 'windows';
+	return 'unknown';
+}
+
+/** Captures detached host callbacks without allowing diagnostics to alter their void contract. */
+function fireAndForgetLocal(
+	actions: LocalDebugActionRunner | null | undefined,
+	context: LocalDebugActionContext,
+	action: () => Promise<unknown>,
+): void {
+	if (actions) actions.fireAndForget(context, action);
+	else action().catch(() => undefined);
+}
+
+/** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
+function consumeRecorded(action: Promise<unknown>): void {
+	action.catch(() => undefined);
 }

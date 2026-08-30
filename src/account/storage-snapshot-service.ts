@@ -25,6 +25,7 @@ import {
 	parseSlotArray,
 	parseWallet,
 } from './storage-snapshot-parsers';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 interface VerifiedSnapshotContext {
 	accountId: string;
@@ -59,8 +60,8 @@ export class StorageSnapshotService {
 
 	constructor(private readonly client: Pick<GuildWars2Client, 'beginOperation'>) {}
 
-	async capture(): Promise<StorageSnapshot> {
-		const operation = this.client.beginOperation();
+	async capture(actionContext?: ResolvedLocalDebugActionContext): Promise<StorageSnapshot> {
+		const operation = this.client.beginOperation(actionContext);
 		return this.captureWithOperation(operation);
 	}
 

@@ -5,6 +5,7 @@ import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from './inventory-adv
 import type { InventoryContainerPriceEvidenceV1 } from './inventory-container-economy';
 import type { ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export const INVENTORY_ADVISOR_EVIDENCE_VERSION = 1 as const;
 
@@ -148,5 +149,6 @@ export interface InventoryAdvisorEvidenceCapture {
 		locale: CatalogLocale,
 		containerPriceItemIds?: readonly number[],
 		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+		actionContext?: ResolvedLocalDebugActionContext,
 	): Promise<InventoryAdvisorEvidenceCaptureResultV1>;
 }

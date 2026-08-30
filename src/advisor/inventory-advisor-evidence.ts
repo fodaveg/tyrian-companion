@@ -39,6 +39,7 @@ import {
 } from './inventory-container-economy';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 const BATCH_SIZE = 200;
 const SNAPSHOT_TTL_MS = 15 * 60_000;
@@ -54,7 +55,7 @@ const ZERO_STORAGE_CAPTURE_PROGRESS: StorageSnapshotCaptureProgress = {
 };
 
 export interface InventoryAdvisorEvidenceClient {
-	beginOperation(): GuildWars2Operation;
+	beginOperation(actionContext?: ResolvedLocalDebugActionContext): GuildWars2Operation;
 }
 
 /** Explicit H4.14 capture only. Constructing this service performs no requests or persistence. */
@@ -74,6 +75,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		locale: CatalogLocale,
 		containerPriceItemIds: readonly number[] = [],
 		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+		actionContext?: ResolvedLocalDebugActionContext,
 	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		const ids = normalizeSupplementalIds(containerPriceItemIds);
 		if (ids === null) {
@@ -85,7 +87,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		const key = `${locale}:${ids.join(',')}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(locale, ids, onProgress).finally(() => { if (this.inFlight.get(key) === promise) this.inFlight.delete(key); });
+		const promise = this.captureInternal(locale, ids, onProgress, actionContext).finally(() => { if (this.inFlight.get(key) === promise) this.inFlight.delete(key); });
 		this.inFlight.set(key, promise);
 		return promise;
 	}
@@ -94,6 +96,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		locale: CatalogLocale,
 		containerPriceItemIds: number[],
 		onProgress?: (progress: InventoryAdvisorCaptureProgress) => void,
+		actionContext?: ResolvedLocalDebugActionContext,
 	): Promise<InventoryAdvisorEvidenceCaptureResultV1> {
 		let snapshot: StorageSnapshot | null = null;
 		let operation: GuildWars2Operation;
@@ -111,7 +114,7 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		};
 		const reportCatalogOrPrice = (): void => { catalogAndPricesCompleted += 1; reportProgress(); };
 		try {
-			operation = this.client.beginOperation();
+			operation = this.client.beginOperation(actionContext);
 		} catch (error) {
 			return await this.finishCapture(error instanceof MissingApiKeyError
 				? { status: 'unavailable', evidence: null, failure: 'missing_key' }
@@ -142,15 +145,15 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 			const [catalog, market, accountContext, containerPrices] = await Promise.all([
 				this.captureCatalog(snapshot, locale, this.now()).finally(reportCatalogOrPrice),
 				Promise.all([
-					captureInventoryPrices(snapshot, this.publicGateway, this.now()),
+					captureInventoryPrices(snapshot, this.publicGateway, this.now(), actionContext),
 					captureInventoryMarketDepth(
 						uniqueIds([...ids(snapshot.availableByItem), ...containerPriceItemIds]),
-						this.publicGateway, this.now(), this.rateLimit,
+						this.publicGateway, this.now(), this.rateLimit, actionContext,
 					),
 				]).finally(reportCatalogOrPrice),
 				captureAccountContext(operation, snapshot.accountId, context.token, context.access, this.now).finally(reportCatalogOrPrice),
 				(containerPriceItemIds.length === 0 ? Promise.resolve(null)
-					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now())).finally(reportCatalogOrPrice),
+					: captureContainerPrices(snapshot, containerPriceItemIds, this.publicGateway, this.now(), actionContext)).finally(reportCatalogOrPrice),
 			]);
 			const [prices, marketDepth] = market;
 			const { accountSignals, activeOrders } = accountContext;
@@ -314,9 +317,10 @@ export async function captureInventoryPrices(
 	snapshot: StorageSnapshot,
 	gateway: PublicCatalogGateway,
 	capturedAt: number,
+	actionContext?: ResolvedLocalDebugActionContext,
 ): Promise<InventoryPriceSnapshotV1> {
 	const requestedItemIds = ids(snapshot.availableByItem);
-	const captured = await capturePriceItems(requestedItemIds, gateway);
+	const captured = await capturePriceItems(requestedItemIds, gateway, actionContext);
 	return {
 		version: INVENTORY_PRICE_SNAPSHOT_VERSION, accountId: snapshot.accountId, snapshotId: snapshot.snapshotId,
 		capturedAt: new Date(capturedAt).toISOString(), source: 'gw2-commerce-prices', schemaVersion: snapshot.schemaVersion,
@@ -354,8 +358,9 @@ async function captureContainerPrices(
 	requestedItemIds: number[],
 	gateway: PublicCatalogGateway,
 	capturedAt: number,
+	actionContext?: ResolvedLocalDebugActionContext,
 ): Promise<InventoryContainerPriceEvidenceV1> {
-	const captured = await capturePriceItems(requestedItemIds, gateway);
+	const captured = await capturePriceItems(requestedItemIds, gateway, actionContext);
 	const value: InventoryContainerPriceEvidenceV1 = {
 		version: 1,
 		accountId: snapshot.accountId,
@@ -373,12 +378,16 @@ async function captureContainerPrices(
 async function capturePriceItems(
 	requestedItemIds: number[],
 	gateway: PublicCatalogGateway,
+	actionContext?: ResolvedLocalDebugActionContext,
 ): Promise<Pick<InventoryPriceSnapshotV1, 'status' | 'items' | 'missingItemIds'>> {
 	const items: InventoryItemPriceV1[] = [];
 	const missing = new Set<number>();
 	for (const batch of chunks(requestedItemIds, BATCH_SIZE)) {
 		try {
-			const response = await gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}&v=${encodeURIComponent(PINNED_SCHEMA)}`);
+			const response = await gateway.requestDetailed(
+				`commerce/prices?ids=${batch.join(',')}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
+				actionContext,
+			);
 			if (response.status !== 200 && response.status !== 206) {
 				batch.forEach((id) => missing.add(id));
 				continue;

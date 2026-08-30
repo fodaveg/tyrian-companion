@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ConnectionCheckError, type ConnectionDetails } from './account-service';
 import { ConnectionService } from './connection-service';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 function details(accountName = 'Account.A'): ConnectionDetails {
 	return {
@@ -46,6 +47,20 @@ describe('ConnectionService', () => {
 		expect(checkConnection).toHaveBeenCalledTimes(1);
 		pending.resolve(details());
 		await first;
+	});
+
+	it('forwards the initiating action context to the gateway while retaining callers without one', async () => {
+		const checkConnection = vi.fn(async () => details());
+		const service = new ConnectionService({ checkConnection });
+		const parent: ResolvedLocalDebugActionContext = {
+			component: 'connection', action: 'connection_check',
+			actionId: 'connection-root', correlationId: 'command-root',
+		};
+
+		await service.check(parent);
+		expect(checkConnection).toHaveBeenLastCalledWith(parent);
+		await service.check();
+		expect(checkConnection).toHaveBeenLastCalledWith(undefined);
 	});
 
 	it('reset makes an older A check obsolete and B wins even when A resolves last', async () => {

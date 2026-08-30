@@ -1,4 +1,8 @@
 import type { CoordinationState } from './coordination-model';
+import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceContext,
+} from '../core/local-debug-persistence';
 
 export const COORDINATION_DB_NAME = 'tyrian-companion-coordination';
 export const COORDINATION_DB_VERSION = 1;
@@ -11,22 +15,28 @@ export interface CoordinationTransactionResult<T> {
 }
 
 export interface CoordinationStore {
-	read(): Promise<unknown>;
+	read(context?: LocalDebugPersistenceContext): Promise<unknown>;
 	transaction<T>(
 		mutator: (current: unknown) => CoordinationTransactionResult<T>,
+		context?: LocalDebugPersistenceContext,
 	): Promise<T>;
 	close(): void;
 }
 
 /** Dedicated IndexedDB store. It never falls back to memory. */
 export class IndexedDbCoordinationStore implements CoordinationStore {
-	constructor(private readonly database: IDBDatabase) {}
+	constructor(
+		private readonly database: IDBDatabase,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
+	) {}
 
 	static open(
 		factory: IDBFactory,
 		databaseName = COORDINATION_DB_NAME,
 		databaseVersion = COORDINATION_DB_VERSION,
+		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbCoordinationStore> {
+		const attempt = diagnostics.begin('coordination', 'open');
 		return new Promise((resolve, reject) => {
 			const request = factory.open(databaseName, databaseVersion);
 			let settled = false;
@@ -44,43 +54,47 @@ export class IndexedDbCoordinationStore implements CoordinationStore {
 				}
 				settled = true;
 				request.result.onversionchange = () => request.result.close();
-				resolve(new IndexedDbCoordinationStore(request.result));
+				attempt.success();
+				resolve(new IndexedDbCoordinationStore(request.result, diagnostics));
 			};
 
 			function settleError(message: string): void {
-				if (!settled) reject(new Error(message));
+				if (!settled) { attempt.failure(); reject(new Error(message)); }
 				settled = true;
 			}
 		});
 	}
 
-	read(): Promise<unknown> {
+	read(context?: LocalDebugPersistenceContext): Promise<unknown> {
+		const attempt = this.diagnostics.begin('coordination', 'read', context);
 		return new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {
 				transaction = this.database.transaction(COORDINATION_STORE_NAME, 'readonly');
 			} catch {
-				reject(new Error('Coordination storage is unavailable.'));
+				attempt.failure(); reject(new Error('Coordination storage is unavailable.'));
 				return;
 			}
 			const request = transaction.objectStore(COORDINATION_STORE_NAME).get(STATE_KEY);
 			let value: unknown;
 			request.onsuccess = () => { value = request.result as unknown; };
-			transaction.oncomplete = () => resolve(value);
-			transaction.onerror = () => reject(new Error('Could not read coordination storage.'));
-			transaction.onabort = () => reject(new Error('Coordination read was aborted.'));
+			transaction.oncomplete = () => { attempt.success(); resolve(value); };
+			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not read coordination storage.')); };
+			transaction.onabort = () => { attempt.failure(); reject(new Error('Coordination read was aborted.')); };
 		});
 	}
 
 	transaction<T>(
 		mutator: (current: unknown) => CoordinationTransactionResult<T>,
+		context?: LocalDebugPersistenceContext,
 	): Promise<T> {
+		const attempt = this.diagnostics.begin('coordination', 'transaction', context);
 		return new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {
 				transaction = this.database.transaction(COORDINATION_STORE_NAME, 'readwrite');
 			} catch {
-				reject(new Error('Coordination storage is unavailable.'));
+				attempt.failure(); reject(new Error('Coordination storage is unavailable.'));
 				return;
 			}
 			const store = transaction.objectStore(COORDINATION_STORE_NAME);
@@ -97,15 +111,17 @@ export class IndexedDbCoordinationStore implements CoordinationStore {
 					transaction.abort();
 				}
 			};
-			transaction.oncomplete = () => resolve(result);
-			transaction.onerror = () => reject(new Error('Could not update coordination storage.'));
-			transaction.onabort = () => reject(new Error(
+			transaction.oncomplete = () => { attempt.success(); resolve(result); };
+			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not update coordination storage.')); };
+			transaction.onabort = () => { attempt.failure(); reject(new Error(
 				mutationFailed ? 'Coordination mutation failed.' : 'Coordination update was aborted.',
-			));
+			)); };
 		});
 	}
 
 	close(): void {
+		const attempt = this.diagnostics.begin('coordination', 'close');
 		this.database.close();
+		attempt.success();
 	}
 }

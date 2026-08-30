@@ -3,6 +3,7 @@ import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { GuildWars2Operation } from './guild-wars-2-client';
 import type { SnapshotCoverage, SourceCoverage, StorageSnapshot } from './storage-snapshot-model';
 import type { StorageSnapshotService } from './storage-snapshot-service';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
 
@@ -22,8 +23,8 @@ export class RateLimitedStorageSnapshotService implements SnapshotCaptureOperati
 		private readonly rateLimit: RateLimitGate,
 	) {}
 
-	capture(): Promise<StorageSnapshot> {
-		return this.guarded(() => this.inner.capture());
+	capture(actionContext?: ResolvedLocalDebugActionContext): Promise<StorageSnapshot> {
+		return this.guarded(() => this.inner.capture(actionContext));
 	}
 
 	captureWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {

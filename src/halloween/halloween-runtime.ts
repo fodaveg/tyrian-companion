@@ -1,5 +1,12 @@
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { SessionContaminationReview } from '../sessions/session-contamination-review';
+import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
+import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { evaluateHalloweenItems } from './halloween-policy';
 import {
 	positiveObservedGains,
@@ -43,6 +50,8 @@ export interface HalloweenRuntimeOptions {
 	onNotice?: (notice: HalloweenNoticeV1) => void;
 	onStateChange?: () => void;
 	now?: () => number;
+	diagnostics?: LocalDebugActionPort;
+	persistenceDiagnostics?: LocalDebugPersistenceProbe;
 }
 
 /** Opt-in Halloween coordinator. Construction and disabled configuration have no effects. */
@@ -67,7 +76,24 @@ export class HalloweenRuntime {
 
 	getState(): HalloweenRuntimeState { return structuredClone(this.state); }
 
-	activate(): Promise<void> {
+	activate(parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
+		}, () => this.now());
+		let activation: Promise<void>;
+		try {
+			activation = this.activateUnobserved();
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		}
+		return activation.then(
+			() => finishHalloweenSpan(span, this.state.status),
+			(error: unknown) => { span.failure(error, 'unknown_failure', this.state.status); throw error; },
+		);
+	}
+
+	private activateUnobserved(): Promise<void> {
 		if (this.disposed) return Promise.reject(new Error('Halloween runtime is disposed.'));
 		this.enabled = true;
 		if (this.store !== null) return Promise.resolve();
@@ -79,7 +105,10 @@ export class HalloweenRuntime {
 		return flight;
 	}
 
-	disable(): void {
+	disable(parent?: ResolvedLocalDebugActionContext): void {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
+		}, () => this.now());
 		this.enabled = false;
 		this.generation += 1;
 		this.activation = null;
@@ -92,6 +121,7 @@ export class HalloweenRuntime {
 		this.learning = true;
 		this.backfillPartial = false;
 		this.setState({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null });
+		span.success('disabled');
 	}
 
 	setOnline(online: boolean): void {
@@ -101,10 +131,22 @@ export class HalloweenRuntime {
 	}
 
 	/** Coalesced lifecycle hook for newly synced or modified session notes. */
-	refreshBackfill(): Promise<void> {
+	refreshBackfill(parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_backfill', ...inheritedIds(parent),
+		}, () => this.now());
+		return this.refreshBackfillUnobserved().then(
+			() => finishHalloweenSpan(span, this.state.status),
+			(error: unknown) => { span.failure(error, 'unknown_failure', this.state.status); throw error; },
+		);
+	}
+
+	private refreshBackfillUnobserved(): Promise<void> {
 		const store = this.store;
 		const accountRef = this.options.accountRef();
-		if (!this.enabled || store === null || accountRef === null) return Promise.resolve();
+		if (!this.enabled || store === null || accountRef === null) {
+			return Promise.resolve();
+		}
 		if (this.backfillFlight !== null) {
 			this.backfillDirty = true;
 			return this.backfillFlight;
@@ -122,16 +164,25 @@ export class HalloweenRuntime {
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
 		review?: SessionContaminationReview;
-	}): Promise<HalloweenNoticeV1 | null> {
+	}, parent?: ResolvedLocalDebugActionContext): Promise<HalloweenNoticeV1 | null> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
+		}, () => this.now());
 		const accountRef = this.options.accountRef();
 		const generation = this.generation;
 		const key = `${accountRef ?? 'missing'}\u0000${input.episodeId}`;
 		const prior = this.episodeFlights.get(key) ?? Promise.resolve(null);
 		const flight = prior.catch(() => null).then(async () =>
-			await this.observeDeltaSerial(input, generation, accountRef));
+			await this.observeDeltaSerial(input, generation, accountRef, span.context));
 		this.episodeFlights.set(key, flight);
 		void flight.finally(() => { if (this.episodeFlights.get(key) === flight) this.episodeFlights.delete(key); });
-		return flight;
+		return flight.then((notice) => {
+			finishHalloweenSpan(span, this.state.status, notice === null ? 0 : 1);
+			return notice;
+		}, (error: unknown) => {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		});
 	}
 
 	private async observeDeltaSerial(input: {
@@ -139,7 +190,8 @@ export class HalloweenRuntime {
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
 		review?: SessionContaminationReview;
-	}, generation: number, queuedAccountRef: string | null): Promise<HalloweenNoticeV1 | null> {
+	}, generation: number, queuedAccountRef: string | null,
+	parent: ResolvedLocalDebugActionContext | undefined): Promise<HalloweenNoticeV1 | null> {
 		if (this.activation !== null) await this.activation;
 		if (!this.current(generation)) return null;
 		while (this.backfillFlight !== null) {
@@ -232,7 +284,7 @@ export class HalloweenRuntime {
 			if (!this.owns(generation, store)) return null;
 			this.projectNotices(notices, observedAt, evidenceState, persistedComparison);
 			if (committed && (input.source !== 'session_final' || replacement?.shouldNotify)) {
-				this.options.onNotice?.(structuredClone(committed));
+				this.emitNotice(committed, parent);
 			}
 			return committed;
 		} catch (error) {
@@ -241,19 +293,27 @@ export class HalloweenRuntime {
 		}
 	}
 
-	async acknowledge(noticeId: string): Promise<boolean> {
+	async acknowledge(noticeId: string, parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_alert', ...inheritedIds(parent),
+		}, () => this.now());
 		const store = this.store;
 		const accountRef = this.options.accountRef();
-		if (store === null || accountRef === null || !this.enabled) return false;
+		if (store === null || accountRef === null || !this.enabled) { span.skip('unavailable', this.state.status); return false; }
 		const generation = this.generation;
 		try {
 			const acknowledged = await store.acknowledge(this.options.vaultId, accountRef, noticeId, new Date(this.now()).toISOString());
-			if (!this.owns(generation, store)) return false;
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return false; }
 			const notices = await store.readNotices(this.options.vaultId, accountRef);
-			if (!this.owns(generation, store)) return false;
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return false; }
 			this.projectNotices(notices);
+			span.success(acknowledged ? 'acknowledged' : 'unchanged');
 			return acknowledged;
-		} catch (error) { if (this.owns(generation, store)) this.storeFailure(error); return false; }
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable');
+			if (this.owns(generation, store)) this.storeFailure(error);
+			return false;
+		}
 	}
 
 	dispose(): void {
@@ -272,12 +332,14 @@ export class HalloweenRuntime {
 	private async activateInternal(generation: number): Promise<void> {
 		let opened: IndexedDbHalloweenStore | null = null;
 		try {
-			opened = await IndexedDbHalloweenStore.open(this.options.factory);
+			opened = await IndexedDbHalloweenStore.open(
+				this.options.factory, undefined, undefined, this.options.persistenceDiagnostics,
+			);
 			if (!this.current(generation)) { opened.close(); return; }
 			this.store = opened;
 			const accountRef = this.options.accountRef();
 			if (accountRef === null) { this.projectNotices([]); return; }
-			await this.refreshBackfill();
+			await this.refreshBackfillUnobserved();
 			if (!this.owns(generation, opened)) return;
 			const [notices, comparison] = await Promise.all([
 				opened.readNotices(this.options.vaultId, accountRef),
@@ -369,10 +431,40 @@ export class HalloweenRuntime {
 
 	private setState(patch: Partial<HalloweenRuntimeState>): void {
 		this.state = { ...this.state, ...patch };
-		this.options.onStateChange?.();
+		try { this.options.onStateChange?.(); }
+		catch (error) {
+			const span = startLocalDebugAction(this.options.diagnostics, {
+				component: 'halloween', action: 'halloween_refresh',
+			}, () => this.now());
+			span.failure(error, 'unknown_failure', this.state.status);
+		}
+	}
+
+	private emitNotice(notice: HalloweenNoticeV1, parent?: ResolvedLocalDebugActionContext): void {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'notification', action: 'notification_emit', ...inheritedIds(parent),
+		}, () => this.now());
+		try {
+			this.options.onNotice?.(structuredClone(notice));
+			span.success('emitted');
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'failed');
+		}
 	}
 
 	private current(generation: number): boolean { return this.enabled && !this.disposed && generation === this.generation; }
 	private owns(generation: number, store: IndexedDbHalloweenStore): boolean { return this.current(generation) && this.store === store; }
 	private now(): number { return (this.options.now ?? Date.now)(); }
+}
+
+function finishHalloweenSpan(span: LocalDebugActionSpan, status: HalloweenRuntimeStatus, outcomeCount?: number): void {
+	if (status === 'disabled' || status === 'offline') span.skip('unavailable', status);
+	else if (status === 'backoff') span.retry(status, outcomeCount === undefined ? undefined : { outcomeCount });
+	else if (status.startsWith('store_')) span.failure(new Error(`halloween_${status}`), 'storage_failure', status);
+	else span.success(status, outcomeCount === undefined ? undefined : { outcomeCount });
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
 }

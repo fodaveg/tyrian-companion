@@ -13,6 +13,7 @@ import {
 	IndexedDbCoordinationStore,
 	type CoordinationStore,
 } from './coordination-store';
+import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 export interface ActiveSessionLeaseCoordinatorOptions {
 	store?: CoordinationStore;
@@ -25,6 +26,7 @@ export interface ActiveSessionLeaseCoordinatorOptions {
 	instanceId?: string;
 	leaseTtlMs?: number;
 	expiryConfirmDelayMs?: number;
+	diagnostics?: LocalDebugPersistenceProbe;
 }
 
 type CommonErrorCode = Exclude<Extract<AcquireLeaseResult, { status: 'error' }>['code'], 'fence_overflow'>;
@@ -56,7 +58,12 @@ export class ActiveSessionLeaseCoordinator {
 			: options.openStore ?? (async () => {
 				const factory = options.indexedDb ?? window.indexedDB;
 				if (!factory) throw new Error('IndexedDB is unavailable.');
-				return IndexedDbCoordinationStore.open(factory, options.databaseName ?? COORDINATION_DB_NAME);
+				return IndexedDbCoordinationStore.open(
+					factory,
+					options.databaseName ?? COORDINATION_DB_NAME,
+					undefined,
+					options.diagnostics,
+				);
 			});
 	}
 

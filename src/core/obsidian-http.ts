@@ -10,7 +10,13 @@ export class ObsidianRequestTransport extends ResilientHttpTransport {
 		super({
 			...options,
 			request: async (request) => {
-				const response = await requestUrl(request);
+				const response = await requestUrl({
+					url: request.url,
+					method: request.method,
+					throw: false,
+					...(request.headers === undefined ? {} : { headers: request.headers }),
+					...(request.body === undefined ? {} : { body: request.body }),
+				});
 				return {
 					status: response.status,
 					headers: response.headers,

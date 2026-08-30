@@ -1,4 +1,8 @@
 import type { PendingProposalQueueRecord } from './pending-proposal-model';
+import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceContext,
+} from '../core/local-debug-persistence';
 
 export const PROPOSAL_QUEUE_DB_NAME = 'tyrian-companion-confirmation-queue';
 export const PROPOSAL_QUEUE_DB_VERSION = 1;
@@ -7,8 +11,8 @@ const QUEUE_KEY = 'pending-proposals';
 
 export interface ProposalQueueMutation<T> { result: T; next?: PendingProposalQueueRecord }
 export interface PendingProposalStore {
-	read(): Promise<unknown>;
-	transaction<T>(mutator: (current: unknown) => ProposalQueueMutation<T>): Promise<T>;
+	read(context?: LocalDebugPersistenceContext): Promise<unknown>;
+	transaction<T>(mutator: (current: unknown) => ProposalQueueMutation<T>, context?: LocalDebugPersistenceContext): Promise<T>;
 	close(): void;
 }
 
@@ -29,11 +33,17 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 	private opening: Promise<IDBDatabase> | null = null;
 	private unavailable = false;
 
-	constructor(private readonly factory: IDBFactory, private readonly databaseName = PROPOSAL_QUEUE_DB_NAME) {}
+	constructor(
+		private readonly factory: IDBFactory,
+		private readonly databaseName = PROPOSAL_QUEUE_DB_NAME,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
+	) {}
 
-	async read(): Promise<unknown> {
-		const database = await this.open();
-		return await new Promise((resolve, reject) => {
+	async read(context?: LocalDebugPersistenceContext): Promise<unknown> {
+		const attempt = this.diagnostics.begin('pending_proposal', 'read', context);
+		try {
+			const database = await this.open(context);
+			const value = await new Promise((resolve, reject) => {
 			const transaction = database.transaction(PROPOSAL_QUEUE_STORE_NAME, 'readonly');
 			const request = transaction.objectStore(PROPOSAL_QUEUE_STORE_NAME).get(QUEUE_KEY);
 			let value: unknown;
@@ -41,12 +51,23 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			transaction.oncomplete = () => resolve(value);
 			transaction.onerror = () => reject(new Error('Could not read confirmation queue.'));
 			transaction.onabort = () => reject(new Error('Confirmation queue read was aborted.'));
-		});
+			});
+			attempt.success();
+			return value;
+		} catch (error) {
+			attempt.failure();
+			throw error;
+		}
 	}
 
-	async transaction<T>(mutator: (current: unknown) => ProposalQueueMutation<T>): Promise<T> {
-		const database = await this.open();
-		return await new Promise((resolve, reject) => {
+	async transaction<T>(
+		mutator: (current: unknown) => ProposalQueueMutation<T>,
+		context?: LocalDebugPersistenceContext,
+	): Promise<T> {
+		const attempt = this.diagnostics.begin('pending_proposal', 'transaction', context);
+		try {
+			const database = await this.open(context);
+			const value = await new Promise<T>((resolve, reject) => {
 			const transaction = database.transaction(PROPOSAL_QUEUE_STORE_NAME, 'readwrite');
 			const store = transaction.objectStore(PROPOSAL_QUEUE_STORE_NAME);
 			const request = store.get(QUEUE_KEY);
@@ -65,19 +86,28 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			transaction.oncomplete = () => resolve(result);
 			transaction.onerror = () => reject(new Error('Could not update confirmation queue.'));
 			transaction.onabort = () => reject(new Error(mutationFailed ? 'Confirmation queue mutation failed.' : 'Confirmation queue update was aborted.'));
-		});
+			});
+			attempt.success();
+			return value;
+		} catch (error) {
+			attempt.failure();
+			throw error;
+		}
 	}
 
 	close(): void {
+		const attempt = this.diagnostics.begin('pending_proposal', 'close');
 		this.unavailable = true;
 		this.database?.close();
 		this.database = null;
+		attempt.success();
 	}
 
-	private async open(): Promise<IDBDatabase> {
+	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Confirmation queue is unavailable.');
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
+		const attempt = this.diagnostics.begin('pending_proposal', 'open', context);
 		const opening = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = this.factory.open(this.databaseName, PROPOSAL_QUEUE_DB_VERSION);
 			let settled = false;
@@ -97,6 +127,15 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			function fail(message: string): void { if (!settled) reject(new Error(message)); settled = true; }
 		});
 		this.opening = opening;
-		try { return await opening; } finally { if (this.opening === opening) this.opening = null; }
+		try {
+			const database = await opening;
+			attempt.success();
+			return database;
+		} catch (error) {
+			attempt.failure();
+			throw error;
+		} finally {
+			if (this.opening === opening) this.opening = null;
+		}
 	}
 }

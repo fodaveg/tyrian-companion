@@ -1,9 +1,10 @@
-import type { HttpResponse, HttpTransport } from '../core/http';
+import type { HttpLogicalEndpoint, HttpResponse, HttpTransport } from '../core/http';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 const DEFAULT_API_URL = 'https://api.guildwars2.com/v2';
 
 export interface PublicCatalogGateway {
-	requestDetailed(path: string): Promise<HttpResponse>;
+	requestDetailed(path: string, actionContext?: ResolvedLocalDebugActionContext): Promise<HttpResponse>;
 }
 
 /** Public GW2 transport. It deliberately has no API-key provider or Authorization header. */
@@ -13,13 +14,29 @@ export class GuildWars2PublicCatalogClient implements PublicCatalogGateway {
 		private readonly apiUrl = DEFAULT_API_URL,
 	) {}
 
-	requestDetailed(path: string): Promise<HttpResponse> {
+	requestDetailed(path: string, actionContext?: ResolvedLocalDebugActionContext): Promise<HttpResponse> {
 		if (/^https?:\/\//iu.test(path)) {
 			throw new Error('Guild Wars 2 API paths must be relative.');
 		}
-		return this.transport.send({
+		const request = {
 			url: `${this.apiUrl.replace(/\/$/u, '')}/${path.replace(/^\//u, '')}`,
-			method: 'GET',
-		});
+			method: 'GET' as const,
+			endpoint: publicCatalogLogicalEndpoint(path),
+		};
+		return actionContext === undefined
+			? this.transport.send(request)
+			: this.transport.send(request, actionContext);
 	}
+}
+
+/** Maps the three reviewed public-catalog families without retaining IDs, locale or schema queries. */
+export function publicCatalogLogicalEndpoint(path: string): HttpLogicalEndpoint {
+	const route = path.split('?', 1)[0]?.replace(/^\/+|\/+$/gu, '') ?? '';
+	if (route === 'items') return 'items';
+	if (route === 'currencies') return 'currencies';
+	if (route === 'materials') return 'material_categories';
+	if (route === 'commerce/prices') return 'commerce_prices';
+	if (route === 'commerce/listings') return 'commerce_listings';
+	if (route === 'recipes/search') return 'recipes_search';
+	return 'unknown';
 }

@@ -1,5 +1,31 @@
 # Changelog
 
+## H6.17 - Diagnóstico local exhaustivo
+
+- Añadido logging JSONL local, append-only y fail-open bajo el directorio de configuración del
+  plugin. La rotación conserva como máximo cinco shards de 2 MiB y recupera de forma acotada una
+  cola truncada y la secuencia monotónica después de reiniciar.
+- El contrato cerrado registra versión, UTC, secuencia, nivel, componente, acción, fase, código,
+  `actionId/correlationId`, duración, intento y estado técnico. Errores conservan nombre, mensaje y
+  stack saneados; HTTP usa solo endpoint lógico, status y `Retry-After`.
+- Un serializador positivo por componente elimina secretos, auth/cookies, URL raw, cuerpos,
+  payloads, identidades y rutas. Canarios hostiles cubren credenciales, errores anidados, getters,
+  ciclos, `BigInt` y valores enormes; copy/export vuelve a sanear cada línea.
+- Settings v11 activa `debug` por defecto durante la beta interna. Ajustes muestra salud, ruta,
+  tamaño, shards, último evento y descartes, y permite abrir, copiar, exportar fuera de la rotación y
+  limpiar con confirmación. Companion enlaza a Ajustes cuando el writer se degrada.
+- Lifecycle, settings, comandos/UI, GW2/HTTP/reintentos, sesiones, detección, Asesor, histórico de
+  precios, Halloween, assets, persistencia, avisos y errores globales usan spans o puertos cerrados.
+  La isla H8/Mumble conserva sus diagnósticos contractuales propios y sigue sin composición, raw log
+  ni retención en el plugin.
+- Un censo AST exacto mantiene un inventario de `catch`, `.catch`, `void` y callbacks registrados.
+  Cada ocurrencia conserva clasificación y motivo; cambios, ficheros nuevos o un baseline mutilado
+  fallan en pruebas de sabotaje.
+- El gate final cubre 155 suites y 2.106 tests, los contratos de seguridad/release y el build. El
+  benchmark H6 queda dentro de presupuesto y su control negativo determinista vuelve rojo.
+- La QA real en Obsidian y la reproducción live de un fallo antes silencioso siguen siendo una
+  aceptación manual separada; no se acreditan solo con tests de repositorio.
+
 ## H9.16/H9.3 - Comparación manual de reciclaje de equipo
 
 - H9.16 añade al Asesor una comparación source-backed para equipo Rare de nivel 68 o superior. La

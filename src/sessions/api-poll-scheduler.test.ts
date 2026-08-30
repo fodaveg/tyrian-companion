@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HttpTransportError } from '../core/http';
+import type {
+	LocalDebugActionContext,
+	LocalDebugEventContext,
+	ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 import {
 	ApiPollScheduler,
 	apiPollOutcomeFromError,
@@ -8,6 +13,101 @@ import {
 } from './api-poll-scheduler';
 
 describe('ApiPollScheduler', () => {
+	it('records start and success with the current outer action identity', async () => {
+		const harness = new SchedulerHarness();
+		const diagnostics = diagnosticHarness();
+		const parent: ResolvedLocalDebugActionContext = {
+			component: 'detection', action: 'detection_arm',
+			actionId: 'arm-action', correlationId: 'command-action',
+		};
+		const poll = vi.fn(async (_context?: ResolvedLocalDebugActionContext) => ({ kind: 'success' as const }));
+		const scheduler = harness.create(poll, {
+			diagnostics,
+			resolveActionContext: () => parent,
+		});
+
+		scheduler.start(10_000);
+		await harness.fireNext();
+
+		expect(diagnostics.events).toEqual([
+			expect.objectContaining({
+				phase: 'start', actionId: 'poll-1', correlationId: 'command-action', attempt: 1,
+				details: { intervalMs: 10_000, status: 'scheduled' },
+			}),
+			expect.objectContaining({
+				phase: 'success', code: 'ok', actionId: 'poll-1', correlationId: 'command-action',
+				details: { status: 'scheduled' }, durationMs: 0,
+			}),
+		]);
+		expect(poll).toHaveBeenCalledWith(expect.objectContaining({
+			actionId: 'poll-1', correlationId: 'command-action',
+		}));
+	});
+
+	it('records rate-limit retry metadata and a cancellation as terminal phases', async () => {
+		const rateHarness = new SchedulerHarness();
+		const rateDiagnostics = diagnosticHarness();
+		const rateScheduler = rateHarness.create(async () => ({ kind: 'rate_limited', retryAfterMs: 4_000 }), {
+			diagnostics: rateDiagnostics,
+		});
+		rateScheduler.start(10_000);
+		await rateHarness.fireNext();
+		expect(rateDiagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'retry']);
+		expect(rateDiagnostics.events[1]).toMatchObject({
+			code: 'rate_limited', details: { status: 'backoff', retryAfterMs: 4_000 },
+		});
+
+		const cancelHarness = new SchedulerHarness();
+		const cancelDiagnostics = diagnosticHarness();
+		const deferred = deferredOutcome();
+		const cancelScheduler = cancelHarness.create(() => deferred.promise, { diagnostics: cancelDiagnostics });
+		cancelScheduler.start(10_000);
+		await cancelHarness.fireNext();
+		cancelScheduler.stop();
+		deferred.resolve({ kind: 'success' });
+		await flushPromises();
+		expect(cancelDiagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'cancel']);
+		expect(cancelDiagnostics.events[1]).toMatchObject({ code: 'cancelled', details: { status: 'idle' } });
+	});
+
+	it('records a slept-through poll as start plus skip without calling the poller', async () => {
+		const harness = new SchedulerHarness();
+		const diagnostics = diagnosticHarness();
+		const poll = vi.fn(async () => ({ kind: 'success' }) as const);
+		const scheduler = harness.create(poll, { diagnostics, sleepToleranceMs: 1_000 });
+		scheduler.start(10_000);
+
+		await harness.fireNext(5_000);
+
+		expect(poll).not.toHaveBeenCalled();
+		expect(diagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'skip']);
+		expect(diagnostics.events[1]).toMatchObject({ code: 'skipped', details: { status: 'paused_sleep' } });
+	});
+
+	it('records a failure for central sanitization and remains fail-open when diagnostics throw', async () => {
+		const harness = new SchedulerHarness();
+		const diagnostics = diagnosticHarness();
+		const scheduler = harness.create(async () => {
+			throw new Error('Bearer abcdefghijklmnop https://private.invalid/secret');
+		}, { diagnostics });
+		scheduler.start(10_000);
+		await harness.fireNext();
+		expect(diagnostics.events.at(-1)).toMatchObject({ phase: 'failure', code: 'unknown_failure' });
+		expect(diagnostics.events.at(-1)?.message).toBeInstanceOf(Error);
+
+		const failingDiagnostics = {
+			createContext: () => { throw new Error('diagnostics unavailable'); },
+			event: () => { throw new Error('must not run'); },
+		};
+		const failOpenHarness = new SchedulerHarness();
+		const failOpenScheduler = failOpenHarness.create(async () => ({ kind: 'success' }), {
+			diagnostics: failingDiagnostics,
+		});
+		failOpenScheduler.start(10_000);
+		await failOpenHarness.fireNext();
+		expect(failOpenScheduler.getState().status).toBe('scheduled');
+	});
+
 	it('has no timer or polling side effect until explicitly started', () => {
 		const harness = new SchedulerHarness();
 		const poll = vi.fn<() => Promise<ApiPollOutcome>>();
@@ -270,11 +370,17 @@ describe('ApiPollScheduler', () => {
 
 	it('isolates throwing observers from the scheduler', async () => {
 		const harness = new SchedulerHarness();
+		const diagnostics = diagnosticHarness();
 		const scheduler = harness.create(async () => ({ kind: 'success' }), {
 			onStateChange: () => { throw new Error('observer failed'); },
+			diagnostics,
 		});
 
 		expect(() => scheduler.start(10_000)).not.toThrow();
+		expect(diagnostics.events.slice(0, 2)).toEqual([
+			expect.objectContaining({ component: 'ui', action: 'view_render', phase: 'start', state: 'observer' }),
+			expect.objectContaining({ component: 'ui', action: 'view_render', phase: 'failure', state: 'observer' }),
+		]);
 		await harness.fireNext();
 		expect(scheduler.getState().status).toBe('scheduled');
 	});
@@ -333,6 +439,8 @@ interface HarnessOptions {
 	sleepToleranceMs?: number;
 	random?: () => number;
 	onStateChange?: (state: ReturnType<ApiPollScheduler['getState']>) => void;
+	diagnostics?: Pick<ReturnType<typeof diagnosticHarness>, 'createContext' | 'event'>;
+	resolveActionContext?: () => ResolvedLocalDebugActionContext | undefined;
 }
 
 class SchedulerHarness {
@@ -363,6 +471,8 @@ class SchedulerHarness {
 				return id;
 			},
 			cancelTimeout: (handle) => { this.timers.delete(handle as number); },
+			diagnostics: options.diagnostics,
+			resolveActionContext: options.resolveActionContext,
 		});
 	}
 
@@ -398,4 +508,25 @@ function deferredOutcome(): {
 
 async function flushPromises(): Promise<void> {
 	for (let index = 0; index < 8; index += 1) await Promise.resolve();
+}
+
+function diagnosticHarness(): {
+	createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext;
+	event(context: LocalDebugEventContext): void;
+	events: LocalDebugEventContext[];
+} {
+	let sequence = 0;
+	const events: LocalDebugEventContext[] = [];
+	return {
+		events,
+		createContext: (context) => {
+			sequence += 1;
+			const actionId = context.actionId ?? `poll-${sequence}`;
+			return {
+				...context, actionId,
+				correlationId: context.correlationId ?? context.parent?.correlationId ?? context.parent?.actionId ?? actionId,
+			};
+		},
+		event: (event) => { events.push(event); },
+	};
 }

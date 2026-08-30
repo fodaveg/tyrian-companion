@@ -4,6 +4,11 @@ import { parseCatalogItems } from '../catalog/public-catalog-parsers';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { HttpTransportError, type HttpResponse } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 import { parsePublicTradingPostPriceBatch, type PublicTradingPostItemPrice } from '../economy/session-price-snapshot';
 import type { HalloweenItemEvidence } from './halloween-model';
 import type { HalloweenUnlockService } from './halloween-unlocks';
@@ -25,9 +30,40 @@ export class HalloweenEvidenceService {
 		private readonly publicGateway: PublicCatalogGateway,
 		private readonly unlocks: HalloweenUnlockService,
 		private readonly rateLimit: RateLimitCoordinator,
+		private readonly diagnostics?: LocalDebugActionPort,
 	) {}
 
 	async resolve(input: {
+		gains: readonly { itemId: number; quantity: number }[];
+		firstSeenItemIds: readonly number[];
+		learning: boolean;
+		scopes: readonly string[];
+		locale: CatalogLocale;
+	}, parent?: ResolvedLocalDebugActionContext): Promise<HalloweenItemEvidence[]> {
+		const span = startLocalDebugAction(this.diagnostics, {
+			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
+			details: { itemCount: input.gains.length },
+		});
+		try {
+			const result = await this.resolveUnobserved(input);
+			const rateLimited = result.some((entry) => entry.catalogStatus === 'rate_limited'
+				|| entry.priceStatus === 'rate_limited'
+				|| entry.unlocks.skinsStatus === 'rate_limited' || entry.unlocks.minisStatus === 'rate_limited');
+			const invalid = result.some((entry) => entry.catalogStatus === 'invalid' || entry.priceStatus === 'invalid');
+			const unavailable = result.some((entry) => entry.catalogStatus === 'unavailable'
+				|| entry.priceStatus === 'unavailable');
+			if (rateLimited) span.retry('backoff', { itemCount: result.length });
+			else if (invalid) span.failure(new Error('halloween_evidence_invalid'), 'validation_failed', 'partial', { itemCount: result.length });
+			else if (unavailable) span.failure(new Error('halloween_evidence_unavailable'), 'network_failure', 'partial', { itemCount: result.length });
+			else span.success('complete', { itemCount: result.length });
+			return result;
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'unavailable', { itemCount: input.gains.length });
+			throw error;
+		}
+	}
+
+	private async resolveUnobserved(input: {
 		gains: readonly { itemId: number; quantity: number }[];
 		firstSeenItemIds: readonly number[];
 		learning: boolean;
@@ -176,4 +212,9 @@ function positiveInteger(value: unknown): value is number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
 }

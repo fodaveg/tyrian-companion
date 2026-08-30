@@ -30,6 +30,7 @@ try {
 	testMumbleShadowAllowlist();
 	testRepositoryCorpusAndEncodings();
 	testFalsePositiveControls();
+	testCanonicalLocalDebugBoundary();
 	testCliRedaction();
 	testReleaseArtifactCorpus();
 	if (process.env.SECURITY_SCANNER_NEGATIVE_CONTROL !== '1') {
@@ -409,6 +410,41 @@ function testFalsePositiveControls() {
 	assert(
 		scanSecurityBoundaries(bypassRoot).some((finding) => finding.rule === 'long-credential-assignment'),
 		'arbitrary values containing example bypassed the exact synthetic allowlist',
+	);
+}
+
+function testCanonicalLocalDebugBoundary() {
+	const allowed = isolatedRoot('canonical-local-debug-boundary');
+	write(allowed, 'src/action.ts', [
+		"import type { LocalDebugLogger } from './core/local-debug-logger';",
+		'export function act(diagnostics: LocalDebugLogger) {',
+		"  diagnostics.record({ level: 'info', component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok', actionId: 'a', correlationId: 'a' });",
+		'}',
+	].join('\n'));
+	assert(scanSecurityBoundaries(allowed).length === 0, 'canonical local debug boundary was not allowlisted');
+
+	for (const [name, source] of [
+		['renamed-info', "const audit = { info() {} }; audit.info('status');"],
+		['renamed-computed-warn', "const sink = { warn() {} }; sink['warn']('status');"],
+		['renamed-optional-error', "diagnostics?.error('status');"],
+	]) {
+		const root = isolatedRoot(`arbitrary-local-debug-${name}`);
+		write(root, 'src/arbitrary-diagnostics.ts', source);
+		assert(
+			scanSecurityBoundaries(root).some((finding) => finding.rule === 'production-logger-log'),
+			`${name} bypassed the canonical local debug boundary`,
+		);
+	}
+
+	const mumble = isolatedRoot('mumble-local-debug-import');
+	write(mumble, 'src/platform/mumble-v2-client.ts', [
+		"import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';",
+		"import { decode } from './mumble-v2-codec';",
+		"import type { LocalDebugLogger } from '../core/local-debug-logger';",
+	].join('\n'));
+	assert(
+		scanSecurityBoundaries(mumble).some((finding) => finding.rule === 'unauthorized-mumble-helper'),
+		'H8 Mumble core imported the canonical local debug boundary',
 	);
 }
 

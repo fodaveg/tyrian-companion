@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
 import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
+import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
@@ -10,7 +11,12 @@ import {
 	projectConnectionDescription,
 	projectManagedAssetsDescription,
 } from './settings-i18n';
-import { TyrianCompanionSettingTab } from './settings-tab';
+import {
+	TyrianCompanionSettingTab,
+	projectLocalDebugStatus,
+	runConfirmedLocalDebugClear,
+	runConfirmedLocalDebugExport,
+} from './settings-tab';
 
 describe('Settings i18n projection', () => {
 	it('keeps the connection error projection exhaustive for every gateway code', () => {
@@ -113,6 +119,42 @@ describe('Halloween price-alert settings wiring', () => {
 		await renderControl(byName(enabledName), 'dropdown').change('off');
 		expect(renderControl(byName(marginName), 'text').disabled).toBe(true);
 		expect(refresh).toHaveBeenCalledTimes(4);
+	});
+});
+
+describe('local diagnostics settings', () => {
+	it('projects degraded writer health as an alert with bounded operational details', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'warn', state: 'degraded',
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, fileCount: 2,
+			lastEventAt: '2026-08-30T04:00:00.000Z', droppedRecords: 3,
+			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
+		};
+		const translator = createTranslator('en');
+		expect(projectLocalDebugStatus(status, translator.t.bind(translator))).toEqual({
+			role: 'alert',
+			lines: [
+				'Writer degraded: some entries could not be saved.',
+				'Folder: test-config-dir/plugins/tyrian-companion/logs/',
+				'2048 bytes in 2 files',
+				'Last event: 2026-08-30T04:00:00.000Z',
+				'Dropped entries: 3',
+			],
+		});
+	});
+
+	it('never exports or clears before confirmation and executes exactly once after acceptance', async () => {
+		const exportPackage = vi.fn(async () => 'Tyrian Companion/diagnostics/package.json');
+		const clear = vi.fn(async () => true);
+		await expect(runConfirmedLocalDebugExport(async () => false, exportPackage)).resolves.toBe(false);
+		await expect(runConfirmedLocalDebugClear(async () => false, clear)).resolves.toBeNull();
+		expect(exportPackage).not.toHaveBeenCalled();
+		expect(clear).not.toHaveBeenCalled();
+		await expect(runConfirmedLocalDebugExport(async () => true, exportPackage))
+			.resolves.toBe('Tyrian Companion/diagnostics/package.json');
+		await expect(runConfirmedLocalDebugClear(async () => true, clear)).resolves.toBe(true);
+		expect(exportPackage).toHaveBeenCalledOnce();
+		expect(clear).toHaveBeenCalledOnce();
 	});
 });
 

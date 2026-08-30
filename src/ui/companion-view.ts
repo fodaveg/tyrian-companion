@@ -2,6 +2,7 @@ import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale } from '../core/i18n';
+import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { DetectionMode } from '../core/settings';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
@@ -75,6 +76,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	stopManualSession(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
+	getLocalDebugStatus?(): LocalDebugStatus;
+	localDebugViewEvent?(phase: 'open' | 'close'): void;
+	openLocalDebugSettings?(): void;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -109,10 +113,12 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		this.actions.localDebugViewEvent?.('open');
 		this.render();
 	}
 
 	async onClose(): Promise<void> {
+		this.actions.localDebugViewEvent?.('close');
 		this.clearRefresh();
 	}
 
@@ -135,6 +141,7 @@ export class TyrianCompanionView extends ItemView {
 		this.ledger = null;
 		contentEl.addClass('tyrian-companion-view');
 		this.renderLedgerHeader(contentEl, projection, connectionState, sessionState);
+		this.renderLocalDebugWarning(contentEl);
 		this.renderStatusRail(contentEl, projection);
 		const loot = this.actions.getLootPresentation();
 		if (loot) renderLootPresentationView(contentEl, loot);
@@ -168,6 +175,21 @@ export class TyrianCompanionView extends ItemView {
 
 		if (projection.refreshEveryMs !== null || isCoolingDown(retryAt)) {
 			this.refreshInterval = contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
+		}
+	}
+
+	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
+	private renderLocalDebugWarning(container: HTMLElement): void {
+		if (this.actions.getLocalDebugStatus?.().state !== 'degraded') return;
+		const translator = createTranslator(this.actions.getLocale());
+		const warning = container.createDiv({ cls: 'tyrian-companion-view__debug-warning' });
+		warning.setAttr('role', 'alert');
+		warning.setAttr('aria-live', 'polite');
+		warning.createEl('strong', { text: translator.t('settings.debug.degraded.title') });
+		warning.createEl('p', { text: translator.t('settings.debug.degraded.desc') });
+		if (this.actions.openLocalDebugSettings) {
+			const button = warning.createEl('button', { text: translator.t('settings.debug.name') });
+			button.addEventListener('click', () => this.actions.openLocalDebugSettings?.());
 		}
 	}
 

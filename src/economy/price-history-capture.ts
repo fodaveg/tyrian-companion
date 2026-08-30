@@ -10,6 +10,7 @@ import {
 	type PriceHistoryTuple,
 } from './price-history-model';
 import { PriceHistoryStoreError, type IndexedDbPriceHistoryStore } from './price-history-store';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export type PriceHistoryCaptureResult =
 	| { status: 'complete' | 'partial' | 'already_captured'; snapshot: PriceHistorySnapshotV1 }
@@ -35,11 +36,12 @@ export class PriceHistoryCaptureService {
 		vaultId: string,
 		slotStartMs: number,
 		intervalMinutes: PriceHistoryIntervalMinutes,
+		actionContext?: ResolvedLocalDebugActionContext,
 	): Promise<PriceHistoryCaptureResult> {
 		const key = `${vaultId}:${String(slotStartMs)}`;
 		const existing = this.flights.get(key);
 		if (existing) return existing;
-		const flight = this.captureInternal(store, vaultId, slotStartMs, intervalMinutes)
+		const flight = this.captureInternal(store, vaultId, slotStartMs, intervalMinutes, actionContext)
 			.finally(() => { if (this.flights.get(key) === flight) this.flights.delete(key); });
 		this.flights.set(key, flight);
 		return flight;
@@ -50,6 +52,7 @@ export class PriceHistoryCaptureService {
 		vaultId: string,
 		slotStartMs: number,
 		intervalMinutes: PriceHistoryIntervalMinutes,
+		actionContext?: ResolvedLocalDebugActionContext,
 	): Promise<PriceHistoryCaptureResult> {
 		const cooldown = this.rateLimit.status();
 		if (cooldown.active) return { status: 'rate_limited', retryAfterMs: cooldown.remainingMs };
@@ -66,7 +69,7 @@ export class PriceHistoryCaptureService {
 				const requested = new Set(batch);
 				let response;
 				try {
-					response = await this.gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}`);
+					response = await this.gateway.requestDetailed(`commerce/prices?ids=${batch.join(',')}`, actionContext);
 				} catch (error) {
 					if (error instanceof HttpTransportError && error.status === 429) {
 						this.rateLimit.recordRateLimited(error.retryAfterMs);

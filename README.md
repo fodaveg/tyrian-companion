@@ -145,6 +145,26 @@ remains numeric so sorting is based on copper rather than formatted text. See th
   input automation, automatic account operation, or unattended session finalization. The repository
   contains only the isolated H8.5/H8.6 server/client core and H8.7 safe-launch plan for future v2 wiring.
 
+## Local beta diagnostics
+
+Internal beta builds enable local `debug` diagnostics by default. Settings lets you disable capture,
+raise the minimum level, inspect writer health and retained size, open the local directory, copy a
+bounded recent extract, create a reviewed support package, or clear retained logs with confirmation.
+Capture failures are fail-open: they remain visible in the Companion and Settings surfaces but never
+block the product action being diagnosed.
+
+Records are append-only JSONL under
+`<config-dir>/plugins/tyrian-companion/logs/`, rotated across at most five 2 MiB files (10 MiB total).
+Each action has one local random `actionId`, a reusable `correlationId`, UTC time, monotonic sequence,
+version, closed component/action/phase/code fields and bounded safe metadata. A central allowlist
+removes credentials, authorization, cookies, bodies, raw URLs, vault paths, account/character identity
+and unreviewed payload fields; errors retain only sanitized name, message and stack. Export performs a
+second sanitization pass and is always explicit. Logs are never uploaded or shared automatically.
+
+The static action-observability census inventories production `catch`, `.catch`, detached `void` and
+registered callback boundaries. `npm run test:action-observability` proves additions turn the gate red
+until the reviewed baseline is updated.
+
 For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md). Never include an API
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.

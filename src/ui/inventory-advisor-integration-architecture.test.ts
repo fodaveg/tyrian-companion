@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
+vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
+
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
 import TyrianCompanionPlugin, {
@@ -26,12 +28,12 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		expect(source).toContain('new ObsidianRequestTransport({ timeoutMs: 30_000 })');
+		expect(source).toMatch(/const inventoryTransport = new ObsidianRequestTransport\(\{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
 		expect(source).toContain('inventoryClient, inventoryPublicClient, inventorySnapshots,');
 		const runtime = source.slice(source.indexOf('function createInventoryAdvisorRuntime('), source.indexOf('\nfunction managedAssetsFailureCode('));
 		expect(runtime).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(source).toContain('() => this.settings.halloweenPersonalValuation');
-		expect(runtime).toContain('capture: async (captureLocale, expectedPriceItemIds) =>');
+		expect(runtime).toContain('capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) =>');
 		expect(runtime).toContain('inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {');
 		expect(runtime).not.toContain("rules: { current: () => ({ status: 'unavailable' }) }");
 	});
@@ -55,6 +57,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		const capture = vi.fn(async () => undefined);
 		const callbacks = createInventoryAdvisorCommandCallbacks({ open, refresh: capture });
 		callbacks.open();
+		await Promise.resolve();
 		expect(open).toHaveBeenCalledOnce();
 		expect(capture).not.toHaveBeenCalled();
 		callbacks.refresh();

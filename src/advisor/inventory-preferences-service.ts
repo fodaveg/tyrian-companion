@@ -7,6 +7,7 @@ import {
 } from './inventory-preferences-contract';
 import type {
 	InventoryPreferenceScope,
+	InventoryPreferencesActionContext,
 	InventoryPreferencesOperationResult,
 	InventoryPreferencesStore,
 	InventoryPreferencesV1,
@@ -23,9 +24,12 @@ export class InventoryPreferencesService {
 		private readonly now: () => string = () => new Date().toISOString(),
 	) {}
 
-	async list(scope: InventoryPreferenceScope): Promise<InventoryPreferencesOperationResult> {
+	async list(
+		scope: InventoryPreferenceScope,
+		actionContext?: InventoryPreferencesActionContext,
+	): Promise<InventoryPreferencesOperationResult> {
 		if (!isInventoryPreferenceScope(scope)) return { status: 'invalid' };
-		const result = await this.store.read(scope);
+		const result = await this.store.read(scope, actionContext);
 		if (result.status !== 'ok') return result;
 		const copied = result.record === null ? null : cloneInventoryPreferences(result.record);
 		return result.record !== null && copied === null
@@ -37,52 +41,57 @@ export class InventoryPreferencesService {
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		goals: readonly ReservationGoal[],
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!validGoals(goals)) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) =>
-			createInventoryPreferences(scope, current?.generation ?? 0, this.now(), goals, current?.keepExceptions ?? []));
+			createInventoryPreferences(scope, current?.generation ?? 0, this.now(), goals, current?.keepExceptions ?? []), actionContext);
 	}
 
 	async upsertGoal(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		goal: ReservationGoal,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!isPlainInventoryPreferenceData(goal) || !safe(() => isReservationGoal(goal))) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) => {
 			const goals = (current?.goals ?? []).filter((entry) => entry.goalId !== goal.goalId);
 			goals.push(goal);
 			return createInventoryPreferences(scope, current?.generation ?? 0, this.now(), goals, current?.keepExceptions ?? []);
-		});
+		}, actionContext);
 	}
 
 	async removeGoal(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		goalId: string,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!validId(goalId)) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) => createInventoryPreferences(
 			scope, current?.generation ?? 0, this.now(),
 			(current?.goals ?? []).filter((goal) => goal.goalId !== goalId), current?.keepExceptions ?? [],
-		));
+		), actionContext);
 	}
 
 	async replaceKeepExceptions(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		keepExceptions: readonly KeepExceptionV1[],
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!validKeepExceptions(keepExceptions)) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) => createInventoryPreferences(
 			scope, current?.generation ?? 0, this.now(), current?.goals ?? [], keepExceptions,
-		));
+		), actionContext);
 	}
 
 	async upsertKeepException(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		keepException: KeepExceptionV1,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!isPlainInventoryPreferenceData(keepException) || !safe(() => isKeepException(keepException))) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) => {
@@ -90,19 +99,20 @@ export class InventoryPreferencesService {
 				.filter((entry) => entry.exceptionId !== keepException.exceptionId);
 			keepExceptions.push(keepException);
 			return createInventoryPreferences(scope, current?.generation ?? 0, this.now(), current?.goals ?? [], keepExceptions);
-		});
+		}, actionContext);
 	}
 
 	async removeKeepException(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		exceptionId: string,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!validId(exceptionId)) return { status: 'invalid' };
 		return await this.replace(scope, expectedGeneration, (current) => createInventoryPreferences(
 			scope, current?.generation ?? 0, this.now(), current?.goals ?? [],
 			(current?.keepExceptions ?? []).filter((exception) => exception.exceptionId !== exceptionId),
-		));
+		), actionContext);
 	}
 
 	dispose(): void {
@@ -113,9 +123,10 @@ export class InventoryPreferencesService {
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		build: (current: InventoryPreferencesV1 | null) => InventoryPreferencesV1 | null,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesOperationResult> {
 		if (!isInventoryPreferenceScope(scope) || !validGeneration(expectedGeneration)) return { status: 'invalid' };
-		const current = await this.store.read(scope);
+		const current = await this.store.read(scope, actionContext);
 		if (current.status !== 'ok') return current;
 		const actualGeneration = current.record?.generation ?? 0;
 		if (actualGeneration !== expectedGeneration) return { status: 'conflict', generation: actualGeneration };
@@ -126,7 +137,7 @@ export class InventoryPreferencesService {
 		const next = unchanged && priorUpdatedAt !== undefined
 			? { ...proposed, generation: actualGeneration, updatedAt: priorUpdatedAt }
 			: { ...proposed, generation: actualGeneration + 1 };
-		const saved = await this.store.compareAndSwap(scope, expectedGeneration, next);
+		const saved = await this.store.compareAndSwap(scope, expectedGeneration, next, actionContext);
 		if (saved.status !== 'saved') return saved;
 		const copied = cloneInventoryPreferences(saved.record);
 		return copied === null ? { status: 'error', code: 'corrupt' } : { status: 'ok', record: copied };

@@ -16,6 +16,15 @@ import {
 const NESTED_CONFIG_DIR = `config/.${'obsidian'}`;
 
 describe('migrateSettings', () => {
+	it('migrates pre-v11 settings to exhaustive beta diagnostics and validates the closed level', () => {
+		expect(migrateSettings({ schemaVersion: 10, debugLoggingEnabled: false, debugLoggingLevel: 'error' }))
+			.toMatchObject({ schemaVersion: 11, debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: false, debugLoggingLevel: 'warn' }))
+			.toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
+		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: true, debugLoggingLevel: 'trace' }))
+			.toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+	});
+
 	it('deep-freezes defaults and returns isolated nested valuation instances', () => {
 		expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true);
 		expect(Object.isFrozen(DEFAULT_SETTINGS.halloweenPersonalValuation)).toBe(true);
@@ -128,9 +137,9 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v10 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
+	it('migrates v2 to v11 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
@@ -142,9 +151,9 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
 	});
 
-	it('migrates v7 to v10 with an empty manual overlay and canonicalizes valid values', () => {
+	it('migrates v7 to v11 with an empty manual overlay and canonicalizes valid values', () => {
 		expect(migrateSettings({ schemaVersion: 7 })).toMatchObject({
-			schemaVersion: 10,
+			schemaVersion: 11,
 			halloweenPersonalValuation: { version: 1, values: [] },
 		});
 		expect(migrateSettings({

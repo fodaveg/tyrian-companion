@@ -17,8 +17,9 @@ import type {
 	EquipmentSalvagePreferencesV1,
 	EquipmentSalvageSaleStrategy,
 } from '../economy/equipment-salvage-economy';
+import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract';
 
-export const SETTINGS_SCHEMA_VERSION = 10 as const;
+export const SETTINGS_SCHEMA_VERSION = 11 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -55,6 +56,10 @@ export interface TyrianSettings {
 	preferredCharacter: string;
 	pollingIntervalMinutes: number;
 	detectionMode: DetectionMode;
+	/** Exhaustive local-only beta diagnostics. Enabled by default while the plugin remains in beta. */
+	debugLoggingEnabled: boolean;
+	/** Minimum severity retained by the local diagnostic writer. */
+	debugLoggingLevel: LocalDebugLevel;
 	/** Root of an explicitly installed managed-asset bundle. Null means unowned. */
 	managedAssetsRoot: string | null;
 	/** A pre-H5.8 relative path retained read-only until an explicit safe replacement. */
@@ -94,6 +99,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	preferredCharacter: '',
 	pollingIntervalMinutes: 60,
 	detectionMode: 'off',
+	debugLoggingEnabled: true,
+	debugLoggingLevel: 'debug',
 	managedAssetsRoot: null,
 	legacyOutputFolder: null,
 	legacyManagedAssetsRoot: null,
@@ -149,6 +156,12 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			data.detectionMode === 'assisted' || data.detectionMode === 'off'
 				? data.detectionMode
 				: DEFAULT_SETTINGS.detectionMode,
+		// Every older schema migrates to the beta default. Only v11+ data may carry
+		// an explicit opt-out, avoiding an accidental false value from old unknown fields.
+		debugLoggingEnabled: data.schemaVersion === SETTINGS_SCHEMA_VERSION
+			? data.debugLoggingEnabled !== false : DEFAULT_SETTINGS.debugLoggingEnabled,
+		debugLoggingLevel: data.schemaVersion === SETTINGS_SCHEMA_VERSION && isLocalDebugLevel(data.debugLoggingLevel)
+			? data.debugLoggingLevel : DEFAULT_SETTINGS.debugLoggingLevel,
 		managedAssetsRoot: portableVaultFolder(data.managedAssetsRoot, configDir),
 		legacyOutputFolder: legacyVaultFolder(data.legacyOutputFolder, configDir) ??
 			legacyVaultFolder(data.outputFolder, configDir),
@@ -400,6 +413,11 @@ export function legacyVaultFolder(value: unknown, configDir?: string): string | 
 
 function stringOrDefault(value: unknown, fallback: string): string {
 	return typeof value === 'string' ? value : fallback;
+}
+
+/** Narrows the persisted diagnostic threshold to the closed logger contract. */
+function isLocalDebugLevel(value: unknown): value is LocalDebugLevel {
+	return typeof value === 'string' && (LOCAL_DEBUG_LEVELS as readonly string[]).includes(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

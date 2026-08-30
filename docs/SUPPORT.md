@@ -48,9 +48,24 @@ No publiques ni envíes en el formulario:
 - logs sin redactar o consola completa, capturas sin redactar, direcciones IP o identificadores de
   terceros.
 
-No existe todavía un exportador oficial de diagnóstico. Que un dato esté en DevTools no significa que
-sea seguro adjuntarlo. Si el problema no puede describirse sin un dato prohibido, detén el reporte y
-pide al coordinador un canal privado y un procedimiento específico.
+## Diagnóstico local
+
+La beta interna conserva diagnósticos JSONL locales por defecto; el usuario puede desactivar la captura
+o elevar su nivel mínimo en Ajustes. Viven exclusivamente
+en `<config-dir>/plugins/tyrian-companion/logs/`, con un máximo de cinco ficheros de 2 MiB (10 MiB en
+total). La rotación no sube, sincroniza ni adjunta esos ficheros, y limpiar el historial exige una
+acción explícita.
+
+Los records pasan por una allowlist y saneado central. Mensaje y stack se conservan en forma acotada
+porque son útiles en beta, pero se redactan secretos, credenciales, cabeceras, cookies, cuerpos raw,
+queries de URL, rutas e identidades detectables. El exportador vuelve a sanear cada record antes de
+entregarlo; aun así, revisa el extracto visualmente y adjunta solo las líneas imprescindibles. No
+publiques el directorio completo ni confundas el saneado automático con una garantía frente a datos
+personales no reconocibles mecánicamente.
+
+Que un dato esté en DevTools o en un fichero local no significa que sea seguro adjuntarlo. Si el
+problema no puede describirse sin un dato prohibido, detén el reporte y pide al coordinador un canal
+privado y un procedimiento específico.
 
 ## Si una clave pudo quedar expuesta
 

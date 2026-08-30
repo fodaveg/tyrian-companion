@@ -4,11 +4,16 @@ import { describe, expect, it } from 'vitest';
 
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
+import { moduleSpecifiers } from '../test/module-boundary';
 
 const PRODUCT_MODULES = readdirSync(new URL('.', import.meta.url))
 	.filter((file) => /^inventory-preferences-[a-z-]+\.ts$/.test(file) && !file.endsWith('.test.ts'))
 	.sort();
-const FORBIDDEN_IMPORTS = ["'../ui/", "'../core/", "'../sessions/", "'../account/", "'../catalog/", "'obsidian'"];
+const FORBIDDEN_IMPORTS = ["'../ui/", "'../sessions/", "'../account/", "'../catalog/", "'obsidian'"];
+const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
+	['inventory-preferences-runtime.ts', ['../core/local-debug-action-runner']],
+	['inventory-preferences-store.ts', ['../core/local-debug-persistence']],
+]);
 
 describe('inventory preferences architecture', () => {
 	it('censuses every product module as local and explicitly wired', () => {
@@ -47,6 +52,9 @@ function assertImportBoundary(sources: Map<string, string>): void {
 	for (const [file, source] of sources) {
 		for (const forbidden of FORBIDDEN_IMPORTS) {
 			if (source.includes(forbidden)) throw new Error(`forbidden import in ${file}`);
+		}
+		for (const specifier of moduleSpecifiers(source).filter((entry) => entry.startsWith('../core/'))) {
+			if (!ALLOWED_CORE_IMPORTS.get(file)?.includes(specifier)) throw new Error(`forbidden import in ${file}`);
 		}
 	}
 }

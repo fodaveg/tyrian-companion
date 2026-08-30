@@ -10,16 +10,19 @@ const PRICE_HISTORY_FILES = readdirSync('src/economy')
 
 const IMPORTS = new Map<string, string[]>([
 	['src/economy/price-history-capture.ts', [
-		'../catalog/public-catalog-client', '../core/http', '../core/rate-limit-coordinator',
+		'../catalog/public-catalog-client', '../core/http', '../core/local-debug-action-runner', '../core/rate-limit-coordinator',
 		'./price-history-model', './price-history-store', './session-price-snapshot',
 	]],
 	['src/economy/price-history-model.ts', []],
 	['src/economy/price-history-runtime.ts', [
-		'../catalog/public-catalog-client', '../core/rate-limit-coordinator', '../sessions/api-poll-scheduler',
+		'../catalog/public-catalog-client', '../core/local-debug-action-runner', '../core/local-debug-persistence',
+		'../core/rate-limit-coordinator', '../sessions/api-poll-scheduler',
 		'./price-history-capture', './price-history-model', './price-history-store',
 	]],
 	['src/economy/price-history-statistics.ts', ['./price-history-model']],
-	['src/economy/price-history-store.ts', ['./price-history-model', './price-history-statistics']],
+	['src/economy/price-history-store.ts', [
+		'../core/local-debug-persistence', './price-history-model', './price-history-statistics',
+	]],
 ]);
 
 const FORBIDDEN_CAPABILITY = /\b(?:SecretStorage|GuildWars2Client|Vault|TFile|requestUrl|fetch|XMLHttpRequest|WebSocket|EventSource|localStorage|sessionStorage)\b/u;

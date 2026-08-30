@@ -1,5 +1,12 @@
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
+import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { ApiPollScheduler, type ApiPollOutcome, type ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
 import { PriceHistoryCaptureService } from './price-history-capture';
 import {
@@ -43,8 +50,14 @@ export interface PriceHistoryRuntimeOptions {
 	afterCompaction?: (input: {
 		nowMs: number;
 		readDaily(itemId: number, fromDayUtc: string): Promise<PriceHistoryDailyV1[]>;
+		actionContext?: ResolvedLocalDebugActionContext;
 	}) => Promise<void>;
-	scheduler?: (poll: () => Promise<ApiPollOutcome>, onStateChange: (state: Readonly<ApiPollSchedulerState>) => void) => ApiPollScheduler;
+	scheduler?: (
+		poll: (context?: ResolvedLocalDebugActionContext) => Promise<ApiPollOutcome>,
+		onStateChange: (state: Readonly<ApiPollSchedulerState>) => void,
+	) => ApiPollScheduler;
+	diagnostics?: LocalDebugActionPort;
+	persistenceDiagnostics?: LocalDebugPersistenceProbe;
 }
 
 /** Opt-in runtime. Construction performs no IndexedDB, timer, listener, or network operation. */
@@ -69,13 +82,32 @@ export class PriceHistoryRuntime {
 		this.onStateChange = options.onStateChange ?? (() => undefined);
 		this.capture = new PriceHistoryCaptureService(options.gateway, options.rateLimit, crypto.randomUUID(), this.now);
 		const onSchedulerState = (scheduler: Readonly<ApiPollSchedulerState>): void => this.projectScheduler(scheduler);
-		this.scheduler = options.scheduler?.(() => this.poll(), onSchedulerState)
-			?? new ApiPollScheduler({ poll: () => this.poll(), onStateChange: onSchedulerState });
+		this.scheduler = options.scheduler?.((context) => this.poll(context), onSchedulerState)
+			?? new ApiPollScheduler({
+				poll: (context) => this.poll(context), onStateChange: onSchedulerState, diagnostics: options.diagnostics,
+			});
 	}
 
 	getState(): PriceHistoryRuntimeState { return structuredClone(this.state); }
 
-	activate(settings: PriceHistorySettings): Promise<void> {
+	activate(settings: PriceHistorySettings, parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_configure', ...inheritedIds(parent),
+		}, this.now);
+		let activation: Promise<void>;
+		try {
+			activation = this.activateUnobserved(settings);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		}
+		return activation.then(
+			() => finishPriceHistorySpan(span, this.state.status),
+			(error: unknown) => { span.failure(error, 'unknown_failure', this.state.status); throw error; },
+		);
+	}
+
+	private activateUnobserved(settings: PriceHistorySettings): Promise<void> {
 		if (this.disposed) return Promise.reject(new Error('Price-history runtime is disposed.'));
 		this.settings = { ...settings };
 		if (!settings.enabled) { this.disable(); return Promise.resolve(); }
@@ -92,7 +124,20 @@ export class PriceHistoryRuntime {
 		return activation;
 	}
 
-	async configure(settings: PriceHistorySettings): Promise<void> {
+	async configure(settings: PriceHistorySettings, parent?: ResolvedLocalDebugActionContext): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_configure', ...inheritedIds(parent),
+		}, this.now);
+		try {
+			await this.configureUnobserved(settings);
+			finishPriceHistorySpan(span, this.state.status);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		}
+	}
+
+	private async configureUnobserved(settings: PriceHistorySettings): Promise<void> {
 		const wasEnabled = this.settings.enabled;
 		this.settings = { ...settings };
 		if (!settings.enabled) { this.disable(); return; }
@@ -103,7 +148,7 @@ export class PriceHistoryRuntime {
 			await this.configureActiveStore();
 			return;
 		}
-		if (!wasEnabled || this.store === null) { await this.activate(settings); return; }
+		if (!wasEnabled || this.store === null) { await this.activateUnobserved(settings); return; }
 		await this.configureActiveStore();
 	}
 
@@ -123,26 +168,45 @@ export class PriceHistoryRuntime {
 	setOnline(online: boolean): void { if (this.store !== null) this.scheduler.setOnline(online); }
 	notifyWake(): void { if (this.store !== null) this.scheduler.notifyWake(); }
 
-	async observeSessionItemIds(itemIds: readonly number[]): Promise<void> {
+	async observeSessionItemIds(
+		itemIds: readonly number[],
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_observe', ...inheritedIds(parent),
+			details: { itemCount: itemIds.length },
+		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) return;
+		if (store === null || !this.settings.enabled) { span.skip('skipped', this.state.status); return; }
 		const generation = this.generation;
 		try {
 			await store.observeItems(this.options.vaultId, itemIds, this.now());
-			if (!this.owns(generation, store)) return;
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return; }
 			const watch = await store.readWatchList(this.options.vaultId);
-			if (!this.owns(generation, store)) return;
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return; }
 			this.setState({ watchItemIds: watch.map(({ itemId }) => itemId), selectedItemId: this.state.selectedItemId ?? watch[0]?.itemId ?? null });
-		} catch (error) { if (this.owns(generation, store)) this.storeFailure(error); }
+			span.success(this.state.status, { itemCount: itemIds.length });
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
+			if (this.owns(generation, store)) this.storeFailure(error);
+		}
 	}
 
-	async loadSeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
+	async loadSeries(
+		itemId: number,
+		side: PriceHistorySide,
+		windowDays: PriceHistoryWindowDays,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_load_series', ...inheritedIds(parent),
+		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) return;
+		if (store === null || !this.settings.enabled) { span.skip('skipped', this.state.status); return; }
 		const generation = this.generation;
 		const seriesGeneration = ++this.seriesGeneration;
 		this.setState({ selectedItemId: itemId, selectedSide: side, windowDays, daily: [], status: 'loading', provisionalDayUtc: null });
-		await this.readSeries(store, generation, seriesGeneration, itemId, side, windowDays);
+		await this.readSeries(store, generation, seriesGeneration, itemId, side, windowDays, span);
 	}
 
 	private async readSeries(
@@ -152,17 +216,23 @@ export class PriceHistoryRuntime {
 		itemId: number,
 		side: PriceHistorySide,
 		windowDays: PriceHistoryWindowDays,
+		span?: LocalDebugActionSpan,
 	): Promise<void> {
 		const from = priceHistoryDayUtc(Math.max(0, this.now() - windowDays * DAY_MS));
 		try {
 			const daily = await store.readDaily(this.options.vaultId, itemId, from);
-			if (!this.owns(generation, store) || seriesGeneration !== this.seriesGeneration) return;
+			if (!this.owns(generation, store) || seriesGeneration !== this.seriesGeneration) {
+				span?.cancel(this.state.status);
+				return;
+			}
 			this.setState({
 				selectedItemId: itemId, selectedSide: side, windowDays, daily,
 				status: daily.length >= 42 ? (daily.some(({ partialSnapshotCount }) => partialSnapshotCount > 0) ? 'partial' : 'ready') : 'collecting',
 				provisionalDayUtc: daily.at(-1)?.dayUtc === priceHistoryDayUtc(this.now()) ? priceHistoryDayUtc(this.now()) : null,
 			});
+			span?.success(this.state.status, { sampleCount: daily.length });
 		} catch (error) {
+			span?.failure(error, 'storage_failure', 'store_unavailable');
 			if (this.owns(generation, store) && seriesGeneration === this.seriesGeneration) this.storeFailure(error);
 		}
 	}
@@ -181,7 +251,9 @@ export class PriceHistoryRuntime {
 	private async activateInternal(generation: number): Promise<void> {
 		let opened: IndexedDbPriceHistoryStore | null = null;
 		try {
-			opened = await IndexedDbPriceHistoryStore.open(this.options.factory);
+			opened = await IndexedDbPriceHistoryStore.open(
+				this.options.factory, undefined, undefined, this.options.persistenceDiagnostics,
+			);
 			if (!this.current(generation)) { opened.close(); return; }
 			this.store = opened;
 			const watch = await opened.ensureSeedWatchList(this.options.vaultId, this.now());
@@ -199,35 +271,56 @@ export class PriceHistoryRuntime {
 		}
 	}
 
-	private async poll(): Promise<ApiPollOutcome> {
+	private async poll(parent?: ResolvedLocalDebugActionContext): Promise<ApiPollOutcome> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_capture', ...inheritedIds(parent),
+		}, this.now);
 		const store = this.store;
-		if (store === null || !this.settings.enabled) return { kind: 'fatal' };
-		const generation = this.generation;
-		const intervalMs = priceHistoryIntervalMs(this.settings.intervalMinutes);
-		const result = await this.capture.capture(store, this.options.vaultId, priceHistorySlotStart(this.now(), intervalMs), this.settings.intervalMinutes);
-		if (!this.owns(generation, store)) return { kind: 'success' };
-		if (result.status === 'rate_limited') return { kind: 'rate_limited', retryAfterMs: result.retryAfterMs };
-		if (result.status === 'transient_failure') return { kind: 'transient_failure' };
-		if (result.status === 'invalid_payload' || result.status === 'store_unavailable') {
-			this.setState({ status: result.status });
+		if (store === null || !this.settings.enabled) {
+			span.skip('skipped', this.state.status);
 			return { kind: 'fatal' };
 		}
-		if (result.status === 'busy') return { kind: 'success' };
+		const generation = this.generation;
+		const intervalMs = priceHistoryIntervalMs(this.settings.intervalMinutes);
+		let result: Awaited<ReturnType<PriceHistoryCaptureService['capture']>>;
+		try {
+			result = await this.capture.capture(
+				store, this.options.vaultId, priceHistorySlotStart(this.now(), intervalMs), this.settings.intervalMinutes,
+				span.context,
+			);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			return { kind: 'fatal' };
+		}
+		if (!this.owns(generation, store)) { span.cancel(this.state.status); return { kind: 'success' }; }
+		if (result.status === 'rate_limited') { span.retry('backoff', { retryAfterMs: result.retryAfterMs }); return { kind: 'rate_limited', retryAfterMs: result.retryAfterMs }; }
+		if (result.status === 'transient_failure') { span.failure(new Error('price_history_capture_transient'), 'network_failure', 'backoff'); return { kind: 'transient_failure' }; }
+		if (result.status === 'invalid_payload' || result.status === 'store_unavailable') {
+			this.setState({ status: result.status });
+			span.failure(new Error(`price_history_${result.status}`), result.status === 'invalid_payload' ? 'validation_failed' : 'storage_failure', result.status);
+			return { kind: 'fatal' };
+		}
+		if (result.status === 'busy') { span.skip('skipped', 'collecting'); return { kind: 'success' }; }
 		try {
 			await store.compactAndPrune(this.options.vaultId, this.now(), this.settings.rawRetentionDays, this.settings.dailyRetentionDays);
 		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable');
 			if (this.owns(generation, store)) this.storeFailure(error);
 			return { kind: 'fatal' };
 		}
-		if (!this.owns(generation, store)) return { kind: 'success' };
+		if (!this.owns(generation, store)) { span.cancel(this.state.status); return { kind: 'success' }; }
 		if (this.options.afterCompaction !== undefined) {
 			try {
 				await this.options.afterCompaction({
 					nowMs: this.now(),
 					readDaily: async (itemId, fromDayUtc) => await store.readDaily(this.options.vaultId, itemId, fromDayUtc),
+					actionContext: span.context,
 				});
-			} catch { /* Downstream local projections cannot stop price sampling. */ }
-			if (!this.owns(generation, store)) return { kind: 'success' };
+			} catch (error) {
+				span.failure(error, 'unknown_failure', 'partial');
+				/* Downstream local projections cannot stop price sampling. */
+			}
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return { kind: 'success' }; }
 		}
 		this.setState({
 			status: result.snapshot.status === 'partial' ? 'partial' : 'collecting',
@@ -235,6 +328,7 @@ export class PriceHistoryRuntime {
 			provisionalDayUtc: priceHistoryDayUtc(result.snapshot.capturedAtMs),
 		});
 		await this.refreshSelectedSeries(store, generation);
+		span.success(this.state.status, { sampleCount: result.snapshot.items.length });
 		return { kind: 'success' };
 	}
 
@@ -295,4 +389,18 @@ export class PriceHistoryRuntime {
 	private owns(generation: number, store: IndexedDbPriceHistoryStore): boolean {
 		return this.current(generation) && this.store === store;
 	}
+}
+
+function finishPriceHistorySpan(span: LocalDebugActionSpan, status: PriceHistoryRuntimeStatus): void {
+	if (status === 'disabled') span.skip('skipped', status);
+	else if (status === 'backoff') span.retry(status);
+	else if (status === 'offline') span.skip('unavailable', status);
+	else if (status === 'invalid_payload') span.failure(new Error('price_history_invalid_payload'), 'validation_failed', status);
+	else if (status.startsWith('store_')) span.failure(new Error(`price_history_${status}`), 'storage_failure', status);
+	else span.success(status);
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
 }

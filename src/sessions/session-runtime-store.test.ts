@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceEvent,
+} from '../core/local-debug-persistence';
 import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
 import { transitionSession } from './session-state-machine';
 import { createSessionContaminationReview } from './session-contamination-review';
@@ -44,6 +48,33 @@ const startContext: SessionStartContext = {
 };
 
 describe('session runtime persistence', () => {
+	it('reports a deliberate storage failure with a child id, parent correlation and no runtime payload', async () => {
+		const events: LocalDebugPersistenceEvent[] = [];
+		const diagnostics = new LocalDebugPersistenceProbe({
+			sink: (event) => { events.push(event); },
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const store = new IndexedDbSessionRuntimeStore(
+			new IDBFactory(),
+			databaseName('diagnostic-failure'),
+			diagnostics,
+		);
+		const context = {
+			actionId: '11111111-1111-4111-8111-111111111111',
+			correlationId: '22222222-2222-4222-8222-222222222222',
+		};
+		store.close();
+
+		await expect(store.save(activeRecord(), context)).resolves.toEqual({ status: 'error', code: 'unavailable' });
+
+		const write = events.filter((event) => event.operation === 'write');
+		expect(write.map(({ phase }) => phase)).toEqual(['start', 'failure']);
+		expect(write.every((event) => event.context?.actionId === '33333333-3333-4333-8333-333333333333'
+			&& event.context.correlationId === context.correlationId)).toBe(true);
+		expect(JSON.stringify(write)).not.toContain(startContext.characterName);
+		expect(JSON.stringify(write)).not.toContain('baselineSnapshot');
+	});
+
 	it('rejects an unknown credential field before the production IndexedDB sink opens', async () => {
 		const credential = ['tyrian-h6', 'runtime-probe', 'not-a-credential'].join('-');
 		const tainted = { ...activeRecord(), apiKey: credential };

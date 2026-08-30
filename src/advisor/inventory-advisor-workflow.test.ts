@@ -13,6 +13,11 @@ import { INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION } from './inventory-containe
 import { buildInventoryAdvisorPresentation } from './inventory-advisor-presentation';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
+import type {
+	LocalDebugActionContext,
+	LocalDebugEventContext,
+	ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 import {
 	createInventoryAdvisorBuiltinRulesProvider,
 	EMPTY_INVENTORY_ADVISOR_PREFERENCES,
@@ -21,6 +26,34 @@ import {
 } from './inventory-advisor-workflow';
 
 describe('H5.11 inventory advisor workflow', () => {
+	it('records a rate-limited refresh as retry with the caller action identity', async () => {
+		const diagnostics = diagnosticHarness();
+		const capture = vi.fn(async () => ({ status: 'unavailable' as const, evidence: null, failure: 'rate_limited' as const }));
+		const parent: ResolvedLocalDebugActionContext = {
+			component: 'ui', action: 'command_execute', actionId: 'refresh-action', correlationId: 'command-chain',
+		};
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture },
+			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+			rules: { current: () => ({ status: 'available', value: {} as never }) },
+			diagnostics,
+		});
+
+		await expect(workflow.refresh('es', parent)).resolves.toEqual({
+			status: 'blocked', reason: 'capture_rate_limited',
+		});
+		expect(diagnostics.created).toBe(1);
+		expect(diagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'retry']);
+		expect(diagnostics.events.at(-1)).toMatchObject({
+			action: 'inventory_advisor_refresh', code: 'retry_scheduled', state: 'capture_rate_limited',
+			actionId: 'generated-1', correlationId: 'command-chain',
+		});
+		expect(capture).toHaveBeenCalledWith(
+			'es', undefined, undefined,
+			expect.objectContaining({ actionId: 'generated-1', correlationId: 'command-chain' }),
+		);
+	});
+
 	it('blocks on a missing reviewed rules bundle before capture or preference I/O', async () => {
 		const capture = vi.fn();
 		const preferences = vi.fn();
@@ -364,4 +397,26 @@ function completeSnapshotCoverage() {
 		bank: { status: 'complete' as const }, materials: { status: 'complete' as const },
 		wallet: { status: 'complete' as const }, commerce_delivery: { status: 'complete' as const },
 	}, characters: {} };
+}
+
+function diagnosticHarness(): {
+	createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext;
+	event(context: LocalDebugEventContext): void;
+	events: LocalDebugEventContext[];
+	created: number;
+} {
+	const harness = {
+		events: [] as LocalDebugEventContext[],
+		created: 0,
+		createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext {
+			if (context.actionId === undefined) this.created += 1;
+			const actionId = context.actionId ?? `generated-${this.created}`;
+			return {
+				...context, actionId,
+				correlationId: context.correlationId ?? context.parent?.correlationId ?? context.parent?.actionId ?? actionId,
+			};
+		},
+		event(context: LocalDebugEventContext): void { this.events.push(context); },
+	};
+	return harness;
 }

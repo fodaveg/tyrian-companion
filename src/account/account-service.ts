@@ -3,6 +3,7 @@ import {
 	MissingApiKeyError,
 	type GuildWars2Operation,
 } from './guild-wars-2-client';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export const REQUIRED_ACCOUNT_SCOPES = ['account'] as const;
 export const RECOMMENDED_SCOPES = [
@@ -65,22 +66,22 @@ export class ConnectionCheckError extends Error {
 }
 
 export interface AccountGateway {
-	checkConnection(): Promise<ConnectionDetails>;
+	checkConnection(parent?: ResolvedLocalDebugActionContext): Promise<ConnectionDetails>;
 }
 
 /** Performs the explicit and atomic tokeninfo → account connection check. */
 export class GuildWars2AccountGateway implements AccountGateway {
 	constructor(
 		private readonly client: {
-			beginOperation(): Pick<GuildWars2Operation, 'request'>;
+			beginOperation(parent?: ResolvedLocalDebugActionContext): Pick<GuildWars2Operation, 'request'>;
 		},
 		private readonly now: () => number = Date.now,
 	) {}
 
-	async checkConnection(): Promise<ConnectionDetails> {
+	async checkConnection(parent?: ResolvedLocalDebugActionContext): Promise<ConnectionDetails> {
 		let operation: Pick<GuildWars2Operation, 'request'>;
 		try {
-			operation = this.client.beginOperation();
+			operation = this.client.beginOperation(parent);
 		} catch (error) {
 			throw mapConnectionError(error, 'tokeninfo');
 		}

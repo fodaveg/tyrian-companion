@@ -4,13 +4,14 @@ import {
 } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 
 export interface InventoryAdvisorControllerPorts {
 	/** The integration seam for H4.14/H4.15 evidence; this controller owns no I/O client. */
-	load(): Promise<InventoryAdvisorWorkflowResult>;
+	load(parent?: ResolvedLocalDebugActionContext): Promise<InventoryAdvisorWorkflowResult>;
 	/** Rebuilds a fresh in-memory capture after an explicit preference edit. */
-	reclassify?(): Promise<InventoryAdvisorWorkflowResult>;
+	reclassify?(parent?: ResolvedLocalDebugActionContext): Promise<InventoryAdvisorWorkflowResult>;
 	/** Clears integration-owned retained evidence when the account or locale changes. */
 	invalidate?(): void;
 }
@@ -81,10 +82,13 @@ export class InventoryAdvisorPresentationController {
 	}
 
 	/** Explicitly captures fresh evidence. Only the newest refresh may update or answer from the cache. */
-	async refresh(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
+	async refresh(
+		options: InventoryAdvisorPresentationOptions = {},
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<InventoryAdvisorViewModel> {
 		if (this.disposed) return this.current(options);
 		const generation = this.generation;
-		await this.runFlight(generation, 'refresh');
+		await this.runFlight(generation, 'refresh', parent);
 		if (this.generation !== generation) {
 			const newer = this.flight;
 			if (newer !== null && newer.generation === this.generation) await newer.promise;
@@ -93,14 +97,17 @@ export class InventoryAdvisorPresentationController {
 	}
 
 	/** Reprojects a cached fresh capture; it never starts a second account capture. */
-	async reclassify(options: InventoryAdvisorPresentationOptions = {}): Promise<InventoryAdvisorViewModel> {
+	async reclassify(
+		options: InventoryAdvisorPresentationOptions = {},
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<InventoryAdvisorViewModel> {
 		if (this.disposed || this.ports.reclassify === undefined) return this.current(options);
 		// A settings write before the first Refresh prepares the next classification. If a
 		// Refresh is already in flight, however, queue behind it so that captured evidence
 		// is immediately projected with the latest settings.
 		if (this.cached === null && (this.flight === null || this.flight.kind !== 'refresh')) return this.current(options);
 		const generation = this.generation;
-		await this.runFlight(generation, 'reclassify');
+		await this.runFlight(generation, 'reclassify', parent);
 		return this.current(options);
 	}
 
@@ -140,7 +147,11 @@ export class InventoryAdvisorPresentationController {
 		this.contentVersion += 1;
 	}
 
-	private runFlight(generation: number, kind: 'refresh' | 'reclassify'): Promise<void> {
+	private runFlight(
+		generation: number,
+		kind: 'refresh' | 'reclassify',
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
 		if (this.disposed) return Promise.resolve();
 		/* Refreshes have no intervening preference state and can coalesce. A
 		 * reclassification may follow a newer CAS write, so it is always queued
@@ -149,7 +160,7 @@ export class InventoryAdvisorPresentationController {
 		const earlier = this.flight !== null && this.flight.generation === generation ? this.flight.promise : Promise.resolve();
 		const promise = earlier.then(() => {
 			if (this.disposed || this.generation !== generation) return null;
-			return kind === 'reclassify' ? this.ports.reclassify!() : this.ports.load();
+			return kind === 'reclassify' ? this.ports.reclassify!(parent) : this.ports.load(parent);
 		}).then((source) => {
 			if (source === null) return;
 			const safe = clone(source);

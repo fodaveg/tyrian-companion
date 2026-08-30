@@ -1,3 +1,10 @@
+import { HttpTransportError } from '../core/http';
+import type {
+	LocalDebugActionPort,
+	LocalDebugEventContext,
+	ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
+
 export type ApiPollOutcome =
 	| { kind: 'success' }
 	| { kind: 'offline' }
@@ -25,7 +32,7 @@ export interface ApiPollSchedulerState {
 }
 
 export interface ApiPollSchedulerOptions {
-	poll: () => Promise<ApiPollOutcome>;
+	poll: (context?: ResolvedLocalDebugActionContext) => Promise<ApiPollOutcome>;
 	onStateChange?: (state: Readonly<ApiPollSchedulerState>) => void;
 	wallNow?: () => number;
 	monotonicNow?: () => number;
@@ -36,6 +43,9 @@ export interface ApiPollSchedulerOptions {
 	maxBackoffMs?: number;
 	resumeDelayMs?: number;
 	sleepToleranceMs?: number;
+	diagnostics?: LocalDebugActionPort;
+	/** Resolves the active outer action, if any, immediately before each poll starts. */
+	resolveActionContext?: () => ResolvedLocalDebugActionContext | undefined;
 }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -68,6 +78,8 @@ export class ApiPollScheduler {
 	private readonly maxBackoffMs: number;
 	private readonly resumeDelayMs: number;
 	private readonly sleepToleranceMs: number;
+	private readonly diagnostics: LocalDebugActionPort | undefined;
+	private readonly resolveActionContext: (() => ResolvedLocalDebugActionContext | undefined) | undefined;
 
 	private state: ApiPollSchedulerState = {
 		status: 'idle',
@@ -96,6 +108,8 @@ export class ApiPollScheduler {
 		this.maxBackoffMs = positiveDelay(options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS, 'maxBackoffMs');
 		this.resumeDelayMs = positiveDelay(options.resumeDelayMs ?? DEFAULT_RESUME_DELAY_MS, 'resumeDelayMs');
 		this.sleepToleranceMs = positiveDelay(options.sleepToleranceMs ?? DEFAULT_SLEEP_TOLERANCE_MS, 'sleepToleranceMs');
+		this.diagnostics = options.diagnostics;
+		this.resolveActionContext = options.resolveActionContext;
 		if (this.baseBackoffMs > this.maxBackoffMs) {
 			throw new RangeError('baseBackoffMs must not exceed maxBackoffMs.');
 		}
@@ -216,76 +230,151 @@ export class ApiPollScheduler {
 		if (!this.timer || this.timer.generation !== generation) return;
 		this.timer = null;
 		if (!this.enabled || this.disposed || generation !== this.generation) return;
+		const diagnostic = this.beginDiagnostic();
 		if (!this.online) {
 			this.publish('paused_offline', null);
+			this.finishDiagnostic(diagnostic, 'skip', 'unavailable', { status: 'paused_offline' });
 			return;
 		}
-		const wall = validClock(this.wallNow(), 'wall clock');
-		const monotonic = validClock(this.monotonicNow(), 'monotonic clock');
-		const wallLateness = wall - expectedWallAt;
-		const monotonicLateness = monotonic - expectedMonotonicAt;
-		if (Math.max(wallLateness, monotonicLateness) > this.sleepToleranceMs) {
-			this.publish('paused_sleep', null);
-			this.schedule(this.resumeDelay(), 'scheduled');
-			return;
-		}
-		if (this.flight) return;
-
-		const flightGeneration = this.generation;
-		this.state.lastAttemptAt = wall;
-		this.publish('polling', null);
-		const flight = this.runPoll(flightGeneration).finally(() => {
-			if (this.flight === flight) this.flight = null;
-			if (
-				this.enabled &&
-				this.online &&
-				!this.disposed &&
-				!this.timer &&
-				flightGeneration !== this.generation
-			) {
+		try {
+			const wall = validClock(this.wallNow(), 'wall clock');
+			const monotonic = validClock(this.monotonicNow(), 'monotonic clock');
+			const wallLateness = wall - expectedWallAt;
+			const monotonicLateness = monotonic - expectedMonotonicAt;
+			if (Math.max(wallLateness, monotonicLateness) > this.sleepToleranceMs) {
+				this.publish('paused_sleep', null);
 				this.schedule(this.resumeDelay(), 'scheduled');
+				this.finishDiagnostic(diagnostic, 'skip', 'skipped', { status: 'paused_sleep' });
+				return;
 			}
-		});
-		this.flight = flight;
-		await flight;
+			if (this.flight) {
+				this.finishDiagnostic(diagnostic, 'skip', 'skipped', { reason: 'single_flight' });
+				return;
+			}
+
+			const flightGeneration = this.generation;
+			this.state.lastAttemptAt = wall;
+			this.publish('polling', null);
+			const flight = this.runPoll(flightGeneration, diagnostic).finally(() => {
+				if (this.flight === flight) this.flight = null;
+				if (
+					this.enabled &&
+					this.online &&
+					!this.disposed &&
+					!this.timer &&
+					flightGeneration !== this.generation
+				) {
+					this.schedule(this.resumeDelay(), 'scheduled');
+				}
+			});
+			this.flight = flight;
+			await flight;
+		} catch (error) {
+			this.finishDiagnostic(diagnostic, 'failure', schedulerFailureCode(error), { status: 'fatal' }, error);
+			throw error;
+		}
 	}
 
-	private async runPoll(generation: number): Promise<void> {
+	private async runPoll(generation: number, diagnostic: ApiPollDiagnosticFlight | null): Promise<void> {
 		let outcome: ApiPollOutcome;
+		let pollError: unknown;
 		try {
-			outcome = validOutcome(await this.poll());
+			outcome = validOutcome(await this.poll(diagnostic?.context));
 		} catch (error) {
+			pollError = error;
 			outcome = apiPollOutcomeFromError(error);
 		}
-		if (!this.enabled || this.disposed || generation !== this.generation) return;
+		if (!this.enabled || this.disposed || generation !== this.generation) {
+			this.finishDiagnostic(diagnostic, 'cancel', 'cancelled', { status: this.state.status });
+			return;
+		}
 
 		switch (outcome.kind) {
 			case 'success': {
 				this.state.consecutiveFailures = 0;
 				this.state.lastSuccessAt = validClock(this.wallNow(), 'wall clock');
 				this.schedule(this.requireInterval(), 'scheduled');
+				this.finishDiagnostic(diagnostic, 'success', 'ok', { status: 'scheduled' });
 				return;
 			}
 			case 'offline': {
 				this.online = false;
 				this.publish('paused_offline', null);
+				this.finishDiagnostic(diagnostic, 'skip', 'unavailable', { status: 'paused_offline' });
 				return;
 			}
 			case 'rate_limited': {
 				this.state.consecutiveFailures += 1;
 				const delay = validRetryDelay(outcome.retryAfterMs) ?? this.backoffDelay();
 				this.schedule(delay, 'backoff');
+				this.finishDiagnostic(diagnostic, 'retry', 'rate_limited', {
+					status: 'backoff', retryAfterMs: delay,
+				});
 				return;
 			}
 			case 'transient_failure': {
 				this.state.consecutiveFailures += 1;
-				this.schedule(this.backoffDelay(), 'backoff');
+				const delay = this.backoffDelay();
+				this.schedule(delay, 'backoff');
+				this.finishDiagnostic(diagnostic, 'retry', pollError === undefined ? 'retry_scheduled' : schedulerFailureCode(pollError), {
+					status: 'backoff', retryAfterMs: delay,
+				}, pollError);
 				return;
 			}
 			case 'fatal': {
 				this.enabled = false;
 				this.publish('fatal', null);
+				this.finishDiagnostic(diagnostic, 'failure', schedulerFailureCode(pollError), {
+					status: 'fatal',
+				}, pollError);
 			}
+		}
+	}
+
+	/** Opens one diagnostic lifecycle for a single scheduled poll. */
+	private beginDiagnostic(): ApiPollDiagnosticFlight | null {
+		if (this.diagnostics === undefined) return null;
+		try {
+			const parent = this.resolveActionContext?.();
+			const context = this.diagnostics.createContext({
+				component: 'detection', action: 'detection_poll',
+				...(parent === undefined ? {} : {
+					parent: { actionId: parent.actionId, correlationId: parent.correlationId },
+				}),
+				attempt: this.state.consecutiveFailures + 1,
+			});
+			const startedAt = this.monotonicNow();
+			this.diagnostics.event({
+				...context, level: 'debug', phase: 'start', code: 'ok',
+				details: { intervalMs: this.state.intervalMs, status: this.state.status },
+			});
+			return { context, startedAt };
+		} catch {
+			return null;
+		}
+	}
+
+	/** Closes a poll lifecycle without allowing diagnostic failures to affect scheduling. */
+	private finishDiagnostic(
+		diagnostic: ApiPollDiagnosticFlight | null,
+		phase: Extract<LocalDebugEventContext['phase'], 'success' | 'failure' | 'cancel' | 'skip' | 'retry'>,
+		code: LocalDebugEventContext['code'],
+		details: Readonly<Record<string, unknown>>,
+		message?: unknown,
+	): void {
+		if (diagnostic === null || this.diagnostics === undefined) return;
+		try {
+			this.diagnostics.event({
+				...diagnostic.context,
+				level: phase === 'success' ? 'info' : phase === 'failure' ? 'error' : 'warn',
+				phase,
+				code,
+				durationMs: elapsed(this.monotonicNow(), diagnostic.startedAt),
+				details,
+				...(message === undefined ? {} : { message }),
+			});
+		} catch {
+			// The local diagnostic port is fail-open by contract.
 		}
 	}
 
@@ -315,8 +404,24 @@ export class ApiPollScheduler {
 	private emit(): void {
 		try {
 			this.onStateChange({ ...this.state });
-		} catch {
+		} catch (error) {
+			this.recordObserverFailure(error);
 			// Observers cannot break scheduling or expose operation data.
+		}
+	}
+
+	/** Records an isolated callback failure without attaching scheduler or observer payloads. */
+	private recordObserverFailure(error: unknown): void {
+		if (this.diagnostics === undefined) return;
+		try {
+			const context = this.diagnostics.createContext({ component: 'ui', action: 'view_render', state: 'observer' });
+			this.diagnostics.event({ ...context, level: 'debug', phase: 'start', code: 'ok' });
+			this.diagnostics.event({
+				...context, level: 'error', phase: 'failure', code: 'unknown_failure',
+				durationMs: 0, message: error,
+			});
+		} catch {
+			// The local diagnostic port is fail-open by contract.
 		}
 	}
 
@@ -331,6 +436,11 @@ export class ApiPollScheduler {
 	}
 }
 
+interface ApiPollDiagnosticFlight {
+	context: ResolvedLocalDebugActionContext;
+	startedAt: number;
+}
+
 /** Maps the sanitized HTTP boundary into scheduler policy without retaining error details. */
 export function apiPollOutcomeFromError(error: unknown): ApiPollOutcome {
 	if (!(error instanceof HttpTransportError)) return { kind: 'fatal' };
@@ -339,6 +449,24 @@ export function apiPollOutcomeFromError(error: unknown): ApiPollOutcome {
 	return error.status !== null && TRANSIENT_HTTP_STATUSES.has(error.status)
 		? { kind: 'transient_failure' }
 		: { kind: 'fatal' };
+}
+
+/** Maps a poll rejection to the same closed diagnostic codes as the HTTP boundary. */
+function schedulerFailureCode(error: unknown): LocalDebugEventContext['code'] {
+	if (!(error instanceof HttpTransportError)) return 'unknown_failure';
+	if (error.kind === 'timeout') return 'timeout';
+	if (error.kind === 'network') return 'network_failure';
+	if (error.status === 429) return 'rate_limited';
+	if (error.status === 401 || error.status === 403) return 'permission_denied';
+	return error.status !== null && TRANSIENT_HTTP_STATUSES.has(error.status)
+		? 'network_failure'
+		: 'unknown_failure';
+}
+
+/** Returns a non-negative safe duration for the injected monotonic clock. */
+function elapsed(finishedAt: number, startedAt: number): number {
+	const duration = Math.round(finishedAt - startedAt);
+	return Number.isSafeInteger(duration) && duration > 0 ? duration : 0;
 }
 
 function validOutcome(value: unknown): ApiPollOutcome {
@@ -382,4 +510,3 @@ function validClock(value: number, name: string): number {
 	if (!Number.isFinite(value) || value < 0) throw new RangeError(`${name} is invalid.`);
 	return Math.round(value);
 }
-import { HttpTransportError } from '../core/http';

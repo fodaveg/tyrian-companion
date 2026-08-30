@@ -1,5 +1,12 @@
 import { priceHistoryDayUtc, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
+import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import {
 	evaluateHalloweenPrice,
 	type HalloweenPriceAlertSettings,
 	type HalloweenPriceNoticeV1,
@@ -31,6 +38,8 @@ export interface HalloweenPriceAlertRuntimeOptions {
 	onNotice?: (notice: HalloweenPriceNoticeV1) => void;
 	onStateChange?: () => void;
 	now?: () => number;
+	diagnostics?: LocalDebugActionPort;
+	persistenceDiagnostics?: LocalDebugPersistenceProbe;
 }
 
 /** Local-only evaluator. It has no timer, network client, or authority to enable H9.1. */
@@ -50,7 +59,24 @@ export class HalloweenPriceAlertRuntime {
 
 	getState(): HalloweenPriceAlertRuntimeState { return structuredClone(this.state); }
 
-	async configure(settings: HalloweenPriceAlertSettings, priceHistoryActive: boolean): Promise<void> {
+	async configure(
+		settings: HalloweenPriceAlertSettings,
+		priceHistoryActive: boolean,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_alert', ...inheritedIds(parent),
+		}, this.options.now);
+		try {
+			await this.configureUnobserved(settings, priceHistoryActive);
+			finishPriceAlertSpan(span, this.state.status);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		}
+	}
+
+	private async configureUnobserved(settings: HalloweenPriceAlertSettings, priceHistoryActive: boolean): Promise<void> {
 		this.settings = { ...settings };
 		this.priceHistoryActive = priceHistoryActive;
 		if (!settings.enabled || !priceHistoryActive) { this.disable(); return; }
@@ -71,7 +97,28 @@ export class HalloweenPriceAlertRuntime {
 		await activation;
 	}
 
-	async evaluate(port: HalloweenPriceHistoryPort, nowMs: number): Promise<void> {
+	async evaluate(
+		port: HalloweenPriceHistoryPort,
+		nowMs: number,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_alert', ...inheritedIds(parent),
+		}, this.options.now);
+		try {
+			await this.evaluateUnobserved(port, nowMs, span.context);
+			finishPriceAlertSpan(span, this.state.status);
+		} catch (error) {
+			span.failure(error, 'unknown_failure', this.state.status);
+			throw error;
+		}
+	}
+
+	private async evaluateUnobserved(
+		port: HalloweenPriceHistoryPort,
+		nowMs: number,
+		parent: ResolvedLocalDebugActionContext | undefined,
+	): Promise<void> {
 		let generation = this.generation;
 		let accountRef = this.options.accountRef();
 		const priceHistoryActive = this.priceHistoryActive;
@@ -79,7 +126,7 @@ export class HalloweenPriceAlertRuntime {
 		if (activation !== null) await activation;
 		if (!this.evaluationContextCurrent(generation, accountRef, priceHistoryActive)) return;
 		if (this.loadedAccountRef !== accountRef) {
-			await this.configure(this.settings, this.priceHistoryActive);
+			await this.configureUnobserved(this.settings, this.priceHistoryActive);
 			generation = this.generation;
 			accountRef = this.options.accountRef();
 			if (!this.evaluationContextCurrent(generation, accountRef, this.priceHistoryActive)) return;
@@ -102,26 +149,34 @@ export class HalloweenPriceAlertRuntime {
 			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
 			this.project(notices, result.projection);
-			if (result.shouldNotify && result.notice !== null) this.options.onNotice?.(structuredClone(result.notice));
+			if (result.shouldNotify && result.notice !== null) this.emitNotice(result.notice, parent);
 		} catch (error) { if (this.owns(generation, store)) this.fail(error); }
 	}
 
-	async acknowledge(noticeId: string): Promise<boolean> {
+	async acknowledge(noticeId: string, parent?: ResolvedLocalDebugActionContext): Promise<boolean> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'halloween', action: 'halloween_alert', ...inheritedIds(parent),
+		}, this.options.now);
 		const store = this.store;
 		const accountRef = this.options.accountRef();
 		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef ||
-			!this.settings.enabled || !this.priceHistoryActive) return false;
+			!this.settings.enabled || !this.priceHistoryActive) { span.skip('unavailable', this.state.status); return false; }
 		const generation = this.generation;
 		try {
 			const acknowledged = await store.acknowledgePriceNotice(
 				this.options.vaultId, accountRef, noticeId, new Date((this.options.now ?? Date.now)()).toISOString(),
 			);
-			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return false;
+			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) { span.cancel(this.state.status); return false; }
 			const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
-			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return false;
+			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) { span.cancel(this.state.status); return false; }
 			this.project(notices, this.state.projection);
+			span.success(acknowledged ? 'acknowledged' : 'unchanged');
 			return acknowledged;
-		} catch (error) { if (this.owns(generation, store)) this.fail(error); return false; }
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable');
+			if (this.owns(generation, store)) this.fail(error);
+			return false;
+		}
 	}
 
 	dispose(): void { this.disposed = true; this.priceHistoryActive = false; this.disable(); }
@@ -132,7 +187,9 @@ export class HalloweenPriceAlertRuntime {
 			if (accountRef === null) { this.setState({ status: 'waiting_account' }); return; }
 			let store: IndexedDbHalloweenStore | null = null;
 			try {
-				store = await IndexedDbHalloweenStore.open(this.options.factory);
+				store = await IndexedDbHalloweenStore.open(
+					this.options.factory, undefined, undefined, this.options.persistenceDiagnostics,
+				);
 				if (!this.current(generation)) { store.close(); return; }
 				if (accountRef !== this.options.accountRef()) { store.close(); continue; }
 				const notices = await store.readPriceNotices(this.options.vaultId, accountRef);
@@ -185,6 +242,18 @@ export class HalloweenPriceAlertRuntime {
 		try { this.options.onStateChange?.(); } catch { /* UI observers do not own the runtime. */ }
 	}
 
+	private emitNotice(notice: HalloweenPriceNoticeV1, parent?: ResolvedLocalDebugActionContext): void {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'notification', action: 'notification_emit', ...inheritedIds(parent),
+		}, this.options.now);
+		try {
+			this.options.onNotice?.(structuredClone(notice));
+			span.success('emitted');
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'failed');
+		}
+	}
+
 	private current(generation: number): boolean {
 		return !this.disposed && this.settings.enabled && this.priceHistoryActive && generation === this.generation;
 	}
@@ -196,4 +265,16 @@ export class HalloweenPriceAlertRuntime {
 	private owns(generation: number, store: IndexedDbHalloweenStore): boolean {
 		return this.current(generation) && this.store === store;
 	}
+}
+
+function finishPriceAlertSpan(span: LocalDebugActionSpan, status: HalloweenPriceAlertRuntimeStatus): void {
+	if (status === 'disabled' || status === 'waiting_account') span.skip('unavailable', status);
+	else if (status.startsWith('store_')) span.failure(new Error(`halloween_alert_${status}`), 'storage_failure', status);
+	else if (status === 'insufficient_history') span.skip('skipped', status);
+	else span.success(status);
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
 }

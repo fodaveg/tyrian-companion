@@ -1,12 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { HttpTransportError } from '../core/http';
+import { HttpTransportError, ResilientHttpTransport } from '../core/http';
+import type { LocalDebugRecordInput } from '../core/local-debug-contract';
+import {
+	LocalDebugActionRunner,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 import {
 	ConnectionCheckError,
 	GuildWars2AccountGateway,
 	parseAccountProfile,
 	parseTokenInfo,
 } from './account-service';
+import { GuildWars2Client } from './guild-wars-2-client';
+import { ConnectionService } from './connection-service';
 
 const tokenInfo = {
 	id: 'key-id',
@@ -38,6 +45,67 @@ function clientWith(responses: unknown[]): {
 }
 
 describe('GuildWars2AccountGateway', () => {
+	it('propagates one root correlation through unique HTTP child lifecycles', async () => {
+		const records: LocalDebugRecordInput[] = [];
+		let sequence = 0;
+		const diagnostics = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => `action-${String(++sequence)}`,
+			now: () => 0,
+		});
+		const transport = new ResilientHttpTransport({
+			diagnostics,
+			now: () => 0,
+			request: async (request) => ({
+				status: 200,
+				headers: {},
+				json: request.endpoint === 'token_info' ? tokenInfo : account,
+			}),
+		});
+		const client = new GuildWars2Client(transport, {
+			hasSelection: () => true,
+			readSelectedApiKey: () => 'ephemeral-secret',
+		});
+		const service = new ConnectionService(new GuildWars2AccountGateway(client));
+
+		await diagnostics.run(
+			{ component: 'connection', action: 'connection_check' },
+			async (context) => await service.check(context),
+		);
+
+		expect(new Set(records.map(({ correlationId }) => correlationId))).toEqual(new Set(['action-1']));
+		expect([...new Set(records.map(({ actionId }) => actionId))]).toEqual([
+			'action-1', 'action-2', 'action-3',
+		]);
+		for (const actionId of ['action-1', 'action-2', 'action-3']) {
+			expect(records.filter((record) => record.actionId === actionId).map(({ phase }) => phase))
+				.toEqual(['start', 'success']);
+		}
+		expect(records.filter(({ action }) => action === 'http_request').map(({ details }) => details))
+			.toEqual([
+				expect.objectContaining({ endpoint: 'token_info' }),
+				expect.objectContaining({ endpoint: 'token_info' }),
+				expect.objectContaining({ endpoint: 'account' }),
+				expect.objectContaining({ endpoint: 'account' }),
+			]);
+	});
+
+	it('passes an optional parent to the pinned client operation and keeps no-parent callers compatible', async () => {
+		const beginOperation = vi.fn(() => ({
+			request: async (path: string) => path === 'tokeninfo' ? tokenInfo : account,
+		}));
+		const gateway = new GuildWars2AccountGateway({ beginOperation });
+		const parent: ResolvedLocalDebugActionContext = {
+			component: 'connection', action: 'connection_check',
+			actionId: 'connection-root', correlationId: 'command-root',
+		};
+
+		await gateway.checkConnection(parent);
+		expect(beginOperation).toHaveBeenLastCalledWith(parent);
+		await gateway.checkConnection();
+		expect(beginOperation).toHaveBeenLastCalledWith(undefined);
+	});
+
 	it('checks tokeninfo before account and separates recommended scopes', async () => {
 		const paths: string[] = [];
 		const gateway = new GuildWars2AccountGateway({

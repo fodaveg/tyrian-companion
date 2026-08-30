@@ -22,7 +22,9 @@ import {
 } from '../core/settings';
 import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
+import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from '../core/local-debug-contract';
 import type TyrianCompanionPlugin from '../main';
+import type { LocalDebugExportPreview } from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
@@ -250,6 +252,89 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								});
 							}),
 					);
+				},
+			},
+			{
+				name: this.t('settings.debug.name'), desc: this.t('settings.debug.desc'),
+				render: (setting) => {
+					setting.settingEl.addClass('tyrian-companion-settings__diagnostics');
+					const status = this.plugin.getLocalDebugStatus();
+					const statusEl = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__diagnostic-status' });
+					statusEl.setAttr('role', status.state === 'degraded' ? 'alert' : 'status');
+					statusEl.setAttr('aria-live', 'polite');
+					renderLocalDebugStatus(statusEl, status, this.t.bind(this));
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addToggle((toggle) => {
+						toggle.toggleEl.setAttr('aria-label', this.t('settings.debug.enabled'));
+						return toggle.setTooltip(this.t('settings.debug.enabled'))
+							.setValue(this.plugin.settings.debugLoggingEnabled)
+							.onChange(async (debugLoggingEnabled) => {
+							toggle.setDisabled(true);
+							try { await this.plugin.updateSettings({ debugLoggingEnabled }); }
+							catch { feedback.setText(this.t('settings.debug.failed')); }
+							finally { toggle.setDisabled(false); this.refreshForSettingsChange(); }
+							});
+					});
+					setting.addDropdown((dropdown) => {
+						dropdown.selectEl.setAttr('aria-label', this.t('settings.debug.level'));
+						for (const level of LOCAL_DEBUG_LEVELS) dropdown.addOption(level, this.t(`settings.debug.level.${level}`));
+						dropdown.setValue(this.plugin.settings.debugLoggingLevel)
+							.setDisabled(!this.plugin.settings.debugLoggingEnabled)
+							.onChange(async (level) => {
+								dropdown.setDisabled(true);
+								try { await this.plugin.updateSettings({ debugLoggingLevel: level as LocalDebugLevel }); }
+								catch { feedback.setText(this.t('settings.debug.failed')); }
+								finally { dropdown.setDisabled(false); this.refreshForSettingsChange(); }
+							});
+					});
+					setting.addButton((button) => button.setButtonText(this.t('settings.debug.open')).onClick(async () => {
+						button.setDisabled(true);
+						try {
+							feedback.setText(await this.plugin.openLocalDebugFolder()
+								? this.t('settings.debug.opened') : this.t('settings.debug.failed'));
+						} catch { feedback.setText(this.t('settings.debug.failed')); }
+						finally { button.setDisabled(false); }
+					}));
+					setting.addButton((button) => button.setButtonText(this.t('settings.debug.copy'))
+						.setDisabled(status.fileCount === 0).onClick(async () => {
+							button.setDisabled(true);
+							try {
+								const count = await this.plugin.copyLocalDebugEntries(50);
+								feedback.setText(count === 0 ? this.t('settings.debug.empty') : this.t('settings.debug.copied', { count }));
+							} catch { feedback.setText(this.t('settings.debug.failed')); }
+							finally { button.setDisabled(false); }
+						}));
+					setting.addButton((button) => button.setButtonText(this.t('settings.debug.export'))
+						.setDisabled(status.fileCount === 0).onClick(async () => {
+							button.setDisabled(true);
+							try {
+								const file = await runConfirmedLocalDebugExport(
+									() => confirmLocalDebugExport(this.app, this.t.bind(this), this.plugin.previewLocalDebugExport()),
+									() => this.plugin.exportLocalDebugPackage(),
+								);
+								if (file === false) return;
+								feedback.setText(file === null ? this.t('settings.debug.empty') : this.t('settings.debug.exported', { file }));
+							} catch { feedback.setText(this.t('settings.debug.failed')); }
+							finally { button.setDisabled(false); this.refreshForSettingsChange(); }
+						}));
+					setting.addButton((button) => {
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText(this.t('settings.debug.clear')).setDisabled(status.fileCount === 0).onClick(async () => {
+							button.setDisabled(true);
+							try {
+								const cleared = await runConfirmedLocalDebugClear(
+									() => confirmLocalDebugClear(this.app, this.t.bind(this)),
+									() => this.plugin.clearLocalDebugLogs(),
+								);
+								if (cleared === null) return;
+								feedback.setText(cleared
+									? this.t('settings.debug.cleared') : this.t('settings.debug.failed'));
+							} catch { feedback.setText(this.t('settings.debug.failed')); }
+							finally { button.setDisabled(false); this.refreshForSettingsChange(); }
+						});
+					});
 				},
 			},
 			{
@@ -639,6 +724,100 @@ function confirmSessionHistoryScrub(
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
 				const scrub = actions.createEl('button', { text: t('settings.history.scrubModal.confirm'), cls: 'mod-warning' });
 				scrub.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
+}
+
+/** Renders the complete bounded writer projection without exposing host-resolved paths. */
+function renderLocalDebugStatus(
+	container: HTMLElement,
+	status: LocalDebugStatus,
+	t: (key: TranslationKey, params?: TranslationParams) => string,
+): void {
+	container.empty();
+	const projection = projectLocalDebugStatus(status, t);
+	container.createEl('strong', { text: projection.lines[0] });
+	for (const line of projection.lines.slice(1)) container.createSpan({ text: line });
+}
+
+/** Projects the complete status into testable text and the appropriate live-region role. */
+export function projectLocalDebugStatus(
+	status: LocalDebugStatus,
+	t: (key: TranslationKey, params?: TranslationParams) => string,
+): { role: 'status' | 'alert'; lines: readonly string[] } {
+	return {
+		role: status.state === 'degraded' ? 'alert' : 'status',
+		lines: [
+			t(`settings.debug.writer.${status.state}`),
+			t('settings.debug.path', { path: status.path }),
+			t('settings.debug.storage', { bytes: status.bytes, files: status.fileCount }),
+			status.lastEventAt === null
+				? t('settings.debug.noEvents') : t('settings.debug.lastEvent', { timestamp: status.lastEventAt }),
+			t('settings.debug.dropped', { count: status.droppedRecords }),
+		],
+	};
+}
+
+/** Executes export only after the exact-content preview is accepted. */
+export async function runConfirmedLocalDebugExport(
+	confirm: () => Promise<boolean>,
+	exportPackage: () => Promise<string | null>,
+): Promise<string | null | false> {
+	return await confirm() ? await exportPackage() : false;
+}
+
+/** Executes destructive clearing only after its dedicated confirmation. */
+export async function runConfirmedLocalDebugClear(
+	confirm: () => Promise<boolean>,
+	clear: () => Promise<boolean>,
+): Promise<boolean | null> {
+	return await confirm() ? await clear() : null;
+}
+
+/** Requires an exact-content preview before creating any support package. */
+function confirmLocalDebugExport(
+	app: App,
+	t: (key: TranslationKey, params?: TranslationParams) => string,
+	preview: LocalDebugExportPreview,
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle(t('settings.debug.exportModal.title'));
+				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.intro') });
+				const list = this.contentEl.createEl('ul');
+				for (const item of preview.included) list.createEl('li', { text: t(`settings.debug.exportModal.${item}`) });
+				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.excluded') });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const confirm = actions.createEl('button', { text: t('settings.debug.exportModal.confirm'), cls: 'mod-cta' });
+				confirm.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
+}
+
+/** Keeps destructive log clearing behind a dedicated confirmation. */
+function confirmLocalDebugClear(
+	app: App,
+	t: (key: TranslationKey) => string,
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle(t('settings.debug.clearModal.title'));
+				this.contentEl.createEl('p', { text: t('settings.debug.clearModal.desc') });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const clear = actions.createEl('button', { text: t('settings.debug.clearModal.confirm'), cls: 'mod-warning' });
+				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
 		}(app);

@@ -1,6 +1,9 @@
 import type { App, PluginManifest } from 'obsidian';
 import { describe, expect, it, vi } from 'vitest';
 
+const electronMocks = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
+vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
+
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import type { ConnectionState } from './account/connection-service';
 import { genericManagedAssets } from './assets/generic-assets';
@@ -8,6 +11,9 @@ import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } 
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
+import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import { LocalDebugLogger } from './core/local-debug-logger';
+import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { COMPANION_VIEW_TYPE, SessionContaminationReviewModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
@@ -51,7 +57,75 @@ interface ReviewIntentHarness {
 	reviewSessionContamination(answers: unknown): Promise<string | null>;
 }
 
+describe('connection diagnostics composition', () => {
+	it('passes the resolved root context from main into ConnectionService', async () => {
+		const parent = {
+			component: 'connection' as const, action: 'connection_check' as const,
+			actionId: 'connection-root', correlationId: 'command-root',
+		};
+		const check = vi.fn(async () => ({
+			status: 'error' as const, code: 'unavailable', message: 'Unavailable.', retryAt: null,
+		}));
+		const harness = {
+			runtimeReady: true,
+			connection: { check },
+			settingTab: { refreshConnectionRow: vi.fn() },
+			renderViews: vi.fn(),
+			localDebugActions: {
+				run: async (_input: unknown, action: (context: typeof parent) => Promise<ConnectionState>) => await action(parent),
+				fireAndForget: vi.fn(),
+			},
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const checkConnection = (TyrianCompanionPlugin.prototype as unknown as {
+			checkConnection(this: typeof harness): Promise<ConnectionState>;
+		}).checkConnection;
+
+		await expect(checkConnection.call(harness)).resolves.toMatchObject({ status: 'error' });
+		expect(check).toHaveBeenCalledWith(parent);
+	});
+});
+
 describe('atomic settings persistence', () => {
+	it('flushes the settings terminal before disabling capture and emits one event when enabling it again', async () => {
+		const events: string[] = [];
+		const settings = { ...DEFAULT_SETTINGS } as TyrianSettings;
+		const localDebug = {
+			flush: vi.fn(async () => { events.push('flush'); }),
+			setMinimumLevel: vi.fn((level: string) => { events.push(`level:${level}`); }),
+			setEnabled: vi.fn((enabled: boolean) => { events.push(`enabled:${String(enabled)}`); }),
+		};
+		const localDebugActions = {
+			run: async (_context: unknown, action: () => Promise<SettingsUpdateResult>) => {
+				events.push('start');
+				const result = await action();
+				events.push('terminal');
+				return result;
+			},
+			event: vi.fn((context: { state?: string }) => { events.push(`event:${context.state ?? ''}`); }),
+		};
+		const harness = {
+			runtimeReady: true, settings, localDebug, localDebugActions,
+			app: { vault: { configDir: 'test-config-dir' } },
+			saveData: vi.fn(async () => { events.push('persist'); }),
+			priceHistory: null, halloween: null, halloweenPriceAlert: null,
+			renderViews: vi.fn(() => { events.push('render'); }),
+			renderInventoryAdvisorViews: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const updateSettings = (TyrianCompanionPlugin.prototype as unknown as {
+			updateSettings(this: typeof harness, update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
+		}).updateSettings;
+
+		await updateSettings.call(harness, { debugLoggingEnabled: false });
+		expect(events).toEqual(['start', 'persist', 'render', 'terminal', 'flush', 'level:debug', 'enabled:false']);
+
+		events.length = 0;
+		localDebugActions.run = async (_context, action) => await action();
+		await updateSettings.call(harness, { debugLoggingEnabled: true });
+		expect(events).toEqual(['persist', 'render', 'level:debug', 'enabled:true', 'event:debug_logging_enabled']);
+	});
+
 	it('keeps the persisted personal overlay in memory and in the next Refresh rules after save rejection', async () => {
 		const settings = {
 			...DEFAULT_SETTINGS,
@@ -543,13 +617,23 @@ describe('deferred runtime boot guard', () => {
 		plugin.registerView = registerView;
 		plugin.addSettingTab = vi.fn();
 		plugin.addCommand = addCommand as unknown as typeof plugin.addCommand;
-		plugin.registerDomEvent = vi.fn();
+		const registerDomEvent = vi.fn();
+		plugin.registerDomEvent = registerDomEvent;
 		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
 		// `registerDomEvent` is stubbed above; these only need to exist as references.
 		vi.stubGlobal('window', {});
 		vi.stubGlobal('document', {});
 
 		await plugin.onload();
+		const debugActions = (plugin as unknown as {
+			localDebugActions: { event(context: { action: string; state?: string }): void };
+		}).localDebugActions;
+		const globalEvent = vi.spyOn(debugActions, 'event');
+		for (const eventName of ['error', 'unhandledrejection']) {
+			const registration = registerDomEvent.mock.calls.find((call) => call[1] === eventName);
+			expect(registration).toBeDefined();
+			(registration?.[2] as (event: Event) => void)({} as Event);
+		}
 		vi.unstubAllGlobals();
 
 		// The saved-leaf restore this guards against races `onLayoutReady`, so the
@@ -565,6 +649,10 @@ describe('deferred runtime boot guard', () => {
 			'open-companion', 'open-inventory-advisor', 'refresh-inventory-advisor',
 			'arm-assisted-detection', 'disarm-assisted-detection',
 		]));
+		expect(globalEvent.mock.calls.map(([context]) => context)).toEqual(expect.arrayContaining([
+			expect.objectContaining({ action: 'global_error', state: 'window_error' }),
+			expect.objectContaining({ action: 'global_error', state: 'unhandled_rejection' }),
+		]));
 
 		// Session start/stop route through `SessionCommandController`, whose context is
 		// itself guarded: with `runtimeReady` still false every command reports
@@ -573,6 +661,130 @@ describe('deferred runtime boot guard', () => {
 		await expect(plugin.stopManualSession()).resolves.toBeUndefined();
 	});
 });
+
+describe('local diagnostics composition', () => {
+	it('clears a real logger without recreating a terminal record after the deletion', async () => {
+		const storage = memoryDebugStorage();
+		const logger = new LocalDebugLogger({
+			enabled: true, pluginVersion: 'test',
+			writer: new LocalDebugJsonlWriter({ storage, directory: 'diagnostics' }),
+		});
+		const actions = new LocalDebugActionRunner({ diagnostics: logger, createId: () => 'clear-proof' });
+		await logger.initialize();
+		await actions.run({ component: 'support', action: 'debug_export' }, async () => undefined);
+		await logger.flush();
+		await expect(logger.exportSanitized()).resolves.not.toBe('');
+		const harness = { localDebug: logger, localDebugActions: actions };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const clear = (TyrianCompanionPlugin.prototype as unknown as {
+			clearLocalDebugLogs(this: typeof harness): Promise<boolean>;
+		}).clearLocalDebugLogs;
+
+		await expect(clear.call(harness)).resolves.toBe(true);
+		await logger.flush();
+		await expect(logger.exportSanitized()).resolves.toBe('');
+	});
+
+	it('copies and exports sanitized records with reconstructable internal IDs but no private settings', async () => {
+		const writeText = vi.fn(async () => undefined);
+		vi.stubGlobal('navigator', { platform: 'Linux x86_64', clipboard: { writeText } });
+		const writes = new Map<string, string>();
+		const folders = new Set<string>();
+		const record = JSON.stringify({
+			schemaVersion: 1, actionId: 'action-1', correlationId: 'flow-1',
+			component: 'session', action: 'session_start', phase: 'success', code: 'ok',
+		});
+		const localDebug = {
+			exportSanitized: vi.fn(async () => `${record}\n`),
+			clear: vi.fn(async () => true),
+		};
+		const harness = {
+			settings: { ...DEFAULT_SETTINGS, apiKeySecret: 'private-secret-name', preferredCharacter: 'Astra' },
+			manifest: { id: 'tyrian-companion', version: '0.1.14' },
+			localDebug,
+			localDebugActions: null,
+			app: { vault: { configDir: 'test-config-dir', adapter: {
+				exists: async (path: string) => folders.has(path) || writes.has(path),
+				mkdir: async (path: string) => { folders.add(path); },
+				write: async (path: string, value: string) => { writes.set(path, value); },
+			} } },
+		};
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			copyLocalDebugEntries(this: typeof harness, limit?: number): Promise<number>;
+			exportLocalDebugPackage(this: typeof harness): Promise<string | null>;
+			previewLocalDebugExport(this: typeof harness): { included: readonly string[]; excluded: readonly string[] };
+			clearLocalDebugLogs(this: typeof harness): Promise<boolean>;
+		};
+
+		await expect(proto.copyLocalDebugEntries.call(harness, 50)).resolves.toBe(1);
+		expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"actionId":"action-1"'));
+		const path = await proto.exportLocalDebugPackage.call(harness);
+		expect(path).toMatch(/^Tyrian Companion\/diagnostics\/diagnostic-export-/u);
+		const exported = writes.get(path!);
+		expect(exported).toContain('\\"correlationId\\":\\"flow-1\\"');
+		expect(exported).not.toContain('private-secret-name');
+		expect(exported).not.toContain('Astra');
+		expect(proto.previewLocalDebugExport.call(harness)).toEqual({
+			included: ['logs', 'version', 'platform', 'settings'],
+			excluded: ['secret_name', 'character', 'paths', 'payloads'],
+		});
+		await expect(proto.clearLocalDebugLogs.call(harness)).resolves.toBe(true);
+		vi.unstubAllGlobals();
+	});
+
+	it('opens only the desktop-resolved diagnostics folder through Electron shell', async () => {
+		electronMocks.openPath.mockResolvedValueOnce('');
+		const status = { path: 'test-config-dir/plugins/tyrian-companion/logs/' };
+		const harness = {
+			localDebugActions: null,
+			getLocalDebugStatus: () => status,
+			app: { vault: { adapter: { getFullPath: (path: string) => `/vault/${path}` } } },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const open = (TyrianCompanionPlugin.prototype as unknown as {
+			openLocalDebugFolder(this: typeof harness): Promise<boolean>;
+		}).openLocalDebugFolder;
+		await expect(open.call(harness)).resolves.toBe(true);
+		expect(electronMocks.openPath).toHaveBeenLastCalledWith('/vault/test-config-dir/plugins/tyrian-companion/logs');
+	});
+
+	it('flushes the unload terminal and then drains the flush terminal before resolving', async () => {
+		const events: string[] = [];
+		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			localDebug: { flush: vi.fn(async () => { events.push('flush'); }) },
+			localDebugActions: { run: async (context: { action: string }, action: () => Promise<unknown>) => {
+				events.push(`start:${context.action}`);
+				const result = await action();
+				events.push(`terminal:${context.action}`);
+				return result;
+			} },
+			sessions: { dispose: vi.fn(async () => { events.push('sessions:dispose'); }) },
+		}) as unknown as TyrianCompanionPlugin;
+		harness.onunload();
+		await harness.awaitLocalDebugShutdown();
+		expect(events).toEqual([
+			'start:plugin_unload', 'sessions:dispose', 'terminal:plugin_unload',
+			'start:debug_flush', 'flush', 'terminal:debug_flush', 'flush',
+		]);
+	});
+});
+
+function memoryDebugStorage(): LocalDebugStoragePort {
+	const files = new Map<string, string>();
+	const directories = new Set<string>();
+	return {
+		exists: async (path) => files.has(path) || directories.has(path),
+		read: async (path) => files.get(path) ?? '',
+		write: async (path, data) => { files.set(path, data); },
+		append: async (path, data) => { files.set(path, `${files.get(path) ?? ''}${data}`); },
+		mkdir: async (path) => { directories.add(path); },
+		remove: async (path) => { files.delete(path); },
+		rename: async (path, destination) => {
+			const value = files.get(path);
+			if (value !== undefined) { files.set(destination, value); files.delete(path); }
+		},
+	};
+}
 
 /** Minimal in-memory Vault double, matching the one `managed-assets.test.ts` exercises the
  * real journal against, so the reconciliation tests above prove actual file moves. */
@@ -627,6 +839,7 @@ interface ManagedAssetsRootHarness {
 	refreshLootPresentation(): Promise<void>;
 	renderViews(): void;
 	renderInventoryAdvisorViews(): void;
+	emitNotice(message: string, source: string): void;
 	applyManagedAssets(): Promise<void>;
 	updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 	relocateManagedAssets(): Promise<unknown>;
@@ -669,6 +882,7 @@ function buildManagedAssetsRootHarness(
 		refreshLootPresentation: async () => undefined,
 		renderViews: () => undefined,
 		renderInventoryAdvisorViews: () => undefined,
+		emitNotice: () => undefined,
 		applyManagedAssets: () => proto.applyManagedAssets.call(harness),
 		updateSettings: (update) => proto.updateSettings.call(harness, update),
 		relocateManagedAssets: () => proto.relocateManagedAssets.call(harness),

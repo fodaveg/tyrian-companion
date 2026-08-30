@@ -1,12 +1,36 @@
 import type { ManagedAssetsManager, ManagedAssetsResult } from './managed-assets';
 import type { ManagedAssetsPointerState, ManagedAssetsPointerStore } from './managed-assets-pointer';
+import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 
 export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 'relocated' | 'unchanged'; root: string | null; generation: number } | { status: 'busy' | 'conflict' | 'unavailable'; message: string };
 
 export class ManagedAssetsLifecycle {
-	constructor(private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>, private readonly pointer: ManagedAssetsPointerStore) {}
+	constructor(
+		private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>,
+		private readonly pointer: ManagedAssetsPointerStore,
+		private readonly diagnostics?: LocalDebugActionPort,
+	) {}
 
-	async install(root: string): Promise<ManagedAssetsLifecycleResult> {
+	async install(root: string, parent?: ResolvedLocalDebugActionContext): Promise<ManagedAssetsLifecycleResult> {
+		const span = startLocalDebugAction(this.diagnostics, {
+			component: 'assets', action: 'managed_assets_apply', ...inheritedIds(parent),
+		});
+		try {
+			const result = await this.installInternal(root);
+			finishLifecycleSpan(span, result);
+			return result;
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'unavailable');
+			throw error;
+		}
+	}
+
+	private async installInternal(root: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
 		if (current.status === 'installing' && current.targetRoot === root) {
 			// Resume the exact durable intent after a crash or from another window.
@@ -37,7 +61,24 @@ export class ManagedAssetsLifecycle {
 		return { status: installed.status === 'unchanged' ? 'unchanged' : 'applied', root, generation: ready.generation };
 	}
 
-	async remove(expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
+	async remove(
+		expectedLegacyRoot?: string,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<ManagedAssetsLifecycleResult> {
+		const span = startLocalDebugAction(this.diagnostics, {
+			component: 'assets', action: 'managed_assets_remove', ...inheritedIds(parent),
+		});
+		try {
+			const result = await this.removeInternal(expectedLegacyRoot);
+			finishLifecycleSpan(span, result);
+			return result;
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'unavailable');
+			throw error;
+		}
+	}
+
+	private async removeInternal(expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
 		if (expectedLegacyRoot !== undefined) {
 			const adopted = await this.adoptExpectedLegacyRoot(current, expectedLegacyRoot, true);
@@ -62,7 +103,25 @@ export class ManagedAssetsLifecycle {
 		return { status: 'removed', root: null, generation: ready.generation };
 	}
 
-	async move(to: string, expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
+	async move(
+		to: string,
+		expectedLegacyRoot?: string,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<ManagedAssetsLifecycleResult> {
+		const span = startLocalDebugAction(this.diagnostics, {
+			component: 'assets', action: 'managed_assets_relocate', ...inheritedIds(parent),
+		});
+		try {
+			const result = await this.moveInternal(to, expectedLegacyRoot);
+			finishLifecycleSpan(span, result);
+			return result;
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'unavailable');
+			throw error;
+		}
+	}
+
+	private async moveInternal(to: string, expectedLegacyRoot?: string): Promise<ManagedAssetsLifecycleResult> {
 		let current = await this.pointer.read();
 		if (expectedLegacyRoot !== undefined) {
 			const adopted = await this.adoptExpectedLegacyRoot(current, expectedLegacyRoot);
@@ -141,3 +200,20 @@ export class ManagedAssetsLifecycle {
 function isSuccess(result: ManagedAssetsResult): result is Extract<ManagedAssetsResult, { status: 'applied' | 'unchanged' | 'detached' }> { return !('message' in result); }
 function failure(result: ManagedAssetsResult): ManagedAssetsLifecycleResult { return 'message' in result ? { status: result.status === 'busy' ? 'busy' : result.status === 'unavailable' ? 'unavailable' : 'conflict', message: result.message } : { status: 'conflict', message: 'Managed-assets evidence did not reach the required state.' }; }
 function successResult(result: ManagedAssetsResult, status: 'applied', pointer: ManagedAssetsPointerState): ManagedAssetsLifecycleResult { return isSuccess(result) ? { status: result.status === 'unchanged' ? 'unchanged' : status, root: pointer.root, generation: pointer.generation } : failure(result); }
+
+function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLifecycleResult): void {
+	if (result.status === 'applied' || result.status === 'removed' || result.status === 'relocated') {
+		span.success(result.status);
+	} else if (result.status === 'unchanged' || result.status === 'busy') {
+		span.skip('skipped', result.status);
+	} else if (result.status === 'unavailable') {
+		span.failure(new Error('managed_assets_unavailable'), 'storage_failure', result.status);
+	} else {
+		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status);
+	}
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
+}

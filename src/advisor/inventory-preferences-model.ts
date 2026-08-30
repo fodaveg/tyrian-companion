@@ -1,6 +1,12 @@
 import type { KeepExceptionV1 } from './inventory-advisor-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 
+/** Opaque local diagnostic identity; structural here to keep the domain model core-independent. */
+export interface InventoryPreferencesActionContext {
+	readonly actionId: string;
+	readonly correlationId: string;
+}
+
 export const INVENTORY_PREFERENCES_SCHEMA_VERSION = 1 as const;
 export const INVENTORY_PREFERENCES_DB_VERSION = 1 as const;
 export const INVENTORY_PREFERENCES_DB_NAME = 'tyrian-companion-inventory-preferences';
@@ -40,11 +46,15 @@ export type InventoryPreferencesWriteResult =
  * two Obsidian windows cannot silently overwrite each other's preferences.
  */
 export interface InventoryPreferencesStore {
-	read(scope: InventoryPreferenceScope): Promise<InventoryPreferencesReadResult>;
+	read(
+		scope: InventoryPreferenceScope,
+		actionContext?: InventoryPreferencesActionContext,
+	): Promise<InventoryPreferencesReadResult>;
 	compareAndSwap(
 		scope: InventoryPreferenceScope,
 		expectedGeneration: number,
 		next: InventoryPreferencesV1,
+		actionContext?: InventoryPreferencesActionContext,
 	): Promise<InventoryPreferencesWriteResult>;
 	dispose(): void;
 }

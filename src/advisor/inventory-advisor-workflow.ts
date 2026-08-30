@@ -13,6 +13,12 @@ import type { ContainerPersonalValuationV1 } from '../economy/container-personal
 import type { EquipmentSalvagePreferencesV1 } from '../economy/equipment-salvage-economy';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import {
+	startLocalDebugAction,
+	type LocalDebugActionPort,
+	type LocalDebugActionSpan,
+	type ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
 
 export interface InventoryAdvisorPreferencesSnapshot {
 	goals: ReservationGoal[];
@@ -26,9 +32,15 @@ export type InventoryAdvisorPreferencesLoadResult =
 export interface InventoryAdvisorWorkflowPorts {
 	capture: Pick<InventoryAdvisorEvidenceCapture, 'capture'>;
 	/** Preferences are scoped only after the explicit capture proves an account identity. */
-	preferences: { load(capture: InventoryAdvisorEvidenceCaptureResultV1): Promise<InventoryAdvisorPreferencesLoadResult> };
+	preferences: {
+		load(
+			capture: InventoryAdvisorEvidenceCaptureResultV1,
+			parent?: ResolvedLocalDebugActionContext,
+		): Promise<InventoryAdvisorPreferencesLoadResult>;
+	};
 	rules: InventoryAdvisorRulesProvider;
 	now?: () => number;
+	diagnostics?: LocalDebugActionPort;
 }
 
 export type InventoryAdvisorRules = {
@@ -77,7 +89,27 @@ export class InventoryAdvisorWorkflow {
 
 	constructor(private readonly ports: InventoryAdvisorWorkflowPorts) {}
 
-	async refresh(locale: CatalogLocale): Promise<InventoryAdvisorWorkflowResult> {
+	async refresh(
+		locale: CatalogLocale,
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<InventoryAdvisorWorkflowResult> {
+		const span = startLocalDebugAction(this.ports.diagnostics, {
+			component: 'advisor', action: 'inventory_advisor_refresh', ...inheritedIds(parent),
+		}, this.ports.now);
+		try {
+			const result = await this.refreshInternal(locale, span.context);
+			finishWorkflowSpan(span, result);
+			return result;
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'blocked');
+			throw error;
+		}
+	}
+
+	private async refreshInternal(
+		locale: CatalogLocale,
+		context: ResolvedLocalDebugActionContext | undefined,
+	): Promise<InventoryAdvisorWorkflowResult> {
 		const epoch = ++this.epoch;
 		this.last = null;
 		const asOf = new Date(this.ports.now?.() ?? Date.now()).toISOString();
@@ -87,9 +119,13 @@ export class InventoryAdvisorWorkflow {
 			...(rules.value.containerEconomyPack?.expectedPriceItemIds ?? []),
 			...(rules.value.equipmentSalvage === undefined ? [] : [rules.value.equipmentSalvage.policy.outputItemId]),
 		].sort((left, right) => left - right).filter((itemId, index, values) => index === 0 || itemId !== values[index - 1]);
-		const capture = expectedPriceItemIds.length === 0
-			? await this.ports.capture.capture(locale)
-			: await this.ports.capture.capture(locale, expectedPriceItemIds);
+		const capture = context === undefined
+			? expectedPriceItemIds.length === 0
+				? await this.ports.capture.capture(locale)
+				: await this.ports.capture.capture(locale, expectedPriceItemIds)
+			: expectedPriceItemIds.length === 0
+				? await this.ports.capture.capture(locale, undefined, undefined, context)
+				: await this.ports.capture.capture(locale, expectedPriceItemIds, undefined, context);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		if (capture.evidence === null) {
 			return { status: 'blocked', reason: capture.failure === 'missing_key'
@@ -98,7 +134,7 @@ export class InventoryAdvisorWorkflow {
 					? 'capture_rate_limited'
 					: capture.status === 'invalid' ? captureBlockedReason(capture.failure) : 'capture_unavailable' };
 		}
-		const preferences = await this.ports.preferences.load(capture);
+		const preferences = await this.ports.preferences.load(capture, context);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		if (preferences.status === 'blocked') return preferences;
 		const source = composeInventoryAdvisorRefresh(capture, preferences.value, rules.value, asOf);
@@ -111,7 +147,23 @@ export class InventoryAdvisorWorkflow {
 	}
 
 	/** Rebuilds the local presentation after a preference write, never recapturing the account. */
-	async reclassify(): Promise<InventoryAdvisorWorkflowResult> {
+	async reclassify(parent?: ResolvedLocalDebugActionContext): Promise<InventoryAdvisorWorkflowResult> {
+		const span = startLocalDebugAction(this.ports.diagnostics, {
+			component: 'advisor', action: 'inventory_advisor_reclassify', ...inheritedIds(parent),
+		}, this.ports.now);
+		try {
+			const result = await this.reclassifyInternal(span.context);
+			finishWorkflowSpan(span, result);
+			return result;
+		} catch (error) {
+			span.failure(error, 'unknown_failure', 'blocked');
+			throw error;
+		}
+	}
+
+	private async reclassifyInternal(
+		context: ResolvedLocalDebugActionContext | undefined,
+	): Promise<InventoryAdvisorWorkflowResult> {
 		const epoch = this.epoch;
 		if (this.last === null) return { status: 'blocked', reason: 'stale_evidence' };
 		const last = this.last;
@@ -125,7 +177,7 @@ export class InventoryAdvisorWorkflow {
 			this.last = null;
 			return { status: 'blocked', reason: 'stale_evidence' };
 		}
-		const preferences = await this.ports.preferences.load(structuredClone(last.capture));
+		const preferences = await this.ports.preferences.load(structuredClone(last.capture), context);
 		if (!this.active(epoch) || this.last !== last) return { status: 'blocked', reason: 'stale_evidence' };
 		if (preferences.status === 'blocked') return preferences;
 		const source = composeInventoryAdvisorRefresh(last.capture, preferences.value, rules.value, asOf);
@@ -292,4 +344,25 @@ function captureBlockedReason(failure: CaptureFailure | undefined): InventoryAdv
 	if (failure === 'wrapper_shape') return 'capture_wrapper_shape';
 	if (failure === 'serialization_invalid') return 'capture_serialization_invalid';
 	return 'capture_invalid';
+}
+
+function finishWorkflowSpan(span: LocalDebugActionSpan, result: InventoryAdvisorWorkflowResult): void {
+	if (result.status === 'ready') {
+		span.success('ready');
+	} else if (result.reason === 'stale_evidence') {
+		span.skip('skipped', result.reason);
+	} else if (result.reason === 'capture_rate_limited') {
+		span.retry(result.reason);
+	} else if (result.reason === 'credential_unavailable') {
+		span.failure(new Error('inventory_advisor_permission_denied'), 'permission_denied', result.reason);
+	} else if (result.reason === 'missing_rules' || result.reason.startsWith('capture_')) {
+		span.failure(new Error('inventory_advisor_validation_failed'), 'validation_failed', result.reason);
+	} else {
+		span.failure(new Error('inventory_advisor_unavailable'), 'storage_failure', result.reason);
+	}
+}
+
+function inheritedIds(parent: ResolvedLocalDebugActionContext | undefined):
+	{ parent: Pick<ResolvedLocalDebugActionContext, 'actionId' | 'correlationId'> } | Record<string, never> {
+	return parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } };
 }

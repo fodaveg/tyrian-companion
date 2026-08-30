@@ -4,7 +4,7 @@
 
 `src/main.ts` es la composición del plugin. Registra la vista, el comando y los ajustes, y conecta adaptadores de Obsidian con servicios independientes.
 
-- `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos y limitación FIFO de concurrencia.
+- `core`: transporte HTTP resiliente, configuración versionada, acceso diferido a secretos, limitación FIFO de concurrencia y diagnóstico local seguro.
 - `account`: cliente de Guild Wars 2, validación runtime, conexión, estado efímero y snapshots de almacenamiento.
 - `catalog`: cliente público, parsers de metadatos, resolución por snapshot y contrato de caché.
 - `economy`: contrato monetario puro en cobre, tasas GW2 versionadas, binding, rutas líquidas por pila, snapshot de precios al cierre, valoración de sesión, modelos versionados de contenedores y reservas por objetivo.
@@ -96,9 +96,38 @@ sessions ----> coordinación local + contratos puros
 objectives --> contratos puros
 
 H8.1/H8.4 contract -> H8.5 helper + H8.6 client core + H8.7 safe launch + H8.8 shadow policy aislados -/-> main, plugin o release
+
+acciones foreground/background -> LocalDebugActionRunner -> allowlist/saneado -> cola fail-open -> JSONL rotativo local
+efectos HTTP/scheduler/IndexedDB -> puertos diagnósticos cerrados -----------/
 ```
 
 Los módulos de dominio no dependen de la UI. `ObsidianRequestTransport` es el adaptador que conecta `requestUrl` con `ResilientHttpTransport`; la política pura aplica timeout lógico, reintentos acotados para `429/500/502/503/504` —no `501`—, `Retry-After`, backoff y jitter inyectables. Los errores transportan solo tipo, estado y espera: nunca URL, cabeceras, cuerpo ni autorización.
+
+## Diagnóstico local H6.17
+
+`LocalDebugActionRunner` es la frontera canónica para acciones síncronas, asíncronas y detached. El
+contexto se resuelve una sola vez y el mismo `actionId/correlationId` acompaña inicio, reintentos,
+efectos y terminal; los adaptadores de HTTP, scheduler y persistencia reciben solo puertos opcionales
+con un vocabulario cerrado. Los módulos puros no importan el logger y H8/Mumble conserva su isla sin
+logging ni retención raw.
+
+`LocalDebugLogger` acepta records sin bloquear al caller, los serializa mediante una cola acotada y
+publica estado `disabled|ready|writing|degraded`. El único sumidero es `LocalDebugJsonlWriter`, sobre
+el adapter de Obsidian: escribe JSONL completo, rota antes de superar 2 MiB, limita el conjunto a cinco
+shards, recupera una cola truncada al arrancar y restaura la secuencia monotónica. `flush` cerca el
+unload; permisos, cuota, desbordamiento o corrupción degradan la observabilidad, nunca la acción de
+producto.
+
+Antes de persistir, `local-debug-sanitizer` reconstruye cada record desde una allowlist positiva por
+componente. Solo conserva niveles, fases, acciones, códigos y metadata escalar/bounded revisados;
+mensajes y stacks se acotan y redactan. Copy/export vuelve a parsear y sanear cada línea. El paquete
+de soporte se crea de forma explícita fuera del directorio rotativo y nunca contiene clave, nombre de
+secreto, URL raw, headers, body, payload, identidad ni ruta del vault.
+
+`scripts/action-observability-census.mjs` mantiene un inventario AST exacto y sin contenido de cada
+`catch`, `.catch`, `void` y callback registrado en producción. Una frontera añadida cambia el censo y
+falla el gate hasta recibir revisión explícita; la suite de sabotaje demuestra el rojo de las cuatro
+clases.
 
 ## Benchmark H6.6 de cuenta grande
 

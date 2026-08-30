@@ -2,6 +2,10 @@ import { compareStorageSnapshots, isComparableStorageSnapshot } from '../account
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceContext,
+} from '../core/local-debug-persistence';
+import {
 	isSessionPriceSnapshot,
 	type SessionPriceSnapshot,
 } from '../economy/session-price-snapshot';
@@ -52,9 +56,9 @@ export type SessionRuntimeMutationResult =
 	| { status: 'error'; code: 'corrupt' | 'unavailable' };
 
 export interface SessionRuntimeStore {
-	load(): Promise<SessionRuntimeLoadResult>;
-	save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult>;
-	clear(authority: SessionAuthority): Promise<SessionRuntimeMutationResult>;
+	load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult>;
+	save(record: SessionRuntimeRecord, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
+	clear(authority: SessionAuthority, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
 	close(): void;
 }
 
@@ -106,24 +110,29 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 	constructor(
 		private readonly factory: IDBFactory,
 		private readonly databaseName = SESSION_RUNTIME_DB_NAME,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
-	async load(): Promise<SessionRuntimeLoadResult> {
+	async load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult> {
+		const attempt = this.diagnostics.begin('session_runtime', 'read', context);
 		try {
-			const value = await this.read();
-			if (value === undefined) return { status: 'empty' };
+			const value = await this.read(context);
+			if (value === undefined) { attempt.skip(); return { status: 'empty' }; }
 			const record = normalizeSessionRuntimeRecord(value);
-			if (!record) return { status: 'error', code: 'corrupt' };
+			if (!record) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
+			attempt.success();
 			return { status: 'loaded', record };
 		} catch {
+			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
 
-	async save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
-		if (!isSessionRuntimeRecord(record)) return { status: 'error', code: 'corrupt' };
+	async save(record: SessionRuntimeRecord, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult> {
+		const attempt = this.diagnostics.begin('session_runtime', 'write', context);
+		if (!isSessionRuntimeRecord(record)) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
 		try {
-			return await this.mutate<SessionRuntimeMutationResult>((value) => {
+			const result = await this.mutate<SessionRuntimeMutationResult>((value) => {
 				const current = value === undefined ? null : normalizeSessionRuntimeRecord(value);
 				if (value !== undefined && !current) return { result: { status: 'error', code: 'corrupt' } as const };
 				if (current && !canReplace(current, record)) {
@@ -133,15 +142,21 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 					result: { status: 'saved' } as const,
 					next: structuredClone(record),
 				};
-			});
+			}, context);
+			if (result.status === 'saved') attempt.success();
+			else if (result.status === 'stale') attempt.skip();
+			else attempt.failure('validation_failed');
+			return result;
 		} catch {
+			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
 
-	async clear(authority: SessionAuthority): Promise<SessionRuntimeMutationResult> {
+	async clear(authority: SessionAuthority, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult> {
+		const attempt = this.diagnostics.begin('session_runtime', 'delete', context);
 		try {
-			return await this.mutate<SessionRuntimeMutationResult>((value) => {
+			const result = await this.mutate<SessionRuntimeMutationResult>((value) => {
 				if (value === undefined) return { result: { status: 'cleared' } as const, remove: true };
 				const current = normalizeSessionRuntimeRecord(value);
 				if (!current) return { result: { status: 'error', code: 'corrupt' } as const };
@@ -149,22 +164,30 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 					return { result: { status: 'stale' } as const };
 				}
 				return { result: { status: 'cleared' } as const, remove: true };
-			});
+			}, context);
+			if (result.status === 'cleared') attempt.success();
+			else if (result.status === 'stale') attempt.skip();
+			else attempt.failure('validation_failed');
+			return result;
 		} catch {
+			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
 
 	close(): void {
+		const attempt = this.diagnostics.begin('session_runtime', 'close');
 		this.unavailable = true;
 		this.database?.close();
 		this.database = null;
+		attempt.success();
 	}
 
-	private async open(): Promise<IDBDatabase> {
+	private async open(context?: LocalDebugPersistenceContext): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Session recovery storage is unavailable.');
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
+		const attempt = this.diagnostics.begin('session_runtime', 'open', context);
 		const opening = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = this.factory.open(this.databaseName, SESSION_RUNTIME_DB_VERSION);
 			let settled = false;
@@ -198,14 +221,19 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		});
 		this.opening = opening;
 		try {
-			return await opening;
+			const database = await opening;
+			attempt.success();
+			return database;
+		} catch (error) {
+			attempt.failure();
+			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;
 		}
 	}
 
-	private async read(): Promise<unknown> {
-		const database = await this.open();
+	private async read(context?: LocalDebugPersistenceContext): Promise<unknown> {
+		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {
@@ -225,8 +253,9 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 
 	private async mutate<T extends SessionRuntimeMutationResult>(
 		mutator: (current: unknown) => { result: T; next?: SessionRuntimeRecord; remove?: boolean },
+		context?: LocalDebugPersistenceContext,
 	): Promise<T> {
-		const database = await this.open();
+		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
 			try {

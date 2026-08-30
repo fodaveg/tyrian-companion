@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { GuildWars2Client, OFFICIAL_GW2_API_URL } from './account/guild-wars-2-client';
 import { ResilientHttpTransport, type HttpRequest } from './core/http';

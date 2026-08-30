@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { LocalDebugActionContext, LocalDebugEventContext } from './local-debug-action-runner';
 import { RateLimitCoordinator } from './rate-limit-coordinator';
 
 function clock(startAt: number): { now: () => number; advance: (ms: number) => void } {
@@ -8,6 +9,45 @@ function clock(startAt: number): { now: () => number; advance: (ms: number) => v
 }
 
 describe('RateLimitCoordinator', () => {
+	it('records the effective cooldown with an explicitly propagated action identity', () => {
+		const events: LocalDebugEventContext[] = [];
+		const coordinator = new RateLimitCoordinator({
+			now: () => 1_000,
+			diagnostics: {
+				createContext: (context: LocalDebugActionContext) => ({
+					...context,
+					actionId: context.actionId ?? 'generated',
+					correlationId: context.correlationId ?? context.actionId ?? 'generated',
+				}),
+				event: (event) => { events.push(event); },
+			},
+		});
+
+		coordinator.recordRateLimited(null, {
+			component: 'inventory', action: 'inventory_refresh',
+			actionId: 'refresh', correlationId: 'command',
+		});
+
+		expect(events).toEqual([expect.objectContaining({
+			component: 'http', action: 'http_request', phase: 'retry', code: 'rate_limited',
+			actionId: 'refresh', correlationId: 'command', state: 'active',
+			details: { retryAfterMs: 60_000 },
+		})]);
+	});
+
+	it('stays fail-open when the optional diagnostic port rejects the event', () => {
+		const coordinator = new RateLimitCoordinator({
+			now: () => 0,
+			diagnostics: {
+				createContext: () => { throw new Error('diagnostics unavailable'); },
+				event: () => { throw new Error('must not run'); },
+			},
+		});
+
+		expect(() => coordinator.recordRateLimited(2_000)).not.toThrow();
+		expect(coordinator.status()).toEqual({ active: true, retryAt: 2_000, remainingMs: 2_000 });
+	});
+
 	it('starts with no cooldown active', () => {
 		const coordinator = new RateLimitCoordinator({ now: () => 0 });
 		expect(coordinator.status()).toEqual({ active: false });

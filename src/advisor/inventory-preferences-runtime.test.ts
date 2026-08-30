@@ -1,8 +1,11 @@
+import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
 import { InventoryPreferencesRuntime } from './inventory-preferences-runtime';
 import { InventoryPreferencesService } from './inventory-preferences-service';
+import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
 import type {
+	InventoryPreferencesActionContext,
 	InventoryPreferenceScope,
 	InventoryPreferencesReadResult,
 	InventoryPreferencesStore,
@@ -11,8 +14,88 @@ import type {
 } from './inventory-preferences-model';
 import type { InventoryAdvisorEvidenceCaptureResultV1 } from './inventory-advisor-evidence-model';
 import type { ReservationGoal } from '../economy/reservation-model';
+import type {
+	LocalDebugActionContext,
+	LocalDebugEventContext,
+	ResolvedLocalDebugActionContext,
+} from '../core/local-debug-action-runner';
+import {
+	LocalDebugPersistenceProbe,
+	type LocalDebugPersistenceEvent,
+} from '../core/local-debug-persistence';
 
 describe('InventoryPreferencesRuntime', () => {
+	it('propagates each runtime span context through preference reads and writes', async () => {
+		const store = new MemoryPreferencesStore();
+		const diagnostics = diagnosticHarness();
+		const runtime = new InventoryPreferencesRuntime(
+			new InventoryPreferencesService(store, () => NOW), 'vault-hash', diagnostics,
+		);
+		const root = rootContext();
+
+		await runtime.load(capture('account-a'), root);
+		await runtime.upsertGoal(goal('one'), undefined, root);
+
+		expect(store.readContexts.map(contextIds)).toEqual([
+			{ actionId: 'preference-span-1', correlationId: 'root-correlation' },
+			{ actionId: 'preference-span-2', correlationId: 'root-correlation' },
+		]);
+		expect(store.writeContexts.map(contextIds)).toEqual([
+			{ actionId: 'preference-span-2', correlationId: 'root-correlation' },
+		]);
+	});
+
+	it('keeps root correlation while giving runtime, read and write/CAS spans unique action IDs, including editor closures', async () => {
+		const readEvents: LocalDebugPersistenceEvent[] = [];
+		const writeEvents: LocalDebugPersistenceEvent[] = [];
+		let readSequence = 0;
+		let writeSequence = 0;
+		const store = new IndexedDbInventoryPreferencesStore(
+			new IDBFactory(),
+			'preferences-causal-diagnostics',
+			{
+				read: new LocalDebugPersistenceProbe({
+					sink: (event) => readEvents.push(event),
+					createId: () => `read-store-${String(++readSequence)}`,
+				}),
+				write: new LocalDebugPersistenceProbe({
+					sink: (event) => writeEvents.push(event),
+					createId: () => `write-store-${String(++writeSequence)}`,
+				}),
+			},
+		);
+		const diagnostics = diagnosticHarness();
+		const runtime = new InventoryPreferencesRuntime(
+			new InventoryPreferencesService(store, () => NOW), 'vault-hash', diagnostics,
+		);
+		const root = rootContext();
+
+		await runtime.load(capture('account-a'), root);
+		await runtime.upsertGoal(goal('runtime-write'), undefined, root);
+		const editor = runtime.createEditorSession(root);
+		await editor.load();
+		await editor.upsertGoal(goal('editor-write'));
+
+		const runtimeStarts = diagnostics.events.filter(({ phase }) => phase === 'start');
+		const readStarts = readEvents.filter(({ phase, operation }) => phase === 'start' && operation === 'read');
+		const writeStarts = writeEvents.filter(({ phase, operation }) => phase === 'start' && operation === 'write');
+		const persistenceStarts = [...readEvents, ...writeEvents].filter(({ phase }) => phase === 'start');
+		expect(runtimeStarts).toHaveLength(4);
+		expect(readStarts).toHaveLength(4);
+		expect(writeStarts).toHaveLength(2);
+		expect(readEvents.every(({ operation }) => operation === 'read' || operation === 'open')).toBe(true);
+		expect(writeEvents.every(({ operation }) => operation === 'write')).toBe(true);
+		expect(runtimeStarts.every(({ correlationId }) => correlationId === 'root-correlation')).toBe(true);
+		expect([...readEvents, ...writeEvents].every(({ context }) => context?.correlationId === 'root-correlation')).toBe(true);
+		const actionIds = [
+			...runtimeStarts.map(({ actionId }) => actionId),
+			...persistenceStarts.map(({ context }) => context?.actionId),
+		];
+		expect(actionIds.every((actionId) => typeof actionId === 'string')).toBe(true);
+		expect(new Set(actionIds).size).toBe(actionIds.length);
+		store.dispose();
+	});
+
 	it('does not read local storage until capture has supplied an account scope', async () => {
 		const store = new MemoryPreferencesStore();
 		const runtime = new InventoryPreferencesRuntime(new InventoryPreferencesService(store, () => NOW), 'vault-hash');
@@ -157,17 +240,26 @@ class MemoryPreferencesStore implements InventoryPreferencesStore {
 	scopes: InventoryPreferenceScope[] = [];
 	failure: 'corrupt' | 'future_schema' | 'unavailable' | null = null;
 	readGate: Promise<void> | null = null;
+	readContexts: Array<InventoryPreferencesActionContext | undefined> = [];
+	writeContexts: Array<InventoryPreferencesActionContext | undefined> = [];
 
-	async read(scope: InventoryPreferenceScope): Promise<InventoryPreferencesReadResult> {
+	async read(scope: InventoryPreferenceScope, actionContext?: InventoryPreferencesActionContext): Promise<InventoryPreferencesReadResult> {
 		this.reads += 1;
 		this.scopes.push(structuredClone(scope));
+		this.readContexts.push(actionContext === undefined ? undefined : { ...actionContext });
 		await this.readGate;
 		if (this.failure !== null) return { status: 'error', code: this.failure };
 		return { status: 'ok', record: clone(this.records.get(key(scope)) ?? null) };
 	}
 
-	async compareAndSwap(scope: InventoryPreferenceScope, expected: number, next: InventoryPreferencesV1): Promise<InventoryPreferencesWriteResult> {
+	async compareAndSwap(
+		scope: InventoryPreferenceScope,
+		expected: number,
+		next: InventoryPreferencesV1,
+		actionContext?: InventoryPreferencesActionContext,
+	): Promise<InventoryPreferencesWriteResult> {
 		this.writes += 1;
+		this.writeContexts.push(actionContext === undefined ? undefined : { ...actionContext });
 		if (this.failure !== null) return { status: 'error', code: this.failure };
 		const current = this.records.get(key(scope)) ?? null;
 		if ((current?.generation ?? 0) !== expected) return { status: 'conflict', generation: current?.generation ?? 0 };
@@ -180,6 +272,36 @@ class MemoryPreferencesStore implements InventoryPreferencesStore {
 
 function key(scope: InventoryPreferenceScope): string { return `${scope.vaultId}\u0000${scope.accountId}`; }
 function clone<T>(value: T): T { return structuredClone(value); }
+function contextIds(context: InventoryPreferencesActionContext | undefined): InventoryPreferencesActionContext | undefined {
+	return context === undefined
+		? undefined
+		: { actionId: context.actionId, correlationId: context.correlationId };
+}
+function rootContext(): ResolvedLocalDebugActionContext {
+	return {
+		component: 'ui', action: 'command_execute', actionId: 'root-action', correlationId: 'root-correlation',
+	};
+}
+function diagnosticHarness(): {
+	createContext(context: LocalDebugActionContext): ResolvedLocalDebugActionContext;
+	event(context: LocalDebugEventContext): void;
+	events: LocalDebugEventContext[];
+} {
+	let sequence = 0;
+	return {
+		events: [],
+		createContext(context) {
+			sequence += 1;
+			const actionId = context.actionId ?? `preference-span-${String(sequence)}`;
+			return {
+				...context,
+				actionId,
+				correlationId: context.correlationId ?? context.parent?.correlationId ?? context.parent?.actionId ?? actionId,
+			};
+		},
+		event(context): void { this.events.push(context); },
+	};
+}
 function deferred<T = void>() {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((innerResolve) => { resolve = innerResolve; });

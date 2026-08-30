@@ -1242,3 +1242,81 @@
 @container (max-width: 479px) {
 	.tyrian-companion-halloween__notice { border-inline-start-width: 3px; }
 }
+
+.tyrian-companion-settings__diagnostics {
+	align-items: start;
+	container-type: inline-size;
+}
+
+.tyrian-companion-settings__diagnostic-status {
+	display: grid;
+	gap: var(--size-4-1);
+	margin-block-start: var(--size-4-2);
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	min-inline-size: 0;
+}
+
+.tyrian-companion-settings__diagnostic-status[role="alert"],
+.tyrian-companion-view__debug-warning {
+	border-color: var(--color-orange);
+	background: var(--background-modifier-error);
+	color: var(--text-warning);
+}
+
+.tyrian-companion-settings__diagnostic-status span,
+.tyrian-companion-view__debug-warning p {
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-settings__diagnostics .setting-item-control {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.tyrian-companion-settings__diagnostics button,
+.tyrian-companion-settings__diagnostics select,
+.tyrian-companion-settings__diagnostics .checkbox-container {
+	min-block-size: 44px;
+	min-inline-size: 44px;
+}
+
+.tyrian-companion-settings__diagnostics :focus-visible,
+.tyrian-companion-view__debug-warning :focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.tyrian-companion-view__debug-warning {
+	display: grid;
+	gap: var(--size-4-1);
+	margin-block: var(--size-4-3);
+	padding: var(--size-4-3);
+	border: 1px solid var(--color-orange);
+	border-radius: var(--radius-m);
+}
+
+.tyrian-companion-view__debug-warning p {
+	margin: 0;
+}
+
+.tyrian-companion-view__debug-warning button {
+	justify-self: start;
+	min-block-size: 44px;
+	min-inline-size: 44px;
+}
+
+@container (max-width: 520px) {
+	.tyrian-companion-settings__diagnostics .setting-item-info,
+	.tyrian-companion-settings__diagnostics .setting-item-control {
+		inline-size: 100%;
+	}
+
+	.tyrian-companion-settings__diagnostics button,
+	.tyrian-companion-settings__diagnostics select {
+		flex: 1 1 100%;
+		inline-size: 100%;
+	}
+}

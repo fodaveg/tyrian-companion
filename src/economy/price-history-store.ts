@@ -14,6 +14,10 @@ import {
 	type PriceHistoryWatchItemV1,
 } from './price-history-model';
 import { buildPriceHistoryDailyAggregates } from './price-history-statistics';
+import {
+	LocalDebugPersistenceProbe,
+	localDebugStorageFailureCode,
+} from '../core/local-debug-persistence';
 
 const DAY_MS = 86_400_000;
 const COMPACTION_READY_KEY = 'compaction:v1:ready';
@@ -62,13 +66,18 @@ interface PriceHistoryCompactionDayResult {
 
 /** Dedicated, fail-closed IndexedDB adapter. It never substitutes an in-memory store. */
 export class IndexedDbPriceHistoryStore {
-	constructor(private readonly database: IDBDatabase) {}
+	constructor(
+		private readonly database: IDBDatabase,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
+	) {}
 
 	static open(
 		factory: IDBFactory,
 		databaseName = PRICE_HISTORY_DB_NAME,
 		databaseVersion = PRICE_HISTORY_DB_VERSION,
+		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbPriceHistoryStore> {
+		const attempt = diagnostics.begin('price_history', 'open');
 		return new Promise((resolve, reject) => {
 			const request = factory.open(databaseName, databaseVersion);
 			let settled = false;
@@ -100,10 +109,11 @@ export class IndexedDbPriceHistoryStore {
 				if (settled) { request.result.close(); return; }
 				settled = true;
 				request.result.onversionchange = () => request.result.close();
-				resolve(new IndexedDbPriceHistoryStore(request.result));
+				attempt.success();
+				resolve(new IndexedDbPriceHistoryStore(request.result, diagnostics));
 			};
 			function fail(error: Error): void {
-				if (!settled) reject(error);
+				if (!settled) { attempt.failure(localDebugStorageFailureCode(error)); reject(error); }
 				settled = true;
 			}
 		});
@@ -406,7 +416,11 @@ export class IndexedDbPriceHistoryStore {
 		});
 	}
 
-	close(): void { this.database.close(); }
+	close(): void {
+		const attempt = this.diagnostics.begin('price_history', 'close');
+		this.database.close();
+		attempt.success();
+	}
 
 	private readAll<T>(storeName: string, range: IDBKeyRange, parse: (value: unknown) => T): Promise<T[]> {
 		return this.transaction([storeName], 'readonly', (transaction, resolve, reject) => {
@@ -453,13 +467,27 @@ export class IndexedDbPriceHistoryStore {
 		mode: IDBTransactionMode,
 		operation: (transaction: IDBTransaction, resolve: (value: T) => void, reject: (reason: unknown) => void) => void,
 	): Promise<T> {
+		const attempt = this.diagnostics.begin(
+			'price_history',
+			mode === 'readonly' ? 'read' : 'transaction',
+		);
 		return new Promise((resolve, reject) => {
+			const resolveObserved = (value: T): void => { attempt.success(); resolve(value); };
+			const rejectObserved = (reason: unknown): void => {
+				const error = reason instanceof Error ? reason : new PriceHistoryStoreError('unavailable');
+				attempt.failure(localDebugStorageFailureCode(error));
+				reject(error);
+			};
 			let transaction: IDBTransaction;
 			try { transaction = this.database.transaction(stores, mode); }
-			catch { reject(new PriceHistoryStoreError('unavailable')); return; }
-			transaction.onerror = () => reject(storeFailure(transaction.error));
-			transaction.onabort = () => reject(storeFailure(transaction.error));
-			operation(transaction, resolve, reject);
+			catch { rejectObserved(new PriceHistoryStoreError('unavailable')); return; }
+			transaction.onerror = () => rejectObserved(storeFailure(transaction.error));
+			transaction.onabort = () => rejectObserved(storeFailure(transaction.error));
+			try {
+				operation(transaction, resolveObserved, rejectObserved);
+			} catch (error) {
+				rejectObserved(error);
+			}
 		});
 	}
 }

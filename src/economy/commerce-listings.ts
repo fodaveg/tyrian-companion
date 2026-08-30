@@ -1,6 +1,7 @@
 import { HttpTransportError } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { calculateTradingPostFees, createTradingPostValueWithPolicy } from './gw2-fees';
 
 export const COMMERCE_LISTINGS_BATCH_SIZE = 200;
@@ -44,6 +45,7 @@ export async function captureInventoryMarketDepth(
 	gateway: PublicCatalogGateway,
 	capturedAt: number,
 	rateLimit?: RateLimitGate,
+	actionContext?: ResolvedLocalDebugActionContext,
 ): Promise<InventoryMarketDepthEvidenceV1> {
 	const requested = normalizeIds(requestedItemIds);
 	const items: InventoryItemMarketDepthV1[] = [];
@@ -53,7 +55,7 @@ export async function captureInventoryMarketDepth(
 			continue;
 		}
 		try {
-			const response = await gateway.requestDetailed(`commerce/listings?ids=${batch.join(',')}`);
+			const response = await gateway.requestDetailed(`commerce/listings?ids=${batch.join(',')}`, actionContext);
 			if (response.status !== 200 && response.status !== 206) {
 				items.push(...batch.map((itemId) => unavailable(itemId)));
 				continue;

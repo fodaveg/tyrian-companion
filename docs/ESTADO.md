@@ -2,6 +2,25 @@
 
 ## Vertical activa
 
+**H6.17, diagnóstico local exhaustivo: candidato en cierre para `0.1.15`.** El plugin incorpora un
+writer JSONL local fail-open y rotativo (5×2 MiB), contrato cerrado con secuencia y correlación,
+saneado positivo central y spans para las acciones foreground/background. Settings v11 deja la
+captura `debug` activada por defecto en beta, expone salud y retención, y ofrece copy/export/clear
+explícitos; Companion hace visible una degradación sin bloquear la acción principal.
+
+La composición cubre lifecycle, ajustes, UI/comandos, red GW2 y reintentos, sesiones y detección,
+Asesor, histórico de precios, Halloween, assets, persistencia, avisos y errores globales. H8/Mumble
+sigue fuera de `main` y conserva su superficie diagnóstica cerrada sin importar el logger ni retener
+frames. El censo AST de fronteras asíncronas forma parte del gate y exige clasificación/motivo para
+cualquier cambio.
+
+El árbol final supera 155 suites y 2.106 tests, lint, TypeScript/build, escáner de seguridad, censo
+de observabilidad y contratos de release. El benchmark H6 queda dentro de presupuesto —mediana
+226 ms, p95 231 ms y 1,14 MiB máximos de heap retenido acumulado— y su sabotaje determinista vuelve
+rojo. La integración en `0.1.15` exige además revisión independiente como último gate. La instalación
+en Obsidian real y la reproducción live de fallo de API/escritura/IndexedDB/helper/aviso siguen
+siendo aceptación manual y no se declararán realizadas desde el repositorio.
+
 **H9.16/H9.3, comparación manual de reciclaje de equipo: implementada y aprobada mediante
 `1d04b61`, `bc1d8ed` y `b4b79ba`; pendiente de integrar en `main`.** El Asesor compara equipo Rare
 de nivel 68 o superior con sus rutas líquidas actuales mediante una EV inferior demostrada de 0,9

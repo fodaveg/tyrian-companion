@@ -3,6 +3,7 @@ import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { HttpTransportError } from '../core/http';
+import type { LocalDebugActionPort, ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import {
 	ApiPollScheduler,
 	type ApiPollOutcome,
@@ -81,7 +82,7 @@ interface PollSchedulerPort {
 }
 
 type PollSchedulerFactory = (
-	options: Pick<ApiPollSchedulerOptions, 'poll' | 'onStateChange'>,
+	options: Pick<ApiPollSchedulerOptions, 'poll' | 'onStateChange' | 'diagnostics' | 'resolveActionContext'>,
 ) => PollSchedulerPort;
 
 export interface AssistedDetectionServiceOptions {
@@ -95,6 +96,8 @@ export interface AssistedDetectionServiceOptions {
 	inactivityThresholdMs?: number;
 	now?: () => Date;
 	schedulerFactory?: PollSchedulerFactory;
+	diagnostics?: LocalDebugActionPort;
+	resolveActionContext?: () => ResolvedLocalDebugActionContext | undefined;
 }
 
 /**
@@ -140,8 +143,10 @@ export class AssistedDetectionService {
 		this.now = options.now ?? (() => new Date());
 		const schedulerFactory = options.schedulerFactory ?? ((schedulerOptions) => new ApiPollScheduler(schedulerOptions));
 		this.scheduler = schedulerFactory({
-			poll: () => this.poll(),
+			poll: (context) => this.poll(context),
 			onStateChange: (scheduler) => this.onSchedulerState(scheduler),
+			diagnostics: options.diagnostics,
+			resolveActionContext: options.resolveActionContext,
 		});
 		this.state = {
 			status: 'disarmed',
@@ -155,7 +160,7 @@ export class AssistedDetectionService {
 		return structuredClone(this.state);
 	}
 
-	arm(intervalMs: number): Promise<AssistedDetectionState> {
+	arm(intervalMs: number, actionContext?: ResolvedLocalDebugActionContext): Promise<AssistedDetectionState> {
 		if (this.disposed) return Promise.resolve(this.fail('Assisted detection is unavailable.'));
 		const interval = positiveInteger(intervalMs, 'intervalMs');
 		if (this.armFlight) return this.armFlight;
@@ -175,7 +180,7 @@ export class AssistedDetectionService {
 		};
 		this.emit();
 
-		const flight = this.armInternal(generation, interval).finally(() => {
+		const flight = this.armInternal(generation, interval, actionContext).finally(() => {
 			if (this.armFlight === flight) this.armFlight = null;
 		});
 		this.armFlight = flight;
@@ -241,9 +246,13 @@ export class AssistedDetectionService {
 		this.scheduler.dispose();
 	}
 
-	private async armInternal(generation: number, intervalMs: number): Promise<AssistedDetectionState> {
+	private async armInternal(
+		generation: number,
+		intervalMs: number,
+		actionContext?: ResolvedLocalDebugActionContext,
+	): Promise<AssistedDetectionState> {
 		try {
-			const snapshot = await this.snapshots.capture();
+			const snapshot = await this.snapshots.capture(actionContext);
 			if (generation !== this.generation || this.disposed) return this.getState();
 			if (!stableSnapshot(snapshot)) return this.fail('The account baseline was not stable enough to arm detection.');
 			this.previousSnapshot = structuredClone(snapshot);
@@ -268,10 +277,10 @@ export class AssistedDetectionService {
 		}
 	}
 
-	private async poll(): Promise<ApiPollOutcome> {
+	private async poll(actionContext?: ResolvedLocalDebugActionContext): Promise<ApiPollOutcome> {
 		if (this.state.status !== 'armed' || !this.previousSnapshot) return { kind: 'success' };
 		const generation = this.generation;
-		const current = await this.snapshots.capture();
+		const current = await this.snapshots.capture(actionContext);
 		if (generation !== this.generation || this.disposed || this.state.status !== 'armed') {
 			return { kind: 'success' };
 		}

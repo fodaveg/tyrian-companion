@@ -1,3 +1,5 @@
+import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+
 export const MANAGED_ASSETS_POINTER_DB = 'tyrian-companion-managed-assets';
 const STORE = 'pointer-v1';
 
@@ -22,19 +24,34 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 	private opening: Promise<IDBDatabase> | null = null;
 	private closed = false;
 	private readonly key: string;
-	constructor(private readonly factory: IDBFactory, vaultId: string, private readonly databaseName = MANAGED_ASSETS_POINTER_DB) {
+	constructor(
+		private readonly factory: IDBFactory,
+		vaultId: string,
+		private readonly databaseName = MANAGED_ASSETS_POINTER_DB,
+		private readonly diagnostics = new LocalDebugPersistenceProbe(),
+	) {
 		if (!/^[a-f0-9]{64}$/u.test(vaultId)) throw new Error('Managed-assets vault identity is invalid.');
 		this.key = `managed-assets-pointer:${vaultId}`;
 	}
 
 	async read(): Promise<ManagedAssetsPointerState> {
-		const database = await this.open();
-		return await requestTransaction(database, 'readonly', (store) => store.get(this.key), (value) => parsePointer(value));
+		const attempt = this.diagnostics.begin('managed_assets_pointer', 'read');
+		try {
+			const database = await this.open();
+			const result = await requestTransaction(database, 'readonly', (store) => store.get(this.key), (value) => parsePointer(value));
+			attempt.success();
+			return result;
+		} catch (error) {
+			attempt.failure('storage_failure');
+			throw error;
+		}
 	}
 
 	async compareAndSet(expected: ManagedAssetsPointerState, next: Omit<ManagedAssetsPointerState, 'schemaVersion' | 'generation'>): Promise<ManagedAssetsPointerState | null> {
-		const database = await this.open();
-		return await new Promise((resolve, reject) => {
+		const attempt = this.diagnostics.begin('managed_assets_pointer', 'write');
+		try {
+			const database = await this.open();
+			const result = await new Promise<ManagedAssetsPointerState | null>((resolve, reject) => {
 			const transaction = database.transaction(STORE, 'readwrite');
 			const store = transaction.objectStore(STORE);
 			const request = store.get(this.key);
@@ -52,14 +69,28 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			transaction.oncomplete = () => resolve(result);
 			transaction.onerror = () => reject(new Error('Managed-assets pointer update failed.'));
 			transaction.onabort = () => reject(new Error('Managed-assets pointer update was aborted.'));
-		});
+			});
+			if (result === null) attempt.skip('validation_failed');
+			else attempt.success();
+			return result;
+		} catch (error) {
+			attempt.failure('storage_failure');
+			throw error;
+		}
 	}
 
-	close(): void { this.closed = true; this.database?.close(); this.database = null; }
+	close(): void {
+		const attempt = this.diagnostics.begin('managed_assets_pointer', 'close');
+		this.closed = true;
+		this.database?.close();
+		this.database = null;
+		attempt.success();
+	}
 	private async open(): Promise<IDBDatabase> {
 		if (this.closed) throw new Error('Managed-assets pointer is closed.');
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
+		const attempt = this.diagnostics.begin('managed_assets_pointer', 'open');
 		const opening = new Promise<IDBDatabase>((resolve, reject) => {
 			const request = this.factory.open(this.databaseName, 1);
 			let settled = false;
@@ -69,9 +100,16 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 				if (settled || this.closed) { request.result.close(); if (!settled) fail(); return; }
 				settled = true; this.database = request.result;
 				request.result.onversionchange = () => { request.result.close(); this.database = null; this.closed = true; };
+				attempt.success();
 				resolve(request.result);
 			};
-			const fail = () => { if (!settled) reject(new Error('Managed-assets pointer could not be opened.')); settled = true; };
+			const fail = () => {
+				if (!settled) {
+					attempt.failure('storage_failure');
+					reject(new Error('Managed-assets pointer could not be opened.'));
+				}
+				settled = true;
+			};
 		});
 		this.opening = opening;
 		try { return await opening; } finally { if (this.opening === opening) this.opening = null; }
