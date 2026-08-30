@@ -19,7 +19,7 @@ import type {
 } from '../economy/equipment-salvage-economy';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract';
 
-export const SETTINGS_SCHEMA_VERSION = 11 as const;
+export const SETTINGS_SCHEMA_VERSION = 12 as const;
 
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
@@ -148,7 +148,9 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			data.preferredCharacter,
 			DEFAULT_SETTINGS.preferredCharacter,
 		).trim(),
-		pollingIntervalMinutes:
+		// v12 is a one-time beta migration: existing installs adopt the fast
+		// feedback cadence, while subsequent explicit edits remain durable.
+		pollingIntervalMinutes: data.schemaVersion === SETTINGS_SCHEMA_VERSION &&
 			typeof data.pollingIntervalMinutes === 'number' &&
 			POLLING_INTERVALS.has(data.pollingIntervalMinutes)
 				? data.pollingIntervalMinutes
@@ -157,11 +159,11 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			data.detectionMode === 'assisted' || data.detectionMode === 'off'
 				? data.detectionMode
 				: DEFAULT_SETTINGS.detectionMode,
-		// Every older schema migrates to the beta default. Only v11+ data may carry
-		// an explicit opt-out, avoiding an accidental false value from old unknown fields.
-		debugLoggingEnabled: data.schemaVersion === SETTINGS_SCHEMA_VERSION
+		// Logging was introduced in v11. Trust only its closed v11/v12 shapes so
+		// this unrelated bump preserves a valid opt-out without accepting future data.
+		debugLoggingEnabled: hasExplicitDebugSettings(data.schemaVersion)
 			? data.debugLoggingEnabled !== false : DEFAULT_SETTINGS.debugLoggingEnabled,
-		debugLoggingLevel: data.schemaVersion === SETTINGS_SCHEMA_VERSION && isLocalDebugLevel(data.debugLoggingLevel)
+		debugLoggingLevel: hasExplicitDebugSettings(data.schemaVersion) && isLocalDebugLevel(data.debugLoggingLevel)
 			? data.debugLoggingLevel : DEFAULT_SETTINGS.debugLoggingLevel,
 		managedAssetsRoot: portableVaultFolder(data.managedAssetsRoot, configDir),
 		legacyOutputFolder: legacyVaultFolder(data.legacyOutputFolder, configDir) ??
@@ -419,6 +421,11 @@ function stringOrDefault(value: unknown, fallback: string): string {
 /** Narrows the persisted diagnostic threshold to the closed logger contract. */
 function isLocalDebugLevel(value: unknown): value is LocalDebugLevel {
 	return typeof value === 'string' && (LOCAL_DEBUG_LEVELS as readonly string[]).includes(value);
+}
+
+/** Accepts only settings schemas that carry the reviewed local-debug fields. */
+function hasExplicitDebugSettings(value: unknown): boolean {
+	return value === 11 || value === SETTINGS_SCHEMA_VERSION;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

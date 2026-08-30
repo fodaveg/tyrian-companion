@@ -16,13 +16,25 @@ import {
 const NESTED_CONFIG_DIR = `config/.${'obsidian'}`;
 
 describe('migrateSettings', () => {
-	it('migrates pre-v11 settings to exhaustive beta diagnostics and validates the closed level', () => {
+	it('migrates pre-v11 settings to exhaustive beta diagnostics and preserves valid v11 preferences', () => {
 		expect(migrateSettings({ schemaVersion: 10, debugLoggingEnabled: false, debugLoggingLevel: 'error' }))
-			.toMatchObject({ schemaVersion: 11, debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+			.toMatchObject({ schemaVersion: 12, debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
 		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: false, debugLoggingLevel: 'warn' }))
 			.toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
-		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: true, debugLoggingLevel: 'trace' }))
+		expect(migrateSettings({ schemaVersion: 12, debugLoggingEnabled: true, debugLoggingLevel: 'trace' }))
 			.toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+	});
+
+	it('forces the beta polling cadence once when upgrading and respects explicit v12 edits', () => {
+		const upgraded = migrateSettings({
+			schemaVersion: 11,
+			pollingIntervalMinutes: 60,
+		});
+
+		expect(upgraded).toMatchObject({ schemaVersion: 12, pollingIntervalMinutes: 2 });
+		expect(shouldPersistSettingsOnLoad({ schemaVersion: 11, pollingIntervalMinutes: 60 }, upgraded)).toBe(true);
+		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 15 }).pollingIntervalMinutes).toBe(15);
+		expect(mergeSettingsUpdate(upgraded, { pollingIntervalMinutes: 60 }).pollingIntervalMinutes).toBe(60);
 	});
 
 	it('deep-freezes defaults and returns isolated nested valuation instances', () => {
@@ -138,9 +150,9 @@ describe('migrateSettings', () => {
 		expect(JSON.stringify(migrated)).not.toMatch(/apiToken|bearerToken|credential|unknown/u);
 	});
 
-	it('migrates v2 to v11 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
+	it('migrates v2 to v12 without scanning, claiming assets, price history, Halloween or storage upgrades', () => {
 		expect(migrateSettings({ schemaVersion: 2, outputFolder: 'Games/GW2' })).toMatchObject({
-			schemaVersion: 11,
+			schemaVersion: 12,
 			managedAssetsRoot: null,
 			priceHistoryEnabled: false,
 			halloweenEnabled: false,
@@ -152,9 +164,9 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ schemaVersion: 3, managedAssetsRoot: '../outside' }).managedAssetsRoot).toBeNull();
 	});
 
-	it('migrates v7 to v11 with an empty manual overlay and canonicalizes valid values', () => {
+	it('migrates v7 to v12 with an empty manual overlay and canonicalizes valid values', () => {
 		expect(migrateSettings({ schemaVersion: 7 })).toMatchObject({
-			schemaVersion: 11,
+			schemaVersion: 12,
 			halloweenPersonalValuation: { version: 1, values: [] },
 		});
 		expect(migrateSettings({
