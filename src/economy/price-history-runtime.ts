@@ -84,7 +84,13 @@ export class PriceHistoryRuntime {
 		const onSchedulerState = (scheduler: Readonly<ApiPollSchedulerState>): void => this.projectScheduler(scheduler);
 		this.scheduler = options.scheduler?.((context) => this.poll(context), onSchedulerState)
 			?? new ApiPollScheduler({
-				poll: (context) => this.poll(context), onStateChange: onSchedulerState, diagnostics: options.diagnostics,
+				poll: (context) => this.poll(context),
+				onStateChange: onSchedulerState,
+				diagnostics: options.diagnostics,
+				diagnosticContext: {
+					component: 'price_history',
+					action: 'price_history_poll',
+				},
 			});
 	}
 

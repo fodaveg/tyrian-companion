@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HttpTransportError } from '../core/http';
+import type { LocalDebugAction, LocalDebugComponent } from '../core/local-debug-contract';
 import type {
 	LocalDebugActionContext,
 	LocalDebugEventContext,
@@ -42,6 +43,27 @@ describe('ApiPollScheduler', () => {
 		expect(poll).toHaveBeenCalledWith(expect.objectContaining({
 			actionId: 'poll-1', correlationId: 'command-action',
 		}));
+	});
+
+	it('uses the diagnostic identity configured by each scheduler consumer', async () => {
+		const harness = new SchedulerHarness();
+		const diagnostics = diagnosticHarness();
+		const scheduler = harness.create(async () => ({ kind: 'success' }), {
+			diagnostics,
+			diagnosticContext: {
+				component: 'price_history',
+				action: 'price_history_poll',
+			},
+		});
+
+		scheduler.start(10_000);
+		await harness.fireNext();
+
+		expect(diagnostics.events).toHaveLength(2);
+		expect(diagnostics.events).toEqual([
+			expect.objectContaining({ component: 'price_history', action: 'price_history_poll', phase: 'start' }),
+			expect.objectContaining({ component: 'price_history', action: 'price_history_poll', phase: 'success' }),
+		]);
 	});
 
 	it('records rate-limit retry metadata and a cancellation as terminal phases', async () => {
@@ -440,6 +462,7 @@ interface HarnessOptions {
 	random?: () => number;
 	onStateChange?: (state: ReturnType<ApiPollScheduler['getState']>) => void;
 	diagnostics?: Pick<ReturnType<typeof diagnosticHarness>, 'createContext' | 'event'>;
+	diagnosticContext?: Readonly<{ component: LocalDebugComponent; action: LocalDebugAction }>;
 	resolveActionContext?: () => ResolvedLocalDebugActionContext | undefined;
 }
 
@@ -472,6 +495,7 @@ class SchedulerHarness {
 			},
 			cancelTimeout: (handle) => { this.timers.delete(handle as number); },
 			diagnostics: options.diagnostics,
+			diagnosticContext: options.diagnosticContext,
 			resolveActionContext: options.resolveActionContext,
 		});
 	}

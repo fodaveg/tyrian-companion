@@ -1,4 +1,5 @@
 import { HttpTransportError } from '../core/http';
+import type { LocalDebugAction, LocalDebugComponent } from '../core/local-debug-contract';
 import type {
 	LocalDebugActionPort,
 	LocalDebugEventContext,
@@ -44,6 +45,10 @@ export interface ApiPollSchedulerOptions {
 	resumeDelayMs?: number;
 	sleepToleranceMs?: number;
 	diagnostics?: LocalDebugActionPort;
+	diagnosticContext?: Readonly<{
+		component: LocalDebugComponent;
+		action: LocalDebugAction;
+	}>;
 	/** Resolves the active outer action, if any, immediately before each poll starts. */
 	resolveActionContext?: () => ResolvedLocalDebugActionContext | undefined;
 }
@@ -79,6 +84,10 @@ export class ApiPollScheduler {
 	private readonly resumeDelayMs: number;
 	private readonly sleepToleranceMs: number;
 	private readonly diagnostics: LocalDebugActionPort | undefined;
+	private readonly diagnosticContext: Readonly<{
+		component: LocalDebugComponent;
+		action: LocalDebugAction;
+	}>;
 	private readonly resolveActionContext: (() => ResolvedLocalDebugActionContext | undefined) | undefined;
 
 	private state: ApiPollSchedulerState = {
@@ -109,6 +118,10 @@ export class ApiPollScheduler {
 		this.resumeDelayMs = positiveDelay(options.resumeDelayMs ?? DEFAULT_RESUME_DELAY_MS, 'resumeDelayMs');
 		this.sleepToleranceMs = positiveDelay(options.sleepToleranceMs ?? DEFAULT_SLEEP_TOLERANCE_MS, 'sleepToleranceMs');
 		this.diagnostics = options.diagnostics;
+		this.diagnosticContext = options.diagnosticContext ?? {
+			component: 'detection',
+			action: 'detection_poll',
+		};
 		this.resolveActionContext = options.resolveActionContext;
 		if (this.baseBackoffMs > this.maxBackoffMs) {
 			throw new RangeError('baseBackoffMs must not exceed maxBackoffMs.');
@@ -337,7 +350,7 @@ export class ApiPollScheduler {
 		try {
 			const parent = this.resolveActionContext?.();
 			const context = this.diagnostics.createContext({
-				component: 'detection', action: 'detection_poll',
+				...this.diagnosticContext,
 				...(parent === undefined ? {} : {
 					parent: { actionId: parent.actionId, correlationId: parent.correlationId },
 				}),

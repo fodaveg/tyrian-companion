@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PreparedSessionNote } from './session-note-model';
+import { LocalDebugPersistenceProbe, type LocalDebugPersistenceEvent } from '../core/local-debug-persistence';
 import { LootPresentationCache } from './loot-presentation-cache';
 
 describe('LootPresentationCache', () => {
@@ -28,6 +29,29 @@ describe('LootPresentationCache', () => {
 		first.resolve(note('es'));
 		await a;
 		expect(cache.get()?.locale).toBe('en');
+	});
+
+	it('treats an empty read and idempotent invalidation as successful cache operations', () => {
+		const events: LocalDebugPersistenceEvent[] = [];
+		const cache = new LootPresentationCache(
+			undefined,
+			new LocalDebugPersistenceProbe({
+				sink: (event) => events.push(event),
+				createId: () => crypto.randomUUID(),
+			}),
+		);
+
+		expect(cache.get()).toBeNull();
+		cache.invalidate();
+
+		expect(events.filter(({ phase }) => phase !== 'start').map(({ operation, phase, code }) => ({
+			operation,
+			phase,
+			code,
+		}))).toEqual([
+			{ operation: 'read', phase: 'success', code: 'ok' },
+			{ operation: 'delete', phase: 'success', code: 'ok' },
+		]);
 	});
 });
 

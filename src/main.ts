@@ -436,7 +436,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.localDebugActions = new LocalDebugActionRunner({ diagnostics: this.localDebug });
 		this.lootPresentation = new LootPresentationCache(
 			() => this.renderViews(),
-			this.persistenceDiagnostics('session', 'session_review'),
+			this.persistenceDiagnostics('session', 'session_projection'),
 		);
 		await this.localDebugActions.run(
 			{ component: 'local_debug', action: 'debug_initialize' },
@@ -522,7 +522,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
 		const coordinator = new ActiveSessionLeaseCoordinator({
-			diagnostics: this.persistenceDiagnostics('session', 'session_start'),
+			diagnostics: this.persistenceDiagnostics('session', 'session_lease'),
 		});
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
 		// inventory advisor, or price history blocks every other caller until it clears.
@@ -720,7 +720,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
 					if (session.status === 'complete') fireAndForgetLocal(this.localDebugActions,
-						{ component: 'session', action: 'session_finish', state: 'loot_projection' },
+						{ component: 'session', action: 'session_projection', state: 'loot_projection' },
 						() => this.refreshLootPresentation());
 					if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 						{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
@@ -1887,7 +1887,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 						},
 					},
 					); this.renderViews(); });
-				this.assistedDetection.disarm('session_stopped');
+				if (this.localDebugActions) this.localDebugActions.runSync(
+					{ component: 'detection', action: 'detection_disarm', state: 'session_stopped' },
+					() => this.assistedDetection.disarm('session_stopped'),
+				);
+				else this.assistedDetection.disarm('session_stopped');
 				if (intent && pendingClaim) {
 					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
 						throw new Error('Proposal receipt failed.');

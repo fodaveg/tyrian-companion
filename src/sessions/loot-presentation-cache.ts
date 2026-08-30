@@ -17,8 +17,7 @@ export class LootPresentationCache {
 
 	get(context?: LocalDebugPersistenceContext): LootPresentationV1 | null {
 		const attempt = this.diagnostics.begin('loot_presentation', 'read', context);
-		if (this.value === null) attempt.skip();
-		else attempt.success();
+		attempt.success();
 		return this.value === null ? null : structuredClone(this.value);
 	}
 
@@ -28,7 +27,7 @@ export class LootPresentationCache {
 		const changed = this.value !== null;
 		this.value = null;
 		if (changed) this.onChange();
-		if (changed) attempt.success(); else attempt.skip();
+		attempt.success();
 	}
 
 	async refresh(
