@@ -662,6 +662,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			catalogDiagnostics,
 			this.localDebugActions,
 		);
+		this.detectionQuality = new DetectionQualityRecorder(
+			new IndexedDbDetectionQualityStore(
+				window.indexedDB,
+				undefined,
+				this.persistenceDiagnostics('detection', 'detection_proposal'),
+			),
+		);
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
+			async () => { await this.detectionQuality.initialize(); this.renderViews(); });
 		this.sessions = new ManualSessionStartService(
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
@@ -726,16 +736,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				return { path: file.path };
 			},
 		});
-		this.detectionQuality = new DetectionQualityRecorder(
-			new IndexedDbDetectionQualityStore(
-				window.indexedDB,
-				undefined,
-				this.persistenceDiagnostics('detection', 'detection_proposal'),
-			),
-		);
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
-			async () => { await this.detectionQuality.initialize(); this.renderViews(); });
 		this.pendingProposals = new PendingProposalService(
 			new IndexedDbPendingProposalStore(
 				window.indexedDB,
