@@ -42,6 +42,8 @@ import {
 } from './companion-status-model';
 import { renderLootPresentationView } from './loot-presentation-view';
 import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
+import type { ProductActionController } from './product-action-controller';
+import { renderProductShell, type ProductShellMount } from './product-shell';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -79,6 +81,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getLocalDebugStatus?(): LocalDebugStatus;
 	localDebugViewEvent?(phase: 'open' | 'close'): void;
 	openLocalDebugSettings?(): void;
+	getProductActionController?(): ProductActionController;
+	hasConfiguredApiKey?(): boolean;
+	openProductSettings?(): void;
 }
 
 export class TyrianCompanionView extends ItemView {
@@ -92,6 +97,8 @@ export class TyrianCompanionView extends ItemView {
 	private incidentMessage: HTMLElement | null = null;
 	private incidentMore: HTMLElement | null = null;
 	private ledger: HTMLElement | null = null;
+	private productShell: ProductShellMount | null = null;
+	private productShellKey: string | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -119,6 +126,9 @@ export class TyrianCompanionView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.actions.localDebugViewEvent?.('close');
+		this.productShell?.dispose();
+		this.productShell = null;
+		this.productShellKey = null;
 		this.clearRefresh();
 	}
 
@@ -129,7 +139,6 @@ export class TyrianCompanionView extends ItemView {
 		const sessionState = this.actions.getSessionState();
 		const projection = this.projectStatus(Date.now());
 
-		contentEl.empty();
 		this.dynamicStatusNodes.clear();
 		this.headerPhase = null;
 		this.headerElapsed = null;
@@ -140,21 +149,54 @@ export class TyrianCompanionView extends ItemView {
 		this.incidentMore = null;
 		this.ledger = null;
 		contentEl.addClass('tyrian-companion-view');
-		this.renderLedgerHeader(contentEl, projection, connectionState, sessionState);
-		this.renderLocalDebugWarning(contentEl);
-		this.renderStatusRail(contentEl, projection);
+		const actionController = this.actions.getProductActionController?.();
+		const locale = this.actions.getLocale();
+		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
+		const shellKey = `${locale}:${String(missingApiKey)}`;
+		if (actionController === undefined) {
+			this.productShell?.dispose();
+			this.productShell = null;
+			this.productShellKey = null;
+			contentEl.empty();
+		} else if (this.productShell === null || this.productShellKey !== shellKey) {
+			this.productShell?.dispose();
+			this.productShell = renderProductShell(contentEl, {
+				locale,
+				active: 'companion',
+				actions: actionController,
+				missingApiKey,
+				openSettings: () => this.actions.openProductSettings?.(),
+			});
+			this.productShellKey = shellKey;
+		}
+		this.productShell?.update();
+		const surface = this.productShell?.content ?? contentEl;
+		surface.empty();
+		surface.addClass('tyrian-companion-view__page');
+		this.renderLedgerHeader(surface, projection, connectionState, sessionState);
+		this.renderLocalDebugWarning(surface);
+		this.renderStatusRail(surface, projection);
+		const sessionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		sessionDetails.open = true;
+		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
+		this.renderSession(sessionDetails, connectionState, sessionState);
+		const detectionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		detectionDetails.open = true;
+		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
+		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
+		this.renderPendingConfirmation(surface);
 		const loot = this.actions.getLootPresentation();
-		if (loot) renderLootPresentationView(contentEl, loot);
-		renderHalloweenAlertPanel(contentEl, this.actions, (key, params) => this.t(key as RuntimeTranslationKey, params));
+		if (loot) renderLootPresentationView(surface, loot);
+		renderHalloweenAlertPanel(surface, this.actions, (key, params) => this.t(key as RuntimeTranslationKey, params));
 
-		const account = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
+		const account = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		account.createEl('summary', { text: this.t('view.accountConnection') });
 		const status = account.createDiv({ cls: 'tyrian-companion-view__status' });
 		status.setAttr('role', connectionState.status === 'error' ? 'alert' : 'status');
 		status.setAttr('aria-live', 'polite');
 		this.renderConnectionState(status, connectionState);
 
-		const checkButton = contentEl.createEl('button', {
+		const checkButton = surface.createEl('button', {
 			text: connectionState.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
 			cls: 'mod-cta',
 		});
@@ -164,14 +206,6 @@ export class TyrianCompanionView extends ItemView {
 		checkButton.addEventListener('click', () => {
 			void this.checkConnection();
 		});
-
-		const sessionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
-		this.renderSession(sessionDetails, connectionState, sessionState);
-		const detectionDetails = contentEl.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
-		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
-		this.renderPendingConfirmation(contentEl);
 
 		if (projection.refreshEveryMs !== null || isCoolingDown(retryAt)) {
 			this.refreshInterval = contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
@@ -302,14 +336,11 @@ export class TyrianCompanionView extends ItemView {
 		session: SessionState,
 	): void {
 		const header = container.createEl('header', { cls: 'tyrian-companion-view__masthead' });
-		const signature = header.createDiv({ cls: 'tyrian-companion-view__compass' });
-		signature.setAttr('aria-hidden', 'true');
 		const title = header.createDiv({ cls: 'tyrian-companion-view__title' });
 		title.createEl('p', { text: this.t('view.fieldLedger'), cls: 'tyrian-companion-view__eyebrow' });
-		title.createEl('h2', { text: this.t('view.title') });
 		const sessionStatus = projection.items.find((status) => status.id === 'session');
 		if (sessionStatus) {
-			this.headerPhase = title.createEl('strong', { text: sessionStatus.value, cls: 'tyrian-companion-view__phase' });
+			this.headerPhase = title.createEl('h2', { text: sessionStatus.value, cls: 'tyrian-companion-view__phase' });
 			this.headerElapsed = title.createEl('p', { text: sessionStatus.detail, cls: 'tyrian-companion-view__elapsed' });
 		}
 		const action = header.createDiv({ cls: 'tyrian-companion-view__primary-action' });

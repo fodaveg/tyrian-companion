@@ -14,11 +14,13 @@ import TyrianCompanionPlugin, {
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		expect(source).toContain("id: 'open-inventory-advisor'");
-		expect(source).toContain('const inventoryAdvisorCommands = this.inventoryAdvisorCommandCallbacks()');
-		expect(source).toContain('callback: inventoryAdvisorCommands.open');
-		expect(source).toContain("id: 'refresh-inventory-advisor'");
-		expect(source).toContain('callback: inventoryAdvisorCommands.refresh');
+		const actionSource = readFileSync('src/ui/product-action-controller.ts', 'utf8');
+		expect(actionSource).toContain("'open-inventory-advisor',");
+		expect(actionSource).toContain("'refresh-inventory-advisor',");
+		expect(source).toContain("id === 'open-companion' || id === 'open-inventory-advisor'");
+		expect(source).toContain("state = id === 'open-companion' ? 'open_companion' : 'open_inventory_advisor'");
+		expect(source).toContain("else if (id === 'refresh-inventory-advisor') await this.refreshInventoryAdvisor();");
+		expect(source).toContain('registerProductActionPalette(');
 		const onload = inventoryAdvisorOnloadSource(source);
 		expect(inventoryAdvisorOnloadSafe(source)).toBe(true);
 		expect(onload).not.toMatch(/setInterval[^\n]*inventory|inventory[^\n]*setInterval/iu);

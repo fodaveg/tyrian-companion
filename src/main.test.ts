@@ -25,6 +25,7 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
 import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
 import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
+import type { PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
 
@@ -254,6 +255,99 @@ describe('manual session start command', () => {
 		expect(startManualSession).not.toHaveBeenCalled();
 		expect(runtime.mutations).toBe(0);
 		expect(notify).not.toHaveBeenCalled();
+	});
+});
+
+describe('product navigation diagnostics', () => {
+	it('runs both navigation actions through command_execute and awaits their real promises', async () => {
+		const contexts: unknown[] = [];
+		let releaseCompanion!: () => void;
+		const companionPending = new Promise<void>((resolve) => { releaseCompanion = resolve; });
+		const activateView = vi.fn(() => companionPending);
+		const activateInventoryAdvisorView = vi.fn(async () => undefined);
+		const harness = {
+			localDebugActions: {
+				run: async (context: unknown, action: () => Promise<void>) => {
+					contexts.push(context);
+					await action();
+				},
+			},
+			activateView,
+			activateInventoryAdvisorView,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof harness,
+				id: 'open-companion' | 'open-inventory-advisor',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		let companionSettled = false;
+		const companion = execute.call(harness, 'open-companion').finally(() => { companionSettled = true; });
+		await Promise.resolve();
+		expect(companionSettled).toBe(false);
+		releaseCompanion();
+		await expect(companion).resolves.toBe('completed');
+		await expect(execute.call(harness, 'open-inventory-advisor')).resolves.toBe('completed');
+
+		expect(activateView).toHaveBeenCalledOnce();
+		expect(activateInventoryAdvisorView).toHaveBeenCalledOnce();
+		expect(contexts).toEqual([
+			{ component: 'ui', action: 'command_execute', state: 'open_companion' },
+			{ component: 'ui', action: 'command_execute', state: 'open_inventory_advisor' },
+		]);
+	});
+
+	it.each(['unavailable', 'failed'] as const)('preserves a pending proposal %s outcome instead of announcing success', async (outcome) => {
+		const reviewPendingProposalOutcome = vi.fn(async () => outcome);
+		const harness = {
+			getPendingProposalState: () => ({
+				next: { proposalId: 'proposal-1', accountId: 'account-1', phase: 'start', binding: { kind: 'idle', ruleSetId: 'rules', ruleSetVersion: 1 } },
+			}),
+			reviewPendingProposalOutcome,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof harness,
+				id: 'review-pending-farming-proposal',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		await expect(execute.call(harness, 'review-pending-farming-proposal')).resolves.toBe(outcome);
+		expect(reviewPendingProposalOutcome).toHaveBeenCalledOnce();
+	});
+
+	it('distinguishes an already-absent proposal from an acknowledgement failure', async () => {
+		const acknowledge = vi.fn(async () => false);
+		const emitNotice = vi.fn();
+		const harness = {
+			runtimeReady: true,
+			settings: { language: 'en' as const },
+			pendingProposals: { acknowledge },
+			notifyRuntimeStarting: vi.fn(),
+			emitNotice,
+			activateView: vi.fn(async () => undefined),
+			renderViews: vi.fn(),
+			localDebugActions: null,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewPendingProposalOutcome(
+				this: typeof harness,
+				intent: PendingProposalIntent,
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).reviewPendingProposalOutcome;
+		const intent = {
+			proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
+			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
+		};
+
+		await expect(review.call(harness, intent)).resolves.toBe('unavailable');
+		acknowledge.mockRejectedValueOnce(new Error('storage failed'));
+		await expect(review.call(harness, intent)).resolves.toBe('failed');
+		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
 });
 

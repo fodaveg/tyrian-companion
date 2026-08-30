@@ -13,6 +13,6 @@ describe('H5.5 presentation boundary', () => {
 		const note = readFileSync(new URL('session-note-renderer.ts', import.meta.url), 'utf8');
 		const view = readFileSync(new URL('../ui/companion-view.ts', import.meta.url), 'utf8');
 		expect(note).toContain('renderLootMarkdown(buildLootPresentation(note))');
-		expect(view).toContain('renderLootPresentationView(contentEl, loot)');
+		expect(view).toContain('renderLootPresentationView(surface, loot)');
 	});
 });

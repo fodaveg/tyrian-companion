@@ -5,6 +5,7 @@ import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inven
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
 import { InventoryAdvisorItemView, type InventoryAdvisorViewActions } from './inventory-advisor-item-view';
+import { ProductActionController } from './product-action-controller';
 
 vi.mock('obsidian', () => ({
 	ItemView: class {
@@ -57,6 +58,60 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(activeDocument.activeElement).toBe(leftSearch);
 		expect(text(left.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
 		expect(text(right.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
+	});
+
+	it('preserves advisor content, filters and focus while the shared action panel updates', async () => {
+		installDom();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		const controller = productController(() => pending);
+		const viewActions = actions(() => 'es', { productActions: controller });
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const search = find(root, 'input').find((input) => input.type === 'search')!;
+		search.value = 'material';
+		search.dispatch('input');
+		search.focus();
+		const openAction = walk(root).find((element) => element.attributes.get('data-command-id') === 'open-companion')!;
+		const openButton = openAction.children.find((element) => element.tag === 'button')!;
+		openButton.dispatch('click');
+		await Promise.resolve();
+		expect(find(root, 'input').find((input) => input.type === 'search')).toBe(search);
+		expect(search.value).toBe('material');
+		expect(activeDocument.activeElement).toBe(search);
+		finish();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(find(root, 'input').find((input) => input.type === 'search')).toBe(search);
+		expect(activeDocument.activeElement).toBe(search);
+	});
+
+	it('projects view-owned analysis busy into the retained panel without remounting it', async () => {
+		installDom();
+		let finish!: () => void;
+		const pending = new Promise<void>((resolve) => { finish = resolve; });
+		const controller = productController(async () => undefined);
+		const viewActions = actions(() => 'es', { productActions: controller, analyze: () => pending });
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const panelAction = walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')!;
+		const panelButton = panelAction.children.find((element) => element.tag === 'button')!;
+		const analyzeButton = find(root, 'button').find((candidate) => candidate.textContent === 'Analizar sin escribir')!;
+		expect(panelButton.disabled).toBe(false);
+
+		analyzeButton.dispatch('click');
+		expect(walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')).toBe(panelAction);
+		expect(panelAction.attributes.get('data-state')).toBe('running');
+		expect(panelButton.disabled).toBe(true);
+
+		finish();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')).toBe(panelAction);
+		expect(panelAction.attributes.get('data-state')).toBe('idle');
+		expect(panelButton.disabled).toBe(false);
 	});
 
 	it('opens without capturing or writing, and a single click on the one guided button runs the whole sync once', async () => {
@@ -190,12 +245,18 @@ function actions(
 		confirm?: () => Promise<void>;
 		cancel?: () => void;
 		analyze?: () => Promise<void>;
+		productActions?: ProductActionController;
 	},
 ): { value: InventoryAdvisorViewActions } {
 	const base: InventoryAdvisorViewActions = {
 		getInventoryAdvisorLocale: locale,
 		getInventoryAdvisorViewModel: readyModel,
 		refreshInventoryAdvisor: sync?.analyze ?? (async () => undefined),
+		...(sync?.productActions === undefined ? {} : {
+			getProductActionController: () => sync.productActions!,
+			hasConfiguredApiKey: () => true,
+			openProductSettings: () => undefined,
+		}),
 	};
 	if (sync === undefined) return { value: base };
 	return { value: {
@@ -225,9 +286,9 @@ function row(): InventoryAdvisorViewRow {
 }
 
 function installDom(): void {
-	vi.stubGlobal('createEl', (tag: string) => new FakeElement(tag, activeDocument));
-	vi.stubGlobal('createDiv', () => new FakeElement('div', activeDocument));
-	vi.stubGlobal('createSpan', () => new FakeElement('span', activeDocument));
+	vi.stubGlobal('createEl', (tag: string, options?: FakeOptions) => new FakeElement(tag, activeDocument, options));
+	vi.stubGlobal('createDiv', (options?: FakeOptions) => new FakeElement('div', activeDocument, options));
+	vi.stubGlobal('createSpan', (options?: FakeOptions) => new FakeElement('span', activeDocument, options));
 }
 
 function find(root: FakeElement, tag: string): FakeElement[] {
@@ -246,6 +307,8 @@ class FakeDocument {
 	activeElement: FakeElement | null = null;
 }
 
+interface FakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
+
 class FakeElement {
 	readonly children: FakeElement[] = [];
 	readonly attributes = new Map<string, string>();
@@ -263,9 +326,21 @@ class FakeElement {
 	disabled = false;
 	hidden = false;
 
-	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
+	constructor(readonly tag: string, readonly ownerDocument: FakeDocument, options: FakeOptions = {}) {
+		this.className = options.cls ?? '';
+		this.textContent = options.text ?? null;
+		for (const [name, value] of Object.entries(options.attr ?? {})) this.attributes.set(name, value);
+	}
+	empty(): void { this.children.splice(0); this.textContent = null; }
 	append(...children: FakeElement[]): void { this.children.push(...children); }
+	prepend(...children: FakeElement[]): void { this.children.unshift(...children); }
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
+	createEl(tag: string, options?: FakeOptions): FakeElement { const child = new FakeElement(tag, this.ownerDocument, options); this.children.push(child); return child; }
+	createDiv(options?: FakeOptions): FakeElement { const child = new FakeElement('div', this.ownerDocument, options); this.children.push(child); return child; }
+	createSpan(options?: FakeOptions): FakeElement { const child = new FakeElement('span', this.ownerDocument, options); this.children.push(child); return child; }
+	setAttr(name: string, value: string): void { this.attributes.set(name, value); }
+	setText(value: string): void { this.textContent = value; }
+	addClass(value: string): void { this.className = `${this.className} ${value}`.trim(); }
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
 	removeAttribute(name: string): void { this.attributes.delete(name); }
 	addEventListener(type: string, listener: () => void): void {
@@ -275,4 +350,20 @@ class FakeElement {
 	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
 	focus(): void { this.ownerDocument.activeElement = this; }
+}
+
+function productController(execute: () => Promise<void>): ProductActionController {
+	return new ProductActionController({
+		getLocale: () => 'es', isRuntimeReady: () => true, hasApiKey: () => true,
+		getConnectionState: () => ({ status: 'connected', details: {} } as never),
+		getPendingProposals: () => ({ status: 'ready', pendingCount: 0, next: null }),
+		getDetectionState: () => ({ status: 'disarmed', reason: 'initial', scheduler: {}, lastSnapshotAt: null } as never),
+		canArmDetection: () => true, canApplyInventory: () => false, canApplyWallet: () => false,
+		isInventoryBusy: () => false,
+		sessionCommands: {
+			describe: (id) => ({ id, name: id, available: true, icon: 'test', destructive: false, targetKey: 'test' }),
+			runWithOutcome: async () => 'completed',
+		},
+		execute: async () => { await execute(); return 'completed' as const; },
+	});
 }

@@ -132,10 +132,16 @@ import {
 	createSessionCommandDispatch,
 	hasExactSessionBackendResult,
 	projectSessionMenu,
-	registerSessionPalette,
 	type SessionCommandDispatch,
 } from './ui/session-command-adapter';
-import { SESSION_COMMAND_IDS, type SessionCommandId } from './ui/session-command-model';
+import type { SessionCommandId } from './ui/session-command-model';
+import {
+	ProductActionController,
+	PRODUCT_ACTION_IDS,
+	registerProductActionPalette,
+	type ProductActionId,
+	type ProductActionOutcome,
+} from './ui/product-action-controller';
 import { projectPendingProposalUi } from './ui/pending-proposal-command';
 import { refreshBackgroundStatus } from './ui/background-status-refresh';
 import { TyrianCompanionSettingTab } from './ui/settings-tab';
@@ -226,6 +232,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private discardModal: ConfirmDiscardSessionModal | null = null;
 	private clearModal: ConfirmClearCompletedSessionModal | null = null;
 	private sessionCommands!: SessionCommandController;
+	private productActions!: ProductActionController;
 	private sessionDispatch!: SessionCommandDispatch;
 	private sessionRibbon: HTMLElement | null = null;
 	private managedAssets!: ManagedAssetsManager;
@@ -273,7 +280,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		await this.localDebugActions!.run({
 			component: 'plugin', action: 'plugin_load',
-			details: { commandCount: SESSION_COMMAND_IDS.length + 10, viewCount: 2 },
+			details: { commandCount: PRODUCT_ACTION_IDS.length, viewCount: 3 },
 		}, async () => {
 
 		this.registerView(
@@ -286,65 +293,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
-		const inventoryAdvisorCommands = this.inventoryAdvisorCommandCallbacks();
-		this.addCommand({
-			id: 'open-companion',
-			name: createTranslator(this.settings.language).t('commands.openCompanion'),
-			callback: () => {
-				fireAndForgetLocal(this.localDebugActions,
-					{ component: 'ui', action: 'command_execute', state: 'open_companion' },
-					() => this.activateView());
-			},
-		});
-		this.addCommand({
-			id: 'open-inventory-advisor',
-			name: createTranslator(this.settings.language).t('commands.openInventoryAdvisor'),
-			callback: inventoryAdvisorCommands.open,
-		});
-		this.addCommand({
-			id: 'refresh-inventory-advisor',
-			name: createTranslator(this.settings.language).t('commands.refreshInventoryAdvisor'),
-			callback: inventoryAdvisorCommands.refresh,
-		});
-		this.addCommand({
-			id: 'preview-inventory-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.previewInventoryVault'),
-			callback: () => { consumeRecorded(this.previewInventoryVaultSync(true)); },
-		});
-		this.addCommand({
-			id: 'apply-inventory-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.applyInventoryVault'),
-			checkCallback: (checking) => {
-				const available = this.inventoryVaultSync.canApply();
-				if (!checking && available) consumeRecorded(this.applyInventoryVaultSync());
-				return available;
-			},
-		});
-		this.addCommand({
-			id: 'preview-wallet-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.previewWalletVault'),
-			callback: () => { consumeRecorded(this.previewWalletVaultSync()); },
-		});
-		this.addCommand({
-			id: 'apply-wallet-vault-sync',
-			name: createTranslator(this.settings.language).t('commands.applyWalletVault'),
-			checkCallback: (checking) => {
-				const available = this.walletVaultSync.canApply();
-				if (!checking && available) consumeRecorded(this.applyWalletVaultSync());
-				return available;
-			},
-		});
-		this.addCommand({
-			id: 'arm-assisted-detection',
-			name: createTranslator(this.settings.language).t('commands.armDetection'),
-			callback: () => { consumeRecorded(this.armAssistedDetection()); },
-		});
-		this.addCommand({
-			id: 'disarm-assisted-detection',
-			name: createTranslator(this.settings.language).t('commands.disarmDetection'),
-			callback: () => this.disarmAssistedDetection(),
-		});
 		this.setupSessionCommands();
+		this.setupProductActions();
 		this.registerDomEvent(window, 'error', (event) => {
 			let failure: unknown = event;
 			if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
@@ -940,6 +890,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.settings.language;
 	}
 
+	getProductActionController(): ProductActionController {
+		return this.productActions;
+	}
+
+	hasConfiguredApiKey(): boolean {
+		return this.settings.apiKeySecret.trim().length > 0;
+	}
+
+	openProductSettings(): void {
+		const host = this.app as typeof this.app & { setting?: { open(): void; openTabById(id: string): void } };
+		host.setting?.open();
+		host.setting?.openTabById(this.manifest.id);
+	}
+
 	/** Returns only the bounded health projection intended for visible diagnostics UI. */
 	getLocalDebugStatus(): LocalDebugStatus {
 		return this.localDebug?.status() ?? {
@@ -1367,25 +1331,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean> {
-		const perform = async (): Promise<boolean> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return false; }
+		return await this.reviewPendingProposalOutcome(intent) === 'completed';
+	}
+
+	private async reviewPendingProposalOutcome(intent: PendingProposalIntent): Promise<ProductActionOutcome> {
+		const perform = async (): Promise<ProductActionOutcome> => {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
 		try {
 			if (!await this.pendingProposals.acknowledge(intent)) {
 				this.emitNotice(
 					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
 					'proposal_unavailable',
 				);
-				return false;
+				return 'unavailable';
 			}
 			await this.activateView();
 			this.renderViews();
-			return true;
+			return 'completed';
 		} catch {
 			this.emitNotice(
 				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
 				'proposal_review_failed',
 			);
-			return false;
+			return 'failed';
 		}
 		};
 		return await (this.localDebugActions?.run(
@@ -2087,6 +2055,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private renderViews(): void {
+		this.productActions?.refresh();
 		this.refreshSessionRibbon();
 		for (const leaf of this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)) {
 			if (leaf.view instanceof TyrianCompanionView) {
@@ -2096,6 +2065,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private renderInventoryAdvisorViews(): void {
+		this.productActions?.refresh();
 		for (const leaf of this.app.workspace.getLeavesOfType(INVENTORY_ADVISOR_VIEW_TYPE)) {
 			if (leaf.view instanceof InventoryAdvisorItemView) leaf.view.render();
 		}
@@ -2173,26 +2143,68 @@ export default class TyrianCompanionPlugin extends Plugin {
 			notify: (message) => { this.emitNotice(message, 'session_command'); },
 		});
 		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
-		registerSessionPalette(
-			{ addCommand: (command) => { this.addCommand(command); } },
-			this.sessionCommands,
-			SESSION_COMMAND_IDS,
-		);
-		this.addCommand({
-			id: 'review-pending-farming-proposal',
-			name: translateRuntime(createTranslator(this.settings.language), 'commands.reviewPending'),
-			checkCallback: (checking) => {
-				if (!this.runtimeReady) return false;
-				const state = this.pendingProposals.getState();
-				const available = projectPendingProposalUi(state, this.settings.language).commandAvailable;
-				if (!checking && available && state.next) consumeRecorded(this.reviewPendingProposal(proposalIntent(state.next)));
-				return available;
-			},
-		});
 		this.sessionRibbon = this.addRibbonIcon('compass', createTranslator(this.settings.language).t('commands.ribbon'), (event) => {
 			this.openSessionCommandMenu(event);
 		});
 		this.refreshSessionRibbon();
+	}
+
+	private setupProductActions(): void {
+		this.productActions = new ProductActionController({
+			getLocale: () => this.settings.language,
+			isRuntimeReady: () => this.runtimeReady,
+			hasApiKey: () => this.hasConfiguredApiKey(),
+			getConnectionState: () => this.getConnectionState(),
+			getPendingProposals: () => this.getPendingProposalState(),
+			getDetectionState: () => this.getAssistedDetectionState(),
+			canArmDetection: () => {
+				if (!this.runtimeReady || this.settings.detectionMode !== 'assisted') return false;
+				const connected = this.connection.getState().status;
+				const session = this.sessions.getState();
+				return (connected === 'connected' || connected === 'warning')
+					&& (session.status === 'idle' || session.status === 'active')
+					&& (session.status !== 'idle' || this.sessions.getRecoveryState().status === 'none');
+			},
+			canApplyInventory: () => this.runtimeReady && this.inventoryVaultSync.canApply(),
+			canApplyWallet: () => this.runtimeReady && this.walletVaultSync.canApply(),
+			isInventoryBusy: () => this.runtimeReady && (
+				this.getInventoryAdvisorViewModel().status === 'loading'
+				|| this.getInventoryVaultSyncRunState().status === 'running'
+			),
+			sessionCommands: this.sessionCommands,
+			execute: (id) => this.executeProductAction(id),
+		});
+		registerProductActionPalette(
+			{ addCommand: (command) => { this.addCommand(command); } },
+			this.productActions,
+		);
+	}
+
+	private async executeProductAction(
+		id: Exclude<ProductActionId, SessionCommandId>,
+	): Promise<ProductActionOutcome> {
+		if (id === 'open-companion' || id === 'open-inventory-advisor') {
+			const state = id === 'open-companion' ? 'open_companion' : 'open_inventory_advisor';
+			const navigate = id === 'open-companion'
+				? () => this.activateView() : () => this.activateInventoryAdvisorView();
+			await (this.localDebugActions?.run(
+				{ component: 'ui', action: 'command_execute', state }, navigate,
+			) ?? navigate());
+			return 'completed';
+		}
+		if (id === 'review-pending-farming-proposal') {
+			const next = this.getPendingProposalState().next;
+			if (next === null) return 'unavailable';
+			return await this.reviewPendingProposalOutcome(proposalIntent(next));
+		}
+		if (id === 'arm-assisted-detection') await this.armAssistedDetection();
+		else if (id === 'disarm-assisted-detection') this.disarmAssistedDetection();
+		else if (id === 'refresh-inventory-advisor') await this.refreshInventoryAdvisor();
+		else if (id === 'preview-inventory-vault-sync') await this.previewInventoryVaultSync(true);
+		else if (id === 'apply-inventory-vault-sync') await this.applyInventoryVaultSync();
+		else if (id === 'preview-wallet-vault-sync') await this.previewWalletVaultSync();
+		else await this.applyWalletVaultSync();
+		return 'completed';
 	}
 
 	private openSessionCommandMenu(event: MouseEvent): void {
@@ -2375,14 +2387,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 	}
 
-	private inventoryAdvisorCommandCallbacks(): { open: () => void; refresh: () => void } {
-		return {
-			open: () => fireAndForgetLocal(this.localDebugActions,
-				{ component: 'ui', action: 'command_execute', state: 'open_inventory_advisor' },
-				() => this.activateInventoryAdvisorView()),
-			refresh: () => consumeRecorded(this.refreshInventoryAdvisor()),
-		};
-	}
 }
 
 /** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */

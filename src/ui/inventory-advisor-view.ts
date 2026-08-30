@@ -546,9 +546,15 @@ function mountInventoryAdvisorView(
 	sortSelect.addEventListener('change', updateFilters);
 	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
 	const priceHistory = createDiv();
-	section.append(heading, intro, iconDisclosure, syncSection, priceHistory, controls, state);
+	const operations = createEl('section');
+	operations.className = 'tyrian-inventory-advisor__operations';
+	operations.append(syncSection, priceHistory);
+	const analysis = createEl('section');
+	analysis.className = 'tyrian-inventory-advisor__analysis';
+	analysis.append(controls, state, results);
+	section.append(heading, intro, iconDisclosure, operations);
 	if (preferencesEditor !== null) section.append(preferencesEditor.element);
-	section.append(results);
+	section.append(analysis);
 	container.replaceChildren(section);
 
 	/** Rebuilds the roster from the observed rows; an absent character falls back to every bag. */

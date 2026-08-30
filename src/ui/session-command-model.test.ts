@@ -73,6 +73,24 @@ describe('projectSessionCommands', () => {
 });
 
 describe('SessionCommandController', () => {
+	it('reports completed, cancelled, unavailable and failed outcomes without changing legacy run()', async () => {
+		const completed = controllerHarness('active');
+		completed.ports.prepare.mockResolvedValue(async () => undefined);
+		await expect(completed.controller.runWithOutcome('finish-farming-session')).resolves.toBe('completed');
+
+		const cancelled = controllerHarness('complete');
+		cancelled.ports.prepare.mockResolvedValue(null);
+		await expect(cancelled.controller.runWithOutcome('clear-completed-session')).resolves.toBe('cancelled');
+
+		const unavailable = controllerHarness('starting');
+		await expect(unavailable.controller.runWithOutcome('start-farming-session')).resolves.toBe('unavailable');
+
+		const failed = controllerHarness('provisional');
+		failed.ports.prepare.mockResolvedValue(async () => { throw new Error('raw detail'); });
+		await expect(failed.controller.runWithOutcome('review-session')).resolves.toBe('failed');
+		await expect(completed.controller.run('finish-farming-session')).resolves.toBeUndefined();
+	});
+
 	it('rechecks stale state inside the execution microtask', async () => {
 		const harness = controllerHarness('idle');
 		expect(harness.controller.describe('start-farming-session').available).toBe(true);

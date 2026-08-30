@@ -9,6 +9,8 @@ import { renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
+import type { ProductActionController } from './product-action-controller';
+import { renderProductShell, type ProductShellMount } from './product-shell';
 
 export const INVENTORY_ADVISOR_VIEW_TYPE = 'tyrian-inventory-advisor-view';
 
@@ -34,14 +36,20 @@ export interface InventoryAdvisorViewActions {
 	getPriceHistoryState?(): PriceHistoryRuntimeState;
 	enablePriceHistory?(): Promise<void>;
 	loadPriceHistorySeries?(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void>;
+	getProductActionController?(): ProductActionController;
+	hasConfiguredApiKey?(): boolean;
+	openProductSettings?(): void;
 }
 
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
 export class InventoryAdvisorItemView extends ItemView {
 	private preferencesBusy = false;
 	private analysisBusy = false;
+	private syncBusy = false;
 	private priceHistoryBusy = false;
 	private closed = false;
+	private productShell: ProductShellMount | null = null;
+	private productShellKey: string | null = null;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
 
 	constructor(leaf: WorkspaceLeaf, private readonly actions: InventoryAdvisorViewActions) {
@@ -52,7 +60,13 @@ export class InventoryAdvisorItemView extends ItemView {
 	getDisplayText(): string { return createTranslator(this.actions.getInventoryAdvisorLocale()).t('advisor.view.title'); }
 	getIcon(): string { return 'package-search'; }
 	async onOpen(): Promise<void> { this.closed = false; this.render(); }
-	async onClose(): Promise<void> { this.closed = true; }
+	async onClose(): Promise<void> {
+		this.closed = true;
+		this.actions.getProductActionController?.().setInventorySurfaceBusy(this, false);
+		this.productShell?.dispose();
+		this.productShell = null;
+		this.productShellKey = null;
+	}
 
 	render(): void {
 		if (this.closed) return;
@@ -83,8 +97,26 @@ export class InventoryAdvisorItemView extends ItemView {
 				onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) =>
 					this.runPriceHistoryAction(() => this.actions.loadPriceHistorySeries!(itemId, side, windowDays)),
 			};
+		const actionController = this.actions.getProductActionController?.();
+		actionController?.setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
+		const locale = this.actions.getInventoryAdvisorLocale();
+		const missingApiKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
+		const shellKey = `${locale}:${String(missingApiKey)}`;
+		if (actionController !== undefined && (this.productShell === null || this.productShellKey !== shellKey)) {
+			this.productShell?.dispose();
+			this.productShell = renderProductShell(this.contentEl, {
+			locale,
+			active: 'inventory',
+			actions: actionController,
+			missingApiKey,
+			openSettings: () => this.actions.openProductSettings?.(),
+			});
+			this.productShellKey = shellKey;
+		}
+		const surface = this.productShell?.content ?? this.contentEl;
+		this.productShell?.update();
 		renderInventoryAdvisorView(
-			this.contentEl,
+			surface,
 			model,
 			createTranslator(this.actions.getInventoryAdvisorLocale()),
 			undefined,
@@ -103,13 +135,17 @@ export class InventoryAdvisorItemView extends ItemView {
 	}
 
 	private async runInventorySyncAction(action: () => Promise<void>): Promise<void> {
-		if (this.closed || this.analysisBusy) return;
+		if (this.closed || this.analysisBusy || this.syncBusy) return;
+		this.syncBusy = true;
 		try {
 			const operation = action();
 			this.render();
 			await operation;
 		}
-		finally { this.render(); }
+		finally {
+			this.syncBusy = false;
+			this.render();
+		}
 	}
 
 	private async runInventoryAnalysisAction(action: () => Promise<void>): Promise<void> {

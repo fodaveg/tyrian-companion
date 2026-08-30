@@ -31,8 +31,11 @@ import { projectConnectionDescription, projectManagedAssetsDescription } from '.
 import { VaultFolderInputSuggest } from './vault-folder-suggest';
 import { HalloweenPersonalValuationSettings } from './halloween-personal-valuation-settings';
 import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../economy/equipment-salvage-economy';
+import { renderProductShell } from './product-shell';
 
 type SettingRenderer = (setting: Setting) => void;
+export type SettingsCategory = 'account' | 'inventory' | 'economy' | 'diagnostics';
+interface CategorizedSettingDefinition { category: SettingsCategory; name: string; desc: string; render: SettingRenderer }
 
 function optionalInteger(value: string, maximum: number): number | null | 'invalid' {
 	if (value.trim() === '') return null;
@@ -51,6 +54,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private readonly sessionHistoryScrubController: SessionHistoryScrubController;
 	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
 	private readonly halloweenPersonalValuation: HalloweenPersonalValuationSettings;
+	private disposeProductShell: (() => void) | null = null;
 
 	constructor(
 		app: App,
@@ -97,10 +101,20 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.sessionHistoryScrubButton = null;
 		this.managedAssetButtons.clear();
 		const { containerEl } = this;
-		containerEl.empty();
+		this.disposeProductShell?.();
+		const productShell = renderProductShell(containerEl, {
+			locale: this.plugin.settings.language,
+			active: 'settings',
+			actions: this.plugin.getProductActionController(),
+			missingApiKey: !this.plugin.hasConfiguredApiKey(),
+			openSettings: () => this.plugin.openProductSettings(),
+		});
+		this.disposeProductShell = () => productShell.dispose();
+		const surface = productShell.content;
+		const sections = createSettingsSections(surface, this.plugin.settings.language);
 		for (const definition of this.definitions()) {
 			definition.render(
-				new Setting(containerEl).setName(definition.name).setDesc(definition.desc),
+				new Setting(sections[definition.category]).setName(definition.name).setDesc(definition.desc),
 			);
 		}
 	}
@@ -113,7 +127,13 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		}));
 	}
 
+	getSettingCategoryAssignments(): Array<{ name: string; category: SettingsCategory }> {
+		return this.definitions().map(({ name, category }) => ({ name, category }));
+	}
+
 	hide(): void {
+		this.disposeProductShell?.();
+		this.disposeProductShell = null;
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionButton = null;
@@ -155,21 +175,24 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.sessionHistoryScrubButton?.setDisabled(working);
 	}
 
-	private definitions(): Array<{ name: string; desc: string; render: SettingRenderer }> {
+	private definitions(): CategorizedSettingDefinition[] {
 		return [
 			{
+				category: 'account',
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
-				render: (setting) => {
-					setting.addComponent((element) =>
-						new SecretComponent(this.app, element)
-							.setValue(this.plugin.settings.apiKeySecret)
-							.onChange(async (apiKeySecret) => {
-								await this.plugin.updateSettings({ apiKeySecret });
-							}),
+					render: (setting) => {
+						setting.addComponent((element) =>
+							new SecretComponent(this.app, element)
+								.setValue(this.plugin.settings.apiKeySecret)
+								.onChange(async (apiKeySecret) => {
+									await this.plugin.updateSettings({ apiKeySecret });
+									this.refreshForSettingsChange();
+								}),
 					);
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.language.name'), desc: this.t('settings.language.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) =>
@@ -184,6 +207,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.output.name'),
 				desc: this.plugin.settings.legacyOutputFolder === null
 					? this.t('settings.output.desc') : this.t('settings.output.legacyDesc'),
@@ -212,6 +236,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.character.name'), desc: this.t('settings.character.desc'),
 				render: (setting) => {
 					setting.addText((text) =>
@@ -224,6 +249,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
@@ -239,6 +265,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.detection.name'), desc: this.t('settings.detection.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) =>
@@ -255,6 +282,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'diagnostics',
 				name: this.t('settings.debug.name'), desc: this.t('settings.debug.desc'),
 				render: (setting) => {
 					setting.settingEl.addClass('tyrian-companion-settings__diagnostics');
@@ -338,6 +366,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'inventory',
 				name: this.t('settings.materialStorage.name'),
 				desc: this.t(this.plugin.settings.materialStorageCapacity === null
 					? 'settings.materialStorage.desc.minimum' : 'settings.materialStorage.desc.configured'),
@@ -381,6 +410,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'inventory',
 				name: this.t('settings.salvage.kit.name'), desc: this.t('settings.salvage.kit.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown
@@ -395,6 +425,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'inventory',
 				name: this.t('settings.salvage.strategy.name'), desc: this.t('settings.salvage.strategy.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown
@@ -410,6 +441,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'inventory',
 				name: this.t('settings.salvage.time.name'), desc: this.t('settings.salvage.time.desc'),
 				render: (setting) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
@@ -432,6 +464,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'inventory',
 				name: this.t('settings.salvage.opportunity.name'), desc: this.t('settings.salvage.opportunity.desc'),
 				render: (setting) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
@@ -454,6 +487,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.personal.name'), desc: this.t('settings.halloween.personal.desc'),
 				render: (setting) => {
 					setting.settingEl.addClass('tyrian-personal-valuation-setting');
@@ -461,6 +495,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.enabled.name'), desc: this.t('settings.halloween.enabled.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown
@@ -470,6 +505,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.threshold.name'), desc: this.t('settings.halloween.threshold.desc'),
 				render: (setting) => {
 					setting.addText((text) => text
@@ -484,6 +520,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.price.enabled.name'), desc: this.t('settings.halloween.price.enabled.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown
@@ -496,6 +533,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.price.margin.name'), desc: this.t('settings.halloween.price.margin.desc'),
 				render: (setting) => {
 					setting.addText((text) => text
@@ -511,6 +549,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.halloween.price.cooldown.name'), desc: this.t('settings.halloween.price.cooldown.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
@@ -528,6 +567,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => dropdown
@@ -538,6 +578,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.priceHistory.interval.name'), desc: this.t('settings.priceHistory.interval.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
@@ -549,6 +590,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.priceHistory.raw.name'), desc: this.t('settings.priceHistory.raw.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
@@ -560,6 +602,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'economy',
 				name: this.t('settings.priceHistory.daily.name'), desc: this.t('settings.priceHistory.daily.desc'),
 				render: (setting) => {
 					setting.addDropdown((dropdown) => {
@@ -571,6 +614,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'diagnostics',
 				name: this.t('settings.assets.name'),
 				desc: projectManagedAssetsDescription(
 					this.plugin.getManagedAssetsView(), createTranslator(this.plugin.settings.language), this.rootDivergence(),
@@ -592,6 +636,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'diagnostics',
 				name: this.t('settings.history.name'),
 				desc: this.t(`settings.history.${this.plugin.getSessionHistoryView().status}` as TranslationKey, this.plugin.getSessionHistoryView()),
 					render: (setting) => {
@@ -613,6 +658,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
+				category: 'account',
 				name: this.t('settings.connection.name'),
 				desc: this.connectionDescription(this.plugin.getConnectionState()),
 				render: (setting) => {
@@ -673,6 +719,25 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		}
 	}
 
+}
+
+function createSettingsSections(container: HTMLElement, locale: 'es' | 'en'): Record<SettingsCategory, HTMLElement> {
+	const labels = locale === 'es'
+		? { account: 'Cuenta y sesión', inventory: 'Inventario', economy: 'Economía y eventos', diagnostics: 'Diagnóstico y datos' }
+		: { account: 'Account and session', inventory: 'Inventory', economy: 'Economy and events', diagnostics: 'Diagnostics and data' };
+	const sections = {} as Record<SettingsCategory, HTMLElement>;
+	const nav = container.createEl('nav', { cls: 'tyrian-product-settings__nav' });
+	nav.setAttr('aria-label', locale === 'es' ? 'Categorías de ajustes' : 'Settings categories');
+	for (const category of ['account', 'inventory', 'economy', 'diagnostics'] as const) {
+		const section = container.createEl('section', { cls: 'tyrian-product-settings__section' });
+		section.setAttr('id', `tyrian-settings-${category}`);
+		section.createEl('h2', { text: labels[category] });
+		sections[category] = section;
+		const link = nav.createEl('a', { text: labels[category] });
+		link.setAttr('href', `#tyrian-settings-${category}`);
+	}
+	container.prepend(nav);
+	return sections;
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {

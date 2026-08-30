@@ -2,10 +2,10 @@
 	"version": 3,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 346,
-		"promise_catch": 20,
-		"void_expression": 41,
-		"callback_registration": 136
+		"catch_clause": 347,
+		"promise_catch": 24,
+		"void_expression": 46,
+		"callback_registration": 139
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -4273,9 +4273,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 260,
+					"line": 267,
 					"column": 3,
-					"endLine": 263,
+					"endLine": 270,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4288,9 +4288,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 348,
+					"line": 298,
 					"column": 3,
-					"endLine": 358,
+					"endLine": 308,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4302,9 +4302,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 359,
+					"line": 309,
 					"column": 3,
-					"endLine": 368,
+					"endLine": 318,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4316,9 +4316,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 369,
+					"line": 319,
 					"column": 3,
-					"endLine": 381,
+					"endLine": 331,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4330,9 +4330,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 382,
+					"line": 332,
 					"column": 3,
-					"endLine": 394,
+					"endLine": 344,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4344,9 +4344,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 345,
 					"column": 3,
-					"endLine": 403,
+					"endLine": 353,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -4360,9 +4360,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 856,
+					"line": 806,
 					"column": 29,
-					"endLine": 856,
+					"endLine": 806,
 					"endColumn": 74,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4376,9 +4376,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1383,
+					"line": 1351,
 					"column": 5,
-					"endLine": 1389,
+					"endLine": 1357,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4389,9 +4389,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1427,
+					"line": 1395,
 					"column": 6,
-					"endLine": 1433,
+					"endLine": 1401,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -4402,9 +4402,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1544,
+					"line": 1512,
 					"column": 5,
-					"endLine": 1546,
+					"endLine": 1514,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4417,9 +4417,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1557,
+					"line": 1525,
 					"column": 18,
-					"endLine": 1561,
+					"endLine": 1529,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4433,9 +4433,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1557,
+					"line": 1525,
 					"column": 18,
-					"endLine": 1566,
+					"endLine": 1534,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4449,9 +4449,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1557,
+					"line": 1525,
 					"column": 18,
-					"endLine": 1570,
+					"endLine": 1538,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4465,9 +4465,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1597,
+					"line": 1565,
 					"column": 18,
-					"endLine": 1601,
+					"endLine": 1569,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4481,9 +4481,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1597,
+					"line": 1565,
 					"column": 18,
-					"endLine": 1609,
+					"endLine": 1577,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4497,9 +4497,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1597,
+					"line": 1565,
 					"column": 18,
-					"endLine": 1613,
+					"endLine": 1581,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4513,9 +4513,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1675,
+					"line": 1643,
 					"column": 5,
-					"endLine": 1675,
+					"endLine": 1643,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4528,9 +4528,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1778,
+					"line": 1746,
 					"column": 3,
-					"endLine": 1778,
+					"endLine": 1746,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4543,9 +4543,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1803,
+					"line": 1771,
 					"column": 24,
-					"endLine": 1803,
+					"endLine": 1771,
 					"endColumn": 104,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4559,9 +4559,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1866,
+					"line": 1834,
 					"column": 25,
-					"endLine": 1866,
+					"endLine": 1834,
 					"endColumn": 83,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4575,9 +4575,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1923,
+					"line": 1891,
 					"column": 25,
-					"endLine": 1923,
+					"endLine": 1891,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4591,9 +4591,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1948,
+					"line": 1916,
 					"column": 7,
-					"endLine": 1948,
+					"endLine": 1916,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4606,9 +4606,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2017,
+					"line": 1985,
 					"column": 6,
-					"endLine": 2019,
+					"endLine": 1987,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4621,9 +4621,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2303,
+					"line": 2315,
 					"column": 24,
-					"endLine": 2303,
+					"endLine": 2315,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4637,9 +4637,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2310,
+					"line": 2322,
 					"column": 24,
-					"endLine": 2310,
+					"endLine": 2322,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4653,9 +4653,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2459,
+					"line": 2463,
 					"column": 17,
-					"endLine": 2459,
+					"endLine": 2463,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4669,9 +4669,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2459,
+					"line": 2463,
 					"column": 17,
-					"endLine": 2459,
+					"endLine": 2463,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4685,9 +4685,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2460,
+					"line": 2464,
 					"column": 20,
-					"endLine": 2460,
+					"endLine": 2464,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4701,9 +4701,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2460,
+					"line": 2464,
 					"column": 20,
-					"endLine": 2460,
+					"endLine": 2464,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4717,9 +4717,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2512,
+					"line": 2516,
 					"column": 5,
-					"endLine": 2515,
+					"endLine": 2519,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4730,9 +4730,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2562,
+					"line": 2566,
 					"column": 6,
-					"endLine": 2567,
+					"endLine": 2571,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4745,9 +4745,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2691,
+					"line": 2695,
 					"column": 5,
-					"endLine": 2691,
+					"endLine": 2695,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4760,9 +4760,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2724,
+					"line": 2728,
 					"column": 7,
-					"endLine": 2724,
+					"endLine": 2728,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4776,9 +4776,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2729,
+					"line": 2733,
 					"column": 2,
-					"endLine": 2729,
+					"endLine": 2733,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6949,9 +6949,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 164,
+					"line": 206,
 					"column": 3,
-					"endLine": 166,
+					"endLine": 208,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -6965,9 +6965,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 165,
+					"line": 207,
 					"column": 4,
-					"endLine": 165,
+					"endLine": 207,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6980,9 +6980,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 177,
+					"line": 211,
 					"column": 27,
-					"endLine": 177,
+					"endLine": 211,
 					"endColumn": 94,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -6996,9 +6996,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 192,
+					"line": 226,
 					"column": 4,
-					"endLine": 192,
+					"endLine": 226,
 					"endColumn": 83,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7012,9 +7012,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 251,
+					"line": 285,
 					"column": 3,
-					"endLine": 257,
+					"endLine": 291,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7028,9 +7028,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 252,
+					"line": 286,
 					"column": 4,
-					"endLine": 256,
+					"endLine": 290,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7043,9 +7043,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 252,
+					"line": 286,
 					"column": 9,
-					"endLine": 256,
+					"endLine": 290,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7059,9 +7059,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 255,
+					"line": 289,
 					"column": 10,
-					"endLine": 255,
+					"endLine": 289,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7074,9 +7074,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 259,
+					"line": 293,
 					"column": 3,
-					"endLine": 261,
+					"endLine": 295,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7090,9 +7090,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 352,
+					"line": 383,
 					"column": 4,
-					"endLine": 352,
+					"endLine": 383,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7106,9 +7106,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 352,
+					"line": 383,
 					"column": 45,
-					"endLine": 352,
+					"endLine": 383,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7121,9 +7121,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 357,
+					"line": 388,
 					"column": 4,
-					"endLine": 357,
+					"endLine": 388,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7137,9 +7137,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 362,
+					"line": 393,
 					"column": 4,
-					"endLine": 362,
+					"endLine": 393,
 					"endColumn": 87,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7153,9 +7153,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 367,
+					"line": 398,
 					"column": 4,
-					"endLine": 367,
+					"endLine": 398,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7169,9 +7169,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 367,
+					"line": 398,
 					"column": 45,
-					"endLine": 367,
+					"endLine": 398,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7184,9 +7184,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 373,
+					"line": 404,
 					"column": 4,
-					"endLine": 373,
+					"endLine": 404,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7200,9 +7200,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 458,
+					"line": 489,
 					"column": 4,
-					"endLine": 458,
+					"endLine": 489,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7216,9 +7216,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 458,
+					"line": 489,
 					"column": 42,
-					"endLine": 458,
+					"endLine": 489,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7231,9 +7231,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 478,
+					"line": 509,
 					"column": 4,
-					"endLine": 478,
+					"endLine": 509,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7247,9 +7247,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 478,
+					"line": 509,
 					"column": 44,
-					"endLine": 478,
+					"endLine": 509,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7262,9 +7262,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 480,
+					"line": 511,
 					"column": 4,
-					"endLine": 480,
+					"endLine": 511,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7278,9 +7278,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 490,
+					"line": 521,
 					"column": 4,
-					"endLine": 490,
+					"endLine": 521,
 					"endColumn": 80,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7294,9 +7294,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 501,
+					"line": 532,
 					"column": 4,
-					"endLine": 501,
+					"endLine": 532,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7310,9 +7310,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 501,
+					"line": 532,
 					"column": 43,
-					"endLine": 501,
+					"endLine": 532,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7325,9 +7325,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 525,
+					"line": 556,
 					"column": 3,
-					"endLine": 525,
+					"endLine": 556,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7341,9 +7341,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 530,
+					"line": 561,
 					"column": 3,
-					"endLine": 537,
+					"endLine": 568,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7357,9 +7357,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 539,
+					"line": 570,
 					"column": 3,
-					"endLine": 539,
+					"endLine": 570,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7373,9 +7373,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 593,
+					"line": 624,
 					"column": 4,
-					"endLine": 593,
+					"endLine": 624,
 					"endColumn": 80,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7389,9 +7389,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 620,
+					"line": 651,
 					"column": 4,
-					"endLine": 620,
+					"endLine": 651,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7405,9 +7405,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 620,
+					"line": 651,
 					"column": 45,
-					"endLine": 620,
+					"endLine": 651,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7420,9 +7420,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 644,
+					"line": 675,
 					"column": 4,
-					"endLine": 644,
+					"endLine": 675,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7436,9 +7436,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 655,
+					"line": 686,
 					"column": 4,
-					"endLine": 655,
+					"endLine": 686,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7452,9 +7452,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 667,
+					"line": 698,
 					"column": 5,
-					"endLine": 667,
+					"endLine": 698,
 					"endColumn": 85,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7468,9 +7468,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 667,
+					"line": 698,
 					"column": 44,
-					"endLine": 667,
+					"endLine": 698,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7483,9 +7483,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 721,
+					"line": 752,
 					"column": 3,
-					"endLine": 721,
+					"endLine": 752,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7499,9 +7499,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 721,
+					"line": 752,
 					"column": 45,
-					"endLine": 721,
+					"endLine": 752,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7514,9 +7514,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 722,
+					"line": 753,
 					"column": 3,
-					"endLine": 722,
+					"endLine": 753,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7530,9 +7530,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 816,
+					"line": 847,
 					"column": 3,
-					"endLine": 816,
+					"endLine": 847,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7546,9 +7546,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 817,
+					"line": 848,
 					"column": 3,
-					"endLine": 821,
+					"endLine": 852,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7562,9 +7562,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 820,
+					"line": 851,
 					"column": 4,
-					"endLine": 820,
+					"endLine": 851,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7577,9 +7577,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 820,
+					"line": 851,
 					"column": 9,
-					"endLine": 820,
+					"endLine": 851,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7593,9 +7593,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 844,
+					"line": 875,
 					"column": 3,
-					"endLine": 844,
+					"endLine": 875,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7609,9 +7609,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 845,
+					"line": 876,
 					"column": 3,
-					"endLine": 849,
+					"endLine": 880,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7625,9 +7625,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 848,
+					"line": 879,
 					"column": 4,
-					"endLine": 848,
+					"endLine": 879,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7640,9 +7640,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 848,
+					"line": 879,
 					"column": 9,
-					"endLine": 848,
+					"endLine": 879,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7656,9 +7656,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 892,
+					"line": 923,
 					"column": 3,
-					"endLine": 892,
+					"endLine": 923,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7672,9 +7672,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 893,
+					"line": 924,
 					"column": 3,
-					"endLine": 908,
+					"endLine": 939,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7688,9 +7688,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 903,
+					"line": 934,
 					"column": 4,
-					"endLine": 907,
+					"endLine": 938,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7703,9 +7703,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 903,
+					"line": 934,
 					"column": 9,
-					"endLine": 903,
+					"endLine": 934,
 					"endColumn": 58,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7719,9 +7719,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 903,
+					"line": 934,
 					"column": 9,
-					"endLine": 907,
+					"endLine": 938,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7735,9 +7735,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 972,
+					"line": 1003,
 					"column": 3,
-					"endLine": 972,
+					"endLine": 1003,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7751,9 +7751,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 973,
+					"line": 1004,
 					"column": 3,
-					"endLine": 998,
+					"endLine": 1029,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7767,9 +7767,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 985,
+					"line": 1016,
 					"column": 4,
-					"endLine": 997,
+					"endLine": 1028,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7782,9 +7782,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 985,
+					"line": 1016,
 					"column": 9,
-					"endLine": 993,
+					"endLine": 1024,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7798,9 +7798,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 985,
+					"line": 1016,
 					"column": 9,
-					"endLine": 997,
+					"endLine": 1028,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7814,9 +7814,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1015,
+					"line": 1046,
 					"column": 3,
-					"endLine": 1057,
+					"endLine": 1088,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7829,9 +7829,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1015,
+					"line": 1046,
 					"column": 8,
-					"endLine": 1055,
+					"endLine": 1086,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7845,9 +7845,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1015,
+					"line": 1046,
 					"column": 8,
-					"endLine": 1057,
+					"endLine": 1088,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7861,9 +7861,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1041,
+					"line": 1072,
 					"column": 4,
-					"endLine": 1049,
+					"endLine": 1080,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7877,9 +7877,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1050,
+					"line": 1081,
 					"column": 4,
-					"endLine": 1054,
+					"endLine": 1085,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8271,9 +8271,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 785,
+					"line": 791,
 					"column": 3,
-					"endLine": 785,
+					"endLine": 791,
 					"endColumn": 65,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8287,9 +8287,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1065,
+					"line": 1071,
 					"column": 4,
-					"endLine": 1067,
+					"endLine": 1073,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8302,9 +8302,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1505,
+					"line": 1511,
 					"column": 2,
-					"endLine": 1505,
+					"endLine": 1511,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8318,9 +8318,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1505,
+					"line": 1511,
 					"column": 41,
-					"endLine": 1505,
+					"endLine": 1511,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8333,9 +8333,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1510,
+					"line": 1516,
 					"column": 2,
-					"endLine": 1510,
+					"endLine": 1516,
 					"endColumn": 103,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8349,9 +8349,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1511,
+					"line": 1517,
 					"column": 2,
-					"endLine": 1527,
+					"endLine": 1533,
 					"endColumn": 4,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8365,9 +8365,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1526,
+					"line": 1532,
 					"column": 3,
-					"endLine": 1526,
+					"endLine": 1532,
 					"endColumn": 46,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8380,9 +8380,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1532,
+					"line": 1538,
 					"column": 2,
-					"endLine": 1532,
+					"endLine": 1538,
 					"endColumn": 113,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8396,9 +8396,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1533,
+					"line": 1539,
 					"column": 2,
-					"endLine": 1533,
+					"endLine": 1539,
 					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8412,9 +8412,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1534,
+					"line": 1540,
 					"column": 2,
-					"endLine": 1547,
+					"endLine": 1553,
 					"endColumn": 4,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8428,9 +8428,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1546,
+					"line": 1552,
 					"column": 3,
-					"endLine": 1546,
+					"endLine": 1552,
 					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8443,9 +8443,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1579,
+					"line": 1585,
 					"column": 74,
-					"endLine": 1579,
+					"endLine": 1585,
 					"endColumn": 114,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8458,9 +8458,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1580,
+					"line": 1586,
 					"column": 84,
-					"endLine": 1580,
+					"endLine": 1586,
 					"endColumn": 129,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8473,9 +8473,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1624,
+					"line": 1630,
 					"column": 2,
-					"endLine": 1624,
+					"endLine": 1630,
 					"endColumn": 71,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8489,9 +8489,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1664,
+					"line": 1670,
 					"column": 3,
-					"endLine": 1664,
+					"endLine": 1670,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8505,9 +8505,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1672,
+					"line": 1678,
 					"column": 3,
-					"endLine": 1676,
+					"endLine": 1682,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8696,6 +8696,189 @@
 				}
 			]
 		},
+		"src/ui/product-action-controller.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 234,
+					"column": 5,
+					"endLine": 238,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "run",
+						"justification": "The \"run\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"run\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 256,
+					"column": 24,
+					"endLine": 259,
+					"endColumn": 16,
+					"registration": "setTimeout",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setTimeout",
+						"scope": "scheduleCooldownRefresh",
+						"justification": "The \"scheduleCooldownRefresh\" owner registers \"setTimeout\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"scheduleCooldownRefresh\" owner registers \"setTimeout\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setTimeout\" in \"scheduleCooldownRefresh\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 308,
+					"column": 32,
+					"endLine": 308,
+					"endColumn": 78,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "controller.run().catch",
+						"scope": "checkCallback",
+						"justification": "The \"checkCallback\" owner deliberately detaches \"controller.run().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"checkCallback\" owner deliberately detaches \"controller.run().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"controller.run().catch\" in \"checkCallback\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 308,
+					"column": 37,
+					"endLine": 308,
+					"endColumn": 78,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "checkCallback",
+						"justification": "The \"checkCallback\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"checkCallback\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"checkCallback\"."
+				}
+			]
+		},
+		"src/ui/product-shell.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "void_expression",
+					"line": 62,
+					"column": 73,
+					"endLine": 62,
+					"endColumn": 138,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "options.actions.run().catch",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"options.actions.run().catch\" in \"renderProductShell\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 62,
+					"column": 78,
+					"endLine": 62,
+					"endColumn": 138,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderProductShell\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 63,
+					"column": 73,
+					"endLine": 63,
+					"endColumn": 146,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "options.actions.run().catch",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderProductShell\" owner deliberately detaches \"options.actions.run().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"options.actions.run().catch\" in \"renderProductShell\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 63,
+					"column": 78,
+					"endLine": 63,
+					"endColumn": 146,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderProductShell",
+						"justification": "The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderProductShell\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderProductShell\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 152,
+					"column": 3,
+					"endLine": 152,
+					"endColumn": 101,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderGroup",
+						"justification": "The \"renderGroup\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderGroup\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderGroup\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 152,
+					"column": 44,
+					"endLine": 152,
+					"endColumn": 97,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "controller.run().catch",
+						"scope": "renderGroup",
+						"justification": "The \"renderGroup\" owner deliberately detaches \"controller.run().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderGroup\" owner deliberately detaches \"controller.run().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"controller.run().catch\" in \"renderGroup\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 152,
+					"column": 49,
+					"endLine": 152,
+					"endColumn": 97,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderGroup",
+						"justification": "The \"renderGroup\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderGroup\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderGroup\"."
+				}
+			]
+		},
 		"src/ui/session-command-adapter.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -8723,51 +8906,82 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 35,
-					"column": 18,
-					"endLine": 49,
+					"line": 45,
+					"column": 19,
+					"endLine": 61,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "then",
-						"scope": "run",
-						"justification": "The \"run\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "flight",
+						"justification": "The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"run\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"run\"."
+					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"flight\"."
 				},
 				{
 					"kind": "promise_catch",
-					"line": 35,
-					"column": 18,
-					"endLine": 51,
+					"line": 45,
+					"column": 19,
+					"endLine": 64,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "intentional_noop",
-						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+						"scope": "flight",
+						"justification": "The \"flight\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
-					"reason": "Allowlisted promise_catch: The \"run\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"run\"."
+					"reason": "Allowlisted promise_catch: The \"flight\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"flight\"."
 				},
 				{
 					"kind": "callback_registration",
-					"line": 35,
+					"line": 65,
 					"column": 18,
-					"endLine": 53,
+					"endLine": 65,
+					"endColumn": 47,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "flight",
+						"justification": "The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"flight\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 68,
+					"column": 3,
+					"endLine": 70,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "outcome.finally",
+						"scope": "flight",
+						"justification": "The \"flight\" owner deliberately detaches \"outcome.finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"flight\" owner deliberately detaches \"outcome.finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"outcome.finally\" in \"flight\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 68,
+					"column": 8,
+					"endLine": 70,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "finally",
-						"scope": "run",
-						"justification": "The \"run\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "flight",
+						"justification": "The \"flight\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"run\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"run\"."
+					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"flight\"."
 				}
 			]
 		},
@@ -8825,9 +9039,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 276,
+					"line": 304,
 					"column": 8,
-					"endLine": 276,
+					"endLine": 304,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8840,9 +9054,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 288,
+					"line": 316,
 					"column": 9,
-					"endLine": 288,
+					"endLine": 316,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8855,40 +9069,10 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 297,
+					"line": 325,
 					"column": 9,
-					"endLine": 297,
+					"endLine": 325,
 					"endColumn": 69,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "render",
-						"justification": "The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 306,
-					"column": 10,
-					"endLine": 306,
-					"endColumn": 70,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "render",
-						"justification": "The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 319,
-					"column": 10,
-					"endLine": 319,
-					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8915,9 +9099,39 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 374,
+					"line": 347,
 					"column": 10,
-					"endLine": 376,
+					"endLine": 347,
+					"endColumn": 70,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "render",
+						"justification": "The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 362,
+					"column": 10,
+					"endLine": 362,
+					"endColumn": 70,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "render",
+						"justification": "The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 403,
+					"column": 10,
+					"endLine": 405,
 					"endColumn": 9,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8930,9 +9144,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 664,
+					"line": 710,
 					"column": 28,
-					"endLine": 666,
+					"endLine": 712,
 					"endColumn": 12,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -8946,9 +9160,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 694,
+					"line": 759,
 					"column": 5,
-					"endLine": 694,
+					"endLine": 759,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8962,9 +9176,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 696,
+					"line": 761,
 					"column": 5,
-					"endLine": 696,
+					"endLine": 761,
 					"endColumn": 93,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8978,9 +9192,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 724,
+					"line": 789,
 					"column": 5,
-					"endLine": 724,
+					"endLine": 789,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8994,9 +9208,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 726,
+					"line": 791,
 					"column": 5,
-					"endLine": 726,
+					"endLine": 791,
 					"endColumn": 92,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9010,9 +9224,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 796,
+					"line": 861,
 					"column": 5,
-					"endLine": 796,
+					"endLine": 861,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9026,9 +9240,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 798,
+					"line": 863,
 					"column": 5,
-					"endLine": 798,
+					"endLine": 863,
 					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9042,9 +9256,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 818,
+					"line": 883,
 					"column": 5,
-					"endLine": 818,
+					"endLine": 883,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9058,9 +9272,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 820,
+					"line": 885,
 					"column": 5,
-					"endLine": 820,
+					"endLine": 885,
 					"endColumn": 92,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
