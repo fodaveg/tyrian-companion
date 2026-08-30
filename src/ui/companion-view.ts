@@ -42,7 +42,7 @@ import {
 } from './companion-status-model';
 import { renderLootPresentationView } from './loot-presentation-view';
 import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
-import type { ProductActionController } from './product-action-controller';
+import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
@@ -62,7 +62,7 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void>;
 	openPendingSessionStart(intent: PendingProposalIntent): void;
 	stopPendingSession(intent: PendingProposalIntent): Promise<void>;
-	armAssistedDetection(): Promise<void>;
+	armAssistedDetection(): Promise<ProductActionOutcome>;
 	disarmAssistedDetection(): void;
 	dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void>;
 	getSessionStartFailure(): SessionStartFailure | null;

@@ -159,6 +159,7 @@ import {
 import {
 	InventoryVaultSyncController,
 	type InventoryVaultSyncDisabledReason,
+	type InventoryVaultSyncViewState,
 } from './ui/inventory-vault-sync-controller';
 import {
 	InventoryVaultOneClickSyncController,
@@ -1411,27 +1412,28 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.performStopManualSession(intent);
 	}
 
-	async armAssistedDetection(): Promise<void> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<void> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
-		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-		if (runtimeLease === null) return;
-		try {
-		const connected = this.connection.getState().status;
-		const session = this.sessions.getState();
-		const recovery = this.sessions.getRecoveryState();
-		if (
-			this.settings.detectionMode !== 'assisted' ||
-			(connected !== 'connected' && connected !== 'warning') ||
-			(session.status !== 'idle' && session.status !== 'active') ||
-			(session.status === 'idle' && recovery.status !== 'none')
-		) return;
-		this.renderViews();
-			await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
-		this.renderViews();
-		} finally { runtimeLease.release(); }
+	async armAssistedDetection(): Promise<ProductActionOutcome> {
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ProductActionOutcome> => {
+			if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
+			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
+			if (runtimeLease === null) return 'unavailable';
+			try {
+				const connected = this.connection.getState().status;
+				const session = this.sessions.getState();
+				const recovery = this.sessions.getRecoveryState();
+				if (
+					this.settings.detectionMode !== 'assisted' ||
+					(connected !== 'connected' && connected !== 'warning') ||
+					(session.status !== 'idle' && session.status !== 'active') ||
+					(session.status === 'idle' && recovery.status !== 'none')
+				) return 'unavailable';
+				this.renderViews();
+				const state = await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
+				this.renderViews();
+				return detectionActionOutcome(state, 'arm');
+			} finally { runtimeLease.release(); }
 		};
-		await (this.localDebugActions?.run({ component: 'detection', action: 'detection_arm' }, perform) ?? perform());
+		return await (this.localDebugActions?.run({ component: 'detection', action: 'detection_arm' }, perform) ?? perform());
 	}
 
 	disarmAssistedDetection(): void {
@@ -2197,14 +2199,26 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (next === null) return 'unavailable';
 			return await this.reviewPendingProposalOutcome(proposalIntent(next));
 		}
-		if (id === 'arm-assisted-detection') await this.armAssistedDetection();
-		else if (id === 'disarm-assisted-detection') this.disarmAssistedDetection();
+		if (id === 'arm-assisted-detection') return await this.armAssistedDetection();
+		if (id === 'disarm-assisted-detection') this.disarmAssistedDetection();
 		else if (id === 'refresh-inventory-advisor') await this.refreshInventoryAdvisor();
 		else if (id === 'preview-inventory-vault-sync') await this.previewInventoryVaultSync(true);
 		else if (id === 'apply-inventory-vault-sync') await this.applyInventoryVaultSync();
 		else if (id === 'preview-wallet-vault-sync') await this.previewWalletVaultSync();
 		else await this.applyWalletVaultSync();
-		return 'completed';
+		return this.productActionOutcome(id);
+	}
+
+	/** Maps handled controller states back into the shared action feedback contract. */
+	private productActionOutcome(
+		id: Exclude<ProductActionId, SessionCommandId | 'open-companion' | 'open-inventory-advisor' | 'review-pending-farming-proposal' | 'arm-assisted-detection'>,
+	): ProductActionOutcome {
+		if (id === 'disarm-assisted-detection') return detectionActionOutcome(this.getAssistedDetectionState(), 'disarm');
+		if (id === 'refresh-inventory-advisor') return advisorActionOutcome(this.getInventoryAdvisorViewModel());
+		if (id === 'preview-inventory-vault-sync') return vaultSyncActionOutcome(this.inventoryVaultSync.current(), 'preview');
+		if (id === 'apply-inventory-vault-sync') return vaultSyncActionOutcome(this.inventoryVaultSync.current(), 'apply');
+		if (id === 'preview-wallet-vault-sync') return vaultSyncActionOutcome(this.walletVaultSync.current(), 'preview');
+		return vaultSyncActionOutcome(this.walletVaultSync.current(), 'apply');
 	}
 
 	private openSessionCommandMenu(event: MouseEvent): void {
@@ -2649,6 +2663,32 @@ function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'una
 		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
 	};
 	return codes[status];
+}
+
+function detectionActionOutcome(
+	state: AssistedDetectionState,
+	request: 'arm' | 'disarm',
+): ProductActionOutcome {
+	if (state.status === 'error') return 'failed';
+	if (request === 'disarm') return state.status === 'disarmed' ? 'completed' : 'unavailable';
+	return state.status === 'armed' || state.status === 'start_proposed' || state.status === 'stop_proposed'
+		? 'completed' : 'unavailable';
+}
+
+function advisorActionOutcome(model: InventoryAdvisorViewModel): ProductActionOutcome {
+	if (model.status === 'blocked' && model.blockedReason === 'credential_unavailable') return 'unavailable';
+	if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) return 'failed';
+	return model.status === 'loading' ? 'unavailable' : 'completed';
+}
+
+function vaultSyncActionOutcome(
+	state: InventoryVaultSyncViewState | WalletVaultSyncViewState,
+	request: 'preview' | 'apply',
+): ProductActionOutcome {
+	if (state.status === 'disabled') return 'unavailable';
+	if (state.status === 'conflict' || state.status === 'error') return 'failed';
+	if (request === 'preview') return state.status === 'preview' ? 'completed' : 'unavailable';
+	return state.status === 'success' ? 'completed' : 'unavailable';
 }
 
 function sessionHistoryView(result: SessionHistoryExportResult): {

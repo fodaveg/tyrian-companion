@@ -349,6 +349,131 @@ describe('product navigation diagnostics', () => {
 		await expect(review.call(harness, intent)).resolves.toBe('failed');
 		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
+
+	it('does not announce success when an advisor refresh discovers the selected credential is absent', async () => {
+		const refreshInventoryAdvisor = vi.fn(async () => undefined);
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+			refreshInventoryAdvisor(): Promise<void>;
+			getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
+		}, {
+			refreshInventoryAdvisor,
+			getInventoryAdvisorViewModel: () => ({
+				status: 'blocked' as const,
+				blockedReason: 'credential_unavailable' as const,
+				title: 'Inventory advisor', detail: 'Blocked.', groups: [],
+			}),
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof plugin,
+				id: 'refresh-inventory-advisor',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		await expect(execute.call(plugin, 'refresh-inventory-advisor')).resolves.toBe('unavailable');
+		expect(refreshInventoryAdvisor).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{
+			id: 'preview-inventory-vault-sync' as const,
+			state: { status: 'error' as const, reason: 'capture_unavailable' as const },
+		},
+		{
+			id: 'apply-inventory-vault-sync' as const,
+			state: { status: 'error' as const, reason: 'write_unavailable' as const },
+		},
+	])('maps a handled inventory $id error to failed', async ({ id, state }) => {
+		const previewInventoryVaultSync = vi.fn(async () => undefined);
+		const applyInventoryVaultSync = vi.fn(async () => undefined);
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+			previewInventoryVaultSync(openView?: boolean): Promise<void>;
+			applyInventoryVaultSync(): Promise<void>;
+			inventoryVaultSync: { current(): typeof state };
+		}, {
+			previewInventoryVaultSync,
+			applyInventoryVaultSync,
+			inventoryVaultSync: { current: () => state },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof plugin,
+				actionId: 'preview-inventory-vault-sync' | 'apply-inventory-vault-sync',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		await expect(execute.call(plugin, id)).resolves.toBe('failed');
+		expect(id.startsWith('preview-') ? previewInventoryVaultSync : applyInventoryVaultSync).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		{
+			id: 'preview-wallet-vault-sync' as const,
+			state: { status: 'disabled' as const, reason: 'missing_key' as const },
+			expected: 'unavailable' as const,
+		},
+		{
+			id: 'apply-wallet-vault-sync' as const,
+			state: { status: 'conflict' as const, summary: null },
+			expected: 'failed' as const,
+		},
+	])('maps a handled wallet $id terminal state to $expected', async ({ id, state, expected }) => {
+		const previewWalletVaultSync = vi.fn(async () => undefined);
+		const applyWalletVaultSync = vi.fn(async () => undefined);
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+			previewWalletVaultSync(): Promise<void>;
+			applyWalletVaultSync(): Promise<void>;
+			walletVaultSync: { current(): typeof state };
+		}, {
+			previewWalletVaultSync,
+			applyWalletVaultSync,
+			walletVaultSync: { current: () => state },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof plugin,
+				actionId: 'preview-wallet-vault-sync' | 'apply-wallet-vault-sync',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		await expect(execute.call(plugin, id)).resolves.toBe(expected);
+		expect(id.startsWith('preview-') ? previewWalletVaultSync : applyWalletVaultSync).toHaveBeenCalledOnce();
+	});
+
+	it('maps an arm attempt without the runtime mutation lease to unavailable', async () => {
+		const acquireRuntimeMutation = vi.fn(() => null);
+		const armRuntime = vi.fn(async () => undefined);
+		const armHarness = {
+			runtimeReady: true,
+			localDebugActions: null,
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation },
+			notifyRuntimeStarting: vi.fn(),
+			assistedDetection: { arm: armRuntime },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const arm = (TyrianCompanionPlugin.prototype as unknown as {
+			armAssistedDetection(this: typeof armHarness): Promise<'unavailable'>;
+		}).armAssistedDetection;
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as {
+			armAssistedDetection(): Promise<'unavailable'>;
+		}, {
+			armAssistedDetection: () => arm.call(armHarness),
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const execute = (TyrianCompanionPlugin.prototype as unknown as {
+			executeProductAction(
+				this: typeof plugin,
+				id: 'arm-assisted-detection',
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).executeProductAction;
+
+		await expect(execute.call(plugin, 'arm-assisted-detection')).resolves.toBe('unavailable');
+		expect(acquireRuntimeMutation).toHaveBeenCalledOnce();
+		expect(armRuntime).not.toHaveBeenCalled();
+	});
 });
 
 describe('session review Trading Post evidence', () => {
