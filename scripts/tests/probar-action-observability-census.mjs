@@ -98,6 +98,7 @@ try {
 	const redCli = runCli(testRoot);
 	assert(redCli.status === 1, 'CLI behaved as an always-green scanner');
 	assert(redCli.stderr.includes('callback_registration'), 'CLI omitted the content-free causal boundary kind');
+	assert(redCli.stderr.includes('(removed)') && redCli.stderr.includes('(added)'), 'moved boundary locator bypassed explicit re-review');
 	assert(!redCli.stderr.includes('diagnostics.record'), 'CLI exposed semantic or source content');
 
 	process.stdout.write('action observability census suite: PASS\n');
