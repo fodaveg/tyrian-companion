@@ -1,5 +1,22 @@
 # Changelog
 
+## Release beta 0.1.17 - Hotfix de inicialización
+
+- Publicada el 2026-08-30 la
+  [GitHub Release `0.1.17`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.17) desde el
+  tag y commit `214362e2e7bc037befdaf81ac7a201ce9aaab37c`.
+- Corregido el bloqueo del runtime diferido al restaurar una sesión completada persistida: la
+  dependencia usada para reconstruir su presentación se compone ahora antes de refrescarla.
+- Añadido un guardarraíl ejecutable que persiste una sesión terminal y exige que la inicialización
+  alcance el estado listo. El caso reproducía el fallo en rojo antes del fix y queda verde junto al
+  control sin sesión persistida; los datos del log local permanecen redactados.
+- Los runs de CI de `main` `33311829149` y del tag `33311981029` terminaron en verde.
+- La release contiene exactamente `manifest.json`, `main.js`, `styles.css`,
+  `tyrian-companion-0.1.17.zip` y `tyrian-companion-0.1.17.zip.sha256`. El ZIP reproducible tiene
+  SHA-256 `dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`.
+- El canal BRAT está publicado. La actualización efectiva y la restauración de una sesión completada
+  dentro de Obsidian siguen pendientes de QA humana.
+
 ## Release beta 0.1.16 - H12 y canal BRAT
 
 - Publicada el 2026-08-30 la

@@ -2,14 +2,21 @@
 
 ## Vertical activa
 
-**Release beta `0.1.16` publicada el 2026-08-30; H12 entregado al canal BRAT.** El tag y commit
-`18312cd00888851ca382fe4f185bb1d53d4f5cc2` están disponibles en la
-[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.16). Los runs
-de CI de `main` [`33305605914`](https://github.com/fodaveg/tyrian-companion/actions/runs/33305605914)
-y del tag [`33305740475`](https://github.com/fodaveg/tyrian-companion/actions/runs/33305740475)
+**Release beta `0.1.17` publicada el 2026-08-30; hotfix de arranque entregado al canal BRAT.** El tag
+y commit `214362e2e7bc037befdaf81ac7a201ce9aaab37c` están disponibles en la
+[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.17). Los runs
+de CI de `main` [`33311829149`](https://github.com/fodaveg/tyrian-companion/actions/runs/33311829149)
+y del tag [`33311981029`](https://github.com/fodaveg/tyrian-companion/actions/runs/33311981029)
 terminaron en verde. La release publica los cinco assets exactos `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.16.zip` y `tyrian-companion-0.1.16.zip.sha256`; el ZIP tiene
-SHA-256 `b0c2efc7861b01ebb2d5f6d280095e21d6a92952be56a3fbf72defd8ccdf293c`.
+`styles.css`, `tyrian-companion-0.1.17.zip` y `tyrian-companion-0.1.17.zip.sha256`; el ZIP tiene
+SHA-256 `dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`.
+
+H12.3 corrige el bloqueo de inicialización observado al restaurar una sesión completada persistida.
+La presentación de esa sesión se reconstruía antes de componer una dependencia que necesitaba, por
+lo que el runtime diferido no alcanzaba el estado listo. El hotfix adelanta esa composición y añade
+un test ejecutable que persiste una sesión terminal, reproduce el fallo en rojo sobre el orden
+anterior y verifica ahora que el runtime termina listo; el control sin sesión persistida permanece
+verde. La evidencia local detallada no sale del entorno de soporte.
 
 H12.1 incorpora en la release el panel visible con paridad 16/16 frente a la paleta. H12.2 deja
 censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confirmaciones; sus
@@ -297,7 +304,7 @@ verificado que el contrato sigue mordiendo con una copia no revisada real. `tsco
 pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
 al build vía esbuild.
 
-**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.16` mediante GitHub Release y BRAT.** El
+**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.17` mediante GitHub Release y BRAT.** El
 release package parte de un build nuevo, contiene únicamente `manifest.json`, `main.js` y
 `styles.css`, valida versiones y tag, escanea los bytes staged y genera ZIP reproducible + SHA-256
 con prueba causal. CI conserva permisos de solo lectura, recrea un staging enumerado y sube
@@ -307,7 +314,7 @@ estado antes de operar, escribe solo los tres ficheros gestionados y revierte fa
 autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
 en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
 y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
-ajeno. El tag y la GitHub Release `0.1.16` publican los tres assets individuales requeridos por BRAT;
+ajeno. El tag y la GitHub Release `0.1.17` publican los tres assets individuales requeridos por BRAT;
 la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
 soportadas.
 
@@ -324,7 +331,7 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio es público desde el 2026-08-29 y la release actual `0.1.16` desde el 2026-08-30.
+El repositorio es público desde el 2026-08-29 y la release actual `0.1.17` desde el 2026-08-30.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -591,7 +598,7 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
    (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
    completo de hasta 90 días, pero solo la confirmación humana modifica la revisión.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-10. Instalar/actualizar `0.1.16` desde BRAT en una bóveda desechable por plataforma, verificar que los
+10. Instalar/actualizar `0.1.17` desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.

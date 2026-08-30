@@ -3,15 +3,19 @@
 ## Estado actual
 
 La beta pública actual es
-[`0.1.16`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.16), tag y commit
-`18312cd00888851ca382fe4f185bb1d53d4f5cc2`. Los runs de CI de `main` `33305605914` y del tag
-`33305740475` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.16.zip` y `tyrian-companion-0.1.16.zip.sha256`, por lo que el
+[`0.1.17`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.17), tag y commit
+`214362e2e7bc037befdaf81ac7a201ce9aaab37c`. Los runs de CI de `main` `33311829149` y del tag
+`33311981029` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
+`styles.css`, `tyrian-companion-0.1.17.zip` y `tyrian-companion-0.1.17.zip.sha256`, por lo que el
 canal BRAT está publicado. El ZIP tiene SHA-256
-`b0c2efc7861b01ebb2d5f6d280095e21d6a92952be56a3fbf72defd8ccdf293c`. La instalación, primera
+`dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`. La instalación, primera
 carga y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
 siguen pendientes de QA humana. Una release publicada o un artifact verde de CI no demuestran esos
 flujos.
+
+`0.1.17` corrige el bloqueo de inicialización al restaurar una sesión completada persistida. El
+guardarraíl de runtime reproduce ese estado terminal y exige alcanzar el estado listo; los detalles
+del log local no forman parte de la evidencia publicada.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de
@@ -57,7 +61,7 @@ Referencias del contrato:
    ```sh
    node install-beta.mjs install \
      --vault "/ruta/a/una-bóveda-desechable" \
-     --archive "tyrian-companion-0.1.16.zip" \
+     --archive "tyrian-companion-0.1.17.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -103,13 +107,13 @@ una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Canal BRAT publicado
 
-La release pública `0.1.16` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
+La release pública `0.1.17` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
 adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
 usarse para instalación manual y su SHA-256 es
-`b0c2efc7861b01ebb2d5f6d280095e21d6a92952be56a3fbf72defd8ccdf293c`; no sustituye los tres assets
+`dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`; no sustituye los tres assets
 que descarga BRAT.
 
-Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.16`. Antes de
+Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.17`. Antes de
 dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
 sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
 una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT
