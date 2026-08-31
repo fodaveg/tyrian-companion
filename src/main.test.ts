@@ -1059,7 +1059,7 @@ describe('local diagnostics composition', () => {
 			pluginVersion: '0.1.14', level: 'error', actionId: 'action-1', correlationId: 'flow-1',
 			component: 'session', action: 'session_projection', phase: 'failure', code: 'precondition_failed',
 			state: 'Astra Uno', message: 'Astra Uno at /home/david/private-vault',
-			errorName: 'TypeError', stack: 'TypeError: Astra Uno at /home/david/private-vault/main.js:1:2',
+			errorName: 'AstraError', stack: 'TypeError: Astra Uno at /home/david/private-vault/main.js:1:2',
 			details: { reason: 'Astra Uno' },
 		});
 		const localDebug = {
@@ -1091,7 +1091,7 @@ describe('local diagnostics composition', () => {
 		const exported = writes.get(path!);
 		expect(exported).toContain('\\"correlationId\\":\\"flow-1\\"');
 		expect(exported).toContain('\\"code\\":\\"precondition_failed\\"');
-		expect(exported).toContain('\\"errorName\\":\\"TypeError\\"');
+		expect(exported).not.toContain('errorName');
 		expect(exported).not.toContain('private-secret-name');
 		expect(exported).not.toContain('Astra');
 		expect(exported).not.toContain('private-vault');

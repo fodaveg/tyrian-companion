@@ -3083,7 +3083,6 @@ function safeLocalDebugSupportJsonl(value: string): string {
 				correlationId: record.correlationId,
 				...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
 				...(record.attempt === undefined ? {} : { attempt: record.attempt }),
-				...(record.errorName === undefined ? {} : { errorName: record.errorName }),
 			};
 			records.push(JSON.stringify(supportRecord));
 		} catch { /* the core export boundary already reports corrupt retained lines */ }

@@ -175,7 +175,7 @@ version, closed component/action/phase/code fields and bounded safe metadata. A 
 removes credentials, authorization, cookies, bodies, raw URLs, vault paths, account/character identity
 and unreviewed payload fields; local errors retain only sanitized name, message and stack. The explicit
 support package performs a second parse/sanitization and emits only structural fields: it omits free
-message, stack, state and details while preserving component, action, code, error name and correlation.
+message, stack, error name, state and details while preserving component, action, code and correlation.
 Logs are never uploaded or shared automatically.
 
 The static action-observability census inventories production `catch`, `.catch`, detached `void` and

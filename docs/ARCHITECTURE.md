@@ -128,9 +128,9 @@ producto.
 Antes de persistir, `local-debug-sanitizer` reconstruye cada record desde una allowlist positiva por
 componente. Solo conserva niveles, fases, acciones, códigos y metadata escalar/bounded revisados;
 mensajes y stacks locales se acotan y redactan. Copy vuelve a parsear y sanear cada línea. El paquete
-de soporte aplica una proyección todavía más estrecha y omite `message|stack|state|details`: conserva
+de soporte aplica una proyección todavía más estrecha y omite `message|stack|errorName|state|details`: conserva
 solo versión/tiempo/secuencia, nivel, componente, acción, fase, código, ids de correlación, duración,
-intento y nombre saneado del error. Se crea de forma explícita fuera del directorio rotativo y nunca
+intento. Se crea de forma explícita fuera del directorio rotativo y nunca
 contiene clave, nombre de secreto, URL raw, headers, body, payload, identidad ni ruta del vault.
 
 La reconstrucción de la presentación de botín separa lectura del runtime, proyección y publicación.

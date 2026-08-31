@@ -39,7 +39,7 @@ timer/backoff; una recuperación vuelve a scheduled sin duplicar polling ni reab
 H6.25 atribuye el TypeError histórico al único span propietario
 `session_projection/precondition_failed`, distingue lectura `storage_failure` de bug interno de
 proyección y permite que `plugin_load/runtime_initialize` termine bien. El paquete de soporte
-conserva solo campos estructurados y omite `message|stack|state|details`, por lo que el código y la
+conserva solo campos estructurados y omite `message|stack|errorName|state|details`, por lo que el código y la
 correlación siguen diagnosticables sin el texto personal observado. Los commits candidatos son
 `446ae51`, `cf0f7c0`, `7732485` y `463d367`. El gate combinado pasa lint, 167 ficheros y 2.269 tests,
 scanner, 644 fronteras de observabilidad sin pendientes, contratos y build; nada se ha integrado o

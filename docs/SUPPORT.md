@@ -60,8 +60,8 @@ acción explícita.
 Los records locales pasan por una allowlist y saneado central. Mensaje y stack se conservan allí en
 forma acotada porque son útiles en beta, pero se redactan secretos, credenciales, cabeceras, cookies,
 cuerpos raw, queries de URL, rutas e identidades detectables. **Crear paquete de soporte** vuelve a
-parsear y sanear cada record y elimina por completo `message`, `stack`, `state` y `details`; conserva
-solo campos estructurados como componente, acción, fase, código, nombre saneado del error y
+parsear y sanear cada record y elimina por completo `message`, `stack`, `errorName`, `state` y `details`; conserva
+solo campos estructurados como componente, acción, fase, código y
 correlación. Revisa aun así el paquete visualmente antes de adjuntarlo. **Copiar extracto reciente**
 puede conservar texto saneado del log local: úsalo solo para líneas imprescindibles y tras revisión
 manual. No publiques el directorio completo ni confundas el saneado automático con una garantía

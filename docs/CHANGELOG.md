@@ -16,7 +16,7 @@
 - H6.25 separa lectura, proyección y publicación del cache de loot. El TypeError histórico queda en
   un único terminal `session_projection/precondition_failed`; lectura real conserva
   `storage_failure`, otro bug de proyección usa `internal_failure` y `runtime_initialize` continúa
-  con terminal success. El paquete de soporte excluye texto libre, stack, state y details.
+  con terminal success. El paquete de soporte excluye texto libre, stack, errorName, state y details.
 - Commits candidatos: `446ae51` (assets), `cf0f7c0` (polling), `7732485` (atribución) y `463d367`
   (baseline combinada). El gate queda verde con lint, 167 ficheros/2.269 tests, scanner,
   observabilidad (644 fronteras, 0 pendientes), contratos y build. Nada está en `main` ni publicado.
