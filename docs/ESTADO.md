@@ -23,6 +23,25 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
+**Lote H6.26/H12.4 integrado en `codex/parallel-integration`, todavía fuera de `main` y de cualquier
+release.** H6.26 hace alcanzables las acciones curadas del Inventory Advisor sin relajar su cierre
+conservador: cada Refresh usa como máximo dos observaciones bajo la misma operación y credencial,
+solo dos capturas completas con ownership y placement equivalentes producen `stable`, y divergencia,
+relocation o recuperación de un fallo transitorio permanecen limitadas. `429` cede inmediatamente al
+cooldown compartido; no hay tercera pasada ni retry exterior. Una fuente opcional parcial conserva el
+núcleo usable, pero nunca habilita rutas curadas.
+
+H12.4 prioriza Companion como HUD de juego. El panel de 16 acciones se mantiene expandido desde
+1050 px y pasa a un disclosure único cerrado por defecto por debajo; si un resize oculta el control
+en foco, este vuelve al toggle. Companion ordena sesión, detección del saco `#36038`, confirmaciones,
+historial, botín/Halloween y cuenta; la detección muestra última consulta, resultado y próxima en una
+estructura semántica. La CTA primaria se reproyecta con el estado vivo, las propuestas obsoletas no
+se promueven y Halloween se resume salvo alerta no leída o error de store. Los commits candidatos son
+`71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d` y `e449df5`. Los gates focales y las revisiones
+independientes de ambos frentes están verdes; el gate combinado se ejecuta antes del cierre. Siguen
+pendientes la latencia/timeout/`429` con una cuenta grande y la QA visual/teclado en Obsidian real a
+1280/900/600/420/280 px, temas claro/oscuro/tercero y zoom.
+
 **Lote H6.23–H6.25 de fallos live integrado en `codex/parallel-integration`, todavía fuera de
 `main` y de cualquier release.** H6.23 reconcilia la topología observada con manifiesto v2 en la raíz
 anterior y cinco Bases reserializadas en la salida: solo relocation puede adoptar el set completo,
@@ -112,8 +131,9 @@ live de una sesión continua de veinte minutos sigue siendo aceptación manual; 
 declara realizada. El gate combinado del candidato pasa lint, 162 ficheros y 2.178 tests, escáner de
 seguridad, censo de observabilidad, contratos de release/beta/soporte y build.
 
-La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
-inventario de sesión, Halloween y cuenta. El alcance real queda explícito: el polling asistido de
+La dirección conserva el panel visible de H12.1 y H12.4 ya aplica su primera tranche en la rama
+candidata: ordena Companion como sesión, detección, confirmaciones, historial, botín/Halloween y
+cuenta. El alcance real queda explícito: el polling asistido de
 desarrollo cada dos minutos busca la señal de la Bolsa de truco o trato `#36038`; no refresca todo el
 inventario ni detecta farmeo general. El Inventory Advisor se actualiza manualmente y el histórico
 de precio usa su propia cadencia.
@@ -613,7 +633,7 @@ H6.13 (`abea4e1`) corrige la sesión cuando un personaje devuelve `404` entre la
 
 H6.16 sustituye cuatro suites de test de `src/advisor/` y `src/economy/` que leían el texto fuente con expresiones regulares por tests de comportamiento ejecutados, y añade `src/test/module-boundary.ts` y `src/test/ambient-capabilities.ts`. El sabotaje S14 (meter `this.ports.invalidate?.()` dentro de `current()` del controller del Inventory Advisor) probó que la regex conservada no se ponía roja y el test de comportamiento nuevo sí: los guardarraíles léxicos declaraban más cobertura de la que tenían.
 
-H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038. H4.19 extrae el kernel económico H4.10 independiente de sesión, captura en Refresh el saco y sus ocho outcomes líquidos y liga modelo/regla/knowledge/TTL/cobertura/binding/reservas/excepciones. David aprobó regla y economía el 2026-08-16: evidencia completa y fresca puede recomendar manualmente `open|sell|vendor` para 36038 con margen fijo del 10%; evidencia parcial o incoherente sigue en revisión y descarte continúa deshabilitado. Los demás items pueden mostrar la mejor salida líquida manual respaldada sin habilitar uso/abrir/reciclar. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las capas con single-flight/latest-wins. La vista captura en una sola pasada acotada bolsas de personaje+compartido como núcleo, y banco, materiales y delivery como ámbitos opcionales desmarcados por defecto. Cada control muestra cobertura saneada y se deshabilita si su fuente no fue leída; un 403 opcional no bloquea el núcleo y un 401 conserva el fallo global de credencial. Añade icono oficial, progreso indeterminado, un único reintento de pasada parcial y conserva el último resultado solo ante `capture_unavailable`. H5.12 añade el editor plegable local de objetivos y excepciones. H6.11 está cerrado por auditoría automatizada; sigue pendiente la QA visual/manual ES/EN de la ruta activada.
+H4.13 define la frontera pura del Inventory Advisor para `supported_storage_v1`. Liga snapshot, catálogo, precios, objetivos, excepciones de conservación, señales de cuenta y rule pack hasheado; valida particiones exactas de toda la propiedad por posición y devuelve un envelope manual separado del envelope de sesión. No existe acción `destroy`: `discard_candidate` requiere regla curada y permanece revisión irreversible. H4.14 captura la evidencia, H4.15 clasifica y H4.16 aplica la allowlist pura. H4.18 aporta un bundle built-in v2 inmutable y source-backed para 36038. H4.19 extrae el kernel económico H4.10 independiente de sesión, captura en Refresh el saco y sus ocho outcomes líquidos y liga modelo/regla/knowledge/TTL/cobertura/binding/reservas/excepciones. David aprobó regla y economía el 2026-08-16: evidencia completa y fresca puede recomendar manualmente `open|sell|vendor` para 36038 con margen fijo del 10%; evidencia parcial o incoherente sigue en revisión y descarte continúa deshabilitado. Los demás items pueden mostrar la mejor salida líquida manual respaldada sin habilitar uso/abrir/reciclar. H5.11 conecta una vista separada ES/EN: Open no captura; Refresh es el único trigger y compone las capas con single-flight/latest-wins. Desde H6.26 la vista usa como máximo dos observaciones acotadas de bolsas de personaje+compartido como núcleo; solo su equivalencia completa produce `stable`. Banco, materiales y delivery siguen como ámbitos opcionales desmarcados por defecto. Cada control muestra cobertura saneada y se deshabilita si su fuente no fue leída; un 403 opcional no bloquea el núcleo y un 401 conserva el fallo global de credencial. Añade icono oficial, progreso real y conserva el último resultado solo ante `capture_unavailable`. H5.12 añade el editor plegable local de objetivos y excepciones. H6.11 está cerrado por auditoría automatizada; sigue pendiente la QA visual/manual ES/EN de la ruta activada.
 
 El inventario durable está integrado en el Inventory Advisor como flujo manual independiente:
 Preview captura las cuatro fuentes físicas completas y prepara un plan Vault-only; Apply relee y usa

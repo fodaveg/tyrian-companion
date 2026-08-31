@@ -279,8 +279,11 @@ The current `0.1.4` vertical provides:
   vendor). David approved the source-backed rule and economic pack on 2026-08-16: complete fresh evidence
   can now recommend manual `open`, `sell` or `vendor` for 36038 with the fixed 10% margin. Partial or
   incoherent evidence still returns review, and discard remains unavailable.
-	The view captures character bags plus shared inventory independently in one bounded pass per attempt;
-	a transient partial pass can trigger one retry, and each explicit Refresh request has a 30-second timeout.
+	The view captures character bags plus shared inventory with at most two observations per explicit
+	Refresh. A complete first observation is checked once more under the same pinned operation and is
+	stable only when ownership and placement agree. A transient `206`/timeout/network/`5xx` may consume
+	the second observation, but recovery remains unstable; `429` stops immediately so the shared
+	cooldown owns the retry. Each private request has a 30-second timeout and no third or external retry.
 	Bank, materials and Trading Post delivery are captured as optional stores and remain unchecked by
 	default. Each control reports whether its source was read, restricted, missing permission, partial or
 	unavailable; a source-specific 403 degrades only that store, while a 401 still rejects the pinned

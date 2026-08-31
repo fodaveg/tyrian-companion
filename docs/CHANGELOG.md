@@ -1,5 +1,26 @@
 # Changelog
 
+## Candidato sin publicar - H6.26 y H12.4
+
+- H6.26 limita cada Refresh del Inventory Advisor a dos observaciones dentro de la misma operación y
+  credencial. Solo dos capturas completas con ownership y placement equivalentes producen `stable`;
+  relocation, divergencia o recuperación transitoria siguen limitadas y bloquean rutas curadas. Un
+  primer `429` termina sin segunda pasada para que el cooldown compartido gobierne el reintento.
+- Banco y materiales siguen siendo fuentes opcionales: su parcialidad se conserva sin descartar un
+  núcleo personaje+compartido completo. El progreso cuenta lecturas reales y no inventa un total
+  estable cuando el roster cambia entre observaciones.
+- H12.4 convierte Companion en un HUD priorizado. Las 16 acciones se pliegan bajo un disclosure único
+  por debajo de 1050 px, conservan feedback y devuelven el foco al toggle si un resize oculta la acción
+  enfocada. La página ordena sesión, detección del saco `#36038`, confirmaciones, historial,
+  botín/Halloween y cuenta.
+- La detección presenta última consulta, resultado y próxima como datos semánticos. La única CTA
+  primaria se recalcula con el estado vivo y no promueve propuestas obsoletas; Halloween permanece
+  compacto salvo alerta no leída o error de store.
+- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d` y `e449df5`. Los gates
+  focales y las revisiones independientes están verdes; el gate combinado se ejecuta antes del cierre.
+  La QA con cuenta grande y la QA visual/teclado en Obsidian real siguen pendientes. Nada está en
+  `main` ni publicado.
+
 ## Candidato sin publicar - H6.23, H6.24 y H6.25
 
 - H6.23 corrige la divergencia live entre manifiesto v2 en la raíz anterior y cinco Bases ya
@@ -691,8 +712,8 @@
   secretos, identidad, personajes, objetos, URLs y cuerpos de respuesta. Las fuentes no disponibles
   conservan únicamente clase de transporte, código HTTP y espera acotada para distinguir 429/5xx,
   timeout y red.
-- El Advisor deja de intentar estabilizar el inventario mediante tres lecturas completas. Cada intento
-  realiza una sola pasada acotada y una pasada completamente cubierta se conserva como evidencia
+- Antes de H6.26, el Advisor dejó de intentar estabilizar el inventario mediante tres lecturas completas.
+  Cada intento realizaba una sola pasada acotada y una pasada completamente cubierta se conservaba como evidencia
   `unstable/limited`: puede mostrar rutas manuales líquidas, pero no autoriza uso, apertura, reciclaje
   ni acciones irreversibles. Solo una pasada parcial transitoria provoca un segundo intento completo.
 - Refresh usa un transporte separado con timeout de 30 segundos por petición; las capturas completas de
