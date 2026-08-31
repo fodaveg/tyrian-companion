@@ -32,6 +32,8 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/platform/mumble-v2-presence-policy.ts',
 	'src/platform/mumble-v2-process-adapter.ts',
 	'src/sessions/mumble-v2-shadow-proposal.ts',
+	// Explicit local Vault export only; the reviewed module has no outbound or credential capability.
+	'src/sessions/pilot-metrics-export.ts',
 	// Pure UI projection. The filename contains `sync`, but the reviewed module has no outbound or credential capability.
 	'src/ui/inventory-sync-panel-view.ts',
 	'src/ui/inventory-vault-sync-controller.ts',

@@ -34,8 +34,14 @@ describe('pending confirmation background boundary', () => {
 
 	it('keeps ordinary manual workflows independent from pending queue receipts', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		const stop = source.slice(source.indexOf('private async performStopManualSession'), source.indexOf('openManualSessionStart(): void'));
-		const start = source.slice(source.indexOf('private async startManualSession'), source.indexOf('async updateSettings'));
+		const stop = source.slice(
+			source.indexOf('private async performStopManualSession'),
+			source.indexOf('\n\topenManualSessionStart('),
+		);
+		const start = source.slice(
+			source.indexOf('private async startManualSession'),
+			source.indexOf('\n\tasync updateSettings('),
+		);
 		for (const workflow of [stop, start]) {
 			expect(workflow).toContain('const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null');
 			expect(workflow).toContain('if (intent && pendingClaim)');
