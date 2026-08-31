@@ -78,6 +78,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private categoryFocusAfterRender: SettingsCategory | null = null;
 	private readonly saveStates = new Map<number, SettingSaveState>();
 	private readonly saveRevisions = new Map<number, number>();
+	private readonly settingsWrites = new SettingsWriteQueue();
 
 	constructor(
 		app: App,
@@ -93,7 +94,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.halloweenPersonalValuation = new HalloweenPersonalValuationSettings({
 			value: () => this.plugin.settings.halloweenPersonalValuation,
 			save: async (halloweenPersonalValuation) => {
-				const result = await this.plugin.updateSettings({ halloweenPersonalValuation });
+				const result = await this.settingsWrites.enqueue(
+					() => this.plugin.updateSettings({ halloweenPersonalValuation }),
+				);
 				if (result.status !== 'saved') throw new Error('Settings runtime is not ready.');
 				return result.inventoryAdvisor === 'reclassified' ? 'reclassified' : 'next_refresh';
 			},
@@ -164,7 +167,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		return this.definitions().map((definition) => ({
 			name: definition.name,
 			desc: definition.desc,
-			render: (setting) => definition.render(setting, (settings) => this.plugin.updateSettings(settings)),
+			render: (setting) => definition.render(setting,
+				(settings) => this.settingsWrites.enqueue(() => this.plugin.updateSettings(settings))),
 		}));
 	}
 
@@ -221,7 +225,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		const revision = (this.saveRevisions.get(index) ?? 0) + 1;
 		this.saveRevisions.set(index, revision);
 		const result = await runSettingWrite(
-			() => this.plugin.updateSettings(settings),
+			() => this.settingsWrites.enqueue(() => this.plugin.updateSettings(settings)),
 			(state) => {
 				if (this.saveRevisions.get(index) !== revision) return;
 				this.saveStates.set(index, state);
@@ -962,6 +966,17 @@ export async function runSettingWrite(
 	} catch {
 		announce('error');
 		return null;
+	}
+}
+
+/** Serializes visible Settings writes so each merge observes the last durable value. */
+export class SettingsWriteQueue {
+	private tail: Promise<void> = Promise.resolve();
+
+	enqueue<T>(write: () => Promise<T>): Promise<T> {
+		const result = this.tail.then(write);
+		this.tail = result.then(() => undefined, () => undefined);
+		return result;
 	}
 }
 

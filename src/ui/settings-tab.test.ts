@@ -20,6 +20,7 @@ import {
 	runConfirmedLocalDebugClear,
 	runConfirmedLocalDebugExport,
 	runSettingWrite,
+	SettingsWriteQueue,
 } from './settings-tab';
 
 describe('Settings i18n projection', () => {
@@ -213,6 +214,28 @@ describe('settings information architecture', () => {
 			(state) => failed.push(state),
 		)).resolves.toBeNull();
 		expect(failed).toEqual(['saving', 'error']);
+	});
+
+	it('serializes setting writes and keeps the queue live after a failed write', async () => {
+		const queue = new SettingsWriteQueue();
+		const order: string[] = [];
+		let finishFirst!: (value: string) => void;
+		const first = queue.enqueue(() => new Promise<string>((resolve) => {
+			order.push('first:start');
+			finishFirst = resolve;
+		}));
+		const second = queue.enqueue(async () => {
+			order.push('second:start');
+			return 'second';
+		});
+		await vi.waitFor(() => expect(order).toEqual(['first:start']));
+		finishFirst('first');
+		await expect(first).resolves.toBe('first');
+		await expect(second).resolves.toBe('second');
+		expect(order).toEqual(['first:start', 'second:start']);
+
+		await expect(queue.enqueue(async () => { throw new Error('save failed'); })).rejects.toThrow('save failed');
+		await expect(queue.enqueue(async () => 'after failure')).resolves.toBe('after failure');
 	});
 });
 

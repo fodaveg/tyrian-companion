@@ -539,6 +539,7 @@ function mountInventoryAdvisorView(
 			scopedToCharacter ? filters.character ?? null : null,
 			(nextAction) => {
 				action.value = filters.action === nextAction ? 'all' : nextAction;
+				advancedFilters.open = true;
 				updateFilters();
 				action.focus();
 			},

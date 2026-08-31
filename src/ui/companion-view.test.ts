@@ -49,9 +49,9 @@ describe('Companion local diagnostics warning', () => {
 		render.call(harness, container);
 		expect(role).toBe('alert');
 		expect(texts).toEqual([
-			'Local diagnostics are degraded',
+			'Diagnostic logs are degraded',
 			'Some entries could not be written. Plugin actions continue to work.',
-			'Local diagnostics',
+			'Diagnostic logs',
 		]);
 		if (click === null) throw new Error('Expected a Settings action.');
 		(click as () => void)();

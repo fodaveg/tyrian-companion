@@ -640,7 +640,9 @@ describe('Inventory Advisor view', () => {
 		const sell = only(summaryButtons.filter((button) => walk(button).some((element) => element.textContent === 'Ver 1 tipo: Vender ya')));
 		sell.dispatch('click');
 		const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
+		const advanced = only(byClass(mount.elements(), 'tyrian-inventory-advisor__advanced-filters'));
 		expect(action.value).toBe('sell');
+		expect(advanced.open).toBe(true);
 		expect(mount.document.activeElement).toBe(action);
 		expect(find(mount.elements(), 'article')).toHaveLength(1);
 		const pressed = only(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action')
@@ -1233,6 +1235,7 @@ class FakeElement {
 	value = '';
 	placeholder = '';
 	disabled = false;
+	open = false;
 	required = false;
 	selected = false;
 	checked = false;
