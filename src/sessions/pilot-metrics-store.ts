@@ -274,10 +274,18 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			const transaction = database.transaction([
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
 			const observations = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
-			const count = await requestValue(observations.count());
+			const [count, storedRevision] = await Promise.all([
+				requestValue(observations.count()),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
+			const nextRevision = nextStoredSampleRevision(storedRevision);
+			if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			observations.clear();
-			transaction.objectStore(PILOT_METRICS_PROFILE_STORE).clear();
+			profiles.delete('active');
+			// A generation counter carries no profile or evidence and prevents ABA after opt-in is restored.
+			profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).clear();
 			await transactionDone(transaction);
 			return { status: 'ok', value: count };

@@ -93,17 +93,44 @@ describe('IndexedDbPilotMetricsStore', () => {
 	it('deletes profile, verification and observations atomically when opt-in is withdrawn', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('disable'));
 		await store.saveProfile(ENV);
+		await store.ensureObservation(await presented('disable-a'));
 		await store.saveVerification({
 			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z', environment: ENV,
-			sampleRevision: 1,
+			sampleRevision: 2,
 		});
-		await store.ensureObservation(await presented('disable-a'));
 		await expect(store.disable()).resolves.toEqual({ status: 'ok', value: 1 });
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unconfigured' });
 		await store.saveProfile(ENV);
 		await expect(store.load()).resolves.toMatchObject({
 			status: 'ok', value: { verification: null, observations: [] },
 		});
+	});
+
+	it('never reuses a pre-disable sample revision after the same profile is enabled again', async () => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('disable-aba'));
+		await store.saveProfile(ENV);
+		await store.ensureObservation(await presented('before-disable'));
+		const beforeDisable = await store.load();
+		if (beforeDisable.status !== 'ok') throw new Error('Expected configured sample.');
+		const capturedVerification = {
+			version: 1 as const, silentLosses: 'none_observed' as const,
+			reviewedAt: '2026-08-20T10:03:00.000Z', environment: ENV,
+			sampleRevision: beforeDisable.value.sampleRevision,
+		};
+		await expect(store.saveVerification(capturedVerification)).resolves.toMatchObject({ status: 'ok' });
+
+		await store.disable();
+		await store.saveProfile(ENV);
+		await store.ensureObservation(await presented('after-enable'));
+		await expect(store.saveVerification(capturedVerification)).resolves.toEqual({ status: 'stale' });
+		const reenabled = await store.load();
+		if (reenabled.status !== 'ok') throw new Error('Expected re-enabled sample.');
+		expect(reenabled.value.sampleRevision).toBeGreaterThan(beforeDisable.value.sampleRevision);
+		expect(reenabled.value.verification).toBeNull();
+		expect(reenabled.value.observations).toMatchObject([{ proposalRef: await pilotProposalRef('after-enable') }]);
+		expect(reenabled.value.observations).not.toContainEqual(
+			expect.objectContaining({ proposalRef: await pilotProposalRef('before-disable') }),
+		);
 	});
 
 	it('invalidates a sample review atomically on new evidence, a terminal update, or a profile change', async () => {
