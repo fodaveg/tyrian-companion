@@ -68,4 +68,18 @@ describe('pilot metrics architecture', () => {
 			expect(TRANSLATIONS[locale]['settings.pilot.disable.desc']).toMatch(/no se borran|not deleted/iu);
 		}
 	});
+
+	it('closes every product invalidation of a live assisted proposal without changing successful workflow closure', () => {
+		const main = readFileSync('src/main.ts', 'utf8');
+		const disarm = main.slice(main.indexOf('disarmAssistedDetection(): void'), main.indexOf('recordAssistedProposalPresented(): void'));
+		expect(disarm).toContain("invalidateAndDisarmAssistedDetection('user')");
+		const settings = main.slice(main.indexOf('async updateSettings('), main.indexOf('\n\tprivate async loadSettings('));
+		expect(settings).toContain("invalidateAndDisarmAssistedDetection('mode_off')");
+		expect(settings).toContain("invalidateAndDisarmAssistedDetection('connection_changed')");
+		const shutdown = main.slice(main.indexOf('private async shutdownRuntime()'), main.indexOf('getConnectionState():'));
+		expect(shutdown).toContain('const pilotProposalClosure = this.excludeLiveAssistedProposal()');
+		const stopWorkflow = main.slice(main.indexOf('private async performStopManualSession'), main.indexOf('\n\topenManualSessionStart('));
+		expect(stopWorkflow).toContain("this.assistedDetection.disarm('session_stopped')");
+		expect(stopWorkflow).not.toContain("invalidateAndDisarmAssistedDetection('session_stopped')");
+	});
 });

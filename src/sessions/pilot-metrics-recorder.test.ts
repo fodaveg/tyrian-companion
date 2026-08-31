@@ -127,6 +127,27 @@ describe('PilotMetricsRecorder', () => {
 		});
 	});
 
+	it('serializes a materialized presentation before an immediately queued invalidation', async () => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('proposal-disarm-race'));
+		const recorder = new PilotMetricsRecorder(store, 10_000, () => NOW);
+		await recorder.configure(profile());
+		const gate = deferred();
+		const ensure = store.ensureObservation.bind(store);
+		vi.spyOn(store, 'ensureObservation').mockImplementation(async (observation) => { await gate.promise; return await ensure(observation); });
+		const finish = vi.spyOn(store, 'finishProposal');
+		const presented = recorder.proposalPresented(presentation('proposal-disarm-race'));
+		const invalidated = recorder.proposalExcluded(
+			'proposal-disarm-race', 'invalidated', '2026-08-20T10:02:00.000Z',
+		);
+		await Promise.resolve();
+		expect(finish).not.toHaveBeenCalled();
+		gate.resolve();
+		await expect(Promise.all([presented, invalidated])).resolves.toEqual([true, true]);
+		expect((await recorder.inspect())?.observations[0]).toMatchObject({
+			kind: 'proposal', terminal: { status: 'excluded', exclusionReason: 'invalidated' },
+		});
+	});
+
 	it('serializes recovery presentation before a terminal invoked without awaiting it', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('recovery-race'));
 		const recorder = new PilotMetricsRecorder(store, 10_000, () => NOW);

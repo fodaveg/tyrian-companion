@@ -858,6 +858,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		const pilotProposalClosure = this.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
@@ -873,7 +874,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.clearModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
-		this.pilotMetrics?.dispose();
+		if (this.pilotMetrics) {
+			if (pilotProposalClosure) void pilotProposalClosure.finally(() => this.pilotMetrics?.dispose());
+			else this.pilotMetrics.dispose();
+		}
 		this.pendingClaimRenewals?.dispose();
 		this.pendingProposals?.dispose();
 		this.sessionHistory?.dispose();
@@ -1574,7 +1578,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const perform = (): void => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		this.runRuntimeMutation(() => {
-			this.assistedDetection.disarm();
+			this.invalidateAndDisarmAssistedDetection('user');
 			this.renderViews();
 		});
 		};
@@ -1582,6 +1586,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'detection', action: 'detection_disarm' }, perform,
 		);
 		else perform();
+	}
+
+	/** Starts the optional terminal write before invalidating product state, but never waits for it. */
+	private invalidateAndDisarmAssistedDetection(reason: 'user' | 'mode_off' | 'connection_changed'): void {
+		void this.excludeLiveAssistedProposal();
+		this.assistedDetection.disarm(reason);
+	}
+
+	private excludeLiveAssistedProposal(): Promise<boolean> | null {
+		const detection = this.assistedDetection?.getState();
+		if ((detection?.status !== 'start_proposed' && detection?.status !== 'stop_proposed') || !this.pilotMetrics) {
+			return null;
+		}
+		try {
+			return this.pilotMetrics.proposalExcluded(detection.proposal.proposalId, 'invalidated').catch(() => false);
+		} catch {
+			return Promise.resolve(false);
+		}
 	}
 
 	recordAssistedProposalPresented(): void {
@@ -2201,14 +2223,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.settingTab.refreshForLocaleChange();
 		}
 		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
-			this.runRuntimeMutation(() => this.assistedDetection.disarm('mode_off'));
+			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
 		}
 		if (previousPollingInterval !== nextSettings.pollingIntervalMinutes) {
 			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
 			this.invalidateInventoryAdvisor();
-			this.runRuntimeMutation(() => this.assistedDetection.disarm('connection_changed'));
+			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('connection_changed'));
 			this.connection.reset();
 			this.halloweenAccountRef = null;
 			this.halloween?.disable(context);

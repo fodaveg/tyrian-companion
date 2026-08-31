@@ -218,6 +218,50 @@ describe('atomic settings persistence', () => {
 	});
 });
 
+describe('assisted proposal invalidation metrics', () => {
+	it('starts an invalidated terminal before disarming a materialized live proposal without awaiting storage', () => {
+		const events: string[] = [];
+		const pendingWrite = new Promise<boolean>(() => undefined);
+		const proposalExcluded = vi.fn(() => { events.push('excluded'); return pendingWrite; });
+		const disarm = vi.fn(() => { events.push('disarm'); });
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			runtimeReady: true,
+			localDebugActions: null,
+			runRuntimeMutation: (operation: () => void) => { operation(); return true; },
+			assistedDetection: {
+				getState: () => ({ status: 'start_proposed', proposal: halloweenProposal() }),
+				disarm,
+			},
+			pilotMetrics: { proposalExcluded },
+			renderViews: vi.fn(() => { events.push('render'); }),
+		}) as unknown as TyrianCompanionPlugin;
+
+		plugin.disarmAssistedDetection();
+
+		expect(events).toEqual(['excluded', 'disarm', 'render']);
+		expect(proposalExcluded).toHaveBeenCalledWith(halloweenProposal().proposalId, 'invalidated');
+		expect(disarm).toHaveBeenCalledWith('user');
+	});
+
+	it('still disarms immediately when the optional metrics hook fails synchronously', () => {
+		const disarm = vi.fn();
+		const plugin = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			runtimeReady: true,
+			localDebugActions: null,
+			runRuntimeMutation: (operation: () => void) => { operation(); return true; },
+			assistedDetection: {
+				getState: () => ({ status: 'stop_proposed', proposal: { proposalId: 'stop-proposal' } }),
+				disarm,
+			},
+			pilotMetrics: { proposalExcluded: () => { throw new Error('pilot unavailable'); } },
+			renderViews: vi.fn(),
+		}) as unknown as TyrianCompanionPlugin;
+
+		expect(() => plugin.disarmAssistedDetection()).not.toThrow();
+		expect(disarm).toHaveBeenCalledWith('user');
+	});
+});
+
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {
 		const runtime = { mutations: 0 };
