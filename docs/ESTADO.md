@@ -51,7 +51,8 @@ La revisión final cerró además la combinación manipulada de profundidad `com
 omisión del warning ante venta parcial; ambos contratos tienen regresiones. Pasan 431 pruebas
 dirigidas y el gate completo posterior con lint, 167 ficheros/2.318 tests, spike nativo, scanner, 644
 fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y build. La
-rerevisión independiente queda como último control. La matriz de diseño cubre tokens,
+rerevisión independiente no encuentra más hallazgos y da el candidato por listo para merge. La
+matriz de diseño cubre tokens,
 componentes/estados, responsive, contenido real y feedback; assets no aplican. Sigue
 pendiente medir accesibilidad/contraste y validar claro/oscuro/tercer tema, zoom, teclado,
 1280/900/600/420/280 px y datos extremos dentro de Obsidian. Antes de publicar H9.20 hay que

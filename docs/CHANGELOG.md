@@ -29,8 +29,8 @@
   venta demostrada y el warning `market_depth_incomplete` equivale exactamente a una línea parcial,
   inválida o sin cobertura. El gate completo posterior pasa lint, 167 ficheros/2.318 tests, spike
   nativo, scanner, 644 fronteras de observabilidad, empaquetado reproducible, contratos
-  beta/release/soporte y build. La rerevisión independiente queda como último control. Siguen
-  pendientes la QA visual/teclado en
+  beta/release/soporte y build. La rerevisión independiente no encuentra más hallazgos y da el
+  candidato por listo para merge. Siguen pendientes la QA visual/teclado en
   Obsidian real y el contraste live de listings, Refresh durable y sesión manual antes de publicar.
   Nada está en `main` ni publicado.
 
