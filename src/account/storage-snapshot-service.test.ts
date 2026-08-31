@@ -153,7 +153,7 @@ describe('StorageSnapshotService', () => {
 		expect(isComparableStorageSnapshot(snapshot)).toBe(true);
 	});
 
-	it('keeps an advisor capture usable when only the optional stores fail', async () => {
+	it('keeps repeated transient optional-store failures fail-closed', async () => {
 		const fixture = clientFor([passWith()], {
 			onRequest: async (path) => {
 				if (path.startsWith('account/bank') || path.startsWith('account/materials')) {
@@ -166,10 +166,10 @@ describe('StorageSnapshotService', () => {
 
 		expect(snapshot.coverage.sources.bank.status).not.toBe('complete');
 		expect(snapshot.coverage.sources.materials.status).not.toBe('complete');
-		expect(snapshot.quality).toBe('unstable');
+		expect(snapshot).toMatchObject({ quality: 'partial', passes: 2 });
 		expect(snapshot.holdings.every(({ location }) =>
 			location.source === 'character' || location.source === 'shared_inventory')).toBe(true);
-		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(false);
 	});
 
 	it.each([
@@ -194,6 +194,7 @@ describe('StorageSnapshotService', () => {
 		});
 		expect(snapshot.coverage.sources.shared_inventory).toEqual({ status: 'complete' });
 		expect(snapshot.coverage.sources.characters).toEqual({ status: 'complete' });
+		expect(snapshot.passes).toBe(1);
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
 	});
 
@@ -493,17 +494,17 @@ describe('StorageSnapshotService', () => {
 		});
 	});
 
-	it('returns one bounded partial advisor pass when the roster is unavailable', async () => {
+	it('keeps two transiently partial advisor observations fail-closed', async () => {
 		const unavailableRoster = passWith({
 			characters: new HttpTransportError('http', 500, null, 'Unavailable.'),
 		});
-		const fixture = clientFor([unavailableRoster]);
+		const fixture = clientFor([unavailableRoster, unavailableRoster]);
 		const snapshot = await new StorageSnapshotService(fixture.client)
 			.captureInventoryWithOperation(fixture.client.beginOperation());
 
 		expect(snapshot).toMatchObject({
 			quality: 'partial',
-			passes: 1,
+			passes: 2,
 			coverage: {
 				sources: { characters: { status: 'partial', reason: 'unavailable' } },
 				characters: {},
@@ -515,7 +516,58 @@ describe('StorageSnapshotService', () => {
 				reason: 'unavailable',
 				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
 			},
+			{
+				status: 'partial',
+				reason: 'unavailable',
+				diagnostic: { kind: 'http', status: 500, retryAfterMs: null },
+			},
 		]);
+	});
+
+	it.each([
+		['timeout', new HttpTransportError('timeout', null, null, 'Timed out.')],
+		['partial response', response(206, characterInventoryFixture)],
+	] as const)('recovers one transient %s into usable but unstable advisor evidence', async (
+		_label, transient,
+	) => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const fixture = clientFor([
+			passWith({ [inventoryPath]: transient }),
+			passWith(),
+		]);
+
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({
+			quality: 'unstable', passes: 2,
+			coverage: {
+				sources: { characters: { status: 'complete' }, shared_inventory: { status: 'complete' } },
+				characters: { [characterName]: { status: 'complete' } },
+			},
+		});
+		expect(snapshot.passCoverages[0]?.characters[characterName]?.status).toBe('partial');
+		expect(snapshot.passCoverages[1]?.characters[characterName]).toEqual({ status: 'complete' });
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+	});
+
+	it('returns a first-pass 429 immediately so the wrapper can arm its cooldown', async () => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const seen: string[] = [];
+		const rateLimited = passWith({
+			[inventoryPath]: new HttpTransportError('http', 429, 2_000, 'Rate limited.'),
+		});
+		const fixture = clientFor([rateLimited, passWith()], { seen });
+
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({ quality: 'partial', passes: 1 });
+		expect(snapshot.coverage.sources.characters).toMatchObject({
+			status: 'partial', diagnostic: { status: 429, retryAfterMs: 2_000 },
+		});
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(1);
 	});
 
 	it('requires two complete equivalent advisor observations before claiming stability', async () => {

@@ -256,9 +256,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 509,
 					"column": 4,
-					"endLine": 496,
+					"endLine": 527,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {

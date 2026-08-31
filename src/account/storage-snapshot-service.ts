@@ -112,6 +112,25 @@ export class StorageSnapshotService {
 			advisorProgress?.first ?? onProgress);
 		if (scope === 'inventory_advisor') {
 			if (!advisorPassComplete(first.coverage) || hasIncompleteCoverage(first.coverage)) {
+				if (shouldRetryAdvisorPass(first.coverage)) {
+					const second = await this.capturePass(operation, context, scope,
+						advisorProgress?.second);
+					const secondComplete = advisorPassComplete(second.coverage)
+						&& !hasIncompleteCoverage(second.coverage);
+					return finalizeStorageSnapshot({
+						pass: second,
+						// Only one complete observation exists, so a recovered refresh can
+						// support manual routes but never a curated recommendation.
+						quality: secondComplete ? 'unstable' : 'partial',
+						coveragePasses: secondComplete ? [second] : [first, second],
+						passes: [first, second],
+					}, {
+						accountId: context.accountId,
+						snapshotId,
+						startedAt,
+						completedAt: new Date().toISOString(),
+					});
+				}
 				return finalizeStorageSnapshot({
 					pass: first,
 					quality: advisorPassComplete(first.coverage) ? 'unstable' : 'partial',
@@ -409,6 +428,18 @@ function advisorPassComplete(coverage: SnapshotCoverage): boolean {
 function hasIncompleteCoverage(coverage: SnapshotCoverage): boolean {
 	return [...Object.values(coverage.sources), ...Object.values(coverage.characters)]
 		.some((entry) => entry.status === 'partial');
+}
+
+function shouldRetryAdvisorPass(coverage: SnapshotCoverage): boolean {
+	const incomplete = [...Object.values(coverage.sources), ...Object.values(coverage.characters)]
+		.filter((entry) => entry.status === 'partial');
+	return incomplete.length > 0 && incomplete.every((entry) =>
+		entry.reason === 'partial_response'
+		|| entry.diagnostic?.kind === 'timeout'
+		|| entry.diagnostic?.kind === 'network'
+		|| (entry.diagnostic?.status !== null
+			&& entry.diagnostic?.status !== undefined
+			&& entry.diagnostic.status >= 500));
 }
 
 function createAdvisorProgressReporter(
