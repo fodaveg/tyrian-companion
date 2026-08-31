@@ -83,6 +83,41 @@ describe('buildSessionHistoryAggregate', () => {
 		});
 		expect(buildSessionHistoryAggregate([record('2026-08-20T10:00:00.000Z')]).comparison).toBeNull();
 	});
+
+	it('compares only a minimum sample from the same declared activity and build using duration-weighted rates', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', {
+				activity: 'halloween', build: 'Power Reaper', durationMs: 3_600_000,
+				sacks: 10, observedImmediateCopper: 10_000,
+			}),
+			record('2026-08-21T10:00:00.000Z', {
+				activity: 'halloween', build: 'Power Reaper', durationMs: 7_200_000,
+				sacks: 40, observedImmediateCopper: 40_000,
+			}),
+			record('2026-08-22T10:00:00.000Z', {
+				activity: 'halloween', build: 'Power Reaper', classification: 'estimated', confidence: 'medium',
+			}),
+			record('2026-08-23T10:00:00.000Z', { activity: 'halloween', build: 'Condi Scourge' }),
+			record('2026-08-24T10:00:00.000Z', { activity: null, build: 'Power Reaper' }),
+		]);
+
+		expect(aggregate.performance).toEqual({
+			minimumSessions: 2,
+			missingContextSessions: 1,
+			groups: [
+				{
+					activity: 'halloween', build: 'Condi Scourge', sessionCount: 1, eligibleSessions: 1,
+					status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null,
+					exclusions: [],
+				},
+				{
+					activity: 'halloween', build: 'Power Reaper', sessionCount: 3, eligibleSessions: 2,
+					status: 'ready', sacksPerHourMilli: 16_667, immediateCopperPerHour: 16_667,
+					exclusions: ['quality'],
+				},
+			],
+		});
+	});
 });
 
 function record(
@@ -91,7 +126,7 @@ function record(
 ): DurableSessionHistoryRecord {
 	const durationMs = overrides.durationMs ?? 3_600_000;
 	return {
-		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), startedAt,
+		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), activity: null, build: null, startedAt,
 		endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(), durationMs,
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,

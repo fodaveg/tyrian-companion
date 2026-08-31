@@ -3,6 +3,9 @@ import type { DurableSessionHistoryRecord, SessionHistoryScan } from './session-
 /** Result exposed to the UI after one explicit load request. */
 export type SessionHistoryLoadResult = SessionHistoryScan | { status: 'unavailable' };
 
+/** Two sessions are the smallest honest personal baseline; one observation is not a comparison. */
+export const SESSION_HISTORY_PERFORMANCE_MINIMUM = 2 as const;
+
 /** Conservative totals plus an identity-free chronological ledger. */
 export interface SessionHistoryAggregate {
 	readonly sessionCount: number;
@@ -14,8 +17,28 @@ export interface SessionHistoryAggregate {
 	readonly totalListingCopper: number | null;
 	readonly listingValueKnown: number;
 	readonly comparison: SessionHistoryComparison | null;
+	readonly performance: SessionHistoryPerformance;
 	readonly sessions: readonly SessionHistorySummaryRow[];
 }
+
+export interface SessionHistoryPerformance {
+	readonly minimumSessions: typeof SESSION_HISTORY_PERFORMANCE_MINIMUM;
+	readonly missingContextSessions: number;
+	readonly groups: readonly SessionHistoryPerformanceGroup[];
+}
+
+export interface SessionHistoryPerformanceGroup {
+	readonly activity: 'halloween';
+	readonly build: string;
+	readonly sessionCount: number;
+	readonly eligibleSessions: number;
+	readonly status: 'ready' | 'insufficient_sample' | 'unavailable';
+	readonly sacksPerHourMilli: number | null;
+	readonly immediateCopperPerHour: number | null;
+	readonly exclusions: readonly SessionHistoryPerformanceExclusion[];
+}
+
+export type SessionHistoryPerformanceExclusion = 'quality' | 'valuation' | 'metrics';
 
 /** Visible durable facts for one completed session; hashed identity is intentionally absent. */
 export interface SessionHistorySummaryRow {
@@ -60,8 +83,89 @@ export function buildSessionHistoryAggregate(
 		totalListingCopper: listing.value,
 		listingValueKnown: listing.known,
 		comparison: compareLatest(rows),
+		performance: buildPerformance(sessions),
 		sessions: rows,
 	};
+}
+
+function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): SessionHistoryPerformance {
+	const grouped = new Map<string, { activity: 'halloween'; build: string; sessions: DurableSessionHistoryRecord[] }>();
+	let missingContextSessions = 0;
+	for (const session of sessions) {
+		const build = normalizeBuild(session.build);
+		if (session.activity !== 'halloween' || build === null) {
+			missingContextSessions += 1;
+			continue;
+		}
+		const key = `${session.activity}\u0000${build}`;
+		const group = grouped.get(key) ?? { activity: session.activity, build, sessions: [] };
+		group.sessions.push(session);
+		grouped.set(key, group);
+	}
+	return {
+		minimumSessions: SESSION_HISTORY_PERFORMANCE_MINIMUM,
+		missingContextSessions,
+		groups: [...grouped.values()].map(performanceGroup).sort((left, right) =>
+			left.activity.localeCompare(right.activity) || left.build.localeCompare(right.build)),
+	};
+}
+
+function performanceGroup(group: {
+	readonly activity: 'halloween';
+	readonly build: string;
+	readonly sessions: readonly DurableSessionHistoryRecord[];
+}): SessionHistoryPerformanceGroup {
+	const exclusions = new Set<SessionHistoryPerformanceExclusion>();
+	const eligible = group.sessions.filter((session) => {
+		let accepted = true;
+		if (session.classification !== 'exact' || session.confidence !== 'high') {
+			exclusions.add('quality');
+			accepted = false;
+		}
+		if (session.valuationCoverage !== 'complete') {
+			exclusions.add('valuation');
+			accepted = false;
+		}
+		if (session.sacks === null || session.observedImmediateCopper === null) {
+			exclusions.add('metrics');
+			accepted = false;
+		}
+		return accepted;
+	});
+	if (eligible.length < SESSION_HISTORY_PERFORMANCE_MINIMUM) {
+		return {
+			activity: group.activity, build: group.build, sessionCount: group.sessions.length,
+			eligibleSessions: eligible.length, status: 'insufficient_sample', sacksPerHourMilli: null,
+			immediateCopperPerHour: null, exclusions: [...exclusions],
+		};
+	}
+	const durationMs = sumBigInt(eligible.map((session) => session.durationMs));
+	const sacks = sumBigInt(eligible.map((session) => session.sacks as number));
+	const immediateCopper = sumBigInt(eligible.map((session) => session.observedImmediateCopper as number));
+	const sacksPerHourMilli = safeRoundedRate(sacks, durationMs, 3_600_000_000n);
+	const immediateCopperPerHour = safeRoundedRate(immediateCopper, durationMs, 3_600_000n);
+	return {
+		activity: group.activity, build: group.build, sessionCount: group.sessions.length,
+		eligibleSessions: eligible.length,
+		status: sacksPerHourMilli === null || immediateCopperPerHour === null ? 'unavailable' : 'ready',
+		sacksPerHourMilli, immediateCopperPerHour, exclusions: [...exclusions],
+	};
+}
+
+function normalizeBuild(build: string | null): string | null {
+	if (build === null) return null;
+	const normalized = build.trim();
+	return normalized.length === 0 ? null : normalized;
+}
+
+function sumBigInt(values: readonly number[]): bigint {
+	return values.reduce((total, value) => total + BigInt(value), 0n);
+}
+
+function safeRoundedRate(total: bigint, durationMs: bigint, scale: bigint): number | null {
+	if (durationMs <= 0n) return null;
+	const rounded = (total * scale + durationMs / 2n) / durationMs;
+	return rounded <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rounded) : null;
 }
 
 function summaryRow(session: DurableSessionHistoryRecord): SessionHistorySummaryRow {

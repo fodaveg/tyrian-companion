@@ -741,6 +741,47 @@
 	background: var(--background-secondary);
 }
 
+.tyrian-session-history__performance {
+	margin-block-end: var(--size-4-4);
+}
+
+.tyrian-session-history__performance > h4,
+.tyrian-session-history__performance > p,
+.tyrian-session-history__performance-group h5,
+.tyrian-session-history__performance-group p {
+	margin-block-start: 0;
+}
+
+.tyrian-session-history__performance-groups {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+	gap: var(--size-4-3);
+}
+
+.tyrian-session-history__performance-group {
+	min-width: 0;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.tyrian-session-history__performance-group dl {
+	display: grid;
+	grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-3);
+}
+
+.tyrian-session-history__performance-group dd {
+	min-width: 0;
+	margin-inline-start: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-session-history__warning {
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
 .tyrian-session-history__comparison dl,
 .tyrian-session-history__card dl {
 	display: grid;
@@ -820,6 +861,7 @@
 
 	.tyrian-session-history__summary,
 	.tyrian-session-history__comparison dl,
+	.tyrian-session-history__performance-group dl,
 	.tyrian-session-history__card dl {
 		grid-template-columns: minmax(0, 1fr);
 	}

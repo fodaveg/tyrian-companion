@@ -206,10 +206,11 @@ describe('durable session history', () => {
 	it('scans schema v3 notes with canonical positive item evidence', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note({
-			tc_schema: 3, tc_positive_item_deltas_json: '[[100,3],[36038,25]]',
+			tc_schema: 3, tc_positive_item_deltas_json: '[[100,3],[36038,25]]', tc_event: 'halloween',
+			tc_event_source: 'manual_explicit', tc_build: 'Power Reaper',
 		}));
 		await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({
-			status: 'ok', sessions: [{ sessionRef: 'a'.repeat(64) }],
+			status: 'ok', sessions: [{ sessionRef: 'a'.repeat(64), activity: 'halloween', build: 'Power Reaper' }],
 		});
 	});
 
@@ -301,7 +302,7 @@ describe('durable session history', () => {
 
 	it('creates deterministic create-only JSON and CRLF CSV without human data or formula injection', async () => {
 		const vault = new MemoryVault();
-		vault.contents.set('Sessions/one.md', await note());
+		vault.contents.set('Sessions/one.md', await note({ tc_build: 'Private Power Reaper' }));
 		const history = new SessionHistoryService(vault);
 		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'written', sessions: 1 });
 		const json = vault.contents.get(`Tyrian Companion/exports/${SESSION_HISTORY_JSON_FILE}`)!;
@@ -310,6 +311,7 @@ describe('durable session history', () => {
 		expect(`${json}\n${csv}`).not.toContain('raw-account-id');
 		expect(`${json}\n${csv}`).not.toContain('Human body must stay private');
 		expect(`${json}\n${csv}`).not.toContain('=malicious-character');
+		expect(`${json}\n${csv}`).not.toContain('Private Power Reaper');
 		expect(csv).toContain('\r\n');
 		expect(csv.replace(/\r\n/gu, '')).not.toContain('\n');
 		await expect(history.export('Tyrian Companion')).resolves.toEqual({ status: 'unchanged', sessions: 1 });

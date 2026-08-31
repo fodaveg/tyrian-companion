@@ -23,6 +23,9 @@ export interface SessionHistoryVault {
 export interface DurableSessionHistoryRecord {
 	sessionRef: string;
 	accountRef: string;
+	/** Declared comparison dimensions are available only to the explicit local history view. */
+	activity: 'halloween' | null;
+	build: string | null;
 	startedAt: string;
 	endedAt: string;
 	durationMs: number;
@@ -382,7 +385,10 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const positiveItemDeltas = fm.tc_schema === 3 ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
 	if (fm.tc_schema === 3 && positiveItemDeltas === null) return { status: 'invalid' };
 	return { status: 'ok', session: {
-		sessionRef, accountRef, startedAt, endedAt, durationMs,
+		sessionRef, accountRef,
+		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
+		build: nullableString(fm.tc_build),
+		startedAt, endedAt, durationMs,
 		classification, confidence, scope,
 		valuationCoverage: stringOr(fm.tc_valuation_coverage), observedImmediateCopper: numberOrNull(fm.tc_observed_immediate_copper),
 		observedListingCopper: numberOrNull(fm.tc_observed_listing_copper), sacks: numberOrNull(fm.tc_sacks),
@@ -491,7 +497,36 @@ function validRecommendationMetadata(fm: Readonly<Record<string, string | number
 }
 
 function serializeJson(sessions: readonly DurableSessionHistoryRecord[]): string {
-	return `${JSON.stringify({ format: 'tyrian-companion-session-export', version: SESSION_HISTORY_EXPORT_VERSION, sessions }, null, 2)}\n`;
+	return `${JSON.stringify({
+		format: 'tyrian-companion-session-export',
+		version: SESSION_HISTORY_EXPORT_VERSION,
+		sessions: sessions.map(exportSession),
+	}, null, 2)}\n`;
+}
+
+/** Export v1 is an explicit allowlist; local activity/build dimensions never cross this boundary. */
+function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build'> {
+	return {
+		sessionRef: session.sessionRef,
+		accountRef: session.accountRef,
+		startedAt: session.startedAt,
+		endedAt: session.endedAt,
+		durationMs: session.durationMs,
+		classification: session.classification,
+		confidence: session.confidence,
+		scope: session.scope,
+		valuationCoverage: session.valuationCoverage,
+		observedImmediateCopper: session.observedImmediateCopper,
+		observedListingCopper: session.observedListingCopper,
+		sacks: session.sacks,
+		sacksPerHourMilli: session.sacksPerHourMilli,
+		immediateCopperPerHour: session.immediateCopperPerHour,
+		listingCopperPerHour: session.listingCopperPerHour,
+		recommendationStatus: session.recommendationStatus,
+		recommendationAction: session.recommendationAction,
+		recommendationQuantity: session.recommendationQuantity,
+		recommendationRoute: session.recommendationRoute,
+	};
 }
 function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string {
 	const rows = [

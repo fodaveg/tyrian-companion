@@ -104,6 +104,27 @@ describe('mountSessionHistoryPanel', () => {
 		expect(allText(state)).toContain('4 notas no válidas y 2 referencias duplicadas');
 		expect(descendants(state).some((element) => element.tag === 'table')).toBe(false);
 	});
+
+	it('renders duration-weighted activity/build performance and an honest minimum-sample warning', async () => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [
+				record('2026-08-20T10:00:00.000Z', 3_600_000, { activity: 'halloween', build: 'Power Reaper' }),
+				record('2026-08-21T10:00:00.000Z', 3_600_000, { activity: 'halloween', build: 'Power Reaper' }),
+				record('2026-08-22T10:00:00.000Z', 3_600_000, { activity: 'halloween', build: 'Condi Scourge' }),
+			],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
+
+		const visible = allText(container);
+		expect(visible).toContain('Rendimiento por actividad y build');
+		expect(visible).toContain('Halloween · Power Reaper');
+		expect(visible).toContain('2/2 sesiones comparables');
+		expect(visible).toContain('Muestra insuficiente: 1/2 sesiones comparables');
+	});
 });
 
 describe('formatSessionHistoryDuration', () => {
@@ -119,14 +140,19 @@ describe('formatSessionHistoryDuration', () => {
 	});
 });
 
-function record(startedAt: string, durationMs = 3_600_000): DurableSessionHistoryRecord {
+function record(
+	startedAt: string,
+	durationMs = 3_600_000,
+	overrides: Partial<DurableSessionHistoryRecord> = {},
+): DurableSessionHistoryRecord {
 	return {
-		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), startedAt,
+		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), activity: null, build: null, startedAt,
 		endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(), durationMs,
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,
 		immediateCopperPerHour: 10_000, listingCopperPerHour: 12_000, recommendationStatus: 'not_evaluated',
 		recommendationAction: null, recommendationQuantity: null, recommendationRoute: null,
+		...overrides,
 	};
 }
 

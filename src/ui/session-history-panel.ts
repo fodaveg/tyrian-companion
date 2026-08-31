@@ -2,8 +2,10 @@ import type { Locale } from '../core/i18n';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import {
 	buildSessionHistoryAggregate,
+	SESSION_HISTORY_PERFORMANCE_MINIMUM,
 	type SessionHistoryAggregate,
 	type SessionHistoryLoadResult,
+	type SessionHistoryPerformanceGroup,
 	type SessionHistorySummaryRow,
 } from '../sessions/session-history-summary';
 
@@ -155,9 +157,52 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 		appendDetail(details, copy.immediatePerHour, signedMoney(aggregate.comparison.immediateCopperPerHourDelta, locale));
 		appendDetail(details, copy.listingPerHour, signedMoney(aggregate.comparison.listingCopperPerHourDelta, locale));
 	}
+	renderPerformance(container, locale, aggregate);
 
 	renderTable(container, locale, aggregate.sessions);
 	renderCards(container, locale, aggregate.sessions);
+}
+
+function renderPerformance(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {
+	const copy = UI[locale];
+	const section = container.createEl('section', { cls: 'tyrian-session-history__performance' });
+	section.createEl('h4', { text: copy.performance });
+	section.createEl('p', { text: format(copy.performanceIntro, { minimum: aggregate.performance.minimumSessions }) });
+	if (aggregate.performance.missingContextSessions > 0) {
+		section.createEl('p', {
+			text: format(copy.performanceMissingContext, { count: aggregate.performance.missingContextSessions }),
+			cls: 'tyrian-session-history__warning',
+		});
+	}
+	if (aggregate.performance.groups.length === 0) {
+		section.createEl('p', { text: copy.performanceEmpty });
+		return;
+	}
+	const groups = section.createDiv({ cls: 'tyrian-session-history__performance-groups' });
+	for (const group of aggregate.performance.groups) renderPerformanceGroup(groups, locale, group);
+}
+
+function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
+	const copy = UI[locale];
+	const article = container.createEl('article', { cls: 'tyrian-session-history__performance-group' });
+	article.createEl('h5', { text: `${copy.halloween} · ${group.build}` });
+	article.createEl('p', {
+		text: format(group.status === 'ready' ? copy.performanceReady : group.status === 'insufficient_sample'
+			? copy.performanceInsufficient : copy.performanceUnavailable, {
+			eligible: group.eligibleSessions,
+			total: group.sessionCount,
+			minimum: SESSION_HISTORY_PERFORMANCE_MINIMUM,
+		}),
+	});
+	const details = article.createEl('dl');
+	appendDetail(details, copy.sacksPerHour, group.sacksPerHourMilli === null ? copy.unknown : rate(group.sacksPerHourMilli, locale));
+	appendDetail(details, copy.immediatePerHour, money(group.immediateCopperPerHour, locale));
+	if (group.exclusions.length > 0) {
+		article.createEl('p', {
+			text: `${copy.performanceExcluded}: ${group.exclusions.map((reason) => copy.performanceExclusion[reason]).join(' · ')}`,
+			cls: 'tyrian-session-history__warning',
+		});
+	}
 }
 
 function renderTable(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
@@ -235,7 +280,11 @@ function signedMoney(copper: number | null, locale: Locale): string {
 function signedRate(value: number | null, locale: Locale): string {
 	if (value === null) return UI[locale].unknown;
 	const sign = value > 0 ? '+' : value < 0 ? '−' : '±';
-	return `${sign}${(Math.abs(value) / 1_000).toLocaleString(locale, { maximumFractionDigits: 3 })}`;
+	return `${sign}${rate(Math.abs(value), locale)}`;
+}
+
+function rate(value: number, locale: Locale): string {
+	return (value / 1_000).toLocaleString(locale, { maximumFractionDigits: 3 });
 }
 
 function signedDuration(durationMs: number, locale: Locale): string {
@@ -296,6 +345,16 @@ const UI = {
 		sessions: 'Sesiones', duration: 'Duración total', sacks: 'Sacos', immediateValue: 'Valor inmediato', listingValue: 'Valor listado',
 		comparison: 'Última sesión frente a la anterior', comparisonBaseline: 'Hace falta una segunda sesión para mostrar evolución.',
 		comparisonWindow: 'Última: {latest}. Anterior: {previous}.', sacksPerHour: 'Sacos por hora', immediatePerHour: 'Valor inmediato por hora', listingPerHour: 'Valor listado por hora',
+		performance: 'Rendimiento por actividad y build',
+		performanceIntro: 'Solo se comparan grupos con al menos {minimum} sesiones exactas, de confianza alta y valoración completa. Las tasas se ponderan por duración.',
+		performanceMissingContext: '{count} sesiones no entran en grupos porque no declaran actividad o build.',
+		performanceEmpty: 'Aún no hay sesiones con actividad y build declarados para comparar.',
+		performanceReady: '{eligible}/{total} sesiones comparables.',
+		performanceInsufficient: 'Muestra insuficiente: {eligible}/{minimum} sesiones comparables ({total} en el grupo).',
+		performanceUnavailable: 'Las tasas de este grupo no se pueden calcular de forma segura.',
+		performanceExcluded: 'Sesiones excluidas',
+		performanceExclusion: { quality: 'calidad no comparable', valuation: 'valoración incompleta', metrics: 'tasas sin evidencia' },
+		halloween: 'Halloween',
 		ended: 'Finalizada', quality: 'Calidad', tableCaption: 'Sesiones finalizadas, de más reciente a más antigua',
 		unknown: 'Desconocido', knownCoverage: 'Desconocido · {known}/{total} con dato', lessThanSecond: '<1 segundo',
 	},
@@ -312,6 +371,16 @@ const UI = {
 		sessions: 'Sessions', duration: 'Total duration', sacks: 'Sacks', immediateValue: 'Immediate value', listingValue: 'Listing value',
 		comparison: 'Latest session versus previous', comparisonBaseline: 'A second session is needed to show a trend.',
 		comparisonWindow: 'Latest: {latest}. Previous: {previous}.', sacksPerHour: 'Sacks per hour', immediatePerHour: 'Immediate value per hour', listingPerHour: 'Listing value per hour',
+		performance: 'Performance by activity and build',
+		performanceIntro: 'Only groups with at least {minimum} exact, high-confidence, fully valued sessions are compared. Rates are weighted by duration.',
+		performanceMissingContext: '{count} sessions are outside groups because activity or build is not declared.',
+		performanceEmpty: 'There are no sessions with both activity and build declared to compare yet.',
+		performanceReady: '{eligible}/{total} comparable sessions.',
+		performanceInsufficient: 'Insufficient sample: {eligible}/{minimum} comparable sessions ({total} in the group).',
+		performanceUnavailable: 'This group’s rates cannot be calculated safely.',
+		performanceExcluded: 'Excluded sessions',
+		performanceExclusion: { quality: 'non-comparable quality', valuation: 'incomplete valuation', metrics: 'rates lack evidence' },
+		halloween: 'Halloween',
 		ended: 'Completed', quality: 'Quality', tableCaption: 'Completed sessions, newest to oldest',
 		unknown: 'Unknown', knownCoverage: 'Unknown · {known}/{total} with data', lessThanSecond: '<1 second',
 	},
