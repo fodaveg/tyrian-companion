@@ -20,15 +20,18 @@
 - La revisión de seguridad detectó un ABA al desactivar y reactivar el mismo perfil. `686194b`
   conserva únicamente un contador generacional no personal, lo avanza durante el borrado y prueba
   que una revisión anterior nunca vuelva a ser válida sobre evidencia nueva.
+- La rerevisión detectó que un cambio concurrente de perfil comparaba antes el entorno y degradaba
+  un store sano. `4902bf5` prioriza la revisión transaccional: una muestra anterior devuelve `stale`;
+  solo una discrepancia de entorno dentro de la revisión vigente es `inconsistent`.
 - Ajustes añade perfil ES/EN, preview, revisión, cuatro exports JSON/CSV deterministas create-only,
   clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
   los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
   propuestas son seudónimos, no anonimización.
 - Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
-  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95`, `686194b` y `e765b5c` para H7.13. Los
-  hallazgos contractuales, de seguridad y de revisión independiente quedan cubiertos; 106 tests
-  focales y el gate completo quedan verdes con lint, 167 ficheros/2.248 tests, scanner,
-  observabilidad, contratos y build. El dry run real en
+  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c` y
+  `4902bf5` para H7.13. Los hallazgos contractuales, de seguridad y de revisión independiente
+  quedan cubiertos; 107 tests focales y el gate completo quedan verdes con lint, 167
+  ficheros/2.249 tests, scanner, observabilidad, contratos y build. El dry run real en
   las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; nada de este lote
   está en `main` ni publicado.
 
