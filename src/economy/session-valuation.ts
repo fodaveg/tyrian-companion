@@ -26,7 +26,6 @@ export interface SessionValuationInput {
 	prices: SessionPriceSnapshot;
 	catalogItems: Record<string, CatalogItem>;
 	bindingByItem: Record<string, SessionBindingEvidence>;
-	durationMs: number;
 	sackItemIds: number[];
 }
 
@@ -75,11 +74,12 @@ export type SessionValuationResult =
 
 export function calculateSessionValuation(input: unknown): SessionValuationResult {
 	if (!isInputShell(input)) return { status: 'invalid', reason: 'invalid_input' };
-	const { sessionId, delta, prices, catalogItems, bindingByItem, durationMs, sackItemIds } = input;
+	const { sessionId, delta, prices, catalogItems, bindingByItem, sackItemIds } = input;
 	if (!isStorageDelta(delta) || delta.status === 'invalid' || !isSessionPriceSnapshot(prices, sessionId, delta)) {
 		return { status: 'invalid', reason: 'evidence_mismatch' };
 	}
-	if (!Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: 'invalid', reason: 'invalid_duration' };
+	const durationMs = durationFromDelta(delta);
+	if (durationMs === null) return { status: 'invalid', reason: 'invalid_duration' };
 	if (!validIdList(sackItemIds)) return { status: 'invalid', reason: 'invalid_sack_ids' };
 	if (!validCatalog(catalogItems) || !validBindings(bindingByItem)) return { status: 'invalid', reason: 'invalid_metadata' };
 
@@ -159,6 +159,7 @@ export function isSessionValuation(
 	const coinNetCopper = delta.currencyChanges.find((change) => change.id === 1)?.delta ?? 0;
 	return valuation.lines.length === positive.length && valuation.lines.every((line, index) =>
 		line.itemId === positive[index]!.id && line.quantity === positive[index]!.delta) &&
+		valuation.durationMs === durationFromDelta(delta) &&
 		valuation.totals.coinNetCopper === coinNetCopper &&
 		valuation.warnings.includes('item_losses_not_valued') ===
 			delta.itemChanges.some((change) => change.delta < 0);
@@ -343,11 +344,17 @@ function isSessionValuationWarning(value: unknown): value is SessionValuation['w
 
 function isInputShell(value: unknown): value is SessionValuationInput {
 	return isRecord(value)
-		&& exactKeys(value, ['sessionId', 'delta', 'prices', 'catalogItems', 'bindingByItem', 'durationMs', 'sackItemIds'])
+		&& exactKeys(value, ['sessionId', 'delta', 'prices', 'catalogItems', 'bindingByItem', 'sackItemIds'])
 		&& typeof value.sessionId === 'string' && value.sessionId.length > 0
 		&& isRecord(value.delta) && isRecord(value.prices)
 		&& isRecord(value.catalogItems) && isRecord(value.bindingByItem)
 		&& Array.isArray(value.sackItemIds);
+}
+
+function durationFromDelta(delta: StorageDelta): number | null {
+	if (delta.window === null) return null;
+	const duration = Date.parse(delta.window.to) - Date.parse(delta.window.from);
+	return Number.isSafeInteger(duration) && duration > 0 ? duration : null;
 }
 
 function validCatalog(value: Record<string, CatalogItem>): boolean {

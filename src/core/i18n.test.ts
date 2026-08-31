@@ -67,6 +67,7 @@ const H5_11_KEYS = [
 	'advisor.view.recommendationValue', 'advisor.view.recommendationPricedAll', 'advisor.view.recommendationUnpriced',
 	'advisor.view.unpricedShort', 'advisor.view.subtotal',
 	'advisor.view.character', 'advisor.view.allCharacters', 'advisor.view.characterScope',
+	'advisor.view.scopedValueUnavailable',
 	'advisor.view.sort', 'advisor.view.sort.value_desc', 'advisor.view.sort.quantity_desc', 'advisor.view.sort.name_asc',
 	'advisor.view.item', 'advisor.view.owned', 'advisor.view.available', 'advisor.view.quantity',
 	'advisor.view.stacks', 'advisor.view.unitValue', 'advisor.view.valueConcentration', 'advisor.view.evidenceDetail',

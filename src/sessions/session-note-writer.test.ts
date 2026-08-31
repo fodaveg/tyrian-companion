@@ -64,6 +64,12 @@ describe('session note model and renderer', () => {
 			tc_recommendation_action: null, tc_recommendation_quantity: null, tc_recommendation_route: null,
 		});
 		expect(first.note.frontmatter.tc_session_ref).toMatch(/^[a-f0-9]{64}$/u);
+		expect(first.note.frontmatter).toMatchObject({
+			tc_started_at: input.runtime.delta?.window?.from,
+			tc_ended_at: input.runtime.delta?.window?.to,
+			tc_duration_ms: 3_599_000,
+		});
+		expect(first.note.frontmatter.tc_ended_at).not.toBe(input.runtime.finalSnapshot?.completedAt);
 		expect(first.note.content).not.toContain('session-sensitive-id');
 		expect(first.note.content).not.toContain(input.runtime.finalSnapshot?.accountId);
 		expect(first.note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
@@ -469,8 +475,6 @@ function valuation(runtime: SessionRuntimeRecord): SessionValuation {
 	const result = calculateSessionValuation({
 		sessionId: runtime.state.status === 'complete' ? runtime.state.sessionId : '', delta: runtime.delta,
 		prices: runtime.priceSnapshot, catalogItems: {}, bindingByItem: { '100': 'unknown' },
-		durationMs: Date.parse(runtime.state.status === 'complete' ? runtime.state.finalSnapshot.completedAt : '') -
-			Date.parse(runtime.state.status === 'complete' ? runtime.state.baseline.completedAt : ''),
 		sackItemIds: [],
 	});
 	if (result.status !== 'ok') throw new Error(`Invalid valuation fixture: ${result.reason}`);

@@ -7,15 +7,15 @@ const COPY = {
 	es: {
 		all: 'Todos', characters: 'Personajes', shared: 'Compartido', bank: 'Banco', materials: 'Materiales',
 		item: 'Objeto', icon: 'Icono', source: 'Ubicación', character: 'Personaje', quantity: 'Cantidad',
-		type: 'Tipo', rarity: 'Rareza', unitValue: 'Venta instantánea 🟤', totalValue: 'Venta instantánea (total) 🟤',
-		unitListValue: 'Publicación 🟤', totalListValue: 'Publicación (total) 🟤', captured: 'Actualizado',
+		type: 'Tipo', rarity: 'Rareza', unitValue: 'Mejor orden de compra (bruto/u) 🟤', totalValue: 'Venta instantánea demostrada (neto) 🟤',
+		unitListValue: 'Menor anuncio actual (bruto/u) 🟤', totalListValue: 'Publicación estimada (neto) 🟤', captured: 'Actualizado',
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
 	},
 	en: {
 		all: 'All', characters: 'Characters', shared: 'Shared', bank: 'Bank', materials: 'Materials',
 		item: 'Item', icon: 'Icon', source: 'Location', character: 'Character', quantity: 'Quantity',
-		type: 'Type', rarity: 'Rarity', unitValue: 'Instant sell 🟤', totalValue: 'Instant sell (total) 🟤',
-		unitListValue: 'Listing 🟤', totalListValue: 'Listing (total) 🟤', captured: 'Updated',
+		type: 'Type', rarity: 'Rarity', unitValue: 'Highest buy order (gross/unit) 🟤', totalValue: 'Demonstrated instant sale (net) 🟤',
+		unitListValue: 'Lowest current listing (gross/unit) 🟤', totalListValue: 'Estimated listing (net) 🟤', captured: 'Updated',
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
 	},
 } as const;
@@ -145,7 +145,7 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 		['materials-base', 'Materials.base', materialsBody],
 	] as const) {
 		for (const locale of ['es', 'en'] as const) {
-			const draft = { id, kind: 'base', contentVersion: 2, locale, relativePath } as const;
+			const draft = { id, kind: 'base', contentVersion: 3, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}

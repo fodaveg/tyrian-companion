@@ -18,7 +18,7 @@ const CONFIG_DIR = 'vault-config';
 const CAPTURED_AT = '2026-08-25T08:00:01.000Z';
 
 describe('inventory Vault projection', () => {
-	it('aggregates piles by item, source and character while keeping every location value independent', async () => {
+	it('aggregates piles by item and location without extrapolating one buy quote to every pile', async () => {
 		const snapshot = snapshotWith([
 			holding(42, 2, characterBag('Alfa')),
 			holding(42, 3, characterBag('Alfa')),
@@ -32,11 +32,11 @@ describe('inventory Vault projection', () => {
 		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 10), 'full', 'es');
 		expect(projected.positions.map(({ source, character, quantity, totalSellCopper }) =>
 			({ source, character, quantity, totalSellCopper }))).toEqual([
-			{ source: 'bank', character: null, quantity: 13, totalSellCopper: 130 },
-			{ source: 'character', character: 'Alfa', quantity: 5, totalSellCopper: 50 },
-			{ source: 'character', character: 'Beta / Dos', quantity: 7, totalSellCopper: 70 },
-			{ source: 'materials', character: null, quantity: 17, totalSellCopper: 170 },
-			{ source: 'shared_inventory', character: null, quantity: 11, totalSellCopper: 110 },
+			{ source: 'bank', character: null, quantity: 13, totalSellCopper: null },
+			{ source: 'character', character: 'Alfa', quantity: 5, totalSellCopper: null },
+			{ source: 'character', character: 'Beta / Dos', quantity: 7, totalSellCopper: null },
+			{ source: 'materials', character: null, quantity: 17, totalSellCopper: null },
+			{ source: 'shared_inventory', character: null, quantity: 11, totalSellCopper: null },
 		]);
 	});
 
@@ -110,7 +110,7 @@ describe('inventory Vault projection', () => {
 			{ itemId: 42, whitelisted: false, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
 		]);
 		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
-		expect(projected.positions[0]).toMatchObject({ unitSellCopper: 10, totalSellCopper: 50 });
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: 10, totalSellCopper: null });
 	});
 
 	it('leaves a free-to-play account without a value for an item the whitelist excludes', async () => {
@@ -136,7 +136,7 @@ describe('inventory Vault projection', () => {
 		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
 		// No buy order right now: the sell column stays null, but the item IS sellable,
 		// which the published ask (list) column proves.
-		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: 20, totalListCopper: 100 });
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: 20, totalListCopper: 85 });
 	});
 
 	it('updates an existing note whose sell value is null once the correct eligibility rule applies', async () => {
@@ -357,8 +357,8 @@ describe('inventory Vault preview and apply', () => {
 		const fields = frontmatter(vault.contents.get(notePath)!);
 		expect(Object.keys(fields)).toEqual(expect.arrayContaining(['tc_unit_list_copper', 'tc_total_list_copper']));
 		expect(fields).toMatchObject({
-			tc_unit_sell_copper: 1234, tc_total_sell_copper: 1234,
-			tc_unit_list_copper: 1300, tc_total_list_copper: 1300,
+			tc_unit_sell_copper: 1234, tc_total_sell_copper: null,
+			tc_unit_list_copper: 1300, tc_total_list_copper: 1105,
 		});
 	});
 

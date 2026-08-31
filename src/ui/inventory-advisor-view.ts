@@ -749,7 +749,7 @@ function renderResults(
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
 		scopeNote.className = 'tyrian-inventory-advisor__scope-note';
-		scopeNote.textContent = translator.t('advisor.view.characterScope', { character: characterScope });
+		scopeNote.textContent = `${translator.t('advisor.view.characterScope', { character: characterScope })} ${translator.t('advisor.view.scopedValueUnavailable')}`;
 		content.append(scopeNote);
 	}
 	if (directRows.length > 0) content.append(renderRecommendationSummary(directRows, selectedAction, translator, onSelectAction));
@@ -1079,8 +1079,10 @@ function scopeRow(row: InventoryAdvisorViewRow, filters: InventoryAdvisorViewFil
 			quantity,
 			occupiedSlots: new Set(allocations.map((allocation) => allocation.positionRef)).size,
 		},
-		value: row.value.status === 'available' && row.quantity > 0
-			? { ...row.value, copper: Math.floor(row.value.copper * quantity / row.quantity) }
+		// Account-wide depth and stack-level fee rounding are not linear. A subset
+		// keeps the decision/provenance, but never inherits a prorated realizable total.
+		value: row.value.status === 'available' && quantity !== row.quantity
+			? { status: 'unavailable', route: null }
 			: { ...row.value },
 	};
 }

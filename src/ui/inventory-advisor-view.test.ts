@@ -335,7 +335,7 @@ describe('Inventory Advisor view', () => {
 		}
 	});
 
-	it('defaults to bags and shared inventory, keeps optional stores off, and rescales mixed rows without mutation', () => {
+	it('defaults to bags and shared inventory without prorating a non-linear account-wide value', () => {
 		const mixed = deepFreeze([row({
 			itemId: 42, name: 'Mixed', action: 'sell', quantity: 5, ownedQuantity: 5, availableQuantity: 5,
 			value: { status: 'available', route: 'instant_sell', copper: 500 },
@@ -346,14 +346,15 @@ describe('Inventory Advisor view', () => {
 		})]);
 		const before = structuredClone(mixed);
 		const base = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action' });
-		expect(base[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2, value: { copper: 200 } });
+		expect(base[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2,
+			value: { status: 'unavailable', route: null } });
 		expect(base[0]?.allocations).toHaveLength(1);
 		const withBank = filterInventoryAdvisorRows(mixed, { query: '', action: 'all', groupBy: 'action', includeBank: true });
 		expect(withBank[0]).toMatchObject({ quantity: 5, ownedQuantity: 5, availableQuantity: 5, value: { copper: 500 } });
 		expect(mixed).toEqual(before);
 	});
 
-	it('scopes rows to one character, ignores every other store and rescales its value', () => {
+	it('scopes rows to one character and withholds non-linear account-wide value', () => {
 		const rows = deepFreeze([row({
 			itemId: 42, name: 'Mixed', action: 'sell', quantity: 10, ownedQuantity: 10, availableQuantity: 10,
 			value: { status: 'available', route: 'instant_sell', copper: 1_000 },
@@ -366,14 +367,15 @@ describe('Inventory Advisor view', () => {
 		})]);
 		expect(inventoryAdvisorCharacters(rows, 'es')).toEqual(['Astra', 'Borja']);
 		const everything = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'all' });
-		expect(everything[0]).toMatchObject({ quantity: 6, value: { copper: 600 } });
+		expect(everything[0]).toMatchObject({ quantity: 6, value: { status: 'unavailable', route: null } });
 		const astra = filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Astra' });
-		expect(astra[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2, value: { copper: 200 } });
+		expect(astra[0]).toMatchObject({ quantity: 2, ownedQuantity: 2, availableQuantity: 2,
+			value: { status: 'unavailable', route: null } });
 		expect(astra[0]?.allocations).toHaveLength(1);
 		const withBankAndCharacter = filterInventoryAdvisorRows(rows, {
 			query: '', action: 'all', groupBy: 'action', character: 'Borja', includeBank: true,
 		});
-		expect(withBankAndCharacter[0]).toMatchObject({ quantity: 3, value: { copper: 300 } });
+		expect(withBankAndCharacter[0]).toMatchObject({ quantity: 3, value: { status: 'unavailable', route: null } });
 		expect(filterInventoryAdvisorRows(rows, { query: '', action: 'all', groupBy: 'action', character: 'Unknown' })).toEqual([]);
 	});
 
@@ -388,6 +390,7 @@ describe('Inventory Advisor view', () => {
 		characterSelect.dispatch('change');
 		expect(stores.every((input) => input.disabled)).toBe(true);
 		expect(text(mount.elements())).toContain('Solo de Astra');
+		expect(text(mount.elements())).toContain('no prorratea la profundidad ni las tasas');
 		expect(text(mount.elements())).not.toContain('Solo de Borja');
 		const withoutAstra: InventoryAdvisorViewModel = {
 			...readyModel(),

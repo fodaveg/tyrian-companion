@@ -10,6 +10,7 @@ import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { normalizeVaultRelativePath } from '../core/vault-path';
+import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -211,6 +212,9 @@ export async function prepareInventoryVaultSyncInput(
 			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
+		const listing = unitListCopper === null
+			? null
+			: createTradingPostValueWithPolicy('listing', unitListCopper, group.quantity);
 		return {
 			positionId: await positionId(group.itemId, group.source, group.character),
 			itemId: group.itemId,
@@ -218,9 +222,11 @@ export async function prepareInventoryVaultSyncInput(
 			character: group.character,
 			quantity: group.quantity,
 			unitSellCopper,
-			totalSellCopper: unitSellCopper === null ? null : safeMultiply(unitSellCopper, group.quantity),
+			// A highest buy quote is not demonstrated capacity for the whole row.
+			// H9.20 supplies consumable order-book levels; without them the total is unknown.
+			totalSellCopper: null,
 			unitListCopper,
-			totalListCopper: unitListCopper === null ? null : safeMultiply(unitListCopper, group.quantity),
+			totalListCopper: listing?.status === 'ok' ? listing.value.netCopper : null,
 			name: cleanText(item?.name ?? (locale === 'es' ? `Objeto ${String(group.itemId)}` : `Item ${String(group.itemId)}`)),
 			type: item?.type ? cleanText(item.type) : null,
 			rarity: item?.rarity ? cleanText(item.rarity) : null,
@@ -472,9 +478,9 @@ function fieldsFor(
 		tc_character: position.character,
 		tc_quantity: quantity,
 		tc_unit_sell_copper: position.unitSellCopper,
-		tc_total_sell_copper: position.unitSellCopper === null ? null : safeMultiply(position.unitSellCopper, quantity),
+		tc_total_sell_copper: active ? position.totalSellCopper : position.unitSellCopper === null ? null : 0,
 		tc_unit_list_copper: position.unitListCopper,
-		tc_total_list_copper: position.unitListCopper === null ? null : safeMultiply(position.unitListCopper, quantity),
+		tc_total_list_copper: active ? position.totalListCopper : position.unitListCopper === null ? null : 0,
 		tc_active: active,
 		tc_captured_at: capturedAt,
 		tc_item_name: position.name,
@@ -572,8 +578,8 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		nullableNonNegative(value.unitListCopper) && nullableNonNegative(value.totalListCopper) && nonEmptyText(value.name) &&
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
 		(value.icon === null || nonEmptyText(value.icon)) &&
-		(value.unitSellCopper === null ? value.totalSellCopper === null : value.totalSellCopper === safeMultiply(value.unitSellCopper, value.quantity)) &&
-		(value.unitListCopper === null ? value.totalListCopper === null : value.totalListCopper === safeMultiply(value.unitListCopper, value.quantity));
+		(value.unitSellCopper !== null || value.totalSellCopper === null) &&
+		(value.unitListCopper !== null || value.totalListCopper === null);
 }
 
 /**
@@ -628,12 +634,6 @@ async function ensureFolders(vault: InventoryVaultPort, path: string): Promise<v
 function safeAdd(left: number, right: number): number {
 	const result = left + right;
 	if (!Number.isSafeInteger(result) || result < 0) throw new Error('inventory_quantity_overflow');
-	return result;
-}
-
-function safeMultiply(left: number, right: number): number {
-	const result = left * right;
-	if (!Number.isSafeInteger(result) || result < 0) throw new Error('inventory_value_overflow');
 	return result;
 }
 

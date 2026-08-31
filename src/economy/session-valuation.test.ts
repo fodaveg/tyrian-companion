@@ -57,18 +57,18 @@ function input(): SessionValuationInput {
 			'2': item(2, { vendorValue: 5, flags: ['AccountBound'] }),
 		},
 		bindingByItem: { [String(HALLOWEEN_TOT_BAG_ITEM_ID)]: 'unbound', '2': 'account_bound' },
-		durationMs: 30 * 60 * 1_000,
 		sackItemIds: [HALLOWEEN_TOT_BAG_ITEM_ID],
 	};
 }
 
 describe('calculateSessionValuation', () => {
-	it('reproduces immediate, listing, vendor, sacks/hour and copper/hour', () => {
+	it('derives farming duration from the delta window, not the later price capture', () => {
 		const result = calculateSessionValuation(input());
 		expect(result).toMatchObject({
 			status: 'ok',
 			valuation: {
 				coverage: 'complete',
+				durationMs: 30 * 60 * 1_000,
 				lines: [
 					{
 						itemId: 2, quantity: 2, instantSell: null, listing: null,
@@ -168,12 +168,13 @@ describe('calculateSessionValuation', () => {
 		});
 	});
 
-	it('rejects mismatched price evidence, invalid duration and unsafe rate arithmetic', () => {
+	it('rejects mismatched evidence, invalid delta duration and unsafe rate arithmetic', () => {
 		const mismatched = input();
 		mismatched.prices = { ...mismatched.prices, sessionId: 'other' };
 		expect(calculateSessionValuation(mismatched)).toEqual({ status: 'invalid', reason: 'evidence_mismatch' });
-		expect(calculateSessionValuation({ ...input(), durationMs: 0 }))
-			.toEqual({ status: 'invalid', reason: 'invalid_duration' });
+		const noWindow = input();
+		noWindow.delta.window = null;
+		expect(calculateSessionValuation(noWindow)).toEqual({ status: 'invalid', reason: 'evidence_mismatch' });
 		expect(calculateSessionValuation({ ...input(), sackItemIds: [2, 2] }))
 			.toEqual({ status: 'invalid', reason: 'invalid_sack_ids' });
 	});

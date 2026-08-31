@@ -108,7 +108,9 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	if (runtime.review.classification.status !== runtime.state.classification) {
 		return { status: 'invalid', reason: 'invalid_runtime' };
 	}
-	const durationMs = Date.parse(runtime.state.finalSnapshot.completedAt) - Date.parse(runtime.state.baseline.completedAt);
+	const durationMs = runtime.delta.window === null
+		? Number.NaN
+		: Date.parse(runtime.delta.window.to) - Date.parse(runtime.delta.window.from);
 	if (!Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: 'invalid', reason: 'invalid_runtime' };
 	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames)) {
 		return { status: 'invalid', reason: 'invalid_input' };
