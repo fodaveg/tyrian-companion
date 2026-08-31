@@ -66,6 +66,52 @@ describe('ApiPollScheduler', () => {
 		]);
 	});
 
+	it('keeps staggered consumer deadlines and diagnostic identities isolated', async () => {
+		const harness = new SchedulerHarness();
+		harness.wall = 12_000;
+		harness.monotonic = 12_000;
+		const diagnostics = diagnosticHarness();
+		const priceHistoryPoll = vi.fn(async () => ({ kind: 'success' }) as const);
+		const detectionPoll = vi.fn(async () => ({ kind: 'success' }) as const);
+		const priceHistoryScheduler = harness.create(priceHistoryPoll, {
+			diagnostics,
+			diagnosticContext: {
+				component: 'price_history',
+				action: 'price_history_poll',
+			},
+		});
+		const detectionScheduler = harness.create(detectionPoll, { diagnostics });
+
+		priceHistoryScheduler.start(60_000);
+		harness.advanceWithoutTimers(12_000);
+		detectionScheduler.start(60_000);
+		await harness.fireNext();
+		await harness.fireNext();
+
+		const pollStarts = diagnostics.events.filter(({ phase }) => phase === 'start');
+		expect(priceHistoryPoll).toHaveBeenCalledTimes(1);
+		expect(detectionPoll).toHaveBeenCalledTimes(1);
+		expect(pollStarts).toEqual([
+			expect.objectContaining({
+				component: 'price_history', action: 'price_history_poll', actionId: 'poll-1',
+			}),
+			expect.objectContaining({
+				component: 'detection', action: 'detection_poll', actionId: 'poll-2',
+			}),
+		]);
+		expect(pollStarts.filter(({ action }) => action === 'detection_poll')).toHaveLength(1);
+		expect(new Set(pollStarts.map(({ actionId }) => actionId)).size).toBe(2);
+		expect(priceHistoryScheduler.getState()).toMatchObject({
+			lastAttemptAt: 72_000,
+			nextRunAt: 132_000,
+		});
+		expect(detectionScheduler.getState()).toMatchObject({
+			lastAttemptAt: 84_000,
+			nextRunAt: 144_000,
+		});
+		expect(harness.pendingTimers()).toBe(2);
+	});
+
 	it('records rate-limit retry metadata and a cancellation as terminal phases', async () => {
 		const rateHarness = new SchedulerHarness();
 		const rateDiagnostics = diagnosticHarness();
