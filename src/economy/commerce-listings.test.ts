@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-	captureInventoryMarketDepth,
 	isInventoryMarketDepthEvidence,
 	valueCompetitiveListing,
 	valueExpectedInstantSellDepth,
 	valueInstantSellDepth,
 } from './commerce-listings';
+import { captureInventoryMarketDepth } from './commerce-listings-capture';
 
 describe('official commerce listings depth', () => {
 	it('consumes several buy levels without extrapolating the best bid', () => {

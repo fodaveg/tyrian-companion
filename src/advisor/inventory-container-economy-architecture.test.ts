@@ -13,6 +13,7 @@ const ALLOWED_DEPENDENCIES = {
 	economy: new Set([
 		'../catalog/public-catalog-model',
 		'../catalog/public-catalog-validators',
+		'./commerce-listings',
 		'./container-expected-value',
 		'./container-model',
 		'./gw2-fees',
@@ -20,6 +21,7 @@ const ALLOWED_DEPENDENCIES = {
 	advisor: new Set([
 		'../catalog/public-catalog-model',
 		'../catalog/public-catalog-validators',
+		'../economy/commerce-listings',
 		'../economy/container-disposition-kernel',
 		'../economy/container-model',
 		'../economy/container-personal-valuation',
@@ -64,6 +66,12 @@ describe('inventory container economy H4.19 architecture boundary', () => {
 			"const fs = import('node:fs/promises');",
 			"const client = require('../account/guild-wars-2-client');",
 		]) expect(violations('src/economy/container-disposition-kernel.ts', source)).toContain('dependency');
+		expect(violations('src/economy/container-disposition-kernel.ts',
+			"import { captureInventoryMarketDepth } from './commerce-listings-capture';"))
+			.toContain('dependency');
+		expect(violations('src/advisor/inventory-container-economy.ts',
+			"import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';"))
+			.toContain('dependency');
 		for (const source of ["fetch('/v2/commerce/prices');", 'localStorage.setItem("x", "y");',
 			'setTimeout(run, 1);']) expect(violations('src/advisor/inventory-container-economy.ts', source)).toContain('side-effect');
 		for (const source of ['client: Client;', 'private readonly executor?: Executor;',

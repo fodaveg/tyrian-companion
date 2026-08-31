@@ -11,11 +11,11 @@ import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
-	captureInventoryMarketDepth,
 	isInventoryMarketDepthEvidence,
 	valueInstantSellDepth,
 	type InventoryMarketDepthEvidenceV1,
 } from '../economy/commerce-listings';
+import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;

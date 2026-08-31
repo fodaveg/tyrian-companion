@@ -2430,23 +2430,7 @@
 		"src/economy/commerce-listings.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"kind": "catch_clause",
-					"line": 77,
-					"column": 5,
-					"endLine": 82,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "captureInventoryMarketDepth",
-						"justification": "The \"captureInventoryMarketDepth\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"captureInventoryMarketDepth\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"captureInventoryMarketDepth\"."
-				}
-			]
+			"boundaries": []
 		},
 		"src/economy/container-disposition-kernel.ts": {
 			"classification": "production_source",
@@ -10806,6 +10790,27 @@
 						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
+				}
+			]
+		},
+		"src/economy/commerce-listings-capture.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 38,
+					"column": 5,
+					"endLine": 43,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "captureInventoryMarketDepth",
+						"justification": "The \"captureInventoryMarketDepth\" boundary handles \"local_recovery\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic."
+					},
+					"reason": "Allowlisted catch_clause: The \"captureInventoryMarketDepth\" boundary handles \"local_recovery\" as deterministic fail-closed validation or local recovery; it neither starts an independent user action nor suppresses an unowned terminal diagnostic. Verified recovery: \"local_recovery\" in \"captureInventoryMarketDepth\"."
 				}
 			]
 		}

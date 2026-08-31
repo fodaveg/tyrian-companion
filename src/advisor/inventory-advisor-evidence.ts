@@ -37,7 +37,7 @@ import {
 	isInventoryContainerPriceEvidence,
 	type InventoryContainerPriceEvidenceV1,
 } from './inventory-container-economy';
-import { captureInventoryMarketDepth } from '../economy/commerce-listings';
+import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 

@@ -2,10 +2,10 @@ import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import {
-	captureInventoryMarketDepth,
 	isInventoryMarketDepthEvidence,
 	type InventoryMarketDepthEvidenceV1,
 } from './commerce-listings';
+import { captureInventoryMarketDepth } from './commerce-listings-capture';
 
 export const SESSION_PRICE_SNAPSHOT_VERSION = 1 as const;
 export const SESSION_PRICE_SOURCE = 'gw2-commerce-prices' as const;
