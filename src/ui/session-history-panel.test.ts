@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { DurableSessionHistoryRecord } from '../sessions/session-history';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
-import { mountSessionHistoryPanel, SessionHistoryPanelController } from './session-history-panel';
+import {
+	formatSessionHistoryDuration,
+	mountSessionHistoryPanel,
+	SessionHistoryPanelController,
+} from './session-history-panel';
 
 describe('SessionHistoryPanelController', () => {
 	it('starts idle, coalesces an explicit load, and projects all terminal states', async () => {
@@ -66,6 +70,27 @@ describe('mountSessionHistoryPanel', () => {
 		expect(descendants(container).some((element) => element.tag === 'article')).toBe(true);
 	});
 
+	it.each([
+		['es' as const, 60_000, 30_000, '30 segundos', '+30 segundos'],
+		['es' as const, 30_000, 60_000, '30 segundos', '−30 segundos'],
+		['en' as const, 60_000, 30_000, '30 seconds', '+30 seconds'],
+		['en' as const, 30_000, 60_000, '30 seconds', '−30 seconds'],
+	])('preserves whole seconds in %s rows and comparison deltas', async (locale, latestMs, previousMs, duration, delta) => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [
+				record('2026-08-20T10:00:00.000Z', previousMs),
+				record('2026-08-20T11:00:00.000Z', latestMs),
+			],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, locale, controller);
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
+		expect(allText(container)).toContain(duration);
+		expect(allText(container)).toContain(delta);
+	});
+
 	it('announces fail-closed conflicts and never renders a partial table', async () => {
 		const document = new FakeDocument();
 		const container = new FakeElement('div', document);
@@ -81,10 +106,23 @@ describe('mountSessionHistoryPanel', () => {
 	});
 });
 
-function record(startedAt: string): DurableSessionHistoryRecord {
+describe('formatSessionHistoryDuration', () => {
+	it.each([
+		[30_000, 'es' as const, '30 segundos'],
+		[30_000, 'en' as const, '30 seconds'],
+		[1, 'es' as const, '<1 segundo'],
+		[999, 'en' as const, '<1 second'],
+		[0, 'es' as const, '0 segundos'],
+		[3_690_000, 'en' as const, '1 h 1 min 30 seconds'],
+	])('formats %dms in %s as %s', (durationMs, locale, expected) => {
+		expect(formatSessionHistoryDuration(durationMs, locale)).toBe(expected);
+	});
+});
+
+function record(startedAt: string, durationMs = 3_600_000): DurableSessionHistoryRecord {
 	return {
 		sessionRef: 'a'.repeat(64), accountRef: 'b'.repeat(64), startedAt,
-		endedAt: new Date(Date.parse(startedAt) + 3_600_000).toISOString(), durationMs: 3_600_000,
+		endedAt: new Date(Date.parse(startedAt) + durationMs).toISOString(), durationMs,
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,
 		immediateCopperPerHour: 10_000, listingCopperPerHour: 12_000, recommendationStatus: 'not_evaluated',

@@ -132,7 +132,7 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 	container.createEl('p', { text: copy.ready, cls: 'tyrian-session-history__ready' });
 	const summary = container.createDiv({ cls: 'tyrian-session-history__summary' });
 	appendMetric(summary, copy.sessions, String(aggregate.sessionCount));
-	appendMetric(summary, copy.duration, aggregate.totalDurationMs === null ? copy.unknown : formatDuration(aggregate.totalDurationMs, locale));
+	appendMetric(summary, copy.duration, aggregate.totalDurationMs === null ? copy.unknown : formatSessionHistoryDuration(aggregate.totalDurationMs, locale));
 	appendMetric(summary, copy.sacks, completeNumber(aggregate.totalSacks, aggregate.sacksKnown, aggregate.sessionCount, locale));
 	appendMetric(summary, copy.immediateValue, completeMoney(
 		aggregate.totalImmediateCopper, aggregate.immediateValueKnown, aggregate.sessionCount, locale,
@@ -175,7 +175,7 @@ function renderTable(container: HTMLElement, locale: Locale, rows: readonly Sess
 		const tr = body.createEl('tr');
 		const ended = tr.createEl('th', { text: formatTimestamp(row.endedAt, locale) });
 		ended.setAttr('scope', 'row');
-		appendCell(tr, formatDuration(row.durationMs, locale));
+		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale));
 		appendCell(tr, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
 		appendCell(tr, row.sacks === null ? copy.unknown : row.sacks.toLocaleString(locale));
 		appendCell(tr, money(row.immediateCopper, locale));
@@ -191,7 +191,7 @@ function renderCards(container: HTMLElement, locale: Locale, rows: readonly Sess
 		const article = cards.createEl('article', { cls: 'tyrian-session-history__card' });
 		article.createEl('h4', { text: formatTimestamp(row.endedAt, locale) });
 		const details = article.createEl('dl');
-		appendDetail(details, copy.duration, formatDuration(row.durationMs, locale));
+		appendDetail(details, copy.duration, formatSessionHistoryDuration(row.durationMs, locale));
 		appendDetail(details, copy.quality, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
 		appendDetail(details, copy.sacks, row.sacks === null ? copy.unknown : row.sacks.toLocaleString(locale));
 		appendDetail(details, copy.immediateValue, money(row.immediateCopper, locale));
@@ -240,14 +240,24 @@ function signedRate(value: number | null, locale: Locale): string {
 
 function signedDuration(durationMs: number, locale: Locale): string {
 	const sign = durationMs > 0 ? '+' : durationMs < 0 ? '−' : '±';
-	return `${sign}${formatDuration(Math.abs(durationMs), locale)}`;
+	return `${sign}${formatSessionHistoryDuration(Math.abs(durationMs), locale)}`;
 }
 
-function formatDuration(durationMs: number, locale: Locale): string {
-	const minutes = Math.floor(durationMs / 60_000);
-	const hours = Math.floor(minutes / 60);
-	const remainder = minutes % 60;
-	return locale === 'es' ? `${String(hours)} h ${String(remainder)} min` : `${String(hours)}h ${String(remainder)}m`;
+/** Formats a non-negative duration without dropping whole seconds or presenting a positive subsecond as zero. */
+export function formatSessionHistoryDuration(durationMs: number, locale: Locale): string {
+	const copy = UI[locale];
+	if (durationMs > 0 && durationMs < 1_000) return copy.lessThanSecond;
+	const totalSeconds = Math.floor(durationMs / 1_000);
+	const hours = Math.floor(totalSeconds / 3_600);
+	const minutes = Math.floor(totalSeconds / 60) % 60;
+	const seconds = totalSeconds % 60;
+	const parts: string[] = [];
+	if (hours > 0) parts.push(`${String(hours)} h`);
+	if (minutes > 0) parts.push(`${String(minutes)} min`);
+	if (seconds > 0 || parts.length === 0) parts.push(locale === 'es'
+		? `${String(seconds)} ${seconds === 1 ? 'segundo' : 'segundos'}`
+		: `${String(seconds)} ${seconds === 1 ? 'second' : 'seconds'}`);
+	return parts.join(' ');
 }
 
 function formatTimestamp(value: string, locale: Locale): string {
@@ -287,7 +297,7 @@ const UI = {
 		comparison: 'Última sesión frente a la anterior', comparisonBaseline: 'Hace falta una segunda sesión para mostrar evolución.',
 		comparisonWindow: 'Última: {latest}. Anterior: {previous}.', sacksPerHour: 'Sacos por hora', immediatePerHour: 'Valor inmediato por hora', listingPerHour: 'Valor listado por hora',
 		ended: 'Finalizada', quality: 'Calidad', tableCaption: 'Sesiones finalizadas, de más reciente a más antigua',
-		unknown: 'Desconocido', knownCoverage: 'Desconocido · {known}/{total} con dato',
+		unknown: 'Desconocido', knownCoverage: 'Desconocido · {known}/{total} con dato', lessThanSecond: '<1 segundo',
 	},
 	en: {
 		title: 'Durable history', intro: 'Compare completed sessions saved in notes. The Vault is read only when you activate this action.',
@@ -303,6 +313,6 @@ const UI = {
 		comparison: 'Latest session versus previous', comparisonBaseline: 'A second session is needed to show a trend.',
 		comparisonWindow: 'Latest: {latest}. Previous: {previous}.', sacksPerHour: 'Sacks per hour', immediatePerHour: 'Immediate value per hour', listingPerHour: 'Listing value per hour',
 		ended: 'Completed', quality: 'Quality', tableCaption: 'Completed sessions, newest to oldest',
-		unknown: 'Unknown', knownCoverage: 'Unknown · {known}/{total} with data',
+		unknown: 'Unknown', knownCoverage: 'Unknown · {known}/{total} with data', lessThanSecond: '<1 second',
 	},
 } as const;

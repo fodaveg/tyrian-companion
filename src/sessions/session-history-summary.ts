@@ -81,7 +81,7 @@ function summaryRow(session: DurableSessionHistoryRecord): SessionHistorySummary
 }
 
 function compareNewestFirst(left: SessionHistorySummaryRow, right: SessionHistorySummaryRow): number {
-	return right.startedAt.localeCompare(left.startedAt) || right.endedAt.localeCompare(left.endedAt);
+	return right.endedAt.localeCompare(left.endedAt) || right.startedAt.localeCompare(left.startedAt);
 }
 
 function compareLatest(rows: readonly SessionHistorySummaryRow[]): SessionHistoryComparison | null {

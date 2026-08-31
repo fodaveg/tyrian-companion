@@ -45,6 +45,38 @@ describe('buildSessionHistoryAggregate', () => {
 		});
 	});
 
+	it('orders overlapping sessions by completion and compares the two latest completions', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T09:00:00.000Z', {
+				durationMs: 5 * 3_600_000, immediateCopperPerHour: 500,
+			}),
+			record('2026-08-20T10:00:00.000Z', {
+				durationMs: 3 * 3_600_000, immediateCopperPerHour: 100,
+			}),
+			record('2026-08-20T11:00:00.000Z', {
+				durationMs: 3_600_000, immediateCopperPerHour: 200,
+			}),
+		]);
+
+		expect(aggregate.sessions.map((row) => row.endedAt)).toEqual([
+			'2026-08-20T14:00:00.000Z',
+			'2026-08-20T13:00:00.000Z',
+			'2026-08-20T12:00:00.000Z',
+		]);
+		expect(aggregate.comparison).toMatchObject({
+			latestEndedAt: '2026-08-20T14:00:00.000Z',
+			previousEndedAt: '2026-08-20T13:00:00.000Z',
+			immediateCopperPerHourDelta: 400,
+		});
+		const tied = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', { durationMs: 2 * 3_600_000 }),
+			record('2026-08-20T11:00:00.000Z', { durationMs: 3_600_000 }),
+		]);
+		expect(tied.sessions.map((row) => row.startedAt)).toEqual([
+			'2026-08-20T11:00:00.000Z', '2026-08-20T10:00:00.000Z',
+		]);
+	});
+
 	it('handles zero and one session without inventing a comparison', () => {
 		expect(buildSessionHistoryAggregate([])).toMatchObject({
 			sessionCount: 0, totalDurationMs: 0, totalSacks: null, comparison: null,
