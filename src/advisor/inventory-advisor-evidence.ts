@@ -122,9 +122,6 @@ export class InventoryAdvisorEvidenceService implements InventoryAdvisorEvidence
 		}
 		try {
 			snapshot = await this.snapshots.captureInventoryWithOperation(operation, onStorageProgress);
-			if (shouldRetryTransientSnapshot(snapshot)) {
-				snapshot = await this.snapshots.captureInventoryWithOperation(operation, onStorageProgress);
-			}
 			const snapshotFailure = inventoryAdvisorStorageSnapshotFailure(snapshot);
 			if (snapshotFailure !== null) {
 				return await this.finishCapture(
@@ -495,18 +492,6 @@ function catalogCoverage(catalog: CatalogResolution, snapshot: StorageSnapshot):
 }
 function snapshotCoverage(snapshot: StorageSnapshot): InventoryAdvisorEvidenceCoverageV1['snapshot'] {
 	return snapshot.quality === 'stable' && Object.values(snapshot.coverage.sources).every((entry) => entry.status === 'complete') ? 'complete' : 'partial';
-}
-function hasTransientSnapshotFailure(snapshot: StorageSnapshot): boolean {
-	if (snapshot.quality === 'unstable') return false;
-	return [...Object.values(snapshot.coverage.sources), ...Object.values(snapshot.coverage.characters)]
-		.some((entry) => entry.status === 'partial' && (entry.reason === 'partial_response' || entry.reason === 'unavailable'));
-}
-function shouldRetryTransientSnapshot(snapshot: StorageSnapshot): boolean {
-	try {
-		return hasTransientSnapshotFailure(snapshot);
-	} catch {
-		return false;
-	}
 }
 function priceCoverage(prices: InventoryPriceSnapshotV1): InventoryAdvisorEvidenceCoverageV1['prices'] { return prices.status; }
 function signalCoverage(signals: AccountSignalsV1): InventoryAdvisorEvidenceCoverageV1['accountSignals'] {

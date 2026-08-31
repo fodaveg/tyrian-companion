@@ -37,11 +37,10 @@ interface VerifiedSnapshotContext {
 export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
 
 /**
- * A real, request-counted snapshot of one capture pass in progress. Every `total` is
- * either a fixed constant (`roster`) or known the moment the roster response lands
- * (`accountStores` from the pinned token's own permissions, `characters` from the
- * roster length itself) — never an estimate. Optional end to end: only the inventory
- * advisor's one-click sync observes it today.
+ * Real request counts for a capture in progress. Every `total` is either fixed
+ * (`roster`) or known when its pass roster lands (`accountStores` from the pinned
+ * token's permissions, `characters` from the roster length itself) — never an
+ * estimate. The Inventory Advisor totals include both required observations.
  */
 export interface StorageSnapshotCaptureProgress {
 	readonly roster: { readonly completed: number; readonly total: number };
@@ -106,13 +105,57 @@ export class StorageSnapshotService {
 	): Promise<StorageSnapshot> {
 		const startedAt = new Date().toISOString();
 		const snapshotId = crypto.randomUUID();
-		const first = await this.capturePass(operation, context, scope, onProgress);
+		const advisorProgress = scope === 'inventory_advisor' && onProgress !== undefined
+			? createAdvisorProgressReporter(onProgress)
+			: null;
+		const first = await this.capturePass(operation, context, scope,
+			advisorProgress?.first ?? onProgress);
 		if (scope === 'inventory_advisor') {
+			if (!advisorPassComplete(first.coverage) || hasIncompleteCoverage(first.coverage)) {
+				return finalizeStorageSnapshot({
+					pass: first,
+					quality: advisorPassComplete(first.coverage) ? 'unstable' : 'partial',
+					coveragePasses: [first],
+					passes: [first],
+				}, {
+					accountId: context.accountId,
+					snapshotId,
+					startedAt,
+					completedAt: new Date().toISOString(),
+				});
+			}
+			const second = await this.capturePass(operation, context, scope,
+				advisorProgress?.second);
+			if (!advisorPassComplete(second.coverage) || hasIncompleteCoverage(second.coverage)) {
+				return finalizeStorageSnapshot({
+					pass: second,
+					quality: advisorPassComplete(second.coverage) ? 'unstable' : 'partial',
+					coveragePasses: [first, second],
+					passes: [first, second],
+				}, {
+					accountId: context.accountId,
+					snapshotId,
+					startedAt,
+					completedAt: new Date().toISOString(),
+				});
+			}
+			const pair = qualifyStorageSnapshotPair(first, second);
+			if (pair.status === 'qualified') {
+				return finalizeStorageSnapshot(pair.value, {
+					accountId: context.accountId,
+					snapshotId,
+					startedAt,
+					completedAt: new Date().toISOString(),
+				});
+			}
+			// Unlike a session boundary, one explicit Advisor refresh is capped at two
+			// observations. A disagreement remains useful for manual inspection but can
+			// never be upgraded into a curated recommendation inside the same refresh.
 			return finalizeStorageSnapshot({
-				pass: first,
-				quality: advisorPassComplete(first.coverage) ? 'unstable' : 'partial',
-				coveragePasses: [first],
-				passes: [first],
+				pass: second,
+				quality: 'unstable',
+				coveragePasses: [first, second],
+				passes: [first, second],
 			}, {
 				accountId: context.accountId,
 				snapshotId,
@@ -361,6 +404,41 @@ function advisorPassComplete(coverage: SnapshotCoverage): boolean {
 	return coverage.sources.characters.status === 'complete'
 		&& coverage.sources.shared_inventory.status === 'complete'
 		&& Object.values(coverage.characters).every((entry) => entry.status === 'complete');
+}
+
+function hasIncompleteCoverage(coverage: SnapshotCoverage): boolean {
+	return [...Object.values(coverage.sources), ...Object.values(coverage.characters)]
+		.some((entry) => entry.status === 'partial');
+}
+
+function createAdvisorProgressReporter(
+	report: (progress: StorageSnapshotCaptureProgress) => void,
+): {
+	first: (progress: StorageSnapshotCaptureProgress) => void;
+	second: (progress: StorageSnapshotCaptureProgress) => void;
+} {
+	let firstLatest: StorageSnapshotCaptureProgress | null = null;
+	return {
+		first: (progress) => {
+			firstLatest = progress;
+			report(progress);
+		},
+		second: (progress) => {
+			const first = firstLatest;
+			if (first === null) return;
+			report({
+				roster: { completed: 1 + progress.roster.completed, total: 2 },
+				accountStores: {
+					completed: first.accountStores.completed + progress.accountStores.completed,
+					total: first.accountStores.total + progress.accountStores.total,
+				},
+				characters: {
+					completed: first.characters.completed + progress.characters.completed,
+					total: first.characters.total + progress.characters.total,
+				},
+			});
+		},
+	};
 }
 
 function hasTransientCoverageFailure(coverage: SnapshotCoverage): boolean {

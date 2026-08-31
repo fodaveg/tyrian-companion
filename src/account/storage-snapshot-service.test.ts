@@ -137,8 +137,8 @@ describe('StorageSnapshotService', () => {
 		]));
 		expect(seen.map((path) => path.split('?')[0])).not.toContain('account/wallet');
 		expect(snapshot).toMatchObject({
-			quality: 'unstable',
-			passes: 1,
+			quality: 'stable',
+			passes: 2,
 			coverage: {
 				sources: {
 					characters: { status: 'complete' },
@@ -150,7 +150,7 @@ describe('StorageSnapshotService', () => {
 			},
 		});
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
-		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(true);
 	});
 
 	it('keeps an advisor capture usable when only the optional stores fail', async () => {
@@ -234,8 +234,8 @@ describe('StorageSnapshotService', () => {
 		expect(maxActiveCharacters).toBe(1);
 	});
 
-	it('keeps a fully covered changing inventory usable as limited advisor evidence', async () => {
-		const changing = [1].map((count) => passWith({
+	it('keeps two divergent advisor observations as limited evidence without a third pass', async () => {
+		const changing = [1, 2].map((count) => passWith({
 			'account/inventory': [{ id: 2_002, count }],
 		}));
 		const operationFixture = clientFor(changing);
@@ -245,8 +245,8 @@ describe('StorageSnapshotService', () => {
 
 		expect(snapshot).toMatchObject({
 			quality: 'unstable',
-			passes: 1,
-			availableByItem: { '2002': 1 },
+			passes: 2,
+			availableByItem: { '2002': 2 },
 			coverage: { sources: {
 				characters: { status: 'complete' },
 				shared_inventory: { status: 'complete' },
@@ -518,22 +518,55 @@ describe('StorageSnapshotService', () => {
 		]);
 	});
 
-	it('does not repeat a complete advisor pass only to claim stability', async () => {
+	it('requires two complete equivalent advisor observations before claiming stability', async () => {
 		const seen: string[] = [];
 		const fixture = clientFor([passWith()], { seen });
 		const snapshot = await new StorageSnapshotService(fixture.client)
 			.captureInventoryWithOperation(fixture.client.beginOperation());
 
 		expect(snapshot).toMatchObject({
-			quality: 'unstable',
-			passes: 1,
+			quality: 'stable',
+			passes: 2,
 			coverage: {
 				sources: { characters: { status: 'complete' }, shared_inventory: { status: 'complete' } },
 				characters: { [characterName]: { status: 'complete' } },
 			},
 		});
-		expect(snapshot.passCoverages).toHaveLength(1);
-		expect(seen).toHaveLength(5);
+		expect(snapshot.passCoverages).toHaveLength(2);
+		expect(seen).toHaveLength(10);
+	});
+
+	it('withholds advisor stability when ownership is equal but placement changes', async () => {
+		const movedBank = [null, bankFixture[0]];
+		const fixture = clientFor([
+			passWith({ 'account/bank': bankFixture }),
+			passWith({ 'account/bank': movedBank }),
+		]);
+
+		await expect(new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation()))
+			.resolves.toMatchObject({ quality: 'stable_owned_placement_changed', passes: 2 });
+	});
+
+	it('does not launch another advisor observation after a partial second pass', async () => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const seen: string[] = [];
+		const second = passWith({
+			[inventoryPath]: new HttpTransportError('http', 429, 2_000, 'Rate limited.'),
+		});
+		const fixture = clientFor([passWith(), second, passWith()], { seen });
+
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({
+			quality: 'partial', passes: 2,
+			coverage: { sources: { characters: {
+				status: 'partial', reason: 'unavailable',
+				diagnostic: { kind: 'http', status: 429, retryAfterMs: 2_000 },
+			} } },
+		});
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(2);
 	});
 
 	it('rejects duplicate roster entries instead of double-counting a character', async () => {
@@ -787,8 +820,7 @@ describe('StorageSnapshotService', () => {
 			);
 
 			expect(ticks.length).toBeGreaterThan(1);
-			// The very first tick lands the instant the roster answers: every total is
-			// already known (3 characters), nothing is completed yet but the roster itself.
+			// Totals expose only observations whose roster has already landed.
 			expect(ticks[0]).toEqual({
 				roster: { completed: 1, total: 1 },
 				accountStores: { completed: 0, total: 3 },
@@ -796,15 +828,50 @@ describe('StorageSnapshotService', () => {
 			});
 			const last = ticks.at(-1)!;
 			expect(last).toEqual({
-				roster: { completed: 1, total: 1 },
-				accountStores: { completed: 3, total: 3 },
-				characters: { completed: 3, total: 3 },
+				roster: { completed: 2, total: 2 },
+				accountStores: { completed: 6, total: 6 },
+				characters: { completed: 6, total: 6 },
 			});
 			// Every counter is monotonically non-decreasing across the whole capture.
 			for (let index = 1; index < ticks.length; index += 1) {
 				expect(ticks[index]!.accountStores.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.accountStores.completed);
 				expect(ticks[index]!.characters.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.completed);
+				expect(ticks[index]!.accountStores.total).toBeGreaterThanOrEqual(ticks[index - 1]!.accountStores.total);
+				expect(ticks[index]!.characters.total).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.total);
 			}
+		});
+
+		it.each([
+			['grows', [characterName], [characterName, 'Boreal Dos']],
+			['shrinks', [characterName, 'Boreal Dos'], [characterName]],
+		] as const)('keeps real monotonic totals when the roster %s between observations', async (
+			_label, firstRoster, secondRoster,
+		) => {
+			const secondCharacter = 'Boreal Dos';
+			const inventoryPath = `characters/${encodeURIComponent(secondCharacter)}/inventory`;
+			const extraInventory = { bags: [{ id: 9_001, inventory: [] }] };
+			const fixture = clientFor([
+				passWith({ characters: [...firstRoster], [inventoryPath]: extraInventory }),
+				passWith({ characters: [...secondRoster], [inventoryPath]: extraInventory }),
+			]);
+			const ticks: StorageSnapshotCaptureProgress[] = [];
+
+			await new StorageSnapshotService(fixture.client).captureInventoryWithOperation(
+				fixture.client.beginOperation(),
+				(progress) => ticks.push(progress),
+			);
+
+			for (let index = 1; index < ticks.length; index += 1) {
+				expect(ticks[index]!.roster.total).toBeGreaterThanOrEqual(ticks[index - 1]!.roster.total);
+				expect(ticks[index]!.accountStores.total).toBeGreaterThanOrEqual(ticks[index - 1]!.accountStores.total);
+				expect(ticks[index]!.characters.total).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.total);
+				expect(ticks[index]!.characters.completed).toBeGreaterThanOrEqual(ticks[index - 1]!.characters.completed);
+			}
+			expect(ticks.at(-1)).toEqual({
+				roster: { completed: 2, total: 2 },
+				accountStores: { completed: 6, total: 6 },
+				characters: { completed: 3, total: 3 },
+			});
 		});
 
 		it('never divides by zero and never regresses when the account has no characters', async () => {
@@ -822,19 +889,19 @@ describe('StorageSnapshotService', () => {
 				expect(Number.isNaN(tick.characters.completed)).toBe(false);
 			}
 			expect(ticks.at(-1)).toEqual({
-				roster: { completed: 1, total: 1 },
-				accountStores: { completed: 3, total: 3 },
+				roster: { completed: 2, total: 2 },
+				accountStores: { completed: 6, total: 6 },
 				characters: { completed: 0, total: 0 },
 			});
 		});
 
-		it('captures exactly as before when the caller does not pass a progress callback', async () => {
+		it('stabilizes even when the caller does not pass a progress callback', async () => {
 			const seen: string[] = [];
 			const fixture = clientFor([passWith()], { seen });
 			const snapshot = await new StorageSnapshotService(fixture.client)
 				.captureInventoryWithOperation(fixture.client.beginOperation());
 
-			expect(snapshot.quality).toBe('unstable');
+			expect(snapshot).toMatchObject({ quality: 'stable', passes: 2 });
 			expect(seen.map((path) => path.split('?')[0])).toContain('account/inventory');
 		});
 	});

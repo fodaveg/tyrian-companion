@@ -2,7 +2,7 @@ import { HttpTransportError } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { GuildWars2Operation } from './guild-wars-2-client';
 import type { SnapshotCoverage, SourceCoverage, StorageSnapshot } from './storage-snapshot-model';
-import type { StorageSnapshotService } from './storage-snapshot-service';
+import type { StorageSnapshotCaptureProgress, StorageSnapshotService } from './storage-snapshot-service';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 
 export type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
@@ -31,8 +31,11 @@ export class RateLimitedStorageSnapshotService implements SnapshotCaptureOperati
 		return this.guarded(() => this.inner.captureWithOperation(operation));
 	}
 
-	captureInventoryWithOperation(operation: GuildWars2Operation): Promise<StorageSnapshot> {
-		return this.guarded(() => this.inner.captureInventoryWithOperation(operation));
+	captureInventoryWithOperation(
+		operation: GuildWars2Operation,
+		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+	): Promise<StorageSnapshot> {
+		return this.guarded(() => this.inner.captureInventoryWithOperation(operation, onProgress));
 	}
 
 	private async guarded(run: () => Promise<StorageSnapshot>): Promise<StorageSnapshot> {

@@ -153,7 +153,7 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 		expect(beginOperation).toHaveBeenCalledTimes(2);
 	});
 
-	it('retries one transient partial snapshot before any catalog or price work, but not a capability limitation', async () => {
+	it('does not wash a transient partial snapshot with an external retry', async () => {
 		const transient = snapshotFixture([10]);
 		transient.quality = 'partial';
 		transient.coverage.sources.bank = { status: 'partial', reason: 'partial_response' };
@@ -166,8 +166,10 @@ describe('InventoryAdvisorEvidenceService H4.14', () => {
 			{ captureInventoryWithOperation }, { resolve: async () => catalogFor(stable) },
 			publicGateway((ids) => ids.map((id) => pricePayload(id))), () => NOW,
 		);
-		expect(await service.capture('es')).toMatchObject({ status: 'complete', evidence: { snapshot: { quality: 'stable' } } });
-		expect(captureInventoryWithOperation).toHaveBeenCalledTimes(2);
+		expect(await service.capture('es')).toEqual({
+			status: 'invalid', evidence: null, failure: 'snapshot_coverage_incomplete',
+		});
+		expect(captureInventoryWithOperation).toHaveBeenCalledOnce();
 
 		const limited = snapshotFixture([10]);
 		limited.coverage.sources.bank = { status: 'skipped', reason: 'missing_scope' };

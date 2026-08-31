@@ -44,6 +44,32 @@ describe('RateLimitedStorageSnapshotService', () => {
 		expect(inner.capture).toHaveBeenCalledTimes(1);
 	});
 
+	it('forwards advisor progress through the shared cooldown gate', async () => {
+		const progress = {
+			roster: { completed: 1, total: 2 },
+			accountStores: { completed: 3, total: 6 },
+			characters: { completed: 1, total: 2 },
+		};
+		const operation = {} as never;
+		const inner = {
+			captureInventoryWithOperation: vi.fn(async (
+				_operation: never,
+				onProgress?: (value: typeof progress) => void,
+			) => {
+				onProgress?.(progress);
+				return snapshot();
+			}),
+		};
+		const onProgress = vi.fn();
+		const gated = new RateLimitedStorageSnapshotService(inner as never,
+			new RateLimitCoordinator({ now: () => 0 }));
+
+		await gated.captureInventoryWithOperation(operation, onProgress);
+
+		expect(inner.captureInventoryWithOperation).toHaveBeenCalledWith(operation, onProgress);
+		expect(onProgress).toHaveBeenCalledWith(progress);
+	});
+
 	it('records a 429 with its Retry-After and blocks the very next capture', async () => {
 		const time = clock(0);
 		const inner = {
