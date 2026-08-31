@@ -83,7 +83,7 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	workspace.prepend(actionPanel.element);
 	const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver((entries) => {
 		const shellEntry = entries.find((entry) => entry.target === shell);
-		if (shellEntry) actionPanel.setCompact(shellEntry.contentRect.width < 480);
+		if (shellEntry) actionPanel.setCompact(shellEntry.contentRect.width < 1_050);
 	});
 	resizeObserver?.observe(shell);
 	return {

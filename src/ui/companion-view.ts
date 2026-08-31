@@ -110,6 +110,7 @@ export class TyrianCompanionView extends ItemView {
 	private incidentMessage: HTMLElement | null = null;
 	private incidentMore: HTMLElement | null = null;
 	private ledger: HTMLElement | null = null;
+	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	private readonly sessionHistoryController: SessionHistoryPanelController;
@@ -166,6 +167,7 @@ export class TyrianCompanionView extends ItemView {
 		this.incidentMessage = null;
 		this.incidentMore = null;
 		this.ledger = null;
+		this.detectionTimelineNodes = null;
 		contentEl.addClass('tyrian-companion-view');
 		const actionController = this.actions.getProductActionController?.();
 		const locale = this.actions.getLocale();
@@ -318,6 +320,7 @@ export class TyrianCompanionView extends ItemView {
 	private refreshDynamicStatus(): void {
 		const projection = this.projectStatus(Date.now());
 		const connection = this.actions.getConnectionState();
+		this.refreshDetectionTimeline();
 		for (const status of projection.items.filter((item) => item.id !== 'session')) {
 			const nodes = this.dynamicStatusNodes.get(status.id);
 			nodes?.value.setText(status.value);
@@ -609,6 +612,31 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		const timeline = container.createDiv({ cls: 'tyrian-companion-view__detection-timeline' });
 		timeline.setAttr('aria-label', this.t('view.detectionTimeline'));
+		const values = this.projectDetectionTimeline(mode, state, session);
+		this.detectionTimelineNodes = {
+			last: addDetectionTimelineItem(timeline, this.t('view.detectionLastQuery'), values.last),
+			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
+			next: addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), values.next),
+		};
+	}
+
+	private refreshDetectionTimeline(): void {
+		if (this.detectionTimelineNodes === null) return;
+		const values = this.projectDetectionTimeline(
+			this.actions.getDetectionMode(),
+			this.actions.getAssistedDetectionState(),
+			this.actions.getSessionState(),
+		);
+		this.detectionTimelineNodes.last.setText(values.last);
+		this.detectionTimelineNodes.result.setText(values.result);
+		this.detectionTimelineNodes.next.setText(values.next);
+	}
+
+	private projectDetectionTimeline(
+		mode: DetectionMode,
+		state: AssistedDetectionState,
+		session: SessionState,
+	): { last: string; result: string; next: string } {
 		const scheduler = state.scheduler;
 		const lastAttemptAt = scheduler.lastAttemptAt;
 		const last = lastAttemptAt === null
@@ -635,9 +663,7 @@ export class TyrianCompanionView extends ItemView {
 		else if (scheduler.status === 'polling') next = this.t('view.now');
 		else if (scheduler.status === 'paused_offline') next = this.t('view.whenOnline');
 		else if (scheduler.nextRunAt !== null) next = this.formatTimestamp(new Date(scheduler.nextRunAt).toISOString());
-		addDetectionTimelineItem(timeline, this.t('view.detectionLastQuery'), last);
-		addDetectionTimelineItem(timeline, this.t('view.detectionResult'), result);
-		addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), next);
+		return { last, result, next };
 	}
 
 	private async armDetection(): Promise<void> {
@@ -1241,10 +1267,10 @@ function addDetectionDetail(container: HTMLElement, term: string, detail: string
 	addDetail(list, term, detail);
 }
 
-function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): void {
+function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): HTMLElement {
 	const item = container.createDiv({ cls: 'tyrian-companion-view__detection-time' });
 	item.createSpan({ text: label });
-	item.createEl('strong', { text: value });
+	return item.createEl('strong', { text: value });
 }
 
 function radioOption(

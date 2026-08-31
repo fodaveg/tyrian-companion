@@ -19,7 +19,8 @@ export function renderHalloweenAlertPanel(
 ): void {
 	const state = actions.getHalloweenState();
 	const priceState = actions.getHalloweenPriceAlertState();
-	const requiresAttention = state.unreadCount > 0 || priceState.unreadCount > 0;
+	const requiresAttention = state.unreadCount > 0 || priceState.unreadCount > 0 ||
+		state.status.startsWith('store_') || priceState.status.startsWith('store_');
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween' });
 	section.setAttr('aria-label', t('halloween.aria'));
 	section.setAttr('data-attention', String(requiresAttention));

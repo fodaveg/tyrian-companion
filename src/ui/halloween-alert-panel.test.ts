@@ -61,6 +61,26 @@ describe('Halloween alert panel DOM', () => {
 		expect(button?.disabled).toBe(true);
 	});
 
+	it.each(['event', 'price'] as const)('keeps a %s store failure visible without an unread notice', (source) => {
+		const mount = new FakeElement('div');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({
+				status: source === 'event' ? 'store_unavailable' as const : 'ready' as const,
+				notices: [], unreadCount: 0, lastObservedAt: null, comparison: null,
+			}),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: () => source === 'price'
+				? { status: 'store_corrupt' as const, projection: null, notices: [], unreadCount: 0 }
+				: disabledPriceState(),
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+		}, translator('en'));
+		const all = walk(mount);
+		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
+		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
+		expect(all.some(({ role }) => role === 'alert')).toBe(true);
+		expect(all.map(({ text }) => text).join(' ')).toContain(source === 'event' ? 'unavailable' : 'invalid data');
+	});
+
 	it('renders all 18 comparison rows and a quantity-free price notice with accessible table semantics', () => {
 		const mount = new FakeElement('div');
 		const comparison: HalloweenComparisonRecordV2 = {

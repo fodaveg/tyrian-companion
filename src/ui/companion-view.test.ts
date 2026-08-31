@@ -4,8 +4,9 @@ vi.mock('./halloween-alert-panel', () => ({ renderHalloweenAlertPanel: vi.fn() }
 
 import { TyrianCompanionView } from './companion-view';
 import { createTranslator } from '../core/i18n';
-import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
+import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import { ProductActionController } from './product-action-controller';
 import { SessionHistoryPanelController } from './session-history-panel';
 
@@ -70,31 +71,57 @@ describe('Companion game HUD narrative', () => {
 	it('renders the exact bag scope and last query to result to next query sequence', () => {
 		const document = new RetainedFakeDocument();
 		const container = new RetainedFakeElement('div', document);
-		const translator = createTranslator('es');
-		const harness = {
-			t: (key: RuntimeTranslationKey, params?: Record<string, string | number>) => translateRuntime(translator, key, params),
-			formatTimestamp: (value: string) => value,
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderDetectionTimeline(
-				this: typeof harness, container: HTMLElement, mode: 'assisted', state: unknown, session: unknown,
-			): void;
-		}).renderDetectionTimeline;
 		const attemptedAt = Date.parse('2026-08-31T10:00:00.000Z');
-		render.call(harness, container as unknown as HTMLElement, 'assisted', {
+		let state: AssistedDetectionState = {
 			status: 'armed', armedAt: '2026-08-31T09:00:00.000Z', lastSnapshotAt: '2026-08-31T10:00:00.000Z',
 			scheduler: {
 				status: 'scheduled', intervalMs: 120_000, nextRunAt: attemptedAt + 120_000,
 				lastAttemptAt: attemptedAt, lastSuccessAt: attemptedAt, consecutiveFailures: 0,
 			},
-		}, { status: 'idle' });
+		};
+		const session = { version: 1 as const, status: 'idle' as const };
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getDetectionMode: () => 'assisted' as const,
+				getAssistedDetectionState: () => state,
+				getSessionState: () => session,
+			},
+			detectionTimelineNodes: null,
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderDetectionTimeline(
+				this: typeof harness, container: HTMLElement, mode: 'assisted', state: AssistedDetectionState, session: unknown,
+			): void;
+		}).renderDetectionTimeline;
+		render.call(harness, container as unknown as HTMLElement, 'assisted', state, session);
 
 		const cells = container.children[0]?.children ?? [];
 		expect(cells.map((cell) => cell.children[0]?.textContent)).toEqual(['Última consulta', 'Resultado', 'Próxima consulta']);
 		expect(cells[1]?.children[1]?.textContent).toContain('saco #36038');
-		expect(harness.t('view.assistedDetection')).toBe('Detección del saco #36038');
-		expect(harness.t('view.detectionScope')).toContain('No detecta farmeo general');
+		const initialLast = cells[0]?.children[1]?.textContent;
+		const initialNext = cells[2]?.children[1]?.textContent;
+
+		state = {
+			...state,
+			scheduler: {
+				...state.scheduler, status: 'backoff', lastAttemptAt: attemptedAt + 60_000,
+				lastSuccessAt: attemptedAt, nextRunAt: attemptedAt + 180_000, consecutiveFailures: 1,
+			},
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const refresh = (TyrianCompanionView.prototype as unknown as {
+			refreshDetectionTimeline(this: typeof harness): void;
+		}).refreshDetectionTimeline;
+		refresh.call(harness);
+		expect(cells[0]?.children[1]?.textContent).not.toBe(initialLast);
+		expect(cells[1]?.children[1]?.textContent).toContain('falló');
+		expect(cells[2]?.children[1]?.textContent).not.toBe(initialNext);
+
+		const translator = createTranslator('es');
+		expect(translateRuntime(translator, 'view.assistedDetection')).toBe('Detección del saco #36038');
+		expect(translateRuntime(translator, 'view.detectionScope')).toContain('No detecta farmeo general');
 	});
 
 	it('promotes exactly one pending confirmation over the ordinary session action', () => {

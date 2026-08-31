@@ -181,7 +181,7 @@ describe('product action surface', () => {
 		expect(openSettings).toHaveBeenCalledOnce();
 	});
 
-	it('closes the single accessible action disclosure when the shell enters compact width', () => {
+	it('closes the single accessible action disclosure throughout the stacked workspace breakpoint', () => {
 		let resize!: ResizeObserverCallback;
 		const disconnect = vi.fn();
 		vi.stubGlobal('ResizeObserver', class {
@@ -200,7 +200,7 @@ describe('product action surface', () => {
 		const contentId = toggle.attributes.get('aria-controls');
 		const content = walk(panel).find((element) => element.attributes.get('id') === contentId)!;
 
-		resize([{ target: shell as unknown as Element, contentRect: { width: 420 } } as ResizeObserverEntry], {} as ResizeObserver);
+		resize([{ target: shell as unknown as Element, contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver);
 		expect(panel.attributes.get('data-compact')).toBe('true');
 		expect(toggle.attributes.get('aria-expanded')).toBe('false');
 		expect(content.hidden).toBe(true);
@@ -209,7 +209,7 @@ describe('product action surface', () => {
 		toggle.dispatch('click');
 		expect(toggle.attributes.get('aria-expanded')).toBe('true');
 		expect(content.hidden).toBe(false);
-		resize([{ target: shell as unknown as Element, contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver);
+		resize([{ target: shell as unknown as Element, contentRect: { width: 1_280 } } as ResizeObserverEntry], {} as ResizeObserver);
 		expect(panel.attributes.get('data-compact')).toBe('false');
 		expect(content.hidden).toBe(false);
 		mount.dispose();
