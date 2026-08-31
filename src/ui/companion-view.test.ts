@@ -5,6 +5,7 @@ vi.mock('./halloween-alert-panel', () => ({ renderHalloweenAlertPanel: vi.fn() }
 import { TyrianCompanionView } from './companion-view';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { ProductActionController } from './product-action-controller';
+import { SessionHistoryPanelController } from './session-history-panel';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -93,6 +94,8 @@ describe('Companion retained product shell', () => {
 			ledger: null,
 			productShell: null,
 			productShellKey: null,
+			sessionHistoryController: new SessionHistoryPanelController(async () => ({ status: 'ok', sessions: [], ignored: 0 })),
+			sessionHistoryPanel: null,
 			clearRefresh: vi.fn(),
 			projectStatus: () => ({ refreshEveryMs: null }),
 			renderLedgerHeader: vi.fn(),

@@ -31,6 +31,7 @@ import type { DetectionQualityRecorderState } from '../sessions/session-detectio
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
+import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import {
 	buildCompanionStatus,
 	localizedCoverageStatus,
@@ -44,6 +45,11 @@ import { renderLootPresentationView } from './loot-presentation-view';
 import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
+import {
+	mountSessionHistoryPanel,
+	SessionHistoryPanelController,
+	type SessionHistoryPanelMount,
+} from './session-history-panel';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -78,6 +84,7 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	stopManualSession(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
+	loadSessionHistory(): Promise<SessionHistoryLoadResult>;
 	getLocalDebugStatus?(): LocalDebugStatus;
 	localDebugViewEvent?(phase: 'open' | 'close'): void;
 	openLocalDebugSettings?(): void;
@@ -99,12 +106,15 @@ export class TyrianCompanionView extends ItemView {
 	private ledger: HTMLElement | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
+	private readonly sessionHistoryController: SessionHistoryPanelController;
+	private sessionHistoryPanel: SessionHistoryPanelMount | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		private readonly actions: CompanionActions,
 	) {
 		super(leaf);
+		this.sessionHistoryController = new SessionHistoryPanelController(() => this.actions.loadSessionHistory());
 	}
 
 	getViewType(): string {
@@ -129,6 +139,8 @@ export class TyrianCompanionView extends ItemView {
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
+		this.sessionHistoryPanel?.dispose();
+		this.sessionHistoryPanel = null;
 		this.clearRefresh();
 	}
 
@@ -171,6 +183,8 @@ export class TyrianCompanionView extends ItemView {
 		}
 		this.productShell?.update();
 		const surface = this.productShell?.content ?? contentEl;
+		this.sessionHistoryPanel?.dispose();
+		this.sessionHistoryPanel = null;
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
 		this.renderLedgerHeader(surface, projection, connectionState, sessionState);
@@ -180,6 +194,7 @@ export class TyrianCompanionView extends ItemView {
 		sessionDetails.open = true;
 		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
 		this.renderSession(sessionDetails, connectionState, sessionState);
+		this.sessionHistoryPanel = mountSessionHistoryPanel(surface, locale, this.sessionHistoryController);
 		const detectionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		detectionDetails.open = true;
 		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });

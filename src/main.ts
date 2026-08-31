@@ -107,6 +107,7 @@ import {
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
 } from './sessions/session-history';
+import type { SessionHistoryLoadResult } from './sessions/session-history-summary';
 import {
 	ManualSessionStartService,
 	type SessionRecoveryState,
@@ -1503,6 +1504,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
 
 	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
+
+	/** Reads durable session notes only after the visible history action is activated. */
+	async loadSessionHistory(): Promise<SessionHistoryLoadResult> {
+		if (!this.runtimeReady) return { status: 'unavailable' };
+		return await this.sessionHistory.scan();
+	}
 
 	async exportSessionHistory(): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
