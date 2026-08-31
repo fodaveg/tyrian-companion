@@ -12,9 +12,11 @@
   cierre. Los mapas tipados son exhaustivos y el mensaje/cooldown de conexión conserva su circuito
   independiente.
 - Los dos commits están combinados únicamente en `codex/parallel-integration`: no se han integrado
-  en `main`, publicado ni desplegado. El gate combinado queda verde con lint, 162 ficheros y 2.166
-  tests, seguridad, observabilidad, contratos de release/beta/soporte y build. La QA visual de H9.7
-  y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen pendientes.
+  en `main`, publicado ni desplegado. La revisión independiente hizo corregir el orden por cierre y
+  la pérdida de segundos en duraciones/deltas subminuto. El gate combinado final queda verde con
+  lint, 162 ficheros y 2.177 tests, seguridad, observabilidad, contratos de release/beta/soporte y
+  build. La QA visual de H9.7 y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen
+  pendientes.
 
 ## Release beta 0.1.17 - Hotfix de inicialización
 

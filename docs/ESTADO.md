@@ -33,9 +33,10 @@ elimina referencias de cuenta/sesión y no persiste recomendaciones ni opera sob
 H6.21 sustituye el mensaje genérico de inicio y cierre por copy accionable y exhaustivo para los
 ocho códigos de arranque y los seis de finalización, con paridad ES/EN. El enfriamiento `429` de la
 conexión conserva su ruta independiente y no queda oculto por este cambio. Ambos frentes tienen
-tests focales verdes. El gate combinado pasa lint, 162 ficheros y 2.166 tests, escáner de seguridad,
-censo de observabilidad, contratos de release/beta/soporte y build; la revisión independiente queda
-como último gate antes de declarar el candidato apto.
+tests focales verdes. La revisión independiente detectó el orden por inicio y la pérdida de segundos
+en duraciones cortas; ambos quedaron corregidos con regresiones por cierre solapado y deltas
+subminuto. El gate combinado pasa lint, 162 ficheros y 2.177 tests, escáner de seguridad, censo de
+observabilidad, contratos de release/beta/soporte y build.
 
 La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
 inventario de sesión, Halloween y cuenta. El alcance real queda explícito: el polling asistido de
@@ -568,7 +569,7 @@ retenía sus capacidades curadas. La vista prioriza ahora una cola directa «Qu�
 verde; queda pendiente repetir
 la QA manual del plugin instalado y confirmar filas reales visibles.
 
-Incluye scaffold oficial, selección segura y estable por operación, ajustes versionados, conexión explícita `tokeninfo → account`, validación runtime, concurrencia latest-wins, cooldown real, estados accesibles, transporte resiliente, límites modulares, tests y CI. H1.4 aporta coordinación fail-closed de una sola sesión activa por máquina mediante lease/fence en IndexedDB dedicada. H3.1 define el lifecycle puro `idle → starting → active → stopping → provisional → complete|error`. H3.2–H3.10 cubren captura manual, recovery durable, detección asistida explícita, revisión de contaminación y medición local de calidad. H4.1–H4.12 añaden valoración, reservas, intenciones y recomendaciones manuales puras; no operan sobre la cuenta. H5.12 persiste objetivos y excepciones locales con CAS explícito. No hay persistencia de recomendaciones, operación sobre la cuenta ni escritura libre en el vault: H5.4 solo genera notas completas con bloques gestionados, H5.6 solo modifica assets tras una operación explícita y H5.10 exporta o scrubbea únicamente mediante acciones explícitas. El panel/agregación del historial sigue pendiente.
+Incluye scaffold oficial, selección segura y estable por operación, ajustes versionados, conexión explícita `tokeninfo → account`, validación runtime, concurrencia latest-wins, cooldown real, estados accesibles, transporte resiliente, límites modulares, tests y CI. H1.4 aporta coordinación fail-closed de una sola sesión activa por máquina mediante lease/fence en IndexedDB dedicada. H3.1 define el lifecycle puro `idle → starting → active → stopping → provisional → complete|error`. H3.2–H3.10 cubren captura manual, recovery durable, detección asistida explícita, revisión de contaminación y medición local de calidad. H4.1–H4.12 añaden valoración, reservas, intenciones y recomendaciones manuales puras; no operan sobre la cuenta. H5.12 persiste objetivos y excepciones locales con CAS explícito. No hay persistencia de recomendaciones, operación sobre la cuenta ni escritura libre en el vault: H5.4 solo genera notas completas con bloques gestionados, H5.6 solo modifica assets tras una operación explícita y H5.10 exporta o scrubbea únicamente mediante acciones explícitas. H9.7 agrega ese historial en Companion después de una carga manual, sin leer el vault al abrir la vista.
 
 ## Evidencia de cierre
 
