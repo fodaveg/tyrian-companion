@@ -2,7 +2,11 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createPilotEnvironment, pilotProposalRef, type PilotProposalObservationV1 } from './pilot-metrics-model';
-import { IndexedDbPilotMetricsStore } from './pilot-metrics-store';
+import {
+	IndexedDbPilotMetricsStore,
+	PILOT_METRICS_PROFILE_STORE,
+	PILOT_METRICS_VERIFICATION_STORE,
+} from './pilot-metrics-store';
 
 const ENV = createPilotEnvironment({
 	platform: 'linux_steam_proton', platformVersion: '10.0-1', obsidianVersion: '1.11.4', tyrianVersion: '0.1.17',
@@ -208,6 +212,27 @@ describe('IndexedDbPilotMetricsStore', () => {
 		})).resolves.toMatchObject({ status: 'ok' });
 	});
 
+	it('reports a corrupt active profile before a stale revision and never stores the verification', async () => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('verification-corrupt-profile'));
+		await store.saveProfile(ENV);
+		const captured = await store.load();
+		if (captured.status !== 'ok') throw new Error('Expected reviewable profile.');
+		await store.saveProfile({ ...ENV, platformVersion: '10.0-2' });
+		const database = await store['database'];
+		if (!database) throw new Error('Expected open database.');
+		const corrupt = database.transaction(PILOT_METRICS_PROFILE_STORE, 'readwrite');
+		corrupt.objectStore(PILOT_METRICS_PROFILE_STORE).put({ invalid: 'profile' }, 'active');
+		await transactionComplete(corrupt);
+
+		await expect(store.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:03:00.000Z',
+			environment: captured.value.profile, sampleRevision: captured.value.sampleRevision,
+		})).resolves.toEqual({ status: 'error', code: 'inconsistent' });
+		const verification = database.transaction(PILOT_METRICS_VERIFICATION_STORE, 'readonly')
+			.objectStore(PILOT_METRICS_VERIFICATION_STORE).get('active');
+		await expect(requestResult(verification)).resolves.toBeUndefined();
+	});
+
 	it('increments the sample revision only for real profile and evidence mutations', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('revision'));
 		await store.saveProfile(ENV);
@@ -299,4 +324,19 @@ function excludedTerminal(exclusionReason: 'expired' | 'superseded' | 'invalidat
 
 function databaseName(suffix: string): string {
 	return `pilot-metrics-${suffix}-${crypto.randomUUID()}`;
+}
+
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+	return new Promise((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed.'));
+	});
+}
+
+function transactionComplete(transaction: IDBTransaction): Promise<void> {
+	return new Promise((resolve, reject) => {
+		transaction.oncomplete = () => resolve();
+		transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed.'));
+		transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted.'));
+	});
 }

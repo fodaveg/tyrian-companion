@@ -151,10 +151,18 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			]);
 			const sampleRevision = normalizeSampleRevision(storedRevision);
 			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
-			if (verification.sampleRevision !== sampleRevision) { transaction.abort(); return { status: 'stale' }; }
-			if (!isPilotEnvironment(profile) || !sameEnvironment(profile, verification.environment)) {
+			if (profile !== undefined && !isPilotEnvironment(profile)) {
 				transaction.abort();
-				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
+				return { status: 'error', code: 'inconsistent' };
+			}
+			if (verification.sampleRevision !== sampleRevision) { transaction.abort(); return { status: 'stale' }; }
+			if (profile === undefined) {
+				transaction.abort();
+				return { status: 'error', code: 'unconfigured' };
+			}
+			if (!sameEnvironment(profile, verification.environment)) {
+				transaction.abort();
+				return { status: 'error', code: 'inconsistent' };
 			}
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).put(structuredClone(verification), 'active');
 			await transactionDone(transaction);
