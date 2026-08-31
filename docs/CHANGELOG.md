@@ -1,6 +1,21 @@
 # Changelog
 
-## Candidato sin publicar - H9.5, H9.19, H9.20, H12.5 y H12.6
+## Release beta 0.1.18 - HUD, historial, Advisor y endurecimiento
+
+- Publicada el 2026-08-31 la
+  [GitHub Release `0.1.18`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18) desde el
+  tag y commit `6090defe5fd4b485e4f49efdbfd10f395197a716`.
+- Los runs de CI de `main` `33422321993` y del tag `33422707286` terminaron en verde con las tres
+  matrices Node, Rust portable/Windows, benchmark y paquete reproducible.
+- La release contiene exactamente `manifest.json`, `main.js`, `styles.css`,
+  `tyrian-companion-0.1.18.zip` y `tyrian-companion-0.1.18.zip.sha256`. Los digests remotos coinciden
+  con los bytes sellados y el ZIP tiene SHA-256
+  `fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`.
+- El canal BRAT está publicado. La instalación/actualización por plataforma, la QA visual en
+  Obsidian y el contraste live de profundidad del Bazar siguen pendientes y no se consideran
+  acreditados por la publicación.
+
+## Incluido en beta 0.1.18 - H9.5, H9.19, H9.20, H12.5 y H12.6
 
 - H9.5 permite comparar el historial por actividad Halloween y build declarado. Los campos viven
   solo en el record local, no atraviesan JSON ni CSV, y un grupo exige al menos dos sesiones
@@ -22,7 +37,7 @@
   nueva. La navegación pasa de lateral a horizontal bajo 1050 px; filas, tablas Halloween y controles
   cambian causalmente en 760/480 px. Logging y soporte usan el mismo vocabulario ES/EN y recuerdan
   revisar el extracto saneado antes de compartirlo.
-- Commits candidatos: `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
+- Commits incluidos: `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
   `85949ae`, `80898b0`, `1747443` y `22b4a17`. La revisión del gate separó la captura HTTP de listings del
   modelo/valoradores puros y añadió sabotajes que impiden importarla desde H4.19. Pasan 431 pruebas
   dirigidas. La revisión final cerró además un hueco del validator: profundidad `complete` exige una
@@ -30,11 +45,11 @@
   inválida o sin cobertura. El gate completo posterior pasa lint, 167 ficheros/2.318 tests, spike
   nativo, scanner, 644 fronteras de observabilidad, empaquetado reproducible, contratos
   beta/release/soporte y build. La rerevisión independiente no encuentra más hallazgos y da el
-  candidato por listo para merge. Siguen pendientes la QA visual/teclado en
-  Obsidian real y el contraste live de listings, Refresh durable y sesión manual antes de publicar.
-  Nada está en `main` ni publicado.
+  árbol por listo para release. Siguen pendientes la QA visual/teclado en Obsidian real y el
+  contraste live de listings, Refresh durable y sesión manual; la publicación no acredita esas
+  comprobaciones.
 
-## Candidato sin publicar - H6.26 y H12.4
+## Incluido en beta 0.1.18 - H6.26 y H12.4
 
 - H6.26 limita cada Refresh del Inventory Advisor a dos observaciones dentro de la misma operación y
   credencial. Solo dos capturas completas con ownership y placement equivalentes producen `stable`;
@@ -52,15 +67,15 @@
   primaria se recalcula con el estado vivo y no promueve propuestas obsoletas; Halloween permanece
   compacto salvo alerta no leída o error de store. El timer único también cubre propuestas que llegan
   tras el render y, al caducar, elimina CTA y acciones inline sin dejar controles muertos.
-- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`, `bca8a9d`, `e449df5`,
+- Commits incluidos: `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`, `bca8a9d`, `e449df5`,
   `c837acf` y `5d1641f`; `ee1f923`, `a19d5e1` y `e04414e` realinean sus fronteras de observabilidad.
   El gate combinado queda verde con lint, 167 ficheros/2.288 tests, spike nativo, scanner,
   643 fronteras de observabilidad sin pendientes,
   empaquetado reproducible, contratos de release/beta/soporte y build. La revisión combinada es el
   último control externo; la QA con cuenta grande y la QA visual/teclado en Obsidian real siguen
-  pendientes. Nada está en `main` ni publicado.
+  pendientes aunque el lote ya está publicado.
 
-## Candidato sin publicar - H6.23, H6.24 y H6.25
+## Incluido en beta 0.1.18 - H6.23, H6.24 y H6.25
 
 - H6.23 corrige la divergencia live entre manifiesto v2 en la raíz anterior y cinco Bases ya
   reserializadas en la nueva carpeta de salida. La relocation exige origen owned/ready/current,
@@ -77,11 +92,11 @@
   un único terminal `session_projection/precondition_failed`; lectura real conserva
   `storage_failure`, otro bug de proyección usa `internal_failure` y `runtime_initialize` continúa
   con terminal success. El paquete de soporte excluye texto libre, stack, errorName, state y details.
-- Commits candidatos: `446ae51` (assets), `cf0f7c0` (polling), `7732485` (atribución) y `463d367`
+- Commits incluidos: `446ae51` (assets), `cf0f7c0` (polling), `7732485` (atribución) y `463d367`
   (baseline combinada). El gate queda verde con lint, 167 ficheros/2.269 tests, scanner,
-  observabilidad (644 fronteras, 0 pendientes), contratos y build. Nada está en `main` ni publicado.
+  observabilidad (644 fronteras, 0 pendientes), contratos y build. El lote forma parte de `0.1.18`.
 
-## Candidato sin publicar - H8.8 y H7.13
+## Incluido en beta 0.1.18 - H8.8 y H7.13
 
 - H8.8 queda reconciliada como política shadow pura y aislada: presencia de 5 s o ausencia de 60 s
   en el mapa 866 producen como máximo un DTO efímero sujeto a revisión humana. No hay composición,
@@ -111,15 +126,15 @@
   clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
   los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
   propuestas son seudónimos, no anonimización.
-- Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
+- Los commits incluidos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
   `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c`,
   `4902bf5`, `f64a06c` y `e70fb66` para H7.13. Los hallazgos contractuales, de seguridad y de
   revisión independiente quedan cubiertos; 108 tests focales y el gate completo quedan verdes con
   lint, 167 ficheros/2.250 tests, scanner, observabilidad, contratos y build. El dry run real en
-  las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; nada de este lote
-  está en `main` ni publicado.
+  las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; publicar el journal
+  no acredita el piloto.
 
-## Reconciliación candidata - H6.19 y H6.20
+## Incluido en beta 0.1.18 - reconciliación H6.19 y H6.20
 
 - Ambos hallazgos de QA real estaban corregidos en producción desde `6c6e2cd`, incluido ya en las
   releases `0.1.16` y `0.1.17`; este lote documenta la causa y añade cobertura, sin cambiar de nuevo
@@ -131,10 +146,10 @@
 - H6.20 reserva `session_start` al gesto humano y etiqueta la persistencia periódica de autoridad
   como `session_lease`, con el saneado positivo habitual y sin datos del lease o de la sesión. La
   sesión live de veinte minutos continúa como aceptación manual no ejecutada desde el repositorio.
-- El gate combinado del candidato queda verde con lint, 162 ficheros y 2.178 tests, seguridad,
+- El gate combinado previo a la release queda verde con lint, 162 ficheros y 2.178 tests, seguridad,
   observabilidad, contratos de release/beta/soporte y build.
 
-## Candidato sin publicar - H9.7 y H6.21
+## Incluido en beta 0.1.18 - H9.7 y H6.21
 
 - H9.7 añade a Companion un panel ES/EN de historial durable. Abrir o repintar la vista no lee el
   vault: el escaneo completo solo parte de **Cargar historial**, coalesce dobles activaciones y
@@ -145,8 +160,8 @@
 - H6.21 incorpora copy accionable ES/EN para los ocho motivos de fallo de inicio y los seis de
   cierre. Los mapas tipados son exhaustivos y el mensaje/cooldown de conexión conserva su circuito
   independiente.
-- Los dos commits están combinados únicamente en `codex/parallel-integration`: no se han integrado
-  en `main`, publicado ni desplegado. La revisión independiente hizo corregir el orden por cierre y
+- Los dos commits están integrados y publicados en `0.1.18`. La revisión independiente hizo corregir
+  el orden por cierre y
   la pérdida de segundos en duraciones/deltas subminuto. El gate combinado final queda verde con
   lint, 162 ficheros y 2.178 tests, seguridad, observabilidad, contratos de release/beta/soporte y
   build. La QA visual de H9.7 y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen

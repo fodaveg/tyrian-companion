@@ -3,24 +3,25 @@
 ## Estado actual
 
 La beta pública actual es
-[`0.1.17`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.17), tag y commit
-`214362e2e7bc037befdaf81ac7a201ce9aaab37c`. Los runs de CI de `main` `33311829149` y del tag
-`33311981029` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.17.zip` y `tyrian-companion-0.1.17.zip.sha256`, por lo que el
+[`0.1.18`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18), tag y commit
+`6090defe5fd4b485e4f49efdbfd10f395197a716`. Los runs de CI de `main` `33422321993` y del tag
+`33422707286` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
+`styles.css`, `tyrian-companion-0.1.18.zip` y `tyrian-companion-0.1.18.zip.sha256`, por lo que el
 canal BRAT está publicado. El ZIP tiene SHA-256
-`dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`. La instalación, primera
+`fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`. La instalación, primera
 carga y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
 siguen pendientes de QA humana. Una release publicada o un artifact verde de CI no demuestran esos
 flujos.
 
-`0.1.17` corrige el bloqueo de inicialización al restaurar una sesión completada persistida. El
-guardarraíl de runtime reproduce ese estado terminal y exige alcanzar el estado listo; los detalles
-del log local no forman parte de la evidencia publicada.
+`0.1.18` incorpora el HUD priorizado, historial y comparativas de sesión, métricas del piloto,
+profundidad real y tasas en las valoraciones económicas, el Advisor orientado a decisiones manuales,
+Ajustes y Halloween responsive, y el endurecimiento acumulado de polling, assets y diagnóstico. No
+incluye el helper H8 en el paquete productivo.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de
 [soporte y redacción](SUPPORT.md). Estos documentos describen el producto actual; no sustituyen la
-matriz humana ni convierten el candidato en una release publicada.
+matriz humana ni acreditan la QA pendiente.
 
 ## Contrato del paquete
 
@@ -61,7 +62,7 @@ Referencias del contrato:
    ```sh
    node install-beta.mjs install \
      --vault "/ruta/a/una-bóveda-desechable" \
-     --archive "tyrian-companion-0.1.17.zip" \
+     --archive "tyrian-companion-0.1.18.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -99,8 +100,8 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
-La rama candidata incorpora el journal local H7.13 para preparar esa evidencia, pero no forma parte
-de la release `0.1.17`. Antes del piloto H7.7 todavía hay que ejecutar el dry run instrumentado en
+La release `0.1.18` incorpora el journal local H7.13 para preparar esa evidencia, pero publicarlo no
+acredita el piloto. Antes de H7.7 todavía hay que ejecutar el dry run instrumentado en
 Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
 que limpiar/desactivar funciona dentro de Obsidian real. El dry run debe incluir además una revisión
 que quede `stale` tras mutación concurrente y tras desactivar/reactivar el mismo perfil, un fallo de
@@ -117,13 +118,13 @@ una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Canal BRAT publicado
 
-La release pública `0.1.17` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
+La release pública `0.1.18` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
 adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
 usarse para instalación manual y su SHA-256 es
-`dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`; no sustituye los tres assets
+`fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`; no sustituye los tres assets
 que descarga BRAT.
 
-Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.17`. Antes de
+Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.18`. Antes de
 dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
 sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
 una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT

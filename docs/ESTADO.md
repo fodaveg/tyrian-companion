@@ -2,14 +2,15 @@
 
 ## Vertical activa
 
-**Release beta `0.1.17` publicada el 2026-08-30; hotfix de arranque entregado al canal BRAT.** El tag
-y commit `214362e2e7bc037befdaf81ac7a201ce9aaab37c` están disponibles en la
-[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.17). Los runs
-de CI de `main` [`33311829149`](https://github.com/fodaveg/tyrian-companion/actions/runs/33311829149)
-y del tag [`33311981029`](https://github.com/fodaveg/tyrian-companion/actions/runs/33311981029)
+**Release beta `0.1.18` publicada el 2026-08-31; canal BRAT actualizado.** El tag y commit
+`6090defe5fd4b485e4f49efdbfd10f395197a716` están disponibles en la
+[GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18). Los runs
+de CI de `main` [`33422321993`](https://github.com/fodaveg/tyrian-companion/actions/runs/33422321993)
+y del tag [`33422707286`](https://github.com/fodaveg/tyrian-companion/actions/runs/33422707286)
 terminaron en verde. La release publica los cinco assets exactos `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.17.zip` y `tyrian-companion-0.1.17.zip.sha256`; el ZIP tiene
-SHA-256 `dd06a408b771d9fc4b2bb76ff34d31740ea099d0accb24ac20e3cc4976f99386`.
+`styles.css`, `tyrian-companion-0.1.18.zip` y `tyrian-companion-0.1.18.zip.sha256`; sus digests
+remotos coinciden con los bytes locales sellados y el ZIP tiene SHA-256
+`fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`.
 
 H12.3 corrige el bloqueo de inicialización observado al restaurar una sesión completada persistida.
 La presentación de esa sesión se reconstruía antes de componer una dependencia que necesitaba, por
@@ -23,8 +24,8 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
-**Lote H9.5/H9.19/H9.20/H12.5/H12.6 integrado en `codex/parallel-integration`, todavía fuera de
-`main` y de cualquier release.** H9.5 añade al historial local actividad Halloween y build
+**Lote H9.5/H9.19/H9.20/H12.5/H12.6 integrado en `main` y publicado en `0.1.18`.** H9.5 añade al
+historial local actividad Halloween y build
 declarado, con agrupaciones de al menos dos sesiones `exact/high` y completamente valoradas. Las
 tasas se calculan desde sumas y duración total; los campos nuevos no cruzan la allowlist JSON ni las
 columnas CSV.
@@ -43,7 +44,7 @@ categoría con navegación accesible lateral/horizontal; cada escritura visible 
 común y muestra guardando/guardado/error. Halloween usa tarjeta, resumen o tabla según 480/760 px, y
 diagnóstico/soporte comparte terminología ES/EN con aviso de revisión humana del extracto saneado.
 
-Los commits candidatos son `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
+Los commits incluidos son `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
 `85949ae`, `80898b0`, `1747443` y `22b4a17`. El gate obligó a aislar
 `commerce-listings-capture` de los
 valoradores puros y los guardarraíles rechazan causalmente importar esa capacidad HTTP desde H4.19.
@@ -51,16 +52,17 @@ La revisión final cerró además la combinación manipulada de profundidad `com
 omisión del warning ante venta parcial; ambos contratos tienen regresiones. Pasan 431 pruebas
 dirigidas y el gate completo posterior con lint, 167 ficheros/2.318 tests, spike nativo, scanner, 644
 fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y build. La
-rerevisión independiente no encuentra más hallazgos y da el candidato por listo para merge. La
+rerevisión independiente no encuentra más hallazgos y deja el árbol listo para release. La
 matriz de diseño cubre tokens,
 componentes/estados, responsive, contenido real y feedback; assets no aplican. Sigue
 pendiente medir accesibilidad/contraste y validar claro/oscuro/tercer tema, zoom, teclado,
-1280/900/600/420/280 px y datos extremos dentro de Obsidian. Antes de publicar H9.20 hay que
-contrastar listings reales de `#36038` y outcomes, un Refresh durable y una sesión manual pequeña y
-otra que agote niveles. No se ha tocado la bóveda real ni se han hecho operaciones sobre la cuenta.
+1280/900/600/420/280 px y datos extremos dentro de Obsidian. La publicación no sustituye el
+contraste pendiente de listings reales de `#36038` y outcomes, un Refresh durable y una sesión
+manual pequeña y otra que agote niveles. No se ha tocado la bóveda real ni se han hecho operaciones
+sobre la cuenta.
 
-**Lote H6.26/H12.4 integrado en `codex/parallel-integration`, todavía fuera de `main` y de cualquier
-release.** H6.26 hace alcanzables las acciones curadas del Inventory Advisor sin relajar su cierre
+**Lote H6.26/H12.4 integrado en `main` y publicado en `0.1.18`.** H6.26 hace alcanzables las acciones
+curadas del Inventory Advisor sin relajar su cierre
 conservador: cada Refresh usa como máximo dos observaciones bajo la misma operación y credencial,
 solo dos capturas completas con ownership y placement equivalentes producen `stable`, y divergencia,
 relocation o recuperación de un fallo transitorio permanecen limitadas. `429` cede inmediatamente al
@@ -74,7 +76,7 @@ historial, botín/Halloween y cuenta; la detección muestra última consulta, re
 estructura semántica. La CTA primaria se reproyecta con el estado vivo, las propuestas obsoletas no
 se promueven y una propuesta fresca arma el timer único incluso si llega tras el render; al caducar
 desaparecen CTA y acciones inline con foco preservado. Halloween se resume salvo alerta no leída o
-error de store. Los commits candidatos son `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`,
+error de store. Los commits incluidos son `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`,
 `bca8a9d`, `e449df5`, `c837acf` y `5d1641f`; `ee1f923`, `a19d5e1` y `e04414e`
 realinean únicamente sus fronteras de observabilidad revisadas. El gate combinado pasa lint,
 167 ficheros y 2.288 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
@@ -83,8 +85,8 @@ verdes y la revisión combinada queda como último control externo. Siguen
 pendientes la latencia/timeout/`429` con una cuenta grande y la QA visual/teclado en Obsidian real a
 1280/900/600/420/280 px, temas claro/oscuro/tercero y zoom.
 
-**Lote H6.23–H6.25 de fallos live integrado en `codex/parallel-integration`, todavía fuera de
-`main` y de cualquier release.** H6.23 reconcilia la topología observada con manifiesto v2 en la raíz
+**Lote H6.23–H6.25 de fallos live integrado en `main` y publicado en `0.1.18`.** H6.23 reconcilia la
+topología observada con manifiesto v2 en la raíz
 anterior y cinco Bases reserializadas en la salida: solo relocation puede adoptar el set completo,
 exacto y semánticamente equivalente; un journal precede puntero/cleanup y cualquier extra, faltante,
 cambio o autoridad ajena falla cerrado sin escribir. La QA filesystem sobre una bóveda desechable
@@ -100,13 +102,13 @@ H6.25 atribuye el TypeError histórico al único span propietario
 `session_projection/precondition_failed`, distingue lectura `storage_failure` de bug interno de
 proyección y permite que `plugin_load/runtime_initialize` termine bien. El paquete de soporte
 conserva solo campos estructurados y omite `message|stack|errorName|state|details`, por lo que el código y la
-correlación siguen diagnosticables sin el texto personal observado. Los commits candidatos son
+correlación siguen diagnosticables sin el texto personal observado. Los commits incluidos son
 `446ae51`, `cf0f7c0`, `7732485` y `463d367`. El gate combinado pasa lint, 167 ficheros y 2.269 tests,
-scanner, 644 fronteras de observabilidad sin pendientes, contratos y build; nada se ha integrado o
-publicado.
+scanner, 644 fronteras de observabilidad sin pendientes, contratos y build; el lote forma parte de
+`0.1.18`.
 
-**Lote H8.8/H7.13 cerrado técnicamente en la rama candidata `codex/parallel-integration`, todavía
-fuera de `main` y de cualquier release.** H8.8 queda reconciliada con el alcance shadow aislado de
+**Lote H8.8/H7.13 integrado en `main` y publicado en `0.1.18`.** H8.8 queda reconciliada con el
+alcance shadow aislado de
 `a4fd22b` y `25a1057`: política pura 5 s/60 s para el mapa 866, DTO efímero y revisión humana, sin
 runtime, cola, persistencia ni UI; la composición y QA posteriores siguen en H8.9–H8.15 y H8 continúa
 congelada por H8.2.
@@ -124,7 +126,7 @@ Sync propio ni telemetría remota; los
 exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-256 siguen siendo
 seudónimas.
 
-Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
+Los commits incluidos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
 `221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c`, `4902bf5`, `f64a06c` y `e70fb66`. La revisión contractual obligó a cerrar también
 `superseded|invalidated` y cualquier propuesta viva al desarmar; seguridad obligó a ligar la revisión
 a entorno+muestra y a precisar el alcance de clear/disable/exports. La revisión final hizo cerrar
@@ -139,10 +141,10 @@ revisión cambiada: la forma inválida vuelve a fallar cerrada antes de clasific
 108 tests focales y el gate completo con lint, 167 ficheros y 2.250 tests, scanner,
 observabilidad, contratos de release/beta/soporte y build. Siguen pendientes la QA visual/manual ES/EN
 en temas reales, IndexedDB multiwindow y borrado en Obsidian real, el dry run instrumentado en las tres
-plataformas y la muestra H7.7; por tanto este cierre técnico no acredita el piloto ni una release.
+plataformas y la muestra H7.7; publicar el journal no acredita el piloto.
 
-**H9.7/H6.21: integradas en la rama candidata `codex/parallel-integration`, todavía fuera de
-`main` y de cualquier release.** H9.7 añade a Companion un historial durable ES/EN que solo escanea
+**H9.7/H6.21: integradas en `main` y publicadas en `0.1.18`.** H9.7 añade a Companion un historial
+durable ES/EN que solo escanea
 el vault tras activar **Cargar historial**. Presenta seis estados cerrados, bloquea resultados
 parciales ante notas inválidas o duplicadas, agrega duración, sacos y valores sin convertir `null`
 en cero y compara las dos sesiones más recientes en tabla o tarjetas responsive. La proyección
@@ -156,12 +158,13 @@ en duraciones cortas; ambos quedaron corregidos con regresiones por cierre solap
 subminuto. El gate combinado pasa lint, 162 ficheros y 2.178 tests, escáner de seguridad, censo de
 observabilidad, contratos de release/beta/soporte y build.
 
-**H6.19/H6.20: reconciliadas en la rama candidata `codex/parallel-integration`, sin cambios nuevos
-de producción.** La corrección `6c6e2cd` ya forma parte de `0.1.16` y `0.1.17`. La evidencia de
+**H6.19/H6.20: reconciliadas y publicadas en `0.1.18`, sin cambios nuevos de producción.** La
+corrección `6c6e2cd` ya forma parte de `0.1.16` y `0.1.17`. La evidencia de
 H6.19 no correspondía a dos calendarios de detección: el poll de las 06:30:12 era el deadline
 independiente del histórico de precios y el de las 06:30:24 pertenecía a detección; antes del fix
 ambos heredaban la identidad `detection_poll`. Producción ya los distingue como
-`price_history_poll` y `detection_poll`. El candidato `40d1678` añade una regresión con reloj falso
+`price_history_poll` y `detection_poll`. `40d1678`, incluido en `0.1.18`, añade una regresión con
+reloj falso
 que reproduce los dos arranques, avanza por ambos deadlines y exige exactamente un poll y un timer
 por consumidor, con `actionId` e identidad propios.
 
@@ -169,11 +172,12 @@ H6.20 quedó resuelta por el mismo commit: `session_start` identifica únicament
 la persistencia de acquire/renew/release/contención de autoridad usa `session_lease`, saneada y sin
 datos del lease o de la sesión. La arquitectura vigila ambas identidades cerradas. La observación
 live de una sesión continua de veinte minutos sigue siendo aceptación manual; el repositorio no la
-declara realizada. El gate combinado del candidato pasa lint, 162 ficheros y 2.178 tests, escáner de
+declara realizada. El gate combinado previo a la release pasa lint, 162 ficheros y 2.178 tests,
+escáner de
 seguridad, censo de observabilidad, contratos de release/beta/soporte y build.
 
-La dirección conserva el panel visible de H12.1 y H12.4 ya aplica su primera tranche en la rama
-candidata: ordena Companion como sesión, detección, confirmaciones, historial, botín/Halloween y
+La dirección conserva el panel visible de H12.1 y H12.4 aplica su primera tranche en `0.1.18`:
+ordena Companion como sesión, detección, confirmaciones, historial, botín/Halloween y
 cuenta. El alcance real queda explícito: el polling asistido de
 desarrollo cada dos minutos busca la señal de la Bolsa de truco o trato `#36038`; no refresca todo el
 inventario ni detecta farmeo general. El Inventory Advisor se actualiza manualmente y el histórico
@@ -454,7 +458,7 @@ verificado que el contrato sigue mordiendo con una copia no revisada real. `tsco
 pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
 al build vía esbuild.
 
-**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.17` mediante GitHub Release y BRAT.** El
+**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.18` mediante GitHub Release y BRAT.** El
 release package parte de un build nuevo, contiene únicamente `manifest.json`, `main.js` y
 `styles.css`, valida versiones y tag, escanea los bytes staged y genera ZIP reproducible + SHA-256
 con prueba causal. CI conserva permisos de solo lectura, recrea un staging enumerado y sube
@@ -464,7 +468,7 @@ estado antes de operar, escribe solo los tres ficheros gestionados y revierte fa
 autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
 en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
 y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
-ajeno. El tag y la GitHub Release `0.1.17` publican los tres assets individuales requeridos por BRAT;
+ajeno. El tag y la GitHub Release `0.1.18` publican los tres assets individuales requeridos por BRAT;
 la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
 soportadas.
 
@@ -481,7 +485,7 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio es público desde el 2026-08-29 y la release actual `0.1.17` desde el 2026-08-30.
+El repositorio es público desde el 2026-08-29 y la release actual `0.1.18` desde el 2026-08-31.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -741,19 +745,19 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6. H7.13 ya agrega y
-   exporta localmente la evidencia en la rama candidata; todavía faltan el dry run instrumentado en
+   exporta localmente la evidencia en `0.1.18`; todavía faltan el dry run instrumentado en
    Linux/Steam/Proton, macOS/CrossOver y Windows beta y la ejecución real de H7.7.
 3. Ejecutar QA visual de H9.7 en Obsidian con temas claro/oscuro, anchos 1280/900/600/420/280,
-   textos largos y listas grandes; la implementación automatizada ya está en la rama candidata.
+   textos largos y listas grandes; la implementación automatizada ya está publicada en `0.1.18`.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
 5. Cerrado por H6.13 (`abea4e1`): un personaje que devuelve `404` (`missing_character`) entre pasada base y de cierre se excluye de las dos proyecciones y el delta pasa a `limited` con el aviso `character_unobserved`, en vez de invalidar el delta entero de la cuenta. Un `500` (`unavailable`) sigue invalidando el delta entero. Decisión de producto pendiente de ratificar por David: si ese criterio del 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP; hoy queda etiquetado `#v1` sin que él lo haya decidido.
-6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. H6.21 añade en la rama candidata el copy específico para cada fallo de inicio y fin; quedan pendientes su QA visual ES/EN y un `429` real en Obsidian.
+6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. H6.21 añade en `0.1.18` el copy específico para cada fallo de inicio y fin; quedan pendientes su QA visual ES/EN y un `429` real en Obsidian.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. ~~Consultar el historial TP para complementar la declaración manual H3.9.~~ Cerrado por H9.8
    (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
    completo de hasta 90 días, pero solo la confirmación humana modifica la revisión.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-10. Instalar/actualizar `0.1.17` desde BRAT en una bóveda desechable por plataforma, verificar que los
+10. Instalar/actualizar `0.1.18` desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
