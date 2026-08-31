@@ -44,11 +44,14 @@ común y muestra guardando/guardado/error. Halloween usa tarjeta, resumen o tabl
 diagnóstico/soporte comparte terminología ES/EN con aviso de revisión humana del extracto saneado.
 
 Los commits candidatos son `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
-`85949ae`, `80898b0` y `1747443`. El gate obligó a aislar `commerce-listings-capture` de los
+`85949ae`, `80898b0`, `1747443` y `22b4a17`. El gate obligó a aislar
+`commerce-listings-capture` de los
 valoradores puros y los guardarraíles rechazan causalmente importar esa capacidad HTTP desde H4.19.
-Pasan 431 pruebas dirigidas y el gate completo con lint, 167 ficheros/2.316 tests, spike nativo,
-scanner, 644 fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y
-build. La revisión independiente final queda como último control. La matriz de diseño cubre tokens,
+La revisión final cerró además la combinación manipulada de profundidad `complete` sin venta y la
+omisión del warning ante venta parcial; ambos contratos tienen regresiones. Pasan 431 pruebas
+dirigidas y el gate completo posterior con lint, 167 ficheros/2.318 tests, spike nativo, scanner, 644
+fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y build. La
+rerevisión independiente queda como último control. La matriz de diseño cubre tokens,
 componentes/estados, responsive, contenido real y feedback; assets no aplican. Sigue
 pendiente medir accesibilidad/contraste y validar claro/oscuro/tercer tema, zoom, teclado,
 1280/900/600/420/280 px y datos extremos dentro de Obsidian. Antes de publicar H9.20 hay que

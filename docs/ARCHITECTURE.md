@@ -517,6 +517,11 @@ público; `commerce-listings` queda como modelo, validator y valoradores puros. 
 de seguridad enumeran ambos lados, y un sabotaje que intenta importar la captura desde el kernel o
 su adapter falla antes de ejecutar producto.
 
+El validator de valoración exige la equivalencia `instantSellDepthCoverage = complete` si y solo si
+existe `instantSell`. Además, `market_depth_incomplete` está presente si y solo si alguna línea tiene
+cobertura distinta de `complete|not_applicable` o una venta instantánea `partial|invalid`. Por tanto,
+un record manipulado no puede promoverse a cobertura completa ni entrar en agregaciones H9.5.
+
 El kernel independiente de `#36038` recibe profundidad cerrada para el saco y sus outcomes, exige
 binding exacto, frescura y cobertura completa y recalcula venta inmediata y EV sobre los niveles
 consumibles. `container-recommendation`, `inventory-container-economy` y los wrappers del Advisor
