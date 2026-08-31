@@ -29,17 +29,19 @@ conservador: cada Refresh usa como máximo dos observaciones bajo la misma opera
 solo dos capturas completas con ownership y placement equivalentes producen `stable`, y divergencia,
 relocation o recuperación de un fallo transitorio permanecen limitadas. `429` cede inmediatamente al
 cooldown compartido; no hay tercera pasada ni retry exterior. Una fuente opcional parcial conserva el
-núcleo usable, pero nunca habilita rutas curadas.
+núcleo usable, pero nunca habilita rutas curadas ni veta recuperar un fallo transitorio del núcleo.
 
 H12.4 prioriza Companion como HUD de juego. El panel de 16 acciones se mantiene expandido desde
 1050 px y pasa a un disclosure único cerrado por defecto por debajo; si un resize oculta el control
 en foco, este vuelve al toggle. Companion ordena sesión, detección del saco `#36038`, confirmaciones,
 historial, botín/Halloween y cuenta; la detección muestra última consulta, resultado y próxima en una
 estructura semántica. La CTA primaria se reproyecta con el estado vivo, las propuestas obsoletas no
-se promueven y Halloween se resume salvo alerta no leída o error de store. Los commits candidatos son
-`71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d`, `e449df5` y `c837acf`; `ee1f923` y `a19d5e1`
+se promueven y una propuesta fresca arma el timer único incluso si llega tras el render; al caducar
+desaparecen CTA y acciones inline con foco preservado. Halloween se resume salvo alerta no leída o
+error de store. Los commits candidatos son `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`,
+`bca8a9d`, `e449df5`, `c837acf` y `5d1641f`; `ee1f923`, `a19d5e1` y `e04414e`
 realinean únicamente sus fronteras de observabilidad revisadas. El gate combinado pasa lint,
-167 ficheros y 2.285 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
+167 ficheros y 2.288 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
 empaquetado reproducible, contratos de release/beta/soporte y build. Las revisiones focales están
 verdes y la revisión combinada queda como último control externo. Siguen
 pendientes la latencia/timeout/`429` con una cuenta grande y la QA visual/teclado en Obsidian real a

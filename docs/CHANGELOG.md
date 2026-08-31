@@ -8,17 +8,20 @@
   primer `429` termina sin segunda pasada para que el cooldown compartido gobierne el reintento.
 - Banco y materiales siguen siendo fuentes opcionales: su parcialidad se conserva sin descartar un
   núcleo personaje+compartido completo. El progreso cuenta lecturas reales y no inventa un total
-  estable cuando el roster cambia entre observaciones.
+  estable cuando el roster cambia entre observaciones. Un fallo opcional no reintentable ya no veta
+  la segunda observación necesaria para recuperar un fallo transitorio del núcleo.
 - H12.4 convierte Companion en un HUD priorizado. Las 16 acciones se pliegan bajo un disclosure único
   por debajo de 1050 px, conservan feedback y devuelven el foco al toggle si un resize oculta la acción
   enfocada. La página ordena sesión, detección del saco `#36038`, confirmaciones, historial,
   botín/Halloween y cuenta.
 - La detección presenta última consulta, resultado y próxima como datos semánticos. La única CTA
   primaria se recalcula con el estado vivo y no promueve propuestas obsoletas; Halloween permanece
-  compacto salvo alerta no leída o error de store.
-- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d`, `e449df5` y `c837acf`;
-  `ee1f923` y `a19d5e1` realinean sus fronteras de observabilidad. El gate combinado queda verde con
-  lint, 167 ficheros/2.285 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
+  compacto salvo alerta no leída o error de store. El timer único también cubre propuestas que llegan
+  tras el render y, al caducar, elimina CTA y acciones inline sin dejar controles muertos.
+- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`, `bca8a9d`, `e449df5`,
+  `c837acf` y `5d1641f`; `ee1f923`, `a19d5e1` y `e04414e` realinean sus fronteras de observabilidad.
+  El gate combinado queda verde con lint, 167 ficheros/2.288 tests, spike nativo, scanner,
+  643 fronteras de observabilidad sin pendientes,
   empaquetado reproducible, contratos de release/beta/soporte y build. La revisión combinada es el
   último control externo; la QA con cuenta grande y la QA visual/teclado en Obsidian real siguen
   pendientes. Nada está en `main` ni publicado.
