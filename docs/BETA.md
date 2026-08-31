@@ -102,8 +102,11 @@ sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una p
 La rama candidata incorpora el journal local H7.13 para preparar esa evidencia, pero no forma parte
 de la release `0.1.17`. Antes del piloto H7.7 todavía hay que ejecutar el dry run instrumentado en
 Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
-que limpiar/desactivar funciona dentro de Obsidian real. Un gate automatizado o una exportación local
-no acreditan por sí solos esa QA ni autorizan una release.
+que limpiar/desactivar funciona dentro de Obsidian real. El dry run debe incluir además una revisión
+que quede `stale` tras mutación concurrente, un fallo de workflow seguido de reintento/exclusión y una
+recovery clasificada antes de recargar; ninguna de esas rutas puede bloquear la acción de sesión ni
+degradar el journal. Un gate automatizado o una exportación local no acreditan por sí solos esa QA ni
+autorizan una release.
 
 El checksum evita una alteración accidental, pero no autentica el origen si alguien sustituye juntos
 ZIP y `.sha256`: el ancla de confianza es el artifact del run y SHA de CI que el release owner haya

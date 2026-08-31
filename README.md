@@ -92,6 +92,10 @@ stops a session automatically.
 
 Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
 the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.
+Every human silent-loss review is bound to the journal's monotonic sample revision; a concurrent
+profile or evidence change makes that review stale instead of attaching it to unseen data. Assisted
+start/stop controls never open or wait for a metrics-only modal and proceed with a nullable timing
+correction when the optional journal is absent or unavailable.
 Reviewing and exporting is explicit and creates four deterministic JSON/CSV files without overwriting
 existing files. **Clear metrics** removes observations and the silent-loss review but keeps the local
 profile; **Disable and delete** also removes that profile. Previously created Vault exports remain and

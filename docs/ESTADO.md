@@ -33,20 +33,24 @@ H7.13 añade un journal local opt-in y separado por vault para el piloto H0.6. R
 presentadas y cierres humanos u operativos, sesiones completadas y recoveries sin bloquear ninguna
 acción de producto; una recovery no clasificada se conserva y deja el veredicto inconcluso. Agrega
 por plataforma y estratos de versión `k/n`, cobertura, Wilson 95 %, precisión, recovery y umbrales;
-la revisión de pérdidas queda ligada a la muestra exacta e invalidada transaccionalmente ante cada
-cambio. Ajustes ofrece preview, cuatro exports JSON/CSV deterministas create-only, limpieza de
+la revisión de pérdidas queda ligada a una `sampleRevision` monotónica e invalidada
+transaccionalmente ante cada cambio real; una carrera devuelve `stale` y no certifica evidencia no
+vista. Ajustes ofrece preview, cuatro exports JSON/CSV deterministas create-only, limpieza de
 muestra+revisión y desactivación integral del journal. No hay Sync propio ni telemetría remota; los
 exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-256 siguen siendo
 seudónimas.
 
-Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343` y
-`221862a`. La revisión contractual obligó a cerrar también `superseded|invalidated` y cualquier
-propuesta viva al desarmar; seguridad obligó a ligar la revisión a entorno+muestra y a precisar el
-alcance de clear/disable/exports. El gate final pasa lint, 167 ficheros y 2.230 tests, scanner,
-observabilidad, contratos de release/beta/soporte y build. La revisión independiente no deja
-bloqueantes. Siguen pendientes la QA visual/manual ES/EN en temas reales, IndexedDB multiwindow y
-borrado en Obsidian real, el dry run instrumentado en las tres plataformas y la muestra H7.7; por
-tanto este cierre técnico no acredita el piloto ni una release.
+Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
+`221862a`, `82c0b94` y `ba77b95`. La revisión contractual obligó a cerrar también
+`superseded|invalidated` y cualquier propuesta viva al desarmar; seguridad obligó a ligar la revisión
+a entorno+muestra y a precisar el alcance de clear/disable/exports. La revisión final hizo cerrar
+además cuatro fallos: muestra concurrente, modal instrumental que gateaba producto, segundo terminal
+tras `accepted_workflow_failed` y clasificación de recovery perdida al recargar. El fix rehidrata y
+cierra esa clasificación, sella el primer fallo y mantiene aceptar/iniciar/parar directos con frontera
+nullable. Pasan 105 tests focales y el gate completo con lint, 167 ficheros y 2.247 tests, scanner,
+observabilidad, contratos de release/beta/soporte y build. Siguen pendientes la QA visual/manual ES/EN
+en temas reales, IndexedDB multiwindow y borrado en Obsidian real, el dry run instrumentado en las tres
+plataformas y la muestra H7.7; por tanto este cierre técnico no acredita el piloto ni una release.
 
 **H9.7/H6.21: integradas en la rama candidata `codex/parallel-integration`, todavía fuera de
 `main` y de cualquier release.** H9.7 añade a Companion un historial durable ES/EN que solo escanea

@@ -11,16 +11,22 @@
   fila. Recoveries sin clasificación permanecen visibles y hacen el resultado inconcluso.
 - La agregación publica por plataforma y estratos recuentos, cobertura, Wilson 95 %, precisión,
   recoveries, sesiones y `pass|fail|inconclusive`. La revisión de pérdidas silenciosas queda ligada
-  al entorno y a la muestra exactos y se invalida atómicamente al mutar la evidencia o el perfil.
+  al entorno y a `sampleRevision`: cada mutación real la incrementa e invalida la revisión en la
+  misma transacción; una carrera devuelve `stale` y no certifica evidencia no vista.
+- La revisión final detectó y `82c0b94` cerró cuatro fallos: el modal instrumental ya no puede
+  cancelar aceptar/iniciar/parar; un primer `accepted_workflow_failed` queda sellado ante reintentos
+  o exclusiones posteriores; la clasificación de recovery se rehidrata y bloquea contradicciones
+  tras recargar; estadísticas y export rechazan revisiones legacy o de otra revisión de muestra.
 - Ajustes añade perfil ES/EN, preview, revisión, cuatro exports JSON/CSV deterministas create-only,
   clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
   los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
   propuestas son seudónimos, no anonimización.
 - Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
-  `c2981ba`, `388dc86`, `8c7f343` y `221862a` para H7.13. Revisión contractual y de seguridad sin
-  bloqueantes; gate completo verde con lint, 167 ficheros/2.230 tests, scanner, observabilidad,
-  contratos y build. El dry run real en las tres plataformas, QA visual/IndexedDB y la muestra H7.7
-  siguen pendientes; nada de este lote está en `main` ni publicado.
+  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94` y `ba77b95` para H7.13. Revisión
+  contractual y de seguridad sin bloqueantes; 105 tests focales y el gate completo quedan verdes
+  con lint, 167 ficheros/2.247 tests, scanner, observabilidad, contratos y build. El dry run real en
+  las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; nada de este lote
+  está en `main` ni publicado.
 
 ## Reconciliación candidata - H6.19 y H6.20
 

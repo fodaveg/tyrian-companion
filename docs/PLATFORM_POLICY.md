@@ -326,6 +326,11 @@ revisión hasta expirar. El umbral del 10 % se aplica
 a la estimación puntual; el intervalo Wilson al 95 % se publica como su incertidumbre, no como un
 umbral alternativo.
 
+`accepted_workflow_failed` conserva el primer intento fallido como terminal separado y queda fuera
+de `n_start|n_stop`; cualquier éxito, reintento o exclusión posterior de esa misma propuesta es un
+no-op idempotente. Así un workflow que falló no se reescribe retrospectivamente ni puede degradar
+el journal a `inconsistent`.
+
 | Métrica | Definición | Publicación | Criterio de éxito |
 | --- | --- | --- | --- |
 | Falso inicio | `k_start / n_start`: `k_start` son inicios con resultado `dismissed`; `n_start` son inicios `decided` con resultado `dismissed|accepted_workflow_succeeded` | Recuento, `n_start`, estimación puntual, desglose H3.10 e intervalo Wilson al 95 % por plataforma | Estimación puntual menor o igual al 10 %, `n_start >= 20` y cobertura de decisión mayor o igual al 90 % |
@@ -336,8 +341,10 @@ umbral alternativo.
 La frontera corregida es una adjudicación humana, no una inferencia posterior del mismo detector. Si
 no existe corrección temporal, el caso aporta decisión de falso positivo, pero no precisión. H7.13
 agrega estas métricas localmente en un journal opt-in, separado por vault y con límite duro de
-10.000 observaciones sin poda. Una revisión explícita de pérdidas silenciosas queda vinculada al
-entorno y a la muestra revisados y se invalida ante cualquier mutación posterior. La preview y la
+10.000 observaciones sin poda. Una `sampleRevision` monotónica cambia en la misma transacción que
+cada mutación real; guardar la revisión exige que esa revisión esperada siga vigente y una carrera
+devuelve `stale` sin certificar evidencia no vista ni corromper la salud. Estadísticas y export
+aceptan la revisión únicamente si coinciden entorno y revisión exactos. La preview y la
 exportación create-only producen cuatro ficheros JSON/CSV deterministas; no existe sincronización ni
 telemetría remota propias o automáticas. Al quedar dentro del Vault, un servicio de Sync configurado
 por el usuario sí puede copiar esos ficheros.
