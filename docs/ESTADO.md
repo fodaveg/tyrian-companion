@@ -654,14 +654,14 @@ estable con las seis fuentes completas y una presentación `limited` de 1.206 ob
 todas en revisión manual; la clave y los endpoints requeridos respondieron correctamente.
 Cada Refresh reemplaza un recibo diagnóstico local saneado con estado, duración y cobertura por
 pasada/fuente; excluye secreto, identidad, personajes, objetos, URLs y cuerpos, y nunca se sube.
-La QA visual real aisló `snapshot_invalid`: el Advisor heredaba el contrato account-wide y exigía banco
-y materiales estables aunque estuvieran desmarcados. El flujo ahora captura únicamente personaje +
-inventario compartido, valida ese scope de forma independiente y conserva fail-closed las fuentes básicas;
-banco/materiales/delivery no se consultan ni pueden bloquearlo. La clasificación distingue cobertura de
-estabilidad: una única pasada completa se conserva como `unstable/limited`, muestra rutas líquidas
-manuales y retiene usar/abrir/reciclar. Cada intento consulta una vez roster, inventario compartido y
-personajes serializados con timeout de 30 segundos; solo una pasada parcial transitoria repite el
-conjunto. El clasificador evalúa catálogo/precio por objeto: un batch TP parcial no oculta las filas
+**Estado histórico anterior a H6.26.** La QA visual real aisló `snapshot_invalid`: el Advisor heredaba
+el contrato account-wide y exigía banco y materiales estables aunque estuvieran desmarcados. En aquella
+versión, el flujo capturaba únicamente personaje + inventario compartido, validaba ese scope de forma
+independiente y conservaba fail-closed las fuentes básicas; banco/materiales/delivery no se consultaban
+ni podían bloquearlo. Una única pasada completa se conservaba como `unstable/limited`, mostraba rutas
+líquidas manuales y retenía usar/abrir/reciclar. Cada intento consultaba una vez roster, inventario
+compartido y personajes serializados con timeout de 30 segundos; solo una pasada parcial transitoria
+repetía el conjunto. El clasificador evalúa catálogo/precio por objeto: un batch TP parcial no oculta las filas
 con precio presente ni las rutas de mercader con omisión demostrada; en esa QA, el pack todavía pendiente
 retenía sus capacidades curadas. La vista prioriza ahora una cola directa «Qué hacer ahora» y relega
 `keep|review|discard_review` a controles de contexto. Gate: 106 ficheros/1481 tests en
