@@ -432,13 +432,13 @@ function hasIncompleteCoverage(coverage: SnapshotCoverage): boolean {
 function shouldRetryAdvisorPass(coverage: SnapshotCoverage): boolean {
 	const incomplete = [...Object.values(coverage.sources), ...Object.values(coverage.characters)]
 		.filter((entry) => entry.status === 'partial');
-	return incomplete.length > 0 && incomplete.every((entry) =>
-		entry.reason === 'partial_response'
+	if (incomplete.some((entry) => entry.diagnostic?.status === 429)) return false;
+	const core = [coverage.sources.characters, coverage.sources.shared_inventory, ...Object.values(coverage.characters)].filter((entry) => entry.status === 'partial');
+	const candidates = core.length > 0 ? core : incomplete;
+	return candidates.length > 0 && candidates.every((entry) => entry.reason === 'partial_response'
 		|| entry.diagnostic?.kind === 'timeout'
 		|| entry.diagnostic?.kind === 'network'
-		|| (entry.diagnostic?.status !== null
-			&& entry.diagnostic?.status !== undefined
-			&& entry.diagnostic.status >= 500));
+		|| (entry.diagnostic?.status ?? 0) >= 500);
 }
 
 function createAdvisorProgressReporter(

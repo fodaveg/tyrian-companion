@@ -198,6 +198,35 @@ describe('StorageSnapshotService', () => {
 		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
 	});
 
+	it('recovers a transient core failure despite a non-retryable optional limitation', async () => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const first = passWith({
+			[inventoryPath]: new HttpTransportError('http', 503, null, 'Unavailable.'),
+		});
+		const fixture = clientFor([first, passWith()], {
+			onRequest: async (path) => {
+				if (path.startsWith('account/bank')) {
+					throw new HttpTransportError('http', 403, null, 'Forbidden.');
+				}
+			},
+		});
+
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot).toMatchObject({
+			quality: 'unstable', passes: 2,
+			coverage: { sources: {
+				characters: { status: 'complete' }, shared_inventory: { status: 'complete' },
+				bank: { status: 'partial', reason: 'unavailable', diagnostic: { status: 403 } },
+			} },
+		});
+		expect(snapshot.passCoverages[0]?.sources.characters.status).toBe('partial');
+		expect(snapshot.passCoverages[1]?.sources.characters).toEqual({ status: 'complete' });
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
+		expect(isComparableStorageSnapshot(snapshot)).toBe(false);
+	});
+
 	it('still rejects a 401 from an optional advisor store because the pinned credential is invalid', async () => {
 		const fixture = clientFor([passWith()], {
 			onRequest: async (path) => {
