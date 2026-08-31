@@ -7935,9 +7935,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 239,
+					"line": 251,
 					"column": 3,
-					"endLine": 241,
+					"endLine": 253,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7951,9 +7951,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 240,
+					"line": 252,
 					"column": 4,
-					"endLine": 240,
+					"endLine": 252,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7966,25 +7966,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 244,
-					"column": 27,
-					"endLine": 244,
-					"endColumn": 94,
-					"registration": "setInterval",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "setInterval",
-						"scope": "render",
-						"justification": "The \"render\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setInterval\" in \"render\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 259,
+					"line": 269,
 					"column": 4,
-					"endLine": 259,
+					"endLine": 269,
 					"endColumn": 83,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7998,9 +7982,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 321,
+					"line": 333,
 					"column": 3,
-					"endLine": 321,
+					"endLine": 333,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8013,9 +7997,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 323,
+					"line": 335,
 					"column": 3,
-					"endLine": 329,
+					"endLine": 341,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8029,9 +8013,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 324,
+					"line": 336,
 					"column": 4,
-					"endLine": 328,
+					"endLine": 340,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8044,9 +8028,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 324,
+					"line": 336,
 					"column": 9,
-					"endLine": 328,
+					"endLine": 340,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8060,9 +8044,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 327,
+					"line": 339,
 					"column": 10,
-					"endLine": 327,
+					"endLine": 339,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8075,9 +8059,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 331,
+					"line": 343,
 					"column": 3,
-					"endLine": 337,
+					"endLine": 349,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8091,9 +8075,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 472,
+					"line": 522,
 					"column": 18,
-					"endLine": 472,
+					"endLine": 522,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8106,9 +8090,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 476,
+					"line": 526,
 					"column": 18,
-					"endLine": 476,
+					"endLine": 526,
 					"endColumn": 55,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8121,9 +8105,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 488,
+					"line": 538,
 					"column": 18,
-					"endLine": 488,
+					"endLine": 538,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8135,10 +8119,26 @@
 					"reason": "Allowlisted void_expression: The \"run\" owner deliberately detaches \"this.runRecovery\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.runRecovery\" in \"run\"."
 				},
 				{
+					"kind": "callback_registration",
+					"line": 562,
+					"column": 27,
+					"endLine": 562,
+					"endColumn": 99,
+					"registration": "setInterval",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setInterval",
+						"scope": "scheduleRefresh",
+						"justification": "The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setInterval\" in \"scheduleRefresh\"."
+				},
+				{
 					"kind": "void_expression",
-					"line": 507,
+					"line": 573,
 					"column": 3,
-					"endLine": 511,
+					"endLine": 577,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8151,9 +8151,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 507,
+					"line": 573,
 					"column": 8,
-					"endLine": 511,
+					"endLine": 577,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8167,9 +8167,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 510,
+					"line": 576,
 					"column": 9,
-					"endLine": 510,
+					"endLine": 576,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8182,9 +8182,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 597,
+					"line": 663,
 					"column": 4,
-					"endLine": 597,
+					"endLine": 663,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8198,9 +8198,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 597,
+					"line": 663,
 					"column": 42,
-					"endLine": 597,
+					"endLine": 663,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8213,9 +8213,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 617,
+					"line": 683,
 					"column": 4,
-					"endLine": 617,
+					"endLine": 683,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8229,9 +8229,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 617,
+					"line": 683,
 					"column": 44,
-					"endLine": 617,
+					"endLine": 683,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8244,9 +8244,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 619,
+					"line": 685,
 					"column": 4,
-					"endLine": 619,
+					"endLine": 685,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8260,9 +8260,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 625,
+					"line": 691,
 					"column": 4,
-					"endLine": 625,
+					"endLine": 691,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8275,9 +8275,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 631,
+					"line": 697,
 					"column": 4,
-					"endLine": 631,
+					"endLine": 697,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8291,9 +8291,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 638,
+					"line": 704,
 					"column": 4,
-					"endLine": 638,
+					"endLine": 704,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8306,9 +8306,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 644,
+					"line": 710,
 					"column": 4,
-					"endLine": 644,
+					"endLine": 710,
 					"endColumn": 88,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8322,9 +8322,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 644,
+					"line": 710,
 					"column": 43,
-					"endLine": 644,
+					"endLine": 710,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8337,9 +8337,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 730,
+					"line": 796,
 					"column": 3,
-					"endLine": 730,
+					"endLine": 796,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8353,9 +8353,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 735,
+					"line": 801,
 					"column": 3,
-					"endLine": 742,
+					"endLine": 808,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8369,9 +8369,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 744,
+					"line": 810,
 					"column": 3,
-					"endLine": 744,
+					"endLine": 810,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8385,9 +8385,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 798,
+					"line": 864,
 					"column": 4,
-					"endLine": 798,
+					"endLine": 864,
 					"endColumn": 80,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8401,9 +8401,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 825,
+					"line": 891,
 					"column": 4,
-					"endLine": 825,
+					"endLine": 891,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8417,9 +8417,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 825,
+					"line": 891,
 					"column": 45,
-					"endLine": 825,
+					"endLine": 891,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8432,9 +8432,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 848,
+					"line": 914,
 					"column": 4,
-					"endLine": 848,
+					"endLine": 914,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8448,9 +8448,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 859,
+					"line": 925,
 					"column": 4,
-					"endLine": 859,
+					"endLine": 925,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8464,9 +8464,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 871,
+					"line": 937,
 					"column": 5,
-					"endLine": 871,
+					"endLine": 937,
 					"endColumn": 85,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8480,9 +8480,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 871,
+					"line": 937,
 					"column": 44,
-					"endLine": 871,
+					"endLine": 937,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8495,9 +8495,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 933,
+					"line": 999,
 					"column": 4,
-					"endLine": 936,
+					"endLine": 1002,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8511,9 +8511,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 935,
+					"line": 1001,
 					"column": 5,
-					"endLine": 935,
+					"endLine": 1001,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8526,9 +8526,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 935,
+					"line": 1001,
 					"column": 10,
-					"endLine": 935,
+					"endLine": 1001,
 					"endColumn": 83,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8542,9 +8542,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 940,
+					"line": 1006,
 					"column": 3,
-					"endLine": 940,
+					"endLine": 1006,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8558,9 +8558,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 940,
+					"line": 1006,
 					"column": 45,
-					"endLine": 940,
+					"endLine": 1006,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8573,9 +8573,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 941,
+					"line": 1007,
 					"column": 3,
-					"endLine": 941,
+					"endLine": 1007,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8589,9 +8589,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1035,
+					"line": 1101,
 					"column": 3,
-					"endLine": 1035,
+					"endLine": 1101,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8605,9 +8605,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1036,
+					"line": 1102,
 					"column": 3,
-					"endLine": 1040,
+					"endLine": 1106,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8621,9 +8621,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1039,
+					"line": 1105,
 					"column": 4,
-					"endLine": 1039,
+					"endLine": 1105,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8636,9 +8636,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1039,
+					"line": 1105,
 					"column": 9,
-					"endLine": 1039,
+					"endLine": 1105,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8652,9 +8652,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1063,
+					"line": 1129,
 					"column": 3,
-					"endLine": 1063,
+					"endLine": 1129,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8668,88 +8668,88 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1064,
-					"column": 3,
-					"endLine": 1068,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1067,
-					"column": 4,
-					"endLine": 1067,
-					"endColumn": 53,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.onConfirm().finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1067,
-					"column": 9,
-					"endLine": 1067,
-					"endColumn": 53,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1112,
-					"column": 3,
-					"endLine": 1112,
-					"endColumn": 55,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1113,
-					"column": 3,
-					"endLine": 1135,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"kind": "void_expression",
 					"line": 1130,
-					"column": 4,
+					"column": 3,
 					"endLine": 1134,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1133,
+					"column": 4,
+					"endLine": 1133,
+					"endColumn": 53,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.onConfirm().finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1133,
+					"column": 9,
+					"endLine": 1133,
+					"endColumn": 53,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1178,
+					"column": 3,
+					"endLine": 1178,
+					"endColumn": 55,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1179,
+					"column": 3,
+					"endLine": 1201,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1196,
+					"column": 4,
+					"endLine": 1200,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8762,9 +8762,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1130,
+					"line": 1196,
 					"column": 9,
-					"endLine": 1130,
+					"endLine": 1196,
 					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8778,9 +8778,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1130,
+					"line": 1196,
 					"column": 9,
-					"endLine": 1134,
+					"endLine": 1200,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8794,9 +8794,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1214,
+					"line": 1280,
 					"column": 3,
-					"endLine": 1214,
+					"endLine": 1280,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8810,9 +8810,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1215,
+					"line": 1281,
 					"column": 3,
-					"endLine": 1240,
+					"endLine": 1306,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8826,9 +8826,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1227,
+					"line": 1293,
 					"column": 4,
-					"endLine": 1239,
+					"endLine": 1305,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8841,9 +8841,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1227,
+					"line": 1293,
 					"column": 9,
-					"endLine": 1235,
+					"endLine": 1301,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8857,9 +8857,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1227,
+					"line": 1293,
 					"column": 9,
-					"endLine": 1239,
+					"endLine": 1305,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8873,9 +8873,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1257,
+					"line": 1323,
 					"column": 3,
-					"endLine": 1299,
+					"endLine": 1365,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8888,9 +8888,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1257,
+					"line": 1323,
 					"column": 8,
-					"endLine": 1297,
+					"endLine": 1363,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -8904,9 +8904,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1257,
+					"line": 1323,
 					"column": 8,
-					"endLine": 1299,
+					"endLine": 1365,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8920,9 +8920,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1283,
+					"line": 1349,
 					"column": 4,
-					"endLine": 1291,
+					"endLine": 1357,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8936,9 +8936,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1292,
+					"line": 1358,
 					"column": 4,
-					"endLine": 1296,
+					"endLine": 1362,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
