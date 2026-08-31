@@ -4,8 +4,9 @@ import { createPilotEnvironment, pilotProposalRef, type PilotObservationV1 } fro
 import { aggregatePilotMetrics, wilson95 } from './pilot-metrics-statistics';
 
 const ENV = createPilotEnvironment({
-	platform: 'linux_steam_proton', platformVersion: 'Proton 10.0-1', obsidianVersion: '1.11.4', tyrianVersion: '0.1.17',
+	platform: 'linux_steam_proton', platformVersion: '10.0-1', obsidianVersion: '1.11.4', tyrianVersion: '0.1.17',
 })!;
+const VERIFIED = { version: 1 as const, silentLosses: 'none_observed' as const, reviewedAt: '2026-08-20T12:00:00.000Z' };
 
 describe('pilot metrics domain and H0.6 aggregation', () => {
 	it('derives a stable domain-separated pseudonym without retaining the raw proposal id', async () => {
@@ -32,7 +33,7 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 		expect(result.verdict).toBe('inconclusive');
 	});
 
-	it('uses nearest-rank median/p90 and keeps precision in seconds and per-row intervals', async () => {
+	it('uses mathematical median, nearest-rank p90 and keeps seconds plus per-row intervals', async () => {
 		const boundaries = [30, 60, 90, 120, 300];
 		const rows = await Promise.all(boundaries.map((seconds, index) => proposal(
 			index % 2 === 0 ? 'start' : 'stop', 'accepted_workflow_succeeded', null,
@@ -42,6 +43,9 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 		const precision = aggregatePilotMetrics(rows, 'ready').platforms[0]!.precision;
 		expect(precision.seconds).toEqual({ median: 90, p90: 300, maximum: 300 });
 		expect(precision.intervalMultiples).toEqual({ median: 1.5, p90: 5, maximum: 5 });
+		const even = aggregatePilotMetrics(rows.slice(0, 4), 'ready').platforms[0]!.precision;
+		expect(even.seconds?.median).toBe(75);
+		expect(even.intervalMultiples?.median).toBe(1.25);
 	});
 
 	it('never creates a cross-platform aggregate that can hide Linux', async () => {
@@ -58,10 +62,31 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 
 	it('publishes pass/fail/inconclusive only from complete per-platform evidence', async () => {
 		const complete = await completeSample(0);
-		expect(aggregatePilotMetrics(complete, 'ready').platforms[0]!.verdict).toBe('pass');
-		expect(aggregatePilotMetrics(await completeSample(3), 'ready').platforms[0]!.verdict).toBe('fail');
-		expect(aggregatePilotMetrics(complete.slice(0, -1), 'ready').platforms[0]!.verdict).toBe('inconclusive');
-		expect(aggregatePilotMetrics(complete, 'inconsistent').platforms[0]!.verdict).toBe('inconclusive');
+		expect(aggregatePilotMetrics(complete, 'ready', VERIFIED).platforms[0]!.verdict).toBe('pass');
+		expect(aggregatePilotMetrics(await completeSample(3), 'ready', VERIFIED).platforms[0]!.verdict).toBe('fail');
+		expect(aggregatePilotMetrics(complete.slice(0, -1), 'ready', VERIFIED).platforms[0]!.verdict).toBe('inconclusive');
+		expect(aggregatePilotMetrics(complete, 'inconsistent', VERIFIED).platforms[0]!.verdict).toBe('inconclusive');
+		expect(aggregatePilotMetrics(complete, 'ready').platforms[0]!.verdict).toBe('inconclusive');
+		const nineteenForced = complete.filter((entry) => entry.kind !== 'recovery' || entry.recoveryRef !== complete
+			.filter((candidate) => candidate.kind === 'recovery')[0]?.recoveryRef);
+		expect(aggregatePilotMetrics(nineteenForced, 'ready', VERIFIED).platforms[0]!.verdict).toBe('inconclusive');
+		const failedForced = structuredClone(complete);
+		const recovery = failedForced.find((entry) => entry.kind === 'recovery');
+		if (!recovery || recovery.kind !== 'recovery' || !recovery.terminal) throw new Error('Expected recovery.');
+		recovery.terminal.outcome = 'failed';
+		expect(aggregatePilotMetrics(failedForced, 'ready', VERIFIED).platforms[0]!.verdict).toBe('fail');
+		expect(aggregatePilotMetrics(complete, 'ready', { ...VERIFIED, silentLosses: 'observed' }).platforms[0]!.verdict)
+			.toBe('inconclusive');
+	});
+
+	it('keeps legacy rows without exact polling interval out of interval precision and pass', async () => {
+		const complete = await completeSample(0);
+		const proposal = complete.find((entry) => entry.kind === 'proposal' && entry.terminal?.humanBoundaryAt !== null);
+		if (!proposal || proposal.kind !== 'proposal') throw new Error('Expected proposal.');
+		proposal.pollingIntervalMs = null;
+		const row = aggregatePilotMetrics(complete, 'ready', VERIFIED).platforms[0]!;
+		expect(row.precision.intervalCount).toBe(row.precision.count - 1);
+		expect(row.verdict).toBe('inconclusive');
 	});
 });
 
@@ -78,6 +103,7 @@ async function completeSample(falseStarts: number): Promise<PilotObservationV1[]
 		observations.push({
 			version: 1, kind: 'recovery', recoveryRef: await pilotProposalRef(`recovery-${String(index)}`),
 			presentedAt: '2026-08-20T10:00:00.000Z',
+			recoveryKind: 'forced_restart',
 			terminal: { outcome: 'succeeded', recordedAt: '2026-08-20T10:01:00.000Z' }, environment: ENV,
 		});
 	}
@@ -96,9 +122,9 @@ async function proposal(
 	id = `${phase}-${result}`,
 ): Promise<Extract<PilotObservationV1, { kind: 'proposal' }>> {
 	return {
-		version: 1, kind: 'proposal', proposalRef: await pilotProposalRef(id), phase,
+		version: 1, kind: 'proposal', proposalRef: await pilotProposalRef(id), phase, mode: 'assisted',
 		reviewPresentedAt: '2026-08-20T10:00:00.000Z',
-		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z' },
+		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
 		pollingIntervalMs: 60_000, evidenceQuality: 'complete', environment: ENV,
 		terminal: result === 'expired'
 			? { status: 'expired', decidedAt: '2026-08-20T10:01:00.000Z', decision: null, effectiveResult: null, correctionCause: null, humanBoundaryAt: null }

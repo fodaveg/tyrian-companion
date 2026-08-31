@@ -350,7 +350,7 @@ describe('product navigation diagnostics', () => {
 		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
 
-	it('journals the first explicit pending-proposal review with only the metric DTO', async () => {
+	it('journals a materialized pending-proposal card with its durable generation interval', async () => {
 		const proposalPresented = vi.fn(async () => true);
 		const proposal = {
 			version: 1 as const, proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
@@ -365,22 +365,20 @@ describe('product navigation diagnostics', () => {
 			detectedAt: '2026-08-20T10:00:00.000Z', enqueuedAt: '2026-08-20T10:00:00.000Z',
 			staleAt: '2026-08-20T16:00:00.000Z', expiresAt: '2026-08-21T10:00:00.000Z',
 			acknowledgedAt: null, lastSurfacedAt: null, duplicateCount: 0,
-			lastObservedAt: '2026-08-20T10:00:00.000Z', claim: null,
+			lastObservedAt: '2026-08-20T10:00:00.000Z', pollingIntervalMs: 120_000, claim: null,
 		};
 		const harness = {
 			runtimeReady: true,
-			settings: { language: 'en' as const, pollingIntervalMinutes: 2 },
-			pendingProposals: { acknowledge: vi.fn(async () => true), getState: () => ({ status: 'ready' as const, pendingCount: 1, next: proposal }) },
-			pilotMetrics: { proposalPresented }, notifyRuntimeStarting: vi.fn(), emitNotice: vi.fn(),
-			activateView: vi.fn(async () => undefined), renderViews: vi.fn(), localDebugActions: null,
+			pendingProposals: { getState: () => ({ status: 'ready' as const, pendingCount: 1, next: proposal }) },
+			pilotMetrics: { proposalPresented },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
-		const review = (TyrianCompanionPlugin.prototype as unknown as {
-			reviewPendingProposalOutcome(this: typeof harness, intent: PendingProposalIntent): Promise<string>;
-		}).reviewPendingProposalOutcome;
-		await expect(review.call(harness, proposalIntent(proposal as never))).resolves.toBe('completed');
+		const presented = (TyrianCompanionPlugin.prototype as unknown as {
+			recordPendingProposalPresented(this: typeof harness, intent: PendingProposalIntent): Promise<void>;
+		}).recordPendingProposalPresented;
+		await presented.call(harness, proposalIntent(proposal as never));
 		expect(proposalPresented).toHaveBeenCalledWith(expect.objectContaining({
-			proposalId: 'proposal-1', phase: 'start', pollingIntervalMs: 120_000,
+			proposalId: 'proposal-1', phase: 'start', mode: 'assisted', pollingIntervalMs: 120_000,
 			window: proposal.proposal.possibleStart, evidenceQuality: 'complete',
 		}));
 	});

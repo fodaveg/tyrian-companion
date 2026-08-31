@@ -2,6 +2,7 @@ import {
 	PILOT_METRICS_MAX_OBSERVATIONS,
 	isPilotEnvironment,
 	isPilotObservation,
+	isPilotVerification,
 	pilotObservationKey,
 	type PilotEnvironmentV1,
 	type PilotJournalSnapshotV1,
@@ -9,13 +10,16 @@ import {
 	type PilotProposalObservationV1,
 	type PilotProposalTerminalV1,
 	type PilotRecoveryObservationV1,
+	type PilotRecoveryKind,
 	type PilotSessionObservationV1,
+	type PilotVerificationV1,
 } from './pilot-metrics-model';
 
 export const PILOT_METRICS_DB_NAME = 'tyrian-companion-pilot-metrics';
-export const PILOT_METRICS_DB_VERSION = 1;
+export const PILOT_METRICS_DB_VERSION = 2;
 export const PILOT_METRICS_PROFILE_STORE = 'profile-v1';
 export const PILOT_METRICS_OBSERVATION_STORE = 'observations-v1';
+export const PILOT_METRICS_VERIFICATION_STORE = 'verification-v1';
 
 export type PilotStoreResult<T = undefined> =
 	| { status: 'ok'; value: T }
@@ -27,11 +31,14 @@ export interface PilotMetricsStore {
 	load(): Promise<PilotStoreResult<PilotJournalSnapshotV1>>;
 	loadProfile(): Promise<PilotStoreResult<PilotEnvironmentV1>>;
 	saveProfile(profile: PilotEnvironmentV1): Promise<PilotStoreResult<PilotEnvironmentV1>>;
+	saveVerification(verification: PilotVerificationV1): Promise<PilotStoreResult<PilotVerificationV1>>;
 	ensureObservation(observation: PilotObservationV1): Promise<PilotStoreResult<PilotObservationV1>>;
 	finishProposal(proposalRef: string, terminal: PilotProposalTerminalV1, allowMissing?: boolean): Promise<PilotStoreResult<PilotProposalObservationV1>>;
-	finishSession(sessionRef: string, completedAt: string): Promise<PilotStoreResult<PilotSessionObservationV1>>;
-	finishRecovery(recoveryRef: string, terminal: NonNullable<PilotRecoveryObservationV1['terminal']>): Promise<PilotStoreResult<PilotRecoveryObservationV1>>;
+	finishSession(sessionRef: string, completedAt: string, allowMissing?: boolean): Promise<PilotStoreResult<PilotSessionObservationV1>>;
+	finishRecovery(recoveryRef: string, terminal: NonNullable<PilotRecoveryObservationV1['terminal']>, allowMissing?: boolean): Promise<PilotStoreResult<PilotRecoveryObservationV1>>;
+	classifyRecovery(recoveryRef: string, recoveryKind: PilotRecoveryKind): Promise<PilotStoreResult<PilotRecoveryObservationV1>>;
 	clearObservations(): Promise<PilotStoreResult<number>>;
+	disable(): Promise<PilotStoreResult<number>>;
 	close(): void;
 }
 
@@ -42,19 +49,38 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 
 	constructor(
 		private readonly indexedDb: IDBFactory,
-		private readonly databaseName = PILOT_METRICS_DB_NAME,
+		vaultId: string,
+		databaseName = PILOT_METRICS_DB_NAME,
 		private readonly maximumObservations = PILOT_METRICS_MAX_OBSERVATIONS,
-	) {}
+	) {
+		if (vaultId.length === 0 || vaultId.length > 128) throw new TypeError('Pilot metrics vault scope is invalid.');
+		this.databaseName = `${databaseName}:${vaultId}`;
+	}
+
+	private readonly databaseName: string;
 
 	async load(): Promise<PilotStoreResult<PilotJournalSnapshotV1>> {
 		try {
-			const profile = await this.read(PILOT_METRICS_PROFILE_STORE, 'active');
+			const database = await this.open();
+			const transaction = database.transaction([
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE, PILOT_METRICS_OBSERVATION_STORE,
+			], 'readonly');
+			const profileRequest = requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>);
+			const verificationRequest = requestValue(transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).get('active') as IDBRequest<unknown>);
+			const observationsRequest = requestValue(transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE)
+				.getAll(undefined, this.maximumObservations + 1) as IDBRequest<unknown[]>);
+			const [profile, verification, raw] = await Promise.all([profileRequest, verificationRequest, observationsRequest]);
+			await transactionDone(transaction);
 			if (profile === undefined) return { status: 'error', code: 'unconfigured' };
 			if (!isPilotEnvironment(profile)) return { status: 'error', code: 'inconsistent' };
-			const raw = await this.readAll(PILOT_METRICS_OBSERVATION_STORE);
+			if (verification !== undefined && !isPilotVerification(verification)) return { status: 'error', code: 'inconsistent' };
+			if (raw.length > this.maximumObservations) return { status: 'error', code: 'full' };
 			if (!raw.every(isPilotObservation)) return { status: 'error', code: 'inconsistent' };
 			const observations = raw.sort(compareObservations).map((entry) => structuredClone(entry));
-			return { status: 'ok', value: { version: 1, profile: structuredClone(profile), observations } };
+			return { status: 'ok', value: {
+				version: 1, profile: structuredClone(profile),
+				verification: verification === undefined ? null : structuredClone(verification), observations,
+			} };
 		} catch { return this.failed(); }
 	}
 
@@ -79,14 +105,42 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		} catch { return this.failed(); }
 	}
 
+	async saveVerification(verification: PilotVerificationV1): Promise<PilotStoreResult<PilotVerificationV1>> {
+		if (!isPilotVerification(verification)) return { status: 'error', code: 'inconsistent' };
+		try {
+			const database = await this.open();
+			const transaction = database.transaction([
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
+			const profile = await requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>);
+			if (!isPilotEnvironment(profile)) {
+				transaction.abort();
+				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
+			}
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).put(structuredClone(verification), 'active');
+			await transactionDone(transaction);
+			return { status: 'ok', value: structuredClone(verification) };
+		} catch { return this.failed(); }
+	}
+
 	async ensureObservation(observation: PilotObservationV1): Promise<PilotStoreResult<PilotObservationV1>> {
 		if (!isPilotObservation(observation)) return { status: 'error', code: 'inconsistent' };
 		try {
 			const database = await this.open();
-			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
+			const transaction = database.transaction([
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE,
+			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const key = pilotObservationKey(observation);
-			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
+			const [profile, existing, count] = await Promise.all([
+				requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>),
+				requestValue(store.get(key) as IDBRequest<unknown>),
+				requestValue(store.count()),
+			]);
+			if (!isPilotEnvironment(profile)) {
+				transaction.abort();
+				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
+			}
 			if (existing !== undefined) {
 				transaction.abort();
 				if (!isPilotObservation(existing) || !samePresentation(existing, observation)) {
@@ -94,7 +148,6 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				}
 				return { status: 'duplicate', value: structuredClone(existing) };
 			}
-			const count = await requestValue(store.count());
 			if (count >= this.maximumObservations) {
 				transaction.abort();
 				return { status: 'error', code: 'full' };
@@ -117,32 +170,59 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		}, allowMissing);
 	}
 
-	async finishSession(sessionRef: string, completedAt: string): Promise<PilotStoreResult<PilotSessionObservationV1>> {
+	async finishSession(sessionRef: string, completedAt: string, allowMissing = false): Promise<PilotStoreResult<PilotSessionObservationV1>> {
 		return await this.finish<PilotSessionObservationV1>(`session:${sessionRef}`, (existing) => {
 			if (!isPilotObservation(existing) || existing.kind !== 'session') return null;
 			const candidate = { ...existing, completedAt };
 			return isPilotObservation(candidate) && candidate.kind === 'session' ? candidate : null;
-		});
+		}, allowMissing);
 	}
 
 	async finishRecovery(
 		recoveryRef: string,
 		terminal: NonNullable<PilotRecoveryObservationV1['terminal']>,
+		allowMissing = false,
 	): Promise<PilotStoreResult<PilotRecoveryObservationV1>> {
 		return await this.finish<PilotRecoveryObservationV1>(`recovery:${recoveryRef}`, (existing) => {
 			if (!isPilotObservation(existing) || existing.kind !== 'recovery') return null;
 			const candidate = { ...existing, terminal };
 			return isPilotObservation(candidate) && candidate.kind === 'recovery' ? candidate : null;
-		});
+		}, allowMissing);
+	}
+
+	async classifyRecovery(
+		recoveryRef: string,
+		recoveryKind: PilotRecoveryKind,
+	): Promise<PilotStoreResult<PilotRecoveryObservationV1>> {
+		return await this.updateRecovery(`recovery:${recoveryRef}`, (existing) => ({ ...existing, recoveryKind }));
 	}
 
 	async clearObservations(): Promise<PilotStoreResult<number>> {
 		try {
 			const database = await this.open();
-			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
+			const transaction = database.transaction([
+				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const count = await requestValue(store.count());
 			store.clear();
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).clear();
+			await transactionDone(transaction);
+			return { status: 'ok', value: count };
+		} catch { return this.failed(); }
+	}
+
+	async disable(): Promise<PilotStoreResult<number>> {
+		try {
+			const database = await this.open();
+			const transaction = database.transaction([
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
+			const observations = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
+			const count = await requestValue(observations.count());
+			observations.clear();
+			transaction.objectStore(PILOT_METRICS_PROFILE_STORE).clear();
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).clear();
 			await transactionDone(transaction);
 			return { status: 'ok', value: count };
 		} catch { return this.failed(); }
@@ -184,6 +264,36 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		} catch { return this.failed(); }
 	}
 
+	private async updateRecovery(
+		key: string,
+		update: (existing: PilotRecoveryObservationV1) => PilotRecoveryObservationV1,
+	): Promise<PilotStoreResult<PilotRecoveryObservationV1>> {
+		try {
+			const database = await this.open();
+			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
+			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
+			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
+			if (!isPilotObservation(existing) || existing.kind !== 'recovery') {
+				transaction.abort();
+				return { status: 'error', code: 'inconsistent' };
+			}
+			if (existing.recoveryKind !== null) {
+				transaction.abort();
+				return existing.recoveryKind === update(existing).recoveryKind
+					? { status: 'duplicate', value: structuredClone(existing) }
+					: { status: 'error', code: 'inconsistent' };
+			}
+			const candidate = update(existing);
+			if (!isPilotObservation(candidate) || candidate.kind !== 'recovery') {
+				transaction.abort();
+				return { status: 'error', code: 'inconsistent' };
+			}
+			store.put(structuredClone(candidate), key);
+			await transactionDone(transaction);
+			return { status: 'ok', value: structuredClone(candidate) };
+		} catch { return this.failed(); }
+	}
+
 	private async read(storeName: string, key: IDBValidKey): Promise<unknown> {
 		const database = await this.open();
 		const transaction = database.transaction(storeName, 'readonly');
@@ -192,29 +302,25 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		return value;
 	}
 
-	private async readAll(storeName: string): Promise<unknown[]> {
-		const database = await this.open();
-		const transaction = database.transaction(storeName, 'readonly');
-		const values = await requestValue(transaction.objectStore(storeName).getAll() as IDBRequest<unknown[]>);
-		await transactionDone(transaction);
-		return values;
-	}
-
 	private async open(): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Pilot metrics storage is unavailable.');
 		this.database ??= new Promise((resolve, reject) => {
 			const request = this.indexedDb.open(this.databaseName, PILOT_METRICS_DB_VERSION);
+			let settled = false;
 			request.onupgradeneeded = () => {
 				const database = request.result;
 				if (!database.objectStoreNames.contains(PILOT_METRICS_PROFILE_STORE)) database.createObjectStore(PILOT_METRICS_PROFILE_STORE);
 				if (!database.objectStoreNames.contains(PILOT_METRICS_OBSERVATION_STORE)) database.createObjectStore(PILOT_METRICS_OBSERVATION_STORE);
+				if (!database.objectStoreNames.contains(PILOT_METRICS_VERIFICATION_STORE)) database.createObjectStore(PILOT_METRICS_VERIFICATION_STORE);
 			};
 			request.onsuccess = () => {
+				if (settled) { request.result.close(); return; }
+				settled = true;
 				request.result.onversionchange = () => { request.result.close(); this.unavailable = true; };
 				resolve(request.result);
 			};
-			request.onerror = () => reject(new Error('Could not open pilot metrics storage.'));
-			request.onblocked = () => reject(new Error('Pilot metrics storage upgrade was blocked.'));
+			request.onerror = () => { if (!settled) { settled = true; reject(new Error('Could not open pilot metrics storage.')); } };
+			request.onblocked = () => { if (!settled) { settled = true; reject(new Error('Pilot metrics storage upgrade was blocked.')); } };
 		});
 		return await this.database;
 	}
@@ -229,10 +335,12 @@ function samePresentation(existing: PilotObservationV1, candidate: PilotObservat
 	if (existing.kind !== candidate.kind) return false;
 	if (existing.kind === 'proposal' && candidate.kind === 'proposal') {
 		return JSON.stringify({
-			proposalRef: existing.proposalRef, phase: existing.phase, window: existing.window,
+			proposalRef: existing.proposalRef, phase: existing.phase, mode: existing.mode,
+			window: existing.window, pollingIntervalMs: existing.pollingIntervalMs,
 			evidenceQuality: existing.evidenceQuality,
 		}) === JSON.stringify({
-			proposalRef: candidate.proposalRef, phase: candidate.phase, window: candidate.window,
+			proposalRef: candidate.proposalRef, phase: candidate.phase, mode: candidate.mode,
+			window: candidate.window, pollingIntervalMs: candidate.pollingIntervalMs,
 			evidenceQuality: candidate.evidenceQuality,
 		});
 	}

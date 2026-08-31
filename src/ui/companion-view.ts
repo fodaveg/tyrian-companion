@@ -28,6 +28,7 @@ import {
 	type SessionDetectionQualitySummary,
 } from '../sessions/session-detection-quality';
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
+import type { PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
@@ -64,7 +65,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getSessionDetectionQuality(sessionId: string): SessionDetectionQualitySummary | null;
 	getDetectionQualityStats(): DetectionQualityStats | null;
 	getPendingProposalState(): ProposalQueueState;
-	recordAssistedProposalPresented?(): void;
+	recordPendingProposalPresented?(intent: PendingProposalIntent): Promise<void>;
+	recordAssistedProposalPresented?(): Promise<void>;
 	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean>;
 	dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause, humanBoundaryAt?: string | null): Promise<void>;
 	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt?: string | null): void;
@@ -81,6 +83,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	openSessionReview(): void;
 	confirmClearCompletedSession(): void;
 	getSessionRecoveryState(): SessionRecoveryState;
+	isPilotRecoveryClassificationRequired?(): boolean;
+	getPilotRecoveryKind?(): PilotRecoveryKind | null;
+	classifyPilotRecovery?(kind: PilotRecoveryKind): Promise<boolean>;
 	openManualSessionStart(humanBoundaryAt?: string | null): void;
 	stopManualSession(humanBoundaryAt?: string | null): Promise<void>;
 	recoverSession(): Promise<void>;
@@ -298,6 +303,7 @@ export class TyrianCompanionView extends ItemView {
 		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const intent = proposalIntent(next);
 		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'), cls: 'mod-cta' });
+		review.disabled = true;
 		review.addEventListener('click', () => {
 			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
 				if (!reviewed) return;
@@ -308,12 +314,18 @@ export class TyrianCompanionView extends ItemView {
 			});
 		});
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
+		dismiss.disabled = true;
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
 				this.app, next.phase,
 				(cause, humanBoundaryAt) => this.actions.dismissPendingProposal(intent, cause, humanBoundaryAt),
 				() => this.actions.getLocale(),
 			).open();
+		});
+		void (this.actions.recordPendingProposalPresented?.(intent) ?? Promise.resolve()).finally(() => {
+			if (!review.isConnected || !dismiss.isConnected) return;
+			review.disabled = false;
+			dismiss.disabled = false;
 		});
 	}
 
@@ -535,36 +547,42 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		if (state.status === 'start_proposed') {
-			this.actions.recordAssistedProposalPresented?.();
+			const presented = this.actions.recordAssistedProposalPresented?.() ?? Promise.resolve();
 			card.createEl('p', { text: this.t('view.startProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const start = actions.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
-			start.disabled = session.status !== 'idle';
+			start.disabled = true;
+			void presented.finally(() => { if (start.isConnected) start.disabled = session.status !== 'idle'; });
 			start.addEventListener('click', () => {
 				new PilotBoundaryModal(
 					this.app, 'start', (boundary) => this.actions.openManualSessionStart(boundary),
 					() => this.actions.getLocale(),
 				).open();
 			});
-			this.addDismissAndDisarm(actions, 'start');
+			const dismiss = this.addDismissAndDisarm(actions, 'start');
+			dismiss.disabled = true;
+			void presented.finally(() => { if (dismiss.isConnected) dismiss.disabled = false; });
 			return;
 		}
 
 		if (state.status === 'stop_proposed') {
-			this.actions.recordAssistedProposalPresented?.();
+			const presented = this.actions.recordAssistedProposalPresented?.() ?? Promise.resolve();
 			card.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const stop = actions.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
-			stop.disabled = session.status !== 'active';
+			stop.disabled = true;
+			void presented.finally(() => { if (stop.isConnected) stop.disabled = session.status !== 'active'; });
 			stop.addEventListener('click', () => {
 				new PilotBoundaryModal(
 					this.app, 'stop', (boundary) => { void this.actions.stopManualSession(boundary); },
 					() => this.actions.getLocale(),
 				).open();
 			});
-			this.addDismissAndDisarm(actions, 'stop');
+			const dismiss = this.addDismissAndDisarm(actions, 'stop');
+			dismiss.disabled = true;
+			void presented.finally(() => { if (dismiss.isConnected) dismiss.disabled = false; });
 			return;
 		}
 
@@ -590,7 +608,7 @@ export class TyrianCompanionView extends ItemView {
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
-	private addDismissAndDisarm(container: HTMLElement, phase: 'start' | 'stop'): void {
+	private addDismissAndDisarm(container: HTMLElement, phase: 'start' | 'stop'): HTMLButtonElement {
 		const dismiss = container.createEl('button', { text: this.t('view.dismissProposal') });
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
@@ -602,6 +620,7 @@ export class TyrianCompanionView extends ItemView {
 		});
 		const disarm = container.createEl('button', { text: this.t('view.disarm') });
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
+		return dismiss;
 	}
 
 	private renderDetectionQualityStatus(container: HTMLElement): void {
@@ -781,8 +800,24 @@ export class TyrianCompanionView extends ItemView {
 		const recover = actions.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
 		const discard = actions.createEl('button', { text: this.t('view.discardSaved') });
 		const working = recovery.status === 'working';
-		recover.disabled = working;
-		discard.disabled = working;
+		const pilotClassificationRequired = this.actions.isPilotRecoveryClassificationRequired?.() ?? false;
+		const recoveryKind = this.actions.getPilotRecoveryKind?.() ?? null;
+		if (pilotClassificationRequired) {
+			const label = container.createEl('label', { text: this.t('view.pilotRecoveryKind') });
+			const select = label.createEl('select');
+			select.createEl('option', { text: this.t('view.pilotRecoveryChoose'), value: '' });
+			select.createEl('option', { text: this.t('view.pilotRecoveryForced'), value: 'forced_restart' });
+			select.createEl('option', { text: this.t('view.pilotRecoveryOrganic'), value: 'organic' });
+			select.value = recoveryKind ?? '';
+			select.disabled = working;
+			select.addEventListener('change', () => {
+				if (select.value !== 'forced_restart' && select.value !== 'organic') return;
+				select.disabled = true;
+				void this.actions.classifyPilotRecovery?.(select.value).then(() => this.render());
+			});
+		}
+		recover.disabled = working || (pilotClassificationRequired && recoveryKind === null);
+		discard.disabled = working || (pilotClassificationRequired && recoveryKind === null);
 		recover.addEventListener('click', () => { void this.runRecovery(); });
 		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
 	}

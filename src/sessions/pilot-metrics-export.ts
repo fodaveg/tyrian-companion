@@ -27,6 +27,7 @@ export type PilotMetricsExportResult =
 interface ExportBundle {
 	detail: ReturnType<typeof sanitizedDetails>;
 	aggregates: PilotAggregationV1;
+	verification: PilotJournalSnapshotV1['verification'];
 }
 
 /** Builds and writes four deterministic files only after a human accepts the returned preview. */
@@ -85,6 +86,7 @@ function sanitizedDetails(observations: readonly PilotObservationV1[]) {
 			proposalRef: entry.proposalRef,
 			pseudonymous: true as const,
 			phase: entry.phase,
+			mode: entry.mode,
 			reviewPresentedAt: entry.reviewPresentedAt,
 			window: entry.window,
 			pollingIntervalMs: entry.pollingIntervalMs,
@@ -101,6 +103,7 @@ function sanitizedDetails(observations: readonly PilotObservationV1[]) {
 		return {
 			kind: entry.kind,
 			presentedAt: entry.presentedAt,
+			recoveryKind: entry.recoveryKind,
 			terminal: entry.terminal,
 			environment: entry.environment,
 		};
@@ -110,7 +113,8 @@ function sanitizedDetails(observations: readonly PilotObservationV1[]) {
 async function prepare(snapshot: PilotJournalSnapshotV1, health: PilotJournalHealth, outputFolder: string) {
 	const bundle: ExportBundle = {
 		detail: sanitizedDetails(snapshot.observations),
-		aggregates: aggregatePilotMetrics(snapshot.observations, health),
+		aggregates: aggregatePilotMetrics(snapshot.observations, health, snapshot.verification),
+		verification: snapshot.verification,
 	};
 	const canonical = stableJson(bundle);
 	const digest = (await sha256(canonical)).slice(0, 16);
@@ -118,6 +122,7 @@ async function prepare(snapshot: PilotJournalSnapshotV1, health: PilotJournalHea
 	const detailJson = stableJson({
 		schema: 'tyrian-pilot-observations-v1',
 		privacy: 'proposalRef is a stable pseudonym, not anonymization',
+		verification: bundle.verification,
 		observations: bundle.detail,
 	}) + '\n';
 	const aggregateJson = stableJson({ schema: 'tyrian-pilot-aggregates-v1', ...bundle.aggregates }) + '\n';
@@ -134,9 +139,10 @@ async function prepare(snapshot: PilotJournalSnapshotV1, health: PilotJournalHea
 
 function detailsCsv(rows: ReturnType<typeof sanitizedDetails>): string {
 	const headers = [
-		'kind', 'proposal_ref_pseudonymous', 'phase', 'presented_or_started_at', 'window_from', 'window_to',
-		'polling_interval_ms', 'evidence_quality', 'terminal_status', 'decision', 'effective_result',
+		'kind', 'proposal_ref_pseudonymous', 'phase', 'mode', 'presented_or_started_at', 'window_from', 'window_to',
+		'uncertainty_ms', 'polling_interval_ms', 'evidence_quality', 'terminal_status', 'decision', 'effective_result',
 		'correction_cause', 'human_boundary_at', 'completed_at', 'terminal_outcome', 'terminal_recorded_at',
+		'recovery_kind',
 		'platform', 'platform_version', 'obsidian_version', 'tyrian_version',
 	] as const;
 	const values = rows.map((row) => {
@@ -144,13 +150,14 @@ function detailsCsv(rows: ReturnType<typeof sanitizedDetails>): string {
 		const session = row.kind === 'session' ? row : null;
 		const recovery = row.kind === 'recovery' ? row : null;
 		return [
-			row.kind, proposal?.proposalRef ?? '', proposal?.phase ?? '',
+			row.kind, proposal?.proposalRef ?? '', proposal?.phase ?? '', proposal?.mode ?? '',
 			proposal?.reviewPresentedAt ?? session?.startedAt ?? recovery?.presentedAt ?? '',
-			proposal?.window.from ?? '', proposal?.window.to ?? '', proposal?.pollingIntervalMs ?? '',
+			proposal?.window.from ?? '', proposal?.window.to ?? '', proposal?.window.uncertaintyMs ?? '',
+			proposal?.pollingIntervalMs ?? '',
 			proposal?.evidenceQuality ?? '', proposal?.terminal?.status ?? '', proposal?.terminal?.decision ?? '',
 			proposal?.terminal?.effectiveResult ?? '', proposal?.terminal?.correctionCause ?? '',
 			proposal?.terminal?.humanBoundaryAt ?? '', session?.completedAt ?? '', recovery?.terminal?.outcome ?? '',
-			recovery?.terminal?.recordedAt ?? '', row.environment.platform, row.environment.platformVersion,
+			recovery?.terminal?.recordedAt ?? '', recovery?.recoveryKind ?? '', row.environment.platform, row.environment.platformVersion,
 			row.environment.obsidianVersion, row.environment.tyrianVersion,
 		];
 	});
@@ -166,9 +173,11 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		'stop_k', 'stop_n', 'stop_rate', 'stop_wilson_low', 'stop_wilson_high', 'stop_coverage',
 		'stop_reviews', 'stop_decisions', 'stop_expired', 'stop_workflow_failed',
 		...DETECTION_CORRECTION_CAUSES.map((cause) => `stop_cause_${cause}`),
-		'precision_count', 'precision_median_s', 'precision_p90_s', 'precision_max_s',
+		'precision_count', 'precision_interval_count', 'precision_median_s', 'precision_p90_s', 'precision_max_s',
 		'precision_median_intervals', 'precision_p90_intervals', 'precision_max_intervals',
 		'recovery_presented', 'recovery_succeeded', 'recovery_failed', 'recovery_discarded', 'recovery_rate',
+		'forced_restart_presented', 'forced_restart_succeeded', 'forced_restart_failed',
+		'forced_restart_discarded', 'forced_restart_rate',
 		'completed_sessions', 'silent_losses', 'executed_operations',
 	] as const;
 	const rows = [...aggregation.platforms, ...aggregation.versionStrata].map((row) => [
@@ -183,11 +192,13 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		row.falseStop.wilson95?.high ?? '', row.falseStop.coverage ?? '',
 		row.falseStop.reviews, row.falseStop.decisions, row.falseStop.expired, row.falseStop.workflowFailed,
 		...DETECTION_CORRECTION_CAUSES.map((cause) => row.falseStop.causes[cause]),
-		row.precision.count, row.precision.seconds?.median ?? '', row.precision.seconds?.p90 ?? '',
+		row.precision.count, row.precision.intervalCount, row.precision.seconds?.median ?? '', row.precision.seconds?.p90 ?? '',
 		row.precision.seconds?.maximum ?? '', row.precision.intervalMultiples?.median ?? '',
 		row.precision.intervalMultiples?.p90 ?? '', row.precision.intervalMultiples?.maximum ?? '',
 		row.recovery.presented, row.recovery.succeeded, row.recovery.failed, row.recovery.discarded,
-		row.recovery.rate ?? '', row.completedSessions, row.evidence.silentLosses, row.evidence.executedOperations,
+		row.recovery.rate ?? '', row.recovery.forcedRestart.presented, row.recovery.forcedRestart.succeeded,
+		row.recovery.forcedRestart.failed, row.recovery.forcedRestart.discarded, row.recovery.forcedRestart.rate ?? '',
+		row.completedSessions, row.evidence.silentLosses, row.evidence.executedOperations,
 	]);
 	return csv(headers, rows);
 }

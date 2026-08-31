@@ -93,6 +93,8 @@ import {
 	type PilotJournalHealth,
 	type PilotJournalSnapshotV1,
 	type PilotPlatform,
+	type PilotRecoveryKind,
+	type PilotSilentLossReview,
 } from './sessions/pilot-metrics-model';
 import { PilotMetricsRecorder, type PilotMetricsState } from './sessions/pilot-metrics-recorder';
 import { IndexedDbPilotMetricsStore } from './sessions/pilot-metrics-store';
@@ -222,6 +224,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private detectionQuality!: DetectionQualityRecorder;
 	private pilotMetrics!: PilotMetricsRecorder;
 	private pilotMetricsExporter!: PilotMetricsExporter;
+	private readonly pilotRecoveryKinds = new Map<string, PilotRecoveryKind>();
+	private readonly measuredPilotRecoveries = new Set<string>();
 	private pilotMetricsExportPlan: {
 		snapshot: PilotJournalSnapshotV1;
 		health: PilotJournalHealth;
@@ -687,7 +691,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			),
 		);
 		this.pilotMetrics = new PilotMetricsRecorder(
-			new IndexedDbPilotMetricsStore(window.indexedDB),
+			new IndexedDbPilotMetricsStore(window.indexedDB, vaultId),
 			PILOT_METRICS_MAX_OBSERVATIONS,
 		);
 		this.pilotMetricsExporter = new PilotMetricsExporter({
@@ -710,7 +714,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				onStateChange: () => {
 					const session = this.sessions.getState();
 					const recoveryId = this.pilotRecoveryIdentity();
-					if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
+					if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
 					if (session.status === 'complete') fireAndForgetLocal(this.localDebugActions,
@@ -731,7 +735,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		await this.sessions.initialize();
 		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
+		if (recoveryId) await this.ensurePilotRecoveryPresented(recoveryId);
 		await this.refreshLootPresentation();
 		this.sessionNotes = new SessionNoteWriter({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
@@ -799,16 +803,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 					{ component: 'halloween', action: 'halloween_refresh' },
 					() => this.observeAcceptedHalloweenDelta(delta));
 			},
-			onProposal: async (proposal) => {
+			onProposal: async (proposal, pollingIntervalMs) => {
 				const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 				if (runtimeLease === null) return false;
 				try {
 					const session = this.sessions.getState();
 					const result = 'ruleSet' in proposal
-						? await this.pendingProposals.enqueue({ phase: 'start', proposal })
+						? await this.pendingProposals.enqueue({ phase: 'start', proposal, pollingIntervalMs })
 						: session.status === 'active'
 							? await this.pendingProposals.enqueue({
-								phase: 'stop', proposal, sessionId: session.sessionId,
+								phase: 'stop', proposal, pollingIntervalMs, sessionId: session.sessionId,
 								baselineSnapshotId: session.baseline.snapshotId,
 							})
 							: { status: 'unavailable' as const };
@@ -1372,6 +1376,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.runtimeReady ? await this.pilotMetrics.profile() : null;
 	}
 
+	async getPilotSilentLossReview(): Promise<PilotSilentLossReview> {
+		if (!this.runtimeReady) return 'unreviewed';
+		return (await this.pilotMetrics.inspect())?.verification?.silentLosses ?? 'unreviewed';
+	}
+
 	async configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
 		if (!this.runtimeReady) return false;
 		const saved = await this.pilotMetrics.configure({
@@ -1403,8 +1412,30 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async clearPilotMetrics(): Promise<number | null> {
 		if (!this.runtimeReady) return null;
 		const cleared = await this.pilotMetrics.clear();
-		if (cleared !== null) this.pilotMetricsExportPlan = null;
+		if (cleared !== null) {
+			this.pilotMetricsExportPlan = null;
+			this.measuredPilotRecoveries.clear();
+			this.pilotRecoveryKinds.clear();
+		}
 		return cleared;
+	}
+
+	async reviewPilotSilentLosses(value: PilotSilentLossReview): Promise<boolean> {
+		if (!this.runtimeReady) return false;
+		const saved = await this.pilotMetrics.reviewSilentLosses(value);
+		if (saved) this.pilotMetricsExportPlan = null;
+		return saved;
+	}
+
+	async disablePilotMetrics(): Promise<number | null> {
+		if (!this.runtimeReady) return null;
+		const deleted = await this.pilotMetrics.disable();
+		if (deleted !== null) {
+			this.pilotMetricsExportPlan = null;
+			this.measuredPilotRecoveries.clear();
+			this.pilotRecoveryKinds.clear();
+		}
+		return deleted;
 	}
 
 	getPendingProposalState(): ProposalQueueState {
@@ -1415,13 +1446,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return await this.reviewPendingProposalOutcome(intent) === 'completed';
 	}
 
+	async recordPendingProposalPresented(intent: PendingProposalIntent): Promise<void> {
+		if (!this.runtimeReady) return;
+		const state = this.pendingProposals.getState();
+		const proposal = state.status === 'ready' && state.next && sameProposalIntent(state.next, intent) ? state.next : null;
+		if (!proposal) return;
+		await this.pilotMetrics.proposalPresented({
+			proposalId: proposal.proposalId, phase: proposal.phase, mode: 'assisted',
+			presentedAt: new Date().toISOString(),
+			window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
+			pollingIntervalMs: proposal.pollingIntervalMs, evidenceQuality: proposal.proposal.evidenceQuality,
+		});
+	}
+
 	private async reviewPendingProposalOutcome(intent: PendingProposalIntent): Promise<ProductActionOutcome> {
 		const perform = async (): Promise<ProductActionOutcome> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
 		try {
-			const pendingState = this.pendingProposals.getState?.();
-			const proposal = pendingState?.status === 'ready' && pendingState.next && sameProposalIntent(pendingState.next, intent)
-				? pendingState.next : null;
 			if (!await this.pendingProposals.acknowledge(intent)) {
 				this.emitNotice(
 					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
@@ -1429,14 +1470,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				);
 				return 'unavailable';
 			}
-			if (proposal) void this.pilotMetrics?.proposalPresented({
-				proposalId: proposal.proposalId,
-				phase: proposal.phase,
-				presentedAt: new Date().toISOString(),
-				window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
-				pollingIntervalMs: this.settings.pollingIntervalMinutes * 60_000,
-				evidenceQuality: proposal.proposal.evidenceQuality,
-			});
 			await this.activateView();
 			this.renderViews();
 			return 'completed';
@@ -1549,17 +1582,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		else perform();
 	}
 
-	recordAssistedProposalPresented(): void {
+	async recordAssistedProposalPresented(): Promise<void> {
 		if (!this.runtimeReady) return;
 		const detection = this.assistedDetection.getState();
 		if (detection.status !== 'start_proposed' && detection.status !== 'stop_proposed') return;
-		void this.pilotMetrics?.proposalPresented({
+		await this.pilotMetrics.proposalPresented({
 			proposalId: detection.proposal.proposalId,
 			phase: detection.status === 'start_proposed' ? 'start' : 'stop',
+			mode: 'assisted',
 			presentedAt: new Date().toISOString(),
 			window: detection.status === 'start_proposed'
 				? detection.proposal.possibleStart : detection.proposal.possibleStop,
-			pollingIntervalMs: this.settings.pollingIntervalMinutes * 60_000,
+			pollingIntervalMs: detection.pollingIntervalMs,
 			evidenceQuality: detection.proposal.evidenceQuality,
 		});
 	}
@@ -1934,6 +1968,26 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getSessionRecoveryState(): SessionRecoveryState {
 		return this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' };
+	}
+
+	getPilotRecoveryKind(): PilotRecoveryKind | null {
+		const recoveryId = this.pilotRecoveryIdentity();
+		return recoveryId ? this.pilotRecoveryKinds.get(recoveryId) ?? null : null;
+	}
+
+	isPilotRecoveryClassificationRequired(): boolean {
+		const recoveryId = this.pilotRecoveryIdentity();
+		return recoveryId !== null && this.measuredPilotRecoveries.has(recoveryId);
+	}
+
+	async classifyPilotRecovery(recoveryKind: PilotRecoveryKind): Promise<boolean> {
+		const recoveryId = this.pilotRecoveryIdentity();
+		if (!recoveryId) return false;
+		if (!await this.ensurePilotRecoveryPresented(recoveryId)) return false;
+		const classified = await this.pilotMetrics.recoveryClassified(recoveryId, recoveryKind);
+		if (classified) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
+		this.renderViews();
+		return classified;
 	}
 
 	async recoverSession(): Promise<void> {
@@ -2511,7 +2565,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private async performRecoverSession(): Promise<void> {
 		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
+		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId);
 		const runtimeLease = this.requireRuntimeMutationLease();
 		let result: Awaited<ReturnType<ManualSessionStartService['recover']>>;
 		try { result = await this.sessions.recover().finally(() => runtimeLease.release()); }
@@ -2529,7 +2583,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private async performDiscardRecoveredSession(): Promise<void> {
 		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
+		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId);
 		const runtimeLease = this.requireRuntimeMutationLease();
 		let result: Awaited<ReturnType<ManualSessionStartService['discardRecovery']>>;
 		try { result = await this.sessions.discardRecovery().finally(() => runtimeLease.release()); }
@@ -2550,6 +2604,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (!('state' in recovery)) return null;
 		const state = recovery.state.status === 'error' ? recovery.state.failedState : recovery.state;
 		return 'sessionId' in state ? `${state.sessionId}:${String(state.authority.fence)}` : null;
+	}
+
+	private async ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
+		const recorded = await this.pilotMetrics.recoveryPresented(recoveryId);
+		if (recorded) this.measuredPilotRecoveries.add(recoveryId);
+		return recorded;
 	}
 
 	private async performClearCompletedSession(): Promise<void> {

@@ -24,6 +24,8 @@ interface PendingProposalBase {
 	lastSurfacedAt: string | null;
 	duplicateCount: number;
 	lastObservedAt: string;
+	/** Generation-time poll interval. Null only after migrating a legacy queued proposal. */
+	pollingIntervalMs: number | null;
 	claim: ProposalClaim | null;
 }
 
@@ -82,7 +84,7 @@ export function isPendingProposal(value: unknown): value is PendingProposal {
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'phase', 'proposalId', 'accountId', 'binding', 'proposal', 'detectedAt',
 		'enqueuedAt', 'staleAt', 'expiresAt', 'acknowledgedAt', 'lastSurfacedAt',
-		'duplicateCount', 'lastObservedAt', 'claim',
+		'duplicateCount', 'lastObservedAt', 'pollingIntervalMs', 'claim',
 	])) return false;
 	if (value.version !== 1 || (value.phase !== 'start' && value.phase !== 'stop') ||
 		!validId(value.proposalId) || !validId(value.accountId) ||
@@ -97,7 +99,8 @@ export function isPendingProposal(value: unknown): value is PendingProposal {
 		(value.acknowledgedAt !== null && Date.parse(value.acknowledgedAt) < enqueued) ||
 		(value.lastSurfacedAt !== null && Date.parse(value.lastSurfacedAt) < enqueued) ||
 		(value.acknowledgedAt === null && value.lastSurfacedAt !== null) ||
-		(value.claim !== null && Date.parse(value.claim.claimedAt) < enqueued)) return false;
+		(value.claim !== null && Date.parse(value.claim.claimedAt) < enqueued) ||
+		(value.pollingIntervalMs !== null && !positive(value.pollingIntervalMs))) return false;
 	if (value.phase === 'start') {
 		return isRecord(value.binding) && exactKeys(value.binding, ['kind', 'ruleSetId', 'ruleSetVersion']) &&
 			value.binding.kind === 'idle' && validId(value.binding.ruleSetId) && positive(value.binding.ruleSetVersion) &&
@@ -129,14 +132,23 @@ export function isProposalReceipt(value: unknown): value is ProposalReceipt {
 export function normalizeProposalQueueRecord(value: unknown): PendingProposalQueueRecord | null {
 	if (!isRecord(value) || !exactKeys(value, ['version', 'revision', 'proposals', 'receipts']) || value.version !== 1 ||
 		!nonNegative(value.revision) ||
-		!Array.isArray(value.proposals) || !value.proposals.every(isPendingProposal) ||
+		!Array.isArray(value.proposals) ||
 		!Array.isArray(value.receipts) || !value.receipts.every(isProposalReceipt)) return null;
-	const proposals = value.proposals;
+	const proposals = value.proposals.map(normalizePendingProposal);
+	if (proposals.some((proposal) => proposal === null)) return null;
+	const normalized = proposals as PendingProposal[];
 	const receipts = value.receipts;
-	if (new Set(proposals.map((entry) => entry.proposalId)).size !== proposals.length ||
+	if (new Set(normalized.map((entry) => entry.proposalId)).size !== normalized.length ||
 		new Set(receipts.map((entry) => entry.proposalId)).size !== receipts.length ||
-		proposals.some((entry, index) => index > 0 && comparePendingProposals(proposals[index - 1]!, entry) >= 0)) return null;
-	return structuredClone(value) as unknown as PendingProposalQueueRecord;
+		normalized.some((entry, index) => index > 0 && comparePendingProposals(normalized[index - 1]!, entry) >= 0)) return null;
+	return { version: 1, revision: value.revision, proposals: structuredClone(normalized), receipts: structuredClone(receipts) };
+}
+
+function normalizePendingProposal(value: unknown): PendingProposal | null {
+	if (isPendingProposal(value)) return structuredClone(value);
+	if (!isRecord(value) || Object.prototype.hasOwnProperty.call(value, 'pollingIntervalMs')) return null;
+	const migrated = { ...value, pollingIntervalMs: null };
+	return isPendingProposal(migrated) ? structuredClone(migrated) : null;
 }
 
 export function comparePendingProposals(a: PendingProposal, b: PendingProposal): number {

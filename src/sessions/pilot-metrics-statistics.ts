@@ -8,6 +8,7 @@ import type {
 	PilotObservationV1,
 	PilotPlatform,
 	PilotProposalObservationV1,
+	PilotVerificationV1,
 } from './pilot-metrics-model';
 
 export interface PilotRateMetricV1 {
@@ -25,6 +26,7 @@ export interface PilotRateMetricV1 {
 
 export interface PilotPrecisionMetricV1 {
 	count: number;
+	intervalCount: number;
 	seconds: { median: number; p90: number; maximum: number } | null;
 	intervalMultiples: { median: number; p90: number; maximum: number } | null;
 }
@@ -35,15 +37,27 @@ export interface PilotAggregateV1 {
 	falseStart: PilotRateMetricV1;
 	falseStop: PilotRateMetricV1;
 	precision: PilotPrecisionMetricV1;
-	recovery: { presented: number; succeeded: number; failed: number; discarded: number; rate: number | null };
+	recovery: PilotRecoveryMetricV1;
 	completedSessions: number;
 	verdict: 'pass' | 'fail' | 'inconclusive';
 	evidence: {
 		journalHealth: PilotJournalHealth;
-		silentLosses: 'none_observed' | 'unavailable_or_inconsistent';
+		silentLosses: 'unreviewed' | 'none_observed' | 'observed';
 		executedOperations: 0;
 		operationsBasis: 'architectural_guard_no_executor';
 	};
+}
+
+export interface PilotRecoveryCountsV1 {
+	presented: number;
+	succeeded: number;
+	failed: number;
+	discarded: number;
+	rate: number | null;
+}
+
+export interface PilotRecoveryMetricV1 extends PilotRecoveryCountsV1 {
+	forcedRestart: PilotRecoveryCountsV1;
 }
 
 export interface PilotAggregationV1 {
@@ -57,10 +71,11 @@ export interface PilotAggregationV1 {
 export function aggregatePilotMetrics(
 	observations: readonly PilotObservationV1[],
 	health: PilotJournalHealth,
+	verification: PilotVerificationV1 | null = null,
 ): PilotAggregationV1 {
 	const platforms = unique(observations.map((entry) => entry.environment.platform));
 	const platformRows = platforms.map((platform) => aggregate(
-		observations.filter((entry) => entry.environment.platform === platform), platform, null, health,
+		observations.filter((entry) => entry.environment.platform === platform), platform, null, health, verification,
 	));
 	const strata = unique(observations.map((entry) => environmentKey(entry.environment)))
 		.map((key) => {
@@ -70,7 +85,7 @@ export function aggregatePilotMetrics(
 				platformVersion: environment.platformVersion,
 				obsidianVersion: environment.obsidianVersion,
 				tyrianVersion: environment.tyrianVersion,
-			}, health);
+			}, health, verification);
 		});
 	return { version: 1, method: 'h0.6-wilson95-nearest-rank-v1', platforms: platformRows, versionStrata: strata };
 }
@@ -90,6 +105,7 @@ function aggregate(
 	platform: PilotPlatform,
 	versions: Omit<PilotEnvironmentV1, 'version' | 'platform'> | null,
 	health: PilotJournalHealth,
+	verification: PilotVerificationV1 | null,
 ): PilotAggregateV1 {
 	const proposals = observations.filter((entry): entry is PilotProposalObservationV1 => entry.kind === 'proposal');
 	const falseStart = rateMetric(proposals.filter((entry) => entry.phase === 'start'));
@@ -97,11 +113,8 @@ function aggregate(
 	const precision = precisionMetric(proposals);
 	const recoveries = observations.filter((entry) => entry.kind === 'recovery');
 	const recovery = {
-		presented: recoveries.length,
-		succeeded: recoveries.filter((entry) => entry.terminal?.outcome === 'succeeded').length,
-		failed: recoveries.filter((entry) => entry.terminal?.outcome === 'failed').length,
-		discarded: recoveries.filter((entry) => entry.terminal?.outcome === 'discarded').length,
-		rate: recoveries.length === 0 ? null : recoveries.filter((entry) => entry.terminal?.outcome === 'succeeded').length / recoveries.length,
+		...recoveryCounts(recoveries),
+		forcedRestart: recoveryCounts(recoveries.filter((entry) => entry.recoveryKind === 'forced_restart')),
 	};
 	const completedSessions = observations.filter((entry) => entry.kind === 'session' && entry.completedAt !== null).length;
 	return {
@@ -112,13 +125,26 @@ function aggregate(
 		precision,
 		recovery,
 		completedSessions,
-		verdict: verdict(falseStart, falseStop, precision, recovery, completedSessions, health),
+		verdict: versions === null
+			? verdict(falseStart, falseStop, precision, recovery, completedSessions, health, platform, verification)
+			: 'inconclusive',
 		evidence: {
 			journalHealth: health,
-			silentLosses: health === 'ready' ? 'none_observed' : 'unavailable_or_inconsistent',
+			silentLosses: verification?.silentLosses ?? 'unreviewed',
 			executedOperations: 0,
 			operationsBasis: 'architectural_guard_no_executor',
 		},
+	};
+}
+
+function recoveryCounts(recoveries: readonly Extract<PilotObservationV1, { kind: 'recovery' }>[]): PilotRecoveryCountsV1 {
+	const succeeded = recoveries.filter((entry) => entry.terminal?.outcome === 'succeeded').length;
+	return {
+		presented: recoveries.length,
+		succeeded,
+		failed: recoveries.filter((entry) => entry.terminal?.outcome === 'failed').length,
+		discarded: recoveries.filter((entry) => entry.terminal?.outcome === 'discarded').length,
+		rate: recoveries.length === 0 ? null : succeeded / recoveries.length,
 	};
 }
 
@@ -154,23 +180,31 @@ function precisionMetric(proposals: readonly PilotProposalObservationV1[]): Pilo
 		if (!boundary) return [];
 		const midpoint = (Date.parse(proposal.window.from) + Date.parse(proposal.window.to)) / 2;
 		const seconds = Math.abs(Date.parse(boundary) - midpoint) / 1_000;
-		return [{ seconds, intervalMultiples: seconds / (proposal.pollingIntervalMs / 1_000) }];
+		return [{ seconds, intervalMultiples: proposal.pollingIntervalMs === null
+			? null : seconds / (proposal.pollingIntervalMs / 1_000) }];
 	});
-	if (rows.length === 0) return { count: 0, seconds: null, intervalMultiples: null };
+	if (rows.length === 0) return { count: 0, intervalCount: 0, seconds: null, intervalMultiples: null };
+	const intervalRows = rows.flatMap((row) => row.intervalMultiples === null ? [] : [row.intervalMultiples]);
 	return {
 		count: rows.length,
+		intervalCount: intervalRows.length,
 		seconds: distribution(rows.map((row) => row.seconds)),
-		intervalMultiples: distribution(rows.map((row) => row.intervalMultiples)),
+		intervalMultiples: intervalRows.length === 0 ? null : distribution(intervalRows),
 	};
 }
 
 function distribution(values: readonly number[]): { median: number; p90: number; maximum: number } {
 	const sorted = [...values].sort((a, b) => a - b);
 	return {
-		median: nearestRank(sorted, 0.5),
+		median: median(sorted),
 		p90: nearestRank(sorted, 0.9),
 		maximum: sorted.at(-1)!,
 	};
+}
+
+function median(sorted: readonly number[]): number {
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
 }
 
 function nearestRank(sorted: readonly number[], percentile: number): number {
@@ -181,17 +215,24 @@ function verdict(
 	start: PilotRateMetricV1,
 	stop: PilotRateMetricV1,
 	precision: PilotPrecisionMetricV1,
-	recovery: { presented: number; succeeded: number; failed: number; discarded: number; rate: number | null },
+	recovery: PilotRecoveryMetricV1,
 	completedSessions: number,
 	health: PilotJournalHealth,
+	platform: PilotPlatform,
+	verification: PilotVerificationV1 | null,
 ): 'pass' | 'fail' | 'inconclusive' {
-	if (health !== 'ready') return 'inconclusive';
+	if (health !== 'ready' || verification?.silentLosses !== 'none_observed') return 'inconclusive';
+	const forcedTerminal = recovery.forcedRestart.succeeded + recovery.forcedRestart.failed + recovery.forcedRestart.discarded;
+	const linuxForcedReady = platform !== 'linux_steam_proton' ||
+		(recovery.forcedRestart.presented >= 20 && forcedTerminal === recovery.forcedRestart.presented);
 	const enough = start.n >= 20 && stop.n >= 20 && start.coverage !== null && stop.coverage !== null &&
 		recovery.presented >= 20 && recovery.succeeded + recovery.failed + recovery.discarded === recovery.presented &&
-		completedSessions >= 50 && precision.intervalMultiples !== null;
+		linuxForcedReady && completedSessions >= 50 && precision.intervalMultiples !== null &&
+		precision.intervalCount === precision.count;
 	if (!enough) return 'inconclusive';
 	return start.rate! <= 0.1 && stop.rate! <= 0.1 && start.coverage! >= 0.9 && stop.coverage! >= 0.9 &&
-		recovery.rate! >= 0.95 && precision.intervalMultiples!.median <= 1 && precision.intervalMultiples!.p90 <= 2
+		recovery.rate! >= 0.95 && (platform !== 'linux_steam_proton' || recovery.forcedRestart.rate === 1) &&
+		precision.intervalMultiples!.median <= 1 && precision.intervalMultiples!.p90 <= 2
 		? 'pass' : 'fail';
 }
 

@@ -27,8 +27,8 @@ export type ProposalQueueState =
 	| { status: 'unavailable'; pendingCount: 0; next: null; message: string };
 
 export type ProposalEnqueueInput =
-	| { phase: 'start'; proposal: RelevantStartProposal }
-	| { phase: 'stop'; proposal: InactivityStopProposal; sessionId: string; baselineSnapshotId: string };
+	| { phase: 'start'; proposal: RelevantStartProposal; pollingIntervalMs: number }
+	| { phase: 'stop'; proposal: InactivityStopProposal; pollingIntervalMs: number; sessionId: string; baselineSnapshotId: string };
 
 export type ProposalEnqueueResult =
 	| { status: 'added' | 'duplicate' | 'coalesced'; proposal: PendingProposal }
@@ -288,7 +288,8 @@ function createPending(input: ProposalEnqueueInput, now: string): PendingProposa
 		detectedAt: input.phase === 'start' ? input.proposal.confirmedAt : input.proposal.detectedAt,
 		enqueuedAt: now, staleAt: addMs(now, PENDING_PROPOSAL_STALE_MS), expiresAt: addMs(now, PENDING_PROPOSAL_EXPIRES_MS),
 		acknowledgedAt: null, lastSurfacedAt: null, duplicateCount: 0,
-		lastObservedAt: input.phase === 'start' ? input.proposal.confirmedAt : input.proposal.detectedAt, claim: null,
+		lastObservedAt: input.phase === 'start' ? input.proposal.confirmedAt : input.proposal.detectedAt,
+		pollingIntervalMs: input.pollingIntervalMs, claim: null,
 	};
 	return input.phase === 'start'
 		? { ...common, phase: 'start', binding: { kind: 'idle', ruleSetId: input.proposal.ruleSet.id, ruleSetVersion: input.proposal.ruleSet.version }, proposal: structuredClone(input.proposal) }

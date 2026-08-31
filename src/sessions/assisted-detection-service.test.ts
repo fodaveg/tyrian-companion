@@ -83,6 +83,7 @@ describe('AssistedDetectionService', () => {
 
 		expect(harness.service.getState()).toMatchObject({
 			status: 'start_proposed',
+			pollingIntervalMs: 900_000,
 			lastSnapshotAt: '2026-08-13T10:30:02.000Z',
 			proposal: {
 				ruleSet: { id: 'halloween.trick-or-treat-bag', version: 1 },
@@ -139,6 +140,7 @@ describe('AssistedDetectionService', () => {
 
 		expect(harness.service.getState()).toMatchObject({
 			status: 'stop_proposed',
+			pollingIntervalMs: 900_000,
 			proposal: { thresholdMs: 20 * 60_000 },
 		});
 		expect(session.status).toBe('active');
@@ -157,13 +159,18 @@ describe('AssistedDetectionService', () => {
 	});
 
 	it('resumes armed polling only after durable queue ownership succeeds', async () => {
+		const transferred: number[] = [];
 		const harness = createHarness([
 			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
-		], idleSession, undefined, async () => true);
+		], idleSession, undefined, async (_proposal, pollingIntervalMs) => {
+			transferred.push(pollingIntervalMs);
+			return true;
+		});
 		await harness.service.arm(900_000);
 		await harness.scheduler.trigger();
 		await harness.scheduler.trigger();
 		await Promise.resolve();
+		expect(transferred).toEqual([900_000]);
 		expect(harness.service.getState().status).toBe('armed');
 		expect(harness.scheduler.getState().status).toBe('scheduled');
 	});

@@ -26,7 +26,7 @@ describe('PendingProposalService', () => {
 	it('persists pending work between IndexedDB instances without surfacing UI', async () => {
 		const name = databaseName();
 		const first = service(new IndexedDbPendingProposalStore(indexedDB, name));
-		expect((await first.enqueue({ phase: 'start', proposal: startProposal() })).status).toBe('added');
+		expect((await first.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() })).status).toBe('added');
 		first.dispose();
 
 		const second = service(new IndexedDbPendingProposalStore(indexedDB, name));
@@ -70,20 +70,20 @@ describe('PendingProposalService', () => {
 	it('deduplicates the same proposal and coalesces a newer proposal for one binding', async () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const queue = service(new MemoryPendingProposalStore(), clock.now);
-		expect((await queue.enqueue({ phase: 'start', proposal: startProposal() })).status).toBe('added');
+		expect((await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() })).status).toBe('added');
 		clock.advance(1_000);
-		const duplicate = await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		const duplicate = await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		expect(duplicate).toMatchObject({ status: 'duplicate', proposal: { duplicateCount: 1 } });
 		clock.advance(1_000);
 		const replacement = startProposal('replacement');
-		expect((await queue.enqueue({ phase: 'start', proposal: replacement })).status).toBe('coalesced');
+		expect((await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: replacement })).status).toBe('coalesced');
 		expect(queue.getState()).toMatchObject({ pendingCount: 1, next: { proposalId: replacement.proposalId } });
 	});
 
 	it('marks acknowledgement only during an explicit foreground projection', async () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const queue = service(new MemoryPendingProposalStore(), clock.now);
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		expect(queue.getState().next?.acknowledgedAt).toBeNull();
 		clock.advance(1_000);
 		await queue.acknowledge(currentIntent(queue));
@@ -95,9 +95,9 @@ describe('PendingProposalService', () => {
 
 	it('rejects acknowledgement when displayed intent A was replaced by B', async () => {
 		const queue = service(new MemoryPendingProposalStore());
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intentA = currentIntent(queue);
-		await queue.enqueue({ phase: 'start', proposal: startProposal('replacement') });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('replacement') });
 		await expect(queue.acknowledge(intentA)).resolves.toBe(false);
 	});
 
@@ -106,7 +106,7 @@ describe('PendingProposalService', () => {
 		const store = new MemoryPendingProposalStore();
 		const first = service(store, clock.now, 'window-a', 'operation-a');
 		const second = service(store, clock.now, 'window-b', 'operation-b');
-		await first.enqueue({ phase: 'start', proposal: startProposal() });
+		await first.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(first);
 		expect((await first.claim(intent, 'operation-a')).status).toBe('claimed');
 		expect((await second.claim(intent, 'operation-b')).status).toBe('busy');
@@ -117,7 +117,7 @@ describe('PendingProposalService', () => {
 	it('keeps a live claim busy for another operation in the same instance', async () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const queue = service(new MemoryPendingProposalStore(), clock.now, 'window-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		expect((await queue.claim(intent, 'operation-a')).status).toBe('claimed');
 		expect((await queue.claim(intent, 'operation-b')).status).toBe('busy');
@@ -130,21 +130,21 @@ describe('PendingProposalService', () => {
 
 	it('does not coalesce away a live claimed proposal', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
-		const replacement = await queue.enqueue({ phase: 'start', proposal: startProposal('replacement') });
+		const replacement = await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('replacement') });
 		expect(replacement).toEqual({ status: 'unavailable' });
 		expect(queue.getState()).toMatchObject({ pendingCount: 1, next: { proposalId: intent.proposalId } });
 	});
 
 	it('does not mutate a live claim when the same proposal is observed again', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
 		const before = queue.getState().next;
-		const duplicate = await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		const duplicate = await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		expect(duplicate).toMatchObject({ status: 'duplicate', proposal: { duplicateCount: 0 } });
 		expect(queue.getState().next).toEqual(before);
 	});
@@ -153,7 +153,7 @@ describe('PendingProposalService', () => {
 		const name = databaseName();
 		const first = service(new IndexedDbPendingProposalStore(indexedDB, name), undefined, 'window-a', 'operation-a');
 		const second = service(new IndexedDbPendingProposalStore(indexedDB, name), undefined, 'window-b', 'operation-b');
-		await first.enqueue({ phase: 'start', proposal: startProposal() });
+		await first.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(first);
 		const results = await Promise.all([
 			first.claim(intent, 'operation-a'), second.claim(intent, 'operation-b'),
@@ -164,7 +164,7 @@ describe('PendingProposalService', () => {
 
 	it('requires the exact operation claim before accepting after backend success', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a', 'operation-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
 		await expect(queue.accept(intent, 'wrong-operation', 'session-a')).resolves.toBe(false);
@@ -178,7 +178,7 @@ describe('PendingProposalService', () => {
 	it('writes a dismissal receipt even when correction recording failed', async () => {
 		const store = new MemoryPendingProposalStore();
 		const queue = service(store, undefined, 'window-a', 'operation-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
 		await expect(queue.dismiss(intent, 'operation-a', null, 'not_farming', false)).resolves.toBe(true);
@@ -188,7 +188,7 @@ describe('PendingProposalService', () => {
 
 	it('enforces phase-specific dismissal causes', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a', 'operation-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
 		await expect(queue.dismiss(intent, 'operation-a', null, 'still_farming', true)).resolves.toBe(false);
@@ -199,7 +199,7 @@ describe('PendingProposalService', () => {
 		const name = databaseName();
 		const firstStore = new IndexedDbPendingProposalStore(indexedDB, name);
 		const first = service(firstStore, undefined, 'window-a', 'operation-a');
-		await first.enqueue({ phase: 'start', proposal: startProposal() });
+		await first.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(first);
 		await first.claim(intent, 'operation-a');
 		await first.dismiss(intent, 'operation-a', null, 'not_farming', false);
@@ -214,7 +214,7 @@ describe('PendingProposalService', () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const store = new MemoryPendingProposalStore();
 		const queue = service(store, clock.now);
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		clock.advance(PENDING_PROPOSAL_STALE_MS + 1);
 		expect((await queue.project()).pendingCount).toBe(1);
@@ -230,7 +230,7 @@ describe('PendingProposalService', () => {
 			new MemoryPendingProposalStore(), 'window-a', clock.now, () => undefined,
 			(proposalId, expiredAt) => expired.push({ proposalId, expiredAt }),
 		);
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		clock.advance(PENDING_PROPOSAL_EXPIRES_MS + 1);
 		await queue.project();
 		expect(expired).toContainEqual({
@@ -241,7 +241,7 @@ describe('PendingProposalService', () => {
 
 	it('invalidates proposals whose account, session or recovery binding changed', async () => {
 		const queue = service(new MemoryPendingProposalStore());
-		await queue.enqueue({ phase: 'stop', proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' });
+		await queue.enqueue({ phase: 'stop', pollingIntervalMs: 60_000, proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' });
 		expect((await queue.reconcile({
 			accountId: 'account', recoveryPending: false,
 			session: { status: 'active', sessionId: 'session-b', baselineSnapshotId: 'baseline-a' },
@@ -250,12 +250,12 @@ describe('PendingProposalService', () => {
 
 	it('rejects stale UI intents whose account, session or baseline binding changed', async () => {
 		const start = service(new MemoryPendingProposalStore());
-		await start.enqueue({ phase: 'start', proposal: startProposal() });
+		await start.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const startIntent = currentIntent(start);
 		expect((await start.claim({ ...startIntent, accountId: 'other-account' }, 'operation-a')).status).toBe('missing');
 
 		const stop = service(new MemoryPendingProposalStore());
-		await stop.enqueue({ phase: 'stop', proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' });
+		await stop.enqueue({ phase: 'stop', pollingIntervalMs: 60_000, proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' });
 		const stopIntent = currentIntent(stop);
 		if (stopIntent.phase !== 'stop') throw new Error('Expected a stop intent.');
 		expect((await stop.claim({
@@ -270,7 +270,7 @@ describe('PendingProposalService', () => {
 
 	it('does not let session state callbacks invalidate a claimed backend operation', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a', 'operation-a');
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		await queue.claim(intent, 'operation-a');
 		expect((await queue.reconcile({ accountId: 'account', recoveryPending: false, session: { status: 'active', sessionId: 'session-a' } })).pendingCount).toBe(1);
@@ -286,11 +286,11 @@ describe('PendingProposalService', () => {
 
 	it('fails closed on revision overflow and a backward claim clock', async () => {
 		const overflow = service(new MemoryPendingProposalStore({ version: 1, revision: Number.MAX_SAFE_INTEGER, proposals: [], receipts: [] }));
-		expect((await overflow.enqueue({ phase: 'start', proposal: startProposal() })).status).toBe('unavailable');
+		expect((await overflow.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() })).status).toBe('unavailable');
 
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const queue = service(new MemoryPendingProposalStore(), clock.now);
-		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		const intent = currentIntent(queue);
 		clock.set('2026-08-13T11:59:59.000Z');
 		expect((await queue.claim(intent, 'operation-a')).status).toBe('unavailable');
@@ -299,13 +299,22 @@ describe('PendingProposalService', () => {
 	it('strictly rejects malformed pending records and invalid chronology', () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
 		const queue = service(new MemoryPendingProposalStore(), clock.now);
-		return queue.enqueue({ phase: 'start', proposal: startProposal() }).then((result) => {
+		return queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() }).then((result) => {
 			expect(result.status).toBe('added');
 			const candidate = result.status === 'unavailable' ? null : result.proposal;
 			expect(isPendingProposal(candidate)).toBe(true);
 			expect(isPendingProposal({ ...candidate, extra: true })).toBe(false);
 			expect(isPendingProposal({ ...candidate, staleAt: candidate?.enqueuedAt })).toBe(false);
 		});
+	});
+
+	it('migrates a legacy queued proposal without inventing a generation interval', async () => {
+		const queue = service(new MemoryPendingProposalStore());
+		const result = await queue.enqueue({ phase: 'start', pollingIntervalMs: 120_000, proposal: startProposal() });
+		if (result.status === 'unavailable') throw new Error('Expected proposal.');
+		const { pollingIntervalMs: _legacyMissing, ...legacy } = result.proposal;
+		const normalized = normalizeProposalQueueRecord({ version: 1, revision: 1, proposals: [legacy], receipts: [] });
+		expect(normalized?.proposals[0]?.pollingIntervalMs).toBeNull();
 	});
 });
 

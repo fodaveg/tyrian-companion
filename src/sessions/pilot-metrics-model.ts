@@ -3,9 +3,20 @@ import type { DetectionCorrectionCause, DetectionEvidenceQuality, DetectionPhase
 export const PILOT_METRICS_VERSION = 1 as const;
 export const PILOT_PLATFORMS = ['linux_steam_proton', 'macos_crossover', 'windows_beta'] as const;
 export const PILOT_METRICS_MAX_OBSERVATIONS = 10_000;
+export const PILOT_RECOVERY_KINDS = ['forced_restart', 'organic'] as const;
+export const PILOT_SILENT_LOSS_REVIEWS = ['unreviewed', 'none_observed', 'observed'] as const;
 
 export type PilotPlatform = typeof PILOT_PLATFORMS[number];
 export type PilotJournalHealth = 'ready' | 'unavailable' | 'inconsistent' | 'full';
+export type PilotRecoveryKind = typeof PILOT_RECOVERY_KINDS[number];
+export type PilotSilentLossReview = typeof PILOT_SILENT_LOSS_REVIEWS[number];
+export type PilotProposalMode = 'assisted';
+
+export interface PilotBoundaryWindowV1 {
+	from: string;
+	to: string;
+	uncertaintyMs: number;
+}
 
 /** Device-local pilot profile. Version strings are strata, never account identity. */
 export interface PilotEnvironmentV1 {
@@ -32,9 +43,11 @@ export interface PilotProposalObservationV1 {
 	/** Domain-separated SHA-256 pseudonym. It is stable, but is not anonymization. */
 	proposalRef: string;
 	phase: DetectionPhase;
+	mode: PilotProposalMode;
 	reviewPresentedAt: string;
-	window: { from: string; to: string };
-	pollingIntervalMs: number;
+	window: PilotBoundaryWindowV1;
+	/** Null only for legacy queued proposals that predate the generation-time snapshot. */
+	pollingIntervalMs: number | null;
 	evidenceQuality: DetectionEvidenceQuality;
 	environment: PilotEnvironmentV1;
 	terminal: PilotProposalTerminalV1 | null;
@@ -56,6 +69,8 @@ export interface PilotRecoveryObservationV1 {
 	/** Local pseudonym used only for idempotency; detail exports omit it. */
 	recoveryRef: string;
 	presentedAt: string;
+	/** Explicit human classification only; never inferred from runtime state. */
+	recoveryKind: PilotRecoveryKind | null;
 	terminal: { outcome: 'succeeded' | 'failed' | 'discarded'; recordedAt: string } | null;
 	environment: PilotEnvironmentV1;
 }
@@ -68,7 +83,14 @@ export type PilotObservationV1 =
 export interface PilotJournalSnapshotV1 {
 	version: typeof PILOT_METRICS_VERSION;
 	profile: PilotEnvironmentV1;
+	verification: PilotVerificationV1 | null;
 	observations: PilotObservationV1[];
+}
+
+export interface PilotVerificationV1 {
+	version: typeof PILOT_METRICS_VERSION;
+	silentLosses: PilotSilentLossReview;
+	reviewedAt: string;
 }
 
 export function createPilotEnvironment(input: Omit<PilotEnvironmentV1, 'version'>): PilotEnvironmentV1 | null {
@@ -82,7 +104,13 @@ export function isPilotEnvironment(value: unknown): value is PilotEnvironmentV1 
 	])) return false;
 	return value.version === PILOT_METRICS_VERSION &&
 		PILOT_PLATFORMS.includes(value.platform as PilotPlatform) &&
-		validVersion(value.platformVersion) && validVersion(value.obsidianVersion) && validVersion(value.tyrianVersion);
+		validPlatformVersion(value.platformVersion) && validVersion(value.obsidianVersion) && validVersion(value.tyrianVersion);
+}
+
+export function isPilotVerification(value: unknown): value is PilotVerificationV1 {
+	return isRecord(value) && exactKeys(value, ['version', 'silentLosses', 'reviewedAt']) &&
+		value.version === PILOT_METRICS_VERSION &&
+		PILOT_SILENT_LOSS_REVIEWS.includes(value.silentLosses as PilotSilentLossReview) && isIso(value.reviewedAt);
 }
 
 export function isPilotObservation(value: unknown): value is PilotObservationV1 {
@@ -113,11 +141,12 @@ export function pilotObservationKey(observation: PilotObservationV1): string {
 
 function isProposal(value: Record<string, unknown>): value is Record<string, unknown> & PilotProposalObservationV1 {
 	if (!exactKeys(value, [
-		'version', 'kind', 'proposalRef', 'phase', 'reviewPresentedAt', 'window',
+		'version', 'kind', 'proposalRef', 'phase', 'mode', 'reviewPresentedAt', 'window',
 		'pollingIntervalMs', 'evidenceQuality', 'environment', 'terminal',
 	]) || !sha256Ref(value.proposalRef) || (value.phase !== 'start' && value.phase !== 'stop') ||
-		!isIso(value.reviewPresentedAt) || !isWindow(value.window) ||
-		!Number.isSafeInteger(value.pollingIntervalMs) || (value.pollingIntervalMs as number) <= 0 ||
+		value.mode !== 'assisted' || !isIso(value.reviewPresentedAt) || !isWindow(value.window) ||
+		(value.pollingIntervalMs !== null &&
+			(!Number.isSafeInteger(value.pollingIntervalMs) || (value.pollingIntervalMs as number) <= 0)) ||
 		(value.evidenceQuality !== 'complete' && value.evidenceQuality !== 'limited')) return false;
 	return value.terminal === null || isProposalTerminal(value.terminal, value);
 }
@@ -155,8 +184,9 @@ function isSession(value: Record<string, unknown>): value is Record<string, unkn
 }
 
 function isRecovery(value: Record<string, unknown>): value is Record<string, unknown> & PilotRecoveryObservationV1 {
-	if (!exactKeys(value, ['version', 'kind', 'recoveryRef', 'presentedAt', 'terminal', 'environment']) ||
+	if (!exactKeys(value, ['version', 'kind', 'recoveryRef', 'presentedAt', 'recoveryKind', 'terminal', 'environment']) ||
 		!sha256Ref(value.recoveryRef) || !isIso(value.presentedAt)) return false;
+	if (value.recoveryKind !== null && !PILOT_RECOVERY_KINDS.includes(value.recoveryKind as PilotRecoveryKind)) return false;
 	if (value.terminal === null) return true;
 	return isRecord(value.terminal) && exactKeys(value.terminal, ['outcome', 'recordedAt']) &&
 		['succeeded', 'failed', 'discarded'].includes(value.terminal.outcome as string) &&
@@ -164,9 +194,16 @@ function isRecovery(value: Record<string, unknown>): value is Record<string, unk
 		Date.parse(value.terminal.recordedAt) >= Date.parse(value.presentedAt);
 }
 
-function isWindow(value: unknown): value is { from: string; to: string } {
-	return isRecord(value) && exactKeys(value, ['from', 'to']) && isIso(value.from) && isIso(value.to) &&
-		Date.parse(value.to) >= Date.parse(value.from);
+function isWindow(value: unknown): value is PilotBoundaryWindowV1 {
+	return isRecord(value) && exactKeys(value, ['from', 'to', 'uncertaintyMs']) && isIso(value.from) && isIso(value.to) &&
+		Number.isSafeInteger(value.uncertaintyMs) && (value.uncertaintyMs as number) >= 0 &&
+		Date.parse(value.to) >= Date.parse(value.from) &&
+		value.uncertaintyMs === Date.parse(value.to) - Date.parse(value.from);
+}
+
+function validPlatformVersion(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0 && value.length <= 32 &&
+		/^[A-Za-z0-9]+(?:[._+-][A-Za-z0-9]+)*$/u.test(value);
 }
 
 function validVersion(value: unknown): value is string {

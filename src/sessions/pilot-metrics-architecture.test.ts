@@ -34,4 +34,24 @@ describe('pilot metrics architecture', () => {
 			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExpired',
 		]) expect(main).toContain(hook);
 	});
+
+	it('attempts review-presented when a proposal card materializes before enabling its decisions', () => {
+		const view = readFileSync('src/ui/companion-view.ts', 'utf8');
+		const pending = view.slice(view.indexOf('private renderPendingConfirmation'), view.indexOf('private refreshDynamicStatus'));
+		expect(pending).toContain('review.disabled = true');
+		expect(pending).toContain('dismiss.disabled = true');
+		expect(pending.indexOf('recordPendingProposalPresented')).toBeLessThan(pending.indexOf('review.disabled = false'));
+		expect(pending.indexOf('recordPendingProposalPresented')).toBeLessThan(pending.indexOf('dismiss.disabled = false'));
+		const main = readFileSync('src/main.ts', 'utf8');
+		const review = main.slice(main.indexOf('private async reviewPendingProposalOutcome'), main.indexOf('async dismissPendingProposal'));
+		expect(review).not.toContain('proposalPresented');
+	});
+
+	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
+		const main = readFileSync('src/main.ts', 'utf8');
+		expect(main).toContain('new IndexedDbPilotMetricsStore(window.indexedDB, vaultId)');
+		const store = readFileSync('src/sessions/pilot-metrics-store.ts', 'utf8');
+		expect(store).toContain('async disable()');
+		expect(store).toContain('PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE');
+	});
 });

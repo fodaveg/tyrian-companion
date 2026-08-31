@@ -57,11 +57,13 @@ export type AssistedDetectionState =
 	| (AssistedDetectionBase & {
 		status: 'start_proposed';
 		armedAt: string;
+		pollingIntervalMs: number;
 		proposal: RelevantStartProposal;
 	})
 	| (AssistedDetectionBase & {
 		status: 'stop_proposed';
 		armedAt: string;
+		pollingIntervalMs: number;
 		proposal: InactivityStopProposal;
 	})
 	| (AssistedDetectionBase & {
@@ -89,7 +91,7 @@ export interface AssistedDetectionServiceOptions {
 	snapshots: Pick<StorageSnapshotService, 'capture'>;
 	getSessionState: () => SessionState;
 	onStateChange?: (state: AssistedDetectionState) => void;
-	onProposal?: (proposal: RelevantStartProposal | InactivityStopProposal) => Promise<boolean>;
+	onProposal?: (proposal: RelevantStartProposal | InactivityStopProposal, pollingIntervalMs: number) => Promise<boolean>;
 	/** Positive-delta consumers receive observed evidence only; this does not attribute a game drop. */
 	onObservedDelta?: (delta: Exclude<StorageDelta, { status: 'invalid' }>, episodeId: string) => void;
 	relevantRuleSet?: RelevantItemRuleSet;
@@ -351,26 +353,28 @@ export class AssistedDetectionService {
 	}
 
 	private publishStartProposal(proposal: RelevantStartProposal): void {
-		if (this.state.status !== 'armed') return;
-		this.state = { ...this.state, status: 'start_proposed', proposal: structuredClone(proposal) };
+		if (this.state.status !== 'armed' || this.intervalMs === null) return;
+		const pollingIntervalMs = this.intervalMs;
+		this.state = { ...this.state, status: 'start_proposed', pollingIntervalMs, proposal: structuredClone(proposal) };
 		this.scheduler.stop();
 		this.state.scheduler = { ...this.scheduler.getState() };
 		this.emit();
-		void this.transferProposal(proposal);
+		void this.transferProposal(proposal, pollingIntervalMs);
 	}
 
 	private publishStopProposal(proposal: InactivityStopProposal): void {
-		if (this.state.status !== 'armed') return;
-		this.state = { ...this.state, status: 'stop_proposed', proposal: structuredClone(proposal) };
+		if (this.state.status !== 'armed' || this.intervalMs === null) return;
+		const pollingIntervalMs = this.intervalMs;
+		this.state = { ...this.state, status: 'stop_proposed', pollingIntervalMs, proposal: structuredClone(proposal) };
 		this.scheduler.stop();
 		this.state.scheduler = { ...this.scheduler.getState() };
 		this.emit();
-		void this.transferProposal(proposal);
+		void this.transferProposal(proposal, pollingIntervalMs);
 	}
 
-	private async transferProposal(proposal: RelevantStartProposal | InactivityStopProposal): Promise<void> {
+	private async transferProposal(proposal: RelevantStartProposal | InactivityStopProposal, pollingIntervalMs: number): Promise<void> {
 		let transferred = false;
-		try { transferred = await this.onProposal(structuredClone(proposal)); } catch { /* remain paused for foreground recovery */ }
+		try { transferred = await this.onProposal(structuredClone(proposal), pollingIntervalMs); } catch { /* remain paused for foreground recovery */ }
 		if (!transferred || this.disposed) return;
 		const state = this.state;
 		if ((state.status === 'start_proposed' || state.status === 'stop_proposed') && state.proposal.proposalId === proposal.proposalId) {
