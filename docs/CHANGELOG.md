@@ -17,14 +17,18 @@
   cancelar aceptar/iniciar/parar; un primer `accepted_workflow_failed` queda sellado ante reintentos
   o exclusiones posteriores; la clasificación de recovery se rehidrata y bloquea contradicciones
   tras recargar; estadísticas y export rechazan revisiones legacy o de otra revisión de muestra.
+- La revisión de seguridad detectó un ABA al desactivar y reactivar el mismo perfil. `686194b`
+  conserva únicamente un contador generacional no personal, lo avanza durante el borrado y prueba
+  que una revisión anterior nunca vuelva a ser válida sobre evidencia nueva.
 - Ajustes añade perfil ES/EN, preview, revisión, cuatro exports JSON/CSV deterministas create-only,
   clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
   los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
   propuestas son seudónimos, no anonimización.
 - Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
-  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94` y `ba77b95` para H7.13. Revisión
-  contractual y de seguridad sin bloqueantes; 105 tests focales y el gate completo quedan verdes
-  con lint, 167 ficheros/2.247 tests, scanner, observabilidad, contratos y build. El dry run real en
+  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95` y `686194b` para H7.13. Los
+  hallazgos contractuales, de seguridad y de revisión independiente quedan cubiertos; 106 tests
+  focales y el gate completo quedan verdes con lint, 167 ficheros/2.248 tests, scanner,
+  observabilidad, contratos y build. El dry run real en
   las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; nada de este lote
   está en `main` ni publicado.
 

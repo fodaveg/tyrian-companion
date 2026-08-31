@@ -35,19 +35,23 @@ acción de producto; una recovery no clasificada se conserva y deja el veredicto
 por plataforma y estratos de versión `k/n`, cobertura, Wilson 95 %, precisión, recovery y umbrales;
 la revisión de pérdidas queda ligada a una `sampleRevision` monotónica e invalidada
 transaccionalmente ante cada cambio real; una carrera devuelve `stale` y no certifica evidencia no
-vista. Ajustes ofrece preview, cuatro exports JSON/CSV deterministas create-only, limpieza de
-muestra+revisión y desactivación integral del journal. No hay Sync propio ni telemetría remota; los
+vista. Desactivar borra perfil, evidencia y revisión, pero avanza y retiene únicamente el contador
+generacional no personal para impedir ABA al reactivar. Ajustes ofrece preview, cuatro exports
+JSON/CSV deterministas create-only, limpieza de muestra+revisión y desactivación del journal. No hay
+Sync propio ni telemetría remota; los
 exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-256 siguen siendo
 seudónimas.
 
 Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
-`221862a`, `82c0b94` y `ba77b95`. La revisión contractual obligó a cerrar también
+`221862a`, `82c0b94`, `ba77b95` y `686194b`. La revisión contractual obligó a cerrar también
 `superseded|invalidated` y cualquier propuesta viva al desarmar; seguridad obligó a ligar la revisión
 a entorno+muestra y a precisar el alcance de clear/disable/exports. La revisión final hizo cerrar
 además cuatro fallos: muestra concurrente, modal instrumental que gateaba producto, segundo terminal
 tras `accepted_workflow_failed` y clasificación de recovery perdida al recargar. El fix rehidrata y
 cierra esa clasificación, sella el primer fallo y mantiene aceptar/iniciar/parar directos con frontera
-nullable. Pasan 105 tests focales y el gate completo con lint, 167 ficheros y 2.247 tests, scanner,
+nullable. Seguridad detectó además el reinicio generacional tras disable/re-enable; el contador ya
+sobrevive como dato no personal y la revisión anterior queda `stale`. Pasan 106 tests focales y el
+gate completo con lint, 167 ficheros y 2.248 tests, scanner,
 observabilidad, contratos de release/beta/soporte y build. Siguen pendientes la QA visual/manual ES/EN
 en temas reales, IndexedDB multiwindow y borrado en Obsidian real, el dry run instrumentado en las tres
 plataformas y la muestra H7.7; por tanto este cierre técnico no acredita el piloto ni una release.

@@ -344,7 +344,9 @@ agrega estas métricas localmente en un journal opt-in, separado por vault y con
 10.000 observaciones sin poda. Una `sampleRevision` monotónica cambia en la misma transacción que
 cada mutación real; guardar la revisión exige que esa revisión esperada siga vigente y una carrera
 devuelve `stale` sin certificar evidencia no vista ni corromper la salud. Estadísticas y export
-aceptan la revisión únicamente si coinciden entorno y revisión exactos. La preview y la
+aceptan la revisión únicamente si coinciden entorno y revisión exactos. Desactivar borra perfil,
+evidencia y revisión, pero avanza y retiene el contador generacional no personal para que reactivar
+el mismo perfil nunca reutilice una muestra anterior. La preview y la
 exportación create-only producen cuatro ficheros JSON/CSV deterministas; no existe sincronización ni
 telemetría remota propias o automáticas. Al quedar dentro del Vault, un servicio de Sync configurado
 por el usuario sí puede copiar esos ficheros.
