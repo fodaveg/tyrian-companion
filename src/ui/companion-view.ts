@@ -118,7 +118,11 @@ export class TyrianCompanionView extends ItemView {
 	private incidentMore: HTMLElement | null = null;
 	private ledger: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
+	private pendingConfirmationContainer: HTMLElement | null = null;
+	private pendingConfirmationFocusTarget: HTMLElement | null = null;
+	private pendingConfirmationKey: string | null = null;
 	private primaryActionContainer: HTMLElement | null = null;
+	private primaryActionButton: HTMLButtonElement | null = null;
 	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
@@ -165,7 +169,8 @@ export class TyrianCompanionView extends ItemView {
 		const { contentEl } = this;
 		const connectionState = this.actions.getConnectionState();
 		const sessionState = this.actions.getSessionState();
-		const projection = this.projectStatus(Date.now());
+		const now = Date.now();
+		const projection = this.projectStatus(now);
 
 		this.dynamicStatusNodes.clear();
 		this.headerPhase = null;
@@ -177,7 +182,11 @@ export class TyrianCompanionView extends ItemView {
 		this.incidentMore = null;
 		this.ledger = null;
 		this.detectionTimelineNodes = null;
+		this.pendingConfirmationContainer = null;
+		this.pendingConfirmationFocusTarget = null;
+		this.pendingConfirmationKey = null;
 		this.primaryActionContainer = null;
+		this.primaryActionButton = null;
 		this.primaryActionKey = null;
 		contentEl.addClass('tyrian-companion-view');
 		const actionController = this.actions.getProductActionController?.();
@@ -206,7 +215,7 @@ export class TyrianCompanionView extends ItemView {
 		this.sessionHistoryPanel = null;
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
-		this.renderLedgerHeader(surface, projection, connectionState, sessionState);
+		this.renderLedgerHeader(surface, projection, connectionState, sessionState, now);
 		this.renderLocalDebugWarning(surface);
 		this.renderStatusRail(surface, projection);
 		const sessionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
@@ -217,7 +226,10 @@ export class TyrianCompanionView extends ItemView {
 		detectionDetails.open = true;
 		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
 		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
-		this.renderPendingConfirmation(surface);
+		const pendingConfirmation = surface.createDiv({ cls: 'tyrian-companion-view__pending-slot' });
+		this.pendingConfirmationContainer = pendingConfirmation;
+		this.pendingConfirmationKey = this.projectPendingConfirmationKey(now);
+		this.renderPendingConfirmation(pendingConfirmation, now);
 		this.sessionHistoryPanel = mountSessionHistoryPanel(surface, locale, this.sessionHistoryController);
 		const loot = this.actions.getLootPresentation();
 		if (loot) renderLootPresentationView(surface, loot);
@@ -240,9 +252,7 @@ export class TyrianCompanionView extends ItemView {
 			void this.checkConnection();
 		});
 
-		if (projection.refreshEveryMs !== null || isCoolingDown(retryAt)) {
-			this.refreshInterval = contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
-		}
+		this.scheduleRefresh(projection, retryAt, now);
 	}
 
 	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
@@ -290,7 +300,7 @@ export class TyrianCompanionView extends ItemView {
 		return translateRuntime(createTranslator(this.actions.getLocale()), key, params);
 	}
 
-	private renderPendingConfirmation(container: HTMLElement): void {
+	private renderPendingConfirmation(container: HTMLElement, now = Date.now()): void {
 		const state = this.actions.getPendingProposalState();
 		if (state.status === 'loading' || (state.status === 'ready' && state.pendingCount === 0)) return;
 		const section = container.createEl('section', { cls: 'tyrian-companion-view__pending' });
@@ -311,8 +321,10 @@ export class TyrianCompanionView extends ItemView {
 		const details = section.createEl('dl');
 		addDetail(details, this.t('view.detected'), this.formatTimestamp(next.detectedAt));
 		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(next.proposal.evidenceQuality, (key, params) => this.t(key, params)));
-		if (Date.parse(next.staleAt) <= Date.now()) {
+		if (Date.parse(next.staleAt) <= now) {
 			addDetail(details, this.t('view.state'), this.t('view.stale'));
+			section.setAttr('tabindex', '-1');
+			this.pendingConfirmationFocusTarget = section;
 			return;
 		}
 		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
@@ -337,11 +349,36 @@ export class TyrianCompanionView extends ItemView {
 		});
 	}
 
+	private projectPendingConfirmationKey(now: number): string {
+		const state = this.actions.getPendingProposalState();
+		if (state.status !== 'ready') return state.status;
+		const next = state.next;
+		if (next === null) return `ready:${state.pendingCount}:none`;
+		const freshness = Date.parse(next.staleAt) <= now ? 'stale' : 'fresh';
+		return `ready:${state.pendingCount}:${next.proposalId}:${next.phase}:${freshness}`;
+	}
+
+	private refreshPendingConfirmation(now: number): boolean {
+		if (this.pendingConfirmationContainer === null) return false;
+		const key = this.projectPendingConfirmationKey(now);
+		if (key === this.pendingConfirmationKey) return false;
+		const restoreFocus = this.pendingConfirmationContainer.contains(
+			this.pendingConfirmationContainer.ownerDocument.activeElement,
+		);
+		this.pendingConfirmationContainer.empty();
+		this.pendingConfirmationFocusTarget = null;
+		this.pendingConfirmationKey = key;
+		this.renderPendingConfirmation(this.pendingConfirmationContainer, now);
+		return restoreFocus;
+	}
+
 	private refreshDynamicStatus(): void {
-		const projection = this.projectStatus(Date.now());
+		const now = Date.now();
+		const projection = this.projectStatus(now);
 		const connection = this.actions.getConnectionState();
 		this.refreshDetectionTimeline();
-		this.refreshPrimaryAction(projection, connection);
+		const restorePendingFocus = this.refreshPendingConfirmation(now);
+		this.refreshPrimaryAction(projection, connection, now, restorePendingFocus);
 		for (const status of projection.items.filter((item) => item.id !== 'session')) {
 			const nodes = this.dynamicStatusNodes.get(status.id);
 			nodes?.value.setText(status.value);
@@ -370,7 +407,7 @@ export class TyrianCompanionView extends ItemView {
 			this.incidentMore.hidden = projection.errors.length <= 1;
 			this.incidentMore.setText(this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }));
 		}
-		if (projection.refreshEveryMs === null) this.clearRefresh();
+		this.scheduleRefresh(projection, retryAt, now);
 	}
 
 	private renderLedgerHeader(
@@ -378,6 +415,7 @@ export class TyrianCompanionView extends ItemView {
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
 		session: SessionState,
+		now: number,
 	): void {
 		const header = container.createEl('header', { cls: 'tyrian-companion-view__masthead' });
 		const title = header.createDiv({ cls: 'tyrian-companion-view__title' });
@@ -389,7 +427,7 @@ export class TyrianCompanionView extends ItemView {
 		}
 		const action = header.createDiv({ cls: 'tyrian-companion-view__primary-action' });
 		this.primaryActionContainer = action;
-		this.primaryActionKey = this.renderPrimaryAction(action, projection, connection);
+		this.primaryActionKey = this.renderPrimaryAction(action, projection, connection, now);
 	}
 
 	private renderStatusRail(container: HTMLElement, projection: CompanionStatusProjection): void {
@@ -422,36 +460,48 @@ export class TyrianCompanionView extends ItemView {
 		container: HTMLElement,
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
+		now = Date.now(),
 	): string | null {
-		const action = this.projectPrimaryAction(projection, connection);
+		const action = this.projectPrimaryAction(projection, connection, now);
 		if (action === null) return null;
-		this.appendPrimaryAction(container, action);
+		this.primaryActionButton = this.appendPrimaryAction(container, action);
 		return action.key;
 	}
 
 	private refreshPrimaryAction(
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
+		now = Date.now(),
+		forceFocus = false,
 	): void {
 		if (this.primaryActionContainer === null) return;
-		const action = this.projectPrimaryAction(projection, connection);
+		const action = this.projectPrimaryAction(projection, connection, now);
 		const key = action?.key ?? null;
-		if (key === this.primaryActionKey) return;
+		if (key === this.primaryActionKey) {
+			if (forceFocus) (this.primaryActionButton ?? this.pendingConfirmationFocusTarget)?.focus();
+			return;
+		}
 		const restoreFocus = this.primaryActionContainer.contains(this.primaryActionContainer.ownerDocument.activeElement);
 		this.primaryActionContainer.empty();
+		this.primaryActionButton = null;
 		this.primaryActionKey = key;
-		if (action === null) return;
+		if (action === null) {
+			if (forceFocus) this.pendingConfirmationFocusTarget?.focus();
+			return;
+		}
 		const button = this.appendPrimaryAction(this.primaryActionContainer, action);
-		if (restoreFocus) button.focus();
+		this.primaryActionButton = button;
+		if (restoreFocus || forceFocus) button.focus();
 	}
 
 	private projectPrimaryAction(
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
+		now = Date.now(),
 	): CompanionPrimaryAction | null {
 		const pending = this.actions.getPendingProposalState();
 		const next = pending.status === 'ready' ? pending.next : null;
-		if (next !== null && Date.parse(next.staleAt) > Date.now()) {
+		if (next !== null && Date.parse(next.staleAt) > now) {
 			return {
 				key: `pending:${next.proposalId}:${next.phase}`,
 				label: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'),
@@ -500,6 +550,22 @@ export class TyrianCompanionView extends ItemView {
 		button.disabled = action.disabled;
 		button.addEventListener('click', action.run);
 		return button;
+	}
+
+	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
+		const shouldRefresh = projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now);
+		if (!shouldRefresh) {
+			this.clearRefresh();
+			return;
+		}
+		if (this.refreshInterval === null) {
+			this.refreshInterval = this.contentEl.win.setInterval(() => this.refreshDynamicStatus(), 1_000);
+		}
+	}
+
+	private hasFreshPendingProposal(now: number): boolean {
+		const state = this.actions.getPendingProposalState();
+		return state.status === 'ready' && state.next !== null && Date.parse(state.next.staleAt) > now;
 	}
 
 	private reviewPending(next: PendingProposal): void {

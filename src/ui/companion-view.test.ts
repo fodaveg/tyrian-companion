@@ -10,7 +10,10 @@ import type { AssistedDetectionState } from '../sessions/assisted-detection-serv
 import { ProductActionController } from './product-action-controller';
 import { SessionHistoryPanelController } from './session-history-panel';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.useRealTimers();
+	vi.unstubAllGlobals();
+});
 
 describe('Companion local diagnostics warning', () => {
 	it('renders a live degraded warning with a navigable Settings action', () => {
@@ -205,6 +208,95 @@ describe('Companion game HUD narrative', () => {
 		expect(container.children).toHaveLength(1);
 		expect(container.children[0]?.textContent).toBe('Revisar e iniciar');
 	});
+
+	it.each(['start_proposed', 'disarmed'] as const)(
+		'arms the sole HUD timer for a new pending proposal and expires it in place while detection is %s',
+		(detectionStatus) => {
+			vi.useFakeTimers();
+			const now = Date.parse('2026-08-31T10:00:00.000Z');
+			vi.setSystemTime(now);
+			const document = new RetainedFakeDocument();
+			const contentEl = new RetainedFakeElement('div', document);
+			const primary = new RetainedFakeElement('div', document);
+			const pending = new RetainedFakeElement('div', document);
+			const next = {
+				version: 1, phase: 'start' as const, proposalId: 'expiring', accountId: 'account',
+				binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
+				proposal: { evidenceQuality: 'complete' as const }, detectedAt: '2026-08-31T09:59:00.000Z',
+				staleAt: new Date(now + 1_000).toISOString(),
+			};
+			const reviewPendingProposal = vi.fn(async () => true);
+			const openManualSessionStart = vi.fn();
+			let currentNext: typeof next | null = null;
+			const actions = {
+				getLocale: () => 'es' as const,
+				getPendingProposalState: () => ({
+					status: 'ready' as const, pendingCount: currentNext === null ? 0 : 1, next: currentNext,
+				}),
+				getAssistedDetectionState: () => ({ status: detectionStatus }),
+				getSessionState: () => ({ version: 1 as const, status: 'idle' as const }),
+				getConnectionState: () => ({ status: 'connected' as const, accountId: 'account', accountName: 'Account' }),
+				reviewPendingProposal,
+				openPendingSessionStart: vi.fn(),
+				stopPendingSession: vi.fn(async () => undefined),
+				dismissPendingProposal: vi.fn(async () => undefined),
+				openManualSessionStart,
+			};
+			const projection = {
+				primaryAction: 'start', refreshEveryMs: null, items: [], errors: [], surfaceTone: 'neutral',
+			};
+			const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+				actions, contentEl, refreshInterval: null,
+				dynamicStatusNodes: new Map(), headerPhase: null, headerElapsed: null, checkButton: null,
+				cooldownNodes: [], incident: null, incidentMessage: null, incidentMore: null, ledger: null,
+				detectionTimelineNodes: null, pendingConfirmationContainer: pending, pendingConfirmationKey: null,
+				primaryActionContainer: primary, primaryActionButton: null, primaryActionKey: null,
+				projectStatus: () => projection,
+				t: (key: string) => key,
+				formatTimestamp: (value: string) => value,
+			});
+			const methods = TyrianCompanionView.prototype as unknown as {
+				renderPrimaryAction(this: typeof harness, container: HTMLElement, projection: unknown, connection: unknown, at: number): string | null;
+				renderPendingConfirmation(this: typeof harness, container: HTMLElement, at: number): void;
+				projectPendingConfirmationKey(this: typeof harness, at: number): string;
+				scheduleRefresh(this: typeof harness, projection: unknown, retryAt: number | null, at: number): void;
+				refreshBackgroundStatus(this: typeof harness): void;
+			};
+			(harness as { primaryActionKey: string | null }).primaryActionKey = methods.renderPrimaryAction.call(
+				harness, primary as unknown as HTMLElement, projection, actions.getConnectionState(), now,
+			);
+			methods.renderPendingConfirmation.call(harness, pending as unknown as HTMLElement, now);
+			(harness as { pendingConfirmationKey: string | null }).pendingConfirmationKey =
+				methods.projectPendingConfirmationKey.call(harness, now);
+			methods.scheduleRefresh.call(harness, projection, null, now);
+			expect(contentEl.scheduledInterval).toBeNull();
+
+			currentNext = next;
+			methods.refreshBackgroundStatus.call(harness);
+			const pendingCta = primary.children[0]!;
+			const pendingButtons = walkRetained(pending).filter((element) => element.tag === 'button');
+			expect(pendingButtons).toHaveLength(2);
+			expect(contentEl.intervalSetCount).toBe(1);
+			const tick = contentEl.scheduledInterval;
+			expect(tick).not.toBeNull();
+			pendingButtons[0]?.focus();
+
+			vi.advanceTimersByTime(1_000);
+			tick?.();
+
+			const currentCta = primary.children[0]!;
+			expect(currentCta).not.toBe(pendingCta);
+			currentCta.listeners.get('click')?.[0]?.();
+			if (detectionStatus === 'start_proposed') expect(openManualSessionStart).toHaveBeenCalledWith(null);
+			else expect(openManualSessionStart).toHaveBeenCalledWith();
+			expect(reviewPendingProposal).not.toHaveBeenCalled();
+			expect(walkRetained(pending).filter((element) => element.tag === 'button')).toHaveLength(0);
+			expect(walkRetained(pending).some((element) => element.textContent === 'view.stale')).toBe(true);
+			expect(document.activeElement).toBe(currentCta);
+			expect(contentEl.scheduledInterval).toBeNull();
+			expect(contentEl.intervalSetCount).toBe(1);
+		},
+	);
 });
 
 describe('Companion pilot metrics fail-open actions', () => {
@@ -356,12 +448,18 @@ describe('Companion retained product shell', () => {
 			incidentMessage: null,
 			incidentMore: null,
 			ledger: null,
+			pendingConfirmationContainer: null,
+			pendingConfirmationFocusTarget: null,
+			pendingConfirmationKey: null,
+			primaryActionButton: null,
 			productShell: null,
 			productShellKey: null,
 			sessionHistoryController: new SessionHistoryPanelController(async () => ({ status: 'ok', sessions: [], ignored: 0 })),
 			sessionHistoryPanel: null,
 			clearRefresh: vi.fn(),
 			projectStatus: () => ({ refreshEveryMs: null }),
+			projectPendingConfirmationKey: () => 'test-pending',
+			scheduleRefresh: vi.fn(),
 			renderLedgerHeader: vi.fn(),
 			renderLocalDebugWarning: vi.fn(),
 			renderStatusRail: vi.fn(),
@@ -384,7 +482,7 @@ describe('Companion retained product shell', () => {
 			element.children.some((child) => child.textContent === 'view.sessionDetails'))!;
 		const detectionDetails = main.children.find((element) => element.tag === 'details' &&
 			element.children.some((child) => child.textContent === 'view.detectionDetails'))!;
-		const pending = main.children.find((element) => element.className.includes('test-pending-confirmation'))!;
+		const pending = main.children.find((element) => element.className.includes('tyrian-companion-view__pending-slot'))!;
 		const history = main.children.find((element) => element.className.includes('tyrian-session-history'))!;
 		expect(main.children.indexOf(sessionDetails)).toBeLessThan(main.children.indexOf(detectionDetails));
 		expect(main.children.indexOf(detectionDetails)).toBeLessThan(main.children.indexOf(pending));
@@ -444,7 +542,16 @@ class RetainedFakeElement {
 	readonly children: RetainedFakeElement[] = [];
 	readonly attributes = new Map<string, string>();
 	readonly listeners = new Map<string, Array<() => void>>();
-	readonly win = { setInterval: () => 1, clearInterval: () => undefined };
+	intervalSetCount = 0;
+	scheduledInterval: (() => void) | null = null;
+	readonly win = {
+		setInterval: (callback: () => void, _delay: number) => {
+			this.intervalSetCount += 1;
+			this.scheduledInterval = callback;
+			return this.intervalSetCount;
+		},
+		clearInterval: (_handle: number) => { this.scheduledInterval = null; },
+	};
 	className = '';
 	textContent = '';
 	disabled = false;
