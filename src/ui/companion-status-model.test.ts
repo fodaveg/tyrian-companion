@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
+import type { SessionStartFailure, SessionStopFailure } from '../sessions/manual-session-start-service';
 import {
 	buildCompanionStatus,
 	localizedClassificationStatus,
@@ -48,6 +49,34 @@ describe('buildCompanionStatus', () => {
 		expect(es.items[0]).toMatchObject({ label: 'Detección', value: 'Activada' });
 		expect(en.items[0]).toMatchObject({ label: 'Detection', value: 'Armed' });
 		expect(es.items[0]?.id).toBe(en.items[0]?.id);
+	});
+
+	it.each([
+		['busy', 'Inicio: Ya hay una sesión o recuperación pendiente. Resuélvela antes de iniciar otra.', 'Start: A session or recovery is already pending. Resolve it before starting another one.'],
+		['coordination_unavailable', 'Inicio: La coordinación local no está disponible. Recarga Obsidian antes de volver a iniciar.', 'Start: Local coordination is unavailable. Reload Obsidian before starting again.'],
+		['invalid_input', 'Inicio: Los datos de inicio no son válidos. Revisa el personaje y el Hallazgo mágico.', 'Start: The start details are invalid. Review the character and Magic Find.'],
+		['missing_capability', 'Inicio: La clave API no permite leer la configuración del personaje. Añade el permiso builds y vuelve a comprobar la conexión.', 'Start: The API key cannot read the character build. Add the builds permission and check the connection again.'],
+		['snapshot_failed', 'Inicio: No se pudo capturar la línea base. Comprueba la conexión y vuelve a iniciar.', 'Start: The baseline could not be captured. Check the connection and start again.'],
+		['lease_lost', 'Inicio: Otra ventana tomó la autoridad de la sesión. Resuelve la sesión allí antes de reintentar.', 'Start: Another window took session authority. Resolve the session there before retrying.'],
+		['rate_limited', 'Inicio: Guild Wars 2 está limitando las peticiones. Espera a que termine el enfriamiento compartido y vuelve a iniciar.', 'Start: Guild Wars 2 is rate limiting requests. Wait for the shared cooldown to end and start again.'],
+		['unexpected', 'Inicio: No se pudo iniciar la sesión. Comprueba la conexión y vuelve a intentarlo.', 'Start: The session could not be started. Check the connection and try again.'],
+	] satisfies ReadonlyArray<readonly [SessionStartFailure['code'], string, string]>)('projects actionable start failure %s in ES and EN', (code, es, en) => {
+		const failure = { code, message: 'untrusted runtime detail' } satisfies SessionStartFailure;
+		expect(buildCompanionStatus(input({ locale: 'es', startFailure: failure })).errors).toEqual([es]);
+		expect(buildCompanionStatus(input({ locale: 'en', startFailure: failure })).errors).toEqual([en]);
+	});
+
+	it.each([
+		['coordination_unavailable', 'Final: La coordinación local no está disponible. Recarga Obsidian, recupera la sesión guardada y vuelve a terminarla.', 'Stop: Local coordination is unavailable. Reload Obsidian, recover the saved session, and finish it again.'],
+		['snapshot_failed', 'Final: No se pudo capturar la instantánea final. La línea base está a salvo; comprueba la conexión y vuelve a terminar.', 'Stop: The final snapshot could not be captured. The baseline is safe; check the connection and finish again.'],
+		['lease_lost', 'Final: Otra ventana tomó la autoridad de la sesión. Termínala o recupérala allí antes de reintentar.', 'Stop: Another window took session authority. Finish or recover the session there before retrying.'],
+		['delta_invalid', 'Final: La instantánea final no se pudo comparar con la línea base. Conserva la sesión, comprueba la cuenta y la conexión y vuelve a terminar.', 'Stop: The final snapshot could not be compared with the baseline. Keep the session, check the account and connection, and finish again.'],
+		['rate_limited', 'Final: Guild Wars 2 está limitando las peticiones. Espera a que termine el enfriamiento compartido y vuelve a terminar.', 'Stop: Guild Wars 2 is rate limiting requests. Wait for the shared cooldown to end and finish again.'],
+		['unexpected', 'Final: No se pudo terminar la sesión. Conserva el estado actual, revísalo en el Acompañante y vuelve a intentarlo.', 'Stop: The session could not be finished. Keep the current state, review it in Companion, and try again.'],
+	] satisfies ReadonlyArray<readonly [SessionStopFailure['code'], string, string]>)('projects actionable stop failure %s in ES and EN', (code, es, en) => {
+		const failure = { code, message: 'untrusted runtime detail' } satisfies SessionStopFailure;
+		expect(buildCompanionStatus(input({ locale: 'es', stopFailure: failure })).errors).toEqual([es]);
+		expect(buildCompanionStatus(input({ locale: 'en', stopFailure: failure })).errors).toEqual([en]);
 	});
 	it('projects the closed-note idle state without scheduling refreshes', () => {
 		const projection = buildCompanionStatus(input());
@@ -133,6 +162,22 @@ describe('buildCompanionStatus', () => {
 		expect(after.errors).not.toContain('Connection: retry cooldown is active.');
 		expect(after.errors).toContain('Connection: The operation could not be completed safely.');
 		expect(after.refreshEveryMs).toBeNull();
+	});
+
+	it('keeps start and stop 429 copy separate from the connection incident and live cooldown', () => {
+		const projection = buildCompanionStatus(input({
+			startFailure: { code: 'rate_limited', message: 'raw start 429' },
+			stopFailure: { code: 'rate_limited', message: 'raw stop 429' },
+			connection: { status: 'error', code: 'rate_limited', message: 'raw connection 429', retryAt: NOW + 1_000 },
+		}));
+
+		expect(projection.errors).toEqual([
+			'Start: Guild Wars 2 is rate limiting requests. Wait for the shared cooldown to end and start again.',
+			'Stop: Guild Wars 2 is rate limiting requests. Wait for the shared cooldown to end and finish again.',
+			'Connection: The operation could not be completed safely.',
+			'Connection: retry cooldown is active.',
+		]);
+		expect(projection.refreshEveryMs).toBe(1_000);
 	});
 
 	it.each([

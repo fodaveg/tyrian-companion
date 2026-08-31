@@ -359,13 +359,13 @@ function statusErrors(input: CompanionStatusInput, t: StatusText): string[] {
 	if (input.recovery.status === 'error') errors.push(t('status.recoveryIncident', { detail: t('status.operationFailed') }));
 	if (input.recovery.status === 'busy') errors.push(t('status.recoveryIncident', { detail: t('status.recoveryOwner') }));
 	if (input.session.status === 'error') errors.push(t('status.sessionIncident', { detail: sessionFailureLabel(input.session.code, t) }));
-	if (input.startFailure) errors.push(t('status.startIncident', { detail: failureLabel(input.startFailure.code, t) }));
-	if (input.stopFailure) errors.push(t('status.stopIncident', { detail: failureLabel(input.stopFailure.code, t) }));
+	if (input.startFailure) errors.push(t('status.startIncident', { detail: startFailureLabel(input.startFailure.code, t) }));
+	if (input.stopFailure) errors.push(t('status.stopIncident', { detail: stopFailureLabel(input.stopFailure.code, t) }));
 	if (sessionHasClockIncident(input.session, input.now)) errors.push(t('status.sessionIncident', { detail: t('status.clockInvalid') }));
 	if (input.review?.classification.status === 'invalid' || input.delta?.status === 'invalid') errors.push(t('status.qualityIncident', { detail: t('status.capturedEvidenceInvalid') }));
 	if (input.detectionMode !== 'off' && input.detection.status === 'error') errors.push(t('status.detectionIncident', { detail: t('status.detectionStopped') }));
 	if (input.detectionMode !== 'off' && input.detection.scheduler.status === 'fatal') errors.push(t('status.pollingFatal'));
-	if (input.connection.status === 'error') errors.push(t('status.connectionIncident', { detail: failureLabel(input.connection.code, t) }));
+	if (input.connection.status === 'error') errors.push(t('status.connectionIncident', { detail: connectionFailureLabel(input.connection.code, t) }));
 	if (input.connection.status === 'warning') errors.push(t('status.connectionIncident', { detail: t('status.attention') }));
 	if ((input.connection.status === 'warning' || input.connection.status === 'error') && hasLiveConnectionCountdown(input.connection, input.now)) errors.push(t('status.connectionIncident', { detail: t('status.cooldownActive') }));
 	if (input.qualityState.status === 'unavailable') errors.push(t('status.qualityIncident', { detail: t('status.unavailable') }));
@@ -375,8 +375,41 @@ function statusErrors(input: CompanionStatusInput, t: StatusText): string[] {
 	return [...new Set(errors)];
 }
 
-function failureLabel(_code: string, t: StatusText): string {
+/** Keeps open-ended connection failures closed instead of exposing transport messages. */
+function connectionFailureLabel(_code: string, t: StatusText): string {
 	return t('status.operationFailed');
+}
+
+/** Exhaustive translation-key contract for every failure returned by manual start. */
+const START_FAILURE_LABELS = {
+	busy: 'status.startFailure.busy',
+	coordination_unavailable: 'status.startFailure.coordination_unavailable',
+	invalid_input: 'status.startFailure.invalid_input',
+	missing_capability: 'status.startFailure.missing_capability',
+	snapshot_failed: 'status.startFailure.snapshot_failed',
+	lease_lost: 'status.startFailure.lease_lost',
+	rate_limited: 'status.startFailure.rate_limited',
+	unexpected: 'status.startFailure.unexpected',
+} satisfies Record<SessionStartFailure['code'], RuntimeTranslationKey>;
+
+/** Exhaustive translation-key contract for every failure returned by manual stop. */
+const STOP_FAILURE_LABELS = {
+	coordination_unavailable: 'status.stopFailure.coordination_unavailable',
+	snapshot_failed: 'status.stopFailure.snapshot_failed',
+	lease_lost: 'status.stopFailure.lease_lost',
+	delta_invalid: 'status.stopFailure.delta_invalid',
+	rate_limited: 'status.stopFailure.rate_limited',
+	unexpected: 'status.stopFailure.unexpected',
+} satisfies Record<SessionStopFailure['code'], RuntimeTranslationKey>;
+
+/** Maps every closed start failure to safe, actionable surface copy. */
+function startFailureLabel(code: SessionStartFailure['code'], t: StatusText): string {
+	return t(START_FAILURE_LABELS[code]);
+}
+
+/** Maps every closed stop failure to safe, actionable surface copy. */
+function stopFailureLabel(code: SessionStopFailure['code'], t: StatusText): string {
+	return t(STOP_FAILURE_LABELS[code]);
 }
 
 function hasErrorIncident(input: CompanionStatusInput): boolean {
