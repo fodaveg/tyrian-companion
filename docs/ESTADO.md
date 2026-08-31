@@ -37,8 +37,11 @@ en foco, este vuelve al toggle. Companion ordena sesión, detección del saco `#
 historial, botín/Halloween y cuenta; la detección muestra última consulta, resultado y próxima en una
 estructura semántica. La CTA primaria se reproyecta con el estado vivo, las propuestas obsoletas no
 se promueven y Halloween se resume salvo alerta no leída o error de store. Los commits candidatos son
-`71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d` y `e449df5`. Los gates focales y las revisiones
-independientes de ambos frentes están verdes; el gate combinado se ejecuta antes del cierre. Siguen
+`71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d`, `e449df5` y `c837acf`; `ee1f923` y `a19d5e1`
+realinean únicamente sus fronteras de observabilidad revisadas. El gate combinado pasa lint,
+167 ficheros y 2.285 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
+empaquetado reproducible, contratos de release/beta/soporte y build. Las revisiones focales están
+verdes y la revisión combinada queda como último control externo. Siguen
 pendientes la latencia/timeout/`429` con una cuenta grande y la QA visual/teclado en Obsidian real a
 1280/900/600/420/280 px, temas claro/oscuro/tercero y zoom.
 

@@ -16,10 +16,12 @@
 - La detección presenta última consulta, resultado y próxima como datos semánticos. La única CTA
   primaria se recalcula con el estado vivo y no promueve propuestas obsoletas; Halloween permanece
   compacto salvo alerta no leída o error de store.
-- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d` y `e449df5`. Los gates
-  focales y las revisiones independientes están verdes; el gate combinado se ejecuta antes del cierre.
-  La QA con cuenta grande y la QA visual/teclado en Obsidian real siguen pendientes. Nada está en
-  `main` ni publicado.
+- Commits candidatos: `71c562a`, `3bf3250`, `cd1a0d0`, `95e9381`, `bca8a9d`, `e449df5` y `c837acf`;
+  `ee1f923` y `a19d5e1` realinean sus fronteras de observabilidad. El gate combinado queda verde con
+  lint, 167 ficheros/2.285 tests, spike nativo, scanner, 643 fronteras de observabilidad sin pendientes,
+  empaquetado reproducible, contratos de release/beta/soporte y build. La revisión combinada es el
+  último control externo; la QA con cuenta grande y la QA visual/teclado en Obsidian real siguen
+  pendientes. Nada está en `main` ni publicado.
 
 ## Candidato sin publicar - H6.23, H6.24 y H6.25
 
