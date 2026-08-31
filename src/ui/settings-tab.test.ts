@@ -169,6 +169,8 @@ describe('settings information architecture', () => {
 		}
 		expect(nextSettingsCategory('account', 'ArrowLeft')).toBe('diagnostics');
 		expect(nextSettingsCategory('diagnostics', 'ArrowRight')).toBe('account');
+		expect(nextSettingsCategory('account', 'ArrowUp')).toBe('diagnostics');
+		expect(nextSettingsCategory('diagnostics', 'ArrowDown')).toBe('account');
 		expect(nextSettingsCategory('economy', 'Home')).toBe('account');
 		expect(nextSettingsCategory('account', 'End')).toBe('diagnostics');
 		expect(nextSettingsCategory('account', 'Enter')).toBeNull();

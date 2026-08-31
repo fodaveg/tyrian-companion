@@ -6,6 +6,7 @@ import type { SessionPriceSnapshot } from './session-price-snapshot';
 import {
 	calculateSessionValuation,
 	HALLOWEEN_TOT_BAG_ITEM_ID,
+	isSessionValuation,
 	type SessionValuationInput,
 } from './session-valuation';
 
@@ -126,6 +127,29 @@ describe('calculateSessionValuation', () => {
 				warnings: ['market_depth_incomplete'],
 			},
 		});
+	});
+
+	it('rejects a complete depth label without a demonstrated instant-sale value', () => {
+		const result = calculateSessionValuation(input());
+		if (result.status !== 'ok') throw new Error('Expected a valid valuation fixture.');
+		const tampered = structuredClone(result.valuation);
+		tampered.lines[0]!.instantSellDepthCoverage = 'complete';
+
+		expect(isSessionValuation(tampered, delta(), [HALLOWEEN_TOT_BAG_ITEM_ID])).toBe(false);
+	});
+
+	it('rejects partial market depth hidden by removing its warning and promoting coverage', () => {
+		const value = input();
+		value.prices.marketDepth.items.find((entry) => entry.itemId === HALLOWEEN_TOT_BAG_ITEM_ID)!.buys = [
+			{ unitCopper: 10, quantity: 40 },
+		];
+		const result = calculateSessionValuation(value);
+		if (result.status !== 'ok') throw new Error('Expected a valid partial-depth fixture.');
+		const tampered = structuredClone(result.valuation);
+		tampered.warnings = [];
+		tampered.coverage = 'complete';
+
+		expect(isSessionValuation(tampered, value.delta, [HALLOWEEN_TOT_BAG_ITEM_ID])).toBe(false);
 	});
 
 	it('keeps unknown binding and missing metadata non-liquid instead of zero-valued', () => {

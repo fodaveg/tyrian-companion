@@ -203,6 +203,9 @@ export function isSessionValuationRecord(value: unknown, sackItemIds: unknown): 
 	const observedListingCopper = addSigned(itemListingCopper, valuation.totals.coinNetCopper);
 	const nonLiquid = valuation.lines.filter((line) => line.nonLiquid);
 	const nonLiquidQuantity = sum(nonLiquid.map((line) => line.quantity));
+	const marketDepthIncomplete = valuation.lines.some((line) =>
+		(line.instantSellDepthCoverage !== 'complete' && line.instantSellDepthCoverage !== 'not_applicable')
+		|| line.instantSell?.status === 'partial' || line.instantSell?.status === 'invalid');
 	const sacks = sum(valuation.lines.filter((line) => sackItemIds.includes(line.itemId)).map((line) => line.quantity));
 	const sacksScaled = sacks === null ? null : multiply(sacks, 1_000);
 	const sacksPerHourMilli = sacksScaled === null ? null : rate(sacksScaled, valuation.durationMs);
@@ -217,6 +220,7 @@ export function isSessionValuationRecord(value: unknown, sackItemIds: unknown): 
 		valuation.totals.observedListingCopper === observedListingCopper &&
 		valuation.totals.nonLiquidItemKinds === nonLiquid.length &&
 		valuation.totals.nonLiquidQuantity === nonLiquidQuantity &&
+		valuation.warnings.includes('market_depth_incomplete') === marketDepthIncomplete &&
 		valuation.rates.sacks === sacks && valuation.rates.sacksPerHourMilli === sacksPerHourMilli &&
 		valuation.rates.immediateCopperPerHour === immediateCopperPerHour &&
 		valuation.rates.listingCopperPerHour === listingCopperPerHour;
@@ -321,6 +325,7 @@ function isSessionValuationLine(value: unknown): value is SessionValuationLine {
 		isVendorRoute(value.vendor, value.quantity))) return false;
 	const line = value as unknown as SessionValuationLine;
 	if (line.binding !== 'unbound' && (line.instantSell !== null || line.listing !== null)) return false;
+	if ((line.instantSellDepthCoverage === 'complete') !== (line.instantSell !== null)) return false;
 	if (line.instantSell !== null && (line.instantSell.requestedQuantity !== line.quantity
 		|| line.instantSellDepthCoverage !== 'complete')) return false;
 	if (line.instantSellDepthCoverage === 'not_applicable' && line.instantSell !== null) return false;

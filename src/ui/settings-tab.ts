@@ -943,13 +943,13 @@ export function isActiveSettingsCategory(category: SettingsCategory, active: Set
 	return category === active;
 }
 
-/** Implements the standard horizontal-tab keyboard loop without coupling it to the DOM. */
+/** Supports both axes because the same tablist is lateral on wide containers and horizontal below 1050 px. */
 export function nextSettingsCategory(category: SettingsCategory, key: string): SettingsCategory | null {
 	const index = SETTINGS_CATEGORIES.indexOf(category);
 	if (key === 'Home') return SETTINGS_CATEGORIES[0];
 	if (key === 'End') return SETTINGS_CATEGORIES.at(-1) ?? null;
-	if (key !== 'ArrowLeft' && key !== 'ArrowRight') return null;
-	const offset = key === 'ArrowRight' ? 1 : -1;
+	if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(key)) return null;
+	const offset = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
 	return SETTINGS_CATEGORIES[(index + offset + SETTINGS_CATEGORIES.length) % SETTINGS_CATEGORIES.length] ?? null;
 }
 
