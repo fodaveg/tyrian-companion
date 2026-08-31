@@ -115,14 +115,13 @@ export class StorageSnapshotService {
 				if (shouldRetryAdvisorPass(first.coverage)) {
 					const second = await this.capturePass(operation, context, scope,
 						advisorProgress?.second);
-					const secondComplete = advisorPassComplete(second.coverage)
-						&& !hasIncompleteCoverage(second.coverage);
+					const secondCoreComplete = advisorPassComplete(second.coverage);
 					return finalizeStorageSnapshot({
 						pass: second,
 						// Only one complete observation exists, so a recovered refresh can
 						// support manual routes but never a curated recommendation.
-						quality: secondComplete ? 'unstable' : 'partial',
-						coveragePasses: secondComplete ? [second] : [first, second],
+						quality: secondCoreComplete ? 'unstable' : 'partial',
+						coveragePasses: secondCoreComplete ? [second] : [first, second],
 						passes: [first, second],
 					}, {
 						accountId: context.accountId,

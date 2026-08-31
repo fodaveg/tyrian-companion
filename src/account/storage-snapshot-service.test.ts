@@ -153,7 +153,7 @@ describe('StorageSnapshotService', () => {
 		expect(isComparableStorageSnapshot(snapshot)).toBe(true);
 	});
 
-	it('keeps repeated transient optional-store failures fail-closed', async () => {
+	it('keeps the advisor core usable when optional stores fail twice', async () => {
 		const fixture = clientFor([passWith()], {
 			onRequest: async (path) => {
 				if (path.startsWith('account/bank') || path.startsWith('account/materials')) {
@@ -166,10 +166,10 @@ describe('StorageSnapshotService', () => {
 
 		expect(snapshot.coverage.sources.bank.status).not.toBe('complete');
 		expect(snapshot.coverage.sources.materials.status).not.toBe('complete');
-		expect(snapshot).toMatchObject({ quality: 'partial', passes: 2 });
+		expect(snapshot).toMatchObject({ quality: 'unstable', passes: 2 });
 		expect(snapshot.holdings.every(({ location }) =>
 			location.source === 'character' || location.source === 'shared_inventory')).toBe(true);
-		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(false);
+		expect(isInventoryAdvisorStorageSnapshot(snapshot)).toBe(true);
 	});
 
 	it.each([
