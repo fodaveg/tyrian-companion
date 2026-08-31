@@ -20,6 +20,9 @@ describe('Halloween alert panel DOM', () => {
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('aria-label')).toBe('Halloween alert inbox');
 		expect(all.find(({ role }) => role === 'status')?.attributes.get('aria-live')).toBe('polite');
 		expect(all.map(({ text }) => text).join(' ')).toContain('does not open IndexedDB');
+		const disclosure = all.find(({ tag }) => tag === 'details');
+		expect(disclosure?.open).toBe(false);
+		expect(all.map(({ text }) => text).join(' ')).toContain('Halloween · optional event');
 	});
 
 	it('keeps 400 ids, long/unknown names, large quantities and combined reasons reviewable', async () => {
@@ -45,6 +48,8 @@ describe('Halloween alert panel DOM', () => {
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 		}, translator('en'));
 		const all = walk(mount);
+		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
+		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
 		expect(all.filter(({ tag }) => tag === 'article')).toHaveLength(1);
 		expect(all.filter(({ tag }) => tag === 'strong')).toHaveLength(400);
 		expect(all.map(({ text }) => text).join('\n')).toContain('Item #2');
@@ -103,7 +108,7 @@ class FakeElement {
 	readonly attributes = new Map<string, string>();
 	readonly listeners = new Map<string, Array<() => void>>();
 	readonly classes = new Set<string>();
-	text = ''; role = ''; disabled = false; tabIndex = 0;
+	text = ''; role = ''; disabled = false; tabIndex = 0; open = false;
 	constructor(readonly tag: string) {}
 	createEl(tag: string, options: { text?: string; cls?: string } = {}): FakeElement {
 		const child = new FakeElement(tag); child.text = options.text ?? ''; if (options.cls) child.classes.add(options.cls); this.children.push(child); return child;

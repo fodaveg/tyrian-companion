@@ -30,7 +30,7 @@ import {
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 import type { PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
-import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import { proposalIntent, type PendingProposal, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { LootPresentationV1 } from '../sessions/loot-presentation';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import {
@@ -200,12 +200,12 @@ export class TyrianCompanionView extends ItemView {
 		sessionDetails.open = true;
 		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
 		this.renderSession(sessionDetails, connectionState, sessionState);
-		this.sessionHistoryPanel = mountSessionHistoryPanel(surface, locale, this.sessionHistoryController);
 		const detectionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
 		detectionDetails.open = true;
 		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
 		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
 		this.renderPendingConfirmation(surface);
+		this.sessionHistoryPanel = mountSessionHistoryPanel(surface, locale, this.sessionHistoryController);
 		const loot = this.actions.getLootPresentation();
 		if (loot) renderLootPresentationView(surface, loot);
 		renderHalloweenAlertPanel(surface, this.actions, (key, params) => this.t(key as RuntimeTranslationKey, params));
@@ -219,7 +219,6 @@ export class TyrianCompanionView extends ItemView {
 
 		const checkButton = surface.createEl('button', {
 			text: connectionState.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
-			cls: 'mod-cta',
 		});
 		this.checkButton = checkButton;
 		const retryAt = getRetryAt(connectionState);
@@ -304,14 +303,8 @@ export class TyrianCompanionView extends ItemView {
 		const intent = proposalIntent(next);
 		try { this.actions.recordPendingProposalPresented?.(intent); }
 		catch { /* Optional pilot metrics never affect foreground actions. */ }
-		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'), cls: 'mod-cta' });
-		review.addEventListener('click', () => {
-			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
-				if (!reviewed) return;
-				if (next.phase === 'start') this.actions.openPendingSessionStart(intent, null);
-				else void this.actions.stopPendingSession(intent, null);
-			});
-		});
+		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop') });
+		review.addEventListener('click', () => this.reviewPending(next));
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
@@ -405,6 +398,29 @@ export class TyrianCompanionView extends ItemView {
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
 	): void {
+		const pending = this.actions.getPendingProposalState();
+		if (pending.status === 'ready' && pending.next !== null) {
+			const button = container.createEl('button', {
+				text: pending.next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'),
+				cls: 'mod-cta',
+			});
+			button.addEventListener('click', () => this.reviewPending(pending.next!));
+			return;
+		}
+		const detection = this.actions.getAssistedDetectionState();
+		const session = this.actions.getSessionState();
+		if (detection.status === 'start_proposed') {
+			const button = container.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
+			button.disabled = session.status !== 'idle';
+			button.addEventListener('click', () => this.actions.openManualSessionStart(null));
+			return;
+		}
+		if (detection.status === 'stop_proposed') {
+			const button = container.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
+			button.disabled = session.status !== 'active';
+			button.addEventListener('click', () => { void this.actions.stopManualSession(null); });
+			return;
+		}
 		if (projection.primaryAction === 'stop') {
 			const button = container.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
@@ -416,7 +432,7 @@ export class TyrianCompanionView extends ItemView {
 			return;
 		}
 		if (projection.primaryAction === 'clear') {
-			const button = container.createEl('button', { text: this.t('view.clearSession') });
+			const button = container.createEl('button', { text: this.t('view.clearSession'), cls: 'mod-cta' });
 			button.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
@@ -430,6 +446,15 @@ export class TyrianCompanionView extends ItemView {
 			button.disabled = connection.status !== 'connected' && connection.status !== 'warning';
 			button.addEventListener('click', () => this.actions.openManualSessionStart());
 		}
+	}
+
+	private reviewPending(next: PendingProposal): void {
+		const intent = proposalIntent(next);
+		void this.actions.reviewPendingProposal(intent).then((reviewed) => {
+			if (!reviewed) return;
+			if (next.phase === 'start') this.actions.openPendingSessionStart(intent, null);
+			else void this.actions.stopPendingSession(intent, null);
+		});
 	}
 
 	private async checkConnection(): Promise<void> {
@@ -497,7 +522,9 @@ export class TyrianCompanionView extends ItemView {
 		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		card.setAttr('aria-live', 'polite');
 		card.createEl('h3', { text: this.t('view.assistedDetection') });
+		card.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
 		this.renderDetectionQualityStatus(card);
+		this.renderDetectionTimeline(card, mode, state, session);
 
 		if (mode === 'off') {
 			card.createEl('p', { text: this.t('view.disabledInSettings') });
@@ -508,7 +535,7 @@ export class TyrianCompanionView extends ItemView {
 			card.createEl('p', { text: this.t('view.disarmedDetail') });
 			addDetectionDetail(card, this.t('view.state'), this.t('status.disarmed'));
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const arm = actions.createEl('button', { text: this.t('view.armDetection'), cls: 'mod-cta' });
+			const arm = actions.createEl('button', { text: this.t('view.armDetection') });
 			const connected = connection.status === 'connected' || connection.status === 'warning';
 			const sessionReady = session.status === 'idle' || session.status === 'active';
 			const recoveryReady = session.status !== 'idle' || this.actions.getSessionRecoveryState().status === 'none';
@@ -532,7 +559,7 @@ export class TyrianCompanionView extends ItemView {
 			card.createEl('p', { text: this.t('status.detectionStopped'), cls: 'tyrian-companion-view__session-error' });
 			addDetectionDetail(card, this.t('view.state'), this.t('status.error'));
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const retry = actions.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
+			const retry = actions.createEl('button', { text: this.t('view.tryArmingAgain') });
 			retry.addEventListener('click', () => { void this.armDetection(); });
 			const disarm = actions.createEl('button', { text: this.t('view.disarm') });
 			disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
@@ -545,7 +572,7 @@ export class TyrianCompanionView extends ItemView {
 			card.createEl('p', { text: this.t('view.startProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const start = actions.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
+			const start = actions.createEl('button', { text: this.t('view.reviewStart') });
 			start.disabled = session.status !== 'idle';
 			start.addEventListener('click', () => this.actions.openManualSessionStart(null));
 			this.addDismissAndDisarm(actions, 'start');
@@ -558,7 +585,7 @@ export class TyrianCompanionView extends ItemView {
 			card.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const stop = actions.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
+			const stop = actions.createEl('button', { text: this.t('view.stopSession') });
 			stop.disabled = session.status !== 'active';
 			stop.addEventListener('click', () => { void this.actions.stopManualSession(null); });
 			this.addDismissAndDisarm(actions, 'stop');
@@ -572,6 +599,45 @@ export class TyrianCompanionView extends ItemView {
 		addDetail(details, this.t('view.interval'), this.formatInterval(state.scheduler.intervalMs));
 		if (state.lastSnapshotAt) addDetail(details, this.t('view.lastSnapshot'), this.formatTimestamp(state.lastSnapshotAt));
 		this.addDisarmButton(card);
+	}
+
+	private renderDetectionTimeline(
+		container: HTMLElement,
+		mode: DetectionMode,
+		state: AssistedDetectionState,
+		session: SessionState,
+	): void {
+		const timeline = container.createDiv({ cls: 'tyrian-companion-view__detection-timeline' });
+		timeline.setAttr('aria-label', this.t('view.detectionTimeline'));
+		const scheduler = state.scheduler;
+		const lastAttemptAt = scheduler.lastAttemptAt;
+		const last = lastAttemptAt === null
+			? this.t('view.notYet')
+			: this.formatTimestamp(new Date(lastAttemptAt).toISOString());
+		let result = this.t('view.noDetectionResult');
+		if (mode === 'off' || state.status === 'disarmed') result = this.t('view.noDetectionResult');
+		else if (state.status === 'arming') result = this.t('view.baselineInProgress');
+		else if (state.status === 'start_proposed') result = this.t('view.bagSignalFound');
+		else if (state.status === 'stop_proposed') result = this.t('view.quietSignalFound');
+		else if (state.status === 'error' || scheduler.status === 'fatal') result = this.t('view.queryStopped');
+		else if (scheduler.status === 'polling') result = this.t('view.queryInProgress');
+		else if (scheduler.lastAttemptAt !== null &&
+			(scheduler.lastSuccessAt === null || scheduler.lastAttemptAt > scheduler.lastSuccessAt)) {
+			result = this.t('view.queryFailedPreserved');
+		} else if (scheduler.lastSuccessAt !== null) {
+			result = session.status === 'active' ? this.t('view.noStopProposal') : this.t('view.noBagSignal');
+		}
+		let next = this.t('view.notScheduled');
+		if (mode === 'off' || state.status === 'disarmed' || state.status === 'error' ||
+			scheduler.status === 'fatal' || scheduler.status === 'disposed') next = this.t('view.notScheduled');
+		else if (state.status === 'arming') next = this.t('view.afterBaseline');
+		else if (state.status === 'start_proposed' || state.status === 'stop_proposed') next = this.t('view.waitingProposalReview');
+		else if (scheduler.status === 'polling') next = this.t('view.now');
+		else if (scheduler.status === 'paused_offline') next = this.t('view.whenOnline');
+		else if (scheduler.nextRunAt !== null) next = this.formatTimestamp(new Date(scheduler.nextRunAt).toISOString());
+		addDetectionTimelineItem(timeline, this.t('view.detectionLastQuery'), last);
+		addDetectionTimelineItem(timeline, this.t('view.detectionResult'), result);
+		addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), next);
 	}
 
 	private async armDetection(): Promise<void> {
@@ -649,7 +715,7 @@ export class TyrianCompanionView extends ItemView {
 			card.createEl('p', { text: this.t('view.noActiveSession') });
 			const failure = this.actions.getSessionStartFailure();
 			if (failure) card.createEl('p', { text: this.t('status.operationFailed'), cls: 'tyrian-companion-view__session-error' });
-			const start = card.createEl('button', { text: this.t('view.startSession'), cls: 'mod-cta' });
+			const start = card.createEl('button', { text: this.t('view.startSession') });
 			const connected = connection.status === 'connected' || connection.status === 'warning';
 			start.disabled = !connected;
 			start.addEventListener('click', () => this.actions.openManualSessionStart());
@@ -701,7 +767,6 @@ export class TyrianCompanionView extends ItemView {
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const reviewButton = actions.createEl('button', {
 				text: review ? this.t('view.reviewAgain') : this.t('view.reviewActivity'),
-				cls: 'mod-cta',
 			});
 			reviewButton.addEventListener('click', () => this.actions.openSessionReview());
 			return;
@@ -713,7 +778,7 @@ export class TyrianCompanionView extends ItemView {
 			const review = this.actions.getContaminationReview();
 			if (review) this.renderReviewSummary(card, review);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const reset = actions.createEl('button', { text: this.t('view.clearCompleted'), cls: 'mod-cta' });
+			const reset = actions.createEl('button', { text: this.t('view.clearCompleted') });
 			reset.addEventListener('click', () => this.actions.confirmClearCompletedSession());
 			return;
 		}
@@ -775,7 +840,7 @@ export class TyrianCompanionView extends ItemView {
 			});
 		}
 		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const recover = actions.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
+		const recover = actions.createEl('button', { text: this.t('view.recoverSession') });
 		const discard = actions.createEl('button', { text: this.t('view.discardSaved') });
 		const working = recovery.status === 'working';
 		const pilotClassificationRequired = this.actions.isPilotRecoveryClassificationRequired?.() ?? false;
@@ -1174,6 +1239,12 @@ function runtimeText(
 function addDetectionDetail(container: HTMLElement, term: string, detail: string): void {
 	const list = container.createEl('dl');
 	addDetail(list, term, detail);
+}
+
+function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): void {
+	const item = container.createDiv({ cls: 'tyrian-companion-view__detection-time' });
+	item.createSpan({ text: label });
+	item.createEl('strong', { text: value });
 }
 
 function radioOption(

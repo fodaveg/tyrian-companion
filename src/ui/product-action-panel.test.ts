@@ -180,6 +180,41 @@ describe('product action surface', () => {
 		walk(warning).find((element) => element.tag === 'button')!.dispatch('click');
 		expect(openSettings).toHaveBeenCalledOnce();
 	});
+
+	it('closes the single accessible action disclosure when the shell enters compact width', () => {
+		let resize!: ResizeObserverCallback;
+		const disconnect = vi.fn();
+		vi.stubGlobal('ResizeObserver', class {
+			constructor(callback: ResizeObserverCallback) { resize = callback; }
+			observe(): void { /* Triggered explicitly after the fake layout settles. */ }
+			disconnect(): void { disconnect(); }
+		});
+		const document = installFakeDocument();
+		const root = new FakeElement('div', document);
+		const mount = renderProductShell(root as unknown as HTMLElement, {
+			locale: 'es', active: 'companion', actions: createController(), missingApiKey: false, openSettings: vi.fn(),
+		});
+		const shell = walk(root).find((element) => element.className.includes('tyrian-product-shell'))!;
+		const panel = mount.panel as unknown as FakeElement;
+		const toggle = walk(panel).find((element) => element.className.includes('tyrian-action-panel__toggle'))!;
+		const contentId = toggle.attributes.get('aria-controls');
+		const content = walk(panel).find((element) => element.attributes.get('id') === contentId)!;
+
+		resize([{ target: shell as unknown as Element, contentRect: { width: 420 } } as ResizeObserverEntry], {} as ResizeObserver);
+		expect(panel.attributes.get('data-compact')).toBe('true');
+		expect(toggle.attributes.get('aria-expanded')).toBe('false');
+		expect(content.hidden).toBe(true);
+		expect(walk(content).filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(16);
+
+		toggle.dispatch('click');
+		expect(toggle.attributes.get('aria-expanded')).toBe('true');
+		expect(content.hidden).toBe(false);
+		resize([{ target: shell as unknown as Element, contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver);
+		expect(panel.attributes.get('data-compact')).toBe('false');
+		expect(content.hidden).toBe(false);
+		mount.dispose();
+		expect(disconnect).toHaveBeenCalledOnce();
+	});
 });
 
 function installFakeDocument(): FakeDocument {

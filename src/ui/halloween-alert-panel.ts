@@ -18,18 +18,30 @@ export function renderHalloweenAlertPanel(
 	t: Translate,
 ): void {
 	const state = actions.getHalloweenState();
+	const priceState = actions.getHalloweenPriceAlertState();
+	const requiresAttention = state.unreadCount > 0 || priceState.unreadCount > 0;
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween' });
 	section.setAttr('aria-label', t('halloween.aria'));
-	section.createEl('h2', { text: t('halloween.title') });
-	const status = section.createEl('p', { cls: 'tyrian-companion-halloween__status' });
+	section.setAttr('data-attention', String(requiresAttention));
+	let body: HTMLElement = section;
+	if (requiresAttention) {
+		section.createEl('h2', { text: t('halloween.title') });
+	} else {
+		const disclosure = section.createEl('details', { cls: 'tyrian-companion-halloween__disclosure' });
+		const summary = disclosure.createEl('summary');
+		summary.createEl('strong', { text: t('halloween.optional') });
+		summary.createEl('small', { text: t(`halloween.state.${state.status}`) });
+		body = disclosure.createDiv({ cls: 'tyrian-companion-halloween__body' });
+	}
+	const status = body.createEl('p', { cls: 'tyrian-companion-halloween__status' });
 	status.setAttr('role', state.status.startsWith('store_') ? 'alert' : 'status');
 	status.setAttr('aria-live', 'polite');
 	if (state.status !== 'ready' && state.status !== 'unread') {
 		status.setText(t(`halloween.state.${state.status}`));
 	}
-	renderComparison(section, state, t);
-	renderPriceAlerts(section, actions, t);
-	for (const notice of state.notices) renderNotice(section, notice, actions, t);
+	renderComparison(body, state, t);
+	renderPriceAlerts(body, actions, priceState, t);
+	for (const notice of state.notices) renderNotice(body, notice, actions, t);
 }
 
 function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, t: Translate): void {
@@ -69,8 +81,12 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
 	}
 }
 
-function renderPriceAlerts(container: HTMLElement, actions: HalloweenAlertPanelActions, t: Translate): void {
-	const state = actions.getHalloweenPriceAlertState();
+function renderPriceAlerts(
+	container: HTMLElement,
+	actions: HalloweenAlertPanelActions,
+	state: HalloweenPriceAlertRuntimeState,
+	t: Translate,
+): void {
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__price' });
 	section.createEl('h3', { text: t('halloween.price.title') });
 	const status = section.createEl('p');
