@@ -552,8 +552,9 @@
   de sesión. La API continúa autoritativa y no se han tocado `main`, settings ni composición.
 - Añadidas 25 pruebas H8.8 —17 funcionales y ocho arquitectónicas—; el gate completo combinado queda
   en 113 ficheros y 1.544 tests Vitest, además de lanes C/Rust/release/scanner y build.
-- H8.8 permanece `@wip`: faltan integración con el runtime, métricas comparativas y QA humana en
-  Windows, Linux/Steam/Proton y macOS/CrossOver.
+- H8.8 queda cerrada en su alcance shadow aislado: la integración con el runtime, las métricas
+  comparativas y la QA humana multiplataforma pertenecen a H8.9–H8.15. Esta reconciliación no
+  descongela H8 ni autoriza composición, salida de shadow o release.
 
 ## H8.7 — Frontera segura de lanzamiento sin executor
 

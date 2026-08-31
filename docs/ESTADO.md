@@ -303,7 +303,7 @@ La revisión independiente no encontró bloqueos y el gate base del repo quedó 
 AA no se ha medido en temas reales. H10.4 y H10.7 conservan QA manual pendiente antes de su aceptación
 humana.
 
-**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.7/H8.8 permanecen `@wip`.**
+**Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.8 queda `@done` dentro de su alcance aislado; H8.7 permanece `@wip`.**
 
 **H8 (Mumble v2) queda congelada por decisión de producto del 2026-08-18** hasta que cierre
 H8.2, que tiene dos pasos: compilar el PE del spike y leer MumbleLink dentro de la botella
@@ -477,7 +477,7 @@ paquete compartido H8.5, artefactos corruptos, capability/TOCTOU, stderr/stop, c
 de capacidades, incluido un único call-site de capability dentro del método hasheado y hash del adaptador completo; scanner v13 y
 guard v17 mantienen el censo exacto.
 
-**H8.8: política shadow de presencia/ausencia implementada en aislamiento, todavía `@wip`.** El
+**H8.8: política shadow de presencia/ausencia implementada y cerrada en su alcance aislado.** El
 reducer puro solo acepta el mapa objetivo `866`: fija presencia tras 5.000 ms de crédito y ausencia
 tras 60.000 ms de crédito. La primera solo acumula en idle y la segunda durante una sesión
 ligada; cada record aporta como máximo 500 ms. Gaps, heartbeat/source degradation, `link_stalled`, caída de canal y
@@ -485,8 +485,10 @@ recovery reinician o degradan la ventana y nunca se interpretan como ausencia. C
 como máximo un DTO efímero con evidencia `limited` y review `human_required`; muestras posteriores
 del mismo estado no lo reemiten. La señal liga `accountId` dentro de su contexto efímero en idle y
 sesión; un cambio de cuenta reinicia ventana y latch. El DTO no entra en la cola H5.3, no persiste,
-no llega a UI y no invoca captura ni lifecycle. La API sigue siendo autoritativa. Faltan composición, métricas
-comparativas y QA humana en Windows, Linux/Steam/Proton y macOS/CrossOver.
+no llega a UI y no invoca captura ni lifecycle. La API sigue siendo autoritativa. La composición,
+las métricas comparativas y la QA humana en Windows, Linux/Steam/Proton y macOS/CrossOver pertenecen
+a la salida posterior de shadow —H8.9–H8.15— y no reabren el criterio aislado de H8.8. La congelación
+de H8 hasta completar H8.2 permanece intacta.
 
 **H8.3: ADR de lenguaje/artefacto que autorizó la implementación.** Se elige Rust
 provisionalmente, target único `x86_64-pc-windows-msvc` con CRT estático, fuente futura

@@ -2,7 +2,8 @@
 
 ## Estado
 
-Implementación pura y aislada, `@wip`. No autoriza composición, salida de shadow ni release.
+Implementación pura y aislada, cerrada dentro de ese alcance. No autoriza composición, salida de
+shadow ni release.
 
 ## Contexto
 
