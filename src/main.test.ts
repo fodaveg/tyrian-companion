@@ -262,6 +262,44 @@ describe('assisted proposal invalidation metrics', () => {
 	});
 });
 
+describe('persisted pilot recovery classification', () => {
+	it('hydrates a reloaded classification and rejects an alternative without touching the journal', async () => {
+		const recoveryClassified = vi.fn(async () => false);
+		const recoveryId = 'session-a:7';
+		const harness = {
+			runtimeReady: true,
+			sessions: { getRecoveryState: () => ({
+				status: 'pending', state: { sessionId: 'session-a', authority: { fence: 7 } },
+			}) },
+			pilotMetrics: {
+				recoveryPresented: vi.fn(async () => true),
+				recoveryKind: vi.fn(async () => 'forced_restart' as const),
+				recoveryClassified,
+			},
+			measuredPilotRecoveries: new Set<string>(),
+			pilotRecoveryKinds: new Map<string, 'forced_restart' | 'organic'>(),
+			renderViews: vi.fn(),
+			pilotRecoveryIdentity: () => recoveryId,
+			ensurePilotRecoveryPresented: (_id: string) => Promise.resolve(false),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
+		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
+			ensurePilotRecoveryPresented(this: typeof harness, id: string): Promise<boolean>;
+		}).ensurePilotRecoveryPresented;
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated reload harness.
+		const classify = (TyrianCompanionPlugin.prototype as unknown as {
+			classifyPilotRecovery(this: typeof harness, kind: 'forced_restart' | 'organic'): Promise<boolean>;
+		}).classifyPilotRecovery;
+		harness.ensurePilotRecoveryPresented = async (id) => await ensure.call(harness, id);
+
+		await expect(ensure.call(harness, recoveryId)).resolves.toBe(true);
+		expect(harness.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+		await expect(classify.call(harness, 'organic')).resolves.toBe(false);
+		expect(recoveryClassified).not.toHaveBeenCalled();
+		expect(harness.pilotRecoveryKinds.get(recoveryId)).toBe('forced_restart');
+	});
+});
+
 describe('manual session start command', () => {
 	it('resolves Cancel or Esc from the real start modal without calling its backend or mutating runtime', async () => {
 		const runtime = { mutations: 0 };

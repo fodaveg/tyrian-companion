@@ -85,6 +85,8 @@ export type PilotObservationV1 =
 export interface PilotJournalSnapshotV1 {
 	version: typeof PILOT_METRICS_VERSION;
 	profile: PilotEnvironmentV1;
+	/** Monotonic token for the exact profile and evidence sample in this snapshot. */
+	sampleRevision: number;
 	verification: PilotVerificationV1 | null;
 	observations: PilotObservationV1[];
 }
@@ -95,6 +97,8 @@ export interface PilotVerificationV1 {
 	reviewedAt: string;
 	/** Exact local environment whose current sample was reviewed. */
 	environment: PilotEnvironmentV1;
+	/** The exact sample revision adjudicated by the human. */
+	sampleRevision: number;
 }
 
 export function createPilotEnvironment(input: Omit<PilotEnvironmentV1, 'version'>): PilotEnvironmentV1 | null {
@@ -112,10 +116,22 @@ export function isPilotEnvironment(value: unknown): value is PilotEnvironmentV1 
 }
 
 export function isPilotVerification(value: unknown): value is PilotVerificationV1 {
+	return isRecord(value) && exactKeys(value, ['version', 'silentLosses', 'reviewedAt', 'environment', 'sampleRevision']) &&
+		value.version === PILOT_METRICS_VERSION &&
+		PILOT_SILENT_LOSS_REVIEWS.includes(value.silentLosses as PilotSilentLossReview) && isIso(value.reviewedAt) &&
+		isPilotEnvironment(value.environment) && isSampleRevision(value.sampleRevision);
+}
+
+/** Released schema compatibility: an old review is readable but never trusted for a revised sample. */
+export function isLegacyPilotVerification(value: unknown): boolean {
 	return isRecord(value) && exactKeys(value, ['version', 'silentLosses', 'reviewedAt', 'environment']) &&
 		value.version === PILOT_METRICS_VERSION &&
 		PILOT_SILENT_LOSS_REVIEWS.includes(value.silentLosses as PilotSilentLossReview) && isIso(value.reviewedAt) &&
 		isPilotEnvironment(value.environment);
+}
+
+export function isSampleRevision(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 export function isPilotObservation(value: unknown): value is PilotObservationV1 {

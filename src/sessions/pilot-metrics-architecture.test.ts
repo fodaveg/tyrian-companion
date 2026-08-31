@@ -44,9 +44,16 @@ describe('pilot metrics architecture', () => {
 		expect(pending).not.toContain('review.disabled');
 		expect(pending).not.toContain('dismiss.disabled');
 		expect(pending).not.toContain('.finally(');
+		expect(pending).not.toContain('PilotBoundaryModal');
+		expect(pending).toContain('openPendingSessionStart(intent, null)');
 		const recovery = view.slice(view.indexOf('private renderRecovery('), view.indexOf('private renderSessionDetails'));
 		expect(recovery).toContain('recover.disabled = working');
 		expect(recovery).not.toContain('recoveryKind === null');
+		expect(recovery).toContain('select.disabled = working || recoveryKind !== null');
+		const assisted = view.slice(view.indexOf('private renderAssistedDetection('), view.indexOf('private async armDetection'));
+		expect(assisted).not.toContain('PilotBoundaryModal');
+		expect(assisted).toContain('openManualSessionStart(null)');
+		expect(assisted).toContain('stopManualSession(null)');
 		const main = readFileSync('src/main.ts', 'utf8');
 		const review = main.slice(main.indexOf('private async reviewPendingProposalOutcome'), main.indexOf('async dismissPendingProposal'));
 		expect(review).not.toContain('proposalPresented');

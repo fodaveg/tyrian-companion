@@ -85,6 +85,18 @@ describe('PilotMetricsExporter', () => {
 		expect(windowsPayload).toContain('windows_beta');
 		expect(windowsPayload).not.toContain('linux_steam_proton');
 	});
+
+	it('does not publish a review bound to a different sample revision', async () => {
+		const snapshot = await fixture('stale-verification');
+		snapshot.sampleRevision += 1;
+		const vault = new MemoryVault();
+		const result = await new PilotMetricsExporter(vault).export(snapshot, 'ready', 'Output');
+		if (result.status !== 'written') throw new Error('Expected export.');
+		const payload = result.files.map((path) => vault.contents.get(path)).join('\n');
+		expect(payload).toContain('"verification": null');
+		expect(payload).toContain('"silentLosses": "unreviewed"');
+		expect(payload).not.toContain('"silentLosses": "none_observed"');
+	});
 });
 
 class MemoryVault implements PilotMetricsExportVault {
@@ -109,9 +121,10 @@ async function fixture(proposalId: string): Promise<PilotJournalSnapshotV1> {
 		platform: 'linux_steam_proton', platformVersion: '10.0-1', obsidianVersion: '1.11.4', tyrianVersion: '0.1.17',
 	})!;
 	return {
-		version: 1, profile: environment,
+		version: 1, profile: environment, sampleRevision: 0,
 		verification: {
 			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z', environment,
+			sampleRevision: 0,
 		},
 		observations: [{
 			version: 1, kind: 'proposal', proposalRef: await pilotProposalRef(proposalId), phase: 'stop', mode: 'assisted',

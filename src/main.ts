@@ -2008,6 +2008,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const recoveryId = this.pilotRecoveryIdentity();
 		if (!recoveryId) return false;
 		if (!await this.ensurePilotRecoveryPresented(recoveryId)) return false;
+		const existing = this.pilotRecoveryKinds.get(recoveryId);
+		if (existing) return existing === recoveryKind;
 		const classified = await this.pilotMetrics.recoveryClassified(recoveryId, recoveryKind);
 		if (classified) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
 		this.renderViews();
@@ -2632,7 +2634,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private async ensurePilotRecoveryPresented(recoveryId: string): Promise<boolean> {
 		const recorded = await this.pilotMetrics.recoveryPresented(recoveryId);
-		if (recorded) this.measuredPilotRecoveries.add(recoveryId);
+		if (recorded) {
+			this.measuredPilotRecoveries.add(recoveryId);
+			const recoveryKind = await this.pilotMetrics.recoveryKind(recoveryId);
+			if (recoveryKind) this.pilotRecoveryKinds.set(recoveryId, recoveryKind);
+		}
 		return recorded;
 	}
 

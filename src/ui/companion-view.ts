@@ -308,10 +308,8 @@ export class TyrianCompanionView extends ItemView {
 		review.addEventListener('click', () => {
 			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
 				if (!reviewed) return;
-				new PilotBoundaryModal(this.app, next.phase, (humanBoundaryAt) => {
-					if (next.phase === 'start') this.actions.openPendingSessionStart(intent, humanBoundaryAt);
-					else void this.actions.stopPendingSession(intent, humanBoundaryAt);
-				}, () => this.actions.getLocale()).open();
+				if (next.phase === 'start') this.actions.openPendingSessionStart(intent, null);
+				else void this.actions.stopPendingSession(intent, null);
 			});
 		});
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
@@ -549,12 +547,7 @@ export class TyrianCompanionView extends ItemView {
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const start = actions.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
 			start.disabled = session.status !== 'idle';
-			start.addEventListener('click', () => {
-				new PilotBoundaryModal(
-					this.app, 'start', (boundary) => this.actions.openManualSessionStart(boundary),
-					() => this.actions.getLocale(),
-				).open();
-			});
+			start.addEventListener('click', () => this.actions.openManualSessionStart(null));
 			this.addDismissAndDisarm(actions, 'start');
 			return;
 		}
@@ -567,12 +560,7 @@ export class TyrianCompanionView extends ItemView {
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const stop = actions.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
-			stop.addEventListener('click', () => {
-				new PilotBoundaryModal(
-					this.app, 'stop', (boundary) => { void this.actions.stopManualSession(boundary); },
-					() => this.actions.getLocale(),
-				).open();
-			});
+			stop.addEventListener('click', () => { void this.actions.stopManualSession(null); });
 			this.addDismissAndDisarm(actions, 'stop');
 			return;
 		}
@@ -799,7 +787,7 @@ export class TyrianCompanionView extends ItemView {
 			select.createEl('option', { text: this.t('view.pilotRecoveryForced'), value: 'forced_restart' });
 			select.createEl('option', { text: this.t('view.pilotRecoveryOrganic'), value: 'organic' });
 			select.value = recoveryKind ?? '';
-			select.disabled = working;
+			select.disabled = working || recoveryKind !== null;
 			select.addEventListener('change', () => {
 				if (select.value !== 'forced_restart' && select.value !== 'organic') return;
 				void this.actions.classifyPilotRecovery?.(select.value).catch(() => undefined);
@@ -1004,44 +992,6 @@ class DetectionCorrectionModal extends Modal {
 			});
 		});
 		inputs[0]?.input.focus();
-	}
-}
-
-class PilotBoundaryModal extends Modal {
-	constructor(
-		app: App,
-		private readonly phase: 'start' | 'stop',
-		private readonly onConfirm: (humanBoundaryAt: string | null) => void,
-		private readonly getLocale: () => Locale = () => 'es',
-	) { super(app); }
-
-	onOpen(): void {
-		this.setTitle(runtimeText(this.getLocale(), 'modal.pilotBoundaryTitle'));
-		this.contentEl.createEl('p', { text: runtimeText(this.getLocale(), 'modal.pilotBoundaryDetail') });
-		const form = this.contentEl.createEl('form');
-		const input = pilotBoundaryInput(form, this.getLocale());
-		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
-		error.setAttr('role', 'alert');
-		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepProposal'), type: 'button' });
-		const submit = actions.createEl('button', {
-			text: runtimeText(this.getLocale(), this.phase === 'start' ? 'view.reviewStart' : 'view.reviewStop'),
-			type: 'submit', cls: 'mod-cta',
-		});
-		cancel.addEventListener('click', () => this.close());
-		form.addEventListener('submit', (event) => {
-			event.preventDefault();
-			const boundary = parsePilotBoundary(input.value);
-			if (input.value.length > 0 && boundary === null) {
-				error.setText(runtimeText(this.getLocale(), 'modal.pilotBoundaryInvalid'));
-				return;
-			}
-			submit.disabled = true;
-			cancel.disabled = true;
-			this.onConfirm(boundary);
-			this.close();
-		});
-		input.focus();
 	}
 }
 

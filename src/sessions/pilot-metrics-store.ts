@@ -1,8 +1,10 @@
 import {
 	PILOT_METRICS_MAX_OBSERVATIONS,
 	isPilotEnvironment,
+	isLegacyPilotVerification,
 	isPilotObservation,
 	isPilotVerification,
+	isSampleRevision,
 	pilotObservationKey,
 	type PilotEnvironmentV1,
 	type PilotJournalSnapshotV1,
@@ -20,11 +22,13 @@ export const PILOT_METRICS_DB_VERSION = 2;
 export const PILOT_METRICS_PROFILE_STORE = 'profile-v1';
 export const PILOT_METRICS_OBSERVATION_STORE = 'observations-v1';
 export const PILOT_METRICS_VERIFICATION_STORE = 'verification-v1';
+const PILOT_METRICS_SAMPLE_REVISION_KEY = 'sample-revision';
 
 export type PilotStoreResult<T = undefined> =
 	| { status: 'ok'; value: T }
 	| { status: 'duplicate'; value: T }
 	| { status: 'missing' }
+	| { status: 'stale' }
 	| { status: 'error'; code: 'unavailable' | 'inconsistent' | 'full' | 'unconfigured' };
 
 export interface PilotMetricsStore {
@@ -65,15 +69,24 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			const transaction = database.transaction([
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE, PILOT_METRICS_OBSERVATION_STORE,
 			], 'readonly');
-			const profileRequest = requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>);
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
+			const profileRequest = requestValue(profiles.get('active') as IDBRequest<unknown>);
+			const revisionRequest = requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>);
 			const verificationRequest = requestValue(transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).get('active') as IDBRequest<unknown>);
 			const observationsRequest = requestValue(transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE)
 				.getAll(undefined, this.maximumObservations + 1) as IDBRequest<unknown[]>);
-			const [profile, verification, raw] = await Promise.all([profileRequest, verificationRequest, observationsRequest]);
+			const [profile, storedRevision, storedVerification, raw] = await Promise.all([
+				profileRequest, revisionRequest, verificationRequest, observationsRequest,
+			]);
 			await transactionDone(transaction);
 			if (profile === undefined) return { status: 'error', code: 'unconfigured' };
 			if (!isPilotEnvironment(profile)) return { status: 'error', code: 'inconsistent' };
-			if (verification !== undefined && !isPilotVerification(verification)) return { status: 'error', code: 'inconsistent' };
+			const sampleRevision = normalizeSampleRevision(storedRevision);
+			if (sampleRevision === null) return { status: 'error', code: 'inconsistent' };
+			if (storedVerification !== undefined && !isPilotVerification(storedVerification) &&
+				!isLegacyPilotVerification(storedVerification)) return { status: 'error', code: 'inconsistent' };
+			const verification = isPilotVerification(storedVerification) && storedVerification.sampleRevision === sampleRevision
+				? storedVerification : undefined;
 			if (isPilotVerification(verification) && !sameEnvironment(profile, verification.environment)) {
 				return { status: 'error', code: 'inconsistent' };
 			}
@@ -81,7 +94,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			if (!raw.every(isPilotObservation)) return { status: 'error', code: 'inconsistent' };
 			const observations = raw.sort(compareObservations).map((entry) => structuredClone(entry));
 			return { status: 'ok', value: {
-				version: 1, profile: structuredClone(profile),
+				version: 1, profile: structuredClone(profile), sampleRevision,
 				verification: verification === undefined ? null : structuredClone(verification), observations,
 			} };
 		} catch { return this.failed(); }
@@ -105,9 +118,18 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
 			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
-			const existing = await requestValue(profiles.get('active') as IDBRequest<unknown>);
+			const [existing, storedRevision] = await Promise.all([
+				requestValue(profiles.get('active') as IDBRequest<unknown>),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
+			const sampleRevision = normalizeSampleRevision(storedRevision);
+			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
+			const changed = !isPilotEnvironment(existing) || !sameEnvironment(existing, profile);
+			const nextRevision = changed ? incrementSampleRevision(sampleRevision) : sampleRevision;
+			if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			profiles.put(structuredClone(profile), 'active');
-			if (!isPilotEnvironment(existing) || !sameEnvironment(existing, profile)) {
+			profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
+			if (changed) {
 				transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			}
 			await transactionDone(transaction);
@@ -122,11 +144,18 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			const transaction = database.transaction([
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
-			const profile = await requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>);
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
+			const [profile, storedRevision] = await Promise.all([
+				requestValue(profiles.get('active') as IDBRequest<unknown>),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
 			if (!isPilotEnvironment(profile) || !sameEnvironment(profile, verification.environment)) {
 				transaction.abort();
 				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
 			}
+			const sampleRevision = normalizeSampleRevision(storedRevision);
+			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
+			if (verification.sampleRevision !== sampleRevision) { transaction.abort(); return { status: 'stale' }; }
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).put(structuredClone(verification), 'active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(verification) };
@@ -141,9 +170,11 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
 			const key = pilotObservationKey(observation);
-			const [profile, existing, count] = await Promise.all([
-				requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>),
+			const [profile, storedRevision, existing, count] = await Promise.all([
+				requestValue(profiles.get('active') as IDBRequest<unknown>),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
 				requestValue(store.get(key) as IDBRequest<unknown>),
 				requestValue(store.count()),
 			]);
@@ -162,7 +193,10 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				transaction.abort();
 				return { status: 'error', code: 'full' };
 			}
+			const nextRevision = nextStoredSampleRevision(storedRevision);
+			if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			store.add(structuredClone(observation), key);
+			profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(observation) };
@@ -212,10 +246,21 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		try {
 			const database = await this.open();
 			const transaction = database.transaction([
-				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
-			const count = await requestValue(store.count());
+			const [count, storedRevision] = await Promise.all([
+				requestValue(store.count()),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
+			const sampleRevision = normalizeSampleRevision(storedRevision);
+			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
+			if (count > 0) {
+				const nextRevision = incrementSampleRevision(sampleRevision);
+				if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
+				profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
+			}
 			store.clear();
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).clear();
 			await transactionDone(transaction);
@@ -253,10 +298,14 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		try {
 			const database = await this.open();
 			const transaction = database.transaction([
-				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
-			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
+			const [existing, storedRevision] = await Promise.all([
+				requestValue(store.get(key) as IDBRequest<unknown>),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
 			if (existing === undefined) {
 				transaction.abort();
 				return allowMissing ? { status: 'missing' } : { status: 'error', code: 'inconsistent' };
@@ -267,11 +316,17 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			const nextTerminal = existingTerminal(candidate);
 			if (currentTerminal !== null) {
 				transaction.abort();
+				if (isSealedWorkflowFailure(existing)) {
+					return { status: 'duplicate', value: structuredClone(existing as T) };
+				}
 				return JSON.stringify(currentTerminal) === JSON.stringify(nextTerminal)
 					? { status: 'duplicate', value: structuredClone(existing as T) }
 					: { status: 'error', code: 'inconsistent' };
 			}
+			const nextRevision = nextStoredSampleRevision(storedRevision);
+			if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			store.put(structuredClone(candidate), key);
+			profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(candidate) };
@@ -285,10 +340,14 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		try {
 			const database = await this.open();
 			const transaction = database.transaction([
-				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
-			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
+			const [existing, storedRevision] = await Promise.all([
+				requestValue(store.get(key) as IDBRequest<unknown>),
+				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
+			]);
 			if (!isPilotObservation(existing) || existing.kind !== 'recovery') {
 				transaction.abort();
 				return { status: 'error', code: 'inconsistent' };
@@ -304,7 +363,10 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				transaction.abort();
 				return { status: 'error', code: 'inconsistent' };
 			}
+			const nextRevision = nextStoredSampleRevision(storedRevision);
+			if (nextRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			store.put(structuredClone(candidate), key);
+			profiles.put(nextRevision, PILOT_METRICS_SAMPLE_REVISION_KEY);
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(candidate) };
@@ -377,6 +439,25 @@ function sameEnvironment(a: PilotEnvironmentV1, b: PilotEnvironmentV1): boolean 
 function existingTerminal(value: unknown): unknown {
 	if (!isPilotObservation(value)) return null;
 	return value.kind === 'session' ? value.completedAt : value.terminal;
+}
+
+function isSealedWorkflowFailure(value: unknown): value is PilotProposalObservationV1 {
+	return isPilotObservation(value) && value.kind === 'proposal' &&
+		value.terminal?.effectiveResult === 'accepted_workflow_failed';
+}
+
+function normalizeSampleRevision(value: unknown): number | null {
+	return value === undefined ? 0 : isSampleRevision(value) ? value : null;
+}
+
+function nextStoredSampleRevision(value: unknown): number | null {
+	const current = normalizeSampleRevision(value);
+	return current === null ? null : incrementSampleRevision(current);
+}
+
+function incrementSampleRevision(value: number): number | null {
+	const next = value + 1;
+	return isSampleRevision(next) ? next : null;
 }
 
 function compareObservations(a: PilotObservationV1, b: PilotObservationV1): number {

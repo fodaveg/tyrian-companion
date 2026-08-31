@@ -44,6 +44,7 @@ export interface PilotAggregateV1 {
 	verdict: 'pass' | 'fail' | 'inconclusive';
 	evidence: {
 		journalHealth: PilotJournalHealth;
+		sampleRevision: number;
 		silentLosses: 'unreviewed' | 'none_observed' | 'observed';
 		executedOperations: 0;
 		operationsBasis: 'architectural_guard_no_executor';
@@ -75,10 +76,12 @@ export function aggregatePilotMetrics(
 	observations: readonly PilotObservationV1[],
 	health: PilotJournalHealth,
 	verification: PilotVerificationV1 | null = null,
+	sampleRevision = 0,
 ): PilotAggregationV1 {
 	const platforms = unique(observations.map((entry) => entry.environment.platform));
 	const platformRows = platforms.map((platform) => aggregate(
 		observations.filter((entry) => entry.environment.platform === platform), platform, null, health, verification,
+		sampleRevision,
 	));
 	const strata = unique(observations.map((entry) => environmentKey(entry.environment)))
 		.map((key) => {
@@ -88,7 +91,7 @@ export function aggregatePilotMetrics(
 				platformVersion: environment.platformVersion,
 				obsidianVersion: environment.obsidianVersion,
 				tyrianVersion: environment.tyrianVersion,
-			}, health, verification);
+			}, health, verification, sampleRevision);
 		});
 	return { version: 1, method: 'h0.6-wilson95-nearest-rank-v1', platforms: platformRows, versionStrata: strata };
 }
@@ -109,6 +112,7 @@ function aggregate(
 	versions: Omit<PilotEnvironmentV1, 'version' | 'platform'> | null,
 	health: PilotJournalHealth,
 	verification: PilotVerificationV1 | null,
+	sampleRevision: number,
 ): PilotAggregateV1 {
 	const proposals = observations.filter((entry): entry is PilotProposalObservationV1 => entry.kind === 'proposal');
 	const falseStart = rateMetric(proposals.filter((entry) => entry.phase === 'start'));
@@ -121,7 +125,7 @@ function aggregate(
 		unclassified: recoveryCounts(recoveries.filter((entry) => entry.recoveryKind === null)),
 	};
 	const completedSessions = observations.filter((entry) => entry.kind === 'session' && entry.completedAt !== null).length;
-	const scopedVerification = applicableVerification(observations, verification);
+	const scopedVerification = applicableVerification(observations, verification, sampleRevision);
 	return {
 		version: 1,
 		scope: { platform, versions },
@@ -135,6 +139,7 @@ function aggregate(
 			: 'inconclusive',
 		evidence: {
 			journalHealth: health,
+			sampleRevision,
 			silentLosses: scopedVerification?.silentLosses ?? 'unreviewed',
 			executedOperations: 0,
 			operationsBasis: 'architectural_guard_no_executor',
@@ -253,8 +258,9 @@ function verdict(
 function applicableVerification(
 	observations: readonly PilotObservationV1[],
 	verification: PilotVerificationV1 | null,
+	sampleRevision: number,
 ): PilotVerificationV1 | null {
-	if (!verification || observations.length === 0 || observations.some((entry) =>
+	if (!verification || verification.sampleRevision !== sampleRevision || observations.length === 0 || observations.some((entry) =>
 		environmentKey(entry.environment) !== environmentKey(verification.environment))) return null;
 	const latestEvidence = Math.max(...observations.map((entry) => Date.parse(observationLatestAt(entry))));
 	return Date.parse(verification.reviewedAt) >= latestEvidence ? verification : null;

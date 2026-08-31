@@ -27,6 +27,7 @@ export type PilotMetricsExportResult =
 interface ExportBundle {
 	detail: ReturnType<typeof sanitizedDetails>;
 	aggregates: PilotAggregationV1;
+	sampleRevision: number;
 	verification: PilotJournalSnapshotV1['verification'];
 }
 
@@ -111,10 +112,13 @@ function sanitizedDetails(observations: readonly PilotObservationV1[]) {
 }
 
 async function prepare(snapshot: PilotJournalSnapshotV1, health: PilotJournalHealth, outputFolder: string) {
+	const verification = snapshot.verification?.sampleRevision === snapshot.sampleRevision
+		? snapshot.verification : null;
 	const bundle: ExportBundle = {
 		detail: sanitizedDetails(snapshot.observations),
-		aggregates: aggregatePilotMetrics(snapshot.observations, health, snapshot.verification),
-		verification: snapshot.verification,
+		aggregates: aggregatePilotMetrics(snapshot.observations, health, verification, snapshot.sampleRevision),
+		sampleRevision: snapshot.sampleRevision,
+		verification,
 	};
 	const canonical = stableJson(bundle);
 	const digest = (await sha256(canonical)).slice(0, 16);
@@ -122,6 +126,7 @@ async function prepare(snapshot: PilotJournalSnapshotV1, health: PilotJournalHea
 	const detailJson = stableJson({
 		schema: 'tyrian-pilot-observations-v1',
 		privacy: 'proposalRef is a stable pseudonym, not anonymization',
+		sampleRevision: bundle.sampleRevision,
 		verification: bundle.verification,
 		observations: bundle.detail,
 	}) + '\n';
@@ -180,7 +185,7 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		'forced_restart_presented', 'forced_restart_succeeded', 'forced_restart_failed',
 		'forced_restart_discarded', 'forced_restart_rate',
 		'unclassified_presented', 'unclassified_succeeded', 'unclassified_failed', 'unclassified_discarded', 'unclassified_rate',
-		'completed_sessions', 'silent_losses', 'executed_operations',
+		'completed_sessions', 'sample_revision', 'silent_losses', 'executed_operations',
 	] as const;
 	const rows = [...aggregation.platforms, ...aggregation.versionStrata].map((row) => [
 		row.scope.versions ? 'version_stratum' : 'platform', row.scope.platform,
@@ -204,7 +209,7 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		row.recovery.forcedRestart.failed, row.recovery.forcedRestart.discarded, row.recovery.forcedRestart.rate ?? '',
 		row.recovery.unclassified.presented, row.recovery.unclassified.succeeded,
 		row.recovery.unclassified.failed, row.recovery.unclassified.discarded, row.recovery.unclassified.rate ?? '',
-		row.completedSessions, row.evidence.silentLosses, row.evidence.executedOperations,
+		row.completedSessions, row.evidence.sampleRevision, row.evidence.silentLosses, row.evidence.executedOperations,
 	]);
 	return csv(headers, rows);
 }

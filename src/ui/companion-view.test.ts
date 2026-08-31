@@ -64,6 +64,88 @@ describe('Companion local diagnostics warning', () => {
 	});
 });
 
+describe('Companion pilot metrics fail-open actions', () => {
+	it.each([
+		['start_proposed', 'idle', 'reviewStart'],
+		['stop_proposed', 'active', 'stopSession'],
+	] as const)('runs %s immediately with a nullable boundary when the pilot hook fails', (status, sessionStatus, label) => {
+		const document = new RetainedFakeDocument();
+		const container = new RetainedFakeElement('div', document);
+		const openStart = vi.fn();
+		const stop = vi.fn(async () => undefined);
+		const actions = {
+			getDetectionMode: () => 'assisted' as const,
+			getAssistedDetectionState: () => ({
+				status,
+				proposal: {
+					possibleStart: pilotWindow(), possibleStop: pilotWindow(), evidenceQuality: 'complete',
+				},
+			}) as never,
+			getLocale: () => 'en' as const,
+			recordAssistedProposalPresented: () => { throw new Error('pilot unavailable'); },
+			openManualSessionStart: openStart,
+			stopManualSession: stop,
+		};
+		const harness = {
+			actions,
+			t: (key: string) => key,
+			renderDetectionQualityStatus: vi.fn(),
+			renderProposalDetails: vi.fn(),
+			addDismissAndDisarm: vi.fn(),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated fail-open harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderAssistedDetection(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown): void;
+		}).renderAssistedDetection;
+		expect(() => render.call(harness, container as unknown as HTMLElement, {}, { status: sessionStatus })).not.toThrow();
+		const button = walkRetained(container).find((element) => element.textContent === `view.${label}`);
+		expect(button).toBeDefined();
+		button?.listeners.get('click')?.[0]?.();
+		if (status === 'start_proposed') expect(openStart).toHaveBeenCalledWith(null);
+		else expect(stop).toHaveBeenCalledWith(null);
+	});
+
+	it.each(['missing', 'throwing'] as const)(
+		'accepts a reviewed pending proposal without a cancellable pilot modal when the hook is %s',
+		async (hookState) => {
+			const document = new RetainedFakeDocument();
+			const container = new RetainedFakeElement('div', document);
+			const open = vi.fn();
+			const actions = {
+				getPendingProposalState: () => ({
+					status: 'ready', pendingCount: 1,
+					next: {
+						version: 1, phase: 'start', proposalId: 'proposal', accountId: 'account',
+						binding: { kind: 'idle', ruleSetId: 'rules', ruleSetVersion: 1 },
+						proposal: { evidenceQuality: 'complete' }, detectedAt: '2026-08-20T10:00:00.000Z',
+						staleAt: '2026-08-21T10:00:00.000Z',
+					},
+				}) as never,
+				reviewPendingProposal: vi.fn(async () => true),
+				openPendingSessionStart: open,
+				stopPendingSession: vi.fn(async () => undefined),
+				...(hookState === 'throwing' ? {
+					recordPendingProposalPresented: () => { throw new Error('pilot unavailable'); },
+				} : {}),
+			};
+			const harness = {
+				actions,
+				t: (key: string) => key,
+				formatTimestamp: (value: string) => value,
+			};
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated fail-open harness.
+			const render = (TyrianCompanionView.prototype as unknown as {
+				renderPendingConfirmation(this: typeof harness, container: HTMLElement): void;
+			}).renderPendingConfirmation;
+			expect(() => render.call(harness, container as unknown as HTMLElement)).not.toThrow();
+			walkRetained(container).find((element) => element.textContent === 'view.reviewStart')
+				?.listeners.get('click')?.[0]?.();
+			await Promise.resolve();
+			expect(open).toHaveBeenCalledWith(expect.objectContaining({ proposalId: 'proposal' }), null);
+		},
+	);
+});
+
 describe('Companion retained product shell', () => {
 	it('preserves the aside, panel disclosure and focus across an external render', async () => {
 		const document = new RetainedFakeDocument();
@@ -157,6 +239,10 @@ function walkRetained(root: RetainedFakeElement): RetainedFakeElement[] {
 }
 
 interface RetainedFakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
+
+function pilotWindow() {
+	return { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 };
+}
 
 class RetainedFakeDocument { activeElement: RetainedFakeElement | null = null }
 

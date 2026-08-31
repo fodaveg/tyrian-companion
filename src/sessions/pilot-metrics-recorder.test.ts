@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PilotMetricsRecorder } from './pilot-metrics-recorder';
 import { IndexedDbPilotMetricsStore, type PilotMetricsStore } from './pilot-metrics-store';
-import { createPilotEnvironment } from './pilot-metrics-model';
+import { createPilotEnvironment, pilotProposalRef } from './pilot-metrics-model';
 import { isRelevantStartProposal, type PendingProposal } from './pending-proposal-model';
 
 const NOW = new Date('2026-08-20T10:01:00.000Z');
@@ -35,6 +35,30 @@ describe('PilotMetricsRecorder', () => {
 			},
 		}]);
 	});
+
+	it.each(['succeeded', 'expired', 'invalidated'] as const)(
+		'keeps a failed workflow sealed when a later %s follow-up arrives',
+		async (followUp) => {
+			const recorder = configuredRecorder(`sealed-${followUp}`);
+			await recorder.ready;
+			await recorder.value.proposalPresented(presentation(`sealed-${followUp}`));
+			await recorder.value.proposalDecided({
+				proposalId: `sealed-${followUp}`, decision: 'accepted', workflow: 'failed', cause: null,
+				humanBoundaryAt: null,
+			});
+			const followed = followUp === 'succeeded'
+				? await recorder.value.proposalDecided({
+					proposalId: `sealed-${followUp}`, decision: 'accepted', workflow: 'succeeded', cause: null,
+					humanBoundaryAt: null,
+				})
+				: await recorder.value.proposalExcluded(`sealed-${followUp}`, followUp);
+			expect(followed).toBe(true);
+			expect(recorder.value.getState()).toMatchObject({ status: 'ready' });
+			expect((await recorder.value.inspect())?.observations[0]).toMatchObject({
+				terminal: { effectiveResult: 'accepted_workflow_failed' },
+			});
+		},
+	);
 
 	it('ignores an operationally excluded proposal that was never presented instead of poisoning journal health', async () => {
 		const recorder = configuredRecorder('unreviewed-expiry');
@@ -203,6 +227,27 @@ describe('PilotMetricsRecorder', () => {
 		expect((await recorder.value.inspect())?.verification).toBeNull();
 	});
 
+	it('does not attach a human review when another window mutates the captured sample', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('review-race');
+		const store = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		const writer = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		const recorder = new PilotMetricsRecorder(store, 10_000, () => NOW);
+		await recorder.configure(profile());
+		await recorder.proposalPresented(presentation('reviewed'));
+		const load = store.load.bind(store);
+		vi.spyOn(store, 'load').mockImplementationOnce(async () => {
+			const snapshot = await load();
+			await writer.ensureObservation(await presentedObservation('concurrent-review'));
+			return snapshot;
+		});
+		await expect(recorder.reviewSilentLosses('none_observed')).resolves.toBe(false);
+		expect(recorder.getState()).toMatchObject({ status: 'ready' });
+		const current = await load();
+		if (current.status !== 'ok') throw new Error('Expected current sample.');
+		expect(current.value.verification).toBeNull();
+	});
+
 	it('accepts one explicit recovery classification and rejects a contradiction', async () => {
 		const recorder = configuredRecorder('recovery-kind');
 		await recorder.ready;
@@ -210,6 +255,21 @@ describe('PilotMetricsRecorder', () => {
 		await expect(recorder.value.recoveryClassified('recovery-kind', 'forced_restart')).resolves.toBe(true);
 		await expect(recorder.value.recoveryClassified('recovery-kind', 'organic')).resolves.toBe(false);
 		expect(recorder.value.getState()).toMatchObject({ status: 'inconsistent' });
+	});
+
+	it('hydrates an explicit recovery classification after a recorder reload', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('recovery-reload');
+		const first = new PilotMetricsRecorder(new IndexedDbPilotMetricsStore(factory, 'vault-a', name), 10_000, () => NOW);
+		await first.configure(profile());
+		await first.recoveryPresented('persisted-recovery');
+		await first.recoveryClassified('persisted-recovery', 'forced_restart');
+		first.dispose();
+		const reloaded = new PilotMetricsRecorder(new IndexedDbPilotMetricsStore(factory, 'vault-a', name), 10_000, () => NOW);
+		await reloaded.configure(profile());
+		await expect(reloaded.recoveryPresented('persisted-recovery')).resolves.toBe(true);
+		await expect(reloaded.recoveryKind('persisted-recovery')).resolves.toBe('forced_restart');
+		expect(reloaded.getState()).toMatchObject({ status: 'ready' });
 	});
 
 	it.each(['Jane Doe', 'jane@example.com', 'my proton version'])(
@@ -239,6 +299,16 @@ function presentation(proposalId: string) {
 		proposalId, phase: 'start' as const, mode: 'assisted' as const, presentedAt: '2026-08-20T10:00:00.000Z',
 		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
 		pollingIntervalMs: 60_000, evidenceQuality: 'complete' as const,
+	};
+}
+
+async function presentedObservation(proposalId: string) {
+	return {
+		version: 1 as const, kind: 'proposal' as const, proposalRef: await pilotProposalRef(proposalId),
+		phase: 'start' as const, mode: 'assisted' as const, reviewPresentedAt: '2026-08-20T10:00:00.000Z',
+		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
+		pollingIntervalMs: 60_000, evidenceQuality: 'complete' as const,
+		environment: createPilotEnvironment(profile())!, terminal: null,
 	};
 }
 

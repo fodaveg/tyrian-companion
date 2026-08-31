@@ -63,6 +63,7 @@ export class PilotMetricsRecorder {
 			const loaded = await this.store.load();
 			if (loaded.status === 'error') { this.failure(loaded.code); return null; }
 			if (loaded.status === 'missing') { this.failure('inconsistent'); return null; }
+			if (loaded.status === 'stale') return null;
 			const previous = this.state.status;
 			const health = previous === 'inconsistent' ? previous
 				: loaded.value.observations.length >= this.limit ? 'full' : 'ready';
@@ -161,13 +162,25 @@ export class PilotMetricsRecorder {
 		} catch { this.failure('unavailable'); return false; } });
 	}
 
+	async recoveryKind(localId: string): Promise<PilotRecoveryKind | null> {
+		const snapshot = await this.inspect();
+		if (!snapshot) return null;
+		try {
+			const recoveryRef = await pilotRecoveryRef(localId);
+			const recovery = snapshot.observations.find((entry) =>
+				entry.kind === 'recovery' && entry.recoveryRef === recoveryRef);
+			return recovery?.kind === 'recovery' ? recovery.recoveryKind : null;
+		} catch { this.failure('unavailable'); return null; }
+	}
+
 	async reviewSilentLosses(silentLosses: PilotSilentLossReview): Promise<boolean> {
 		try {
-			const profile = await this.store.loadProfile();
-			if (profile.status === 'error') { this.failure(profile.code); return false; }
-			if (profile.status === 'missing') { this.failure('inconsistent'); return false; }
+			const snapshot = await this.store.load();
+			if (snapshot.status === 'error') { this.failure(snapshot.code); return false; }
+			if (snapshot.status === 'missing' || snapshot.status === 'stale') return false;
 			return this.consume(await this.store.saveVerification({
-				version: 1, silentLosses, reviewedAt: this.timestamp(), environment: profile.value,
+				version: 1, silentLosses, reviewedAt: this.timestamp(), environment: snapshot.value.profile,
+				sampleRevision: snapshot.value.sampleRevision,
 			}), false);
 		} catch { this.failure('unavailable'); return false; }
 	}
@@ -177,6 +190,7 @@ export class PilotMetricsRecorder {
 			const result = await this.store.clearObservations();
 			if (result.status === 'error') { this.failure(result.code); return null; }
 			if (result.status === 'missing') { this.failure('inconsistent'); return null; }
+			if (result.status === 'stale') return null;
 			this.state = { status: 'ready', observations: 0, limit: this.limit };
 			return result.value;
 		} catch { this.failure('unavailable'); return null; }
@@ -187,6 +201,7 @@ export class PilotMetricsRecorder {
 			const result = await this.store.disable();
 			if (result.status === 'error') { this.failure(result.code); return null; }
 			if (result.status === 'missing') { this.failure('inconsistent'); return null; }
+			if (result.status === 'stale') return null;
 			this.state = { status: 'unconfigured' };
 			return result.value;
 		} catch { this.failure('unavailable'); return null; }
@@ -201,12 +216,14 @@ export class PilotMetricsRecorder {
 			const loaded = await this.store.loadProfile();
 			if (loaded.status === 'error') { this.failure(loaded.code); return false; }
 			if (loaded.status === 'missing') { this.failure('inconsistent'); return false; }
+			if (loaded.status === 'stale') return false;
 			return this.consume(await operation(loaded.value), true);
 		} catch { this.failure('unavailable'); return false; }
 	}
 
 	private consume(result: PilotStoreResult<unknown>, countNew: boolean): boolean {
 		if (result.status === 'error') { this.failure(result.code); return false; }
+		if (result.status === 'stale') return false;
 		if (result.status === 'missing') return true;
 		if (this.state.status === 'full' || this.state.status === 'inconsistent') return true;
 		const count = this.state.status === 'ready' ? this.state.observations : 0;

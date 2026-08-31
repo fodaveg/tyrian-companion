@@ -8,7 +8,7 @@ const ENV = createPilotEnvironment({
 })!;
 const VERIFIED = {
 	version: 1 as const, silentLosses: 'none_observed' as const,
-	reviewedAt: '2026-08-20T12:00:00.000Z', environment: ENV,
+	reviewedAt: '2026-08-20T12:00:00.000Z', environment: ENV, sampleRevision: 0,
 };
 
 describe('pilot metrics domain and H0.6 aggregation', () => {
@@ -114,6 +114,9 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 		const staleResult = aggregatePilotMetrics(linux, 'ready', stale).platforms[0]!;
 		expect(staleResult.evidence.silentLosses).toBe('unreviewed');
 		expect(staleResult.verdict).toBe('inconclusive');
+		const revised = aggregatePilotMetrics(linux, 'ready', VERIFIED, 1).platforms[0]!;
+		expect(revised.evidence.silentLosses).toBe('unreviewed');
+		expect(revised.verdict).toBe('inconclusive');
 	});
 
 	it('publishes unclassified recoveries and never passes until they are explicitly classified', async () => {

@@ -95,6 +95,7 @@ describe('IndexedDbPilotMetricsStore', () => {
 		await store.saveProfile(ENV);
 		await store.saveVerification({
 			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z', environment: ENV,
+			sampleRevision: 1,
 		});
 		await store.ensureObservation(await presented('disable-a'));
 		await expect(store.disable()).resolves.toEqual({ status: 'ok', value: 1 });
@@ -107,17 +108,17 @@ describe('IndexedDbPilotMetricsStore', () => {
 
 	it('invalidates a sample review atomically on new evidence, a terminal update, or a profile change', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('verification-binding'));
-		const verification = {
+		const verification = (sampleRevision: number) => ({
 			version: 1 as const, silentLosses: 'none_observed' as const,
-			reviewedAt: '2026-08-20T10:03:00.000Z', environment: ENV,
-		};
+			reviewedAt: '2026-08-20T10:03:00.000Z', environment: ENV, sampleRevision,
+		});
 		await store.saveProfile(ENV);
 		await store.ensureObservation(await presented('reviewed-first'));
-		await store.saveVerification(verification);
+		await store.saveVerification(verification(2));
 		await store.ensureObservation(await presented('new-evidence'));
 		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
 
-		await store.saveVerification(verification);
+		await store.saveVerification(verification(3));
 		await store.finishProposal(await pilotProposalRef('reviewed-first'), {
 			status: 'decided', decidedAt: '2026-08-20T10:04:00.000Z', decision: 'accepted',
 			effectiveResult: 'accepted_workflow_succeeded', correctionCause: null, humanBoundaryAt: null,
@@ -125,9 +126,68 @@ describe('IndexedDbPilotMetricsStore', () => {
 		});
 		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
 
-		await store.saveVerification(verification);
+		await store.saveVerification(verification(4));
 		await store.saveProfile({ ...ENV, platformVersion: '10.0-2' });
 		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
+	});
+
+	it('rejects a cross-window review when the exact sample revision changed', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('verification-race');
+		const reviewer = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		const writer = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		await reviewer.saveProfile(ENV);
+		await reviewer.ensureObservation(await presented('reviewed'));
+		const snapshot = await reviewer.load();
+		if (snapshot.status !== 'ok') throw new Error('Expected reviewable sample.');
+		await writer.ensureObservation(await presented('concurrent'));
+		await expect(reviewer.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:03:00.000Z',
+			environment: ENV, sampleRevision: snapshot.value.sampleRevision,
+		})).resolves.toEqual({ status: 'stale' });
+		await expect(reviewer.load()).resolves.toMatchObject({
+			status: 'ok', value: { sampleRevision: snapshot.value.sampleRevision + 1, verification: null },
+		});
+	});
+
+	it('increments the sample revision only for real profile and evidence mutations', async () => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('revision'));
+		await store.saveProfile(ENV);
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { sampleRevision: 1 } });
+		await store.saveProfile(ENV);
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { sampleRevision: 1 } });
+		const observation = await presented('revision-row');
+		await store.ensureObservation(observation);
+		await store.ensureObservation(observation);
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { sampleRevision: 2 } });
+		await store.finishProposal(observation.proposalRef, failedTerminal());
+		await store.finishProposal(observation.proposalRef, failedTerminal());
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { sampleRevision: 3 } });
+		await store.clearObservations();
+		await expect(store.load()).resolves.toMatchObject({
+			status: 'ok', value: { sampleRevision: 4, observations: [] },
+		});
+		await store.saveProfile({ ...ENV, platformVersion: '10.0-2' });
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { sampleRevision: 5 } });
+	});
+
+	it.each([
+		['success', { ...failedTerminal(), effectiveResult: 'accepted_workflow_succeeded' as const }],
+		['expiry', excludedTerminal('expired')],
+		['invalidation', excludedTerminal('invalidated')],
+		['supersession', excludedTerminal('superseded')],
+	])('seals accepted_workflow_failed before a later %s terminal', async (_label, later) => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName(`sealed-${_label}`));
+		await store.saveProfile(ENV);
+		const observation = await presented(`sealed-${_label}`);
+		await store.ensureObservation(observation);
+		await expect(store.finishProposal(observation.proposalRef, failedTerminal())).resolves.toMatchObject({ status: 'ok' });
+		await expect(store.finishProposal(observation.proposalRef, later)).resolves.toMatchObject({
+			status: 'duplicate', value: { terminal: { effectiveResult: 'accepted_workflow_failed' } },
+		});
+		await expect(store.load()).resolves.toMatchObject({
+			status: 'ok', value: { sampleRevision: 3, observations: [{ terminal: { effectiveResult: 'accepted_workflow_failed' } }] },
+		});
 	});
 
 	it('reads at most max+1 and refuses an oversized pre-existing dataset', async () => {
@@ -161,6 +221,21 @@ async function presented(id: string): Promise<PilotProposalObservationV1> {
 		reviewPresentedAt: '2026-08-20T10:00:00.000Z',
 		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
 		pollingIntervalMs: 60_000, evidenceQuality: 'complete', environment: ENV, terminal: null,
+	};
+}
+
+function failedTerminal() {
+	return {
+		status: 'decided' as const, decidedAt: '2026-08-20T10:02:00.000Z', decision: 'accepted' as const,
+		effectiveResult: 'accepted_workflow_failed' as const, correctionCause: null, humanBoundaryAt: null,
+		exclusionReason: null,
+	};
+}
+
+function excludedTerminal(exclusionReason: 'expired' | 'superseded' | 'invalidated') {
+	return {
+		status: 'excluded' as const, decidedAt: '2026-08-20T10:03:00.000Z', decision: null,
+		effectiveResult: null, correctionCause: null, humanBoundaryAt: null, exclusionReason,
 	};
 }
 
