@@ -7053,9 +7053,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 170,
 					"column": 5,
-					"endLine": 162,
+					"endLine": 170,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7068,9 +7068,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 203,
+					"line": 211,
 					"column": 5,
-					"endLine": 203,
+					"endLine": 211,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7083,9 +7083,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 268,
+					"line": 276,
 					"column": 5,
-					"endLine": 268,
+					"endLine": 276,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7098,9 +7098,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 292,
+					"line": 300,
 					"column": 5,
-					"endLine": 292,
+					"endLine": 300,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7113,9 +7113,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 296,
+					"line": 304,
 					"column": 3,
-					"endLine": 296,
+					"endLine": 304,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7128,9 +7128,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 296,
+					"line": 304,
 					"column": 8,
-					"endLine": 296,
+					"endLine": 304,
 					"endColumn": 59,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7144,9 +7144,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 296,
+					"line": 304,
 					"column": 8,
-					"endLine": 296,
+					"endLine": 304,
 					"endColumn": 82,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7160,9 +7160,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 341,
+					"line": 349,
 					"column": 5,
-					"endLine": 341,
+					"endLine": 349,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7175,9 +7175,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 381,
+					"line": 389,
 					"column": 5,
-					"endLine": 381,
+					"endLine": 389,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
