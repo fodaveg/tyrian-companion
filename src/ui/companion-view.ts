@@ -311,19 +311,23 @@ export class TyrianCompanionView extends ItemView {
 		const details = section.createEl('dl');
 		addDetail(details, this.t('view.detected'), this.formatTimestamp(next.detectedAt));
 		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(next.proposal.evidenceQuality, (key, params) => this.t(key, params)));
-		if (Date.parse(next.staleAt) <= Date.now()) addDetail(details, this.t('view.state'), this.t('view.stale'));
+		if (Date.parse(next.staleAt) <= Date.now()) {
+			addDetail(details, this.t('view.state'), this.t('view.stale'));
+			return;
+		}
 		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const intent = proposalIntent(next);
-		const stale = Date.parse(next.staleAt) <= Date.now();
-		if (!stale) {
-			try { this.actions.recordPendingProposalPresented?.(intent); }
-			catch { /* Optional pilot metrics never affect foreground actions. */ }
-		}
+		try { this.actions.recordPendingProposalPresented?.(intent); }
+		catch { /* Optional pilot metrics never affect foreground actions. */ }
 		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop') });
-		review.disabled = stale;
-		review.addEventListener('click', () => this.reviewPending(next));
+		review.addEventListener('click', () => {
+			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
+				if (!reviewed) return;
+				if (next.phase === 'start') this.actions.openPendingSessionStart(intent, null);
+				else void this.actions.stopPendingSession(intent, null);
+			});
+		});
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
-		dismiss.disabled = stale;
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
 				this.app, next.phase,

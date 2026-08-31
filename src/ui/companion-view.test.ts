@@ -295,7 +295,7 @@ describe('Companion pilot metrics fail-open actions', () => {
 		},
 	);
 
-	it('disables every dead action for a stale queued proposal', () => {
+	it('omits every dead action for a stale queued proposal', () => {
 		const document = new RetainedFakeDocument();
 		const container = new RetainedFakeElement('div', document);
 		const recordPresented = vi.fn();
@@ -322,8 +322,8 @@ describe('Companion pilot metrics fail-open actions', () => {
 		}).renderPendingConfirmation;
 		render.call(harness, container as unknown as HTMLElement);
 		const buttons = walkRetained(container).filter((element) => element.tag === 'button');
-		expect(buttons).toHaveLength(2);
-		expect(buttons.every((button) => button.disabled)).toBe(true);
+		expect(buttons).toHaveLength(0);
+		expect(walkRetained(container).some((element) => element.textContent === 'view.stale')).toBe(true);
 		expect(recordPresented).not.toHaveBeenCalled();
 	});
 });
