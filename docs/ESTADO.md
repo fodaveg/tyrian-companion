@@ -43,7 +43,7 @@ exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-25
 seudónimas.
 
 Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
-`221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c` y `4902bf5`. La revisión contractual obligó a cerrar también
+`221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c`, `4902bf5`, `f64a06c` y `e70fb66`. La revisión contractual obligó a cerrar también
 `superseded|invalidated` y cualquier propuesta viva al desarmar; seguridad obligó a ligar la revisión
 a entorno+muestra y a precisar el alcance de clear/disable/exports. La revisión final hizo cerrar
 además cuatro fallos: muestra concurrente, modal instrumental que gateaba producto, segundo terminal
@@ -52,7 +52,9 @@ cierra esa clasificación, sella el primer fallo y mantiene aceptar/iniciar/para
 nullable. Seguridad detectó además el reinicio generacional tras disable/re-enable; el contador ya
 sobrevive como dato no personal y la revisión anterior queda `stale`. La rerevisión cerró también el
 cambio concurrente de perfil: se compara primero la revisión y un store sano ya no se degrada por
-entorno obsoleto. Pasan 107 tests focales y el gate completo con lint, 167 ficheros y 2.249 tests, scanner,
+entorno obsoleto. El último control de seguridad cerró además la combinación de perfil corrupto y
+revisión cambiada: la forma inválida vuelve a fallar cerrada antes de clasificar una carrera. Pasan
+108 tests focales y el gate completo con lint, 167 ficheros y 2.250 tests, scanner,
 observabilidad, contratos de release/beta/soporte y build. Siguen pendientes la QA visual/manual ES/EN
 en temas reales, IndexedDB multiwindow y borrado en Obsidian real, el dry run instrumentado en las tres
 plataformas y la muestra H7.7; por tanto este cierre técnico no acredita el piloto ni una release.
