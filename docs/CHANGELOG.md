@@ -25,7 +25,7 @@
   los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
   propuestas son seudónimos, no anonimización.
 - Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
-  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95` y `686194b` para H7.13. Los
+  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95`, `686194b` y `e765b5c` para H7.13. Los
   hallazgos contractuales, de seguridad y de revisión independiente quedan cubiertos; 106 tests
   focales y el gate completo quedan verdes con lint, 167 ficheros/2.248 tests, scanner,
   observabilidad, contratos y build. El dry run real en

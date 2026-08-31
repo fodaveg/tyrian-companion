@@ -43,7 +43,7 @@ exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-25
 seudónimas.
 
 Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343`,
-`221862a`, `82c0b94`, `ba77b95` y `686194b`. La revisión contractual obligó a cerrar también
+`221862a`, `82c0b94`, `ba77b95`, `686194b` y `e765b5c`. La revisión contractual obligó a cerrar también
 `superseded|invalidated` y cualquier propuesta viva al desarmar; seguridad obligó a ligar la revisión
 a entorno+muestra y a precisar el alcance de clear/disable/exports. La revisión final hizo cerrar
 además cuatro fallos: muestra concurrente, modal instrumental que gateaba producto, segundo terminal
