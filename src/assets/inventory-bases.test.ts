@@ -13,10 +13,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 3, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 3, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 3, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 3, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 4, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 4, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 4, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 4, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -85,6 +85,7 @@ describe('inventory Base assets', () => {
 					'note.tc_item_name', 'note.tc_source', 'note.tc_character', 'note.tc_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity', 'note.tc_captured_at',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
+					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
@@ -112,13 +113,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 3', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 4', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=3', 'version=1')
+				.replace('version=4', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -138,8 +139,8 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 3 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 3 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 4 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 4 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['note.tc_item_name']).toBeDefined();
@@ -156,7 +157,9 @@ describe('inventory Base assets', () => {
 			locale: 'es',
 			positions: [{
 				positionId: '42-b-account', itemId: 42, source: 'bank', character: null,
-				quantity: 3, unitSellCopper: 10, totalSellCopper: 30, unitListCopper: 11, totalListCopper: 33,
+				quantity: 3, unitSellCopper: 10, totalSellCopper: 25,
+				sellDepthStatus: 'complete', sellCoveredQuantity: 3, sellUncoveredQuantity: 0,
+				unitListCopper: 11, totalListCopper: null,
 				name: 'Objeto 42', type: 'Material', rarity: 'Fine', icon: null,
 			}],
 		});

@@ -22,6 +22,10 @@ import type {
 	InventoryAdvisorRulePackV2,
 	InventoryItemPriceV1,
 } from './inventory-advisor-model';
+import {
+	isInventoryMarketDepthEvidence,
+	type InventoryMarketDepthEvidenceV1,
+} from '../economy/commerce-listings';
 
 export const INVENTORY_CONTAINER_ECONOMY_VERSION = 1 as const;
 export const INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION = 1 as const;
@@ -85,6 +89,7 @@ export interface InventoryContainerEconomyInputV1 {
 	knowledgePackSha256: string;
 	economyPack: InventoryContainerEconomyPackV1;
 	prices: InventoryContainerPriceEvidenceV1;
+	marketDepth: InventoryMarketDepthEvidenceV1 | null;
 	/** User-owned overlay. It is never included in the economy pack or model fingerprint. */
 	personalValuation?: ContainerPersonalValuationV1;
 }
@@ -103,6 +108,10 @@ export type InventoryContainerEconomyReviewReason =
 	| 'price_future'
 	| 'price_missing'
 	| 'price_incoherent'
+	| 'market_depth_missing'
+	| 'market_depth_partial'
+	| 'market_depth_stale'
+	| 'market_depth_future'
 	| 'open_ev_partial'
 	| 'container_not_sellable'
 	| 'personal_valuation_incoherent'
@@ -171,12 +180,17 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		const age = Date.parse(input.asOf) - Date.parse(input.prices.capturedAt);
 		if (age < -pack.policy.maxFutureSkewMs) return review('price_future');
 		if (age > pack.policy.maxPriceAgeMs) return review('price_stale');
+		if (input.marketDepth === null) return review('market_depth_missing');
+		if (!depthBinding(input)) return review('market_depth_partial');
+		const depthAge = Date.parse(input.asOf) - Date.parse(input.marketDepth.capturedAt);
+		if (depthAge < -pack.policy.maxFutureSkewMs) return review('market_depth_future');
+		if (depthAge > pack.policy.maxPriceAgeMs) return review('market_depth_stale');
 		const quoteById = new Map(input.prices.items.map((item) => [item.itemId, item]));
 		if (pack.expectedPriceItemIds.some((itemId) => quoteById.get(itemId)?.bid === null)) {
 			return review('price_missing');
 		}
 		const containerQuote = quoteById.get(input.container.itemId);
-		if (!containerQuote?.bid || containerQuote.bid.quantity < allocation.freeQuantity) {
+		if (!containerQuote?.bid) {
 			return review('price_partial');
 		}
 		const kernel = calculateContainerDispositionKernel({
@@ -196,6 +210,7 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 					bidUnitCopper: item.bid?.unitCopper ?? null,
 					askUnitCopper: item.ask?.unitCopper ?? null,
 				})),
+				depth: input.marketDepth,
 			},
 			policy: pack.policy,
 		});
@@ -343,12 +358,13 @@ function halloweenContainerEconomyPack(
 function isInput(value: unknown): value is InventoryContainerEconomyInputV1 {
 	return record(value) && exactOptionalKeys(value, [
 		'version', 'asOf', 'accountId', 'snapshotId', 'schemaVersion', 'allocation', 'container', 'rulePack',
-		'knowledgePackSha256', 'economyPack', 'prices',
+		'knowledgePackSha256', 'economyPack', 'prices', 'marketDepth',
 	], ['personalValuation']) && value.version === 1 && iso(value.asOf) && text(value.accountId, 256) && text(value.snapshotId, 256)
 		&& text(value.schemaVersion, 256)
 		&& allocation(value.allocation) && container(value.container) && isInventoryAdvisorRulePackV2(value.rulePack)
 		&& sha(value.knowledgePackSha256) && isInventoryContainerEconomyPack(value.economyPack)
 		&& isInventoryContainerPriceEvidence(value.prices)
+		&& (value.marketDepth === null || isInventoryMarketDepthEvidence(value.marketDepth))
 		&& (value.personalValuation === undefined || isContainerPersonalValuation(value.personalValuation));
 }
 
@@ -445,6 +461,11 @@ function priceBinding(input: InventoryContainerEconomyInputV1): boolean {
 		&& sameNumbers(input.prices.items.map((item) => item.itemId), input.economyPack.expectedPriceItemIds);
 }
 
+function depthBinding(input: InventoryContainerEconomyInputV1): boolean {
+	return input.marketDepth !== null
+		&& sameNumbers(input.marketDepth.requestedItemIds, input.economyPack.expectedPriceItemIds);
+}
+
 function economicPriceIds(model: ContainerModelV1): number[] {
 	return [model.containerItemId, ...model.outcomes.filter((outcome) => outcome.valuationPolicy === 'liquid_market'
 		&& outcome.sampleUnits > 0).map((outcome) => outcome.id)].sort((left, right) => left - right);
@@ -453,6 +474,7 @@ function economicPriceIds(model: ContainerModelV1): number[] {
 function kernelReason(reason: string): InventoryContainerEconomyReviewReason {
 	const known: InventoryContainerEconomyReviewReason[] = [
 		'binding_unknown', 'trading_access_unknown', 'price_stale', 'price_future', 'price_missing',
+		'market_depth_missing', 'market_depth_partial', 'market_depth_stale', 'market_depth_future',
 		'open_ev_partial', 'container_not_sellable', 'arithmetic_overflow',
 	];
 	return known.includes(reason as InventoryContainerEconomyReviewReason)

@@ -18,7 +18,7 @@ import type {
 	ReservationGoal,
 	ReservationPlan,
 } from './reservation-model';
-import { createTradingPostValueWithPolicy } from './gw2-fees';
+import { valueInstantSellDepth } from './commerce-listings';
 import { isSessionValuation, type SessionValuation } from './session-valuation';
 
 describe('createReservationPlan', () => {
@@ -365,8 +365,7 @@ describe('partitionSessionValuation', () => {
 		const valid = valuationWithInstantSell(ITEM_ID, 30);
 		expect(isSessionValuation(valid, delta(ITEM_ID, 30), [])).toBe(true);
 		const route = valid.lines[0]!.instantSell!;
-		const zeroFeeRoute = { ...route, listingFeeCopper: 0, exchangeFeeCopper: 0,
-			totalFeesCopper: 0, netCopper: route.grossCopper };
+		const zeroFeeRoute = { ...route, netCopper: route.grossCopper };
 		const zeroFee = withImmediateRoute(valid, zeroFeeRoute);
 		expect(isSessionValuation(zeroFee, delta(ITEM_ID, 30), [])).toBe(false);
 		expect(isSessionValuation({
@@ -427,33 +426,36 @@ function valuation(itemId: number, quantity: number): SessionValuation {
 	const total = quantity * 10;
 	return {
 		version: 1, sessionId: 'session-1', priceCapturedAt: '2026-08-13T09:30:01.000Z',
-		priceSource: 'gw2-commerce-prices', coverage: 'complete', durationMs: 1_000,
-		lines: [{ itemId, quantity, binding: 'unbound', instantSell: null, listing: null, vendor,
+		priceSource: 'gw2-commerce-prices', coverage: 'complete', durationMs: 30 * 60_000,
+		lines: [{ itemId, quantity, binding: 'unbound', instantSell: null,
+			instantSellDepthCoverage: 'not_applicable', listing: null, vendor,
 			immediateBestCopper: total, listingBestCopper: total, nonLiquid: false, reason: null }],
 		totals: { itemImmediateCopper: total, itemListingCopper: total, coinNetCopper: 0,
 			observedImmediateCopper: total, observedListingCopper: total,
 			nonLiquidItemKinds: 0, nonLiquidQuantity: 0 },
-		rates: { sacks: 0, sacksPerHourMilli: 0, immediateCopperPerHour: total * 3_600,
-			listingCopperPerHour: total * 3_600 }, warnings: [],
+		rates: { sacks: 0, sacksPerHourMilli: 0, immediateCopperPerHour: total * 2,
+			listingCopperPerHour: total * 2 }, warnings: [],
 	};
 }
 
 function valuationWithInstantSell(itemId: number, quantity: number): SessionValuation {
-	const result = createTradingPostValueWithPolicy('instant_sell', 100, quantity);
-	if (result.status !== 'ok') throw new Error('Expected a valid Trading Post fixture.');
-	return withImmediateRoute(valuation(itemId, quantity), result.value);
+	const result = valueInstantSellDepth([{ unitCopper: 100, quantity }], quantity);
+	if (result.status !== 'complete') throw new Error('Expected complete Trading Post depth.');
+	return withImmediateRoute(valuation(itemId, quantity), result);
 }
 
 function withImmediateRoute(
 	value: SessionValuation,
 	route: NonNullable<SessionValuation['lines'][number]['instantSell']>,
 ): SessionValuation {
+	if (route.status !== 'complete' || route.netCopper === null) throw new Error('Expected a complete instant-sell route.');
 	const immediate = Math.max(route.netCopper, value.lines[0]!.vendor?.netCopper ?? 0);
 	return {
 		...value,
-		lines: [{ ...value.lines[0]!, instantSell: route, immediateBestCopper: immediate }],
+		lines: [{ ...value.lines[0]!, instantSell: route, instantSellDepthCoverage: 'complete',
+			immediateBestCopper: immediate }],
 		totals: { ...value.totals, itemImmediateCopper: immediate, observedImmediateCopper: immediate },
-		rates: { ...value.rates, immediateCopperPerHour: immediate * 3_600 },
+		rates: { ...value.rates, immediateCopperPerHour: immediate * 2 },
 	};
 }
 

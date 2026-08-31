@@ -172,7 +172,22 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			missingItemIds: [],
 		};
 		const engineInput = { input, knowledgePack: bundle.knowledgePack,
-			containerEconomy: { pack: bundle.economyPack, prices } };
+			containerEconomy: {
+				pack: bundle.economyPack,
+				prices,
+				marketDepth: {
+					version: 1 as const,
+					capturedAt: prices.capturedAt,
+					source: 'gw2-commerce-listings' as const,
+					requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
+					status: 'complete' as const,
+					items: prices.items.map((item) => ({
+						itemId: item.itemId, coverage: 'complete' as const,
+						buys: [{ unitCopper: item.bid!.unitCopper, quantity: 1_000_000 }], sells: [],
+					})),
+				},
+			},
+		};
 		const result = classifyInventoryAdvisor(engineInput);
 		expect(result.report?.lines[0]?.decisions).toEqual([
 			expect.objectContaining({ action: 'open', quantity: 2, ruleId: 'open-36038-capability-v1' }),
@@ -199,6 +214,9 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			const routed = structuredClone(engineInput);
 			for (const item of routed.containerEconomy.prices.items) {
 				item.bid!.unitCopper = item.itemId === 36_038 ? sackBid : outcomeBid;
+			}
+			for (const item of routed.containerEconomy.marketDepth.items) {
+				item.buys[0]!.unitCopper = item.itemId === 36_038 ? sackBid : outcomeBid;
 			}
 			const routedResult = classifyInventoryAdvisor(routed);
 			expect(routedResult.report?.lines[0]?.decisions).toEqual([

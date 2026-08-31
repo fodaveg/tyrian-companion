@@ -3,6 +3,12 @@ import { isStorageDelta } from '../account/contamination';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { isNormalizedCatalogItem } from '../catalog/public-catalog-validators';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
+import {
+	isDemonstratedMarketValue,
+	valueInstantSellDepth,
+	type DemonstratedMarketValueV1,
+	type InventoryItemMarketDepthV1,
+} from './commerce-listings';
 import { classifyItemLiquidity } from './item-liquidity';
 import {
 	isCopperValue,
@@ -33,7 +39,8 @@ export interface SessionValuationLine {
 	itemId: number;
 	quantity: number;
 	binding: SessionBindingEvidence;
-	instantSell: TradingPostCopperValue | null;
+	instantSell: DemonstratedMarketValueV1 | null;
+	instantSellDepthCoverage: InventoryItemMarketDepthV1['coverage'] | 'not_applicable';
 	listing: TradingPostCopperValue | null;
 	vendor: VendorCopperValue | null;
 	immediateBestCopper: number | null;
@@ -65,7 +72,7 @@ export interface SessionValuation {
 		immediateCopperPerHour: number;
 		listingCopperPerHour: number;
 	};
-	warnings: Array<'catalog_missing' | 'binding_unknown' | 'price_incomplete' | 'item_losses_not_valued'>;
+	warnings: Array<'catalog_missing' | 'binding_unknown' | 'price_incomplete' | 'market_depth_incomplete' | 'item_losses_not_valued'>;
 }
 
 export type SessionValuationResult =
@@ -84,6 +91,7 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 	if (!validCatalog(catalogItems) || !validBindings(bindingByItem)) return { status: 'invalid', reason: 'invalid_metadata' };
 
 	const priceById = new Map(prices.items.map((price) => [price.itemId, price]));
+	const depthById = new Map(prices.marketDepth.items.map((item) => [item.itemId, item]));
 	const missing = new Set(prices.missingItemIds);
 	const warnings = new Set<SessionValuation['warnings'][number]>();
 	if (prices.status !== 'complete') warnings.add('price_incomplete');
@@ -95,8 +103,14 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 		const price = priceById.get(change.id) ?? null;
 		if (catalog === null) warnings.add('catalog_missing');
 		if (binding === 'unknown') warnings.add('binding_unknown');
-		const line = valueLine(change.id, change.delta, catalog, binding, price, missing.has(change.id));
+		const line = valueLine(
+			change.id, change.delta, catalog, binding, price, missing.has(change.id), depthById.get(change.id) ?? null,
+		);
 		if (!line) return { status: 'invalid', reason: 'valuation_arithmetic_invalid' };
+		if (line.instantSellDepthCoverage !== 'complete' && line.instantSellDepthCoverage !== 'not_applicable'
+			|| line.instantSell?.status === 'partial' || line.instantSell?.status === 'invalid') {
+			warnings.add('market_depth_incomplete');
+		}
 		lines.push(line);
 	}
 
@@ -215,6 +229,7 @@ function valueLine(
 	binding: SessionBindingEvidence,
 	price: SessionItemPrice | null,
 	missingPrice: boolean,
+	depth: InventoryItemMarketDepthV1 | null,
 ): SessionValuationLine | null {
 	const metadataBinding = binding === 'account_bound' ? 'Account'
 		: binding === 'character_bound' ? 'Character'
@@ -226,20 +241,27 @@ function valueLine(
 		metadata: metadataBinding ? { binding: metadataBinding } : {},
 	}, catalog, priceStatus);
 	if (classified.status === 'invalid') return null;
-	const instantSell = classified.classification.tradingPost.status === 'eligible' && price?.bid
-		? createTradingPostValueWithPolicy('instant_sell', price.bid.unitCopper, quantity) : null;
+	const tpEligible = classified.classification.tradingPost.status === 'eligible';
+	const instantSellDepthCoverage = tpEligible && price?.bid
+		? depth?.coverage ?? 'unavailable' : 'not_applicable';
+	const instantSell = tpEligible && price?.bid && depth?.coverage === 'complete'
+		? valueInstantSellDepth(depth.buys, quantity) : null;
 	const listing = classified.classification.tradingPost.status === 'eligible' && price?.ask
 		? createTradingPostValueWithPolicy('listing', price.ask.unitCopper, quantity) : null;
 	if (instantSell?.status === 'invalid' || listing?.status === 'invalid') return null;
 	const vendor = classified.classification.vendor.status === 'eligible'
 		? classified.classification.vendor.value : null;
-	const immediateBestCopper = maximum(instantSell?.value.netCopper ?? null, vendor?.netCopper ?? null);
+	const immediateBestCopper = maximum(
+		instantSell?.status === 'complete' ? instantSell.netCopper : null,
+		vendor?.netCopper ?? null,
+	);
 	const listingBestCopper = maximum(listing?.value.netCopper ?? null, vendor?.netCopper ?? null);
 	return {
 		itemId,
 		quantity,
 		binding,
-		instantSell: instantSell?.status === 'ok' ? instantSell.value : null,
+		instantSell,
+		instantSellDepthCoverage,
 		listing: listing?.status === 'ok' ? listing.value : null,
 		vendor,
 		immediateBestCopper,
@@ -285,7 +307,7 @@ function rate(amount: number, durationMs: number): number | null {
 
 function isSessionValuationLine(value: unknown): value is SessionValuationLine {
 	if (!(isRecord(value) && exactKeys(value, [
-		'itemId', 'quantity', 'binding', 'instantSell', 'listing', 'vendor',
+		'itemId', 'quantity', 'binding', 'instantSell', 'instantSellDepthCoverage', 'listing', 'vendor',
 		'immediateBestCopper', 'listingBestCopper', 'nonLiquid', 'reason',
 	]) && isPositiveId(value.itemId) && isQuantity(value.quantity) &&
 		['unbound', 'account_bound', 'character_bound', 'unknown'].includes(String(value.binding)) &&
@@ -293,12 +315,19 @@ function isSessionValuationLine(value: unknown): value is SessionValuationLine {
 		(value.listingBestCopper === null || isCopper(value.listingBestCopper)) &&
 		typeof value.nonLiquid === 'boolean' &&
 		(value.reason === null || trimmed(value.reason, 256)) &&
-		isTradingPostRoute(value.instantSell, 'instant_sell', value.quantity) &&
+		(value.instantSell === null || isDemonstratedMarketValue(value.instantSell)) &&
+		['complete', 'missing', 'invalid', 'unavailable', 'not_applicable'].includes(String(value.instantSellDepthCoverage)) &&
 		isTradingPostRoute(value.listing, 'listing', value.quantity) &&
 		isVendorRoute(value.vendor, value.quantity))) return false;
 	const line = value as unknown as SessionValuationLine;
 	if (line.binding !== 'unbound' && (line.instantSell !== null || line.listing !== null)) return false;
-	const immediateBestCopper = maximum(line.instantSell?.netCopper ?? null, line.vendor?.netCopper ?? null);
+	if (line.instantSell !== null && (line.instantSell.requestedQuantity !== line.quantity
+		|| line.instantSellDepthCoverage !== 'complete')) return false;
+	if (line.instantSellDepthCoverage === 'not_applicable' && line.instantSell !== null) return false;
+	const immediateBestCopper = maximum(
+		line.instantSell?.status === 'complete' ? line.instantSell.netCopper : null,
+		line.vendor?.netCopper ?? null,
+	);
 	const listingBestCopper = maximum(line.listing?.netCopper ?? null, line.vendor?.netCopper ?? null);
 	return line.immediateBestCopper === immediateBestCopper && line.listingBestCopper === listingBestCopper &&
 		line.nonLiquid === (immediateBestCopper === null && listingBestCopper === null);
@@ -339,7 +368,7 @@ function isValuationRates(value: unknown): value is SessionValuation['rates'] {
 
 function isSessionValuationWarning(value: unknown): value is SessionValuation['warnings'][number] {
 	return typeof value === 'string' &&
-		['catalog_missing', 'binding_unknown', 'price_incomplete', 'item_losses_not_valued'].includes(value);
+		['catalog_missing', 'binding_unknown', 'price_incomplete', 'market_depth_incomplete', 'item_losses_not_valued'].includes(value);
 }
 
 function isInputShell(value: unknown): value is SessionValuationInput {

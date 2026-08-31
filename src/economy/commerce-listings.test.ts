@@ -4,6 +4,7 @@ import {
 	captureInventoryMarketDepth,
 	isInventoryMarketDepthEvidence,
 	valueCompetitiveListing,
+	valueExpectedInstantSellDepth,
 	valueInstantSellDepth,
 } from './commerce-listings';
 
@@ -18,6 +19,26 @@ describe('official commerce listings depth', () => {
 		});
 		expect(valueInstantSellDepth([{ unitCopper: 100, quantity: 2 }], 5)).toMatchObject({
 			status: 'partial', coveredQuantity: 2, uncoveredQuantity: 3, grossCopper: 200, netCopper: 170,
+		});
+	});
+
+	it('continues from already consumed depth and degrades when later rows exhaust it', () => {
+		const levels = [{ unitCopper: 100, quantity: 2 }, { unitCopper: 90, quantity: 3 }];
+		expect(valueInstantSellDepth(levels, 2, 2)).toMatchObject({
+			status: 'complete', grossCopper: 180, coveredQuantity: 2, uncoveredQuantity: 0,
+		});
+		expect(valueInstantSellDepth(levels, 2, 4)).toMatchObject({
+			status: 'partial', grossCopper: 90, coveredQuantity: 1, uncoveredQuantity: 1,
+		});
+	});
+
+	it('values probabilistic outcome units conservatively against finite depth', () => {
+		const complete = valueExpectedInstantSellDepth([{ unitCopper: 10, quantity: 2 }], 1_500_000n);
+		expect(complete).toMatchObject({
+			status: 'complete', grossMicroCopper: 15_000_000n, netMicroCopper: 12_500_000n,
+		});
+		expect(valueExpectedInstantSellDepth([{ unitCopper: 10, quantity: 1 }], 1_500_000n)).toMatchObject({
+			status: 'partial', coveredUnitsMillionths: 1_000_000n, uncoveredUnitsMillionths: 500_000n,
 		});
 	});
 

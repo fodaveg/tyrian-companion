@@ -52,6 +52,7 @@ export interface InventoryAdvisorEngineInputV1 {
 	containerEconomy?: {
 		pack: InventoryContainerEconomyPackV1;
 		prices: InventoryContainerPriceEvidenceV1;
+		marketDepth: InventoryMarketDepthEvidenceV1 | null;
 	};
 	/** Mutable user overlay kept outside the immutable economy pack. */
 	personalValuation?: ContainerPersonalValuationV1;

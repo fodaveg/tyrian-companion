@@ -421,10 +421,22 @@ function valuationInput(
 			status: "complete",
 			items: prices,
 			missingItemIds: [],
+			marketDepth: {
+				version: 1,
+				capturedAt: "2026-08-14T09:00:02.000Z",
+				source: "gw2-commerce-listings",
+				requestedItemIds: prices.map((price) => price.itemId),
+				status: "complete",
+				items: prices.map((price) => ({
+					itemId: price.itemId,
+					coverage: "complete",
+					buys: [{ unitCopper: 20, quantity: 1_000 }],
+					sells: [{ unitCopper: 30, quantity: 1_000 }],
+				})),
+			},
 		},
 		catalogItems,
 		bindingByItem,
-		durationMs: 60 * 60 * 1_000,
 		sackItemIds: [100_000],
 	};
 }

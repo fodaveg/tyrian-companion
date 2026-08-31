@@ -44,6 +44,20 @@ function prices(storageDelta = delta()): SessionPriceSnapshot {
 			ask: { quantity: 1_000, unitCopper: change.id === HALLOWEEN_TOT_BAG_ITEM_ID ? 20 : 30 },
 			})),
 		missingItemIds: [],
+		marketDepth: {
+			version: 1, capturedAt: '2026-08-13T09:30:01.000Z', source: 'gw2-commerce-listings',
+			requestedItemIds: storageDelta.itemChanges.filter((change) => change.delta > 0)
+				.map((change) => change.id).sort((left, right) => left - right),
+			status: 'complete',
+			items: storageDelta.itemChanges.filter((change) => change.delta > 0)
+				.sort((left, right) => left.id - right.id).map((change) => ({
+					itemId: change.id, coverage: 'complete' as const,
+					buys: change.id === HALLOWEEN_TOT_BAG_ITEM_ID
+						? [{ unitCopper: 10, quantity: 50 }, { unitCopper: 8, quantity: 50 }]
+						: [{ unitCopper: 20, quantity: 1_000 }],
+					sells: [{ unitCopper: change.id === HALLOWEEN_TOT_BAG_ITEM_ID ? 20 : 30, quantity: 1_000 }],
+				})),
+		},
 	};
 }
 
@@ -76,20 +90,40 @@ describe('calculateSessionValuation', () => {
 					},
 					{
 						itemId: HALLOWEEN_TOT_BAG_ITEM_ID, quantity: 100,
-						instantSell: { grossCopper: 1_000, netCopper: 850 },
+						instantSell: { status: 'complete', grossCopper: 900, netCopper: 765 },
+						instantSellDepthCoverage: 'complete',
 						listing: { grossCopper: 2_000, netCopper: 1_700 },
-						vendor: { netCopper: 200 }, immediateBestCopper: 850, listingBestCopper: 1_700,
+						vendor: { netCopper: 200 }, immediateBestCopper: 765, listingBestCopper: 1_700,
 					},
 				],
 				totals: {
-					itemImmediateCopper: 860, itemListingCopper: 1_710, coinNetCopper: 140,
-					observedImmediateCopper: 1_000, observedListingCopper: 1_850,
+					itemImmediateCopper: 775, itemListingCopper: 1_710, coinNetCopper: 140,
+					observedImmediateCopper: 915, observedListingCopper: 1_850,
 				},
 				rates: {
 					sacks: 100, sacksPerHourMilli: 200_000,
-					immediateCopperPerHour: 2_000, listingCopperPerHour: 3_700,
+					immediateCopperPerHour: 1_830, listingCopperPerHour: 3_700,
 				},
 				warnings: [],
+			},
+		});
+	});
+
+	it('withholds an exhausted instant-sale total and marks depth coverage partial', () => {
+		const value = input();
+		const sackDepth = value.prices.marketDepth.items.find((entry) => entry.itemId === HALLOWEEN_TOT_BAG_ITEM_ID)!;
+		sackDepth.buys = [{ unitCopper: 10, quantity: 40 }];
+		const result = calculateSessionValuation(value);
+		expect(result).toMatchObject({
+			status: 'ok',
+			valuation: {
+				coverage: 'partial',
+				lines: [{}, {
+					itemId: HALLOWEEN_TOT_BAG_ITEM_ID,
+					instantSell: { status: 'partial', coveredQuantity: 40, uncoveredQuantity: 60 },
+					immediateBestCopper: 200,
+				}],
+				warnings: ['market_depth_incomplete'],
 			},
 		});
 	});

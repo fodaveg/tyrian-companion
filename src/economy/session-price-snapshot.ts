@@ -1,6 +1,11 @@
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
+import {
+	captureInventoryMarketDepth,
+	isInventoryMarketDepthEvidence,
+	type InventoryMarketDepthEvidenceV1,
+} from './commerce-listings';
 
 export const SESSION_PRICE_SNAPSHOT_VERSION = 1 as const;
 export const SESSION_PRICE_SOURCE = 'gw2-commerce-prices' as const;
@@ -36,6 +41,7 @@ export interface SessionPriceSnapshot {
 	status: 'complete' | 'partial' | 'unavailable';
 	items: SessionItemPrice[];
 	missingItemIds: number[];
+	marketDepth: InventoryMarketDepthEvidenceV1;
 }
 
 export interface SessionPriceCapture {
@@ -53,7 +59,9 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 		const gains = delta.status === 'invalid' ? [] : delta.itemChanges.filter((change) => change.delta > 0);
 		const gainedById = new Map(gains.map((change) => [change.id, change.delta]));
 		const ids = [...gainedById.keys()].sort((left, right) => left - right);
-		if (ids.length === 0) return createResult(sessionId, this.now(), 'complete', [], []);
+		const capturedAt = this.now();
+		const marketDepthPromise = captureInventoryMarketDepth(ids, this.gateway, capturedAt);
+		if (ids.length === 0) return createResult(sessionId, capturedAt, 'complete', [], [], await marketDepthPromise);
 
 		const items: SessionItemPrice[] = [];
 		const missing = new Set<number>();
@@ -73,18 +81,19 @@ export class SessionPriceSnapshotService implements SessionPriceCapture {
 				incompleteSides ||= parsed.incompleteSides;
 			}
 		} catch {
-			return createResult(sessionId, this.now(), 'unavailable', [], ids);
+			return createResult(sessionId, capturedAt, 'unavailable', [], ids, await marketDepthPromise);
 		}
 
 		items.sort((left, right) => left.itemId - right.itemId);
 		const missingItemIds = [...missing].sort((left, right) => left - right);
 		return createResult(
 			sessionId,
-			this.now(),
+			capturedAt,
 			missingItemIds.length === 0 && !incompleteSides
 				? 'complete' : items.length === 0 ? 'unavailable' : 'partial',
 			items,
 			missingItemIds,
+			await marketDepthPromise,
 		);
 	}
 }
@@ -98,7 +107,7 @@ export function unavailableSessionPriceSnapshot(
 		.filter((change) => change.delta > 0)
 		.map((change) => change.id)
 		.sort((left, right) => left - right);
-	return createResult(sessionId, now, 'unavailable', [], missing);
+	return createResult(sessionId, now, 'unavailable', [], missing, unavailableMarketDepth(missing, now));
 }
 
 export function isSessionPriceSnapshot(
@@ -108,7 +117,7 @@ export function isSessionPriceSnapshot(
 ): value is SessionPriceSnapshot {
 	if (!isRecord(value) || !exactKeys(value, [
 		'version', 'sessionId', 'capturedAt', 'source', 'schemaVersion',
-		'status', 'items', 'missingItemIds',
+		'status', 'items', 'missingItemIds', 'marketDepth',
 	])) return false;
 	if (value.version !== SESSION_PRICE_SNAPSHOT_VERSION
 		|| value.source !== SESSION_PRICE_SOURCE
@@ -117,7 +126,8 @@ export function isSessionPriceSnapshot(
 		|| (sessionId !== undefined && value.sessionId !== sessionId)
 		|| typeof value.capturedAt !== 'string' || !Number.isFinite(Date.parse(value.capturedAt))
 		|| !['complete', 'partial', 'unavailable'].includes(value.status as string)
-		|| !Array.isArray(value.items) || !Array.isArray(value.missingItemIds)) return false;
+		|| !Array.isArray(value.items) || !Array.isArray(value.missingItemIds)
+		|| !isInventoryMarketDepthEvidence(value.marketDepth)) return false;
 
 	const items = value.items as unknown[];
 	const missing = value.missingItemIds as unknown[];
@@ -131,6 +141,7 @@ export function isSessionPriceSnapshot(
 	if (value.status === 'unavailable' && typedItems.length > 0) return false;
 	if (value.status === 'partial' && (typedItems.length === 0
 		|| (typedMissing.length === 0 && typedItems.every((item) => item.bid !== null && item.ask !== null)))) return false;
+	if (value.marketDepth.capturedAt !== value.capturedAt) return false;
 
 	if (delta) {
 		const expected = new Map(delta.status === 'invalid' ? [] : delta.itemChanges
@@ -139,6 +150,7 @@ export function isSessionPriceSnapshot(
 		if (typedItems.length + typedMissing.length !== expected.size) return false;
 		for (const item of typedItems) if (expected.get(item.itemId) !== item.quantityGained) return false;
 		for (const id of typedMissing) if (!expected.has(id)) return false;
+		if (!sameNumbers(value.marketDepth.requestedItemIds, [...expected.keys()].sort((left, right) => left - right))) return false;
 	}
 	return true;
 }
@@ -149,6 +161,7 @@ function createResult(
 	status: SessionPriceSnapshot['status'],
 	items: SessionItemPrice[],
 	missingItemIds: number[],
+	marketDepth: InventoryMarketDepthEvidenceV1,
 ): SessionPriceSnapshot {
 	return {
 		version: SESSION_PRICE_SNAPSHOT_VERSION,
@@ -159,6 +172,18 @@ function createResult(
 		status,
 		items,
 		missingItemIds,
+		marketDepth,
+	};
+}
+
+function unavailableMarketDepth(itemIds: number[], now: number): InventoryMarketDepthEvidenceV1 {
+	return {
+		version: 1,
+		capturedAt: new Date(now).toISOString(),
+		source: 'gw2-commerce-listings',
+		requestedItemIds: [...itemIds],
+		status: itemIds.length === 0 ? 'complete' : 'unavailable',
+		items: itemIds.map((itemId) => ({ itemId, coverage: 'unavailable', buys: [], sells: [] })),
 	};
 }
 
@@ -236,6 +261,10 @@ function chunks<T>(values: T[], size: number): T[][] {
 
 function strictlyAscending(values: number[]): boolean {
 	return values.every((value, index) => index === 0 || values[index - 1]! < value);
+}
+
+function sameNumbers(left: number[], right: number[]): boolean {
+	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {

@@ -540,6 +540,7 @@ function containerEconomyDecision(
 		knowledgePackSha256,
 		economyPack: economy.pack,
 		prices: economy.prices,
+		marketDepth: economy.marketDepth,
 		...(personalValuation === undefined ? {} : { personalValuation }),
 	});
 	if (result.status !== 'ready') return { action: 'review', reason: result.status === 'invalid'
@@ -559,6 +560,8 @@ function economyReason(reason: string): string {
 		allocation_incoherent: 'rule_conflict', binding_unknown: 'binding_unknown',
 		trading_access_unknown: 'tp_access_unknown', price_partial: 'price_partial', price_stale: 'price_stale',
 		price_future: 'price_stale', price_missing: 'price_missing', price_incoherent: 'price_partial',
+		market_depth_missing: 'price_partial', market_depth_partial: 'price_partial',
+		market_depth_stale: 'price_stale', market_depth_future: 'price_stale',
 		open_ev_partial: 'price_partial', container_not_sellable: 'no_sell',
 		personal_valuation_incoherent: 'rule_conflict', arithmetic_overflow: 'arithmetic_overflow',
 	};
@@ -659,9 +662,12 @@ function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 		|| !fresh(value.marketDepth.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
 			input.policy.maxFutureSkewMs))) return false;
 	const economy = value.containerEconomy;
-	if (economy !== undefined && (!record(economy) || !keys(economy, ['pack', 'prices'])
+	if (economy !== undefined && (!record(economy) || !keys(economy, ['pack', 'prices', 'marketDepth'])
 		|| !isInventoryContainerEconomyPack(economy.pack)
-		|| !isInventoryContainerPriceEvidence(economy.prices))) return false;
+		|| !isInventoryContainerPriceEvidence(economy.prices)
+		|| (economy.marketDepth !== null && (!isInventoryMarketDepthEvidence(economy.marketDepth)
+			|| !fresh(economy.marketDepth.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
+				input.policy.maxFutureSkewMs))))) return false;
 	if (value.personalValuation === undefined) return true;
 	if (economy === undefined || !isContainerPersonalValuation(value.personalValuation)) return false;
 	const validatedEconomy = economy as NonNullable<EngineInput['containerEconomy']>;

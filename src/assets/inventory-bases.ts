@@ -8,14 +8,16 @@ const COPY = {
 		all: 'Todos', characters: 'Personajes', shared: 'Compartido', bank: 'Banco', materials: 'Materiales',
 		item: 'Objeto', icon: 'Icono', source: 'Ubicación', character: 'Personaje', quantity: 'Cantidad',
 		type: 'Tipo', rarity: 'Rareza', unitValue: 'Mejor orden de compra (bruto/u) 🟤', totalValue: 'Venta instantánea demostrada (neto) 🟤',
-		unitListValue: 'Menor anuncio actual (bruto/u) 🟤', totalListValue: 'Publicación estimada (neto) 🟤', captured: 'Actualizado',
+		depthStatus: 'Cobertura de demanda', covered: 'Cantidad cubierta', uncovered: 'Cantidad sin cubrir',
+		unitListValue: 'Menor anuncio actual (bruto/u) 🟤', totalListValue: 'Publicación realizable (no demostrada) 🟤', captured: 'Actualizado',
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
 	},
 	en: {
 		all: 'All', characters: 'Characters', shared: 'Shared', bank: 'Bank', materials: 'Materials',
 		item: 'Item', icon: 'Icon', source: 'Location', character: 'Character', quantity: 'Quantity',
 		type: 'Type', rarity: 'Rarity', unitValue: 'Highest buy order (gross/unit) 🟤', totalValue: 'Demonstrated instant sale (net) 🟤',
-		unitListValue: 'Lowest current listing (gross/unit) 🟤', totalListValue: 'Estimated listing (net) 🟤', captured: 'Updated',
+		depthStatus: 'Demand coverage', covered: 'Covered quantity', uncovered: 'Uncovered quantity',
+		unitListValue: 'Lowest current listing (gross/unit) 🟤', totalListValue: 'Realizable listing (not demonstrated) 🟤', captured: 'Updated',
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
 	},
 } as const;
@@ -52,6 +54,12 @@ properties:
     displayName: "${copy.unitValue}"
   note.tc_total_sell_copper:
     displayName: "${copy.totalValue}"
+  note.tc_sell_depth_status:
+    displayName: "${copy.depthStatus}"
+  note.tc_sell_covered_quantity:
+    displayName: "${copy.covered}"
+  note.tc_sell_uncovered_quantity:
+    displayName: "${copy.uncovered}"
   note.tc_unit_list_copper:
     displayName: "${copy.unitListValue}"
   note.tc_total_list_copper:
@@ -63,7 +71,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]';
+	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -125,7 +133,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]
+    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]
     sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -145,7 +153,7 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 		['materials-base', 'Materials.base', materialsBody],
 	] as const) {
 		for (const locale of ['es', 'en'] as const) {
-			const draft = { id, kind: 'base', contentVersion: 3, locale, relativePath } as const;
+			const draft = { id, kind: 'base', contentVersion: 4, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}

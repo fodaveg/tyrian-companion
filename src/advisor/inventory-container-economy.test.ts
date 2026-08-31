@@ -164,7 +164,15 @@ describe('H4.19 inventory container economy', () => {
 		['identity drift', (value: InventoryContainerEconomyInputV1) => { value.prices.snapshotId = 'snapshot-foreign'; }, 'price_incoherent'],
 		['foreign schema', (value: InventoryContainerEconomyInputV1) => { value.prices.schemaVersion = 'foreign-schema'; }, 'price_incoherent'],
 		['missing outcome bid', (value: InventoryContainerEconomyInputV1) => { value.prices.items[1]!.bid = null; }, 'price_missing'],
-		['insufficient sack depth', (value: InventoryContainerEconomyInputV1) => { value.prices.items[0]!.bid!.quantity = 4; }, 'price_partial'],
+		['missing listings port', (value: InventoryContainerEconomyInputV1) => { value.marketDepth = null; }, 'market_depth_missing'],
+		['partial listings evidence', (value: InventoryContainerEconomyInputV1) => {
+			value.marketDepth!.items[0] = { itemId: value.marketDepth!.items[0]!.itemId,
+				coverage: 'unavailable', buys: [], sells: [] };
+			value.marketDepth!.status = 'partial';
+		}, 'market_depth_partial'],
+		['insufficient sack depth', (value: InventoryContainerEconomyInputV1) => {
+			value.marketDepth!.items.find((item) => item.itemId === 36_038)!.buys[0]!.quantity = 4;
+		}, 'market_depth_partial'],
 		['unknown binding', (value: InventoryContainerEconomyInputV1) => { value.container.binding = 'unknown'; }, 'binding_unknown'],
 		['allocation overlap', (value: InventoryContainerEconomyInputV1) => { value.allocation.reservedQuantity = 6; }, 'allocation_incoherent'],
 	] as const)('fails closed to review for %s', (_name, mutate, reason) => {
@@ -225,6 +233,19 @@ function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyIn
 			status: 'complete',
 			items,
 			missingItemIds: [],
+		},
+		marketDepth: {
+			version: 1,
+			capturedAt: '2026-08-16T05:22:30.000Z',
+			source: 'gw2-commerce-listings',
+			requestedItemIds: structuredClone(economyPack.expectedPriceItemIds),
+			status: 'complete',
+			items: items.map((item) => ({
+				itemId: item.itemId,
+				coverage: 'complete',
+				buys: [{ unitCopper: item.bid.unitCopper, quantity: 1_000_000 }],
+				sells: [],
+			})),
 		},
 	};
 }

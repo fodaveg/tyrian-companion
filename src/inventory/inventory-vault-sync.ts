@@ -10,7 +10,12 @@ import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { normalizeVaultRelativePath } from '../core/vault-path';
-import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
+import {
+	captureInventoryMarketDepth,
+	isInventoryMarketDepthEvidence,
+	valueInstantSellDepth,
+	type InventoryMarketDepthEvidenceV1,
+} from '../economy/commerce-listings';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -40,6 +45,9 @@ export interface InventoryVaultPosition {
 	quantity: number;
 	unitSellCopper: number | null;
 	totalSellCopper: number | null;
+	sellDepthStatus: 'complete' | 'partial' | 'no_market' | 'unavailable' | 'invalid';
+	sellCoveredQuantity: number;
+	sellUncoveredQuantity: number;
 	unitListCopper: number | null;
 	totalListCopper: number | null;
 	name: string;
@@ -101,6 +109,9 @@ interface InventoryNoteFields {
 	tc_quantity: number;
 	tc_unit_sell_copper: number | null;
 	tc_total_sell_copper: number | null;
+	tc_sell_depth_status: InventoryVaultPosition['sellDepthStatus'];
+	tc_sell_covered_quantity: number;
+	tc_sell_uncovered_quantity: number;
 	tc_unit_list_copper: number | null;
 	tc_total_list_copper: number | null;
 	tc_active: boolean;
@@ -115,7 +126,8 @@ interface InventoryNoteFields {
 const INVENTORY_NOTE_KEYS = [
 	'tc_schema', 'tc_kind', 'tc_marker', 'tc_position_id',
 	'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
-	'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
+	'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_sell_depth_status', 'tc_sell_covered_quantity',
+	'tc_sell_uncovered_quantity', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
 	'tc_captured_at', 'tc_item_name', 'tc_item_type',
 	'tc_item_rarity', 'tc_icon', 'descripcion',
 ] as const;
@@ -133,7 +145,10 @@ const INVENTORY_NOTE_KEYS = [
  * nothing at all: that is exactly what `tc_unit_list_copper`/`tc_total_list_copper` did
  * to a 1302-note Vault when they were added.
  */
-const INVENTORY_NOTE_KEYS_ADDED_LATER = ['tc_unit_list_copper', 'tc_total_list_copper'] as const;
+const INVENTORY_NOTE_KEYS_ADDED_LATER = [
+	'tc_unit_list_copper', 'tc_total_list_copper', 'tc_sell_depth_status',
+	'tc_sell_covered_quantity', 'tc_sell_uncovered_quantity',
+] as const;
 
 interface OwnedInventoryNote {
 	fields: InventoryNoteFields;
@@ -166,12 +181,19 @@ export class InventoryVaultCaptureService {
 		const operation = this.client.beginOperation();
 		const snapshot = await this.snapshots.captureWithOperation(operation);
 		if (!inventorySnapshotComplete(snapshot)) throw new Error('inventory_capture_incomplete');
-		const [catalog, prices, tradingPostAccess] = await Promise.all([
+		const capturedAt = this.now();
+		const [catalog, prices, tradingPostAccess, marketDepth] = await Promise.all([
 			this.catalog.resolve(snapshot, locale),
-			captureInventoryPrices(snapshot, this.publicGateway, this.now()),
+			captureInventoryPrices(snapshot, this.publicGateway, capturedAt),
 			captureInventoryTradingPostAccess(operation, snapshot.accountId),
+			captureInventoryMarketDepth(
+				Object.entries(snapshot.availableByItem).filter(([, quantity]) => quantity > 0)
+					.map(([itemId]) => Number(itemId)),
+				this.publicGateway,
+				capturedAt,
+			),
 		]);
-		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale);
+		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth);
 	}
 }
 
@@ -185,8 +207,13 @@ export async function prepareInventoryVaultSyncInput(
 	prices: InventoryPriceSnapshotV1,
 	tradingPostAccess: InventoryTradingPostAccess,
 	locale: CatalogLocale,
+	marketDepth?: InventoryMarketDepthEvidenceV1,
 ): Promise<InventoryVaultSyncInput> {
 	assertCaptureRelations(snapshot, catalog, prices, locale);
+	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
+		|| !sameNumbers(marketDepth.requestedItemIds, prices.requestedItemIds))) {
+		throw new Error('inventory_capture_identity_mismatch');
+	}
 	const grouped = new Map<string, {
 		itemId: number; source: InventoryPositionSource; character: string | null; quantity: number; holding: ItemHolding;
 	}>();
@@ -204,7 +231,12 @@ export async function prepareInventoryVaultSyncInput(
 	}
 
 	const priceById = new Map(prices.items.map((price) => [price.itemId, price]));
-	const positions = await Promise.all([...grouped.values()].map(async (group): Promise<InventoryVaultPosition> => {
+	const depthById = new Map(marketDepth?.items.map((item) => [item.itemId, item]) ?? []);
+	const consumedByItem = new Map<number, number>();
+	const orderedGroups = [...grouped.values()].sort((left, right) => left.itemId - right.itemId
+		|| left.source.localeCompare(right.source) || (left.character ?? '').localeCompare(right.character ?? ''));
+	const positions: InventoryVaultPosition[] = [];
+	for (const group of orderedGroups) {
 		const item = catalog.items[String(group.itemId)] ?? null;
 		const price = priceById.get(group.itemId);
 		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
@@ -212,27 +244,37 @@ export async function prepareInventoryVaultSyncInput(
 			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
-		const listing = unitListCopper === null
-			? null
-			: createTradingPostValueWithPolicy('listing', unitListCopper, group.quantity);
-		return {
+		const depth = eligible && unitSellCopper !== null ? depthById.get(group.itemId) : undefined;
+		const consumed = consumedByItem.get(group.itemId) ?? 0;
+		const demonstrated = depth?.coverage === 'complete'
+			? valueInstantSellDepth(depth.buys, group.quantity, consumed)
+			: null;
+		if (demonstrated !== null && demonstrated.status !== 'invalid') {
+			consumedByItem.set(group.itemId, safeAdd(consumed, demonstrated.coveredQuantity));
+		}
+		const sellDepthStatus = !eligible || depth === undefined ? 'unavailable'
+			: depth.coverage !== 'complete' ? depth.coverage === 'invalid' ? 'invalid' : 'unavailable'
+				: demonstrated?.status ?? 'invalid';
+		positions.push({
 			positionId: await positionId(group.itemId, group.source, group.character),
 			itemId: group.itemId,
 			source: group.source,
 			character: group.character,
 			quantity: group.quantity,
 			unitSellCopper,
-			// A highest buy quote is not demonstrated capacity for the whole row.
-			// H9.20 supplies consumable order-book levels; without them the total is unknown.
-			totalSellCopper: null,
+			totalSellCopper: demonstrated?.status === 'complete' ? demonstrated.netCopper : null,
+			sellDepthStatus,
+			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
+			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
 			unitListCopper,
-			totalListCopper: listing?.status === 'ok' ? listing.value.netCopper : null,
+			// The best ask is a competing listing, not demonstrated buyer capacity.
+			totalListCopper: null,
 			name: cleanText(item?.name ?? (locale === 'es' ? `Objeto ${String(group.itemId)}` : `Item ${String(group.itemId)}`)),
 			type: item?.type ? cleanText(item.type) : null,
 			rarity: item?.rarity ? cleanText(item.rarity) : null,
 			icon: item?.icon ?? null,
-		};
-	}));
+		});
+	}
 	positions.sort(comparePositions);
 	return {
 		schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION,
@@ -479,6 +521,10 @@ function fieldsFor(
 		tc_quantity: quantity,
 		tc_unit_sell_copper: position.unitSellCopper,
 		tc_total_sell_copper: active ? position.totalSellCopper : position.unitSellCopper === null ? null : 0,
+		tc_sell_depth_status: active ? position.sellDepthStatus
+			: position.unitSellCopper === null ? 'unavailable' : 'complete',
+		tc_sell_covered_quantity: active ? position.sellCoveredQuantity : 0,
+		tc_sell_uncovered_quantity: active ? position.sellUncoveredQuantity : 0,
 		tc_unit_list_copper: position.unitListCopper,
 		tc_total_list_copper: active ? position.totalListCopper : position.unitListCopper === null ? null : 0,
 		tc_active: active,
@@ -545,6 +591,9 @@ function positionFromFields(fields: InventoryNoteFields): InventoryVaultPosition
 		quantity: fields.tc_quantity,
 		unitSellCopper: fields.tc_unit_sell_copper,
 		totalSellCopper: fields.tc_total_sell_copper,
+		sellDepthStatus: fields.tc_sell_depth_status,
+		sellCoveredQuantity: fields.tc_sell_covered_quantity,
+		sellUncoveredQuantity: fields.tc_sell_uncovered_quantity,
 		unitListCopper: fields.tc_unit_list_copper,
 		totalListCopper: fields.tc_total_list_copper,
 		name: fields.tc_item_name,
@@ -575,6 +624,11 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		positive(value.itemId) && inventorySource(value.source) && (value.character === null || nonEmptyText(value.character)) &&
 		(value.source === 'character' ? value.character !== null : value.character === null) && positive(value.quantity) &&
 		nullableNonNegative(value.unitSellCopper) && nullableNonNegative(value.totalSellCopper) &&
+		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.sellDepthStatus)) &&
+		nonNegative(value.sellCoveredQuantity) && nonNegative(value.sellUncoveredQuantity) &&
+		value.sellCoveredQuantity + value.sellUncoveredQuantity === value.quantity &&
+		(value.sellDepthStatus === 'complete' ? value.sellUncoveredQuantity === 0 && value.totalSellCopper !== null
+			: value.totalSellCopper === null) &&
 		nullableNonNegative(value.unitListCopper) && nullableNonNegative(value.totalListCopper) && nonEmptyText(value.name) &&
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
 		(value.icon === null || nonEmptyText(value.icon)) &&
@@ -585,14 +639,22 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 /**
  * Brings frontmatter written by an older build up to the current key set by defaulting
  * the absent `INVENTORY_NOTE_KEYS_ADDED_LATER` to `null`, so the note validates and the
- * plan rewrites it with the missing columns. It only ever ADDS those two keys: a key we
+ * plan rewrites it with the missing columns. It only ever ADDS known keys: a key we
  * never wrote is left in place so that `isInventoryNoteFields` still rejects it, which
  * is what keeps a hand-edited note a conflict.
  */
 function migrateInventoryNoteFields(value: unknown): unknown {
 	if (!record(value)) return value;
 	const migrated: Record<string, unknown> = { ...value };
-	for (const key of INVENTORY_NOTE_KEYS_ADDED_LATER) if (!(key in migrated)) migrated[key] = null;
+	if (!('tc_sell_depth_status' in migrated)) {
+		// A legacy total came from one top-of-book quote, not demonstrated depth.
+		migrated.tc_total_sell_copper = null;
+	}
+	for (const key of INVENTORY_NOTE_KEYS_ADDED_LATER) if (!(key in migrated)) {
+		migrated[key] = key === 'tc_sell_depth_status' ? 'unavailable'
+			: key === 'tc_sell_covered_quantity' ? 0
+				: key === 'tc_sell_uncovered_quantity' ? migrated.tc_quantity : null;
+	}
 	return migrated;
 }
 
@@ -604,7 +666,12 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		(value.tc_character === null || nonEmptyText(value.tc_character)) &&
 		(value.tc_source === 'character' ? value.tc_character !== null : value.tc_character === null) &&
 		nonNegative(value.tc_quantity) && nullableNonNegative(value.tc_unit_sell_copper) &&
-		nullableNonNegative(value.tc_total_sell_copper) && nullableNonNegative(value.tc_unit_list_copper) &&
+		nullableNonNegative(value.tc_total_sell_copper) &&
+		['complete', 'partial', 'no_market', 'unavailable', 'invalid'].includes(String(value.tc_sell_depth_status)) &&
+		nonNegative(value.tc_sell_covered_quantity) && nonNegative(value.tc_sell_uncovered_quantity) &&
+		value.tc_sell_covered_quantity + value.tc_sell_uncovered_quantity === value.tc_quantity &&
+		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_uncovered_quantity === 0
+			: value.tc_total_sell_copper === null) && nullableNonNegative(value.tc_unit_list_copper) &&
 		nullableNonNegative(value.tc_total_list_copper) && typeof value.tc_active === 'boolean' &&
 		value.tc_active === (value.tc_quantity > 0) && iso(value.tc_captured_at) &&
 		nonEmptyText(value.tc_item_name) && (value.tc_item_type === null || nonEmptyText(value.tc_item_type)) &&
@@ -644,6 +711,7 @@ function cleanText(value: string): string {
 function normalizeLf(value: string): string { return value.replace(/\r\n?/gu, '\n'); }
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean { const expected = new Set(keys); return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key)); }
+function sameNumbers(left: number[], right: number[]): boolean { return left.length === right.length && left.every((value, index) => value === right[index]); }
 function inventorySource(value: unknown): value is InventoryPositionSource { return ['character', 'shared_inventory', 'bank', 'materials'].includes(String(value)); }
 function nonEmptyText(value: unknown): value is string { return typeof value === 'string' && value.length > 0 && value.length <= 512 && value === value.normalize('NFC'); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }

@@ -6,7 +6,13 @@ import {
 	type ContainerTradingAccess,
 } from './container-expected-value';
 import { isContainerModel, type ContainerModelV1 } from './container-model';
-import { createCatalogVendorValue, createTradingPostValueWithPolicy } from './gw2-fees';
+import {
+	isInventoryMarketDepthEvidence,
+	valueExpectedInstantSellDepth,
+	valueInstantSellDepth,
+	type InventoryMarketDepthEvidenceV1,
+} from './commerce-listings';
+import { calculateTradingPostFees, createCatalogVendorValue } from './gw2-fees';
 const MICRO_COPPER = 1_000_000n;
 const BASIS_POINTS = 10_000n;
 const DAY_MS = 86_400_000;
@@ -37,6 +43,7 @@ export interface ContainerDispositionMarketBatch {
 	capturedAt: string;
 	source: 'gw2-commerce-prices';
 	quotes: ContainerMarketQuote[];
+	depth: InventoryMarketDepthEvidenceV1 | null;
 }
 
 export interface ContainerDispositionKernelInput {
@@ -60,6 +67,10 @@ export type ContainerDispositionKernelReason =
 	| 'price_stale'
 	| 'price_future'
 	| 'price_missing'
+	| 'market_depth_missing'
+	| 'market_depth_partial'
+	| 'market_depth_stale'
+	| 'market_depth_future'
 	| 'open_ev_partial'
 	| 'container_not_sellable'
 	| 'binding_unknown'
@@ -126,6 +137,11 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 		const priceAgeMs = Date.parse(input.asOf) - Date.parse(input.market.capturedAt);
 		if (priceAgeMs < -input.policy.maxFutureSkewMs) return review('price_future');
 		if (priceAgeMs > input.policy.maxPriceAgeMs) return review('price_stale');
+		if (input.market.depth === null) return review('market_depth_missing');
+		const depthAgeMs = Date.parse(input.asOf) - Date.parse(input.market.depth.capturedAt);
+		if (depthAgeMs < -input.policy.maxFutureSkewMs) return review('market_depth_future');
+		if (depthAgeMs > input.policy.maxPriceAgeMs) return review('market_depth_stale');
+		if (!depthBinding(input.market.depth, input.model)) return review('market_depth_partial');
 
 		const quote = input.market.quotes.find((entry) => entry.itemId === input.container.itemId) ?? null;
 		const priceStatus = quote === null || quote.bidUnitCopper === null ? 'missing' : 'available';
@@ -138,14 +154,28 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 		if (input.container.tradingAccess === 'unknown' && quote !== null
 			&& !quote.whitelisted && tpBindingEligible) return review('trading_access_unknown');
 		const bidUnitCopper = quote?.bidUnitCopper ?? null;
+		const containerDepth = input.market.depth.items.find((entry) => entry.itemId === input.container.itemId)!;
+		if (tpBindingEligible && tpAccessEligible && priceStatus === 'available'
+			&& containerDepth.coverage !== 'complete') return review('market_depth_partial');
 		const tp = tpBindingEligible && tpAccessEligible && priceStatus === 'available' && bidUnitCopper !== null
-			? createTradingPostValueWithPolicy('instant_sell', bidUnitCopper, input.quantity) : null;
-		if (tp?.status === 'invalid') return invalid(tp.reason === 'arithmetic_overflow'
-			? 'arithmetic_overflow' : 'model_ev_inconsistent');
+			? valueInstantSellDepth(containerDepth.buys, input.quantity) : null;
+		if (tp?.status === 'invalid') return invalid('arithmetic_overflow');
+		if (tp?.status === 'partial') return review('market_depth_partial');
 		const vendor = createCatalogVendorValue(input.container.catalogItem, input.quantity);
 		if (vendor.status === 'invalid') return invalid(vendor.reason === 'arithmetic_overflow'
 			? 'arithmetic_overflow' : 'malformed_input');
-		const tpValue = tp?.status === 'ok' ? tp.value : null;
+		const tpFees = tp?.status === 'complete' && tp.grossCopper !== null
+			? calculateTradingPostFees(tp.grossCopper) : null;
+		if (tpFees?.status === 'invalid') return invalid('arithmetic_overflow');
+		const tpValue = tp?.status === 'complete' && tp.grossCopper !== null && tp.netCopper !== null
+			&& tpFees?.status === 'ok' ? {
+				unitCopper: containerDepth.buys[0]!.unitCopper,
+				grossCopper: tp.grossCopper,
+				listingFeeCopper: tpFees.fees.listingFeeCopper,
+				exchangeFeeCopper: tpFees.fees.exchangeFeeCopper,
+				totalFeesCopper: tpFees.fees.totalFeesCopper,
+				netCopper: tp.netCopper,
+			} : null;
 		const vendorValue = vendor.status === 'ok' ? vendor.value : null;
 		if (tpValue === null && vendorValue === null) return review(quote === null || quote.bidUnitCopper === null
 			? 'price_missing' : 'container_not_sellable');
@@ -176,7 +206,15 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 		if (ev.value.instant.coverage !== 'complete' || ev.value.instant.netMicroCopper === null) {
 			return review('open_ev_partial');
 		}
-		const openTotal = BigInt(ev.value.instant.netMicroCopper) * BigInt(input.quantity);
+		const depthOpen = openExpectedValueAtDepth(
+			input.model, input.market.quotes, input.container.tradingAccess, input.market.depth, input.quantity,
+		);
+		if (depthOpen.status !== 'ok') return depthOpen.status === 'partial'
+			? review('market_depth_partial') : invalid('arithmetic_overflow');
+		const openTotal = depthOpen.totalMicroCopper;
+		const perContainer = openTotal / BigInt(input.quantity);
+		const perContainerNumber = safeBigIntNumber(perContainer);
+		if (perContainerNumber === null || perContainerNumber < 0) return invalid('arithmetic_overflow');
 		const sellMicro = BigInt(sell.netCopper) * MICRO_COPPER;
 		const thresholdNumerator = sellMicro * (BASIS_POINTS + BigInt(input.policy.openAdvantageBps));
 		const requiredOpen = divideRoundUp(thresholdNumerator, BASIS_POINTS);
@@ -190,7 +228,7 @@ export function calculateContainerDispositionKernel(value: unknown): ContainerDi
 			explanation: {
 				sellNow: sell,
 				open: {
-					evPerContainerMicroCopper: ev.value.instant.netMicroCopper,
+					evPerContainerMicroCopper: perContainerNumber,
 					totalExpectedMicroCopper: openTotal.toString(),
 					coverage: 'complete',
 					modelId: input.model.modelId,
@@ -236,11 +274,50 @@ function isKernelInput(value: unknown): value is ContainerDispositionKernelInput
 }
 
 function isMarket(value: unknown): value is ContainerDispositionMarketBatch {
-	return record(value) && exactKeys(value, ['version', 'batchId', 'capturedAt', 'source', 'quotes'])
+	return record(value) && exactKeys(value, ['version', 'batchId', 'capturedAt', 'source', 'quotes', 'depth'])
 		&& value.version === 1 && text(value.batchId, 256) && iso(value.capturedAt)
 		&& value.source === 'gw2-commerce-prices' && Array.isArray(value.quotes)
 		&& value.quotes.every(isQuote)
-		&& new Set(value.quotes.map((quote) => quote.itemId)).size === value.quotes.length;
+		&& new Set(value.quotes.map((quote) => quote.itemId)).size === value.quotes.length
+		&& (value.depth === null || isInventoryMarketDepthEvidence(value.depth));
+}
+
+function depthBinding(depth: InventoryMarketDepthEvidenceV1, model: ContainerModelV1): boolean {
+	const expected = [model.containerItemId, ...model.outcomes.filter((outcome) =>
+		outcome.sampleUnits > 0 && outcome.valuationPolicy === 'liquid_market').map((outcome) => outcome.id)]
+		.sort((left, right) => left - right);
+	return sameNumbers(depth.requestedItemIds, expected);
+}
+
+function openExpectedValueAtDepth(
+	model: ContainerModelV1,
+	quotes: ContainerMarketQuote[],
+	tradingAccess: ContainerTradingAccess,
+	depth: InventoryMarketDepthEvidenceV1,
+	quantity: number,
+): { status: 'ok'; totalMicroCopper: bigint } | { status: 'partial' | 'invalid' } {
+	const quoteById = new Map(quotes.map((quote) => [quote.itemId, quote]));
+	const depthById = new Map(depth.items.map((item) => [item.itemId, item]));
+	let total = 0n;
+	for (const outcome of model.outcomes) {
+		if (outcome.sampleUnits === 0 || outcome.valuationPolicy === 'excluded') continue;
+		if (outcome.valuationPolicy === 'direct_currency' && outcome.namespace === 'currency' && outcome.id === 1) {
+			total += BigInt(outcome.expectedUnitsMillionths) * BigInt(quantity);
+			continue;
+		}
+		if (outcome.valuationPolicy !== 'liquid_market') return { status: 'partial' };
+		const quote = quoteById.get(outcome.id);
+		const itemDepth = depthById.get(outcome.id);
+		if (quote === undefined || quote.bidUnitCopper === null
+			|| (tradingAccess !== 'full' && !quote.whitelisted)
+			|| itemDepth?.coverage !== 'complete') return { status: 'partial' };
+		const requested = BigInt(outcome.expectedUnitsMillionths) * BigInt(quantity);
+		const demonstrated = valueExpectedInstantSellDepth(itemDepth.buys, requested);
+		if (demonstrated.status === 'invalid') return { status: 'invalid' };
+		if (demonstrated.status !== 'complete' || demonstrated.netMicroCopper === null) return { status: 'partial' };
+		total += demonstrated.netMicroCopper;
+	}
+	return { status: 'ok', totalMicroCopper: total };
 }
 
 function isQuote(value: unknown): value is ContainerMarketQuote {
@@ -263,6 +340,10 @@ function divideRoundUp(numerator: bigint, denominator: bigint): bigint {
 
 function safeBigIntNumber(value: bigint): number | null {
 	return value >= BigInt(Number.MIN_SAFE_INTEGER) && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
+}
+
+function sameNumbers(left: number[], right: number[]): boolean {
+	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function review(reason: ContainerDispositionKernelReason): ContainerDispositionKernelResult {

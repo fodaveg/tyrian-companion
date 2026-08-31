@@ -30,7 +30,12 @@ function delta(changes: Array<{ id: number; before: number; after: number }>): S
 
 function gateway(body: unknown, status = 200): PublicCatalogGateway & { requestDetailed: ReturnType<typeof vi.fn> } {
 	return {
-		requestDetailed: vi.fn(async () => ({ status, headers: {}, body })),
+		requestDetailed: vi.fn(async (path: string) => ({
+			status,
+			headers: {},
+			body: path.startsWith('commerce/listings?') && Array.isArray(body)
+				? body.map((entry) => listingEntry(entry)) : body,
+		})),
 	};
 }
 
@@ -63,6 +68,14 @@ describe('SessionPriceSnapshotService', () => {
 				{ itemId: 20, quantityGained: 3, whitelisted: false, bid: { quantity: 8, unitCopper: 123 }, ask: { quantity: 5, unitCopper: 150 } },
 			],
 			missingItemIds: [],
+			marketDepth: {
+				version: 1, capturedAt: '2026-08-13T10:00:00.000Z', source: 'gw2-commerce-listings',
+				requestedItemIds: [10, 20], status: 'complete',
+				items: [
+					{ itemId: 10, coverage: 'complete', buys: [], sells: [{ unitCopper: 44, quantity: 2 }] },
+					{ itemId: 20, coverage: 'complete', buys: [{ unitCopper: 123, quantity: 8 }], sells: [{ unitCopper: 150, quantity: 5 }] },
+				],
+			},
 		});
 		expect(isSessionPriceSnapshot(result, 'session-1', storageDelta)).toBe(true);
 	});
@@ -123,7 +136,9 @@ describe('SessionPriceSnapshotService', () => {
 				return {
 					status: 200,
 					headers: {},
-					body: ids.map((id) => ({ id, whitelisted: true, buys: { quantity: 1, unit_price: id }, sells: { quantity: 1, unit_price: id + 1 } })),
+					body: path.startsWith('commerce/listings?')
+						? ids.map((id) => ({ id, buys: [{ listings: 1, quantity: 1, unit_price: id }], sells: [{ listings: 1, quantity: 1, unit_price: id + 1 }] }))
+						: ids.map((id) => ({ id, whitelisted: true, buys: { quantity: 1, unit_price: id }, sells: { quantity: 1, unit_price: id + 1 } })),
 				};
 			}),
 		};
@@ -132,7 +147,7 @@ describe('SessionPriceSnapshotService', () => {
 			.capture('session-1', delta(changes));
 
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Vitest mock is a standalone arrow function.
-		expect(api.requestDetailed).toHaveBeenCalledTimes(2);
+		expect(api.requestDetailed).toHaveBeenCalledTimes(4);
 		expect(result.items).toHaveLength(201);
 		expect(result.items[0]?.itemId).toBe(1);
 		expect(result.items.at(-1)?.itemId).toBe(201);
@@ -151,3 +166,15 @@ describe('SessionPriceSnapshotService', () => {
 		expect(isSessionPriceSnapshot({ ...result, missingItemIds: [] }, 'session-1', storageDelta)).toBe(false);
 	});
 });
+
+function listingEntry(value: unknown): unknown {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+	const entry = value as Record<string, unknown>;
+	const level = (side: unknown): unknown[] => {
+		if (typeof side !== 'object' || side === null || Array.isArray(side)) return [];
+		const quote = side as Record<string, unknown>;
+		return typeof quote.quantity === 'number' && quote.quantity > 0 && typeof quote.unit_price === 'number' && quote.unit_price > 0
+			? [{ listings: 1, quantity: quote.quantity, unit_price: quote.unit_price }] : [];
+	};
+	return { id: entry.id, buys: level(entry.buys), sells: level(entry.sells) };
+}

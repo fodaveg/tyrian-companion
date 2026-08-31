@@ -5,6 +5,7 @@ import { PINNED_SCHEMA, type ItemHolding, type StorageSnapshot } from '../accoun
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
+import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import {
 	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
@@ -37,6 +38,30 @@ describe('inventory Vault projection', () => {
 			{ source: 'character', character: 'Beta / Dos', quantity: 7, totalSellCopper: null },
 			{ source: 'materials', character: null, quantity: 17, totalSellCopper: null },
 			{ source: 'shared_inventory', character: null, quantity: 11, totalSellCopper: null },
+		]);
+	});
+
+	it('consumes shared buy levels once across rows and exposes complete, partial and exhausted coverage', async () => {
+		const snapshot = snapshotWith([
+			holding(42, 5, characterBag('Alfa')),
+			holding(42, 7, characterBag('Beta')),
+			holding(42, 11, { source: 'shared_inventory', slot: 0 }),
+			holding(42, 13, { source: 'bank', slot: 0 }),
+			holding(42, 17, { source: 'materials', category: 1 }),
+		]);
+		const projected = await prepareInventoryVaultSyncInput(
+			snapshot, catalogFor(snapshot), pricesFor(snapshot, 42, 100), 'full', 'es',
+			marketDepthFor(42, [{ unitCopper: 100, quantity: 15 }, { unitCopper: 90, quantity: 15 }]),
+		);
+		expect(projected.positions.map((position) => ({
+			source: position.source, total: position.totalSellCopper, status: position.sellDepthStatus,
+			covered: position.sellCoveredQuantity, uncovered: position.sellUncoveredQuantity,
+		}))).toEqual([
+			{ source: 'bank', total: 1_105, status: 'complete', covered: 13, uncovered: 0 },
+			{ source: 'character', total: 399, status: 'complete', covered: 5, uncovered: 0 },
+			{ source: 'character', total: 535, status: 'complete', covered: 7, uncovered: 0 },
+			{ source: 'materials', total: null, status: 'partial', covered: 5, uncovered: 12 },
+			{ source: 'shared_inventory', total: null, status: 'no_market', covered: 0, uncovered: 11 },
 		]);
 	});
 
@@ -136,7 +161,7 @@ describe('inventory Vault projection', () => {
 		const projected = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es');
 		// No buy order right now: the sell column stays null, but the item IS sellable,
 		// which the published ask (list) column proves.
-		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: 20, totalListCopper: 85 });
+		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: 20, totalListCopper: null });
 	});
 
 	it('updates an existing note whose sell value is null once the correct eligibility rule applies', async () => {
@@ -313,8 +338,10 @@ describe('inventory Vault preview and apply', () => {
 			capturedAt: '2026-08-25T08:02:00.000Z',
 			positions: initial.positions.map((position) => ({
 				...position, quantity: position.quantity + 1,
-				totalSellCopper: (position.unitSellCopper ?? 0) * (position.quantity + 1),
-				totalListCopper: (position.unitListCopper ?? 0) * (position.quantity + 1),
+				totalSellCopper: null,
+				sellDepthStatus: 'unavailable' as const,
+				sellUncoveredQuantity: position.sellUncoveredQuantity + 1,
+				totalListCopper: null,
 			})),
 		};
 		const plan = await service.preview(ROOT, changed);
@@ -340,7 +367,10 @@ describe('inventory Vault preview and apply', () => {
 
 	it('migrates a note written before the list-price fields existed instead of blocking on it', async () => {
 		const notePath = `${ROOT}/Inventory/Positions/${LEGACY_NOTE_POSITION_ID}.md`;
-		const vault = new MemoryInventoryVault([[notePath, NOTE_WRITTEN_BY_0_1_11]]);
+		const legacyTopQuoteTotal = await resign(NOTE_WRITTEN_BY_0_1_11.replace(
+			'tc_total_sell_copper: null', 'tc_total_sell_copper: 1234',
+		));
+		const vault = new MemoryInventoryVault([[notePath, legacyTopQuoteTotal]]);
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const snapshot = snapshotWith([holding(LEGACY_NOTE_ITEM_ID, 1, characterBag(LEGACY_NOTE_CHARACTER))]);
 		// Not whitelisted but with a live buy order: the very shape that left most of the
@@ -358,7 +388,7 @@ describe('inventory Vault preview and apply', () => {
 		expect(Object.keys(fields)).toEqual(expect.arrayContaining(['tc_unit_list_copper', 'tc_total_list_copper']));
 		expect(fields).toMatchObject({
 			tc_unit_sell_copper: 1234, tc_total_sell_copper: null,
-			tc_unit_list_copper: 1300, tc_total_list_copper: 1105,
+			tc_unit_list_copper: 1300, tc_total_list_copper: null,
 		});
 	});
 
@@ -457,6 +487,20 @@ function pricesFor(snapshot: StorageSnapshot, itemId: number, unitCopper: number
 	return priceSnapshotWith(snapshot, [
 		{ itemId, whitelisted: true, bid: { unitCopper, quantity: 100 }, ask: { unitCopper: unitCopper + 1, quantity: 100 } },
 	]);
+}
+
+function marketDepthFor(
+	itemId: number,
+	buys: InventoryMarketDepthEvidenceV1['items'][number]['buys'],
+): InventoryMarketDepthEvidenceV1 {
+	return {
+		version: 1,
+		capturedAt: CAPTURED_AT,
+		source: 'gw2-commerce-listings',
+		requestedItemIds: [itemId],
+		status: 'complete',
+		items: [{ itemId, coverage: 'complete', buys, sells: [] }],
+	};
 }
 
 /**

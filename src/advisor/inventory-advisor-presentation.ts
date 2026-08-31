@@ -400,6 +400,7 @@ function containerEconomyFor(
 		knowledgePackSha256: engine.knowledgePack.sha256,
 		economyPack: economy.pack,
 		prices: economy.prices,
+		marketDepth: economy.marketDepth,
 		...(engine.personalValuation === undefined ? {} : { personalValuation: engine.personalValuation }),
 	});
 	return result.status === 'ready'

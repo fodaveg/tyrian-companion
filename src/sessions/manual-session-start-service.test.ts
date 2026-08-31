@@ -298,6 +298,18 @@ describe('ManualSessionStartService', () => {
 					ask: { quantity: 4, unitCopper: 100 },
 				}],
 				missingItemIds: [],
+				marketDepth: {
+					version: 1 as const,
+					capturedAt: '2026-08-13T10:00:00.000Z',
+					source: 'gw2-commerce-listings' as const,
+					requestedItemIds: [100],
+					status: 'complete' as const,
+					items: [{
+						itemId: 100, coverage: 'complete' as const,
+						buys: [{ unitCopper: 91, quantity: 7 }],
+						sells: [{ unitCopper: 100, quantity: 4 }],
+					}],
+				},
 			})),
 		};
 		const service = new ManualSessionStartService(

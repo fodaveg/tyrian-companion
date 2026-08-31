@@ -281,6 +281,27 @@ describe('recommendContainerDisposition', () => {
 		expect(readyWithCaveat.explanation?.caveats).toContain('listing_route_partial');
 	});
 
+	it('degrades explicitly when order-book depth is missing, partial or exhausted', () => {
+		const missing = input({ marketOutcome: true });
+		missing.market.depth = null;
+		expect(recommendContainerDisposition(missing)).toMatchObject({
+			status: 'blocked', reasons: [{ code: 'market_depth_missing' }],
+		});
+		const partial = input({ marketOutcome: true });
+		partial.market.depth!.items.find((entry) => entry.itemId === 1)!.coverage = 'unavailable';
+		partial.market.depth!.items.find((entry) => entry.itemId === 1)!.buys = [];
+		partial.market.depth!.items.find((entry) => entry.itemId === 1)!.sells = [];
+		partial.market.depth!.status = 'partial';
+		expect(recommendContainerDisposition(partial)).toMatchObject({
+			status: 'blocked', reasons: [{ code: 'market_depth_partial' }],
+		});
+		const exhausted = input({ marketOutcome: true, gainedQuantity: 5, finalQuantity: 5 });
+		exhausted.market.depth!.items.find((entry) => entry.itemId === 1)!.buys[0]!.quantity = 4;
+		expect(recommendContainerDisposition(exhausted)).toMatchObject({
+			status: 'blocked', reasons: [{ code: 'market_depth_partial' }],
+		});
+	});
+
 	it('keeps the extracted kernel equivalent to the H4.10 economic result', () => {
 		const value = input({ marketOutcome: true, gainedQuantity: 3, finalQuantity: 3 });
 		value.market.quotes.find((quote) => quote.itemId === 1)!.askUnitCopper = null;
@@ -552,6 +573,7 @@ describe('recommendContainerDisposition', () => {
 		expect(recommendContainerDisposition(null)).toMatchObject({ status: 'invalid' });
 		const overflow = input({ gainedQuantity: 2, finalQuantity: 2, vendorValue: 0 });
 		overflow.market.quotes.find((quote) => quote.itemId === ITEM_ID)!.bidUnitCopper = Number.MAX_SAFE_INTEGER;
+		overflow.market.depth!.items.find((entry) => entry.itemId === ITEM_ID)!.buys[0]!.unitCopper = Number.MAX_SAFE_INTEGER;
 		expect(recommendContainerDisposition(overflow)).toMatchObject({ status: 'invalid', reasons: [{ code: 'arithmetic_overflow' }] });
 	});
 
@@ -613,6 +635,27 @@ function input(options: {
 			{ itemId: ITEM_ID, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 },
 			...(options.marketOutcome ? [{ itemId: 1, whitelisted: true, bidUnitCopper: 110, askUnitCopper: 120 }] : []),
 		],
+		depth: {
+			version: 1 as const,
+			capturedAt: AS_OF,
+			source: 'gw2-commerce-listings' as const,
+			requestedItemIds: [
+				...(options.marketOutcome ? [1] : []), ITEM_ID,
+			].sort((left, right) => left - right),
+			status: 'complete' as const,
+			items: [
+				...(options.marketOutcome ? [{
+					itemId: 1, coverage: 'complete' as const,
+					buys: [{ unitCopper: 110, quantity: 1_000 }],
+					sells: [{ unitCopper: 120, quantity: 1_000 }],
+				}] : []),
+				{
+					itemId: ITEM_ID, coverage: 'complete' as const,
+					buys: [{ unitCopper: 110, quantity: 1_000 }],
+					sells: [{ unitCopper: 120, quantity: 1_000 }],
+				},
+			].sort((left, right) => left.itemId - right.itemId),
+		},
 	};
 	const hold = evaluateHoldIntents({
 		version: 1,
@@ -626,7 +669,7 @@ function input(options: {
 			overlay.lines[0]!.openEligible ?? 0,
 		) },
 		intents: [],
-		market,
+		market: holdMarket(market),
 	});
 	if (hold.status !== 'ok') throw new Error('Invalid hold fixture.');
 	return {
@@ -668,11 +711,21 @@ function withHold(value: ContainerRecommendationInput, intents: HoldIntentV1[]):
 		sessionId: value.session.sessionId,
 		freeQuantityByItem,
 		intents,
-		market: value.market,
+		market: holdMarket(value.market),
 	});
 	if (result.status !== 'ok') throw new Error(`Invalid hold fixture: ${result.reason}`);
 	value.hold = { intents, plan: result.plan };
 	return value;
+}
+
+function holdMarket(market: ContainerRecommendationInput['market']) {
+	return {
+		version: market.version,
+		batchId: market.batchId,
+		capturedAt: market.capturedAt,
+		source: market.source,
+		quotes: market.quotes,
+	};
 }
 
 function holdIntent(overrides: Partial<HoldIntentV1> = {}): HoldIntentV1 {
@@ -752,9 +805,10 @@ function valuationFor(quantity: number): SessionValuation {
 	const gross = quantity;
 	return {
 		version: 1, sessionId: 'session-1', priceCapturedAt: AS_OF, priceSource: 'gw2-commerce-prices',
-		coverage: 'complete', durationMs: 3_600_000,
+		coverage: 'complete', durationMs: 3_599_000,
 		lines: [{
-			itemId: ITEM_ID, quantity, binding: 'unbound', instantSell: null, listing: null,
+			itemId: ITEM_ID, quantity, binding: 'unbound', instantSell: null,
+			instantSellDepthCoverage: 'not_applicable', listing: null,
 			vendor: { version: 1, kind: 'vendor', priceSource: 'vendor_value', liquidity: 'immediate',
 				quantity, unitCopper: 1, grossCopper: gross, netCopper: gross },
 			immediateBestCopper: gross, listingBestCopper: gross, nonLiquid: false, reason: null,

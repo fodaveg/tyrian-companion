@@ -243,6 +243,8 @@ export function composeInventoryAdvisorRefresh(
 		&& capture.containerPrices !== null ? { containerEconomy: {
 			pack: structuredClone(rules.containerEconomyPack),
 			prices: selectSupplementalPrices(capture.containerPrices, rules.containerEconomyPack.expectedPriceItemIds),
+			marketDepth: capture.marketDepth === undefined ? null
+				: selectSupplementalMarketDepth(capture.marketDepth, rules.containerEconomyPack.expectedPriceItemIds),
 		} } : {};
 	const engineInput = {
 		input,

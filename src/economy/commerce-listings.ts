@@ -2,7 +2,11 @@ import { HttpTransportError } from '../core/http';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
-import { calculateTradingPostFees, createTradingPostValueWithPolicy } from './gw2-fees';
+import {
+	calculateTradingPostFees,
+	createTradingPostValueWithPolicy,
+	GW2_TRADING_POST_FEE_POLICY,
+} from './gw2-fees';
 
 export const COMMERCE_LISTINGS_BATCH_SIZE = 200;
 
@@ -35,6 +39,15 @@ export interface DemonstratedMarketValueV1 {
 	grossCopper: number | null;
 	netCopper: number | null;
 	unitCopper: number | null;
+}
+
+export interface DemonstratedExpectedMarketValueV1 {
+	status: 'complete' | 'partial' | 'no_market' | 'invalid';
+	requestedUnitsMillionths: bigint;
+	coveredUnitsMillionths: bigint;
+	uncoveredUnitsMillionths: bigint;
+	grossMicroCopper: bigint | null;
+	netMicroCopper: bigint | null;
 }
 
 type RateLimitGate = Pick<RateLimitCoordinator, 'status' | 'recordRateLimited'>;
@@ -84,19 +97,26 @@ export async function captureInventoryMarketDepth(
 export function valueInstantSellDepth(
 	levels: readonly CommerceListingLevelV1[],
 	quantity: number,
+	consumedQuantity = 0,
 ): DemonstratedMarketValueV1 {
-	if (!validQuantity(quantity) || !validLevels(levels, 'buys')) return invalidValue(quantity);
+	if (!validQuantity(quantity) || !nonNegative(consumedQuantity) || !validLevels(levels, 'buys')) {
+		return invalidValue(quantity);
+	}
 	let remaining = quantity;
+	let consumedRemaining = consumedQuantity;
 	let covered = 0;
 	let gross = 0;
 	for (const level of levels) {
-		const take = Math.min(remaining, level.quantity);
-		if (take === 0) break;
+		const skipped = Math.min(consumedRemaining, level.quantity);
+		consumedRemaining -= skipped;
+		const take = Math.min(remaining, level.quantity - skipped);
+		if (take === 0) continue;
 		const slice = level.unitCopper * take;
 		if (!Number.isSafeInteger(slice) || !Number.isSafeInteger(gross + slice)) return invalidValue(quantity);
 		gross += slice;
 		covered += take;
 		remaining -= take;
+		if (remaining === 0) break;
 	}
 	if (covered === 0) return unavailableValue(quantity);
 	const fees = calculateTradingPostFees(gross);
@@ -107,6 +127,44 @@ export function valueInstantSellDepth(
 		status: remaining === 0 ? 'complete' : 'partial', requestedQuantity: quantity,
 		coveredQuantity: covered, uncoveredQuantity: remaining, grossCopper: gross,
 		netCopper: net, unitCopper: null,
+	};
+}
+
+/**
+ * Values probabilistic outcome units against real buy depth. Fees are rounded
+ * up in micro-copper, including each route's one-copper minimum, so the result
+ * is a conservative realizable bound rather than a top-quote extrapolation.
+ */
+export function valueExpectedInstantSellDepth(
+	levels: readonly CommerceListingLevelV1[],
+	requestedUnitsMillionths: bigint,
+): DemonstratedExpectedMarketValueV1 {
+	if (requestedUnitsMillionths <= 0n || !validLevels(levels, 'buys')) {
+		return invalidExpectedValue(requestedUnitsMillionths);
+	}
+	const scale = 1_000_000n;
+	let remaining = requestedUnitsMillionths;
+	let covered = 0n;
+	let gross = 0n;
+	for (const level of levels) {
+		const capacity = BigInt(level.quantity) * scale;
+		const take = remaining < capacity ? remaining : capacity;
+		if (take === 0n) break;
+		gross += take * BigInt(level.unitCopper);
+		covered += take;
+		remaining -= take;
+	}
+	if (covered === 0n) return unavailableExpectedValue(requestedUnitsMillionths);
+	const listingFee = expectedFeeMicroCopper(gross, GW2_TRADING_POST_FEE_POLICY.listingFeeBasisPoints);
+	const exchangeFee = expectedFeeMicroCopper(gross, GW2_TRADING_POST_FEE_POLICY.exchangeFeeBasisPoints);
+	const net = gross > listingFee + exchangeFee ? gross - listingFee - exchangeFee : 0n;
+	return {
+		status: remaining === 0n ? 'complete' : 'partial',
+		requestedUnitsMillionths,
+		coveredUnitsMillionths: covered,
+		uncoveredUnitsMillionths: remaining,
+		grossMicroCopper: gross,
+		netMicroCopper: net,
 	};
 }
 
@@ -124,6 +182,25 @@ export function valueCompetitiveListing(
 		status: 'complete', requestedQuantity: quantity, coveredQuantity: quantity, uncoveredQuantity: 0,
 		grossCopper: value.value.grossCopper, netCopper: value.value.netCopper, unitCopper: best.unitCopper,
 	};
+}
+
+export function isDemonstratedMarketValue(value: unknown): value is DemonstratedMarketValueV1 {
+	if (!record(value) || !exactKeys(value, [
+		'status', 'requestedQuantity', 'coveredQuantity', 'uncoveredQuantity',
+		'grossCopper', 'netCopper', 'unitCopper',
+	]) || !['complete', 'partial', 'no_market', 'invalid'].includes(String(value.status))
+		|| !validQuantity(value.requestedQuantity) || !nonNegative(value.coveredQuantity)
+		|| !nonNegative(value.uncoveredQuantity)
+		|| value.coveredQuantity + value.uncoveredQuantity !== value.requestedQuantity
+		|| value.unitCopper !== null) return false;
+	if (value.status === 'no_market' || value.status === 'invalid') {
+		return value.coveredQuantity === 0 && value.uncoveredQuantity === value.requestedQuantity
+			&& value.grossCopper === null && value.netCopper === null;
+	}
+	if (!positive(value.coveredQuantity) || !positive(value.grossCopper) || !nonNegative(value.netCopper)) return false;
+	const fees = calculateTradingPostFees(value.grossCopper);
+	return fees.status === 'ok' && value.netCopper === value.grossCopper - fees.fees.totalFeesCopper
+		&& (value.status === 'complete' ? value.uncoveredQuantity === 0 : value.uncoveredQuantity > 0);
 }
 
 export function isInventoryMarketDepthEvidence(value: unknown): value is InventoryMarketDepthEvidenceV1 {
@@ -191,12 +268,20 @@ function missing(itemId: number): InventoryItemMarketDepthV1 { return { itemId, 
 function invalid(itemId: number): InventoryItemMarketDepthV1 { return { itemId, coverage: 'invalid', buys: [], sells: [] }; }
 function unavailableValue(quantity: number): DemonstratedMarketValueV1 { return { status: 'no_market', requestedQuantity: quantity, coveredQuantity: 0, uncoveredQuantity: quantity, grossCopper: null, netCopper: null, unitCopper: null }; }
 function invalidValue(quantity: number): DemonstratedMarketValueV1 { return { status: 'invalid', requestedQuantity: validQuantity(quantity) ? quantity : 0, coveredQuantity: 0, uncoveredQuantity: validQuantity(quantity) ? quantity : 0, grossCopper: null, netCopper: null, unitCopper: null }; }
+function unavailableExpectedValue(quantity: bigint): DemonstratedExpectedMarketValueV1 { return { status: 'no_market', requestedUnitsMillionths: quantity, coveredUnitsMillionths: 0n, uncoveredUnitsMillionths: quantity, grossMicroCopper: null, netMicroCopper: null }; }
+function invalidExpectedValue(quantity: bigint): DemonstratedExpectedMarketValueV1 { return { status: 'invalid', requestedUnitsMillionths: quantity > 0n ? quantity : 0n, coveredUnitsMillionths: 0n, uncoveredUnitsMillionths: quantity > 0n ? quantity : 0n, grossMicroCopper: null, netMicroCopper: null }; }
+function expectedFeeMicroCopper(gross: bigint, basisPoints: number): bigint {
+	const numerator = gross * BigInt(basisPoints);
+	const denominator = 10_000n;
+	const roundedUp = (numerator + denominator - 1n) / denominator;
+	return roundedUp > 1_000_000n ? roundedUp : 1_000_000n;
+}
 function normalizeIds(values: readonly number[]): number[] { return [...new Set(values.filter(positive))].sort((a, b) => a - b); }
 function chunks<T>(values: readonly T[], size: number): T[][] { const result: T[][] = []; for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size)); return result; }
 function strictIds(values: unknown[]): boolean { return values.every(positive) && values.every((value, index) => index === 0 || (values[index - 1] as number) < value); }
 function strictItems(values: unknown[]): boolean { return values.every((value, index) => index === 0 || (values[index - 1] as InventoryItemMarketDepthV1).itemId < (value as InventoryItemMarketDepthV1).itemId); }
 function sameIds(left: number[], right: number[]): boolean { return left.length === right.length && left.every((value, index) => value === right[index]); }
-function validQuantity(value: number): boolean { return Number.isSafeInteger(value) && value > 0; }
+function validQuantity(value: unknown): value is number { return positive(value); }
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
 function iso(value: unknown): boolean { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(Date.parse(value)).toISOString() === value; }

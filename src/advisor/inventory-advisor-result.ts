@@ -294,6 +294,7 @@ function validEconomicDecisionAgainstInput(
 		knowledgePackSha256: knowledgePack.sha256,
 		economyPack: economy.pack,
 		prices: economy.prices,
+		marketDepth: economy.marketDepth,
 		...(personalValuation === undefined ? {} : { personalValuation }),
 	});
 	return result.status === 'ready' && result.decision.action === decision.action

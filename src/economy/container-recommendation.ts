@@ -13,8 +13,9 @@ import {
 	type ContainerTradingAccess,
 } from './container-expected-value';
 import { calculateContainerDispositionKernel } from './container-disposition-kernel';
+import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from './commerce-listings';
 import { isContainerModel, type ContainerModelV1 } from './container-model';
-import { createTradingPostValueWithPolicy } from './gw2-fees';
+import { calculateTradingPostFees } from './gw2-fees';
 import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
 import {
 	buildReservationBalance,
@@ -83,6 +84,7 @@ export interface ContainerMarketBatch {
 	capturedAt: string;
 	source: 'gw2-commerce-prices';
 	quotes: ContainerMarketQuote[];
+	depth: InventoryMarketDepthEvidenceV1 | null;
 }
 
 export interface ContainerRecommendationInput {
@@ -132,6 +134,10 @@ export type ContainerRecommendationReasonCode =
 	| 'price_stale'
 	| 'price_future'
 	| 'price_missing'
+	| 'market_depth_missing'
+	| 'market_depth_partial'
+	| 'market_depth_stale'
+	| 'market_depth_future'
 	| 'open_ev_partial'
 	| 'container_not_sellable'
 	| 'binding_unknown'
@@ -337,7 +343,13 @@ function holdEvidence(input: ContainerRecommendationInput):
 		sessionId: input.session.sessionId,
 		freeQuantityByItem,
 		intents: input.hold.intents,
-		market: input.market,
+		market: {
+			version: input.market.version,
+			batchId: input.market.batchId,
+			capturedAt: input.market.capturedAt,
+			source: input.market.source,
+			quotes: input.market.quotes,
+		},
 	});
 	if (result.status !== 'ok' || canonical(result.plan) !== canonical(input.hold.plan)) {
 		return { status: 'invalid', reason: 'evidence_mismatch' };
@@ -653,23 +665,25 @@ function isSellNow(
 	]) || !['instant_sell', 'vendor'].includes(String(value.route)) || !nonNegative(value.unitCopper) ||
 		!nonNegative(value.grossCopper) || !nonNegative(value.listingFeeCopper) || !nonNegative(value.exchangeFeeCopper) ||
 		!nonNegative(value.totalFeesCopper) || !nonNegative(value.netCopper)) return false;
-	const gross = safeProduct(value.unitCopper, quantity);
 	const fees = safeSum([value.listingFeeCopper, value.exchangeFeeCopper]);
-	if (gross === null || fees === null || value.grossCopper !== gross || value.totalFeesCopper !== fees ||
-		value.netCopper !== gross - fees) return false;
-	if (value.route === 'vendor') return fees === 0;
-	const expected = createTradingPostValueWithPolicy('instant_sell', value.unitCopper, quantity);
-	return expected.status === 'ok' && expected.value.grossCopper === value.grossCopper &&
-		expected.value.listingFeeCopper === value.listingFeeCopper &&
-		expected.value.exchangeFeeCopper === value.exchangeFeeCopper &&
-		expected.value.totalFeesCopper === value.totalFeesCopper && expected.value.netCopper === value.netCopper;
+	if (fees === null || value.totalFeesCopper !== fees ||
+		value.netCopper !== value.grossCopper - fees) return false;
+	const maximumGross = safeProduct(value.unitCopper, quantity);
+	if (maximumGross === null) return false;
+	if (value.route === 'vendor') return fees === 0 && value.grossCopper === maximumGross;
+	if (value.grossCopper <= 0 || value.grossCopper > maximumGross) return false;
+	const expected = calculateTradingPostFees(value.grossCopper);
+	return expected.status === 'ok' && expected.fees.listingFeeCopper === value.listingFeeCopper &&
+		expected.fees.exchangeFeeCopper === value.exchangeFeeCopper &&
+		expected.fees.totalFeesCopper === value.totalFeesCopper;
 }
 
 const RECOMMENDATION_REASON_CODES = new Set<ContainerRecommendationReasonCode>([
 	'session_classification_v1', 'session_estimated', 'session_contaminated', 'session_invalid',
 	'session_not_recommendable', 'reservation_unknown', 'reservation_mismatch', 'hold_intent_active',
 	'hold_price_unavailable', 'model_unreviewed', 'model_revoked', 'model_review_stale', 'model_review_future',
-	'model_review_mismatch', 'price_stale', 'price_future', 'price_missing', 'open_ev_partial',
+	'model_review_mismatch', 'price_stale', 'price_future', 'price_missing', 'market_depth_missing',
+	'market_depth_partial', 'market_depth_stale', 'market_depth_future', 'open_ev_partial',
 	'container_not_sellable', 'binding_unknown', 'trading_access_unknown', 'malformed_input',
 	'evidence_mismatch', 'arithmetic_overflow', 'model_ev_inconsistent',
 ]);
@@ -725,10 +739,10 @@ function isModelReview(value: unknown): value is ContainerModelReview {
 }
 
 function isMarket(value: unknown): value is ContainerMarketBatch {
-	if (!isRecord(value) || !exactKeys(value, ['version', 'batchId', 'capturedAt', 'source', 'quotes']) ||
+	if (!isRecord(value) || !exactKeys(value, ['version', 'batchId', 'capturedAt', 'source', 'quotes', 'depth']) ||
 		value.version !== 1 || !trimmed(value.batchId, 256) || !iso(value.capturedAt) ||
 		value.source !== 'gw2-commerce-prices' || !Array.isArray(value.quotes) ||
-		!value.quotes.every(isQuote)) return false;
+		!value.quotes.every(isQuote) || (value.depth !== null && !isInventoryMarketDepthEvidence(value.depth))) return false;
 	return new Set(value.quotes.map((quote) => quote.itemId)).size === value.quotes.length;
 }
 

@@ -331,7 +331,7 @@ function safeSum(values: number[]): number | null {
 type CopyKey = 'item' | 'currency' | 'observed_total' | 'known_subtotal' | 'not_evaluated' |
 	'evidence_invalid' | 'contaminated_block' | 'recommendation_blocked' | 'manual_footer' |
 	'availability_changed' | 'composition_changed' | 'catalog_missing' | 'binding_unknown' |
-	'price_incomplete' | 'item_losses_not_valued';
+	'price_incomplete' | 'market_depth_incomplete' | 'item_losses_not_valued';
 
 const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 	es: {
@@ -343,7 +343,9 @@ const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 		availability_changed: 'Cambió la disponibilidad sin cambiar la propiedad total.',
 		composition_changed: 'Cambió la ubicación o composición del almacenamiento.',
 		catalog_missing: 'Faltan datos de catálogo para parte del botín.', binding_unknown: 'Hay vinculaciones desconocidas.',
-		price_incomplete: 'Faltan precios para parte del botín.', item_losses_not_valued: 'Las pérdidas no se valoran como botín.',
+		price_incomplete: 'Faltan precios para parte del botín.',
+		market_depth_incomplete: 'La profundidad del bazar no cubre por completo parte del botín.',
+		item_losses_not_valued: 'Las pérdidas no se valoran como botín.',
 	},
 	en: {
 		item: 'Item', currency: 'Currency', observed_total: 'Observed total', known_subtotal: 'Known subtotal',
@@ -354,7 +356,9 @@ const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 		availability_changed: 'Availability changed without changing total ownership.',
 		composition_changed: 'Storage placement or composition changed.',
 		catalog_missing: 'Catalog data is missing for part of the loot.', binding_unknown: 'Some bindings are unknown.',
-		price_incomplete: 'Prices are missing for part of the loot.', item_losses_not_valued: 'Losses are not valued as loot.',
+		price_incomplete: 'Prices are missing for part of the loot.',
+		market_depth_incomplete: 'Trading Post depth does not fully cover part of the loot.',
+		item_losses_not_valued: 'Losses are not valued as loot.',
 	},
 };
 

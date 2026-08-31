@@ -1,4 +1,4 @@
-import type { ContainerMarketBatch } from './container-recommendation';
+import type { ContainerMarketQuote } from './container-expected-value';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
 
 export const HOLD_INTENT_VERSION = 1 as const;
@@ -75,7 +75,16 @@ export interface HoldIntentInput {
 	sessionId: string;
 	freeQuantityByItem: Record<string, number>;
 	intents: HoldIntentV1[];
-	market: ContainerMarketBatch;
+	market: HoldIntentMarketBatch;
+}
+
+/** Quote-only market evidence used by durable user hold intents. */
+export interface HoldIntentMarketBatch {
+	version: 1;
+	batchId: string;
+	capturedAt: string;
+	source: 'gw2-commerce-prices';
+	quotes: ContainerMarketQuote[];
 }
 
 export type HoldPlanResult =
@@ -214,7 +223,7 @@ function isHoldIntentInput(value: unknown): value is HoldIntentInput {
 		value.intents.every((intent) => Date.parse(intent.createdAt) <= Date.parse(asOf));
 }
 
-function isMarket(value: unknown): value is ContainerMarketBatch {
+function isMarket(value: unknown): value is HoldIntentMarketBatch {
 	if (!isRecord(value) || !exactKeys(value, ['version', 'batchId', 'capturedAt', 'source', 'quotes']) ||
 		value.version !== 1 || !trimmed(value.batchId, 256) || !iso(value.capturedAt) ||
 		value.source !== 'gw2-commerce-prices' || !Array.isArray(value.quotes) || !value.quotes.every((quote) =>
@@ -299,7 +308,7 @@ function intentState(intent: HoldIntentV1, asOf: string, current: number | null)
 	return current >= intent.target.unitGrossCopper ? 'target_reached' : 'holding';
 }
 
-function currentUnitPrice(route: HoldIntentRoute, quote: ContainerMarketBatch['quotes'][number] | undefined): number | null {
+function currentUnitPrice(route: HoldIntentRoute, quote: HoldIntentMarketBatch['quotes'][number] | undefined): number | null {
 	return route === 'instant_sell' ? quote?.bidUnitCopper ?? null : quote?.askUnitCopper ?? null;
 }
 

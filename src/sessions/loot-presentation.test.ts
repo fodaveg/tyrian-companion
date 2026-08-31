@@ -91,9 +91,14 @@ describe('buildLootPresentation', () => {
 		if (partial.valuation.status === 'valid') {
 			partial.valuation.value.coverage = 'partial';
 			partial.valuation.value.lines[0]!.listingBestCopper = null;
-			partial.valuation.value.warnings = ['price_incomplete'];
+			partial.valuation.value.warnings = ['market_depth_incomplete'];
 		}
-		expect(buildLootPresentation(partial).rows[0]!.valuation).toMatchObject({ status: 'partial', listingCopper: null });
+		const partialEs = buildLootPresentation(partial);
+		expect(partialEs.rows[0]!.valuation).toMatchObject({ status: 'partial', listingCopper: null });
+		expect(partialEs.warnings).toContain('La profundidad del bazar no cubre por completo parte del botín.');
+		partial.locale = 'en';
+		expect(buildLootPresentation(partial).warnings)
+			.toContain('Trading Post depth does not fully cover part of the loot.');
 		const nonLiquid = prepared();
 		if (nonLiquid.valuation.status === 'valid') nonLiquid.valuation.value.lines[0]!.nonLiquid = true;
 		expect(buildLootPresentation(nonLiquid).rows[0]!.valuation.status).toBe('non_liquid');

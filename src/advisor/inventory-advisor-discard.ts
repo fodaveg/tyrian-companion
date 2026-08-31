@@ -7,6 +7,7 @@ import { isInventoryContainerEconomyPack, isInventoryContainerPriceEvidence } fr
 import type { InventoryAdvisorLineV1, InventoryAdvisorReportV1, InventoryRecommendationDecisionV1 } from './inventory-advisor-model';
 import type { InventoryRouteClaimV1 } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
+import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
 import {
 	INVENTORY_DISCARD_ALLOWLIST_VERSION,
 	type InventoryDiscardAllowlistInputV1,
@@ -144,9 +145,11 @@ function isInput(value: unknown): value is InventoryDiscardAllowlistInputV1 {
 		].includes(key))) return false;
 	if (value.engineInput.containerEconomy === undefined) return value.engineInput.personalValuation === undefined;
 	return record(value.engineInput.containerEconomy)
-		&& keys(value.engineInput.containerEconomy, ['pack', 'prices'])
+		&& keys(value.engineInput.containerEconomy, ['pack', 'prices', 'marketDepth'])
 		&& isInventoryContainerEconomyPack(value.engineInput.containerEconomy.pack)
 		&& isInventoryContainerPriceEvidence(value.engineInput.containerEconomy.prices)
+		&& (value.engineInput.containerEconomy.marketDepth === null
+			|| isInventoryMarketDepthEvidence(value.engineInput.containerEconomy.marketDepth))
 		&& (value.engineInput.personalValuation === undefined
 			|| (isContainerPersonalValuation(value.engineInput.personalValuation)
 				&& resolveContainerPersonalValuation(
