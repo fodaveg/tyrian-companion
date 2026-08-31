@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
@@ -13,9 +14,12 @@ import {
 } from './settings-i18n';
 import {
 	TyrianCompanionSettingTab,
+	isActiveSettingsCategory,
+	nextSettingsCategory,
 	projectLocalDebugStatus,
 	runConfirmedLocalDebugClear,
 	runConfirmedLocalDebugExport,
+	runSettingWrite,
 } from './settings-tab';
 
 describe('Settings i18n projection', () => {
@@ -156,6 +160,60 @@ describe('settings information architecture', () => {
 		expect(assignments.filter(({ category }) => category === 'diagnostics')).toHaveLength(4);
 		expect(assignments.every(({ category }) => ['account', 'inventory', 'economy', 'diagnostics'].includes(category))).toBe(true);
 	});
+
+	it('keeps exactly one category mounted and provides a wrapping keyboard tab order', () => {
+		const categories = ['account', 'inventory', 'economy', 'diagnostics'] as const;
+		for (const active of ['account', 'inventory', 'economy', 'diagnostics'] as const) {
+			expect(categories.filter((category) => isActiveSettingsCategory(category, active))).toEqual([active]);
+		}
+		expect(nextSettingsCategory('account', 'ArrowLeft')).toBe('diagnostics');
+		expect(nextSettingsCategory('diagnostics', 'ArrowRight')).toBe('account');
+		expect(nextSettingsCategory('economy', 'Home')).toBe('account');
+		expect(nextSettingsCategory('account', 'End')).toBe('diagnostics');
+		expect(nextSettingsCategory('account', 'Enter')).toBeNull();
+	});
+
+	it('pins the lateral/horizontal layouts, 44 px controls and focus restoration', () => {
+		const source = readFileSync('src/ui/settings-tab.ts', 'utf8');
+		const styles = readFileSync('styles.css', 'utf8');
+		expect(settingsLayoutAt(styles, 479)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'full' });
+		expect(settingsLayoutAt(styles, 480)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'intrinsic' });
+		expect(settingsLayoutAt(styles, 759)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'intrinsic' });
+		expect(settingsLayoutAt(styles, 760)).toEqual({ navigation: 'horizontal', rows: 'columns', controls: 'intrinsic' });
+		expect(settingsLayoutAt(styles, 1_049).navigation).toBe('horizontal');
+		expect(settingsLayoutAt(styles, 1_050).navigation).toBe('lateral');
+		expect(styles).toMatch(/\.tyrian-product-settings__section button,[\s\S]*min-block-size: 44px/u);
+		expect(source).toContain('restoreSettingsFocus(this.containerEl, focus)');
+		expect(source).toContain('control.focus({ preventScroll: true })');
+		expect(source).toContain("state === 'error' ? 'alert' : 'status'");
+		expect(createTranslator('es').t('settings.save.saving')).toBe('Guardando…');
+		expect(createTranslator('en').t('settings.save.error')).toContain('last saved setting is preserved');
+	});
+
+	it('announces saving, saved and blocked/error writes without swallowing the last result', async () => {
+		let finish!: (result: { status: 'saved'; inventoryAdvisor: 'unchanged' }) => void;
+		const states: string[] = [];
+		const pending = new Promise<{ status: 'saved'; inventoryAdvisor: 'unchanged' }>((resolve) => { finish = resolve; });
+		const flight = runSettingWrite(() => pending, (state) => states.push(state));
+		expect(states).toEqual(['saving']);
+		finish({ status: 'saved', inventoryAdvisor: 'unchanged' });
+		await expect(flight).resolves.toEqual({ status: 'saved', inventoryAdvisor: 'unchanged' });
+		expect(states).toEqual(['saving', 'saved']);
+
+		const blocked: string[] = [];
+		await expect(runSettingWrite(
+			async () => ({ status: 'blocked', reason: 'runtime_starting' }),
+			(state) => blocked.push(state),
+		)).resolves.toEqual({ status: 'blocked', reason: 'runtime_starting' });
+		expect(blocked).toEqual(['saving', 'error']);
+
+		const failed: string[] = [];
+		await expect(runSettingWrite(
+			async () => { throw new Error('persistence unavailable'); },
+			(state) => failed.push(state),
+		)).resolves.toBeNull();
+		expect(failed).toEqual(['saving', 'error']);
+	});
 });
 
 describe('local diagnostics settings', () => {
@@ -171,12 +229,24 @@ describe('local diagnostics settings', () => {
 			role: 'alert',
 			lines: [
 				'Writer degraded: some entries could not be saved.',
-				'Folder: test-config-dir/plugins/tyrian-companion/logs/',
+				'Log folder: test-config-dir/plugins/tyrian-companion/logs/',
 				'2048 bytes in 2 files',
 				'Last event: 2026-08-30T04:00:00.000Z',
 				'Dropped entries: 3',
 			],
 		});
+	});
+
+	it.each(['es', 'en'] as const)('uses one diagnostic-log/support vocabulary and asks for review before sharing in %s', (locale) => {
+		const translator = createTranslator(locale);
+		expect(translator.t('settings.debug.name')).toBe(locale === 'es' ? 'Registros de diagnóstico' : 'Diagnostic logs');
+		expect(translator.t('settings.debug.export')).toBe(locale === 'es' ? 'Crear paquete de soporte' : 'Create support package');
+		expect(translator.t('settings.debug.copied', { count: 2 }).toLocaleLowerCase(locale)).toContain(
+			locale === 'es' ? 'revisa el extracto antes de compartirlo' : 'review the extract before sharing it',
+		);
+		expect(translator.t('settings.debug.exportModal.intro').toLocaleLowerCase(locale)).toContain(
+			locale === 'es' ? 'antes de compartirlo' : 'before sharing it',
+		);
 	});
 
 	it('never exports or clears before confirmation and executes exactly once after acceptance', async () => {
@@ -219,6 +289,30 @@ interface FakeControl {
 interface RenderableSettingDefinition {
 	name: string;
 	render(setting: never): void;
+}
+
+function settingsLayoutAt(styles: string, width: number): {
+	readonly navigation: 'horizontal' | 'lateral';
+	readonly rows: 'stacked' | 'columns';
+	readonly controls: 'full' | 'intrinsic';
+} {
+	const horizontal = requireCssBreakpoint(styles,
+		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__layout \{/u);
+	const stacked = requireCssBreakpoint(styles,
+		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__section \.setting-item,/u);
+	const full = requireCssBreakpoint(styles,
+		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__section \.setting-item-control > input,/u);
+	return {
+		navigation: width <= horizontal ? 'horizontal' : 'lateral',
+		rows: width <= stacked ? 'stacked' : 'columns',
+		controls: width <= full ? 'full' : 'intrinsic',
+	};
+}
+
+function requireCssBreakpoint(styles: string, pattern: RegExp): number {
+	const match = pattern.exec(styles);
+	if (match?.[1] === undefined) throw new Error(`Missing causal CSS breakpoint: ${String(pattern)}`);
+	return Number(match[1]);
 }
 
 function renderControl(

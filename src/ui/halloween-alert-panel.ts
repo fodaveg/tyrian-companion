@@ -75,10 +75,15 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
 		const row = body.createEl('tr');
 		row.toggleClass('is-deviation', outcome.deviates);
 		row.createEl('th', { text: `${outcome.name} (#${String(outcome.itemId)})` }).setAttr('scope', 'row');
-		row.createEl('td', { text: `${outcome.expectedNumerator}/${String(outcome.expectedSampleBags)}` });
-		row.createEl('td', { text: String(outcome.observedUnits) });
-		row.createEl('td', { text: `${outcome.differenceBasisPoints >= 0 ? '+' : ''}${String(outcome.differenceBasisPoints / 100)}%${
-			outcome.deviates ? ` · ${t('halloween.comparison.flag')}` : ''}` });
+		const cells = [
+			['model', `${outcome.expectedNumerator}/${String(outcome.expectedSampleBags)}`],
+			['observed', String(outcome.observedUnits)],
+			['difference', `${outcome.differenceBasisPoints >= 0 ? '+' : ''}${String(outcome.differenceBasisPoints / 100)}%${
+				outcome.deviates ? ` · ${t('halloween.comparison.flag')}` : ''}`],
+		] as const;
+		for (const [key, text] of cells) {
+			row.createEl('td', { text }).setAttr('data-label', t(`halloween.comparison.table.${key}`));
+		}
 	}
 }
 

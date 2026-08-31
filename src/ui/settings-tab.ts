@@ -19,12 +19,13 @@ import {
 	MATERIAL_STORAGE_CAPACITIES,
 	resolveVaultFolderInput,
 	type MaterialStorageCapacity,
+	type TyrianSettings,
 } from '../core/settings';
 import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, PriceHistoryRawRetentionDays } from '../economy/price-history-model';
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from '../core/local-debug-contract';
 import type TyrianCompanionPlugin from '../main';
-import type { LocalDebugExportPreview } from '../main';
+import type { LocalDebugExportPreview, SettingsUpdateResult } from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import type { PilotMetricsExportPreview } from '../sessions/pilot-metrics-export';
 import {
@@ -41,9 +42,19 @@ import { HalloweenPersonalValuationSettings } from './halloween-personal-valuati
 import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../economy/equipment-salvage-economy';
 import { renderProductShell } from './product-shell';
 
-type SettingRenderer = (setting: Setting) => void;
 export type SettingsCategory = 'account' | 'inventory' | 'economy' | 'diagnostics';
-interface CategorizedSettingDefinition { category: SettingsCategory; name: string; desc: string; render: SettingRenderer }
+type SettingSaveState = 'saving' | 'saved' | 'error';
+type SettingsWriter = (settings: Partial<TyrianSettings>) => Promise<SettingsUpdateResult | null>;
+type CategorizedSettingRenderer = (setting: Setting, save: SettingsWriter) => void;
+interface CategorizedSettingDefinition {
+	category: SettingsCategory;
+	name: string;
+	desc: string;
+	render: CategorizedSettingRenderer;
+}
+
+const SETTINGS_CATEGORIES = ['account', 'inventory', 'economy', 'diagnostics'] as const;
+const SETTINGS_FOCUSABLE = 'button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 function optionalInteger(value: string, maximum: number): number | null | 'invalid' {
 	if (value.trim() === '') return null;
@@ -63,6 +74,10 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private readonly managedAssetButtons = new Map<ManagedAssetsAction, ButtonComponent>();
 	private readonly halloweenPersonalValuation: HalloweenPersonalValuationSettings;
 	private disposeProductShell: (() => void) | null = null;
+	private activeCategory: SettingsCategory = 'account';
+	private categoryFocusAfterRender: SettingsCategory | null = null;
+	private readonly saveStates = new Map<number, SettingSaveState>();
+	private readonly saveRevisions = new Map<number, number>();
 
 	constructor(
 		app: App,
@@ -100,6 +115,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	}
 
 	private renderSettings(): void {
+		const focus = captureSettingsFocus(this.containerEl);
 		this.clearCountdown();
 		this.connectionSetting = null;
 		this.connectionButton = null;
@@ -119,11 +135,28 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		});
 		this.disposeProductShell = () => productShell.dispose();
 		const surface = productShell.content;
-		const sections = createSettingsSections(surface, this.plugin.settings.language);
-		for (const definition of this.definitions()) {
-			definition.render(
-				new Setting(sections[definition.category]).setName(definition.name).setDesc(definition.desc),
-			);
+		const sections = createSettingsSections(
+			surface,
+			this.activeCategory,
+			this.t.bind(this),
+			(category) => {
+				this.activeCategory = category;
+				this.categoryFocusAfterRender = category;
+				this.renderSettings();
+			},
+		);
+		for (const [index, definition] of this.definitions().entries()) {
+			if (!isActiveSettingsCategory(definition.category, this.activeCategory)) continue;
+			const setting = new Setting(sections[definition.category]).setName(definition.name).setDesc(definition.desc);
+			setting.settingEl.dataset.tyrianSettingRow = String(index);
+			definition.render(setting, (settings) => this.saveSettings(index, settings));
+			const state = this.saveStates.get(index);
+			if (state !== undefined) renderSettingSaveState(setting.descEl, state, this.t.bind(this));
+		}
+		if (this.categoryFocusAfterRender === null) restoreSettingsFocus(this.containerEl, focus);
+		else {
+			this.containerEl.querySelector<HTMLElement>(`#tyrian-settings-tab-${this.categoryFocusAfterRender}`)?.focus({ preventScroll: true });
+			this.categoryFocusAfterRender = null;
 		}
 	}
 
@@ -131,7 +164,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		return this.definitions().map((definition) => ({
 			name: definition.name,
 			desc: definition.desc,
-			render: definition.render,
+			render: (setting) => definition.render(setting, (settings) => this.plugin.updateSettings(settings)),
 		}));
 	}
 
@@ -183,33 +216,55 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.sessionHistoryScrubButton?.setDisabled(working);
 	}
 
+	/** Announces every durable setting write and keeps its state across runtime-triggered rerenders. */
+	private async saveSettings(index: number, settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult | null> {
+		const revision = (this.saveRevisions.get(index) ?? 0) + 1;
+		this.saveRevisions.set(index, revision);
+		const result = await runSettingWrite(
+			() => this.plugin.updateSettings(settings),
+			(state) => {
+				if (this.saveRevisions.get(index) !== revision) return;
+				this.saveStates.set(index, state);
+				const row = this.containerEl.querySelector<HTMLElement>(`[data-tyrian-setting-row="${String(index)}"]`);
+				const description = row?.querySelector<HTMLElement>('.setting-item-description');
+				if (description !== undefined && description !== null) {
+					renderSettingSaveState(description, state, this.t.bind(this));
+				}
+			},
+		);
+		if (this.saveRevisions.get(index) === revision && result?.status !== 'saved') {
+			this.refreshForSettingsChange();
+		}
+		return result;
+	}
+
 	private definitions(): CategorizedSettingDefinition[] {
 		return [
 			{
 				category: 'account',
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
-					render: (setting) => {
-						setting.addComponent((element) =>
-							new SecretComponent(this.app, element)
-								.setValue(this.plugin.settings.apiKeySecret)
-								.onChange(async (apiKeySecret) => {
-									await this.plugin.updateSettings({ apiKeySecret });
-									this.refreshForSettingsChange();
-								}),
+				render: (setting, save) => {
+					setting.addComponent((element) =>
+						new SecretComponent(this.app, element)
+							.setValue(this.plugin.settings.apiKeySecret)
+							.onChange(async (apiKeySecret) => {
+								await save({ apiKeySecret });
+								this.refreshForSettingsChange();
+							}),
 					);
 				},
 			},
 			{
 				category: 'account',
 				name: this.t('settings.language.name'), desc: this.t('settings.language.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) =>
 						dropdown
 							.addOption('es', this.t('settings.language.spanish'))
 							.addOption('en', this.t('settings.language.english'))
 							.setValue(this.plugin.settings.language)
 							.onChange(async (language) => {
-								await this.plugin.updateSettings({ language: language === 'en' ? 'en' : 'es' });
+								await save({ language: language === 'en' ? 'en' : 'es' });
 							}),
 					);
 				},
@@ -219,7 +274,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				name: this.t('settings.output.name'),
 				desc: this.plugin.settings.legacyOutputFolder === null
 					? this.t('settings.output.desc') : this.t('settings.output.legacyDesc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					const error = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__error' });
 					error.setAttr('role', 'alert');
 					error.setAttr('aria-live', 'polite');
@@ -232,7 +287,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							return;
 						}
 						error.setText('');
-						await this.plugin.updateSettings({ outputFolder: resolved.value });
+						await save({ outputFolder: resolved.value });
 					};
 					setting.addText((text) => {
 						text
@@ -246,12 +301,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'account',
 				name: this.t('settings.character.name'), desc: this.t('settings.character.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addText((text) =>
 						text
 							.setValue(this.plugin.settings.preferredCharacter)
 							.onChange(async (preferredCharacter) => {
-								await this.plugin.updateSettings({ preferredCharacter });
+								await save({ preferredCharacter });
 							}),
 					);
 				},
@@ -259,7 +314,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'account',
 				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
 					for (const minutes of [2, 15, 30, 60, 120, 240]) {
 							dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
@@ -267,7 +322,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						dropdown
 							.setValue(String(this.plugin.settings.pollingIntervalMinutes))
 							.onChange(async (value) => {
-								await this.plugin.updateSettings({ pollingIntervalMinutes: Number(value) });
+								await save({ pollingIntervalMinutes: Number(value) });
 							});
 					});
 				},
@@ -275,14 +330,14 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'account',
 				name: this.t('settings.detection.name'), desc: this.t('settings.detection.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) =>
 						dropdown
 							.addOption('off', this.t('settings.off'))
 							.addOption('assisted', this.t('settings.assisted'))
 							.setValue(this.plugin.settings.detectionMode)
 							.onChange(async (detectionMode) => {
-								await this.plugin.updateSettings({
+								await save({
 									detectionMode: detectionMode === 'assisted' ? 'assisted' : 'off',
 								});
 							}),
@@ -292,7 +347,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'diagnostics',
 				name: this.t('settings.debug.name'), desc: this.t('settings.debug.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.settingEl.addClass('tyrian-companion-settings__diagnostics');
 					const status = this.plugin.getLocalDebugStatus();
 					const statusEl = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__diagnostic-status' });
@@ -307,10 +362,10 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						return toggle.setTooltip(this.t('settings.debug.enabled'))
 							.setValue(this.plugin.settings.debugLoggingEnabled)
 							.onChange(async (debugLoggingEnabled) => {
-							toggle.setDisabled(true);
-							try { await this.plugin.updateSettings({ debugLoggingEnabled }); }
-							catch { feedback.setText(this.t('settings.debug.failed')); }
-							finally { toggle.setDisabled(false); this.refreshForSettingsChange(); }
+								toggle.setDisabled(true);
+								await save({ debugLoggingEnabled });
+								toggle.setDisabled(false);
+								this.refreshForSettingsChange();
 							});
 					});
 					setting.addDropdown((dropdown) => {
@@ -320,9 +375,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							.setDisabled(!this.plugin.settings.debugLoggingEnabled)
 							.onChange(async (level) => {
 								dropdown.setDisabled(true);
-								try { await this.plugin.updateSettings({ debugLoggingLevel: level as LocalDebugLevel }); }
-								catch { feedback.setText(this.t('settings.debug.failed')); }
-								finally { dropdown.setDisabled(false); this.refreshForSettingsChange(); }
+								await save({ debugLoggingLevel: level as LocalDebugLevel });
+								dropdown.setDisabled(false);
+								this.refreshForSettingsChange();
 							});
 					});
 					setting.addButton((button) => button.setButtonText(this.t('settings.debug.open')).onClick(async () => {
@@ -490,7 +545,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				name: this.t('settings.materialStorage.name'),
 				desc: this.t(this.plugin.settings.materialStorageCapacity === null
 					? 'settings.materialStorage.desc.minimum' : 'settings.materialStorage.desc.configured'),
-				render: (setting) => {
+				render: (setting, save) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
@@ -510,21 +565,15 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							}
 							dropdown.selectEl.removeAttribute('aria-invalid');
 							dropdown.setDisabled(true);
-							feedback.setText(this.t('settings.materialStorage.saving'));
-							try {
-								const result = await this.plugin.updateSettings({
-									materialStorageCapacity: numeric as MaterialStorageCapacity | null,
-								});
-								feedback.setText(result.status === 'saved'
-									? this.t(result.inventoryAdvisor === 'reclassified'
-										? 'settings.materialStorage.saved.reclassified'
-										: 'settings.materialStorage.saved.next_refresh')
-									: this.t('settings.materialStorage.error'));
-							} catch {
-								feedback.setText(this.t('settings.materialStorage.error'));
-							} finally {
-								dropdown.setDisabled(false);
-							}
+							const result = await save({
+								materialStorageCapacity: numeric as MaterialStorageCapacity | null,
+							});
+							if (result?.status === 'saved') feedback.setText(this.t(
+								result.inventoryAdvisor === 'reclassified'
+									? 'settings.materialStorage.saved.reclassified'
+									: 'settings.materialStorage.saved.next_refresh',
+							));
+							dropdown.setDisabled(false);
 						});
 					});
 				},
@@ -532,7 +581,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'inventory',
 				name: this.t('settings.salvage.kit.name'), desc: this.t('settings.salvage.kit.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('', this.t('settings.salvage.kit.default'))
 						.addOption('master', this.t('settings.salvage.kit.master'))
@@ -540,21 +589,21 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						.addOption('mystic', this.t('settings.salvage.kit.mystic'))
 						.setValue(this.plugin.settings.salvageKit ?? '')
 						.onChange(async (value) => {
-							await this.plugin.updateSettings({ salvageKit: value === '' ? null : value as EquipmentSalvageKit });
+							await save({ salvageKit: value === '' ? null : value as EquipmentSalvageKit });
 						}));
 				},
 			},
 			{
 				category: 'inventory',
 				name: this.t('settings.salvage.strategy.name'), desc: this.t('settings.salvage.strategy.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('', this.t('settings.salvage.strategy.conservative'))
 						.addOption('instant_sell', this.t('settings.salvage.strategy.instant_sell'))
 						.addOption('listing', this.t('settings.salvage.strategy.listing'))
 						.setValue(this.plugin.settings.salvageSaleStrategy ?? '')
 						.onChange(async (value) => {
-							await this.plugin.updateSettings({
+							await save({
 								salvageSaleStrategy: value === '' ? null : value as EquipmentSalvageSaleStrategy,
 							});
 						}));
@@ -563,7 +612,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'inventory',
 				name: this.t('settings.salvage.time.name'), desc: this.t('settings.salvage.time.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status'); feedback.setAttr('aria-live', 'polite');
 					setting.addText((text) => text
@@ -578,15 +627,14 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								return;
 							}
 							text.inputEl.removeAttribute('aria-invalid');
-							await this.plugin.updateSettings({ salvageSecondsPerItem: parsed });
-							feedback.setText(this.t('settings.salvage.saved'));
+							await save({ salvageSecondsPerItem: parsed });
 						}));
 				},
 			},
 			{
 				category: 'inventory',
 				name: this.t('settings.salvage.opportunity.name'), desc: this.t('settings.salvage.opportunity.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status'); feedback.setAttr('aria-live', 'polite');
 					setting.addText((text) => text
@@ -601,8 +649,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								return;
 							}
 							text.inputEl.removeAttribute('aria-invalid');
-							await this.plugin.updateSettings({ salvageOpportunityCostCopperPerHour: parsed });
-							feedback.setText(this.t('settings.salvage.saved'));
+							await save({ salvageOpportunityCostCopperPerHour: parsed });
 						}));
 				},
 			},
@@ -617,24 +664,24 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'economy',
 				name: this.t('settings.halloween.enabled.name'), desc: this.t('settings.halloween.enabled.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
 						.setValue(this.plugin.settings.halloweenEnabled ? 'on' : 'off')
-						.onChange(async (value) => { await this.plugin.updateSettings({ halloweenEnabled: value === 'on' }); }));
+						.onChange(async (value) => { await save({ halloweenEnabled: value === 'on' }); }));
 				},
 			},
 			{
 				category: 'economy',
 				name: this.t('settings.halloween.threshold.name'), desc: this.t('settings.halloween.threshold.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addText((text) => text
 						.setValue(String(this.plugin.settings.halloweenValueThresholdCopper))
 						.setDisabled(!this.plugin.settings.halloweenEnabled)
 						.onChange(async (value) => {
 							const threshold = Number(value);
 							if (Number.isSafeInteger(threshold) && threshold >= 0) {
-								await this.plugin.updateSettings({ halloweenValueThresholdCopper: threshold });
+								await save({ halloweenValueThresholdCopper: threshold });
 							}
 						}));
 				},
@@ -642,12 +689,12 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'economy',
 				name: this.t('settings.halloween.price.enabled.name'), desc: this.t('settings.halloween.price.enabled.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
 						.setValue(this.plugin.settings.halloweenPriceAlertEnabled ? 'on' : 'off')
 						.onChange(async (value) => {
-							await this.plugin.updateSettings({ halloweenPriceAlertEnabled: value === 'on' });
+							await save({ halloweenPriceAlertEnabled: value === 'on' });
 							this.refreshForSettingsChange();
 						}));
 				},
@@ -655,14 +702,14 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'economy',
 				name: this.t('settings.halloween.price.margin.name'), desc: this.t('settings.halloween.price.margin.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addText((text) => text
 						.setValue(String(this.plugin.settings.halloweenPriceAlertMinimumAboveP90Bps))
 						.setDisabled(!this.plugin.settings.halloweenPriceAlertEnabled)
 						.onChange(async (value) => {
 							const margin = Number(value);
 							if (Number.isSafeInteger(margin) && margin >= 0 && margin <= 100_000) {
-								await this.plugin.updateSettings({ halloweenPriceAlertMinimumAboveP90Bps: margin });
+								await save({ halloweenPriceAlertMinimumAboveP90Bps: margin });
 								this.refreshForSettingsChange();
 							}
 						}));
@@ -671,7 +718,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'economy',
 				name: this.t('settings.halloween.price.cooldown.name'), desc: this.t('settings.halloween.price.cooldown.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
 						for (const hours of [6, 12, 24, 48] as const) dropdown.addOption(String(hours), `${String(hours)} h`);
 						dropdown.setValue(String(this.plugin.settings.halloweenPriceAlertCooldownHours))
@@ -679,7 +726,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							.onChange(async (value) => {
 								const hours = Number(value);
 								if (hours === 6 || hours === 12 || hours === 24 || hours === 48) {
-									await this.plugin.updateSettings({ halloweenPriceAlertCooldownHours: hours });
+									await save({ halloweenPriceAlertCooldownHours: hours });
 									this.refreshForSettingsChange();
 								}
 							});
@@ -689,47 +736,47 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'economy',
 				name: this.t('settings.priceHistory.enabled.name'), desc: this.t('settings.priceHistory.enabled.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.priceHistory.disable'))
 						.addOption('on', this.t('settings.priceHistory.enable'))
 						.setValue(this.plugin.settings.priceHistoryEnabled ? 'on' : 'off')
-						.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryEnabled: value === 'on' }); }));
+						.onChange(async (value) => { await save({ priceHistoryEnabled: value === 'on' }); }));
 				},
 			},
 			{
 				category: 'economy',
 				name: this.t('settings.priceHistory.interval.name'), desc: this.t('settings.priceHistory.interval.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
 						for (const minutes of [5, 15, 30, 60]) dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
 						dropdown.setValue(String(this.plugin.settings.priceHistoryIntervalMinutes))
 							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
-							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryIntervalMinutes: Number(value) as PriceHistoryIntervalMinutes }); });
+							.onChange(async (value) => { await save({ priceHistoryIntervalMinutes: Number(value) as PriceHistoryIntervalMinutes }); });
 					});
 				},
 			},
 			{
 				category: 'economy',
 				name: this.t('settings.priceHistory.raw.name'), desc: this.t('settings.priceHistory.raw.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
 						for (const days of [2, 7, 14, 30]) dropdown.addOption(String(days), this.t('priceHistory.days', { days }));
 						dropdown.setValue(String(this.plugin.settings.priceHistoryRawRetentionDays))
 							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
-							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryRawRetentionDays: Number(value) as PriceHistoryRawRetentionDays }); });
+							.onChange(async (value) => { await save({ priceHistoryRawRetentionDays: Number(value) as PriceHistoryRawRetentionDays }); });
 					});
 				},
 			},
 			{
 				category: 'economy',
 				name: this.t('settings.priceHistory.daily.name'), desc: this.t('settings.priceHistory.daily.desc'),
-				render: (setting) => {
+				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
 						for (const days of [42, 90, 180, 365]) dropdown.addOption(String(days), this.t('priceHistory.days', { days }));
 						dropdown.setValue(String(this.plugin.settings.priceHistoryDailyRetentionDays))
 							.setDisabled(!this.plugin.settings.priceHistoryEnabled)
-							.onChange(async (value) => { await this.plugin.updateSettings({ priceHistoryDailyRetentionDays: Number(value) as PriceHistoryDailyRetentionDays }); });
+							.onChange(async (value) => { await save({ priceHistoryDailyRetentionDays: Number(value) as PriceHistoryDailyRetentionDays }); });
 					});
 				},
 			},
@@ -841,23 +888,116 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 
 }
 
-function createSettingsSections(container: HTMLElement, locale: 'es' | 'en'): Record<SettingsCategory, HTMLElement> {
-	const labels = locale === 'es'
-		? { account: 'Cuenta y sesión', inventory: 'Inventario', economy: 'Economía y eventos', diagnostics: 'Diagnóstico y datos' }
-		: { account: 'Account and session', inventory: 'Inventory', economy: 'Economy and events', diagnostics: 'Diagnostics and data' };
+function createSettingsSections(
+	container: HTMLElement,
+	active: SettingsCategory,
+	t: (key: TranslationKey) => string,
+	onSelect: (category: SettingsCategory) => void,
+): Record<SettingsCategory, HTMLElement> {
+	const labels: Record<SettingsCategory, string> = {
+		account: t('settings.category.account'),
+		inventory: t('settings.category.inventory'),
+		economy: t('settings.category.economy'),
+		diagnostics: t('settings.category.diagnostics'),
+	};
 	const sections = {} as Record<SettingsCategory, HTMLElement>;
-	const nav = container.createEl('nav', { cls: 'tyrian-product-settings__nav' });
-	nav.setAttr('aria-label', locale === 'es' ? 'Categorías de ajustes' : 'Settings categories');
-	for (const category of ['account', 'inventory', 'economy', 'diagnostics'] as const) {
-		const section = container.createEl('section', { cls: 'tyrian-product-settings__section' });
+	const layout = container.createDiv({ cls: 'tyrian-product-settings__layout' });
+	const nav = layout.createEl('nav', { cls: 'tyrian-product-settings__nav' });
+	const panels = layout.createDiv({ cls: 'tyrian-product-settings__panels' });
+	nav.setAttr('aria-label', t('settings.categories.aria'));
+	nav.setAttr('role', 'tablist');
+	for (const category of SETTINGS_CATEGORIES) {
+		const section = panels.createEl('section', { cls: 'tyrian-product-settings__section' });
 		section.setAttr('id', `tyrian-settings-${category}`);
-		section.createEl('h2', { text: labels[category] });
+		section.setAttr('role', 'tabpanel');
+		section.setAttr('aria-labelledby', `tyrian-settings-tab-${category}`);
+		section.hidden = !isActiveSettingsCategory(category, active);
+		const header = section.createEl('header');
+		header.createEl('h2', { text: labels[category] });
+		header.createEl('p', { text: t(`settings.category.${category}.intro`) });
 		sections[category] = section;
-		const link = nav.createEl('a', { text: labels[category] });
-		link.setAttr('href', `#tyrian-settings-${category}`);
+		const tab = nav.createEl('button', { text: labels[category] });
+		tab.type = 'button';
+		tab.setAttr('id', `tyrian-settings-tab-${category}`);
+		tab.setAttr('role', 'tab');
+		tab.setAttr('aria-controls', `tyrian-settings-${category}`);
+		tab.setAttr('aria-selected', String(isActiveSettingsCategory(category, active)));
+		tab.tabIndex = isActiveSettingsCategory(category, active) ? 0 : -1;
+		tab.addEventListener('click', () => onSelect(category));
+		tab.addEventListener('keydown', (event) => {
+			const next = nextSettingsCategory(category, event.key);
+			if (next === null) return;
+			event.preventDefault();
+			onSelect(next);
+		});
 	}
-	container.prepend(nav);
 	return sections;
+}
+
+/** Keeps the DOM mount and ARIA projection on the same one-visible-category predicate. */
+export function isActiveSettingsCategory(category: SettingsCategory, active: SettingsCategory): boolean {
+	return category === active;
+}
+
+/** Implements the standard horizontal-tab keyboard loop without coupling it to the DOM. */
+export function nextSettingsCategory(category: SettingsCategory, key: string): SettingsCategory | null {
+	const index = SETTINGS_CATEGORIES.indexOf(category);
+	if (key === 'Home') return SETTINGS_CATEGORIES[0];
+	if (key === 'End') return SETTINGS_CATEGORIES.at(-1) ?? null;
+	if (key !== 'ArrowLeft' && key !== 'ArrowRight') return null;
+	const offset = key === 'ArrowRight' ? 1 : -1;
+	return SETTINGS_CATEGORIES[(index + offset + SETTINGS_CATEGORIES.length) % SETTINGS_CATEGORIES.length] ?? null;
+}
+
+/** Runs one durable write and exposes the complete saving/saved/error state machine. */
+export async function runSettingWrite(
+	write: () => Promise<SettingsUpdateResult>,
+	announce: (state: SettingSaveState) => void,
+): Promise<SettingsUpdateResult | null> {
+	announce('saving');
+	try {
+		const result = await write();
+		announce(result.status === 'saved' ? 'saved' : 'error');
+		return result;
+	} catch {
+		announce('error');
+		return null;
+	}
+}
+
+function renderSettingSaveState(
+	container: HTMLElement,
+	state: SettingSaveState,
+	t: (key: TranslationKey) => string,
+): void {
+	let status = container.querySelector<HTMLElement>('.tyrian-companion-settings__save-status');
+	if (status === null) status = container.createDiv({ cls: 'tyrian-companion-settings__save-status' });
+	status.setAttr('role', state === 'error' ? 'alert' : 'status');
+	status.setAttr('aria-live', 'polite');
+	status.setAttr('data-state', state);
+	status.setText(t(`settings.save.${state}`));
+}
+
+interface SettingsFocusToken { readonly row: string; readonly control: number }
+
+/** Captures the focused control by stable row and ordinal before a settings rerender. */
+function captureSettingsFocus(container: HTMLElement): SettingsFocusToken | null {
+	const active = container.ownerDocument.activeElement as HTMLElement | null;
+	if (active === null || !container.contains(active)) return null;
+	const row = active.closest<HTMLElement>('[data-tyrian-setting-row]');
+	const id = row?.dataset.tyrianSettingRow;
+	if (row === null || row === undefined || id === undefined) return null;
+	const controls = Array.from(row.querySelectorAll<HTMLElement>(SETTINGS_FOCUSABLE));
+	const control = controls.indexOf(active);
+	return control >= 0 ? { row: id, control } : null;
+}
+
+/** Restores focus to the equivalent newly rendered control without scrolling the pane. */
+function restoreSettingsFocus(container: HTMLElement, token: SettingsFocusToken | null): void {
+	if (token === null) return;
+	const row = container.querySelector<HTMLElement>(`[data-tyrian-setting-row="${token.row}"]`);
+	const control = row?.querySelectorAll<HTMLElement>(SETTINGS_FOCUSABLE)[token.control];
+	if (control !== undefined && !control.matches(':disabled')) control.focus({ preventScroll: true });
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {

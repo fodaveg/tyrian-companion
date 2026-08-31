@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { createTranslator, type TranslationKey } from '../core/i18n';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
@@ -114,8 +115,39 @@ describe('Halloween alert panel DOM', () => {
 		expect(all.map(({ text }) => text).join(' ')).toContain('provisional bid close: 1234 copper');
 		expect(all.map(({ text }) => text).join(' ')).not.toContain('Quantity:');
 		expect(all.filter(({ tag }) => tag === 'th').every(({ attributes }) => attributes.get('scope') !== undefined)).toBe(true);
+		expect(all.filter(({ tag }) => tag === 'td').slice(0, 3).map(({ attributes }) => attributes.get('data-label')))
+			.toEqual(['Exact expected', 'Observed', 'Difference']);
+	});
+
+	it('uses responsive cards below 480px without a fixed 44rem table dependency', () => {
+		const styles = readFileSync('styles.css', 'utf8');
+		expect(styles).not.toContain('min-inline-size: 44rem');
+		expect(styles).toContain('@container (max-width: 479px)');
+		expect(styles).toContain('@container (min-width: 480px) and (max-width: 759px)');
+		expect(styles).toContain('content: attr(data-label)');
+		expect(styles).toContain('@container (max-width: 320px)');
+	});
+
+	it.each([
+		[279, 'narrow-card'], [280, 'narrow-card'], [319, 'narrow-card'], [320, 'narrow-card'],
+		[479, 'card'], [480, 'summary'], [759, 'summary'], [760, 'table'],
+	] as const)('has a closed responsive layout at the %ipx boundary', (width, expected) => {
+		expect(halloweenLayoutAt(readFileSync('styles.css', 'utf8'), width)).toBe(expected);
 	});
 });
+
+function halloweenLayoutAt(styles: string, width: number): 'narrow-card' | 'card' | 'summary' | 'table' {
+	const cardMatch = /@container \(max-width: (\d+)px\) \{\n\t\.tyrian-companion-halloween__notice \{ padding:/u.exec(styles);
+	const narrowMatch = /@container \(max-width: (\d+)px\) \{\n\t\.tyrian-companion-halloween__comparison,[\s\S]*?tbody td \{ grid-template-columns: minmax\(0, 1fr\); \}/u.exec(styles);
+	const summaryMatch = /@container \(min-width: (\d+)px\) and \(max-width: (\d+)px\) \{\n\t\.tyrian-companion-halloween__table-scroll th:nth-child\(2\),/u.exec(styles);
+	if (cardMatch?.[1] === undefined || narrowMatch?.[1] === undefined ||
+		summaryMatch?.[1] === undefined || summaryMatch[2] === undefined) {
+		throw new Error('Missing causal Halloween responsive CSS contract.');
+	}
+	if (width <= Number(cardMatch[1])) return width <= Number(narrowMatch[1]) ? 'narrow-card' : 'card';
+	if (width >= Number(summaryMatch[1]) && width <= Number(summaryMatch[2])) return 'summary';
+	return 'table';
+}
 
 function translator(locale: 'es' | 'en'): (key: string, params?: Record<string, string | number>) => string {
 	const t = createTranslator(locale);

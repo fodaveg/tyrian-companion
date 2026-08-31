@@ -299,42 +299,133 @@
 	padding: var(--size-4-3);
 }
 
+.tyrian-product-settings__layout {
+	display: grid;
+	grid-template-columns: 12rem minmax(0, 1fr);
+	gap: var(--size-4-5);
+	align-items: start;
+}
+
+.tyrian-product-settings__panels {
+	min-inline-size: 0;
+}
+
 .tyrian-product-settings__section {
 	margin-block-end: var(--size-4-6);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
 	overflow: clip;
+	container-type: inline-size;
 }
 
-.tyrian-product-settings__section > h2 {
-	margin: 0;
+.tyrian-product-settings__section > header {
 	padding: var(--size-4-3) var(--size-4-4);
 	border-block-end: 1px solid var(--background-modifier-border);
 	background: var(--background-secondary);
+}
+
+.tyrian-product-settings__section > header h2 {
+	margin: 0;
 	font-size: var(--font-ui-large);
+}
+
+.tyrian-product-settings__section > header p {
+	margin: var(--size-4-1) 0 0;
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
 }
 
 .tyrian-product-settings__section .setting-item {
 	padding-inline: var(--size-4-4);
 }
 
-.tyrian-product-settings__nav {
-	display: flex;
+.tyrian-product-settings__section .setting-item-control {
+	flex-wrap: wrap;
 	gap: var(--size-4-2);
-	margin-block-end: var(--size-4-4);
-	overflow-x: auto;
 }
 
-.tyrian-product-settings__nav a {
+.tyrian-product-settings__section button,
+.tyrian-product-settings__section input,
+.tyrian-product-settings__section select,
+.tyrian-product-settings__section .checkbox-container {
+	min-block-size: 44px;
+	min-inline-size: 44px;
+}
+
+.tyrian-product-settings__nav {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--size-4-2);
+	position: sticky;
+	inset-block-start: var(--size-4-4);
+}
+
+.tyrian-product-settings__nav button {
 	display: inline-flex;
+	justify-content: center;
 	align-items: center;
 	min-height: 44px;
-	padding-inline: var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
+	background: var(--background-secondary);
 	color: var(--text-normal);
-	text-decoration: none;
-	white-space: nowrap;
+	white-space: normal;
+}
+
+.tyrian-product-settings__nav button[aria-selected="true"] {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.tyrian-companion-settings__save-status {
+	margin-block-start: var(--size-4-2);
+	color: var(--text-muted);
+}
+
+.tyrian-companion-settings__save-status[data-state="saved"] {
+	color: var(--text-success);
+}
+
+.tyrian-companion-settings__save-status[data-state="error"] {
+	color: var(--text-error);
+	overflow-wrap: anywhere;
+}
+
+@container (max-width: 1049px) {
+	.tyrian-product-settings__layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--size-4-4);
+	}
+
+	.tyrian-product-settings__nav {
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+		inset-block-start: 0;
+		padding-block: var(--size-4-2);
+		background: var(--background-primary);
+	}
+}
+
+@container (max-width: 759px) {
+	.tyrian-product-settings__section .setting-item,
+	.tyrian-product-settings__section .setting-item-info,
+	.tyrian-product-settings__section .setting-item-control {
+		inline-size: 100%;
+	}
+
+	.tyrian-product-settings__section .setting-item {
+		align-items: stretch;
+		padding-inline: var(--size-4-3);
+	}
+}
+
+@container (max-width: 479px) {
+	.tyrian-product-settings__section .setting-item-control > input,
+	.tyrian-product-settings__section .setting-item-control > select,
+	.tyrian-product-settings__section .setting-item-control > button {
+		flex: 1 1 100%;
+		max-inline-size: 100%;
+	}
 }
 
 .tyrian-product-shell button:focus-visible,
@@ -1935,7 +2026,8 @@
 
 .tyrian-companion-halloween__table-scroll table {
 	inline-size: 100%;
-	min-inline-size: 44rem;
+	min-inline-size: 0;
+	table-layout: fixed;
 	border-collapse: collapse;
 }
 
@@ -1945,21 +2037,82 @@
 	border-block-end: 1px solid var(--background-modifier-border);
 	text-align: start;
 	vertical-align: top;
+	overflow-wrap: anywhere;
 }
 
 .tyrian-companion-halloween__table-scroll .is-deviation {
 	background: var(--background-modifier-error);
 }
 
-@container (max-width: 480px) {
+@container (max-width: 479px) {
 	.tyrian-companion-halloween__notice { padding: var(--size-4-2); }
 	.tyrian-companion-halloween__notice button { inline-size: 100%; }
+
+	.tyrian-companion-halloween__table-scroll { overflow: visible; }
+
+	.tyrian-companion-halloween__table-scroll table,
+	.tyrian-companion-halloween__table-scroll tbody,
+	.tyrian-companion-halloween__table-scroll tr,
+	.tyrian-companion-halloween__table-scroll th,
+	.tyrian-companion-halloween__table-scroll td {
+		display: block;
+		inline-size: 100%;
+	}
+
+	.tyrian-companion-halloween__table-scroll thead {
+		position: absolute;
+		inline-size: 1px;
+		block-size: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	.tyrian-companion-halloween__table-scroll tbody {
+		display: grid;
+		gap: var(--size-4-3);
+	}
+
+	.tyrian-companion-halloween__table-scroll tbody tr {
+		border: 1px solid var(--background-modifier-border);
+		border-radius: var(--radius-s);
+		overflow: clip;
+	}
+
+	.tyrian-companion-halloween__table-scroll tbody th {
+		padding: var(--size-4-2);
+		background: var(--background-secondary);
+	}
+
+	.tyrian-companion-halloween__table-scroll tbody td {
+		display: grid;
+		grid-template-columns: minmax(6rem, 0.8fr) minmax(0, 1fr);
+		gap: var(--size-4-2);
+		padding: var(--size-4-2);
+	}
+
+	.tyrian-companion-halloween__table-scroll tbody td::before {
+		color: var(--text-muted);
+		font-weight: var(--font-semibold);
+		content: attr(data-label);
+	}
+}
+
+@container (min-width: 480px) and (max-width: 759px) {
+	.tyrian-companion-halloween__table-scroll th:nth-child(2),
+	.tyrian-companion-halloween__table-scroll td:nth-child(2) {
+		display: none;
+	}
 }
 
 @container (max-width: 320px) {
 	.tyrian-companion-halloween__comparison,
 	.tyrian-companion-halloween__price { gap: var(--size-4-2); }
 	.tyrian-companion-halloween__table-scroll { margin-inline: calc(var(--size-4-2) * -1); }
+	.tyrian-companion-halloween__table-scroll tbody td { grid-template-columns: minmax(0, 1fr); }
 }
 
 @container (max-width: 760px) {
