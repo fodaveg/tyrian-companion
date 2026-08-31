@@ -126,6 +126,7 @@ export function mountActionPanel(controller: ProductActionController, locale: Lo
 	let expanded = true;
 	const projectDisclosure = (): void => {
 		const visible = !compact || expanded;
+		if (!visible && !content.hidden && content.contains(content.ownerDocument.activeElement)) toggle.focus();
 		content.hidden = !visible;
 		toggle.setAttr('aria-expanded', String(visible));
 		panel.setAttr('data-compact', String(compact));

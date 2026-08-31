@@ -199,11 +199,14 @@ describe('product action surface', () => {
 		const toggle = walk(panel).find((element) => element.className.includes('tyrian-action-panel__toggle'))!;
 		const contentId = toggle.attributes.get('aria-controls');
 		const content = walk(panel).find((element) => element.attributes.get('id') === contentId)!;
+		const focusedAction = walk(content).find((element) => element.tag === 'button')!;
+		focusedAction.focus();
 
 		resize([{ target: shell as unknown as Element, contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver);
 		expect(panel.attributes.get('data-compact')).toBe('true');
 		expect(toggle.attributes.get('aria-expanded')).toBe('false');
 		expect(content.hidden).toBe(true);
+		expect(document.activeElement).toBe(toggle);
 		expect(walk(content).filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(16);
 
 		toggle.dispatch('click');
@@ -283,6 +286,9 @@ class FakeElement {
 	}
 	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
 	focus(): void { this.ownerDocument.activeElement = this; }
+	contains(target: FakeElement | null): boolean {
+		return target === this || this.children.some((child) => child.contains(target));
+	}
 }
 
 function walk(root: FakeElement): FakeElement[] { return [root, ...root.children.flatMap(walk)]; }

@@ -99,6 +99,13 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	openProductSettings?(): void;
 }
 
+interface CompanionPrimaryAction {
+	readonly key: string;
+	readonly label: string;
+	readonly disabled: boolean;
+	readonly run: () => void;
+}
+
 export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
 	private readonly dynamicStatusNodes = new Map<string, { value: HTMLElement; detail: HTMLElement }>();
@@ -111,6 +118,8 @@ export class TyrianCompanionView extends ItemView {
 	private incidentMore: HTMLElement | null = null;
 	private ledger: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
+	private primaryActionContainer: HTMLElement | null = null;
+	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	private readonly sessionHistoryController: SessionHistoryPanelController;
@@ -168,6 +177,8 @@ export class TyrianCompanionView extends ItemView {
 		this.incidentMore = null;
 		this.ledger = null;
 		this.detectionTimelineNodes = null;
+		this.primaryActionContainer = null;
+		this.primaryActionKey = null;
 		contentEl.addClass('tyrian-companion-view');
 		const actionController = this.actions.getProductActionController?.();
 		const locale = this.actions.getLocale();
@@ -303,11 +314,16 @@ export class TyrianCompanionView extends ItemView {
 		if (Date.parse(next.staleAt) <= Date.now()) addDetail(details, this.t('view.state'), this.t('view.stale'));
 		const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const intent = proposalIntent(next);
-		try { this.actions.recordPendingProposalPresented?.(intent); }
-		catch { /* Optional pilot metrics never affect foreground actions. */ }
+		const stale = Date.parse(next.staleAt) <= Date.now();
+		if (!stale) {
+			try { this.actions.recordPendingProposalPresented?.(intent); }
+			catch { /* Optional pilot metrics never affect foreground actions. */ }
+		}
 		const review = actions.createEl('button', { text: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop') });
+		review.disabled = stale;
 		review.addEventListener('click', () => this.reviewPending(next));
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
+		dismiss.disabled = stale;
 		dismiss.addEventListener('click', () => {
 			new DetectionCorrectionModal(
 				this.app, next.phase,
@@ -321,6 +337,7 @@ export class TyrianCompanionView extends ItemView {
 		const projection = this.projectStatus(Date.now());
 		const connection = this.actions.getConnectionState();
 		this.refreshDetectionTimeline();
+		this.refreshPrimaryAction(projection, connection);
 		for (const status of projection.items.filter((item) => item.id !== 'session')) {
 			const nodes = this.dynamicStatusNodes.get(status.id);
 			nodes?.value.setText(status.value);
@@ -367,7 +384,8 @@ export class TyrianCompanionView extends ItemView {
 			this.headerElapsed = title.createEl('p', { text: sessionStatus.detail, cls: 'tyrian-companion-view__elapsed' });
 		}
 		const action = header.createDiv({ cls: 'tyrian-companion-view__primary-action' });
-		this.renderPrimaryAction(action, projection, connection);
+		this.primaryActionContainer = action;
+		this.primaryActionKey = this.renderPrimaryAction(action, projection, connection);
 	}
 
 	private renderStatusRail(container: HTMLElement, projection: CompanionStatusProjection): void {
@@ -400,55 +418,84 @@ export class TyrianCompanionView extends ItemView {
 		container: HTMLElement,
 		projection: CompanionStatusProjection,
 		connection: ConnectionState,
+	): string | null {
+		const action = this.projectPrimaryAction(projection, connection);
+		if (action === null) return null;
+		this.appendPrimaryAction(container, action);
+		return action.key;
+	}
+
+	private refreshPrimaryAction(
+		projection: CompanionStatusProjection,
+		connection: ConnectionState,
 	): void {
+		if (this.primaryActionContainer === null) return;
+		const action = this.projectPrimaryAction(projection, connection);
+		const key = action?.key ?? null;
+		if (key === this.primaryActionKey) return;
+		const restoreFocus = this.primaryActionContainer.contains(this.primaryActionContainer.ownerDocument.activeElement);
+		this.primaryActionContainer.empty();
+		this.primaryActionKey = key;
+		if (action === null) return;
+		const button = this.appendPrimaryAction(this.primaryActionContainer, action);
+		if (restoreFocus) button.focus();
+	}
+
+	private projectPrimaryAction(
+		projection: CompanionStatusProjection,
+		connection: ConnectionState,
+	): CompanionPrimaryAction | null {
 		const pending = this.actions.getPendingProposalState();
-		if (pending.status === 'ready' && pending.next !== null) {
-			const button = container.createEl('button', {
-				text: pending.next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'),
-				cls: 'mod-cta',
-			});
-			button.addEventListener('click', () => this.reviewPending(pending.next!));
-			return;
+		const next = pending.status === 'ready' ? pending.next : null;
+		if (next !== null && Date.parse(next.staleAt) > Date.now()) {
+			return {
+				key: `pending:${next.proposalId}:${next.phase}`,
+				label: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'),
+				disabled: false,
+				run: () => this.reviewPending(next),
+			};
 		}
 		const detection = this.actions.getAssistedDetectionState();
 		const session = this.actions.getSessionState();
 		if (detection.status === 'start_proposed') {
-			const button = container.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
-			button.disabled = session.status !== 'idle';
-			button.addEventListener('click', () => this.actions.openManualSessionStart(null));
-			return;
+			const disabled = session.status !== 'idle';
+			return { key: `detection:start:${String(disabled)}`, label: this.t('view.reviewStart'), disabled,
+				run: () => this.actions.openManualSessionStart(null) };
 		}
 		if (detection.status === 'stop_proposed') {
-			const button = container.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
-			button.disabled = session.status !== 'active';
-			button.addEventListener('click', () => { void this.actions.stopManualSession(null); });
-			return;
+			const disabled = session.status !== 'active';
+			return { key: `detection:stop:${String(disabled)}`, label: this.t('view.stopSession'), disabled,
+				run: () => { void this.actions.stopManualSession(null); } };
 		}
 		if (projection.primaryAction === 'stop') {
-			const button = container.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
-			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
-			return;
+			return { key: 'session:stop', label: this.t('view.stopSession'), disabled: false,
+				run: () => { void this.actions.stopManualSession(); } };
 		}
 		if (projection.primaryAction === 'review') {
-			const button = container.createEl('button', { text: this.t('view.reviewActivity'), cls: 'mod-cta' });
-			button.addEventListener('click', () => this.actions.openSessionReview());
-			return;
+			return { key: 'session:review', label: this.t('view.reviewActivity'), disabled: false,
+				run: () => this.actions.openSessionReview() };
 		}
 		if (projection.primaryAction === 'clear') {
-			const button = container.createEl('button', { text: this.t('view.clearSession'), cls: 'mod-cta' });
-			button.addEventListener('click', () => this.actions.confirmClearCompletedSession());
-			return;
+			return { key: 'session:clear', label: this.t('view.clearSession'), disabled: false,
+				run: () => this.actions.confirmClearCompletedSession() };
 		}
 		if (projection.primaryAction === 'recover') {
-			const button = container.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
-			button.addEventListener('click', () => { void this.runRecovery(); });
-			return;
+			return { key: 'session:recover', label: this.t('view.recoverSession'), disabled: false,
+				run: () => { void this.runRecovery(); } };
 		}
 		if (projection.primaryAction === 'start') {
-			const button = container.createEl('button', { text: this.t('view.startSession'), cls: 'mod-cta' });
-			button.disabled = connection.status !== 'connected' && connection.status !== 'warning';
-			button.addEventListener('click', () => this.actions.openManualSessionStart());
+			const disabled = connection.status !== 'connected' && connection.status !== 'warning';
+			return { key: `session:start:${String(disabled)}`, label: this.t('view.startSession'), disabled,
+				run: () => this.actions.openManualSessionStart() };
 		}
+		return null;
+	}
+
+	private appendPrimaryAction(container: HTMLElement, action: CompanionPrimaryAction): HTMLButtonElement {
+		const button = container.createEl('button', { text: action.label, cls: 'mod-cta' });
+		button.disabled = action.disabled;
+		button.addEventListener('click', action.run);
+		return button;
 	}
 
 	private reviewPending(next: PendingProposal): void {
@@ -610,7 +657,7 @@ export class TyrianCompanionView extends ItemView {
 		state: AssistedDetectionState,
 		session: SessionState,
 	): void {
-		const timeline = container.createDiv({ cls: 'tyrian-companion-view__detection-timeline' });
+		const timeline = container.createEl('dl', { cls: 'tyrian-companion-view__detection-timeline' });
 		timeline.setAttr('aria-label', this.t('view.detectionTimeline'));
 		const values = this.projectDetectionTimeline(mode, state, session);
 		this.detectionTimelineNodes = {
@@ -1269,8 +1316,8 @@ function addDetectionDetail(container: HTMLElement, term: string, detail: string
 
 function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): HTMLElement {
 	const item = container.createDiv({ cls: 'tyrian-companion-view__detection-time' });
-	item.createSpan({ text: label });
-	return item.createEl('strong', { text: value });
+	item.createEl('dt', { text: label });
+	return item.createEl('dd', { text: value });
 }
 
 function radioOption(

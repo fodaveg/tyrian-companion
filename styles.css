@@ -577,7 +577,7 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-companion-view__detection-time span {
+.tyrian-companion-view__detection-time dt {
 	color: var(--text-muted);
 	font-size: var(--font-smallest);
 	font-weight: var(--font-semibold);
@@ -585,9 +585,11 @@
 	text-transform: uppercase;
 }
 
-.tyrian-companion-view__detection-time strong {
+.tyrian-companion-view__detection-time dd {
+	margin: 0;
 	font-family: var(--font-monospace);
 	font-size: var(--font-small);
+	font-weight: var(--font-semibold);
 	font-variant-numeric: tabular-nums;
 	overflow-wrap: anywhere;
 }
