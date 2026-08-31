@@ -1,5 +1,26 @@
 # Changelog
 
+## Candidato sin publicar - H6.23, H6.24 y H6.25
+
+- H6.23 corrige la divergencia live entre manifiesto v2 en la raíz anterior y cinco Bases ya
+  reserializadas en la nueva carpeta de salida. La relocation exige origen owned/ready/current,
+  destino completo y semánticamente exacto, sin extras, y escribe un journal durable antes del
+  cambio de puntero y del cleanup; install ordinario no adopta ficheros markerless. QA con filesystem
+  y vault desechable: positivo `relocated` con bytes preservados y negativo con `Human.base` ajena
+  `conflict` sin una sola escritura.
+- H6.24 evita que un timeout parcial de personaje dispare hasta tres fan-outs account-wide. El primer
+  `timeout|network|429|5xx` parcial corta las pasadas restantes, conserva cobertura incompleta y no
+  publica snapshot; el scheduler mantiene el único timer/backoff y recupera sin duplicar polling.
+  `character_inventory|character_build` usan una política explícita de un intento y 30 segundos;
+  el calendario ya corregido por H6.19 no cambia.
+- H6.25 separa lectura, proyección y publicación del cache de loot. El TypeError histórico queda en
+  un único terminal `session_projection/precondition_failed`; lectura real conserva
+  `storage_failure`, otro bug de proyección usa `internal_failure` y `runtime_initialize` continúa
+  con terminal success. El paquete de soporte excluye texto libre, stack, state y details.
+- Commits candidatos: `446ae51` (assets), `cf0f7c0` (polling), `7732485` (atribución) y `463d367`
+  (baseline combinada). El gate queda verde con lint, 167 ficheros/2.269 tests, scanner,
+  observabilidad (644 fronteras, 0 pendientes), contratos y build. Nada está en `main` ni publicado.
+
 ## Candidato sin publicar - H8.8 y H7.13
 
 - H8.8 queda reconciliada como política shadow pura y aislada: presencia de 5 s o ausencia de 60 s

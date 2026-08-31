@@ -173,8 +173,10 @@ Records are append-only JSONL under
 Each action has one local random `actionId`, a reusable `correlationId`, UTC time, monotonic sequence,
 version, closed component/action/phase/code fields and bounded safe metadata. A central allowlist
 removes credentials, authorization, cookies, bodies, raw URLs, vault paths, account/character identity
-and unreviewed payload fields; errors retain only sanitized name, message and stack. Export performs a
-second sanitization pass and is always explicit. Logs are never uploaded or shared automatically.
+and unreviewed payload fields; local errors retain only sanitized name, message and stack. The explicit
+support package performs a second parse/sanitization and emits only structural fields: it omits free
+message, stack, state and details while preserving component, action, code, error name and correlation.
+Logs are never uploaded or shared automatically.
 
 The static action-observability census inventories production `catch`, `.catch`, detached `void` and
 registered callback boundaries. `npm run test:action-observability` proves additions turn the gate red
@@ -220,7 +222,9 @@ The current `0.1.4` vertical provides:
 - H3.4 crash/restart recovery backed by a second fail-closed IndexedDB store that preserves the
   full baseline, optional final snapshot, canonical delta, and fenced runtime state.
 - H3.8 assisted detection with an explicit arm/disarm control, a stable baseline before polling,
-  and visible start/stop proposals that always require a user action.
+  and visible start/stop proposals that always require a user action. Character inventory/build reads
+  use one 30-second attempt; the first transient partial pass stops the account-wide fan-out and lets
+  the single scheduler own the bounded backoff and recovery.
 - H3.9 contamination review for provisional sessions, with explicit activity declarations,
   conservative H2.7 classification, crash-safe local persistence, and a completed-session state.
 - H3.10 local detection-quality measurement: each accepted boundary keeps its manual or assisted
@@ -497,7 +501,11 @@ in `Tyrian Companion Assets.json`. Loading the plugin does not inspect or write 
 read-only; Apply/Repair/Move/Remove are explicit, journaled Vault operations. Modified or foreign
 files are preserved, and uninstall moves byte-exact templates or semantically equivalent owned YAML Bases through Obsidian's trash API. A lazy
 IndexedDB pointer, namespaced by a SHA-256 vault identity, uses generation and operation state to arbitrate install/move/remove across windows;
-settings mirror only the last completed root. Bundle v5 keeps the generic `.base`, localized
+settings mirror only the last completed root. Relocation can recover the observed split topology only
+when the old ready v2 manifest proves ownership and the new root contains the exact complete,
+semantically equivalent set with no foreign file; a durable relocation journal is written before the
+pointer changes or the origin is detached. Ordinary install remains unable to adopt markerless files.
+Bundle v5 keeps the generic `.base`, localized
 `Halloween.base`, and localized `Inventory.base`/`Materials.base` through the same manifest/CAS path. The Halloween Base reads only session-note schema v2
 fields, preserves literal zeroes, and excludes incomplete evidence from performance views.
 

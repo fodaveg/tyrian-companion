@@ -23,6 +23,28 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
+**Lote H6.23–H6.25 de fallos live integrado en `codex/parallel-integration`, todavía fuera de
+`main` y de cualquier release.** H6.23 reconcilia la topología observada con manifiesto v2 en la raíz
+anterior y cinco Bases reserializadas en la salida: solo relocation puede adoptar el set completo,
+exacto y semánticamente equivalente; un journal precede puntero/cleanup y cualquier extra, faltante,
+cambio o autoridad ajena falla cerrado sin escribir. La QA filesystem sobre una bóveda desechable
+confirmó destino `ready`, origen `detached` y bytes preservados; añadir `Human.base` devolvió
+`conflict` y dejó el árbol byte-idéntico. La bóveda real no se tocó.
+
+H6.24 corta una captura account-wide en cuanto una pasada contiene un fallo parcial transitorio,
+conserva `passCoverages` y no publica snapshot incompleto. Los endpoints de inventario/build de
+personaje reciben un intento de 30 segundos y el scheduler conserva en exclusiva un único
+timer/backoff; una recuperación vuelve a scheduled sin duplicar polling ni reabrir H6.19.
+
+H6.25 atribuye el TypeError histórico al único span propietario
+`session_projection/precondition_failed`, distingue lectura `storage_failure` de bug interno de
+proyección y permite que `plugin_load/runtime_initialize` termine bien. El paquete de soporte
+conserva solo campos estructurados y omite `message|stack|state|details`, por lo que el código y la
+correlación siguen diagnosticables sin el texto personal observado. Los commits candidatos son
+`446ae51`, `cf0f7c0`, `7732485` y `463d367`. El gate combinado pasa lint, 167 ficheros y 2.269 tests,
+scanner, 644 fronteras de observabilidad sin pendientes, contratos y build; nada se ha integrado o
+publicado.
+
 **Lote H8.8/H7.13 cerrado técnicamente en la rama candidata `codex/parallel-integration`, todavía
 fuera de `main` y de cualquier release.** H8.8 queda reconciliada con el alcance shadow aislado de
 `a4fd22b` y `25a1057`: política pura 5 s/60 s para el mapa 866, DTO efímero y revisión humana, sin

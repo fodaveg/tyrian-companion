@@ -57,12 +57,15 @@ en `<config-dir>/plugins/tyrian-companion/logs/`, con un máximo de cinco ficher
 total). La rotación no sube, sincroniza ni adjunta esos ficheros, y limpiar el historial exige una
 acción explícita.
 
-Los records pasan por una allowlist y saneado central. Mensaje y stack se conservan en forma acotada
-porque son útiles en beta, pero se redactan secretos, credenciales, cabeceras, cookies, cuerpos raw,
-queries de URL, rutas e identidades detectables. El exportador vuelve a sanear cada record antes de
-entregarlo; aun así, revisa el extracto visualmente y adjunta solo las líneas imprescindibles. No
-publiques el directorio completo ni confundas el saneado automático con una garantía frente a datos
-personales no reconocibles mecánicamente.
+Los records locales pasan por una allowlist y saneado central. Mensaje y stack se conservan allí en
+forma acotada porque son útiles en beta, pero se redactan secretos, credenciales, cabeceras, cookies,
+cuerpos raw, queries de URL, rutas e identidades detectables. **Crear paquete de soporte** vuelve a
+parsear y sanear cada record y elimina por completo `message`, `stack`, `state` y `details`; conserva
+solo campos estructurados como componente, acción, fase, código, nombre saneado del error y
+correlación. Revisa aun así el paquete visualmente antes de adjuntarlo. **Copiar extracto reciente**
+puede conservar texto saneado del log local: úsalo solo para líneas imprescindibles y tras revisión
+manual. No publiques el directorio completo ni confundas el saneado automático con una garantía
+frente a datos personales no reconocibles mecánicamente.
 
 Que un dato esté en DevTools o en un fichero local no significa que sea seguro adjuntarlo. Si el
 problema no puede describirse sin un dato prohibido, detén el reporte y pide al coordinador un canal
