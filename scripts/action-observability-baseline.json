@@ -2,10 +2,10 @@
 	"version": 3,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 347,
-		"promise_catch": 24,
-		"void_expression": 47,
-		"callback_registration": 142
+		"catch_clause": 378,
+		"promise_catch": 28,
+		"void_expression": 76,
+		"callback_registration": 159
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -4273,9 +4273,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 269,
+					"line": 289,
 					"column": 3,
-					"endLine": 272,
+					"endLine": 292,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4288,9 +4288,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 300,
+					"line": 320,
 					"column": 3,
-					"endLine": 310,
+					"endLine": 330,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4302,9 +4302,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 311,
+					"line": 331,
 					"column": 3,
-					"endLine": 320,
+					"endLine": 340,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4316,9 +4316,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 321,
+					"line": 341,
 					"column": 3,
-					"endLine": 333,
+					"endLine": 353,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4330,9 +4330,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 334,
+					"line": 354,
 					"column": 3,
-					"endLine": 346,
+					"endLine": 366,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4344,9 +4344,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 347,
+					"line": 367,
 					"column": 3,
-					"endLine": 355,
+					"endLine": 375,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -4359,10 +4359,87 @@
 					"reason": "Allowlisted callback_registration: The \"onload\" owner registers \"registerDomEvent\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"registerDomEvent\" in \"onload\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 717,
+					"column": 22,
+					"endLine": 717,
+					"endColumn": 103,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented().then",
+						"scope": "onStateChange",
+						"justification": "The \"onStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"onStateChange\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"onStateChange\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 717,
+					"column": 27,
+					"endLine": 717,
+					"endColumn": 103,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "onStateChange",
+						"justification": "The \"onStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onStateChange\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"onStateChange\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 738,
+					"column": 19,
+					"endLine": 738,
+					"endColumn": 100,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented().then",
+						"scope": "initializeRuntime",
+						"justification": "The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"this.ensurePilotRecoveryPresented().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented().then\" in \"initializeRuntime\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 738,
+					"column": 24,
+					"endLine": 738,
+					"endColumn": 100,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "initializeRuntime",
+						"justification": "The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"initializeRuntime\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"initializeRuntime\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 788,
+					"column": 5,
+					"endLine": 788,
+					"endColumn": 76,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalExcluded",
+						"scope": "initializeRuntime",
+						"justification": "The \"initializeRuntime\" owner deliberately detaches \"this.pilotMetrics.proposalExcluded\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"initializeRuntime\" owner deliberately detaches \"this.pilotMetrics.proposalExcluded\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalExcluded\" in \"initializeRuntime\"."
+				},
+				{
 					"kind": "promise_catch",
-					"line": 808,
+					"line": 849,
 					"column": 29,
-					"endLine": 808,
+					"endLine": 849,
 					"endColumn": 74,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4375,10 +4452,56 @@
 					"reason": "Allowlisted promise_catch: The \"onunload\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"onunload\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 878,
+					"column": 30,
+					"endLine": 878,
+					"endColumn": 99,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "pilotProposalClosure.finally",
+						"scope": "dispose",
+						"justification": "The \"dispose\" owner deliberately detaches \"pilotProposalClosure.finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"dispose\" owner deliberately detaches \"pilotProposalClosure.finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"pilotProposalClosure.finally\" in \"dispose\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 878,
+					"column": 35,
+					"endLine": 878,
+					"endColumn": 99,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "dispose",
+						"justification": "The \"dispose\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"dispose\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"dispose\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1460,
+					"column": 3,
+					"endLine": 1465,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalPresented",
+						"scope": "recordPendingProposalPresented",
+						"justification": "The \"recordPendingProposalPresented\" owner deliberately detaches \"this.pilotMetrics.proposalPresented\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"recordPendingProposalPresented\" owner deliberately detaches \"this.pilotMetrics.proposalPresented\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalPresented\" in \"recordPendingProposalPresented\"."
+				},
+				{
 					"kind": "catch_clause",
-					"line": 1353,
+					"line": 1482,
 					"column": 5,
-					"endLine": 1359,
+					"endLine": 1488,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4388,10 +4511,25 @@
 					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
 				},
 				{
+					"kind": "void_expression",
+					"line": 1509,
+					"column": 4,
+					"endLine": 1512,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "perform",
+						"justification": "The \"perform\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"perform\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"perform\"."
+				},
+				{
 					"kind": "catch_clause",
-					"line": 1397,
+					"line": 1534,
 					"column": 6,
-					"endLine": 1403,
+					"endLine": 1540,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -4401,10 +4539,86 @@
 					"reason": "Direct observability call \"this.emitNotice\" is present inside this catch_clause boundary."
 				},
 				{
+					"kind": "void_expression",
+					"line": 1593,
+					"column": 3,
+					"endLine": 1593,
+					"endColumn": 42,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.excludeLiveAssistedProposal",
+						"scope": "invalidateAndDisarmAssistedDetection",
+						"justification": "The \"invalidateAndDisarmAssistedDetection\" owner deliberately detaches \"this.excludeLiveAssistedProposal\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"invalidateAndDisarmAssistedDetection\" owner deliberately detaches \"this.excludeLiveAssistedProposal\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.excludeLiveAssistedProposal\" in \"invalidateAndDisarmAssistedDetection\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 1603,
+					"column": 11,
+					"endLine": 1603,
+					"endColumn": 110,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "excludeLiveAssistedProposal",
+						"justification": "The \"excludeLiveAssistedProposal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"excludeLiveAssistedProposal\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"excludeLiveAssistedProposal\"."
+				},
+				{
 					"kind": "catch_clause",
-					"line": 1521,
+					"line": 1604,
 					"column": 5,
-					"endLine": 1523,
+					"endLine": 1606,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "excludeLiveAssistedProposal",
+						"justification": "The \"excludeLiveAssistedProposal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"excludeLiveAssistedProposal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"excludeLiveAssistedProposal\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1613,
+					"column": 3,
+					"endLine": 1622,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalPresented",
+						"scope": "recordAssistedProposalPresented",
+						"justification": "The \"recordAssistedProposalPresented\" owner deliberately detaches \"this.pilotMetrics.proposalPresented\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"recordAssistedProposalPresented\" owner deliberately detaches \"this.pilotMetrics.proposalPresented\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalPresented\" in \"recordAssistedProposalPresented\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1653,
+					"column": 19,
+					"endLine": 1655,
+					"endColumn": 5,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "perform",
+						"justification": "The \"perform\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"perform\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"perform\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 1701,
+					"column": 5,
+					"endLine": 1703,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4417,9 +4631,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1534,
+					"line": 1714,
 					"column": 18,
-					"endLine": 1538,
+					"endLine": 1718,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4433,9 +4647,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1534,
+					"line": 1714,
 					"column": 18,
-					"endLine": 1543,
+					"endLine": 1723,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4449,9 +4663,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1534,
+					"line": 1714,
 					"column": 18,
-					"endLine": 1547,
+					"endLine": 1727,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4465,9 +4679,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1574,
+					"line": 1754,
 					"column": 18,
-					"endLine": 1578,
+					"endLine": 1758,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4481,9 +4695,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1574,
+					"line": 1754,
 					"column": 18,
-					"endLine": 1586,
+					"endLine": 1766,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4497,9 +4711,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1574,
+					"line": 1754,
 					"column": 18,
-					"endLine": 1590,
+					"endLine": 1770,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4513,9 +4727,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1652,
+					"line": 1832,
 					"column": 5,
-					"endLine": 1652,
+					"endLine": 1832,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4528,9 +4742,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1755,
+					"line": 1935,
 					"column": 3,
-					"endLine": 1755,
+					"endLine": 1935,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4543,9 +4757,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1780,
+					"line": 1960,
 					"column": 24,
-					"endLine": 1780,
+					"endLine": 1960,
 					"endColumn": 104,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4558,10 +4772,25 @@
 					"reason": "Allowlisted callback_registration: The \"perform\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"perform\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 1962,
+					"column": 4,
+					"endLine": 1962,
+					"endColumn": 94,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.sessionCompleted",
+						"scope": "perform",
+						"justification": "The \"perform\" owner deliberately detaches \"this.pilotMetrics.sessionCompleted\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"perform\" owner deliberately detaches \"this.pilotMetrics.sessionCompleted\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.sessionCompleted\" in \"perform\"."
+				},
+				{
 					"kind": "callback_registration",
-					"line": 1843,
+					"line": 2053,
 					"column": 25,
-					"endLine": 1843,
+					"endLine": 2053,
 					"endColumn": 83,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4574,10 +4803,55 @@
 					"reason": "Allowlisted callback_registration: The \"performStopManualSession\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"performStopManualSession\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 2088,
+					"column": 29,
+					"endLine": 2091,
+					"endColumn": 7,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "performStopManualSession",
+						"justification": "The \"performStopManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performStopManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"performStopManualSession\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 2095,
+					"column": 5,
+					"endLine": 2101,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "performStopManualSession",
+						"justification": "The \"performStopManualSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"performStopManualSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"performStopManualSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2096,
+					"column": 55,
+					"endLine": 2099,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "performStopManualSession",
+						"justification": "The \"performStopManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performStopManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"performStopManualSession\"."
+				},
+				{
 					"kind": "callback_registration",
-					"line": 1900,
+					"line": 2144,
 					"column": 25,
-					"endLine": 1900,
+					"endLine": 2144,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4590,10 +4864,40 @@
 					"reason": "Allowlisted callback_registration: The \"startManualSession\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"startManualSession\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 2146,
+					"column": 5,
+					"endLine": 2146,
+					"endColumn": 102,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.sessionStarted",
+						"scope": "startManualSession",
+						"justification": "The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.sessionStarted\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.sessionStarted\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.sessionStarted\" in \"startManualSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2167,
+					"column": 29,
+					"endLine": 2170,
+					"endColumn": 7,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "startManualSession",
+						"justification": "The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"startManualSession\"."
+				},
+				{
 					"kind": "catch_clause",
-					"line": 1925,
+					"line": 2175,
 					"column": 7,
-					"endLine": 1925,
+					"endLine": 2175,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4606,9 +4910,39 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1994,
+					"line": 2179,
+					"column": 5,
+					"endLine": 2185,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "startManualSession",
+						"justification": "The \"startManualSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"startManualSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"startManualSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2180,
+					"column": 55,
+					"endLine": 2183,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.proposalDecided",
+						"scope": "startManualSession",
+						"justification": "The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"startManualSession\" owner deliberately detaches \"this.pilotMetrics.proposalDecided\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.proposalDecided\" in \"startManualSession\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 2250,
 					"column": 6,
-					"endLine": 1996,
+					"endLine": 2252,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4620,10 +4954,25 @@
 					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"perform\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 2592,
+					"column": 19,
+					"endLine": 2592,
+					"endColumn": 69,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.ensurePilotRecoveryPresented\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.ensurePilotRecoveryPresented\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented\" in \"performRecoverSession\"."
+				},
+				{
 					"kind": "callback_registration",
-					"line": 2336,
+					"line": 2595,
 					"column": 24,
-					"endLine": 2336,
+					"endLine": 2595,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4636,10 +4985,85 @@
 					"reason": "Allowlisted callback_registration: The \"performRecoverSession\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"performRecoverSession\"."
 				},
 				{
+					"kind": "catch_clause",
+					"line": 2596,
+					"column": 3,
+					"endLine": 2599,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"performRecoverSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"performRecoverSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2597,
+					"column": 20,
+					"endLine": 2597,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2602,
+					"column": 20,
+					"endLine": 2602,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2605,
+					"column": 19,
+					"endLine": 2605,
+					"endColumn": 83,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performRecoverSession",
+						"justification": "The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performRecoverSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performRecoverSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2610,
+					"column": 19,
+					"endLine": 2610,
+					"endColumn": 69,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.ensurePilotRecoveryPresented",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.ensurePilotRecoveryPresented\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.ensurePilotRecoveryPresented\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.ensurePilotRecoveryPresented\" in \"performDiscardRecoveredSession\"."
+				},
+				{
 					"kind": "callback_registration",
-					"line": 2343,
+					"line": 2613,
 					"column": 24,
-					"endLine": 2343,
+					"endLine": 2613,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -4652,10 +5076,70 @@
 					"reason": "Allowlisted callback_registration: The \"performDiscardRecoveredSession\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"performDiscardRecoveredSession\"."
 				},
 				{
+					"kind": "catch_clause",
+					"line": 2614,
+					"column": 3,
+					"endLine": 2617,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"performDiscardRecoveredSession\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"performDiscardRecoveredSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2615,
+					"column": 20,
+					"endLine": 2615,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2620,
+					"column": 20,
+					"endLine": 2620,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 2623,
+					"column": 19,
+					"endLine": 2623,
+					"endColumn": 83,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.pilotMetrics.recoveryFinished",
+						"scope": "performDiscardRecoveredSession",
+						"justification": "The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"performDiscardRecoveredSession\" owner deliberately detaches \"this.pilotMetrics.recoveryFinished\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.pilotMetrics.recoveryFinished\" in \"performDiscardRecoveredSession\"."
+				},
+				{
 					"kind": "callback_registration",
-					"line": 2484,
+					"line": 2775,
 					"column": 17,
-					"endLine": 2484,
+					"endLine": 2775,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4669,9 +5153,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2484,
+					"line": 2775,
 					"column": 17,
-					"endLine": 2484,
+					"endLine": 2775,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4685,9 +5169,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2485,
+					"line": 2776,
 					"column": 20,
-					"endLine": 2485,
+					"endLine": 2776,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4701,9 +5185,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2485,
+					"line": 2776,
 					"column": 20,
-					"endLine": 2485,
+					"endLine": 2776,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4717,9 +5201,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2537,
+					"line": 2828,
 					"column": 5,
-					"endLine": 2540,
+					"endLine": 2831,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -4730,9 +5214,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2587,
+					"line": 2878,
 					"column": 6,
-					"endLine": 2592,
+					"endLine": 2883,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4745,9 +5229,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2742,
+					"line": 3037,
 					"column": 5,
-					"endLine": 2742,
+					"endLine": 3037,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4760,9 +5244,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2775,
+					"line": 3070,
 					"column": 7,
-					"endLine": 2775,
+					"endLine": 3070,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -4776,9 +5260,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2780,
+					"line": 3075,
 					"column": 2,
-					"endLine": 2780,
+					"endLine": 3075,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5270,9 +5754,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 183,
+					"line": 185,
 					"column": 18,
-					"endLine": 185,
+					"endLine": 187,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5286,9 +5770,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 271,
+					"line": 273,
 					"column": 5,
-					"endLine": 277,
+					"endLine": 279,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5301,10 +5785,10 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 359,
+					"line": 362,
 					"column": 3,
-					"endLine": 359,
-					"endColumn": 39,
+					"endLine": 362,
+					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
@@ -5316,10 +5800,10 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 368,
+					"line": 372,
 					"column": 3,
-					"endLine": 368,
-					"endColumn": 39,
+					"endLine": 372,
+					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
@@ -5331,10 +5815,10 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 373,
-					"column": 75,
-					"endLine": 373,
-					"endColumn": 128,
+					"line": 377,
+					"column": 94,
+					"endLine": 377,
+					"endColumn": 147,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -6068,9 +6552,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 64,
+					"line": 69,
 					"column": 18,
-					"endLine": 64,
+					"endLine": 69,
 					"endColumn": 119,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6084,9 +6568,24 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 84,
+					"line": 101,
 					"column": 5,
-					"endLine": 84,
+					"endLine": 101,
+					"endColumn": 80,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "project",
+						"justification": "The \"project\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"project\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"project\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 105,
+					"column": 5,
+					"endLine": 105,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6099,9 +6598,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 103,
+					"line": 124,
 					"column": 5,
-					"endLine": 103,
+					"endLine": 124,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6114,9 +6613,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 140,
+					"line": 161,
 					"column": 5,
-					"endLine": 140,
+					"endLine": 161,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6129,9 +6628,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 167,
+					"line": 188,
 					"column": 5,
-					"endLine": 167,
+					"endLine": 188,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6144,9 +6643,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 187,
+					"line": 208,
 					"column": 5,
-					"endLine": 187,
+					"endLine": 208,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6159,9 +6658,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 226,
+					"line": 247,
 					"column": 5,
-					"endLine": 226,
+					"endLine": 247,
 					"endColumn": 41,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6174,9 +6673,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 253,
+					"line": 274,
 					"column": 5,
-					"endLine": 253,
+					"endLine": 274,
 					"endColumn": 48,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6252,6 +6751,427 @@
 						"justification": "The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"open\"."
+				}
+			]
+		},
+		"src/sessions/pilot-metrics-export.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 78,
+					"column": 5,
+					"endLine": 78,
+					"endColumn": 59,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "export",
+						"justification": "The \"export\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"export\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"export\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 245,
+					"column": 4,
+					"endLine": 245,
+					"endColumn": 95,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "ensureFolders",
+						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
+				}
+			]
+		},
+		"src/sessions/pilot-metrics-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/sessions/pilot-metrics-recorder.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 58,
+					"column": 3,
+					"endLine": 58,
+					"endColumn": 55,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "configure",
+						"justification": "The \"configure\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"configure\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"configure\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 71,
+					"column": 5,
+					"endLine": 71,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "inspect",
+						"justification": "The \"inspect\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"inspect\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"inspect\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 109,
+					"column": 4,
+					"endLine": 109,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "proposalDecided",
+						"justification": "The \"proposalDecided\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"proposalDecided\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"proposalDecided\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 123,
+					"column": 5,
+					"endLine": 123,
+					"endColumn": 57,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "proposalExcluded",
+						"justification": "The \"proposalExcluded\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"proposalExcluded\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"proposalExcluded\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 136,
+					"column": 4,
+					"endLine": 136,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "sessionCompleted",
+						"justification": "The \"sessionCompleted\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"sessionCompleted\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"sessionCompleted\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 150,
+					"column": 4,
+					"endLine": 150,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "recoveryClassified",
+						"justification": "The \"recoveryClassified\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"recoveryClassified\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"recoveryClassified\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 161,
+					"column": 5,
+					"endLine": 161,
+					"endColumn": 57,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "recoveryFinished",
+						"justification": "The \"recoveryFinished\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"recoveryFinished\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"recoveryFinished\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 172,
+					"column": 5,
+					"endLine": 172,
+					"endColumn": 57,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "reviewSilentLosses",
+						"justification": "The \"reviewSilentLosses\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"reviewSilentLosses\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"reviewSilentLosses\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 182,
+					"column": 5,
+					"endLine": 182,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "clear",
+						"justification": "The \"clear\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"clear\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"clear\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 192,
+					"column": 5,
+					"endLine": 192,
+					"endColumn": 56,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "disable",
+						"justification": "The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"disable\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 205,
+					"column": 5,
+					"endLine": 205,
+					"endColumn": 57,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "withProfile",
+						"justification": "The \"withProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"withProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"withProfile\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 232,
+					"column": 19,
+					"endLine": 232,
+					"endColumn": 50,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "serialize",
+						"justification": "The \"serialize\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"serialize\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"serialize\"."
+				}
+			]
+		},
+		"src/sessions/pilot-metrics-statistics.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/sessions/pilot-metrics-store.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 87,
+					"column": 5,
+					"endLine": 87,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "load",
+						"justification": "The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"load\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 97,
+					"column": 5,
+					"endLine": 97,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "loadProfile",
+						"justification": "The \"loadProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"loadProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"loadProfile\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 115,
+					"column": 5,
+					"endLine": 115,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "saveProfile",
+						"justification": "The \"saveProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"saveProfile\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"saveProfile\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 133,
+					"column": 5,
+					"endLine": 133,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "saveVerification",
+						"justification": "The \"saveVerification\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"saveVerification\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"saveVerification\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 169,
+					"column": 5,
+					"endLine": 169,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "ensureObservation",
+						"justification": "The \"ensureObservation\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"ensureObservation\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"ensureObservation\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 223,
+					"column": 5,
+					"endLine": 223,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "clearObservations",
+						"justification": "The \"clearObservations\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"clearObservations\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"clearObservations\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 239,
+					"column": 5,
+					"endLine": 239,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "disable",
+						"justification": "The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"disable\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 243,
+					"column": 3,
+					"endLine": 243,
+					"endColumn": 82,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.database.then().catch",
+						"scope": "close",
+						"justification": "The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"close\" owner deliberately detaches \"this.database.then().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.database.then().catch\" in \"close\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 243,
+					"column": 8,
+					"endLine": 243,
+					"endColumn": 59,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "close",
+						"justification": "The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"close\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"close\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 243,
+					"column": 8,
+					"endLine": 243,
+					"endColumn": 82,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "close",
+						"justification": "The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"close\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"close\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 278,
+					"column": 5,
+					"endLine": 278,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "finish",
+						"justification": "The \"finish\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"finish\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"finish\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 311,
+					"column": 5,
+					"endLine": 311,
+					"endColumn": 36,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "updateRecovery",
+						"justification": "The \"updateRecovery\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"updateRecovery\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"updateRecovery\"."
 				}
 			]
 		},
@@ -6954,9 +7874,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 221,
+					"line": 227,
 					"column": 3,
-					"endLine": 223,
+					"endLine": 229,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -6970,9 +7890,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 222,
+					"line": 228,
 					"column": 4,
-					"endLine": 222,
+					"endLine": 228,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6985,9 +7905,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 226,
+					"line": 232,
 					"column": 27,
-					"endLine": 226,
+					"endLine": 232,
 					"endColumn": 94,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -7001,9 +7921,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 241,
+					"line": 247,
 					"column": 4,
-					"endLine": 241,
+					"endLine": 247,
 					"endColumn": 83,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7016,10 +7936,25 @@
 					"reason": "Allowlisted callback_registration: The \"renderLocalDebugWarning\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderLocalDebugWarning\"."
 				},
 				{
-					"kind": "callback_registration",
-					"line": 300,
+					"kind": "catch_clause",
+					"line": 306,
 					"column": 3,
 					"endLine": 306,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 308,
+					"column": 3,
+					"endLine": 316,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7033,9 +7968,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 301,
+					"line": 309,
 					"column": 4,
-					"endLine": 305,
+					"endLine": 315,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7048,9 +7983,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 301,
+					"line": 309,
 					"column": 9,
-					"endLine": 305,
+					"endLine": 315,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7064,10 +7999,10 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 304,
-					"column": 10,
-					"endLine": 304,
-					"endColumn": 54,
+					"line": 313,
+					"column": 11,
+					"endLine": 313,
+					"endColumn": 72,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
@@ -7079,9 +8014,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 308,
+					"line": 318,
 					"column": 3,
-					"endLine": 310,
+					"endLine": 324,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7095,9 +8030,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 398,
+					"line": 412,
 					"column": 4,
-					"endLine": 398,
+					"endLine": 412,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7111,9 +8046,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 398,
+					"line": 412,
 					"column": 45,
-					"endLine": 398,
+					"endLine": 412,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7126,9 +8061,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 403,
+					"line": 417,
 					"column": 4,
-					"endLine": 403,
+					"endLine": 417,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7142,9 +8077,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 408,
+					"line": 422,
 					"column": 4,
-					"endLine": 408,
+					"endLine": 422,
 					"endColumn": 87,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7158,9 +8093,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 413,
+					"line": 427,
 					"column": 4,
-					"endLine": 413,
+					"endLine": 427,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7174,9 +8109,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 413,
+					"line": 427,
 					"column": 45,
-					"endLine": 413,
+					"endLine": 427,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7189,9 +8124,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 419,
+					"line": 433,
 					"column": 4,
-					"endLine": 419,
+					"endLine": 433,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7205,9 +8140,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 504,
+					"line": 518,
 					"column": 4,
-					"endLine": 504,
+					"endLine": 518,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7221,9 +8156,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 504,
+					"line": 518,
 					"column": 42,
-					"endLine": 504,
+					"endLine": 518,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7236,9 +8171,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 524,
+					"line": 538,
 					"column": 4,
-					"endLine": 524,
+					"endLine": 538,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7252,9 +8187,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 524,
+					"line": 538,
 					"column": 44,
-					"endLine": 524,
+					"endLine": 538,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7267,9 +8202,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 526,
+					"line": 540,
 					"column": 4,
-					"endLine": 526,
+					"endLine": 540,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7282,11 +8217,26 @@
 					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
 				},
 				{
-					"kind": "callback_registration",
-					"line": 536,
+					"kind": "catch_clause",
+					"line": 546,
 					"column": 4,
-					"endLine": 536,
-					"endColumn": 80,
+					"endLine": 546,
+					"endColumn": 75,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 552,
+					"column": 4,
+					"endLine": 557,
+					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
@@ -7298,11 +8248,26 @@
 					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
 				},
 				{
-					"kind": "callback_registration",
-					"line": 547,
+					"kind": "catch_clause",
+					"line": 564,
 					"column": 4,
-					"endLine": 547,
-					"endColumn": 84,
+					"endLine": 564,
+					"endColumn": 75,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 570,
+					"column": 4,
+					"endLine": 575,
+					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
@@ -7315,10 +8280,10 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 547,
-					"column": 43,
-					"endLine": 547,
-					"endColumn": 80,
+					"line": 572,
+					"column": 40,
+					"endLine": 572,
+					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
@@ -7330,9 +8295,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 571,
+					"line": 599,
 					"column": 3,
-					"endLine": 571,
+					"endLine": 599,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7346,9 +8311,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 576,
+					"line": 604,
 					"column": 3,
-					"endLine": 583,
+					"endLine": 611,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7362,9 +8327,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 585,
+					"line": 613,
 					"column": 3,
-					"endLine": 585,
+					"endLine": 613,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7378,9 +8343,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 639,
+					"line": 667,
 					"column": 4,
-					"endLine": 639,
+					"endLine": 667,
 					"endColumn": 80,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7394,9 +8359,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 666,
+					"line": 694,
 					"column": 4,
-					"endLine": 666,
+					"endLine": 694,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7410,9 +8375,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 666,
+					"line": 694,
 					"column": 45,
-					"endLine": 666,
+					"endLine": 694,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7425,9 +8390,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 690,
+					"line": 718,
 					"column": 4,
-					"endLine": 690,
+					"endLine": 718,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7441,9 +8406,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 701,
+					"line": 729,
 					"column": 4,
-					"endLine": 701,
+					"endLine": 729,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7457,9 +8422,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 713,
+					"line": 741,
 					"column": 5,
-					"endLine": 713,
+					"endLine": 741,
 					"endColumn": 85,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7473,9 +8438,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 713,
+					"line": 741,
 					"column": 44,
-					"endLine": 713,
+					"endLine": 741,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7488,9 +8453,56 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 767,
+					"line": 803,
+					"column": 4,
+					"endLine": 806,
+					"endColumn": 6,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderRecovery",
+						"justification": "The \"renderRecovery\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderRecovery\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderRecovery\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 805,
+					"column": 5,
+					"endLine": 805,
+					"endColumn": 83,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.classifyPilotRecovery().catch",
+						"scope": "renderRecovery",
+						"justification": "The \"renderRecovery\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderRecovery\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.classifyPilotRecovery().catch\" in \"renderRecovery\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 805,
+					"column": 10,
+					"endLine": 805,
+					"endColumn": 83,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderRecovery",
+						"justification": "The \"renderRecovery\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderRecovery\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderRecovery\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 810,
 					"column": 3,
-					"endLine": 767,
+					"endLine": 810,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7504,9 +8516,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 767,
+					"line": 810,
 					"column": 45,
-					"endLine": 767,
+					"endLine": 810,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7519,9 +8531,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 768,
+					"line": 811,
 					"column": 3,
-					"endLine": 768,
+					"endLine": 811,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7535,9 +8547,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 862,
+					"line": 905,
 					"column": 3,
-					"endLine": 862,
+					"endLine": 905,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7551,9 +8563,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 863,
+					"line": 906,
 					"column": 3,
-					"endLine": 867,
+					"endLine": 910,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7567,9 +8579,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 866,
+					"line": 909,
 					"column": 4,
-					"endLine": 866,
+					"endLine": 909,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7582,9 +8594,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 866,
+					"line": 909,
 					"column": 9,
-					"endLine": 866,
+					"endLine": 909,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7598,9 +8610,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 890,
+					"line": 933,
 					"column": 3,
-					"endLine": 890,
+					"endLine": 933,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7614,72 +8626,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 891,
-					"column": 3,
-					"endLine": 895,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 894,
-					"column": 4,
-					"endLine": 894,
-					"endColumn": 53,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.onConfirm().finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 894,
-					"column": 9,
-					"endLine": 894,
-					"endColumn": 53,
-					"registration": "finally",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "finally",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 938,
+					"line": 934,
 					"column": 3,
 					"endLine": 938,
-					"endColumn": 55,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "onOpen",
-						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 939,
-					"column": 3,
-					"endLine": 954,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7693,9 +8642,72 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 949,
+					"line": 937,
 					"column": 4,
-					"endLine": 953,
+					"endLine": 937,
+					"endColumn": 53,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.onConfirm().finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.onConfirm().finally\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 937,
+					"column": 9,
+					"endLine": 937,
+					"endColumn": 53,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 982,
+					"column": 3,
+					"endLine": 982,
+					"endColumn": 55,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 983,
+					"column": 3,
+					"endLine": 1005,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 1000,
+					"column": 4,
+					"endLine": 1004,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7708,10 +8720,10 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 949,
+					"line": 1000,
 					"column": 9,
-					"endLine": 949,
-					"endColumn": 58,
+					"endLine": 1000,
+					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
@@ -7724,9 +8736,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 949,
+					"line": 1000,
 					"column": 9,
-					"endLine": 953,
+					"endLine": 1004,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7740,9 +8752,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1018,
+					"line": 1031,
 					"column": 3,
-					"endLine": 1018,
+					"endLine": 1031,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7756,9 +8768,41 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1019,
+					"line": 1032,
 					"column": 3,
-					"endLine": 1044,
+					"endLine": 1043,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1122,
+					"column": 3,
+					"endLine": 1122,
+					"endColumn": 55,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1123,
+					"column": 3,
+					"endLine": 1148,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7772,9 +8816,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1031,
+					"line": 1135,
 					"column": 4,
-					"endLine": 1043,
+					"endLine": 1147,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7787,9 +8831,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1031,
+					"line": 1135,
 					"column": 9,
-					"endLine": 1039,
+					"endLine": 1143,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7803,9 +8847,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1031,
+					"line": 1135,
 					"column": 9,
-					"endLine": 1043,
+					"endLine": 1147,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7819,9 +8863,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1061,
+					"line": 1165,
 					"column": 3,
-					"endLine": 1103,
+					"endLine": 1207,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7834,9 +8878,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1061,
+					"line": 1165,
 					"column": 8,
-					"endLine": 1101,
+					"endLine": 1205,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7850,9 +8894,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1061,
+					"line": 1165,
 					"column": 8,
-					"endLine": 1103,
+					"endLine": 1207,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7866,9 +8910,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1087,
+					"line": 1191,
 					"column": 4,
-					"endLine": 1095,
+					"endLine": 1199,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -7882,9 +8926,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1096,
+					"line": 1200,
 					"column": 4,
-					"endLine": 1100,
+					"endLine": 1204,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9113,9 +10157,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 304,
+					"line": 312,
 					"column": 8,
-					"endLine": 304,
+					"endLine": 312,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9128,9 +10172,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 316,
+					"line": 324,
 					"column": 9,
-					"endLine": 316,
+					"endLine": 324,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9143,9 +10187,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 325,
+					"line": 333,
 					"column": 9,
-					"endLine": 325,
+					"endLine": 333,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9158,9 +10202,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 334,
+					"line": 342,
 					"column": 10,
-					"endLine": 334,
+					"endLine": 342,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9173,9 +10217,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 347,
+					"line": 355,
 					"column": 10,
-					"endLine": 347,
+					"endLine": 355,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9188,9 +10232,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 362,
+					"line": 370,
 					"column": 10,
-					"endLine": 362,
+					"endLine": 370,
 					"endColumn": 70,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9202,10 +10246,134 @@
 					"reason": "Allowlisted catch_clause: The \"render\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"render\"."
 				},
 				{
+					"kind": "void_expression",
+					"line": 395,
+					"column": 6,
+					"endLine": 395,
+					"endColumn": 76,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "profileFlight.finally",
+						"scope": "render",
+						"justification": "The \"render\" owner deliberately detaches \"profileFlight.finally\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.finally\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.finally\" in \"render\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 395,
+					"column": 11,
+					"endLine": 395,
+					"endColumn": 76,
+					"registration": "finally",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "finally",
+						"scope": "render",
+						"justification": "The \"render\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"render\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 400,
+					"column": 7,
+					"endLine": 407,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "profileFlight.then",
+						"scope": "render",
+						"justification": "The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.then\" in \"render\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 400,
+					"column": 12,
+					"endLine": 407,
+					"endColumn": 9,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "render",
+						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 414,
+					"column": 7,
+					"endLine": 418,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "profileFlight.then",
+						"scope": "render",
+						"justification": "The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"profileFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"profileFlight.then\" in \"render\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 414,
+					"column": 12,
+					"endLine": 418,
+					"endColumn": 9,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "render",
+						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 438,
+					"column": 7,
+					"endLine": 442,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "verificationFlight.then",
+						"scope": "render",
+						"justification": "The \"render\" owner deliberately detaches \"verificationFlight.then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"render\" owner deliberately detaches \"verificationFlight.then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"verificationFlight.then\" in \"render\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 438,
+					"column": 12,
+					"endLine": 442,
+					"endColumn": 9,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "render",
+						"justification": "The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"render\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"render\"."
+				},
+				{
 					"kind": "catch_clause",
-					"line": 403,
+					"line": 523,
 					"column": 10,
-					"endLine": 405,
+					"endLine": 525,
 					"endColumn": 9,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9218,9 +10386,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 710,
+					"line": 830,
 					"column": 28,
-					"endLine": 712,
+					"endLine": 832,
 					"endColumn": 12,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -9234,9 +10402,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 759,
+					"line": 879,
 					"column": 5,
-					"endLine": 759,
+					"endLine": 879,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9250,9 +10418,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 761,
+					"line": 881,
 					"column": 5,
-					"endLine": 761,
+					"endLine": 881,
 					"endColumn": 93,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9266,9 +10434,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 789,
+					"line": 909,
 					"column": 5,
-					"endLine": 789,
+					"endLine": 909,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9282,9 +10450,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 791,
+					"line": 911,
 					"column": 5,
-					"endLine": 791,
+					"endLine": 911,
 					"endColumn": 92,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9298,9 +10466,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 861,
+					"line": 981,
 					"column": 5,
-					"endLine": 861,
+					"endLine": 981,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9314,9 +10482,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 863,
+					"line": 983,
 					"column": 5,
-					"endLine": 863,
+					"endLine": 983,
 					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9330,9 +10498,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 883,
+					"line": 1003,
 					"column": 5,
-					"endLine": 883,
+					"endLine": 1003,
 					"endColumn": 107,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9346,10 +10514,106 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 885,
+					"line": 1005,
 					"column": 5,
-					"endLine": 885,
+					"endLine": 1005,
 					"endColumn": 92,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1030,
+					"column": 5,
+					"endLine": 1030,
+					"endColumn": 107,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1032,
+					"column": 5,
+					"endLine": 1032,
+					"endColumn": 94,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1051,
+					"column": 5,
+					"endLine": 1051,
+					"endColumn": 107,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1053,
+					"column": 5,
+					"endLine": 1053,
+					"endColumn": 92,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1072,
+					"column": 5,
+					"endLine": 1072,
+					"endColumn": 107,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "onOpen",
+						"justification": "The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"onOpen\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1074,
+					"column": 5,
+					"endLine": 1074,
+					"endColumn": 94,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
