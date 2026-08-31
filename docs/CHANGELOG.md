@@ -1,5 +1,20 @@
 # Changelog
 
+## Reconciliación candidata - H6.19 y H6.20
+
+- Ambos hallazgos de QA real estaban corregidos en producción desde `6c6e2cd`, incluido ya en las
+  releases `0.1.16` y `0.1.17`; este lote documenta la causa y añade cobertura, sin cambiar de nuevo
+  el comportamiento productivo.
+- H6.19 no era un doble calendario de detección. Los deadlines observados pertenecían al histórico
+  de precios y a detección, pero el primero heredaba erróneamente la identidad `detection_poll`.
+  Ahora se distinguen como `price_history_poll` y `detection_poll`; `40d1678` añade una regresión con
+  reloj falso que cruza ambos deadlines y exige una ejecución y un timer por consumidor.
+- H6.20 reserva `session_start` al gesto humano y etiqueta la persistencia periódica de autoridad
+  como `session_lease`, con el saneado positivo habitual y sin datos del lease o de la sesión. La
+  sesión live de veinte minutos continúa como aceptación manual no ejecutada desde el repositorio.
+- El gate combinado del candidato queda verde con lint, 162 ficheros y 2.178 tests, seguridad,
+  observabilidad, contratos de release/beta/soporte y build.
+
 ## Candidato sin publicar - H9.7 y H6.21
 
 - H9.7 añade a Companion un panel ES/EN de historial durable. Abrir o repintar la vista no lee el
@@ -14,7 +29,7 @@
 - Los dos commits están combinados únicamente en `codex/parallel-integration`: no se han integrado
   en `main`, publicado ni desplegado. La revisión independiente hizo corregir el orden por cierre y
   la pérdida de segundos en duraciones/deltas subminuto. El gate combinado final queda verde con
-  lint, 162 ficheros y 2.177 tests, seguridad, observabilidad, contratos de release/beta/soporte y
+  lint, 162 ficheros y 2.178 tests, seguridad, observabilidad, contratos de release/beta/soporte y
   build. La QA visual de H9.7 y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen
   pendientes.
 

@@ -35,8 +35,24 @@ ocho códigos de arranque y los seis de finalización, con paridad ES/EN. El enf
 conexión conserva su ruta independiente y no queda oculto por este cambio. Ambos frentes tienen
 tests focales verdes. La revisión independiente detectó el orden por inicio y la pérdida de segundos
 en duraciones cortas; ambos quedaron corregidos con regresiones por cierre solapado y deltas
-subminuto. El gate combinado pasa lint, 162 ficheros y 2.177 tests, escáner de seguridad, censo de
+subminuto. El gate combinado pasa lint, 162 ficheros y 2.178 tests, escáner de seguridad, censo de
 observabilidad, contratos de release/beta/soporte y build.
+
+**H6.19/H6.20: reconciliadas en la rama candidata `codex/parallel-integration`, sin cambios nuevos
+de producción.** La corrección `6c6e2cd` ya forma parte de `0.1.16` y `0.1.17`. La evidencia de
+H6.19 no correspondía a dos calendarios de detección: el poll de las 06:30:12 era el deadline
+independiente del histórico de precios y el de las 06:30:24 pertenecía a detección; antes del fix
+ambos heredaban la identidad `detection_poll`. Producción ya los distingue como
+`price_history_poll` y `detection_poll`. El candidato `40d1678` añade una regresión con reloj falso
+que reproduce los dos arranques, avanza por ambos deadlines y exige exactamente un poll y un timer
+por consumidor, con `actionId` e identidad propios.
+
+H6.20 quedó resuelta por el mismo commit: `session_start` identifica únicamente el inicio humano y
+la persistencia de acquire/renew/release/contención de autoridad usa `session_lease`, saneada y sin
+datos del lease o de la sesión. La arquitectura vigila ambas identidades cerradas. La observación
+live de una sesión continua de veinte minutos sigue siendo aceptación manual; el repositorio no la
+declara realizada. El gate combinado del candidato pasa lint, 162 ficheros y 2.178 tests, escáner de
+seguridad, censo de observabilidad, contratos de release/beta/soporte y build.
 
 La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
 inventario de sesión, Halloween y cuenta. El alcance real queda explícito: el polling asistido de

@@ -111,6 +111,13 @@ efectos y terminal; los adaptadores de HTTP, scheduler y persistencia reciben so
 con un vocabulario cerrado. Los módulos puros no importan el logger y H8/Mumble conserva su isla sin
 logging ni retención raw.
 
+Los consumidores del scheduler conservan calendarios independientes y una identidad diagnóstica
+propia: la detección emite `detection_poll` y el histórico de precios `price_history_poll`. Esa
+separación evita atribuir al armado de detección el deadline legítimo de otro consumidor aunque
+ambos compartan `ApiPollScheduler`. Del mismo modo, `session_start` queda reservado al gesto humano;
+la persistencia periódica de acquire/renew/release/contención de la autoridad local usa la identidad
+cerrada `session_lease`, sin incorporar datos de sesión ni del lease al log.
+
 `LocalDebugLogger` acepta records sin bloquear al caller, los serializa mediante una cola acotada y
 publica estado `disabled|ready|writing|degraded`. El único sumidero es `LocalDebugJsonlWriter`, sobre
 el adapter de Obsidian: escribe JSONL completo, rota antes de superar 2 MiB, limita el conjunto a cinco
