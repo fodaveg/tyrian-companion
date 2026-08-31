@@ -38,7 +38,8 @@ export type LocalDebugAction = typeof LOCAL_DEBUG_ACTIONS[number];
 export const LOCAL_DEBUG_CODES = [
 	'ok', 'cancelled', 'skipped', 'retry_scheduled', 'validation_failed', 'unavailable',
 	'network_failure', 'timeout', 'rate_limited', 'permission_denied', 'quota_exceeded',
-	'storage_failure', 'corrupt_tail_recovered', 'queue_overflow', 'logger_failure', 'unknown_failure',
+	'storage_failure', 'precondition_failed', 'internal_failure',
+	'corrupt_tail_recovered', 'queue_overflow', 'logger_failure', 'unknown_failure',
 ] as const;
 export type LocalDebugCode = typeof LOCAL_DEBUG_CODES[number];
 

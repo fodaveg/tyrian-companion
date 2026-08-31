@@ -7,8 +7,11 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import TyrianCompanionPlugin from './main';
+import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { DEFAULT_SETTINGS } from './core/settings';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
+import { DetectionQualityRecorder } from './sessions/session-detection-quality-recorder';
 import type { CompleteSessionState, SessionSnapshotReference } from './sessions/session';
 import { createSessionContaminationReview } from './sessions/session-contamination-review';
 import {
@@ -18,11 +21,13 @@ import {
 
 interface RuntimeBootHarness {
 	runtimeReady: boolean;
+	localDebugActions: LocalDebugActionRunner | null;
 	initializeRuntime(): Promise<void>;
 }
 
 describe('deferred runtime startup with persisted terminal state', () => {
 	afterEach(() => {
+		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
 
@@ -41,6 +46,41 @@ describe('deferred runtime startup with persisted terminal state', () => {
 		const plugin = runtimeBootPlugin(new IDBFactory());
 		await expect(plugin.initializeRuntime()).resolves.toBeUndefined();
 		expect(plugin.runtimeReady).toBe(true);
+	});
+
+	it('keeps runtime initialization alive and attributes the historical projection TypeError once', async () => {
+		const factory = new IDBFactory();
+		const store = new IndexedDbSessionRuntimeStore(factory);
+		await expect(store.save(completedSessionRecord())).resolves.toEqual({ status: 'saved' });
+		store.close();
+		const records: LocalDebugRecordInput[] = [];
+		const plugin = runtimeBootPlugin(factory);
+		const actions = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: (() => { let id = 0; return () => `diagnostic-${String(++id)}`; })(),
+		});
+		plugin.localDebugActions = actions;
+		vi.spyOn(DetectionQualityRecorder.prototype, 'getSessionSummary').mockImplementation(() => {
+			throw new TypeError('this.detectionQuality.getSessionSummary is not a function');
+		});
+
+		await expect(actions.run(
+			{ component: 'plugin', action: 'plugin_load', state: 'runtime_initialize' },
+			async () => await plugin.initializeRuntime(),
+		)).resolves.toBeUndefined();
+
+		expect(plugin.runtimeReady).toBe(true);
+		const failures = records.filter(({ phase }) => phase === 'failure');
+		expect(failures).toHaveLength(1);
+		expect(failures[0]).toMatchObject({
+			component: 'session', action: 'session_projection', code: 'precondition_failed',
+			state: 'projection',
+		});
+		expect(failures[0]?.message).toBeInstanceOf(TypeError);
+		expect(records).toContainEqual(expect.objectContaining({
+			component: 'plugin', action: 'plugin_load', phase: 'success', code: 'ok', state: 'runtime_initialize',
+		}));
+		expect(records).not.toContainEqual(expect.objectContaining({ code: 'storage_failure' }));
 	});
 });
 

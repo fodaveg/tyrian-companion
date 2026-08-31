@@ -1055,8 +1055,12 @@ describe('local diagnostics composition', () => {
 		const writes = new Map<string, string>();
 		const folders = new Set<string>();
 		const record = JSON.stringify({
-			schemaVersion: 1, actionId: 'action-1', correlationId: 'flow-1',
-			component: 'session', action: 'session_start', phase: 'success', code: 'ok',
+			schemaVersion: 1, timestampUtc: '2026-08-31T08:00:00.000Z', sequence: 1,
+			pluginVersion: '0.1.14', level: 'error', actionId: 'action-1', correlationId: 'flow-1',
+			component: 'session', action: 'session_projection', phase: 'failure', code: 'precondition_failed',
+			state: 'Astra Uno', message: 'Astra Uno at /home/david/private-vault',
+			errorName: 'TypeError', stack: 'TypeError: Astra Uno at /home/david/private-vault/main.js:1:2',
+			details: { reason: 'Astra Uno' },
 		});
 		const localDebug = {
 			exportSanitized: vi.fn(async () => `${record}\n`),
@@ -1086,8 +1090,14 @@ describe('local diagnostics composition', () => {
 		expect(path).toMatch(/^Tyrian Companion\/diagnostics\/diagnostic-export-/u);
 		const exported = writes.get(path!);
 		expect(exported).toContain('\\"correlationId\\":\\"flow-1\\"');
+		expect(exported).toContain('\\"code\\":\\"precondition_failed\\"');
+		expect(exported).toContain('\\"errorName\\":\\"TypeError\\"');
 		expect(exported).not.toContain('private-secret-name');
 		expect(exported).not.toContain('Astra');
+		expect(exported).not.toContain('private-vault');
+		expect(exported).not.toContain('stack');
+		expect(exported).not.toContain('message');
+		expect(exported).not.toContain('details');
 		expect(proto.previewLocalDebugExport.call(harness)).toEqual({
 			included: ['logs', 'version', 'platform', 'settings'],
 			excluded: ['secret_name', 'character', 'paths', 'payloads'],

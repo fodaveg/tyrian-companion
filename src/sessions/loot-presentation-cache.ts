@@ -4,6 +4,18 @@ import {
 	LocalDebugPersistenceProbe,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
+import type { LocalDebugCode } from '../core/local-debug-contract';
+
+export type LootPresentationRefreshStage = 'source_read' | 'projection' | 'publish';
+
+export type LootPresentationRefreshResult =
+	| { status: 'updated' | 'superseded' }
+	| {
+		status: 'failed';
+		stage: LootPresentationRefreshStage;
+		code: Extract<LocalDebugCode, 'storage_failure' | 'precondition_failed' | 'internal_failure'>;
+		cause: unknown;
+	};
 
 /** Latest-wins cache for the asynchronous completed-runtime read used by the synchronous view. */
 export class LootPresentationCache {
@@ -30,21 +42,42 @@ export class LootPresentationCache {
 		attempt.success();
 	}
 
-	async refresh(
-		load: () => Promise<PreparedSessionNote | null>,
+	async refresh<Source>(
+		load: () => Promise<Source | null>,
+		project: (source: Source) => PreparedSessionNote | null,
 		context?: LocalDebugPersistenceContext,
-	): Promise<void> {
-		const attempt = this.diagnostics.begin('loot_presentation', 'write', context);
+	): Promise<LootPresentationRefreshResult> {
 		const run = ++this.run;
+		let stage: LootPresentationRefreshStage = 'source_read';
+		let next: LootPresentationV1 | null;
 		try {
-			const note = await load();
-			if (run !== this.run) { attempt.skip(); return; }
-			this.value = note === null ? null : buildLootPresentation(note);
-			this.onChange();
-			attempt.success();
-		} catch (error) {
-			attempt.failure();
-			throw error;
+			const source = await load();
+			stage = 'projection';
+			const note = source === null ? null : project(source);
+			next = note === null ? null : buildLootPresentation(note);
+		} catch (cause) {
+			if (run !== this.run) return { status: 'superseded' };
+			return { status: 'failed', stage, code: refreshFailureCode(stage, cause), cause };
 		}
+		if (run !== this.run) return { status: 'superseded' };
+		const attempt = this.diagnostics.begin('loot_presentation', 'write', context);
+		this.value = next;
+		attempt.success();
+		stage = 'publish';
+		try {
+			this.onChange();
+		} catch (cause) {
+			return { status: 'failed', stage, code: 'internal_failure', cause };
+		}
+		return { status: 'updated' };
 	}
+}
+
+/** Classifies only failures from the callback stage; cache persistence has its own probe. */
+function refreshFailureCode(
+	stage: Exclude<LootPresentationRefreshStage, 'publish'>,
+	cause: unknown,
+): Extract<LocalDebugCode, 'storage_failure' | 'precondition_failed' | 'internal_failure'> {
+	if (stage === 'source_read') return 'storage_failure';
+	return cause instanceof TypeError ? 'precondition_failed' : 'internal_failure';
 }

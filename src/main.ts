@@ -37,6 +37,7 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
+import { resanitizeLocalDebugRecord } from './core/local-debug-sanitizer';
 import {
 	createLocalDebugPersistenceSink,
 	LocalDebugPersistenceProbe,
@@ -725,9 +726,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
-					if (session.status === 'complete') fireAndForgetLocal(this.localDebugActions,
-						{ component: 'session', action: 'session_projection', state: 'loot_projection' },
-						() => this.refreshLootPresentation());
+					if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
 					if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 						{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
 						() => this.reconcilePendingProposals());
@@ -1036,7 +1035,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Creates one support package locally with an explicit non-secret settings allowlist. */
 	async exportLocalDebugPackage(): Promise<string | null> {
 		const run = async (): Promise<string | null> => {
-			const logsJsonl = safeLocalDebugJsonl(await this.localDebug?.exportSanitized() ?? '');
+			const logsJsonl = safeLocalDebugSupportJsonl(await this.localDebug?.exportSanitized() ?? '');
 			if (logsJsonl.length === 0) return null;
 			const baseName = `diagnostic-export-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
 			const directory = `${this.settings.outputFolder}/diagnostics`;
@@ -2675,12 +2674,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async refreshLootPresentation(): Promise<void> {
-		await this.lootPresentation.refresh(async () => {
-			const runtime = await this.sessions.getCompletedRuntimeRecord();
-			if (!runtime) return null;
-			const prepared = prepareSessionNote(this.sessionNoteInput(runtime));
-			return prepared.status === 'ok' ? prepared.note : null;
+		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+			component: 'session', action: 'session_projection', state: 'loot_projection',
 		});
+		const result = await this.lootPresentation.refresh(
+			async () => await this.sessions.getCompletedRuntimeRecord(),
+			(runtime) => {
+				const prepared = prepareSessionNote(this.sessionNoteInput(runtime));
+				return prepared.status === 'ok' ? prepared.note : null;
+			},
+			span.context,
+		);
+		if (result.status === 'failed') span.failure(result.cause, result.code, result.stage);
+		else if (result.status === 'superseded') span.cancel(result.status);
+		else span.success(result.status);
 	}
 
 	private refreshSessionRibbon(): void {
@@ -3052,6 +3059,36 @@ function safeLocalDebugJsonl(value: string, newestLimit?: number): string {
 	}
 	const selected = newestLimit === undefined ? records : records.slice(-Math.max(0, newestLimit));
 	return selected.length === 0 ? '' : `${selected.join('\n')}\n`;
+}
+
+/** Projects support logs to structural diagnostics without free text, stacks or personal data. */
+function safeLocalDebugSupportJsonl(value: string): string {
+	const records: string[] = [];
+	for (const line of value.split('\n')) {
+		if (line.length === 0) continue;
+		try {
+			const record = resanitizeLocalDebugRecord(JSON.parse(line));
+			if (record === null) continue;
+			const supportRecord = {
+				schemaVersion: record.schemaVersion,
+				timestampUtc: record.timestampUtc,
+				sequence: record.sequence,
+				pluginVersion: record.pluginVersion,
+				level: record.level,
+				component: record.component,
+				action: record.action,
+				phase: record.phase,
+				code: record.code,
+				actionId: record.actionId,
+				correlationId: record.correlationId,
+				...(record.durationMs === undefined ? {} : { durationMs: record.durationMs }),
+				...(record.attempt === undefined ? {} : { attempt: record.attempt }),
+				...(record.errorName === undefined ? {} : { errorName: record.errorName }),
+			};
+			records.push(JSON.stringify(supportRecord));
+		} catch { /* the core export boundary already reports corrupt retained lines */ }
+	}
+	return records.length === 0 ? '' : `${records.join('\n')}\n`;
 }
 
 /** Creates each missing portable segment so package writes remain create-only outside log rotation. */

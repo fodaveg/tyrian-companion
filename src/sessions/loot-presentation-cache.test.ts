@@ -9,7 +9,7 @@ describe('LootPresentationCache', () => {
 		const changed = vi.fn();
 		const cache = new LootPresentationCache(changed);
 		const pending = deferred<PreparedSessionNote | null>();
-		const refresh = cache.refresh(() => pending.promise);
+		const refresh = cache.refresh(() => pending.promise, (value) => value);
 		cache.invalidate(); // clear
 		cache.invalidate(); // active
 		pending.resolve(note('es'));
@@ -22,8 +22,8 @@ describe('LootPresentationCache', () => {
 		const cache = new LootPresentationCache();
 		const first = deferred<PreparedSessionNote | null>();
 		const second = deferred<PreparedSessionNote | null>();
-		const a = cache.refresh(() => first.promise);
-		const b = cache.refresh(() => second.promise);
+		const a = cache.refresh(() => first.promise, (value) => value);
+		const b = cache.refresh(() => second.promise, (value) => value);
 		second.resolve(note('en'));
 		await b;
 		first.resolve(note('es'));
@@ -52,6 +52,38 @@ describe('LootPresentationCache', () => {
 			{ operation: 'read', phase: 'success', code: 'ok' },
 			{ operation: 'delete', phase: 'success', code: 'ok' },
 		]);
+	});
+
+	it('attributes a projection TypeError to its precondition without inventing a cache storage failure', async () => {
+		const events: LocalDebugPersistenceEvent[] = [];
+		const cache = new LootPresentationCache(
+			undefined,
+			new LocalDebugPersistenceProbe({
+				sink: (event) => events.push(event),
+				createId: () => crypto.randomUUID(),
+			}),
+		);
+		const cause = new TypeError('this.detectionQuality.getSessionSummary is not a function');
+
+		const result = await cache.refresh(async () => note('es'), () => { throw cause; });
+
+		expect(result).toEqual({
+			status: 'failed', stage: 'projection', code: 'precondition_failed', cause,
+		});
+		expect(events).toEqual([]);
+		expect(cache.get()).toBeNull();
+		expect(events.at(-1)).toMatchObject({ operation: 'read', phase: 'success', code: 'ok' });
+	});
+
+	it('keeps source-store failures distinct from internal projection failures', async () => {
+		const cache = new LootPresentationCache();
+		const storageCause = new DOMException('IndexedDB unavailable', 'UnknownError');
+		const internalCause = new Error('projection contract bug');
+
+		await expect(cache.refresh(async () => { throw storageCause; }, (value) => value))
+			.resolves.toEqual({ status: 'failed', stage: 'source_read', code: 'storage_failure', cause: storageCause });
+		await expect(cache.refresh(async () => note('es'), () => { throw internalCause; }))
+			.resolves.toEqual({ status: 'failed', stage: 'projection', code: 'internal_failure', cause: internalCause });
 	});
 });
 
