@@ -54,6 +54,7 @@ export class PendingProposalService {
 		private readonly instanceId: string,
 		private readonly now: () => Date = () => new Date(),
 		private readonly onStateChange: () => void = () => undefined,
+		private readonly onExpired: (proposalId: string, expiredAt: string) => void = () => undefined,
 	) {
 		if (!validId(instanceId)) throw new TypeError('Proposal queue instance id is invalid.');
 	}
@@ -72,13 +73,21 @@ export class PendingProposalService {
 		if (this.disposed) return this.unavailable();
 		try {
 			const now = this.timestamp();
-			const nextState = await this.store.transaction((raw) => {
+			const projected = await this.store.transaction((raw) => {
 				const record = this.record(raw);
 				const reconciled = expireAndPrune(record, now);
-				return { result: projection(reconciled), next: reconciled };
+				return {
+					result: {
+						state: projection(reconciled),
+						expired: reconciled.receipts.filter((receipt) => receipt.outcome === 'expired')
+							.map((receipt) => ({ proposalId: receipt.proposalId, expiredAt: receipt.resolvedAt })),
+					},
+					next: reconciled,
+				};
 			});
 			if (this.disposed) return this.getState();
-			this.state = nextState;
+			this.state = projected.state;
+			for (const receipt of projected.expired) this.onExpired(receipt.proposalId, receipt.expiredAt);
 			this.onStateChange();
 			return this.getState();
 		} catch { return this.unavailable(); }

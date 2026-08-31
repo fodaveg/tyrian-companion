@@ -223,6 +223,22 @@ describe('PendingProposalService', () => {
 		expect((await queue.project()).pendingCount).toBe(0);
 	});
 
+	it('reports durable expirations to the optional pilot hook without changing receipt semantics', async () => {
+		const clock = fakeClock('2026-08-13T12:00:00.000Z');
+		const expired: Array<{ proposalId: string; expiredAt: string }> = [];
+		const queue = new PendingProposalService(
+			new MemoryPendingProposalStore(), 'window-a', clock.now, () => undefined,
+			(proposalId, expiredAt) => expired.push({ proposalId, expiredAt }),
+		);
+		await queue.enqueue({ phase: 'start', proposal: startProposal() });
+		clock.advance(PENDING_PROPOSAL_EXPIRES_MS + 1);
+		await queue.project();
+		expect(expired).toContainEqual({
+			proposalId: startProposal().proposalId,
+			expiredAt: '2026-08-14T12:00:00.001Z',
+		});
+	});
+
 	it('invalidates proposals whose account, session or recovery binding changed', async () => {
 		const queue = service(new MemoryPendingProposalStore());
 		await queue.enqueue({ phase: 'stop', proposal: stopProposal(), sessionId: 'session-a', baselineSnapshotId: 'baseline-a' });

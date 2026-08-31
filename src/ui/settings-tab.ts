@@ -26,6 +26,8 @@ import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from 
 import type TyrianCompanionPlugin from '../main';
 import type { LocalDebugExportPreview } from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
+import type { PilotMetricsExportPreview } from '../sessions/pilot-metrics-export';
+import { PILOT_METRICS_MAX_OBSERVATIONS, PILOT_PLATFORMS, type PilotPlatform } from '../sessions/pilot-metrics-model';
 import { SessionHistoryScrubController } from './session-history-scrub-controller';
 import { projectConnectionDescription, projectManagedAssetsDescription } from './settings-i18n';
 import { VaultFolderInputSuggest } from './vault-folder-suggest';
@@ -361,6 +363,72 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 									? this.t('settings.debug.cleared') : this.t('settings.debug.failed'));
 							} catch { feedback.setText(this.t('settings.debug.failed')); }
 							finally { button.setDisabled(false); this.refreshForSettingsChange(); }
+						});
+					});
+				},
+			},
+			{
+				category: 'diagnostics',
+				name: this.t('settings.pilot.name'),
+				desc: this.t('settings.pilot.desc', { limit: PILOT_METRICS_MAX_OBSERVATIONS }),
+				render: (setting) => {
+					const state = this.plugin.getPilotMetricsState();
+					const status = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					status.setAttr('role', state.status === 'unavailable' || state.status === 'inconsistent' ? 'alert' : 'status');
+					status.setAttr('aria-live', 'polite');
+					status.setText(this.t(`settings.pilot.status.${state.status}`, state.status === 'unconfigured'
+						? undefined : state));
+					let platform: PilotPlatform = 'linux_steam_proton';
+					let platformVersion = '';
+					const profileFlight = this.plugin.getPilotProfile();
+					setting.addDropdown((dropdown) => {
+						dropdown.selectEl.setAttr('aria-label', this.t('settings.pilot.platform'));
+						for (const value of PILOT_PLATFORMS) dropdown.addOption(value, this.t(`settings.pilot.platform.${value}`));
+						dropdown.onChange((value) => { platform = value as PilotPlatform; });
+						void profileFlight.then((profile) => {
+							const refreshed = this.plugin.getPilotMetricsState();
+							status.setText(this.t(`settings.pilot.status.${refreshed.status}`, refreshed.status === 'unconfigured'
+								? undefined : refreshed));
+							if (!profile || !dropdown.selectEl.isConnected) return;
+							platform = profile.platform;
+							dropdown.setValue(profile.platform);
+						});
+					});
+					setting.addText((text) => {
+						text.inputEl.setAttr('aria-label', this.t('settings.pilot.version'));
+						text.setPlaceholder(this.t('settings.pilot.version')).onChange((value) => { platformVersion = value; });
+						void profileFlight.then((profile) => {
+							if (!profile || !text.inputEl.isConnected) return;
+							platformVersion = profile.platformVersion;
+							text.setValue(profile.platformVersion);
+						});
+					});
+					setting.addButton((button) => button.setButtonText(this.t('settings.pilot.save')).onClick(async () => {
+						button.setDisabled(true);
+						const saved = await this.plugin.configurePilotProfile(platform, platformVersion.trim());
+						status.setText(this.t(saved ? 'settings.pilot.saved' : 'settings.pilot.failed'));
+						button.setDisabled(false);
+					}));
+					setting.addButton((button) => button.setButtonText(this.t('settings.pilot.review')).setCta().onClick(async () => {
+						button.setDisabled(true);
+						try {
+							const preview = await this.plugin.previewPilotMetricsExport();
+							if (!preview || !await confirmPilotMetricsExport(this.app, this.t.bind(this), preview)) return;
+							const result = await this.plugin.exportPilotMetrics();
+							status.setText(this.t(result?.status === 'written' || result?.status === 'unchanged'
+								? 'settings.pilot.exported' : 'settings.pilot.failed'));
+						} finally { button.setDisabled(false); }
+					}));
+					setting.addButton((button) => {
+						button.buttonEl.addClass('mod-warning');
+						button.setButtonText(this.t('settings.pilot.clear')).onClick(async () => {
+							if (!await confirmPilotMetricsClear(this.app, this.t.bind(this))) return;
+							button.setDisabled(true);
+							const cleared = await this.plugin.clearPilotMetrics();
+							status.setText(this.t(cleared === null ? 'settings.pilot.failed' : 'settings.pilot.status.ready', {
+								observations: 0, limit: PILOT_METRICS_MAX_OBSERVATIONS,
+							}));
+							button.setDisabled(false);
 						});
 					});
 				},
@@ -882,6 +950,54 @@ function confirmLocalDebugClear(
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
 				const clear = actions.createEl('button', { text: t('settings.debug.clearModal.confirm'), cls: 'mod-warning' });
+				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
+}
+
+function confirmPilotMetricsExport(
+	app: App,
+	t: (key: TranslationKey, params?: TranslationParams) => string,
+	preview: PilotMetricsExportPreview,
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle(t('settings.pilot.preview.title'));
+				this.contentEl.createEl('p', { text: t('settings.pilot.preview.summary', {
+					observations: preview.observationCount, platforms: preview.platformCount,
+				}) });
+				this.contentEl.createEl('p', { text: t('settings.pilot.preview.privacy') });
+				const list = this.contentEl.createEl('ul');
+				for (const file of preview.files) list.createEl('li', { text: file });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const confirm = actions.createEl('button', { text: t('settings.pilot.preview.confirm'), cls: 'mod-cta' });
+				confirm.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
+			}
+			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }
+		}(app);
+		modal.open();
+	});
+}
+
+function confirmPilotMetricsClear(
+	app: App,
+	t: (key: TranslationKey) => string,
+): Promise<boolean> {
+	return new Promise((resolve) => {
+		let settled = false;
+		const modal = new class extends Modal {
+			onOpen(): void {
+				this.setTitle(t('settings.pilot.clear.title'));
+				this.contentEl.createEl('p', { text: t('settings.pilot.clear.desc') });
+				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
+				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
+				const clear = actions.createEl('button', { text: t('settings.pilot.clear.confirm'), cls: 'mod-warning' });
 				clear.addEventListener('click', () => { settled = true; resolve(true); this.close(); });
 			}
 			onClose(): void { this.contentEl.empty(); if (!settled) resolve(false); }

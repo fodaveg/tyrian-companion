@@ -33,6 +33,18 @@ describe('IndexedDbPilotMetricsStore', () => {
 		const observation = await presented('proposal-b');
 		const presentations = await Promise.all([first.ensureObservation(observation), second.ensureObservation(observation)]);
 		expect(presentations.map((result) => result.status).sort()).toEqual(['duplicate', 'ok']);
+		await expect(second.ensureObservation({
+			...observation,
+			reviewPresentedAt: '2026-08-20T10:00:30.000Z',
+			pollingIntervalMs: 120_000,
+		})).resolves.toMatchObject({
+			status: 'duplicate',
+			value: { reviewPresentedAt: '2026-08-20T10:00:00.000Z', pollingIntervalMs: 60_000 },
+		});
+		await expect(second.ensureObservation({
+			...observation,
+			window: { ...observation.window, from: '2026-08-20T09:58:00.000Z' },
+		})).resolves.toEqual({ status: 'error', code: 'inconsistent' });
 		const terminal = {
 			status: 'decided' as const, decidedAt: '2026-08-20T10:02:00.000Z', decision: 'accepted' as const,
 			effectiveResult: 'accepted_workflow_succeeded' as const, correctionCause: null, humanBoundaryAt: null,

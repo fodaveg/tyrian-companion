@@ -64,13 +64,14 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getSessionDetectionQuality(sessionId: string): SessionDetectionQualitySummary | null;
 	getDetectionQualityStats(): DetectionQualityStats | null;
 	getPendingProposalState(): ProposalQueueState;
+	recordAssistedProposalPresented?(): void;
 	reviewPendingProposal(intent: PendingProposalIntent): Promise<boolean>;
-	dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void>;
-	openPendingSessionStart(intent: PendingProposalIntent): void;
-	stopPendingSession(intent: PendingProposalIntent): Promise<void>;
+	dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause, humanBoundaryAt?: string | null): Promise<void>;
+	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt?: string | null): void;
+	stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt?: string | null): Promise<void>;
 	armAssistedDetection(): Promise<ProductActionOutcome>;
 	disarmAssistedDetection(): void;
-	dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void>;
+	dismissAssistedProposal(cause: DetectionCorrectionCause, humanBoundaryAt?: string | null): Promise<void>;
 	getSessionStartFailure(): SessionStartFailure | null;
 	getSessionStopFailure(): SessionStopFailure | null;
 	getProvisionalDelta(): StorageDelta | null;
@@ -80,8 +81,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	openSessionReview(): void;
 	confirmClearCompletedSession(): void;
 	getSessionRecoveryState(): SessionRecoveryState;
-	openManualSessionStart(): void;
-	stopManualSession(): Promise<void>;
+	openManualSessionStart(humanBoundaryAt?: string | null): void;
+	stopManualSession(humanBoundaryAt?: string | null): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
 	loadSessionHistory(): Promise<SessionHistoryLoadResult>;
@@ -300,13 +301,19 @@ export class TyrianCompanionView extends ItemView {
 		review.addEventListener('click', () => {
 			void this.actions.reviewPendingProposal(intent).then((reviewed) => {
 				if (!reviewed) return;
-				if (next.phase === 'start') this.actions.openPendingSessionStart(intent);
-				else void this.actions.stopPendingSession(intent);
+				new PilotBoundaryModal(this.app, next.phase, (humanBoundaryAt) => {
+					if (next.phase === 'start') this.actions.openPendingSessionStart(intent, humanBoundaryAt);
+					else void this.actions.stopPendingSession(intent, humanBoundaryAt);
+				}, () => this.actions.getLocale()).open();
 			});
 		});
 		const dismiss = actions.createEl('button', { text: this.t('view.dismiss') });
 		dismiss.addEventListener('click', () => {
-			new DetectionCorrectionModal(this.app, next.phase, (cause) => this.actions.dismissPendingProposal(intent, cause), () => this.actions.getLocale()).open();
+			new DetectionCorrectionModal(
+				this.app, next.phase,
+				(cause, humanBoundaryAt) => this.actions.dismissPendingProposal(intent, cause, humanBoundaryAt),
+				() => this.actions.getLocale(),
+			).open();
 		});
 	}
 
@@ -528,23 +535,35 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		if (state.status === 'start_proposed') {
+			this.actions.recordAssistedProposalPresented?.();
 			card.createEl('p', { text: this.t('view.startProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const start = actions.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
 			start.disabled = session.status !== 'idle';
-			start.addEventListener('click', () => this.actions.openManualSessionStart());
+			start.addEventListener('click', () => {
+				new PilotBoundaryModal(
+					this.app, 'start', (boundary) => this.actions.openManualSessionStart(boundary),
+					() => this.actions.getLocale(),
+				).open();
+			});
 			this.addDismissAndDisarm(actions, 'start');
 			return;
 		}
 
 		if (state.status === 'stop_proposed') {
+			this.actions.recordAssistedProposalPresented?.();
 			card.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const stop = actions.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
-			stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			stop.addEventListener('click', () => {
+				new PilotBoundaryModal(
+					this.app, 'stop', (boundary) => { void this.actions.stopManualSession(boundary); },
+					() => this.actions.getLocale(),
+				).open();
+			});
 			this.addDismissAndDisarm(actions, 'stop');
 			return;
 		}
@@ -577,7 +596,7 @@ export class TyrianCompanionView extends ItemView {
 			new DetectionCorrectionModal(
 				this.app,
 				phase,
-				(cause) => this.actions.dismissAssistedProposal(cause),
+				(cause, boundary) => this.actions.dismissAssistedProposal(cause, boundary),
 				() => this.actions.getLocale(),
 			).open();
 		});
@@ -905,7 +924,7 @@ class DetectionCorrectionModal extends Modal {
 	constructor(
 		app: App,
 		private readonly phase: 'start' | 'stop',
-		private readonly onConfirm: (cause: DetectionCorrectionCause) => Promise<void>,
+		private readonly onConfirm: (cause: DetectionCorrectionCause, humanBoundaryAt: string | null) => Promise<void>,
 		private readonly getLocale: () => Locale = () => 'es',
 	) {
 		super(app);
@@ -932,6 +951,7 @@ class DetectionCorrectionModal extends Modal {
 		}));
 		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
 		error.setAttr('role', 'alert');
+		const boundary = pilotBoundaryInput(form, this.getLocale());
 		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepProposal'), type: 'button' });
 		const submit = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.saveAndDismiss'), type: 'submit', cls: 'mod-cta' });
@@ -946,7 +966,14 @@ class DetectionCorrectionModal extends Modal {
 			submit.disabled = true;
 			cancel.disabled = true;
 			error.setText('');
-			void this.onConfirm(selected).then(() => this.close()).catch(() => {
+			const humanBoundaryAt = parsePilotBoundary(boundary.value);
+			if (boundary.value.length > 0 && humanBoundaryAt === null) {
+				error.setText(runtimeText(this.getLocale(), 'modal.pilotBoundaryInvalid'));
+				submit.disabled = false;
+				cancel.disabled = false;
+				return;
+			}
+			void this.onConfirm(selected, humanBoundaryAt).then(() => this.close()).catch(() => {
 				error.setText(runtimeText(this.getLocale(), 'modal.dismissFailed'));
 				submit.disabled = false;
 				cancel.disabled = false;
@@ -954,6 +981,59 @@ class DetectionCorrectionModal extends Modal {
 		});
 		inputs[0]?.input.focus();
 	}
+}
+
+class PilotBoundaryModal extends Modal {
+	constructor(
+		app: App,
+		private readonly phase: 'start' | 'stop',
+		private readonly onConfirm: (humanBoundaryAt: string | null) => void,
+		private readonly getLocale: () => Locale = () => 'es',
+	) { super(app); }
+
+	onOpen(): void {
+		this.setTitle(runtimeText(this.getLocale(), 'modal.pilotBoundaryTitle'));
+		this.contentEl.createEl('p', { text: runtimeText(this.getLocale(), 'modal.pilotBoundaryDetail') });
+		const form = this.contentEl.createEl('form');
+		const input = pilotBoundaryInput(form, this.getLocale());
+		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
+		error.setAttr('role', 'alert');
+		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepProposal'), type: 'button' });
+		const submit = actions.createEl('button', {
+			text: runtimeText(this.getLocale(), this.phase === 'start' ? 'view.reviewStart' : 'view.reviewStop'),
+			type: 'submit', cls: 'mod-cta',
+		});
+		cancel.addEventListener('click', () => this.close());
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			const boundary = parsePilotBoundary(input.value);
+			if (input.value.length > 0 && boundary === null) {
+				error.setText(runtimeText(this.getLocale(), 'modal.pilotBoundaryInvalid'));
+				return;
+			}
+			submit.disabled = true;
+			cancel.disabled = true;
+			this.onConfirm(boundary);
+			this.close();
+		});
+		input.focus();
+	}
+}
+
+function pilotBoundaryInput(container: HTMLElement, locale: Locale): HTMLInputElement {
+	const label = container.createEl('label', { text: runtimeText(locale, 'modal.pilotBoundaryLabel') });
+	const input = label.createEl('input');
+	input.type = 'datetime-local';
+	input.step = '1';
+	container.createEl('p', { text: runtimeText(locale, 'modal.pilotBoundaryOptional') });
+	return input;
+}
+
+function parsePilotBoundary(value: string): string | null {
+	if (value.length === 0) return null;
+	const parsed = new Date(value);
+	return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 export class SessionContaminationReviewModal extends Modal {

@@ -1,4 +1,5 @@
 import { aggregatePilotMetrics, type PilotAggregationV1 } from './pilot-metrics-statistics';
+import { DETECTION_CORRECTION_CAUSES } from './session-detection-quality';
 import type { PilotJournalHealth, PilotJournalSnapshotV1, PilotObservationV1 } from './pilot-metrics-model';
 
 export interface PilotMetricsExportFile { path: string }
@@ -160,7 +161,11 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 	const headers = [
 		'scope', 'platform', 'platform_version', 'obsidian_version', 'tyrian_version', 'verdict',
 		'start_k', 'start_n', 'start_rate', 'start_wilson_low', 'start_wilson_high', 'start_coverage',
+		'start_reviews', 'start_decisions', 'start_expired', 'start_workflow_failed',
+		...DETECTION_CORRECTION_CAUSES.map((cause) => `start_cause_${cause}`),
 		'stop_k', 'stop_n', 'stop_rate', 'stop_wilson_low', 'stop_wilson_high', 'stop_coverage',
+		'stop_reviews', 'stop_decisions', 'stop_expired', 'stop_workflow_failed',
+		...DETECTION_CORRECTION_CAUSES.map((cause) => `stop_cause_${cause}`),
 		'precision_count', 'precision_median_s', 'precision_p90_s', 'precision_max_s',
 		'precision_median_intervals', 'precision_p90_intervals', 'precision_max_intervals',
 		'recovery_presented', 'recovery_succeeded', 'recovery_failed', 'recovery_discarded', 'recovery_rate',
@@ -172,8 +177,12 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		row.scope.versions?.tyrianVersion ?? '', row.verdict,
 		row.falseStart.k, row.falseStart.n, row.falseStart.rate ?? '', row.falseStart.wilson95?.low ?? '',
 		row.falseStart.wilson95?.high ?? '', row.falseStart.coverage ?? '',
+		row.falseStart.reviews, row.falseStart.decisions, row.falseStart.expired, row.falseStart.workflowFailed,
+		...DETECTION_CORRECTION_CAUSES.map((cause) => row.falseStart.causes[cause]),
 		row.falseStop.k, row.falseStop.n, row.falseStop.rate ?? '', row.falseStop.wilson95?.low ?? '',
 		row.falseStop.wilson95?.high ?? '', row.falseStop.coverage ?? '',
+		row.falseStop.reviews, row.falseStop.decisions, row.falseStop.expired, row.falseStop.workflowFailed,
+		...DETECTION_CORRECTION_CAUSES.map((cause) => row.falseStop.causes[cause]),
 		row.precision.count, row.precision.seconds?.median ?? '', row.precision.seconds?.p90 ?? '',
 		row.precision.seconds?.maximum ?? '', row.precision.intervalMultiples?.median ?? '',
 		row.precision.intervalMultiples?.p90 ?? '', row.precision.intervalMultiples?.maximum ?? '',

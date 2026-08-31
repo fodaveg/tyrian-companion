@@ -20,6 +20,7 @@ export const PILOT_METRICS_OBSERVATION_STORE = 'observations-v1';
 export type PilotStoreResult<T = undefined> =
 	| { status: 'ok'; value: T }
 	| { status: 'duplicate'; value: T }
+	| { status: 'missing' }
 	| { status: 'error'; code: 'unavailable' | 'inconsistent' | 'full' | 'unconfigured' };
 
 export interface PilotMetricsStore {
@@ -27,7 +28,7 @@ export interface PilotMetricsStore {
 	loadProfile(): Promise<PilotStoreResult<PilotEnvironmentV1>>;
 	saveProfile(profile: PilotEnvironmentV1): Promise<PilotStoreResult<PilotEnvironmentV1>>;
 	ensureObservation(observation: PilotObservationV1): Promise<PilotStoreResult<PilotObservationV1>>;
-	finishProposal(proposalRef: string, terminal: PilotProposalTerminalV1): Promise<PilotStoreResult<PilotProposalObservationV1>>;
+	finishProposal(proposalRef: string, terminal: PilotProposalTerminalV1, allowMissing?: boolean): Promise<PilotStoreResult<PilotProposalObservationV1>>;
 	finishSession(sessionRef: string, completedAt: string): Promise<PilotStoreResult<PilotSessionObservationV1>>;
 	finishRecovery(recoveryRef: string, terminal: NonNullable<PilotRecoveryObservationV1['terminal']>): Promise<PilotStoreResult<PilotRecoveryObservationV1>>;
 	clearObservations(): Promise<PilotStoreResult<number>>;
@@ -107,12 +108,13 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 	async finishProposal(
 		proposalRef: string,
 		terminal: PilotProposalTerminalV1,
+		allowMissing = false,
 	): Promise<PilotStoreResult<PilotProposalObservationV1>> {
 		return await this.finish<PilotProposalObservationV1>(`proposal:${proposalRef}`, (existing) => {
 			if (!isPilotObservation(existing) || existing.kind !== 'proposal') return null;
 			const candidate = { ...existing, terminal };
 			return isPilotObservation(candidate) && candidate.kind === 'proposal' ? candidate : null;
-		});
+		}, allowMissing);
 	}
 
 	async finishSession(sessionRef: string, completedAt: string): Promise<PilotStoreResult<PilotSessionObservationV1>> {
@@ -155,12 +157,17 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 	private async finish<T extends PilotObservationV1>(
 		key: string,
 		update: (existing: unknown) => T | null,
+		allowMissing = false,
 	): Promise<PilotStoreResult<T>> {
 		try {
 			const database = await this.open();
 			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
+			if (existing === undefined) {
+				transaction.abort();
+				return allowMissing ? { status: 'missing' } : { status: 'error', code: 'inconsistent' };
+			}
 			const candidate = update(existing);
 			if (!candidate) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
 			const currentTerminal = existingTerminal(existing);
@@ -221,13 +228,19 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 function samePresentation(existing: PilotObservationV1, candidate: PilotObservationV1): boolean {
 	if (existing.kind !== candidate.kind) return false;
 	if (existing.kind === 'proposal' && candidate.kind === 'proposal') {
-		return JSON.stringify({ ...existing, terminal: null }) === JSON.stringify({ ...candidate, terminal: null });
+		return JSON.stringify({
+			proposalRef: existing.proposalRef, phase: existing.phase, window: existing.window,
+			evidenceQuality: existing.evidenceQuality,
+		}) === JSON.stringify({
+			proposalRef: candidate.proposalRef, phase: candidate.phase, window: candidate.window,
+			evidenceQuality: candidate.evidenceQuality,
+		});
 	}
 	if (existing.kind === 'session' && candidate.kind === 'session') {
 		return JSON.stringify({ ...existing, completedAt: null }) === JSON.stringify({ ...candidate, completedAt: null });
 	}
 	if (existing.kind === 'recovery' && candidate.kind === 'recovery') {
-		return JSON.stringify({ ...existing, terminal: null }) === JSON.stringify({ ...candidate, terminal: null });
+		return existing.recoveryRef === candidate.recoveryRef;
 	}
 	return false;
 }

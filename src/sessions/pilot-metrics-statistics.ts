@@ -82,7 +82,7 @@ export function wilson95(k: number, n: number): { low: number; high: number } | 
 	const denominator = 1 + z * z / n;
 	const center = (p + z * z / (2 * n)) / denominator;
 	const half = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator;
-	return { low: center - half, high: center + half };
+	return { low: Math.max(0, center - half), high: Math.min(1, center + half) };
 }
 
 function aggregate(
@@ -181,13 +181,14 @@ function verdict(
 	start: PilotRateMetricV1,
 	stop: PilotRateMetricV1,
 	precision: PilotPrecisionMetricV1,
-	recovery: { presented: number; rate: number | null },
+	recovery: { presented: number; succeeded: number; failed: number; discarded: number; rate: number | null },
 	completedSessions: number,
 	health: PilotJournalHealth,
 ): 'pass' | 'fail' | 'inconclusive' {
 	if (health !== 'ready') return 'inconclusive';
 	const enough = start.n >= 20 && stop.n >= 20 && start.coverage !== null && stop.coverage !== null &&
-		recovery.presented >= 20 && completedSessions >= 50 && precision.intervalMultiples !== null;
+		recovery.presented >= 20 && recovery.succeeded + recovery.failed + recovery.discarded === recovery.presented &&
+		completedSessions >= 50 && precision.intervalMultiples !== null;
 	if (!enough) return 'inconclusive';
 	return start.rate! <= 0.1 && stop.rate! <= 0.1 && start.coverage! >= 0.9 && stop.coverage! >= 0.9 &&
 		recovery.rate! >= 0.95 && precision.intervalMultiples!.median <= 1 && precision.intervalMultiples!.p90 <= 2

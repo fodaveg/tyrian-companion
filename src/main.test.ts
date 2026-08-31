@@ -25,7 +25,7 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
 import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
 import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
-import type { PendingProposalIntent } from './sessions/pending-proposal-model';
+import { proposalIntent, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
 
@@ -348,6 +348,41 @@ describe('product navigation diagnostics', () => {
 		acknowledge.mockRejectedValueOnce(new Error('storage failed'));
 		await expect(review.call(harness, intent)).resolves.toBe('failed');
 		expect(emitNotice).toHaveBeenCalledTimes(2);
+	});
+
+	it('journals the first explicit pending-proposal review with only the metric DTO', async () => {
+		const proposalPresented = vi.fn(async () => true);
+		const proposal = {
+			version: 1 as const, proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
+			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
+			proposal: {
+				version: 1 as const, proposalId: 'proposal-1', accountId: 'account-1',
+				ruleSet: { id: 'rules', version: 1 },
+				possibleStart: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
+				evidenceQuality: 'complete' as const, confirmedAt: '2026-08-20T10:00:00.000Z',
+				firstSignal: {}, confirmationSignal: {},
+			},
+			detectedAt: '2026-08-20T10:00:00.000Z', enqueuedAt: '2026-08-20T10:00:00.000Z',
+			staleAt: '2026-08-20T16:00:00.000Z', expiresAt: '2026-08-21T10:00:00.000Z',
+			acknowledgedAt: null, lastSurfacedAt: null, duplicateCount: 0,
+			lastObservedAt: '2026-08-20T10:00:00.000Z', claim: null,
+		};
+		const harness = {
+			runtimeReady: true,
+			settings: { language: 'en' as const, pollingIntervalMinutes: 2 },
+			pendingProposals: { acknowledge: vi.fn(async () => true), getState: () => ({ status: 'ready' as const, pendingCount: 1, next: proposal }) },
+			pilotMetrics: { proposalPresented }, notifyRuntimeStarting: vi.fn(), emitNotice: vi.fn(),
+			activateView: vi.fn(async () => undefined), renderViews: vi.fn(), localDebugActions: null,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewPendingProposalOutcome(this: typeof harness, intent: PendingProposalIntent): Promise<string>;
+		}).reviewPendingProposalOutcome;
+		await expect(review.call(harness, proposalIntent(proposal as never))).resolves.toBe('completed');
+		expect(proposalPresented).toHaveBeenCalledWith(expect.objectContaining({
+			proposalId: 'proposal-1', phase: 'start', pollingIntervalMs: 120_000,
+			window: proposal.proposal.possibleStart, evidenceQuality: 'complete',
+		}));
 	});
 
 	it('does not announce success when an advisor refresh discovers the selected credential is absent', async () => {

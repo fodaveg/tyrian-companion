@@ -20,6 +20,8 @@ describe('PilotMetricsExporter', () => {
 			expect(payload).not.toContain(canary);
 		}
 		expect(payload).toContain('stable pseudonym, not anonymization');
+		expect(payload).toContain('"start_workflow_failed"');
+		expect(payload).toContain('"stop_cause_temporary_pause"');
 	});
 
 	it('is create-only, returns unchanged for exact files and preflights conflicts before any write', async () => {

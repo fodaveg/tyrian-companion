@@ -55,7 +55,38 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 		expect(result.platforms.map((row) => row.scope.platform)).toEqual(['linux_steam_proton', 'windows_beta']);
 		expect(result.platforms.every((row) => row.scope.versions === null)).toBe(true);
 	});
+
+	it('publishes pass/fail/inconclusive only from complete per-platform evidence', async () => {
+		const complete = await completeSample(0);
+		expect(aggregatePilotMetrics(complete, 'ready').platforms[0]!.verdict).toBe('pass');
+		expect(aggregatePilotMetrics(await completeSample(3), 'ready').platforms[0]!.verdict).toBe('fail');
+		expect(aggregatePilotMetrics(complete.slice(0, -1), 'ready').platforms[0]!.verdict).toBe('inconclusive');
+		expect(aggregatePilotMetrics(complete, 'inconsistent').platforms[0]!.verdict).toBe('inconclusive');
+	});
 });
+
+async function completeSample(falseStarts: number): Promise<PilotObservationV1[]> {
+	const observations: PilotObservationV1[] = [];
+	for (let index = 0; index < 20; index += 1) {
+		observations.push(await proposal(
+			'start', index < falseStarts ? 'dismissed' : 'accepted_workflow_succeeded',
+			index < falseStarts ? 'not_farming' : null, '2026-08-20T09:59:30.000Z', `start-${String(index)}`,
+		));
+		observations.push(await proposal(
+			'stop', 'accepted_workflow_succeeded', null, '2026-08-20T09:59:30.000Z', `stop-${String(index)}`,
+		));
+		observations.push({
+			version: 1, kind: 'recovery', recoveryRef: await pilotProposalRef(`recovery-${String(index)}`),
+			presentedAt: '2026-08-20T10:00:00.000Z',
+			terminal: { outcome: 'succeeded', recordedAt: '2026-08-20T10:01:00.000Z' }, environment: ENV,
+		});
+	}
+	for (let index = 0; index < 50; index += 1) observations.push({
+		version: 1, kind: 'session', sessionRef: await pilotProposalRef(`session-${String(index)}`),
+		startedAt: '2026-08-20T10:00:00.000Z', completedAt: '2026-08-20T11:00:00.000Z', environment: ENV,
+	});
+	return observations;
+}
 
 async function proposal(
 	phase: 'start' | 'stop',

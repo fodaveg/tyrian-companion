@@ -1,4 +1,4 @@
-import { Menu, Notice, Platform, Plugin, TFile } from 'obsidian';
+import { apiVersion, Menu, Notice, Platform, Plugin, TFile } from 'obsidian';
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
 
@@ -87,9 +87,18 @@ import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinat
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
 import { DetectionQualityRecorder, type DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
 import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
+import { PilotMetricsExporter, type PilotMetricsExportPreview, type PilotMetricsExportResult } from './sessions/pilot-metrics-export';
+import {
+	PILOT_METRICS_MAX_OBSERVATIONS,
+	type PilotJournalHealth,
+	type PilotJournalSnapshotV1,
+	type PilotPlatform,
+} from './sessions/pilot-metrics-model';
+import { PilotMetricsRecorder, type PilotMetricsState } from './sessions/pilot-metrics-recorder';
+import { IndexedDbPilotMetricsStore } from './sessions/pilot-metrics-store';
 import { PendingProposalService, type ProposalQueueState } from './sessions/pending-proposal-service';
 import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
-import { proposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
+import { proposalIntent, sameProposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from './sessions/loot-presentation';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
@@ -211,6 +220,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessions!: ManualSessionStartService;
 	private assistedDetection!: AssistedDetectionService;
 	private detectionQuality!: DetectionQualityRecorder;
+	private pilotMetrics!: PilotMetricsRecorder;
+	private pilotMetricsExporter!: PilotMetricsExporter;
+	private pilotMetricsExportPlan: {
+		snapshot: PilotJournalSnapshotV1;
+		health: PilotJournalHealth;
+		outputFolder: string;
+	} | null = null;
 	private pendingProposals!: PendingProposalService;
 	private pendingClaimRenewals!: PendingProposalRenewalRegistry;
 	private sessionNotes!: SessionNoteWriter;
@@ -670,6 +686,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 				this.persistenceDiagnostics('detection', 'detection_proposal'),
 			),
 		);
+		this.pilotMetrics = new PilotMetricsRecorder(
+			new IndexedDbPilotMetricsStore(window.indexedDB),
+			PILOT_METRICS_MAX_OBSERVATIONS,
+		);
+		this.pilotMetricsExporter = new PilotMetricsExporter({
+			file: (path) => this.app.vault.getAbstractFileByPath(path),
+			read: async (file) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Pilot metrics export is not a file.');
+				return await this.app.vault.read(target);
+			},
+			createFolder: async (path) => { await this.app.vault.createFolder(path); },
+			create: async (path, content) => await this.app.vault.create(path, content),
+		});
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
 			async () => { await this.detectionQuality.initialize(); this.renderViews(); });
@@ -679,6 +709,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{
 				onStateChange: () => {
 					const session = this.sessions.getState();
+					const recoveryId = this.pilotRecoveryIdentity();
+					if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
 					if (session.status !== 'complete') this.lootPresentation.invalidate();
 					this.renderViews();
 					if (session.status === 'complete') fireAndForgetLocal(this.localDebugActions,
@@ -698,6 +730,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		);
 		await this.sessions.initialize();
+		const recoveryId = this.pilotRecoveryIdentity();
+		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
 		await this.refreshLootPresentation();
 		this.sessionNotes = new SessionNoteWriter({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
@@ -746,6 +780,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			crypto.randomUUID(),
 			undefined,
 			() => this.refreshBackgroundIndicators(),
+			(proposalId, expiredAt) => { void this.pilotMetrics.proposalExpired(proposalId, expiredAt); },
 		);
 		this.pendingClaimRenewals = new PendingProposalRenewalRegistry({
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
@@ -832,6 +867,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.clearModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
+		this.pilotMetrics?.dispose();
 		this.pendingClaimRenewals?.dispose();
 		this.pendingProposals?.dispose();
 		this.sessionHistory?.dispose();
@@ -1328,6 +1364,49 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.runtimeReady ? this.detectionQuality.getStats() : null;
 	}
 
+	getPilotMetricsState(): PilotMetricsState {
+		return this.runtimeReady ? this.pilotMetrics.getState() : { status: 'unconfigured' };
+	}
+
+	async getPilotProfile() {
+		return this.runtimeReady ? await this.pilotMetrics.profile() : null;
+	}
+
+	async configurePilotProfile(platform: PilotPlatform, platformVersion: string): Promise<boolean> {
+		if (!this.runtimeReady) return false;
+		const saved = await this.pilotMetrics.configure({
+			platform,
+			platformVersion,
+			obsidianVersion: apiVersion,
+			tyrianVersion: this.manifest.version,
+		});
+		if (saved) this.pilotMetricsExportPlan = null;
+		return saved;
+	}
+
+	async previewPilotMetricsExport(): Promise<PilotMetricsExportPreview | null> {
+		if (!this.runtimeReady) return null;
+		const snapshot = await this.pilotMetrics.inspect();
+		if (!snapshot) return null;
+		const health = pilotJournalHealth(this.pilotMetrics.getState());
+		this.pilotMetricsExportPlan = { snapshot, health, outputFolder: this.settings.outputFolder };
+		return await this.pilotMetricsExporter.preview(snapshot, health, this.settings.outputFolder);
+	}
+
+	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
+		if (!this.runtimeReady) return null;
+		const plan = this.pilotMetricsExportPlan;
+		if (!plan) return null;
+		return await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
+	}
+
+	async clearPilotMetrics(): Promise<number | null> {
+		if (!this.runtimeReady) return null;
+		const cleared = await this.pilotMetrics.clear();
+		if (cleared !== null) this.pilotMetricsExportPlan = null;
+		return cleared;
+	}
+
 	getPendingProposalState(): ProposalQueueState {
 		return this.runtimeReady ? this.pendingProposals.getState() : { status: 'loading', pendingCount: 0, next: null };
 	}
@@ -1340,6 +1419,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const perform = async (): Promise<ProductActionOutcome> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return 'unavailable'; }
 		try {
+			const pendingState = this.pendingProposals.getState?.();
+			const proposal = pendingState?.status === 'ready' && pendingState.next && sameProposalIntent(pendingState.next, intent)
+				? pendingState.next : null;
 			if (!await this.pendingProposals.acknowledge(intent)) {
 				this.emitNotice(
 					translateRuntime(createTranslator(this.settings.language), 'notices.proposalUnavailable'),
@@ -1347,6 +1429,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 				);
 				return 'unavailable';
 			}
+			if (proposal) void this.pilotMetrics?.proposalPresented({
+				proposalId: proposal.proposalId,
+				phase: proposal.phase,
+				presentedAt: new Date().toISOString(),
+				window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
+				pollingIntervalMs: this.settings.pollingIntervalMinutes * 60_000,
+				evidenceQuality: proposal.proposal.evidenceQuality,
+			});
 			await this.activateView();
 			this.renderViews();
 			return 'completed';
@@ -1363,7 +1453,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		) ?? perform());
 	}
 
-	async dismissPendingProposal(intent: PendingProposalIntent, cause: DetectionCorrectionCause): Promise<void> {
+	async dismissPendingProposal(
+		intent: PendingProposalIntent,
+		cause: DetectionCorrectionCause,
+		humanBoundaryAt: string | null = null,
+	): Promise<void> {
 		const perform = async (): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const claim = await this.acquirePendingIntent(intent);
@@ -1373,6 +1467,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (!await this.pendingProposals.dismiss(intent, claim.operationId, sessionId, cause, recorded)) {
 				throw new Error('Proposal dismissal failed.');
 			}
+			void this.pilotMetrics?.proposalDecided({
+				proposalId: claim.proposal.proposalId,
+				decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
+			});
 		} finally {
 			claim.stopRenewal();
 			this.renderViews();
@@ -1383,7 +1481,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		) ?? perform());
 	}
 
-	openPendingSessionStart(intent: PendingProposalIntent): void {
+	openPendingSessionStart(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): void {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'start' || this.startModal) return;
 		this.startModal = new ManualSessionStartModal(
@@ -1393,7 +1491,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			(input) => { fireAndForgetLocal(this.localDebugActions,
 				{ component: 'session', action: 'session_start' },
 				async () => {
-					try { await this.startManualSession(input, intent); }
+					try { await this.startManualSession(input, intent, humanBoundaryAt); }
 					catch (error) {
 						this.emitNotice(
 							translateRuntime(createTranslator(this.settings.language), 'notices.pendingStartFailed'),
@@ -1407,10 +1505,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.startModal.open();
 	}
 
-	async stopPendingSession(intent: PendingProposalIntent): Promise<void> {
+	async stopPendingSession(intent: PendingProposalIntent, humanBoundaryAt: string | null = null): Promise<void> {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		if (intent.phase !== 'stop') return;
-		await this.performStopManualSession(intent);
+		await this.performStopManualSession(intent, humanBoundaryAt);
 	}
 
 	async armAssistedDetection(): Promise<ProductActionOutcome> {
@@ -1451,7 +1549,25 @@ export default class TyrianCompanionPlugin extends Plugin {
 		else perform();
 	}
 
-	async dismissAssistedProposal(cause: DetectionCorrectionCause): Promise<void> {
+	recordAssistedProposalPresented(): void {
+		if (!this.runtimeReady) return;
+		const detection = this.assistedDetection.getState();
+		if (detection.status !== 'start_proposed' && detection.status !== 'stop_proposed') return;
+		void this.pilotMetrics?.proposalPresented({
+			proposalId: detection.proposal.proposalId,
+			phase: detection.status === 'start_proposed' ? 'start' : 'stop',
+			presentedAt: new Date().toISOString(),
+			window: detection.status === 'start_proposed'
+				? detection.proposal.possibleStart : detection.proposal.possibleStop,
+			pollingIntervalMs: this.settings.pollingIntervalMinutes * 60_000,
+			evidenceQuality: detection.proposal.evidenceQuality,
+		});
+	}
+
+	async dismissAssistedProposal(
+		cause: DetectionCorrectionCause,
+		humanBoundaryAt: string | null = null,
+	): Promise<void> {
 		const perform = async (): Promise<void> => {
 		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return; }
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
@@ -1459,11 +1575,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		try {
 		const detection = this.assistedDetection.getState();
 		const session = this.sessions.getState();
+		let proposalId: string | null = null;
 		if (detection.status === 'start_proposed') {
+			proposalId = detection.proposal.proposalId;
 			fireAndForgetLocal(this.localDebugActions,
 				{ component: 'detection', action: 'detection_proposal', state: 'dismiss_start' },
 				async () => { await this.detectionQuality.recordDismissed('start', null, cause, detection.proposal); this.renderViews(); });
 		} else if (detection.status === 'stop_proposed') {
+			proposalId = detection.proposal.proposalId;
 			const observed = session.status === 'error' ? session.failedState : session;
 			const sessionId = observed.status === 'active' ? observed.sessionId : null;
 			if (sessionId) {
@@ -1473,6 +1592,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 		}
 		this.assistedDetection.dismissProposal();
+		if (proposalId) void this.pilotMetrics?.proposalDecided({
+			proposalId, decision: 'dismissed', workflow: null, cause, humanBoundaryAt,
+		});
 		this.renderViews();
 		} finally { runtimeLease.release(); }
 		};
@@ -1778,6 +1900,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 		if (runtimeLease === null) return 'Session history scrub is active.';
 		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
+		if (result.status === 'finalized' && result.state.status === 'complete') {
+			void this.pilotMetrics?.sessionCompleted(result.state.sessionId, result.state.finalizedAt);
+		}
 		if (result.status === 'finalized' && sessionNoteEventDeclarationFromDetectionSummary(
 			result.state.sessionId, this.detectionQuality.getSessionSummary(result.state.sessionId),
 		)?.event === 'halloween') {
@@ -1826,17 +1951,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'session', action: 'session_discard' }, () => this.sessionCommands.run('discard-saved-session'));
 	}
 
-	async stopManualSession(): Promise<void> {
-		const perform = async () => await this.sessionDispatch.finish();
+	async stopManualSession(humanBoundaryAt: string | null = null): Promise<void> {
+		const perform = async () => humanBoundaryAt === null
+			? await this.sessionDispatch.finish()
+			: await this.performStopManualSession(undefined, humanBoundaryAt);
 		return await (this.localDebugActions?.run({ component: 'session', action: 'session_finish' }, perform) ?? perform());
 	}
 
-	private async performStopManualSession(intent?: PendingProposalIntent): Promise<void> {
+	private async performStopManualSession(
+		intent?: PendingProposalIntent,
+		humanBoundaryAt: string | null = null,
+	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
 		const proposal = pendingClaim?.proposal.phase === 'stop'
 			? pendingClaim.proposal.proposal : detection.status === 'stop_proposed' ? detection.proposal : null;
+		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+		let pilotWorkflowSucceeded = false;
 		this.renderViews();
 		try {
 			const runtimeLease = this.requireRuntimeMutationLease();
@@ -1874,31 +2006,66 @@ export default class TyrianCompanionPlugin extends Plugin {
 						throw new Error('Proposal receipt failed.');
 					}
 				}
+				pilotWorkflowSucceeded = true;
+				if (workflowProposalId) void this.pilotMetrics?.proposalDecided({
+					proposalId: workflowProposalId,
+					decision: 'accepted', workflow: 'succeeded', cause: null, humanBoundaryAt,
+				});
 			}
 			this.renderViews();
 			if (result.status === 'failed') throw new Error('Stop failed.');
+		} catch (error) {
+			if (workflowProposalId && !pilotWorkflowSucceeded) void this.pilotMetrics?.proposalDecided({
+				proposalId: workflowProposalId,
+				decision: 'accepted', workflow: 'failed', cause: null, humanBoundaryAt,
+			});
+			throw error;
 		} finally {
 			pendingClaim?.stopRenewal();
 		}
 	}
 
-	openManualSessionStart(): void {
+	openManualSessionStart(humanBoundaryAt: string | null = null): void {
 		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_start' }, () => this.sessionCommands.run('start-farming-session'));
+			{ component: 'session', action: 'session_start' }, async () => {
+				if (humanBoundaryAt === null) await this.sessionCommands.run('start-farming-session');
+				else this.openManualSessionStartWithBoundary(humanBoundaryAt);
+			});
 	}
 
-	private async startManualSession(input: SessionStartInput, intent?: PendingProposalIntent): Promise<void> {
+	private openManualSessionStartWithBoundary(humanBoundaryAt: string): void {
+		if (!this.runtimeReady || this.startModal) return;
+		this.startModal = new ManualSessionStartModal(
+			this.app, this.settings.preferredCharacter, () => this.settings.language,
+			(input) => { fireAndForgetLocal(
+				this.localDebugActions,
+				{ component: 'session', action: 'session_start', state: 'pilot_boundary' },
+				() => this.startManualSession(input, undefined, humanBoundaryAt),
+			); },
+			() => { this.startModal = null; },
+		);
+		this.startModal.open();
+	}
+
+	private async startManualSession(
+		input: SessionStartInput,
+		intent?: PendingProposalIntent,
+		humanBoundaryAt: string | null = null,
+	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
 		const detection = this.assistedDetection.getState();
 		const proposal = pendingClaim?.proposal.phase === 'start'
 			? pendingClaim.proposal.proposal : detection.status === 'start_proposed' ? detection.proposal : null;
+		const workflowProposalId = pendingClaim?.proposal.proposalId ?? proposal?.proposalId ?? null;
+		let pilotWorkflowSucceeded = false;
 		this.renderViews();
 		try {
 			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 			if (runtimeLease === null) throw new Error('Session history scrub is active.');
 			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
 			if (result.status === 'started') {
+				void this.pilotMetrics?.sessionStarted(result.state.sessionId, result.state.baseline.completedAt);
 				await this.detectionQuality.recordAccepted(
 					'start',
 					result.state.sessionId,
@@ -1918,6 +2085,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 						throw new Error('Proposal receipt failed.');
 					}
 				}
+				pilotWorkflowSucceeded = true;
+				if (workflowProposalId) void this.pilotMetrics?.proposalDecided({
+					proposalId: workflowProposalId,
+					decision: 'accepted', workflow: 'succeeded', cause: null, humanBoundaryAt,
+				});
 			}
 			if (result.status === 'started' && this.settings.preferredCharacter !== input.characterName.trim()) {
 				try {
@@ -1926,6 +2098,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.renderViews();
 			if (result.status === 'failed') throw new Error('Start failed.');
+		} catch (error) {
+			if (workflowProposalId && !pilotWorkflowSucceeded) void this.pilotMetrics?.proposalDecided({
+				proposalId: workflowProposalId,
+				decision: 'accepted', workflow: 'failed', cause: null, humanBoundaryAt,
+			});
+			throw error;
 		} finally {
 			pendingClaim?.stopRenewal();
 		}
@@ -2332,17 +2510,46 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	private async performRecoverSession(): Promise<void> {
+		const recoveryId = this.pilotRecoveryIdentity();
+		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
 		const runtimeLease = this.requireRuntimeMutationLease();
-		const result = await this.sessions.recover().finally(() => runtimeLease.release());
+		let result: Awaited<ReturnType<ManualSessionStartService['recover']>>;
+		try { result = await this.sessions.recover().finally(() => runtimeLease.release()); }
+		catch (error) {
+			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
+			throw error;
+		}
 		this.renderViews();
-		if (!hasExactSessionBackendResult('recover', result)) throw new Error('Recovery failed.');
+		if (!hasExactSessionBackendResult('recover', result)) {
+			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
+			throw new Error('Recovery failed.');
+		}
+		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'succeeded');
 	}
 
 	private async performDiscardRecoveredSession(): Promise<void> {
+		const recoveryId = this.pilotRecoveryIdentity();
+		if (recoveryId) void this.pilotMetrics.recoveryPresented(recoveryId);
 		const runtimeLease = this.requireRuntimeMutationLease();
-		const result = await this.sessions.discardRecovery().finally(() => runtimeLease.release());
+		let result: Awaited<ReturnType<ManualSessionStartService['discardRecovery']>>;
+		try { result = await this.sessions.discardRecovery().finally(() => runtimeLease.release()); }
+		catch (error) {
+			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
+			throw error;
+		}
 		this.renderViews();
-		if (!hasExactSessionBackendResult('discard', result)) throw new Error('Discard failed.');
+		if (!hasExactSessionBackendResult('discard', result)) {
+			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
+			throw new Error('Discard failed.');
+		}
+		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'discarded');
+	}
+
+	private pilotRecoveryIdentity(): string | null {
+		const recovery = this.sessions.getRecoveryState();
+		if (!('state' in recovery)) return null;
+		const state = recovery.state.status === 'error' ? recovery.state.failedState : recovery.state;
+		return 'sessionId' in state ? `${state.sessionId}:${String(state.authority.fence)}` : null;
 	}
 
 	private async performClearCompletedSession(): Promise<void> {
@@ -2705,6 +2912,10 @@ function sessionHistoryView(result: SessionHistoryExportResult): {
 	return result.status === 'written' || result.status === 'unchanged'
 		? { status: result.status, sessions: result.sessions, erased: 0, alreadyAbsent: 0 }
 		: { status: result.status, sessions: 0, erased: 0, alreadyAbsent: 0 };
+}
+
+function pilotJournalHealth(state: PilotMetricsState): PilotJournalHealth {
+	return state.status === 'unconfigured' ? 'inconsistent' : state.status;
 }
 
 function scrubPreviewView(preview: SessionHistoryScrubPreview): SessionHistoryView {

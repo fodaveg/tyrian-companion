@@ -134,12 +134,17 @@ function isProposalTerminal(value: unknown, proposal: Record<string, unknown>): 
 	}
 	if (value.decision === 'dismissed') {
 		return value.effectiveResult === 'dismissed' && typeof value.correctionCause === 'string' &&
-			['not_farming', 'still_farming', 'temporary_pause', 'unrelated_account_activity', 'other']
-				.includes(value.correctionCause);
+			allowedCause(proposal.phase, value.correctionCause);
 	}
 	return value.decision === 'accepted' &&
 		(value.effectiveResult === 'accepted_workflow_succeeded' || value.effectiveResult === 'accepted_workflow_failed') &&
 		value.correctionCause === null;
+}
+
+function allowedCause(phase: unknown, cause: string): boolean {
+	return phase === 'start'
+		? ['not_farming', 'unrelated_account_activity', 'other'].includes(cause)
+		: phase === 'stop' && ['still_farming', 'temporary_pause', 'unrelated_account_activity', 'other'].includes(cause);
 }
 
 function isSession(value: Record<string, unknown>): value is Record<string, unknown> & PilotSessionObservationV1 {

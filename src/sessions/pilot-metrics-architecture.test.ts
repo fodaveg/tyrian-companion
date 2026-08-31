@@ -23,4 +23,15 @@ describe('pilot metrics architecture', () => {
 		expect(source).toContain('async export(');
 		expect(source).not.toMatch(/\bfetch\b|requestUrl|SecretStorage|uploader|telemetry/iu);
 	});
+
+	it('keeps H5.3 receipts unchanged and wires every H0.6 lifecycle source fail-open', () => {
+		const receipts = readFileSync('src/sessions/pending-proposal-model.ts', 'utf8');
+		expect(receipts).toContain("PROPOSAL_RECEIPT_VERSION = 1");
+		expect(receipts).not.toContain('accepted_workflow_failed');
+		const main = readFileSync('src/main.ts', 'utf8');
+		for (const hook of [
+			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
+			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExpired',
+		]) expect(main).toContain(hook);
+	});
 });

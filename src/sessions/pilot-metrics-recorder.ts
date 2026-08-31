@@ -45,24 +45,28 @@ export class PilotMetricsRecorder {
 	}): Promise<boolean> {
 		const profile = createPilotEnvironment(input);
 		if (!profile) return false;
-		return this.consume(await this.store.saveProfile(profile));
+		try {
+			const saved = this.consume(await this.store.saveProfile(profile), false);
+			if (saved) await this.inspect();
+			return saved;
+		}
+		catch { this.failure('unavailable'); return false; }
 	}
 
 	async inspect(): Promise<PilotJournalSnapshotV1 | null> {
 		try {
 			const loaded = await this.store.load();
 			if (loaded.status === 'error') { this.failure(loaded.code); return null; }
-			this.state = { status: 'ready', observations: loaded.value.observations.length, limit: this.limit };
+			if (loaded.status === 'missing') { this.failure('inconsistent'); return null; }
+			const previous = this.state.status;
+			const health = previous === 'full' || previous === 'inconsistent' ? previous : 'ready';
+			this.state = { status: health, observations: loaded.value.observations.length, limit: this.limit };
 			return structuredClone(loaded.value);
 		} catch { this.failure('unavailable'); return null; }
 	}
 
 	async profile(): Promise<PilotEnvironmentV1 | null> {
-		try {
-			const loaded = await this.store.loadProfile();
-			if (loaded.status === 'error') { this.failure(loaded.code); return null; }
-			return structuredClone(loaded.value);
-		} catch { this.failure('unavailable'); return null; }
+		return (await this.inspect())?.profile ?? null;
 	}
 
 	async proposalPresented(input: PilotProposalPresentedInput): Promise<boolean> {
@@ -85,6 +89,8 @@ export class PilotMetricsRecorder {
 		humanBoundaryAt: string | null;
 		recordedAt?: string;
 	}): Promise<boolean> {
+		if ((input.decision === 'accepted' && input.workflow === null) ||
+			(input.decision === 'dismissed' && input.cause === null)) return false;
 		const terminal: PilotProposalTerminalV1 = {
 			status: 'decided', decidedAt: input.recordedAt ?? this.timestamp(), decision: input.decision,
 			effectiveResult: input.decision === 'dismissed' ? 'dismissed'
@@ -92,7 +98,7 @@ export class PilotMetricsRecorder {
 			correctionCause: input.decision === 'dismissed' ? input.cause : null,
 			humanBoundaryAt: input.humanBoundaryAt,
 		};
-		try { return this.consume(await this.store.finishProposal(await pilotProposalRef(input.proposalId), terminal)); }
+		try { return this.consume(await this.store.finishProposal(await pilotProposalRef(input.proposalId), terminal), false); }
 		catch { this.failure('unavailable'); return false; }
 	}
 
@@ -101,7 +107,7 @@ export class PilotMetricsRecorder {
 			return this.consume(await this.store.finishProposal(await pilotProposalRef(proposalId), {
 				status: 'expired', decidedAt: recordedAt, decision: null, effectiveResult: null,
 				correctionCause: null, humanBoundaryAt: null,
-			}));
+			}, true), false);
 		} catch { this.failure('unavailable'); return false; }
 	}
 
@@ -113,7 +119,7 @@ export class PilotMetricsRecorder {
 	}
 
 	async sessionCompleted(sessionId: string, completedAt: string): Promise<boolean> {
-		try { return this.consume(await this.store.finishSession(await pilotSessionRef(sessionId), completedAt)); }
+		try { return this.consume(await this.store.finishSession(await pilotSessionRef(sessionId), completedAt), false); }
 		catch { this.failure('unavailable'); return false; }
 	}
 
@@ -130,7 +136,7 @@ export class PilotMetricsRecorder {
 		recordedAt = this.timestamp(),
 	): Promise<boolean> {
 		try {
-			return this.consume(await this.store.finishRecovery(await pilotRecoveryRef(localId), { outcome, recordedAt }));
+			return this.consume(await this.store.finishRecovery(await pilotRecoveryRef(localId), { outcome, recordedAt }), false);
 		} catch { this.failure('unavailable'); return false; }
 	}
 
@@ -138,6 +144,7 @@ export class PilotMetricsRecorder {
 		try {
 			const result = await this.store.clearObservations();
 			if (result.status === 'error') { this.failure(result.code); return null; }
+			if (result.status === 'missing') { this.failure('inconsistent'); return null; }
 			this.state = { status: 'ready', observations: 0, limit: this.limit };
 			return result.value;
 		} catch { this.failure('unavailable'); return null; }
@@ -151,14 +158,21 @@ export class PilotMetricsRecorder {
 		try {
 			const loaded = await this.store.loadProfile();
 			if (loaded.status === 'error') { this.failure(loaded.code); return false; }
-			return this.consume(await operation(loaded.value));
+			if (loaded.status === 'missing') { this.failure('inconsistent'); return false; }
+			return this.consume(await operation(loaded.value), true);
 		} catch { this.failure('unavailable'); return false; }
 	}
 
-	private consume(result: PilotStoreResult<unknown>): boolean {
+	private consume(result: PilotStoreResult<unknown>, countNew: boolean): boolean {
 		if (result.status === 'error') { this.failure(result.code); return false; }
+		if (result.status === 'missing') return true;
+		if (this.state.status === 'full' || this.state.status === 'inconsistent') return true;
 		const count = this.state.status === 'ready' ? this.state.observations : 0;
-		this.state = { status: 'ready', observations: Math.min(this.limit, count + (result.status === 'ok' ? 1 : 0)), limit: this.limit };
+		this.state = {
+			status: 'ready',
+			observations: Math.min(this.limit, count + (countNew && result.status === 'ok' ? 1 : 0)),
+			limit: this.limit,
+		};
 		return true;
 	}
 
