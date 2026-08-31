@@ -44,6 +44,7 @@ No publiques ni envíes en el formulario:
 - nombre o ID de cuenta, nombres de personajes, nombre de build o guild;
 - ruta absoluta del vault, nombre de usuario del sistema o lista de ficheros personales;
 - inventario crudo, snapshots completos, payloads de la API, contenido íntegro de notas o exports;
+- los cuatro exports del piloto H7.13, aunque estén saneados y usen referencias seudónimas: revísalos localmente y comunica solo recuentos o campos mínimos acordados;
 - dumps de IndexedDB, bases locales, settings completos o un ZIP de `.obsidian`;
 - logs sin redactar o consola completa, capturas sin redactar, direcciones IP o identificadores de
   terceros.

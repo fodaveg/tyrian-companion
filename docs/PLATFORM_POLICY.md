@@ -298,12 +298,14 @@ de una sesión sin la confirmación prevista por su lifecycle.
 
 Antes del piloto se exige un dry run de instrumentación por plataforma: debe registrar cada
 propuesta presentada, reconciliarla con la cola y el lifecycle y producir el esquema siguiente sin
-usar aún sus resultados como muestra del piloto. Cada fila se identifica de forma estable por
-`proposalId` y contiene `review_presented` y su timestamp, tipo `start|stop`, estado terminal
-`decided|expired`, ventana y intervalo de polling, y las versiones de plataforma, Obsidian, Tyrian
-Companion y Steam/Proton, CrossOver o Windows que correspondan. En `expired`, decisión, resultado
-efectivo, causa H3.10 y frontera humana son `null`, salvo un dato ya observado antes de expirar que
-se conserva sin inferir otro. En `decided`, la decisión es `dismissed|accepted`: un descarte tiene
+usar aún sus resultados como muestra del piloto. Cada fila se identifica de forma estable por un
+`proposalRef` SHA-256 con separación de dominio —seudónimo, no anónimo— y contiene
+`review_presented` y su timestamp, tipo `start|stop`, estado terminal
+`decided|excluded`, ventana y el intervalo de polling vigente al generarse, y las versiones de
+plataforma, Obsidian, Tyrian Companion y Steam/Proton, CrossOver o Windows que correspondan. En
+`excluded`, la razón operativa cerrada es `expired|superseded|invalidated`; decisión, resultado
+efectivo, causa H3.10 y frontera humana son `null`. Estos cierres se publican por razón y no
+adjudican la calidad de la detección. En `decided`, la decisión es `dismissed|accepted`: un descarte tiene
 resultado efectivo `dismissed` y su causa H3.10; una aceptación tiene
 `accepted_workflow_succeeded|accepted_workflow_failed`. La frontera humana corregida permanece
 `null` si no existe adjudicación humana, independientemente del terminal.
@@ -317,8 +319,10 @@ filtro. Por tanto, `tasa_t = k_t / n_t`. Una
 aceptación cuyo workflow falla se conserva y publica por separado, pero no entra en `k_t` ni `n_t`:
 no adjudica la calidad de la detección. Una propuesta expirada tras llegar a revisión tampoco entra
 en esas tasas, pero sí en la cobertura: `cobertura = decisiones / revisiones`, donde `decisiones`
-son las revisiones con estado `decided` y `revisiones` las presentadas que cierran como
-`decided|expired`. Así una tasa no mejora ocultando casos sin revisar. El umbral del 10 % se aplica
+son las revisiones con estado `decided` y `revisiones` las presentadas que cierran como `decided` o
+`excluded:expired`. `superseded|invalidated` son exclusiones operativas separadas y no alteran ni
+tasas ni cobertura. Así una tasa no mejora ocultando casos que sí permanecieron disponibles para
+revisión hasta expirar. El umbral del 10 % se aplica
 a la estimación puntual; el intervalo Wilson al 95 % se publica como su incertidumbre, no como un
 umbral alternativo.
 
@@ -330,28 +334,34 @@ umbral alternativo.
 | Precisión temporal | Error absoluto en segundos entre el punto medio de la ventana propuesta y la frontera corregida por la persona | Mediana, p90 y máximo, en segundos y en múltiplos del intervalo de polling | Mediana menor o igual a 1 intervalo y p90 menor o igual a 2 intervalos |
 
 La frontera corregida es una adjudicación humana, no una inferencia posterior del mismo detector. Si
-no existe corrección temporal, el caso aporta decisión de falso positivo, pero no precisión. H3.10
-ya conserva observaciones locales, pero `0.1.0` todavía no agrega ni sincroniza estas métricas ni
-captura todas las adjudicaciones necesarias para calcularlas.
+no existe corrección temporal, el caso aporta decisión de falso positivo, pero no precisión. H7.13
+agrega estas métricas localmente en un journal opt-in, separado por vault y con límite duro de
+10.000 observaciones sin poda. Una revisión explícita de pérdidas silenciosas queda vinculada al
+entorno y a la muestra revisados y se invalida ante cualquier mutación posterior. La preview y la
+exportación create-only producen cuatro ficheros JSON/CSV deterministas; no existe sincronización ni
+telemetría remota propias o automáticas. Al quedar dentro del Vault, un servicio de Sync configurado
+por el usuario sí puede copiar esos ficheros.
 
 ## Entrada y salida del piloto
 
 El piloto puede comenzar cuando el mismo candidato cumple la matriz funcional completa en Linux,
 los smoke tests obligatorios en macOS y Windows, y una revisión confirma que la medición no contiene
-credenciales, snapshots crudos ni payloads crudos de inventario. El conjunto mínimo permitido es
-la identidad del evento/sesión/propuesta, fase, resultado, modo, causa, ventana, incertidumbre,
-calidad de evidencia y timestamps necesarios para las métricas. Cuando deba preservarse la
-procedencia de un inicio asistido, se admite la `RelevantStartProposal` completa y nada más:
-`version`, `proposalId`, `accountId`, `ruleSet.id|version`, `firstSignal` y
-`confirmationSignal` —cada una con refs de snapshots, intervalo/ventana, ganancias `itemId` y
-`quantity`, y `deltaStatus`—, `possibleStart`, `evidenceQuality` y `confirmedAt`. Nunca contiene
-snapshots crudos, payloads crudos de inventario, texto libre ni API key. La beta de Windows debe
+credenciales, snapshots crudos ni payloads crudos de inventario. El journal y las cuatro salidas
+H7.13 admiten únicamente referencia SHA-256 de propuesta, fase, resultado, modo, causa, ventana,
+incertidumbre, calidad de evidencia, timestamps, clasificación de recovery y estratos de plataforma
+y versión necesarios para las métricas. Prohíben `proposalId`, `accountId`, `sessionId`, referencias
+de snapshots, ganancias `itemId|quantity`, rutas, texto libre, payloads y API key; las referencias
+locales de sesión y recovery tampoco salen en el detalle. H3.10 puede conservar en su store local
+separado la `RelevantStartProposal` completa para reconstruir procedencia, pero esa evidencia no se
+copia al journal H7.13 ni a una exportación o entrega del piloto. La beta de Windows debe
 identificarse como tal en cualquier entrega.
 
 El piloto se considera satisfactorio con un mínimo de 50 sesiones completadas, los denominadores
 mínimos de ambas tasas, los 20 reinicios forzados de Linux y todos los umbrales anteriores. Además,
 debe registrar cero operaciones ejecutadas por el companion y cero pérdidas silenciosas de runtime
-o notas. Los mínimos —50 sesiones, `n_start >= 20`, `n_stop >= 20` y los reinicios exigidos— se
+o notas. Una recovery no clasificada se conserva pero obliga a publicar el resultado como
+inconcluso; clasificarla es una acción humana opcional y nunca bloquea Recovery. Los mínimos —50
+sesiones, `n_start >= 20`, `n_stop >= 20` y los reinicios exigidos— se
 aplican por plataforma, no por cada combinación de versiones. Las versiones se publican como
 estratos para permitir reproducir y acotar una regresión; cualquier regresión por versión se
 investiga y no puede quedar oculta en un agregado. Los umbrales y muestras son obligatorios para

@@ -1,5 +1,27 @@
 # Changelog
 
+## Candidato sin publicar - H8.8 y H7.13
+
+- H8.8 queda reconciliada como política shadow pura y aislada: presencia de 5 s o ausencia de 60 s
+  en el mapa 866 producen como máximo un DTO efímero sujeto a revisión humana. No hay composición,
+  cola, persistencia, UI ni cambio del lifecycle; H8.9–H8.15 y la congelación por H8.2 permanecen.
+- H7.13 incorpora un journal local opt-in, lazy y separado por vault. Toda propuesta presentada se
+  reconcilia con una decisión o con `expired|superseded|invalidated`; desarmar una propuesta viva
+  inicia el cierre fail-open sin retrasar producto, mientras una propuesta nunca mostrada no crea
+  fila. Recoveries sin clasificación permanecen visibles y hacen el resultado inconcluso.
+- La agregación publica por plataforma y estratos recuentos, cobertura, Wilson 95 %, precisión,
+  recoveries, sesiones y `pass|fail|inconclusive`. La revisión de pérdidas silenciosas queda ligada
+  al entorno y a la muestra exactos y se invalida atómicamente al mutar la evidencia o el perfil.
+- Ajustes añade perfil ES/EN, preview, revisión, cuatro exports JSON/CSV deterministas create-only,
+  clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
+  los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
+  propuestas son seudónimos, no anonimización.
+- Los commits candidatos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
+  `c2981ba`, `388dc86`, `8c7f343` y `221862a` para H7.13. Revisión contractual y de seguridad sin
+  bloqueantes; gate completo verde con lint, 167 ficheros/2.230 tests, scanner, observabilidad,
+  contratos y build. El dry run real en las tres plataformas, QA visual/IndexedDB y la muestra H7.7
+  siguen pendientes; nada de este lote está en `main` ni publicado.
+
 ## Reconciliación candidata - H6.19 y H6.20
 
 - Ambos hallazgos de QA real estaban corregidos en producción desde `6c6e2cd`, incluido ya en las

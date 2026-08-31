@@ -90,6 +90,14 @@ Assisted detection is optional. Set **Detection mode → Assisted**, check the c
 every proposal still needs an explicit review action. It always reloads disarmed and never starts or
 stops a session automatically.
 
+Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
+the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.
+Reviewing and exporting is explicit and creates four deterministic JSON/CSV files without overwriting
+existing files. **Clear metrics** removes observations and the silent-loss review but keeps the local
+profile; **Disable and delete** also removes that profile. Previously created Vault exports remain and
+may be synchronized by Obsidian, and their proposal references are pseudonyms rather than anonymous
+identifiers. This instrumentation never gates a session action and sends no remote telemetry.
+
 ## Inventory advisor
 
 Run **Open inventory advisor**, then use **Refresh inventory** to make the one explicit account

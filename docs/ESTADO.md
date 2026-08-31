@@ -23,6 +23,31 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
+**Lote H8.8/H7.13 cerrado técnicamente en la rama candidata `codex/parallel-integration`, todavía
+fuera de `main` y de cualquier release.** H8.8 queda reconciliada con el alcance shadow aislado de
+`a4fd22b` y `25a1057`: política pura 5 s/60 s para el mapa 866, DTO efímero y revisión humana, sin
+runtime, cola, persistencia ni UI; la composición y QA posteriores siguen en H8.9–H8.15 y H8 continúa
+congelada por H8.2.
+
+H7.13 añade un journal local opt-in y separado por vault para el piloto H0.6. Registra propuestas
+presentadas y cierres humanos u operativos, sesiones completadas y recoveries sin bloquear ninguna
+acción de producto; una recovery no clasificada se conserva y deja el veredicto inconcluso. Agrega
+por plataforma y estratos de versión `k/n`, cobertura, Wilson 95 %, precisión, recovery y umbrales;
+la revisión de pérdidas queda ligada a la muestra exacta e invalidada transaccionalmente ante cada
+cambio. Ajustes ofrece preview, cuatro exports JSON/CSV deterministas create-only, limpieza de
+muestra+revisión y desactivación integral del journal. No hay Sync propio ni telemetría remota; los
+exports del Vault pueden ser copiados por Obsidian Sync y las referencias SHA-256 siguen siendo
+seudónimas.
+
+Los commits candidatos de H7.13 son `e267ae4`, `ab321a9`, `c2981ba`, `388dc86`, `8c7f343` y
+`221862a`. La revisión contractual obligó a cerrar también `superseded|invalidated` y cualquier
+propuesta viva al desarmar; seguridad obligó a ligar la revisión a entorno+muestra y a precisar el
+alcance de clear/disable/exports. El gate final pasa lint, 167 ficheros y 2.230 tests, scanner,
+observabilidad, contratos de release/beta/soporte y build. La revisión independiente no deja
+bloqueantes. Siguen pendientes la QA visual/manual ES/EN en temas reales, IndexedDB multiwindow y
+borrado en Obsidian real, el dry run instrumentado en las tres plataformas y la muestra H7.7; por
+tanto este cierre técnico no acredita el piloto ni una release.
+
 **H9.7/H6.21: integradas en la rama candidata `codex/parallel-integration`, todavía fuera de
 `main` y de cualquier release.** H9.7 añade a Companion un historial durable ES/EN que solo escanea
 el vault tras activar **Cargar historial**. Presenta seis estados cerrados, bloquea resultados
@@ -621,7 +646,9 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 ## Pendientes de producto
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
-2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
+2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6. H7.13 ya agrega y
+   exporta localmente la evidencia en la rama candidata; todavía faltan el dry run instrumentado en
+   Linux/Steam/Proton, macOS/CrossOver y Windows beta y la ejecución real de H7.7.
 3. Ejecutar QA visual de H9.7 en Obsidian con temas claro/oscuro, anchos 1280/900/600/420/280,
    textos largos y listas grandes; la implementación automatizada ya está en la rama candidata.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.

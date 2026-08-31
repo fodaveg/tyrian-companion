@@ -99,6 +99,12 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
+La rama candidata incorpora el journal local H7.13 para preparar esa evidencia, pero no forma parte
+de la release `0.1.17`. Antes del piloto H7.7 todavía hay que ejecutar el dry run instrumentado en
+Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
+que limpiar/desactivar funciona dentro de Obsidian real. Un gate automatizado o una exportación local
+no acreditan por sí solos esa QA ni autorizan una release.
+
 El checksum evita una alteración accidental, pero no autentica el origen si alguien sustituye juntos
 ZIP y `.sha256`: el ancla de confianza es el artifact del run y SHA de CI que el release owner haya
 señalado. Si el origen, hash, contenido o versión no coinciden, no se instala el candidato. La QA debe
