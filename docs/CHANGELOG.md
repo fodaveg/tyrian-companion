@@ -1,5 +1,21 @@
 # Changelog
 
+## Candidato sin publicar - H9.7 y H6.21
+
+- H9.7 añade a Companion un panel ES/EN de historial durable. Abrir o repintar la vista no lee el
+  vault: el escaneo completo solo parte de **Cargar historial**, coalesce dobles activaciones y
+  conserva en memoria los estados `idle`, `loading`, `empty`, `ready`, `conflict` y `unavailable`.
+- La agregación elimina referencias de cuenta y sesión, ordena las sesiones finalizadas, compara las
+  dos más recientes y presenta tabla o tarjetas responsive. Totales y diferencias desconocidos
+  permanecen `null`; una nota inválida o duplicada bloquea toda la presentación sin modificar notas.
+- H6.21 incorpora copy accionable ES/EN para los ocho motivos de fallo de inicio y los seis de
+  cierre. Los mapas tipados son exhaustivos y el mensaje/cooldown de conexión conserva su circuito
+  independiente.
+- Los dos commits están combinados únicamente en `codex/parallel-integration`: no se han integrado
+  en `main`, publicado ni desplegado. El gate combinado queda verde con lint, 162 ficheros y 2.166
+  tests, seguridad, observabilidad, contratos de release/beta/soporte y build. La QA visual de H9.7
+  y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen pendientes.
+
 ## Release beta 0.1.17 - Hotfix de inicialización
 
 - Publicada el 2026-08-30 la

@@ -23,6 +23,20 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
+**H9.7/H6.21: integradas en la rama candidata `codex/parallel-integration`, todavía fuera de
+`main` y de cualquier release.** H9.7 añade a Companion un historial durable ES/EN que solo escanea
+el vault tras activar **Cargar historial**. Presenta seis estados cerrados, bloquea resultados
+parciales ante notas inválidas o duplicadas, agrega duración, sacos y valores sin convertir `null`
+en cero y compara las dos sesiones más recientes en tabla o tarjetas responsive. La proyección
+elimina referencias de cuenta/sesión y no persiste recomendaciones ni opera sobre la cuenta.
+
+H6.21 sustituye el mensaje genérico de inicio y cierre por copy accionable y exhaustivo para los
+ocho códigos de arranque y los seis de finalización, con paridad ES/EN. El enfriamiento `429` de la
+conexión conserva su ruta independiente y no queda oculto por este cambio. Ambos frentes tienen
+tests focales verdes. El gate combinado pasa lint, 162 ficheros y 2.166 tests, escáner de seguridad,
+censo de observabilidad, contratos de release/beta/soporte y build; la revisión independiente queda
+como último gate antes de declarar el candidato apto.
+
 La dirección conserva el panel visible de H12.1 y ordena Companion como sesión, detección,
 inventario de sesión, Halloween y cuenta. El alcance real queda explícito: el polling asistido de
 desarrollo cada dos minutos busca la señal de la Bolsa de truco o trato `#36038`; no refresca todo el
@@ -589,10 +603,11 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6; `0.1.0` conserva observaciones H3.10 locales, pero aún no agrega ni exporta las métricas.
-3. Diseñar el panel/agregación del historial durable de sesiones finalizadas. Ya tiene tarea en Lumbre: H9.7.
+3. Ejecutar QA visual de H9.7 en Obsidian con temas claro/oscuro, anchos 1280/900/600/420/280,
+   textos largos y listas grandes; la implementación automatizada ya está en la rama candidata.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
 5. Cerrado por H6.13 (`abea4e1`): un personaje que devuelve `404` (`missing_character`) entre pasada base y de cierre se excluye de las dos proyecciones y el delta pasa a `limited` con el aviso `character_unobserved`, en vez de invalidar el delta entero de la cuenta. Un `500` (`unavailable`) sigue invalidando el delta entero. Decisión de producto pendiente de ratificar por David: si ese criterio del 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP; hoy queda etiquetado `#v1` sin que él lo haya decidido.
-6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. Queda pendiente el copy de superficie por razón en `failureLabel()` de `src/ui/companion-status-model.ts` para los fallos de inicio y fin de sesión, que hoy leen el mensaje genérico: la conexión sí muestra el enfriamiento mientras corre. Va con la QA visual de H6.9.
+6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. H6.21 añade en la rama candidata el copy específico para cada fallo de inicio y fin; quedan pendientes su QA visual ES/EN y un `429` real en Obsidian.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. ~~Consultar el historial TP para complementar la declaración manual H3.9.~~ Cerrado por H9.8
    (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
