@@ -149,13 +149,13 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				requestValue(profiles.get('active') as IDBRequest<unknown>),
 				requestValue(profiles.get(PILOT_METRICS_SAMPLE_REVISION_KEY) as IDBRequest<unknown>),
 			]);
+			const sampleRevision = normalizeSampleRevision(storedRevision);
+			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
+			if (verification.sampleRevision !== sampleRevision) { transaction.abort(); return { status: 'stale' }; }
 			if (!isPilotEnvironment(profile) || !sameEnvironment(profile, verification.environment)) {
 				transaction.abort();
 				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
 			}
-			const sampleRevision = normalizeSampleRevision(storedRevision);
-			if (sampleRevision === null) { transaction.abort(); return { status: 'error', code: 'inconsistent' }; }
-			if (verification.sampleRevision !== sampleRevision) { transaction.abort(); return { status: 'stale' }; }
 			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).put(structuredClone(verification), 'active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(verification) };

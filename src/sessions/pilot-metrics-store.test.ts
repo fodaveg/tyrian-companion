@@ -177,6 +177,37 @@ describe('IndexedDbPilotMetricsStore', () => {
 		});
 	});
 
+	it('treats a cross-window profile change as stale before comparing the old environment', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('verification-profile-race');
+		const reviewer = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		const writer = new IndexedDbPilotMetricsStore(factory, 'vault-a', name);
+		await reviewer.saveProfile(ENV);
+		const snapshot = await reviewer.load();
+		if (snapshot.status !== 'ok') throw new Error('Expected reviewable profile.');
+		const changedEnvironment = { ...ENV, platformVersion: '10.0-2' };
+		await writer.saveProfile(changedEnvironment);
+		await expect(reviewer.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:03:00.000Z',
+			environment: snapshot.value.profile, sampleRevision: snapshot.value.sampleRevision,
+		})).resolves.toEqual({ status: 'stale' });
+		const current = await reviewer.load();
+		if (current.status !== 'ok') throw new Error('Expected store to remain usable.');
+		expect(current.value).toMatchObject({
+			profile: changedEnvironment,
+			sampleRevision: snapshot.value.sampleRevision + 1,
+			verification: null,
+		});
+		await expect(reviewer.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:04:00.000Z',
+			environment: snapshot.value.profile, sampleRevision: current.value.sampleRevision,
+		})).resolves.toEqual({ status: 'error', code: 'inconsistent' });
+		await expect(reviewer.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:05:00.000Z',
+			environment: current.value.profile, sampleRevision: current.value.sampleRevision,
+		})).resolves.toMatchObject({ status: 'ok' });
+	});
+
 	it('increments the sample revision only for real profile and evidence mutations', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('revision'));
 		await store.saveProfile(ENV);
