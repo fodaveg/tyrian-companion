@@ -11,7 +11,7 @@ export type ManagedAssetsLifecycleResult = { status: 'applied' | 'removed' | 're
 
 export class ManagedAssetsLifecycle {
 	constructor(
-		private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>,
+		private readonly manager: Pick<ManagedAssetsManager, 'apply' | 'relocate' | 'uninstall' | 'inspect' | 'inspectForLegacyTransition'>,
 		private readonly pointer: ManagedAssetsPointerStore,
 		private readonly diagnostics?: LocalDebugActionPort,
 	) {}
@@ -140,7 +140,7 @@ export class ManagedAssetsLifecycle {
 		else if (current.status === 'moving' && current.root === to) from = current.targetRoot;
 		else return { status: 'busy', message: 'Another managed-assets lifecycle operation is active.' };
 		if (current.root === from) {
-			const installed = await this.manager.apply(to, 'install');
+			const installed = await this.manager.relocate(from, to);
 			if (!isSuccess(installed)) return failure(installed);
 			const switched = await this.pointer.compareAndSet(current, { status: 'moving', root: to, targetRoot: from });
 			if (!switched) {

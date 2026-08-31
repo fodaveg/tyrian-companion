@@ -446,6 +446,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.managedAssets = new ManagedAssetsManager(
 			{
 				file: (path) => this.app.vault.getAbstractFileByPath(path),
+				listFiles: () => this.app.vault.getFiles().map((file) => ({ path: file.path })),
 				read: async (file) => {
 					const target = this.app.vault.getAbstractFileByPath(file.path);
 					if (!(target instanceof TFile)) throw new Error('Managed asset is not a file.');

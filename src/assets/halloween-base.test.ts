@@ -174,6 +174,7 @@ class MemoryVault implements ManagedAssetsVault {
 	readonly contents = new Map<string, string>();
 	readonly folders = new Set<string>();
 	file(path: string): ManagedAssetFile | null { return this.contents.has(path) || this.folders.has(path) ? { path } : null; }
+	listFiles(): ManagedAssetFile[] { return [...this.contents.keys()].map((path) => ({ path })); }
 	async read(file: ManagedAssetFile): Promise<string> { return this.contents.get(file.path) ?? Promise.reject(new Error('not_file')); }
 	async createFolder(path: string): Promise<void> { this.folders.add(path); }
 	async create(path: string, content: string): Promise<ManagedAssetFile> {

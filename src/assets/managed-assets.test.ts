@@ -352,6 +352,104 @@ describe('ManagedAssetsManager', () => {
 		expect((await instance.apply('Tyrian Companion')).status).toBe('conflict');
 	});
 
+	it('relocates a complete reserialized destination only with the exact v2 origin authority', async () => {
+		const vault = new MemoryAssetVault();
+		const bundle = await managedAssetsBundle();
+		const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		expect(await lifecycle.install('Previous root')).toMatchObject({ status: 'applied', root: 'Previous root' });
+		const sourceManifestPath = `Previous root/${MANAGED_ASSETS_MANIFEST}`;
+		const sourceManifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
+		expect(sourceManifest).toMatchObject({ schemaVersion: 2, bundleVersion: 6, state: 'ready' });
+		expect(sourceManifest.assets).toHaveLength(5);
+
+		const destinationBytes = new Map<string, string>();
+		for (const entry of sourceManifest.assets) {
+			const source = vault.contents.get(entry.path);
+			if (source === undefined) throw new Error(`missing source fixture: ${entry.path}`);
+			const destination = entry.path.replace(/^Previous root\//u, 'Configured output/');
+			const reserialized = stringifyYaml(parseYaml(source));
+			expect(reserialized).not.toContain('tyrian-companion-managed');
+			vault.contents.set(destination, reserialized);
+			vault.contents.delete(entry.path);
+			destinationBytes.set(destination, reserialized);
+		}
+
+		expect(await lifecycle.move('Configured output')).toMatchObject({ status: 'relocated', root: 'Configured output' });
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Configured output' });
+		expect(vault.contents.get(sourceManifestPath)).toContain('"state": "detached"');
+		for (const [path, bytes] of destinationBytes) expect(vault.contents.get(path)).toBe(bytes);
+		const destinationManifest = JSON.parse(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)!) as MutableJournal;
+		expect(destinationManifest).toMatchObject({ schemaVersion: 2, bundleVersion: 6, state: 'ready' });
+		expect(destinationManifest.assets).toHaveLength(5);
+	});
+
+	it('keeps ordinary install unable to adopt the same markerless semantic Bases', async () => {
+		const vault = new MemoryAssetVault();
+		const { instance } = await stageReserializedRelocation(vault);
+		const before = new Map(vault.contents);
+
+		expect(await instance.apply('Configured output', 'install')).toMatchObject({ status: 'conflict' });
+		expect(vault.contents).toEqual(before);
+		expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(false);
+	});
+
+	it.each(['missing', 'extra', 'changed'] as const)(
+		'refuses relocation adoption when the destination set is %s',
+		async (scenario) => {
+			const vault = new MemoryAssetVault();
+			const { lifecycle, destinationPaths, sourceManifestPath } = await stageReserializedRelocation(vault);
+			const first = destinationPaths[0];
+			if (!first) throw new Error('missing destination fixture');
+			if (scenario === 'missing') vault.contents.delete(first);
+			else if (scenario === 'extra') vault.contents.set('Configured output/Bases/Foreign.base', 'filters:\n  and: []\n');
+			else vault.contents.set(first, `${vault.contents.get(first)!}\ninvalid: [unterminated\n`);
+			const before = new Map(vault.contents);
+
+			expect(await lifecycle.move('Configured output')).toMatchObject({ status: 'conflict' });
+			expect(vault.contents).toEqual(before);
+			expect(vault.contents.get(sourceManifestPath)).toContain('"state": "ready"');
+			expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(false);
+		},
+	);
+
+	it('refuses destination adoption when the owned origin has conflicting live bytes', async () => {
+		const vault = new MemoryAssetVault();
+		const { lifecycle, sourceManifestPath } = await stageReserializedRelocation(vault);
+		const sourceManifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
+		const sourcePath = sourceManifest.assets[0]?.path;
+		if (!sourcePath) throw new Error('missing source path fixture');
+		vault.contents.set(sourcePath, 'filters:\n  and: [human-change]\n');
+		const before = new Map(vault.contents);
+
+		expect(await lifecycle.move('Configured output')).toMatchObject({ status: 'conflict' });
+		expect(vault.contents).toEqual(before);
+		expect(vault.contents.get(sourceManifestPath)).toContain('"state": "ready"');
+		expect(vault.contents.has(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toBe(false);
+	});
+
+	it('resumes relocation after the adoption journal was persisted but not finalized', async () => {
+		const vault = new MemoryAssetVault();
+		const { bundle, lifecycle, pointer, destinationBytes } = await stageReserializedRelocation(vault);
+		vault.failAfterWrites = vault.writeCount + 1;
+
+		expect(await lifecycle.move('Configured output')).toMatchObject({ status: 'unavailable' });
+		expect(await pointer.read()).toMatchObject({ status: 'moving', root: 'Previous root', targetRoot: 'Configured output' });
+		expect(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toContain('"state": "applying"');
+		for (const [path, bytes] of destinationBytes) expect(vault.contents.get(path)).toBe(bytes);
+
+		vault.failAfterWrites = null;
+		const resumed = new ManagedAssetsLifecycle(
+			new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle }),
+			pointer,
+		);
+		expect(await resumed.move('Configured output')).toMatchObject({ status: 'relocated', root: 'Configured output' });
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Configured output' });
+		expect(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)).toContain('"state": "ready"');
+		for (const [path, bytes] of destinationBytes) expect(vault.contents.get(path)).toBe(bytes);
+	});
+
 	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {
 		const vault = new MemoryAssetVault();
 		const instance = await manager(vault, 1);
@@ -436,6 +534,38 @@ describe('ManagedAssetsManager', () => {
 	});
 });
 
+async function stageReserializedRelocation(vault: MemoryAssetVault): Promise<{
+	bundle: PackagedAsset[];
+	instance: ManagedAssetsManager;
+	lifecycle: ManagedAssetsLifecycle;
+	pointer: MemoryManagedAssetsPointerStore;
+	destinationBytes: Map<string, string>;
+	destinationPaths: string[];
+	sourceManifestPath: string;
+}> {
+	const bundle = await managedAssetsBundle();
+	const instance = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 6, locale: 'es', assets: bundle });
+	const pointer = new MemoryManagedAssetsPointerStore();
+	const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+	expect(await lifecycle.install('Previous root')).toMatchObject({ status: 'applied', root: 'Previous root' });
+	const sourceManifestPath = `Previous root/${MANAGED_ASSETS_MANIFEST}`;
+	const sourceManifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
+	const destinationBytes = new Map<string, string>();
+	for (const entry of sourceManifest.assets) {
+		const source = vault.contents.get(entry.path);
+		if (source === undefined) throw new Error(`missing source fixture: ${entry.path}`);
+		const destination = entry.path.replace(/^Previous root\//u, 'Configured output/');
+		const reserialized = stringifyYaml(parseYaml(source));
+		vault.contents.set(destination, reserialized);
+		vault.contents.delete(entry.path);
+		destinationBytes.set(destination, reserialized);
+	}
+	return {
+		bundle, instance, lifecycle, pointer, destinationBytes,
+		destinationPaths: [...destinationBytes.keys()], sourceManifestPath,
+	};
+}
+
 async function manager(vault: MemoryAssetVault, version: number): Promise<ManagedAssetsManager> {
 	const [asset] = await genericManagedAssets();
 	if (!asset) throw new Error('missing fixture');
@@ -478,6 +608,7 @@ class MemoryAssetVault implements ManagedAssetsVault {
 	failAfterTrash = false;
 	failBeforeTrash = false;
 	file(path: string): ManagedAssetFile | null { return this.contents.has(path) || this.folders.has(path) ? { path } : null; }
+	listFiles(): ManagedAssetFile[] { return [...this.contents.keys()].map((path) => ({ path })); }
 	async read(file: ManagedAssetFile): Promise<string> {
 		const value = this.contents.get(file.path); if (value === undefined) throw new Error('not_file'); return value;
 	}

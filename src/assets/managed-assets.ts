@@ -23,6 +23,7 @@ import {
 export interface ManagedAssetFile { path: string }
 export interface ManagedAssetsVault {
 	file(path: string): ManagedAssetFile | null;
+	listFiles(): ManagedAssetFile[];
 	read(file: ManagedAssetFile): Promise<string>;
 	createFolder(path: string): Promise<void>;
 	create(path: string, content: string): Promise<ManagedAssetFile>;
@@ -132,6 +133,14 @@ export class ManagedAssetsManager {
 		return promise;
 	}
 
+	relocate(from: string, to: string): Promise<ManagedAssetsResult> {
+		const key = this.flightKey(to, 'relocate', from);
+		if (this.flight) return this.flight.key === key ? this.flight.promise : Promise.resolve({ status: 'busy', message: 'Another managed-assets operation is active.' });
+		const promise = this.relocateInternal(from, to).finally(() => { if (this.flight?.promise === promise) this.flight = null; });
+		this.flight = { key, promise };
+		return promise;
+	}
+
 	async uninstall(root: string): Promise<ManagedAssetsResult> {
 		const key = this.flightKey(root, 'uninstall');
 		if (this.flight) return this.flight.key === key ? this.flight.promise : { status: 'busy', message: 'Another managed-assets operation is active.' };
@@ -140,9 +149,97 @@ export class ManagedAssetsManager {
 		return await promise;
 	}
 
-	private flightKey(root: string, kind: ManagedOperationKind): string {
-		return JSON.stringify([root, kind, this.bundle.bundleVersion, this.bundle.locale,
+	private flightKey(root: string, kind: ManagedOperationKind, sourceRoot: string | null = null): string {
+		return JSON.stringify([sourceRoot, root, kind, this.bundle.bundleVersion, this.bundle.locale,
 			selectedAssets(this.bundle).map(({ id, contentVersion, locale, relativePath, contentHash }) => [id, contentVersion, locale, relativePath, contentHash])]);
+	}
+
+	/**
+	 * Relocation is the only operation allowed to recover a complete destination whose Bases
+	 * lost their byte marker during Obsidian serialization. The ready schema-v2 manifest at the
+	 * pointer-owned origin supplies the exact semantic fingerprints; ordinary install remains
+	 * deliberately unable to adopt the same files.
+	 */
+	private async relocateInternal(from: string, to: string): Promise<ManagedAssetsResult> {
+		try {
+			if (from === to) return { status: 'invalid', message: 'Managed-assets relocation roots must differ.' };
+			let destination = await this.inspect(to);
+			if (destination.manifest?.state === 'applying') {
+				if (destination.manifest.pendingOperation?.kind !== 'relocate') {
+					return { status: 'busy', message: 'Another managed-assets operation is active.' };
+				}
+				const finalized = await this.finalize(destination.manifest);
+				if (!finalized) return { status: 'conflict', message: 'The recovered relocation could not be finalized.' };
+				return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(to), ownership: 'existing' };
+			}
+			if (destination.manifestStatus !== 'missing' ||
+				destination.assets.every((entry) => entry.status !== 'occupied_unowned')) {
+				return await this.applyInternal(to, 'install');
+			}
+
+			const source = await this.inspect(from);
+			const adopted = this.relocationAdoption(source, destination);
+			if (!adopted) return { status: 'conflict', message: 'Destination files do not exactly match the owned origin bundle.' };
+			const operation = {
+				operationId: await operationId(to, 0, this.bundle.bundleVersion, this.bundle.locale, 'relocate', adopted.steps),
+				kind: 'relocate' as const, fromGeneration: 0, targetBundleVersion: this.bundle.bundleVersion,
+				steps: adopted.steps,
+			};
+			let journal = await this.begin(destination, operation, adopted.entries);
+			if (!journal) {
+				destination = await this.inspect(to);
+				if (destination.manifestStatus === 'ready' && destination.assets.every((entry) => entry.status === 'unchanged')) {
+					return { status: 'unchanged', inspection: destination, ownership: 'existing' };
+				}
+				if (destination.manifest?.state !== 'applying' || destination.manifest.pendingOperation?.operationId !== operation.operationId) {
+					return { status: 'conflict', message: 'The relocation journal changed.' };
+				}
+				journal = destination.manifest;
+			}
+			const finalized = await this.finalize(journal);
+			if (!finalized) return { status: 'conflict', message: 'The relocation could not be finalized.' };
+			return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(to), ownership: 'created' };
+		} catch {
+			return { status: 'unavailable', message: 'Managed assets could not be relocated safely.' };
+		}
+	}
+
+	private relocationAdoption(
+		source: ManagedAssetsInspection,
+		destination: ManagedAssetsInspection,
+	): { entries: ManagedAssetEntry[]; steps: ManagedOperationStep[] } | null {
+		const manifest = source.manifest;
+		if (manifest?.schemaVersion !== MANAGED_ASSETS_SCHEMA_VERSION || manifest.state !== 'ready' ||
+			source.manifestStatus !== 'ready' || manifest.bundleVersion !== this.bundle.bundleVersion ||
+			manifest.locale !== this.bundle.locale || destination.manifestStatus !== 'missing' ||
+			source.assets.some((entry) => entry.status !== 'unchanged' && entry.status !== 'missing')) return null;
+		const expectedPaths = destination.assets.map((entry) => entry.path).sort();
+		const actualPaths = this.vault.listFiles().map((file) => file.path)
+			.filter((path) => path.startsWith(`${destination.root}/Bases/`) || path.startsWith(`${destination.root}/Templates/`))
+			.sort();
+		if (JSON.stringify(actualPaths) !== JSON.stringify(expectedPaths)) return null;
+
+		const entries: ManagedAssetEntry[] = [];
+		const steps: ManagedOperationStep[] = [];
+		for (const inspected of destination.assets) {
+			const { asset, currentHash, currentSemanticHash, path } = inspected;
+			const origin = manifest.assets.find((entry) => entry.id === asset.id && entry.kind === asset.kind &&
+				entry.contentVersion === asset.contentVersion && entry.locale === asset.locale);
+			if (!origin || currentHash === null) return null;
+			if (asset.kind === 'base') {
+				if (origin.installedSemanticHash === undefined || currentSemanticHash !== origin.installedSemanticHash) return null;
+			} else if (inspected.status !== 'recoverable' || currentHash !== origin.installedHash) {
+				return null;
+			}
+			const entry: ManagedAssetEntry = {
+				id: asset.id, kind: asset.kind, contentVersion: asset.contentVersion, locale: asset.locale,
+				path, installedHash: currentHash,
+			};
+			if (asset.kind === 'base') entry.installedSemanticHash = currentSemanticHash!;
+			entries.push(entry);
+			steps.push({ id: asset.id, path, beforeHash: currentHash, afterHash: asset.contentHash, state: 'done' });
+		}
+		return { entries, steps };
 	}
 
 	private async applyInternal(root: string, kind: 'install' | 'upgrade' | 'repair'): Promise<ManagedAssetsResult> {
@@ -211,7 +308,11 @@ export class ManagedAssetsManager {
 		}
 	}
 
-	private async begin(inspection: ManagedAssetsInspection, operation: ManagedAssetsManifest['pendingOperation']): Promise<ManagedAssetsManifest | null> {
+	private async begin(
+		inspection: ManagedAssetsInspection,
+		operation: ManagedAssetsManifest['pendingOperation'],
+		initialAssets: ManagedAssetEntry[] = [],
+	): Promise<ManagedAssetsManifest | null> {
 		if (!operation) return null;
 		if (inspection.manifest?.state === 'applying') {
 			return inspection.manifest.pendingOperation?.operationId === operation.operationId ? inspection.manifest : null;
@@ -223,7 +324,7 @@ export class ManagedAssetsManager {
 			generation: inspection.manifest?.generation ?? 0,
 			locale: operation.kind === 'uninstall' ? inspection.manifest?.locale ?? this.bundle.locale : this.bundle.locale,
 			state: 'applying',
-			assets: inspection.manifest?.assets ?? [], pendingOperation: operation,
+			assets: inspection.manifest?.assets ?? initialAssets, pendingOperation: operation,
 		};
 		await ensureFolders(this.vault, inspection.root);
 		const file = this.vault.file(inspection.manifestPath);

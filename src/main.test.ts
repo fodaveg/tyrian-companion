@@ -1157,6 +1157,7 @@ class MemoryAssetVault implements ManagedAssetsVault {
 	readonly folders = new Set<string>();
 	writeCount = 0;
 	file(path: string): ManagedAssetFile | null { return this.contents.has(path) || this.folders.has(path) ? { path } : null; }
+	listFiles(): ManagedAssetFile[] { return [...this.contents.keys()].map((path) => ({ path })); }
 	async read(file: ManagedAssetFile): Promise<string> {
 		const value = this.contents.get(file.path);
 		if (value === undefined) throw new Error('not_file');

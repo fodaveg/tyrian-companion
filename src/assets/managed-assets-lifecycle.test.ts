@@ -200,6 +200,7 @@ class FakeManager {
 	readonly installed: string[] = [];
 	readonly uninstalled: string[] = [];
 	async apply(root: string): Promise<ManagedAssetsResult> { this.installed.push(root); return ok('applied', 'created'); }
+	async relocate(_from: string, to: string): Promise<ManagedAssetsResult> { return await this.apply(to); }
 	async uninstall(root: string): Promise<ManagedAssetsResult> { this.uninstalled.push(root); return ok('detached', 'existing'); }
 	async inspect(root: string) { return inspection(root, 'ready'); }
 	async inspectForLegacyTransition(root: string) { return await this.inspect(root); }
