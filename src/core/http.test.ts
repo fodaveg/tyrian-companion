@@ -243,6 +243,55 @@ describe('ObsidianRequestTransport', () => {
 		timeout?.();
 		await expect(result).rejects.toMatchObject({ kind: 'timeout', status: null });
 	});
+
+	it.each(['character_inventory', 'character_build'] as const)(
+		'applies the explicit slow character policy to %s without an immediate retry',
+		async (endpoint) => {
+			let timeout: (() => void) | undefined;
+			const scheduledDelays: number[] = [];
+			const request = vi.fn(() => new Promise<never>(() => undefined));
+			const transport = new ResilientHttpTransport({
+				request,
+				operationPolicies: {
+					[endpoint]: { timeoutMs: 30_000, maxRetries: 0 },
+				},
+				scheduleTimeout: (callback, milliseconds) => {
+					timeout = callback;
+					scheduledDelays.push(milliseconds);
+					return 1;
+				},
+				cancelTimeout: vi.fn(),
+			});
+
+			const result = transport.send({
+				url: 'https://api.guildwars2.com/v2/redacted',
+				method: 'GET',
+				endpoint,
+			});
+			expect(scheduledDelays).toEqual([30_000]);
+			timeout?.();
+			await expect(result).rejects.toMatchObject({ kind: 'timeout', status: null });
+			expect(request).toHaveBeenCalledOnce();
+		},
+	);
+
+	it('lets the character operation owner recover after a 5xx instead of retrying in transport', async () => {
+		const request = vi.fn(async () => response(503));
+		const transport = new ResilientHttpTransport({
+			request,
+			operationPolicies: {
+				character_inventory: { timeoutMs: 30_000, maxRetries: 0 },
+			},
+			...inertTimer,
+		});
+
+		await expect(transport.send({
+			url: 'https://api.guildwars2.com/v2/redacted',
+			method: 'GET',
+			endpoint: 'character_inventory',
+		})).rejects.toMatchObject({ kind: 'http', status: 503 });
+		expect(request).toHaveBeenCalledOnce();
+	});
 });
 
 function diagnosticHarness(): {

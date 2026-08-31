@@ -51,6 +51,7 @@ export class HttpTransportError extends Error {
 export interface TransportOptions {
 	maxRetries?: number;
 	timeoutMs?: number;
+	operationPolicies?: HttpOperationPolicies;
 	baseDelayMs?: number;
 	request: (request: HttpRequest & { throw: false }) => Promise<RawHttpResponse>;
 	sleep?: (milliseconds: number) => Promise<void>;
@@ -60,6 +61,15 @@ export interface TransportOptions {
 	cancelTimeout?: (handle: unknown) => void;
 	diagnostics?: LocalDebugActionPort;
 }
+
+export interface HttpOperationPolicy {
+	maxRetries?: number;
+	timeoutMs?: number;
+}
+
+export type HttpOperationPolicies = Readonly<Partial<
+	Record<HttpLogicalEndpoint, Readonly<HttpOperationPolicy>>
+>>;
 
 export interface RawHttpResponse {
 	status: number;
@@ -73,6 +83,7 @@ const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 export class ResilientHttpTransport implements HttpTransport {
 	private readonly maxRetries: number;
 	private readonly timeoutMs: number;
+	private readonly operationPolicies: HttpOperationPolicies;
 	private readonly baseDelayMs: number;
 	private readonly request: TransportOptions['request'];
 	private readonly sleep: (milliseconds: number) => Promise<void>;
@@ -85,6 +96,7 @@ export class ResilientHttpTransport implements HttpTransport {
 	constructor(options: TransportOptions) {
 		this.maxRetries = options.maxRetries ?? 2;
 		this.timeoutMs = options.timeoutMs ?? 10_000;
+		this.operationPolicies = options.operationPolicies ?? {};
 		this.baseDelayMs = options.baseDelayMs ?? 500;
 		this.request = options.request;
 		this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)));
@@ -97,12 +109,13 @@ export class ResilientHttpTransport implements HttpTransport {
 
 	async send(request: HttpRequest, actionContext?: ResolvedLocalDebugActionContext): Promise<HttpResponse> {
 		const endpoint = closedEndpoint(request.endpoint);
+		const policy = this.operationPolicy(endpoint);
 		const diagnostic = this.beginDiagnostic(endpoint, actionContext);
 		let lastAttempt = 1;
 		try {
-			for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+			for (let attempt = 0; attempt <= policy.maxRetries; attempt += 1) {
 				lastAttempt = attempt + 1;
-				const response = await this.perform(request);
+				const response = await this.perform(request, policy.timeoutMs);
 				if (response.status >= 200 && response.status < 300) {
 					this.finishDiagnostic(diagnostic, 'success', 'ok', endpoint, attempt + 1, {
 						statusCode: response.status,
@@ -114,7 +127,7 @@ export class ResilientHttpTransport implements HttpTransport {
 				const retryAfterMs = parseRetryAfter(response.headers, this.now());
 				const retryDelayMs =
 					retryAfterMs ?? (RETRYABLE_STATUSES.has(response.status) ? this.backoff(attempt) : null);
-				if (!RETRYABLE_STATUSES.has(response.status) || attempt === this.maxRetries) {
+				if (!RETRYABLE_STATUSES.has(response.status) || attempt === policy.maxRetries) {
 					throw new HttpTransportError(
 						'http',
 						response.status,
@@ -220,7 +233,7 @@ export class ResilientHttpTransport implements HttpTransport {
 		}
 	}
 
-	private async perform(request: HttpRequest): Promise<HttpResponse> {
+	private async perform(request: HttpRequest, timeoutMs: number): Promise<HttpResponse> {
 		let timer: unknown;
 		try {
 			const response = await Promise.race([
@@ -228,7 +241,7 @@ export class ResilientHttpTransport implements HttpTransport {
 				new Promise<never>((_resolve, reject) => {
 					timer = this.scheduleTimeout(
 						() => reject(new HttpTransportError('timeout', null, null, 'Request timed out.')),
-						this.timeoutMs,
+						timeoutMs,
 					);
 				}),
 			]);
@@ -248,6 +261,14 @@ export class ResilientHttpTransport implements HttpTransport {
 				this.cancelTimeout(timer);
 			}
 		}
+	}
+
+	private operationPolicy(endpoint: HttpLogicalEndpoint): Required<HttpOperationPolicy> {
+		const override = this.operationPolicies[endpoint];
+		return {
+			maxRetries: override?.maxRetries ?? this.maxRetries,
+			timeoutMs: override?.timeoutMs ?? this.timeoutMs,
+		};
 	}
 
 	private backoff(attempt: number): number {

@@ -4,7 +4,10 @@ import { shell } from 'electron';
 
 import { GuildWars2AccountGateway } from './account/account-service';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
-import { GuildWars2Client } from './account/guild-wars-2-client';
+import {
+	GuildWars2Client,
+	GW2_CHARACTER_OPERATION_POLICIES,
+} from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { TradingPostHistoryEvidenceService } from './account/trading-post-evidence';
 import { RateLimitedStorageSnapshotService } from './account/rate-limited-storage-snapshot-service';
@@ -483,11 +486,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.app,
 			() => this.settings.apiKeySecret,
 		);
-		const transport = new ObsidianRequestTransport({ diagnostics: this.localDebugActions ?? undefined });
+		const transport = new ObsidianRequestTransport({
+			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
+			diagnostics: this.localDebugActions ?? undefined,
+		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
 		const inventoryTransport = new ObsidianRequestTransport({
 			timeoutMs: 30_000,
+			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		const inventoryClient = new GuildWars2Client(inventoryTransport, apiKeyProvider);

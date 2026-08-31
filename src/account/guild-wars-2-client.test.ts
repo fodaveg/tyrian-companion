@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTransport } from '../core/http';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import type { ApiKeyProvider } from '../core/secret-provider';
-import { GuildWars2Client, guildWars2LogicalEndpoint, MissingApiKeyError } from './guild-wars-2-client';
+import {
+	GuildWars2Client,
+	GW2_CHARACTER_OPERATION_POLICIES,
+	guildWars2LogicalEndpoint,
+	MissingApiKeyError,
+} from './guild-wars-2-client';
 
 class FakeTransport implements HttpTransport {
 	requests: HttpRequest[] = [];
@@ -121,5 +126,12 @@ describe('GuildWars2Client', () => {
 		expect(guildWars2LogicalEndpoint('characters/Secret Name/buildtabs/active?v=latest')).toBe('character_build');
 		expect(guildWars2LogicalEndpoint('commerce/transactions/history/buys?page=1')).toBe('commerce_transactions_history');
 		expect(guildWars2LogicalEndpoint('private/Secret Name?token=secret')).toBe('unknown');
+	});
+
+	it('defines patient single-attempt policies only for the two character operations', () => {
+		expect(GW2_CHARACTER_OPERATION_POLICIES).toEqual({
+			character_inventory: { timeoutMs: 30_000, maxRetries: 0 },
+			character_build: { timeoutMs: 30_000, maxRetries: 0 },
+		});
 	});
 });

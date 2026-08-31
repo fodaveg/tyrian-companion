@@ -31,6 +31,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
 		expect(source).toMatch(/const inventoryTransport = new ObsidianRequestTransport\(\{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
+		expect(source.match(/operationPolicies: GW2_CHARACTER_OPERATION_POLICIES/gu)).toHaveLength(2);
 		expect(source).toContain('inventoryClient, inventoryPublicClient, inventorySnapshots,');
 		const runtime = source.slice(source.indexOf('function createInventoryAdvisorRuntime('), source.indexOf('\nfunction managedAssetsFailureCode('));
 		expect(runtime).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');

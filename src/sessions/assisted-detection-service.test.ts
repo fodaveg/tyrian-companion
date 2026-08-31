@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import type { ApiPollOutcome, ApiPollSchedulerState } from './api-poll-scheduler';
+import {
+	ApiPollScheduler,
+	type ApiPollOutcome,
+	type ApiPollSchedulerState,
+} from './api-poll-scheduler';
 import {
 	AssistedDetectionService,
 	HALLOWEEN_RELEVANT_ITEM_RULE_SET,
@@ -219,6 +223,56 @@ describe('AssistedDetectionService', () => {
 		expect(harness.scheduler.starts).toEqual([]);
 	});
 
+	it('backs off once after a partial poll and recovers without publishing or duplicating it', async () => {
+		const queue = [
+			snapshot('baseline', 0, 0),
+			{ ...snapshot('partial', 2, 99), quality: 'partial' as const },
+			snapshot('recovered', 4, 1),
+		];
+		const observed: string[] = [];
+		const clock = new DetectionSchedulerHarness();
+		let captures = 0;
+		const service = new AssistedDetectionService({
+			snapshots: { capture: async () => {
+				captures += 1;
+				const next = queue.shift();
+				if (!next) throw new Error('Missing snapshot fixture.');
+				return structuredClone(next);
+			} },
+			getSessionState: idleSession,
+			onObservedDelta: (delta) => {
+				if (delta.afterSnapshotId === null) throw new Error('Observed delta must identify its recovered snapshot.');
+				observed.push(delta.afterSnapshotId);
+			},
+			schedulerFactory: (options) => clock.create(options),
+			now: () => new Date('2026-08-13T09:59:00.000Z'),
+		});
+
+		await service.arm(10_000);
+		expect(clock.pendingTimers()).toBe(1);
+		await clock.fireNext();
+
+		expect(captures).toBe(2);
+		expect(observed).toEqual([]);
+		expect(service.getState()).toMatchObject({
+			status: 'armed',
+			lastSnapshotAt: '2026-08-13T10:00:02.000Z',
+			scheduler: { status: 'backoff', consecutiveFailures: 1 },
+		});
+		expect(clock.pendingTimers()).toBe(1);
+
+		await clock.fireNext();
+
+		expect(captures).toBe(3);
+		expect(observed).toEqual(['recovered']);
+		expect(service.getState()).toMatchObject({
+			status: 'armed',
+			lastSnapshotAt: '2026-08-13T10:04:02.000Z',
+			scheduler: { status: 'scheduled', consecutiveFailures: 0 },
+		});
+		expect(clock.pendingTimers()).toBe(1);
+	});
+
 	it('updates a running interval and disarms without retaining account evidence', async () => {
 		const harness = createHarness([snapshot('a', 0, 0)]);
 		await harness.service.arm(900_000);
@@ -317,6 +371,57 @@ class FakeScheduler {
 	private publish(status: ApiPollSchedulerState['status'], intervalMs: number | null): void {
 		this.state = { ...this.state, status, intervalMs };
 		this.onStateChange?.(this.getState());
+	}
+}
+
+class DetectionSchedulerHarness {
+	private wall = 1_000;
+	private monotonic = 100;
+	private nextId = 1;
+	private readonly timers = new Map<number, {
+		callback: () => void;
+		dueWall: number;
+		dueMonotonic: number;
+	}>();
+
+	create(
+		options: ConstructorParameters<typeof ApiPollScheduler>[0],
+	): ApiPollScheduler {
+		return new ApiPollScheduler({
+			...options,
+			wallNow: () => this.wall,
+			monotonicNow: () => this.monotonic,
+			random: () => 0.5,
+			baseBackoffMs: 1_000,
+			maxBackoffMs: 2_000,
+			scheduleTimeout: (callback, delayMs) => {
+				const id = this.nextId;
+				this.nextId += 1;
+				this.timers.set(id, {
+					callback,
+					dueWall: this.wall + delayMs,
+					dueMonotonic: this.monotonic + delayMs,
+				});
+				return id;
+			},
+			cancelTimeout: (handle) => { this.timers.delete(handle as number); },
+		});
+	}
+
+	pendingTimers(): number {
+		return this.timers.size;
+	}
+
+	async fireNext(): Promise<void> {
+		const next = [...this.timers.entries()]
+			.sort((left, right) => left[1].dueMonotonic - right[1].dueMonotonic)[0];
+		if (!next) throw new Error('No timer is pending.');
+		const [id, timer] = next;
+		this.timers.delete(id);
+		this.wall = timer.dueWall;
+		this.monotonic = timer.dueMonotonic;
+		timer.callback();
+		for (let index = 0; index < 12; index += 1) await Promise.resolve();
 	}
 }
 

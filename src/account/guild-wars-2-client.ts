@@ -1,6 +1,7 @@
 import {
 	HttpTransportError,
 	type HttpLogicalEndpoint,
+	type HttpOperationPolicies,
 	type HttpResponse,
 	type HttpTransport,
 } from '../core/http';
@@ -8,6 +9,12 @@ import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action
 import type { ApiKeyProvider } from '../core/secret-provider';
 
 export const OFFICIAL_GW2_API_URL = 'https://api.guildwars2.com/v2';
+
+/** Slow per-character fan-out gets one patient attempt; capture/scheduler own recovery. */
+export const GW2_CHARACTER_OPERATION_POLICIES = Object.freeze({
+	character_inventory: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
+	character_build: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
+}) satisfies HttpOperationPolicies;
 
 export class MissingApiKeyError extends Error {
 	constructor() {

@@ -120,7 +120,36 @@ export class StorageSnapshotService {
 				completedAt: new Date().toISOString(),
 			});
 		}
+		// A transient hole already makes this pass unusable as a session boundary.
+		// Returning it now preserves exact coverage while the single poll scheduler
+		// owns the only retry/backoff; repeating the whole roster here creates bursts.
+		if (hasTransientCoverageFailure(first.coverage)) {
+			return finalizeStorageSnapshot({
+				pass: first,
+				quality: 'partial',
+				coveragePasses: [first],
+				passes: [first],
+			}, {
+				accountId: context.accountId,
+				snapshotId,
+				startedAt,
+				completedAt: new Date().toISOString(),
+			});
+		}
 		const second = await this.capturePass(operation, context, scope);
+		if (hasTransientCoverageFailure(second.coverage)) {
+			return finalizeStorageSnapshot({
+				pass: second,
+				quality: 'partial',
+				coveragePasses: [first, second],
+				passes: [first, second],
+			}, {
+				accountId: context.accountId,
+				snapshotId,
+				startedAt,
+				completedAt: new Date().toISOString(),
+			});
+		}
 		const pair = qualifyStorageSnapshotPair(first, second);
 		if (pair.status === 'qualified') {
 			return finalizeStorageSnapshot(pair.value, {
@@ -332,6 +361,16 @@ function advisorPassComplete(coverage: SnapshotCoverage): boolean {
 	return coverage.sources.characters.status === 'complete'
 		&& coverage.sources.shared_inventory.status === 'complete'
 		&& Object.values(coverage.characters).every((entry) => entry.status === 'complete');
+}
+
+function hasTransientCoverageFailure(coverage: SnapshotCoverage): boolean {
+	return [...Object.values(coverage.sources), ...Object.values(coverage.characters)].some((entry) => {
+		if (entry.status !== 'partial' || entry.diagnostic === undefined) return false;
+		return entry.diagnostic.kind === 'timeout'
+			|| entry.diagnostic.kind === 'network'
+			|| entry.diagnostic.status === 429
+			|| (entry.diagnostic.status !== null && entry.diagnostic.status >= 500);
+	});
 }
 
 function withSchema(path: string): string {

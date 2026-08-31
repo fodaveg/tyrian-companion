@@ -719,6 +719,57 @@ describe('StorageSnapshotService', () => {
 		});
 	});
 
+	it.each([
+		['timeout', new HttpTransportError('timeout', null, null, 'Timed out.')],
+		['network', new HttpTransportError('network', null, null, 'Network failed.')],
+		['server failure', new HttpTransportError('http', 503, null, 'Unavailable.')],
+	] as const)('stops after the first pass when one character has a transient %s', async (_label, failure) => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const seen: string[] = [];
+		const first = passWith({ [inventoryPath]: failure });
+		const service = new StorageSnapshotService(clientFor([
+			first,
+			passWith(),
+			passWith(),
+		], { seen }).client);
+
+		const snapshot = await service.capture();
+
+		expect(snapshot).toMatchObject({
+			quality: 'partial',
+			passes: 1,
+			coverage: {
+				sources: { characters: { status: 'partial', reason: 'unavailable' } },
+				characters: { [characterName]: { status: 'partial', reason: 'unavailable' } },
+			},
+		});
+		expect(snapshot.passCoverages).toHaveLength(1);
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(1);
+	});
+
+	it('does not launch a third account-wide pass when the transient hole appears in the second', async () => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const seen: string[] = [];
+		const second = passWith({
+			[inventoryPath]: new HttpTransportError('timeout', null, null, 'Timed out.'),
+		});
+		const service = new StorageSnapshotService(clientFor([
+			passWith(),
+			second,
+			passWith(),
+		], { seen }).client);
+
+		const snapshot = await service.capture();
+
+		expect(snapshot).toMatchObject({ quality: 'partial', passes: 2 });
+		expect(snapshot.passCoverages).toHaveLength(2);
+		expect(snapshot.passCoverages[0]?.characters[characterName]).toEqual({ status: 'complete' });
+		expect(snapshot.passCoverages[1]?.characters[characterName]).toMatchObject({
+			status: 'partial', reason: 'unavailable', diagnostic: { kind: 'timeout' },
+		});
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(2);
+	});
+
 	describe('capture progress', () => {
 		it('reports a real, growing completed/total for each character as its own request settles', async () => {
 			const names = ['Astra', 'Borja', 'Carla'];
