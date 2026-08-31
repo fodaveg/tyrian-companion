@@ -5275,9 +5275,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3089,
+					"line": 3088,
 					"column": 5,
-					"endLine": 3089,
+					"endLine": 3088,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5290,9 +5290,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3121,
+					"line": 3120,
 					"column": 7,
-					"endLine": 3121,
+					"endLine": 3120,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5306,9 +5306,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3126,
+					"line": 3125,
 					"column": 2,
-					"endLine": 3126,
+					"endLine": 3125,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
