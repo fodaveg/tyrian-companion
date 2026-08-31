@@ -51,6 +51,7 @@ describe('IndexedDbPilotMetricsStore', () => {
 		const terminal = {
 			status: 'decided' as const, decidedAt: '2026-08-20T10:02:00.000Z', decision: 'accepted' as const,
 			effectiveResult: 'accepted_workflow_succeeded' as const, correctionCause: null, humanBoundaryAt: null,
+			exclusionReason: null,
 		};
 		const terminals = await Promise.all([
 			first.finishProposal(observation.proposalRef, terminal), second.finishProposal(observation.proposalRef, terminal),
@@ -76,7 +77,10 @@ describe('IndexedDbPilotMetricsStore', () => {
 		await first.saveProfile(ENV);
 		await second.saveProfile({ ...ENV, platform: 'windows_beta', platformVersion: '11.24H2' });
 		await first.ensureObservation(await presented('only-a'));
-		await second.ensureObservation(await presented('only-b'));
+		await second.ensureObservation({
+			...await presented('only-b'),
+			environment: { ...ENV, platform: 'windows_beta', platformVersion: '11.24H2' },
+		});
 		expect((await first.load() as { status: 'ok'; value: { profile: { platform: string }; observations: unknown[] } }).value)
 			.toMatchObject({ profile: { platform: 'linux_steam_proton' }, observations: [{ proposalRef: await pilotProposalRef('only-a') }] });
 		expect((await second.load() as { status: 'ok'; value: { profile: { platform: string }; observations: unknown[] } }).value)
@@ -89,7 +93,9 @@ describe('IndexedDbPilotMetricsStore', () => {
 	it('deletes profile, verification and observations atomically when opt-in is withdrawn', async () => {
 		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('disable'));
 		await store.saveProfile(ENV);
-		await store.saveVerification({ version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z' });
+		await store.saveVerification({
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z', environment: ENV,
+		});
 		await store.ensureObservation(await presented('disable-a'));
 		await expect(store.disable()).resolves.toEqual({ status: 'ok', value: 1 });
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unconfigured' });
@@ -97,6 +103,31 @@ describe('IndexedDbPilotMetricsStore', () => {
 		await expect(store.load()).resolves.toMatchObject({
 			status: 'ok', value: { verification: null, observations: [] },
 		});
+	});
+
+	it('invalidates a sample review atomically on new evidence, a terminal update, or a profile change', async () => {
+		const store = new IndexedDbPilotMetricsStore(new IDBFactory(), 'vault-a', databaseName('verification-binding'));
+		const verification = {
+			version: 1 as const, silentLosses: 'none_observed' as const,
+			reviewedAt: '2026-08-20T10:03:00.000Z', environment: ENV,
+		};
+		await store.saveProfile(ENV);
+		await store.ensureObservation(await presented('reviewed-first'));
+		await store.saveVerification(verification);
+		await store.ensureObservation(await presented('new-evidence'));
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
+
+		await store.saveVerification(verification);
+		await store.finishProposal(await pilotProposalRef('reviewed-first'), {
+			status: 'decided', decidedAt: '2026-08-20T10:04:00.000Z', decision: 'accepted',
+			effectiveResult: 'accepted_workflow_succeeded', correctionCause: null, humanBoundaryAt: null,
+			exclusionReason: null,
+		});
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
+
+		await store.saveVerification(verification);
+		await store.saveProfile({ ...ENV, platformVersion: '10.0-2' });
+		await expect(store.load()).resolves.toMatchObject({ status: 'ok', value: { verification: null } });
 	});
 
 	it('reads at most max+1 and refuses an oversized pre-existing dataset', async () => {

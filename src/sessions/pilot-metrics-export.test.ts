@@ -27,6 +27,9 @@ describe('PilotMetricsExporter', () => {
 		expect(payload).toContain('"mode"');
 		expect(payload).toContain('"assisted"');
 		expect(payload).toContain('"uncertainty_ms"');
+		expect(payload).toContain('"exclusion_reason"');
+		expect(payload).toContain('"start_superseded"');
+		expect(payload).toContain('"unclassified_presented"');
 	});
 
 	it('is create-only, returns unchanged for exact files and preflights conflicts before any write', async () => {
@@ -107,7 +110,9 @@ async function fixture(proposalId: string): Promise<PilotJournalSnapshotV1> {
 	})!;
 	return {
 		version: 1, profile: environment,
-		verification: { version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z' },
+		verification: {
+			version: 1, silentLosses: 'none_observed', reviewedAt: '2026-08-20T10:02:00.000Z', environment,
+		},
 		observations: [{
 			version: 1, kind: 'proposal', proposalRef: await pilotProposalRef(proposalId), phase: 'stop', mode: 'assisted',
 			reviewPresentedAt: '2026-08-20T10:00:00.000Z',
@@ -116,6 +121,7 @@ async function fixture(proposalId: string): Promise<PilotJournalSnapshotV1> {
 			terminal: {
 				status: 'decided', decidedAt: '2026-08-20T10:01:00.000Z', decision: 'accepted',
 				effectiveResult: 'accepted_workflow_succeeded', correctionCause: null, humanBoundaryAt: null,
+				exclusionReason: null,
 			},
 		}],
 	};

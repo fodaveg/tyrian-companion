@@ -102,7 +102,7 @@ export class PilotMetricsRecorder {
 			effectiveResult: input.decision === 'dismissed' ? 'dismissed'
 				: input.workflow === 'succeeded' ? 'accepted_workflow_succeeded' : 'accepted_workflow_failed',
 			correctionCause: input.decision === 'dismissed' ? input.cause : null,
-			humanBoundaryAt: input.humanBoundaryAt,
+			humanBoundaryAt: input.humanBoundaryAt, exclusionReason: null,
 		};
 		return await this.serialize(`proposal:${input.proposalId}`, async () => {
 			try { return this.consume(await this.store.finishProposal(await pilotProposalRef(input.proposalId), terminal, true), false); }
@@ -110,11 +110,15 @@ export class PilotMetricsRecorder {
 		});
 	}
 
-	async proposalExpired(proposalId: string, recordedAt = this.timestamp()): Promise<boolean> {
+	async proposalExcluded(
+		proposalId: string,
+		reason: 'expired' | 'superseded' | 'invalidated',
+		recordedAt = this.timestamp(),
+	): Promise<boolean> {
 		return await this.serialize(`proposal:${proposalId}`, async () => { try {
 			return this.consume(await this.store.finishProposal(await pilotProposalRef(proposalId), {
-				status: 'expired', decidedAt: recordedAt, decision: null, effectiveResult: null,
-				correctionCause: null, humanBoundaryAt: null,
+				status: 'excluded', decidedAt: recordedAt, decision: null, effectiveResult: null,
+				correctionCause: null, humanBoundaryAt: null, exclusionReason: reason,
 			}, true), false);
 		} catch { this.failure('unavailable'); return false; } });
 	}
@@ -163,7 +167,7 @@ export class PilotMetricsRecorder {
 			if (profile.status === 'error') { this.failure(profile.code); return false; }
 			if (profile.status === 'missing') { this.failure('inconsistent'); return false; }
 			return this.consume(await this.store.saveVerification({
-				version: 1, silentLosses, reviewedAt: this.timestamp(),
+				version: 1, silentLosses, reviewedAt: this.timestamp(), environment: profile.value,
 			}), false);
 		} catch { this.failure('unavailable'); return false; }
 	}

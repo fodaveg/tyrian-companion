@@ -424,12 +424,17 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						button.setDisabled(false);
 					}));
 					let silentLosses: PilotSilentLossReview = 'unreviewed';
+					let resetSilentLossReview = (): void => { silentLosses = 'unreviewed'; };
 					setting.addDropdown((dropdown) => {
 						dropdown.selectEl.setAttr('aria-label', this.t('settings.pilot.silentLosses'));
 						for (const value of PILOT_SILENT_LOSS_REVIEWS) {
 							dropdown.addOption(value, this.t(`settings.pilot.silentLosses.${value}`));
 						}
 						dropdown.onChange((value) => { silentLosses = value as PilotSilentLossReview; });
+						resetSilentLossReview = () => {
+							silentLosses = 'unreviewed';
+							if (dropdown.selectEl.isConnected) dropdown.setValue('unreviewed');
+						};
 						void verificationFlight.then((value) => {
 							if (!dropdown.selectEl.isConnected) return;
 							silentLosses = value;
@@ -459,6 +464,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							button.setDisabled(true);
 							try {
 								const cleared = await this.plugin.clearPilotMetrics();
+								if (cleared !== null) resetSilentLossReview();
 								setPilotStatus(this.t(cleared === null ? 'settings.pilot.failed' : 'settings.pilot.status.ready', {
 									observations: 0, limit: PILOT_METRICS_MAX_OBSERVATIONS,
 								}), cleared === null);
@@ -472,6 +478,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							button.setDisabled(true);
 							try {
 								const deleted = await this.plugin.disablePilotMetrics();
+								if (deleted !== null) resetSilentLossReview();
 								setPilotStatus(this.t(deleted === null ? 'settings.pilot.failed' : 'settings.pilot.disabled'), deleted === null);
 							} finally { button.setDisabled(false); }
 						});

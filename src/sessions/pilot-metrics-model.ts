@@ -28,13 +28,15 @@ export interface PilotEnvironmentV1 {
 }
 
 export interface PilotProposalTerminalV1 {
-	status: 'decided' | 'expired';
+	status: 'decided' | 'excluded';
 	decidedAt: string;
 	decision: 'dismissed' | 'accepted' | null;
 	effectiveResult: 'dismissed' | 'accepted_workflow_succeeded' | 'accepted_workflow_failed' | null;
 	correctionCause: DetectionCorrectionCause | null;
 	/** Explicit human adjudication only. Null is not inferred from detector or click time. */
 	humanBoundaryAt: string | null;
+	/** Operational closure outside human review; published separately from accuracy and coverage. */
+	exclusionReason: 'expired' | 'superseded' | 'invalidated' | null;
 }
 
 export interface PilotProposalObservationV1 {
@@ -91,6 +93,8 @@ export interface PilotVerificationV1 {
 	version: typeof PILOT_METRICS_VERSION;
 	silentLosses: PilotSilentLossReview;
 	reviewedAt: string;
+	/** Exact local environment whose current sample was reviewed. */
+	environment: PilotEnvironmentV1;
 }
 
 export function createPilotEnvironment(input: Omit<PilotEnvironmentV1, 'version'>): PilotEnvironmentV1 | null {
@@ -108,9 +112,10 @@ export function isPilotEnvironment(value: unknown): value is PilotEnvironmentV1 
 }
 
 export function isPilotVerification(value: unknown): value is PilotVerificationV1 {
-	return isRecord(value) && exactKeys(value, ['version', 'silentLosses', 'reviewedAt']) &&
+	return isRecord(value) && exactKeys(value, ['version', 'silentLosses', 'reviewedAt', 'environment']) &&
 		value.version === PILOT_METRICS_VERSION &&
-		PILOT_SILENT_LOSS_REVIEWS.includes(value.silentLosses as PilotSilentLossReview) && isIso(value.reviewedAt);
+		PILOT_SILENT_LOSS_REVIEWS.includes(value.silentLosses as PilotSilentLossReview) && isIso(value.reviewedAt) &&
+		isPilotEnvironment(value.environment);
 }
 
 export function isPilotObservation(value: unknown): value is PilotObservationV1 {
@@ -153,14 +158,16 @@ function isProposal(value: Record<string, unknown>): value is Record<string, unk
 
 function isProposalTerminal(value: unknown, proposal: Record<string, unknown>): value is PilotProposalTerminalV1 {
 	if (!isRecord(value) || !exactKeys(value, [
-		'status', 'decidedAt', 'decision', 'effectiveResult', 'correctionCause', 'humanBoundaryAt',
-	]) || (value.status !== 'decided' && value.status !== 'expired') || !isIso(value.decidedAt) ||
+		'status', 'decidedAt', 'decision', 'effectiveResult', 'correctionCause', 'humanBoundaryAt', 'exclusionReason',
+	]) || (value.status !== 'decided' && value.status !== 'excluded') || !isIso(value.decidedAt) ||
 		!isIso(proposal.reviewPresentedAt) || Date.parse(value.decidedAt) < Date.parse(proposal.reviewPresentedAt) ||
 		(value.humanBoundaryAt !== null && !isIso(value.humanBoundaryAt))) return false;
-	if (value.status === 'expired') {
+	if (value.status === 'excluded') {
 		return value.decision === null && value.effectiveResult === null && value.correctionCause === null &&
-			value.humanBoundaryAt === null;
+			value.humanBoundaryAt === null &&
+			['expired', 'superseded', 'invalidated'].includes(value.exclusionReason as string);
 	}
+	if (value.exclusionReason !== null) return false;
 	if (value.decision === 'dismissed') {
 		return value.effectiveResult === 'dismissed' && typeof value.correctionCause === 'string' &&
 			allowedCause(proposal.phase, value.correctionCause);

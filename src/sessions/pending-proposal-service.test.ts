@@ -225,18 +225,44 @@ describe('PendingProposalService', () => {
 
 	it('reports durable expirations to the optional pilot hook without changing receipt semantics', async () => {
 		const clock = fakeClock('2026-08-13T12:00:00.000Z');
-		const expired: Array<{ proposalId: string; expiredAt: string }> = [];
+		const expired: Array<{ proposalId: string; reason: string; resolvedAt: string }> = [];
 		const queue = new PendingProposalService(
 			new MemoryPendingProposalStore(), 'window-a', clock.now, () => undefined,
-			(proposalId, expiredAt) => expired.push({ proposalId, expiredAt }),
+			(proposalId, reason, resolvedAt) => expired.push({ proposalId, reason, resolvedAt }),
 		);
 		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
 		clock.advance(PENDING_PROPOSAL_EXPIRES_MS + 1);
 		await queue.project();
 		expect(expired).toContainEqual({
 			proposalId: startProposal().proposalId,
-			expiredAt: '2026-08-14T12:00:00.001Z',
+			reason: 'expired', resolvedAt: '2026-08-14T12:00:00.001Z',
 		});
+	});
+
+	it('notifies superseded and invalidated operational closures without changing receipts', async () => {
+		const excluded: Array<{ proposalId: string; reason: string }> = [];
+		const queue = new PendingProposalService(
+			new MemoryPendingProposalStore(), 'window-a', undefined, () => undefined,
+			(proposalId, reason) => excluded.push({ proposalId, reason }),
+		);
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('replacement') });
+		expect(excluded).toContainEqual({ proposalId: startProposal().proposalId, reason: 'superseded' });
+		await queue.reconcile({ accountId: 'other-account', recoveryPending: false, session: { status: 'idle' } });
+		expect(excluded).toContainEqual({ proposalId: startProposal('replacement').proposalId, reason: 'invalidated' });
+	});
+
+	it('keeps the product queue available when the optional exclusion hook throws', async () => {
+		const queue = new PendingProposalService(
+			new MemoryPendingProposalStore(), 'window-a', undefined, () => undefined,
+			() => { throw new Error('pilot unavailable'); },
+		);
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
+		const replacement = await queue.enqueue({
+			phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal('replacement'),
+		});
+		expect(replacement.status).toBe('coalesced');
+		expect(queue.getState()).toMatchObject({ status: 'ready', pendingCount: 1 });
 	});
 
 	it('invalidates proposals whose account, session or recovery binding changed', async () => {

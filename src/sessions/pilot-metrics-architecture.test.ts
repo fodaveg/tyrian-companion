@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { TRANSLATIONS } from '../core/i18n';
+
 const CORE = [
 	'src/sessions/pilot-metrics-model.ts',
 	'src/sessions/pilot-metrics-statistics.ts',
@@ -31,20 +33,24 @@ describe('pilot metrics architecture', () => {
 		const main = readFileSync('src/main.ts', 'utf8');
 		for (const hook of [
 			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
-			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExpired',
+			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExcluded',
 		]) expect(main).toContain(hook);
 	});
 
-	it('attempts review-presented when a proposal card materializes before enabling its decisions', () => {
+	it('attempts review-presented when a card materializes without delaying any product action', () => {
 		const view = readFileSync('src/ui/companion-view.ts', 'utf8');
 		const pending = view.slice(view.indexOf('private renderPendingConfirmation'), view.indexOf('private refreshDynamicStatus'));
-		expect(pending).toContain('review.disabled = true');
-		expect(pending).toContain('dismiss.disabled = true');
-		expect(pending.indexOf('recordPendingProposalPresented')).toBeLessThan(pending.indexOf('review.disabled = false'));
-		expect(pending.indexOf('recordPendingProposalPresented')).toBeLessThan(pending.indexOf('dismiss.disabled = false'));
+		expect(pending).toContain('recordPendingProposalPresented');
+		expect(pending).not.toContain('review.disabled');
+		expect(pending).not.toContain('dismiss.disabled');
+		expect(pending).not.toContain('.finally(');
+		const recovery = view.slice(view.indexOf('private renderRecovery('), view.indexOf('private renderSessionDetails'));
+		expect(recovery).toContain('recover.disabled = working');
+		expect(recovery).not.toContain('recoveryKind === null');
 		const main = readFileSync('src/main.ts', 'utf8');
 		const review = main.slice(main.indexOf('private async reviewPendingProposalOutcome'), main.indexOf('async dismissPendingProposal'));
 		expect(review).not.toContain('proposalPresented');
+		expect(main).not.toContain('if (recoveryId) await this.ensurePilotRecoveryPresented(recoveryId)');
 	});
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
@@ -53,5 +59,13 @@ describe('pilot metrics architecture', () => {
 		const store = readFileSync('src/sessions/pilot-metrics-store.ts', 'utf8');
 		expect(store).toContain('async disable()');
 		expect(store).toContain('PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE');
+	});
+
+	it('states that clear resets the review and disable leaves prior Vault exports untouched', () => {
+		for (const locale of ['es', 'en'] as const) {
+			expect(TRANSLATIONS[locale]['settings.pilot.clear.desc']).toMatch(/revisi|review/iu);
+			expect(TRANSLATIONS[locale]['settings.pilot.disable.desc']).toMatch(/Vault/u);
+			expect(TRANSLATIONS[locale]['settings.pilot.disable.desc']).toMatch(/no se borran|not deleted/iu);
+		}
 	});
 });

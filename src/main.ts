@@ -735,7 +735,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 		await this.sessions.initialize();
 		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) await this.ensurePilotRecoveryPresented(recoveryId);
+		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 		await this.refreshLootPresentation();
 		this.sessionNotes = new SessionNoteWriter({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
@@ -784,7 +784,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			crypto.randomUUID(),
 			undefined,
 			() => this.refreshBackgroundIndicators(),
-			(proposalId, expiredAt) => { void this.pilotMetrics.proposalExpired(proposalId, expiredAt); },
+			(proposalId, reason, resolvedAt) => {
+				void this.pilotMetrics.proposalExcluded(proposalId, reason, resolvedAt);
+			},
 		);
 		this.pendingClaimRenewals = new PendingProposalRenewalRegistry({
 			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
@@ -1446,12 +1448,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return await this.reviewPendingProposalOutcome(intent) === 'completed';
 	}
 
-	async recordPendingProposalPresented(intent: PendingProposalIntent): Promise<void> {
+	recordPendingProposalPresented(intent: PendingProposalIntent): void {
 		if (!this.runtimeReady) return;
 		const state = this.pendingProposals.getState();
 		const proposal = state.status === 'ready' && state.next && sameProposalIntent(state.next, intent) ? state.next : null;
 		if (!proposal) return;
-		await this.pilotMetrics.proposalPresented({
+		void this.pilotMetrics.proposalPresented({
 			proposalId: proposal.proposalId, phase: proposal.phase, mode: 'assisted',
 			presentedAt: new Date().toISOString(),
 			window: proposal.phase === 'start' ? proposal.proposal.possibleStart : proposal.proposal.possibleStop,
@@ -1582,11 +1584,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		else perform();
 	}
 
-	async recordAssistedProposalPresented(): Promise<void> {
+	recordAssistedProposalPresented(): void {
 		if (!this.runtimeReady) return;
 		const detection = this.assistedDetection.getState();
 		if (detection.status !== 'start_proposed' && detection.status !== 'stop_proposed') return;
-		await this.pilotMetrics.proposalPresented({
+		void this.pilotMetrics.proposalPresented({
 			proposalId: detection.proposal.proposalId,
 			phase: detection.status === 'start_proposed' ? 'start' : 'stop',
 			mode: 'assisted',

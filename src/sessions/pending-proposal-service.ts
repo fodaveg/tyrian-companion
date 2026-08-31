@@ -54,7 +54,11 @@ export class PendingProposalService {
 		private readonly instanceId: string,
 		private readonly now: () => Date = () => new Date(),
 		private readonly onStateChange: () => void = () => undefined,
-		private readonly onExpired: (proposalId: string, expiredAt: string) => void = () => undefined,
+		private readonly onExcluded: (
+			proposalId: string,
+			reason: 'expired' | 'superseded' | 'invalidated',
+			resolvedAt: string,
+		) => void = () => undefined,
 	) {
 		if (!validId(instanceId)) throw new TypeError('Proposal queue instance id is invalid.');
 	}
@@ -79,15 +83,23 @@ export class PendingProposalService {
 				return {
 					result: {
 						state: projection(reconciled),
-						expired: reconciled.receipts.filter((receipt) => receipt.outcome === 'expired')
-							.map((receipt) => ({ proposalId: receipt.proposalId, expiredAt: receipt.resolvedAt })),
+						excluded: reconciled.receipts
+							.filter((receipt): receipt is ProposalReceipt & {
+								outcome: 'expired' | 'superseded' | 'invalidated';
+							} => ['expired', 'superseded', 'invalidated'].includes(receipt.outcome))
+							.map((receipt) => ({
+								proposalId: receipt.proposalId, reason: receipt.outcome, resolvedAt: receipt.resolvedAt,
+							})),
 					},
 					next: reconciled,
 				};
 			});
 			if (this.disposed) return this.getState();
 			this.state = projected.state;
-			for (const receipt of projected.expired) this.onExpired(receipt.proposalId, receipt.expiredAt);
+			for (const receipt of projected.excluded) {
+				try { this.onExcluded(receipt.proposalId, receipt.reason, receipt.resolvedAt); }
+				catch { /* Optional pilot metrics never affect the confirmation queue. */ }
+			}
 			this.onStateChange();
 			return this.getState();
 		} catch { return this.unavailable(); }

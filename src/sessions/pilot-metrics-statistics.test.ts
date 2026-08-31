@@ -6,7 +6,10 @@ import { aggregatePilotMetrics, wilson95 } from './pilot-metrics-statistics';
 const ENV = createPilotEnvironment({
 	platform: 'linux_steam_proton', platformVersion: '10.0-1', obsidianVersion: '1.11.4', tyrianVersion: '0.1.17',
 })!;
-const VERIFIED = { version: 1 as const, silentLosses: 'none_observed' as const, reviewedAt: '2026-08-20T12:00:00.000Z' };
+const VERIFIED = {
+	version: 1 as const, silentLosses: 'none_observed' as const,
+	reviewedAt: '2026-08-20T12:00:00.000Z', environment: ENV,
+};
 
 describe('pilot metrics domain and H0.6 aggregation', () => {
 	it('derives a stable domain-separated pseudonym without retaining the raw proposal id', async () => {
@@ -18,16 +21,21 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 	});
 
 	it('computes exact k/n, coverage, workflow exclusions, causes and Wilson 95%', async () => {
+		const superseded = await proposal('start', 'expired', null, null, 'superseded');
+		superseded.terminal = { ...superseded.terminal!, exclusionReason: 'superseded' };
+		const invalidated = await proposal('start', 'expired', null, null, 'invalidated');
+		invalidated.terminal = { ...invalidated.terminal!, exclusionReason: 'invalidated' };
 		const observations: PilotObservationV1[] = [
 			await proposal('start', 'dismissed', 'not_farming', '2026-08-20T10:00:30.000Z'),
 			await proposal('start', 'accepted_workflow_succeeded', null, '2026-08-20T10:00:31.000Z'),
 			await proposal('start', 'accepted_workflow_failed', null, null),
 			await proposal('start', 'expired', null, null),
+			superseded, invalidated,
 		];
 		const result = aggregatePilotMetrics(observations, 'ready').platforms[0]!;
 		expect(result.falseStart).toMatchObject({
 			k: 1, n: 2, rate: 0.5, reviews: 4, decisions: 3, expired: 1,
-			workflowFailed: 1, coverage: 0.75, causes: { not_farming: 1 },
+			superseded: 1, invalidated: 1, workflowFailed: 1, coverage: 0.75, causes: { not_farming: 1 },
 		});
 		expect(result.falseStart.wilson95).toEqual(wilson95(1, 2));
 		expect(result.verdict).toBe('inconclusive');
@@ -88,6 +96,35 @@ describe('pilot metrics domain and H0.6 aggregation', () => {
 		expect(row.precision.intervalCount).toBe(row.precision.count - 1);
 		expect(row.verdict).toBe('inconclusive');
 	});
+
+	it('applies silent-loss review only to the exact environment and evidence no newer than the review', async () => {
+		const linux = await completeSample(0);
+		const windowsEnvironment = {
+			...ENV, platform: 'windows_beta' as const, platformVersion: '11.24H2',
+		};
+		const windows = structuredClone(linux).map((entry) => ({ ...entry, environment: windowsEnvironment }));
+		const result = aggregatePilotMetrics([...linux, ...windows], 'ready', VERIFIED);
+		expect(result.platforms.find((row) => row.scope.platform === 'linux_steam_proton')?.evidence.silentLosses)
+			.toBe('none_observed');
+		expect(result.platforms.find((row) => row.scope.platform === 'windows_beta')?.evidence.silentLosses)
+			.toBe('unreviewed');
+		expect(result.platforms.find((row) => row.scope.platform === 'windows_beta')?.verdict).toBe('inconclusive');
+
+		const stale = { ...VERIFIED, reviewedAt: '2026-08-20T09:00:00.000Z' };
+		const staleResult = aggregatePilotMetrics(linux, 'ready', stale).platforms[0]!;
+		expect(staleResult.evidence.silentLosses).toBe('unreviewed');
+		expect(staleResult.verdict).toBe('inconclusive');
+	});
+
+	it('publishes unclassified recoveries and never passes until they are explicitly classified', async () => {
+		const complete = await completeSample(0);
+		const recovery = complete.find((entry) => entry.kind === 'recovery');
+		if (!recovery || recovery.kind !== 'recovery') throw new Error('Expected recovery.');
+		recovery.recoveryKind = null;
+		const row = aggregatePilotMetrics(complete, 'ready', VERIFIED).platforms[0]!;
+		expect(row.recovery.unclassified).toMatchObject({ presented: 1, succeeded: 1 });
+		expect(row.verdict).toBe('inconclusive');
+	});
 });
 
 async function completeSample(falseStarts: number): Promise<PilotObservationV1[]> {
@@ -127,11 +164,14 @@ async function proposal(
 		window: { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 },
 		pollingIntervalMs: 60_000, evidenceQuality: 'complete', environment: ENV,
 		terminal: result === 'expired'
-			? { status: 'expired', decidedAt: '2026-08-20T10:01:00.000Z', decision: null, effectiveResult: null, correctionCause: null, humanBoundaryAt: null }
+			? {
+				status: 'excluded', decidedAt: '2026-08-20T10:01:00.000Z', decision: null, effectiveResult: null,
+				correctionCause: null, humanBoundaryAt: null, exclusionReason: 'expired',
+			}
 			: {
 				status: 'decided', decidedAt: '2026-08-20T10:01:00.000Z',
 				decision: result === 'dismissed' ? 'dismissed' : 'accepted', effectiveResult: result,
-				correctionCause: cause, humanBoundaryAt,
+				correctionCause: cause, humanBoundaryAt, exclusionReason: null,
 			},
 	};
 }

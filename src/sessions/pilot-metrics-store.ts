@@ -74,6 +74,9 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 			if (profile === undefined) return { status: 'error', code: 'unconfigured' };
 			if (!isPilotEnvironment(profile)) return { status: 'error', code: 'inconsistent' };
 			if (verification !== undefined && !isPilotVerification(verification)) return { status: 'error', code: 'inconsistent' };
+			if (isPilotVerification(verification) && !sameEnvironment(profile, verification.environment)) {
+				return { status: 'error', code: 'inconsistent' };
+			}
 			if (raw.length > this.maximumObservations) return { status: 'error', code: 'full' };
 			if (!raw.every(isPilotObservation)) return { status: 'error', code: 'inconsistent' };
 			const observations = raw.sort(compareObservations).map((entry) => structuredClone(entry));
@@ -98,8 +101,15 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		if (!isPilotEnvironment(profile)) return { status: 'error', code: 'inconsistent' };
 		try {
 			const database = await this.open();
-			const transaction = database.transaction(PILOT_METRICS_PROFILE_STORE, 'readwrite');
-			transaction.objectStore(PILOT_METRICS_PROFILE_STORE).put(structuredClone(profile), 'active');
+			const transaction = database.transaction([
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
+			const profiles = transaction.objectStore(PILOT_METRICS_PROFILE_STORE);
+			const existing = await requestValue(profiles.get('active') as IDBRequest<unknown>);
+			profiles.put(structuredClone(profile), 'active');
+			if (!isPilotEnvironment(existing) || !sameEnvironment(existing, profile)) {
+				transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
+			}
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(profile) };
 		} catch { return this.failed(); }
@@ -113,7 +123,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
 			const profile = await requestValue(transaction.objectStore(PILOT_METRICS_PROFILE_STORE).get('active') as IDBRequest<unknown>);
-			if (!isPilotEnvironment(profile)) {
+			if (!isPilotEnvironment(profile) || !sameEnvironment(profile, verification.environment)) {
 				transaction.abort();
 				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
 			}
@@ -128,7 +138,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		try {
 			const database = await this.open();
 			const transaction = database.transaction([
-				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE,
+				PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
 			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const key = pilotObservationKey(observation);
@@ -137,7 +147,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				requestValue(store.get(key) as IDBRequest<unknown>),
 				requestValue(store.count()),
 			]);
-			if (!isPilotEnvironment(profile)) {
+			if (!isPilotEnvironment(profile) || !sameEnvironment(profile, observation.environment)) {
 				transaction.abort();
 				return { status: 'error', code: profile === undefined ? 'unconfigured' : 'inconsistent' };
 			}
@@ -153,6 +163,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				return { status: 'error', code: 'full' };
 			}
 			store.add(structuredClone(observation), key);
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(observation) };
 		} catch { return this.failed(); }
@@ -241,7 +252,9 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 	): Promise<PilotStoreResult<T>> {
 		try {
 			const database = await this.open();
-			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
+			const transaction = database.transaction([
+				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
 			if (existing === undefined) {
@@ -259,6 +272,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 					: { status: 'error', code: 'inconsistent' };
 			}
 			store.put(structuredClone(candidate), key);
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(candidate) };
 		} catch { return this.failed(); }
@@ -270,7 +284,9 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 	): Promise<PilotStoreResult<PilotRecoveryObservationV1>> {
 		try {
 			const database = await this.open();
-			const transaction = database.transaction(PILOT_METRICS_OBSERVATION_STORE, 'readwrite');
+			const transaction = database.transaction([
+				PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE,
+			], 'readwrite');
 			const store = transaction.objectStore(PILOT_METRICS_OBSERVATION_STORE);
 			const existing = await requestValue(store.get(key) as IDBRequest<unknown>);
 			if (!isPilotObservation(existing) || existing.kind !== 'recovery') {
@@ -289,6 +305,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 				return { status: 'error', code: 'inconsistent' };
 			}
 			store.put(structuredClone(candidate), key);
+			transaction.objectStore(PILOT_METRICS_VERIFICATION_STORE).delete('active');
 			await transactionDone(transaction);
 			return { status: 'ok', value: structuredClone(candidate) };
 		} catch { return this.failed(); }
@@ -351,6 +368,10 @@ function samePresentation(existing: PilotObservationV1, candidate: PilotObservat
 		return existing.recoveryRef === candidate.recoveryRef;
 	}
 	return false;
+}
+
+function sameEnvironment(a: PilotEnvironmentV1, b: PilotEnvironmentV1): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function existingTerminal(value: unknown): unknown {

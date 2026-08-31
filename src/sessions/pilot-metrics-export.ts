@@ -141,7 +141,7 @@ function detailsCsv(rows: ReturnType<typeof sanitizedDetails>): string {
 	const headers = [
 		'kind', 'proposal_ref_pseudonymous', 'phase', 'mode', 'presented_or_started_at', 'window_from', 'window_to',
 		'uncertainty_ms', 'polling_interval_ms', 'evidence_quality', 'terminal_status', 'decision', 'effective_result',
-		'correction_cause', 'human_boundary_at', 'completed_at', 'terminal_outcome', 'terminal_recorded_at',
+		'correction_cause', 'human_boundary_at', 'exclusion_reason', 'completed_at', 'terminal_outcome', 'terminal_recorded_at',
 		'recovery_kind',
 		'platform', 'platform_version', 'obsidian_version', 'tyrian_version',
 	] as const;
@@ -156,7 +156,8 @@ function detailsCsv(rows: ReturnType<typeof sanitizedDetails>): string {
 			proposal?.pollingIntervalMs ?? '',
 			proposal?.evidenceQuality ?? '', proposal?.terminal?.status ?? '', proposal?.terminal?.decision ?? '',
 			proposal?.terminal?.effectiveResult ?? '', proposal?.terminal?.correctionCause ?? '',
-			proposal?.terminal?.humanBoundaryAt ?? '', session?.completedAt ?? '', recovery?.terminal?.outcome ?? '',
+			proposal?.terminal?.humanBoundaryAt ?? '', proposal?.terminal?.exclusionReason ?? '',
+			session?.completedAt ?? '', recovery?.terminal?.outcome ?? '',
 			recovery?.terminal?.recordedAt ?? '', recovery?.recoveryKind ?? '', row.environment.platform, row.environment.platformVersion,
 			row.environment.obsidianVersion, row.environment.tyrianVersion,
 		];
@@ -168,16 +169,17 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 	const headers = [
 		'scope', 'platform', 'platform_version', 'obsidian_version', 'tyrian_version', 'verdict',
 		'start_k', 'start_n', 'start_rate', 'start_wilson_low', 'start_wilson_high', 'start_coverage',
-		'start_reviews', 'start_decisions', 'start_expired', 'start_workflow_failed',
+		'start_reviews', 'start_decisions', 'start_expired', 'start_superseded', 'start_invalidated', 'start_workflow_failed',
 		...DETECTION_CORRECTION_CAUSES.map((cause) => `start_cause_${cause}`),
 		'stop_k', 'stop_n', 'stop_rate', 'stop_wilson_low', 'stop_wilson_high', 'stop_coverage',
-		'stop_reviews', 'stop_decisions', 'stop_expired', 'stop_workflow_failed',
+		'stop_reviews', 'stop_decisions', 'stop_expired', 'stop_superseded', 'stop_invalidated', 'stop_workflow_failed',
 		...DETECTION_CORRECTION_CAUSES.map((cause) => `stop_cause_${cause}`),
 		'precision_count', 'precision_interval_count', 'precision_median_s', 'precision_p90_s', 'precision_max_s',
 		'precision_median_intervals', 'precision_p90_intervals', 'precision_max_intervals',
 		'recovery_presented', 'recovery_succeeded', 'recovery_failed', 'recovery_discarded', 'recovery_rate',
 		'forced_restart_presented', 'forced_restart_succeeded', 'forced_restart_failed',
 		'forced_restart_discarded', 'forced_restart_rate',
+		'unclassified_presented', 'unclassified_succeeded', 'unclassified_failed', 'unclassified_discarded', 'unclassified_rate',
 		'completed_sessions', 'silent_losses', 'executed_operations',
 	] as const;
 	const rows = [...aggregation.platforms, ...aggregation.versionStrata].map((row) => [
@@ -186,11 +188,13 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		row.scope.versions?.tyrianVersion ?? '', row.verdict,
 		row.falseStart.k, row.falseStart.n, row.falseStart.rate ?? '', row.falseStart.wilson95?.low ?? '',
 		row.falseStart.wilson95?.high ?? '', row.falseStart.coverage ?? '',
-		row.falseStart.reviews, row.falseStart.decisions, row.falseStart.expired, row.falseStart.workflowFailed,
+		row.falseStart.reviews, row.falseStart.decisions, row.falseStart.expired, row.falseStart.superseded,
+		row.falseStart.invalidated, row.falseStart.workflowFailed,
 		...DETECTION_CORRECTION_CAUSES.map((cause) => row.falseStart.causes[cause]),
 		row.falseStop.k, row.falseStop.n, row.falseStop.rate ?? '', row.falseStop.wilson95?.low ?? '',
 		row.falseStop.wilson95?.high ?? '', row.falseStop.coverage ?? '',
-		row.falseStop.reviews, row.falseStop.decisions, row.falseStop.expired, row.falseStop.workflowFailed,
+		row.falseStop.reviews, row.falseStop.decisions, row.falseStop.expired, row.falseStop.superseded,
+		row.falseStop.invalidated, row.falseStop.workflowFailed,
 		...DETECTION_CORRECTION_CAUSES.map((cause) => row.falseStop.causes[cause]),
 		row.precision.count, row.precision.intervalCount, row.precision.seconds?.median ?? '', row.precision.seconds?.p90 ?? '',
 		row.precision.seconds?.maximum ?? '', row.precision.intervalMultiples?.median ?? '',
@@ -198,6 +202,8 @@ function aggregatesCsv(aggregation: PilotAggregationV1): string {
 		row.recovery.presented, row.recovery.succeeded, row.recovery.failed, row.recovery.discarded,
 		row.recovery.rate ?? '', row.recovery.forcedRestart.presented, row.recovery.forcedRestart.succeeded,
 		row.recovery.forcedRestart.failed, row.recovery.forcedRestart.discarded, row.recovery.forcedRestart.rate ?? '',
+		row.recovery.unclassified.presented, row.recovery.unclassified.succeeded,
+		row.recovery.unclassified.failed, row.recovery.unclassified.discarded, row.recovery.unclassified.rate ?? '',
 		row.completedSessions, row.evidence.silentLosses, row.evidence.executedOperations,
 	]);
 	return csv(headers, rows);

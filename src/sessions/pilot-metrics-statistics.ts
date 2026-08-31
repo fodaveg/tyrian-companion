@@ -20,6 +20,8 @@ export interface PilotRateMetricV1 {
 	reviews: number;
 	decisions: number;
 	expired: number;
+	superseded: number;
+	invalidated: number;
 	workflowFailed: number;
 	coverage: number | null;
 }
@@ -58,6 +60,7 @@ export interface PilotRecoveryCountsV1 {
 
 export interface PilotRecoveryMetricV1 extends PilotRecoveryCountsV1 {
 	forcedRestart: PilotRecoveryCountsV1;
+	unclassified: PilotRecoveryCountsV1;
 }
 
 export interface PilotAggregationV1 {
@@ -115,8 +118,10 @@ function aggregate(
 	const recovery = {
 		...recoveryCounts(recoveries),
 		forcedRestart: recoveryCounts(recoveries.filter((entry) => entry.recoveryKind === 'forced_restart')),
+		unclassified: recoveryCounts(recoveries.filter((entry) => entry.recoveryKind === null)),
 	};
 	const completedSessions = observations.filter((entry) => entry.kind === 'session' && entry.completedAt !== null).length;
+	const scopedVerification = applicableVerification(observations, verification);
 	return {
 		version: 1,
 		scope: { platform, versions },
@@ -126,11 +131,11 @@ function aggregate(
 		recovery,
 		completedSessions,
 		verdict: versions === null
-			? verdict(falseStart, falseStop, precision, recovery, completedSessions, health, platform, verification)
+			? verdict(falseStart, falseStop, precision, recovery, completedSessions, health, platform, scopedVerification)
 			: 'inconclusive',
 		evidence: {
 			journalHealth: health,
-			silentLosses: verification?.silentLosses ?? 'unreviewed',
+			silentLosses: scopedVerification?.silentLosses ?? 'unreviewed',
 			executedOperations: 0,
 			operationsBasis: 'architectural_guard_no_executor',
 		},
@@ -154,11 +159,18 @@ function rateMetric(proposals: readonly PilotProposalObservationV1[]): PilotRate
 	let n = 0;
 	let decisions = 0;
 	let expired = 0;
+	let superseded = 0;
+	let invalidated = 0;
 	let workflowFailed = 0;
 	for (const proposal of proposals) {
 		const terminal = proposal.terminal;
 		if (!terminal) continue;
-		if (terminal.status === 'expired') { expired += 1; continue; }
+		if (terminal.status === 'excluded') {
+			if (terminal.exclusionReason === 'expired') expired += 1;
+			else if (terminal.exclusionReason === 'superseded') superseded += 1;
+			else if (terminal.exclusionReason === 'invalidated') invalidated += 1;
+			continue;
+		}
 		decisions += 1;
 		if (terminal.effectiveResult === 'accepted_workflow_failed') { workflowFailed += 1; continue; }
 		if (terminal.effectiveResult === 'dismissed') {
@@ -170,7 +182,8 @@ function rateMetric(proposals: readonly PilotProposalObservationV1[]): PilotRate
 	const reviews = decisions + expired;
 	return {
 		k, n, rate: n === 0 ? null : k / n, wilson95: wilson95(k, n), causes,
-		reviews, decisions, expired, workflowFailed, coverage: reviews === 0 ? null : decisions / reviews,
+		reviews, decisions, expired, superseded, invalidated, workflowFailed,
+		coverage: reviews === 0 ? null : decisions / reviews,
 	};
 }
 
@@ -227,6 +240,7 @@ function verdict(
 		(recovery.forcedRestart.presented >= 20 && forcedTerminal === recovery.forcedRestart.presented);
 	const enough = start.n >= 20 && stop.n >= 20 && start.coverage !== null && stop.coverage !== null &&
 		recovery.presented >= 20 && recovery.succeeded + recovery.failed + recovery.discarded === recovery.presented &&
+		recovery.unclassified.presented === 0 &&
 		linuxForcedReady && completedSessions >= 50 && precision.intervalMultiples !== null &&
 		precision.intervalCount === precision.count;
 	if (!enough) return 'inconclusive';
@@ -234,6 +248,22 @@ function verdict(
 		recovery.rate! >= 0.95 && (platform !== 'linux_steam_proton' || recovery.forcedRestart.rate === 1) &&
 		precision.intervalMultiples!.median <= 1 && precision.intervalMultiples!.p90 <= 2
 		? 'pass' : 'fail';
+}
+
+function applicableVerification(
+	observations: readonly PilotObservationV1[],
+	verification: PilotVerificationV1 | null,
+): PilotVerificationV1 | null {
+	if (!verification || observations.length === 0 || observations.some((entry) =>
+		environmentKey(entry.environment) !== environmentKey(verification.environment))) return null;
+	const latestEvidence = Math.max(...observations.map((entry) => Date.parse(observationLatestAt(entry))));
+	return Date.parse(verification.reviewedAt) >= latestEvidence ? verification : null;
+}
+
+function observationLatestAt(observation: PilotObservationV1): string {
+	if (observation.kind === 'proposal') return observation.terminal?.decidedAt ?? observation.reviewPresentedAt;
+	if (observation.kind === 'session') return observation.completedAt ?? observation.startedAt;
+	return observation.terminal?.recordedAt ?? observation.presentedAt;
 }
 
 function environmentKey(environment: PilotEnvironmentV1): string {

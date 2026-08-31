@@ -36,12 +36,27 @@ describe('PilotMetricsRecorder', () => {
 		}]);
 	});
 
-	it('ignores an expired proposal that was never presented instead of poisoning journal health', async () => {
+	it('ignores an operationally excluded proposal that was never presented instead of poisoning journal health', async () => {
 		const recorder = configuredRecorder('unreviewed-expiry');
 		await recorder.ready;
-		await expect(recorder.value.proposalExpired('never-presented')).resolves.toBe(true);
+		await expect(recorder.value.proposalExcluded('never-presented', 'expired')).resolves.toBe(true);
 		expect(recorder.value.getState()).toMatchObject({ status: 'ready', observations: 0 });
 	});
+
+	it.each(['superseded', 'invalidated'] as const)(
+		'closes a presented proposal as excluded/%s without inventing an accuracy decision',
+		async (reason) => {
+			const recorder = configuredRecorder(`excluded-${reason}`);
+			await recorder.ready;
+			await recorder.value.proposalPresented(presentation(`proposal-${reason}`));
+			await expect(recorder.value.proposalExcluded(`proposal-${reason}`, reason)).resolves.toBe(true);
+			expect((await recorder.value.inspect())?.observations[0]).toMatchObject({
+				kind: 'proposal', terminal: {
+					status: 'excluded', exclusionReason: reason, decision: null, effectiveResult: null,
+				},
+			});
+		},
+	);
 
 	it('marks contradictory terminals inconsistent while the product caller receives false instead of an exception', async () => {
 		const recorder = configuredRecorder('conflict');
