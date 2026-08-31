@@ -23,6 +23,38 @@ censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confi
 entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
 `docs/design/H12.2-mockup.html`.
 
+**Lote H9.5/H9.19/H9.20/H12.5/H12.6 integrado en `codex/parallel-integration`, todavía fuera de
+`main` y de cualquier release.** H9.5 añade al historial local actividad Halloween y build
+declarado, con agrupaciones de al menos dos sesiones `exact/high` y completamente valoradas. Las
+tasas se calculan desde sumas y duración total; los campos nuevos no cruzan la allowlist JSON ni las
+columnas CSV.
+
+H9.19 corrige tres promesas económicas: la duración procede de `delta.window`; un filtro de una
+valoración account-wide no prorratea profundidad ni tasas; y el mejor anuncio vendedor se presenta
+como referencia bruta, no como total realizable. H9.20 comparte un cursor de profundidad por objeto
+entre valoración de sesión, inventario durable y economía curada de `#36038`, aplicando las tasas
+con aritmética segura. Profundidad ausente, parcial, agotada, stale o futura conserva la cobertura y
+bloquea rutas curadas en vez de volver optimista el resultado.
+
+H12.5 ordena el Advisor como actualización manual, **Qué hacer ahora**, sync/histórico y
+preferencias; búsqueda y orden quedan siempre visibles y el resto de filtros se pliega. Los botones
+resumen dicen que filtran y no ejecutan. H12.6 conserva las 26 filas de Ajustes mostrando una sola
+categoría con navegación accesible lateral/horizontal; cada escritura visible pasa por una cola
+común y muestra guardando/guardado/error. Halloween usa tarjeta, resumen o tabla según 480/760 px, y
+diagnóstico/soporte comparte terminología ES/EN con aviso de revisión humana del extracto saneado.
+
+Los commits candidatos son `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
+`85949ae`, `80898b0` y `1747443`. El gate obligó a aislar `commerce-listings-capture` de los
+valoradores puros y los guardarraíles rechazan causalmente importar esa capacidad HTTP desde H4.19.
+Pasan 431 pruebas dirigidas y el gate completo con lint, 167 ficheros/2.316 tests, spike nativo,
+scanner, 644 fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y
+build. La revisión independiente final queda como último control. La matriz de diseño cubre tokens,
+componentes/estados, responsive, contenido real y feedback; assets no aplican. Sigue
+pendiente medir accesibilidad/contraste y validar claro/oscuro/tercer tema, zoom, teclado,
+1280/900/600/420/280 px y datos extremos dentro de Obsidian. Antes de publicar H9.20 hay que
+contrastar listings reales de `#36038` y outcomes, un Refresh durable y una sesión manual pequeña y
+otra que agote niveles. No se ha tocado la bóveda real ni se han hecho operaciones sobre la cuenta.
+
 **Lote H6.26/H12.4 integrado en `codex/parallel-integration`, todavía fuera de `main` y de cualquier
 release.** H6.26 hace alcanzables las acciones curadas del Inventory Advisor sin relajar su cierre
 conservador: cada Refresh usa como máximo dos observaciones bajo la misma operación y credencial,

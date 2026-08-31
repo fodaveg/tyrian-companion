@@ -171,6 +171,10 @@ La versión `0.1.0` valida la base técnica:
   usa el mejor precio vendedor como referencia para la pila completa, sin confundir anuncios con
   compradores ni prometer ejecución. Una captura parcial conserva el cálculo anterior de precios,
   pero marca el resultado como limitado.
+- H9.19/H9.20 extienden esa verdad a sesión, inventario durable y al kernel de `#36038`. La duración
+  sale de la ventana del delta; los niveles y tasas se consumen por objeto y no se prorratean al
+  filtrar una parte de la cuenta. Sin profundidad exacta, fresca y suficiente no existe total
+  realizable ni ruta curada; el mejor ask sigue siendo solo referencia estimada de publicación.
 - H9.16 compara manualmente el equipo Rare de nivel 68 o superior con sus rutas líquidas actuales.
   Usa una EV inferior source-backed de 0,9 ectoplasmas por objeto, profundidad real de pujas para la
   venta inmediata y costes de kit; materiales base, suerte y mejoras recuperadas quedan fuera y se
@@ -185,6 +189,9 @@ La versión `0.1.0` valida la base técnica:
 - H9.18 recomienda depositar manualmente solo material suelto de personaje o compartido, después de
   reservas y excepciones y con cobertura y frescura completas. La suma nunca supera el hueco
   demostrado y el plugin no ejecuta el depósito.
+- H9.5 compara sesiones Halloween por build declarado solo cuando hay al menos dos muestras
+  `exact/high` y completamente valoradas. Pondera por duración total y mantiene actividad/build
+  fuera de los exports JSON/CSV, por lo que la agrupación sigue siendo local y explícita.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
 - `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
 

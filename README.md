@@ -25,6 +25,20 @@ is wired from `main`, the helper is not included in the plugin ZIP, and firma y 
 > Installation, update, and runtime QA in Obsidian are still pending across the platform matrix, so
 > use a disposable vault while validating it.
 
+## Current candidate
+
+The isolated `codex/parallel-integration` candidate now includes the audited H9.5/H9.19/H9.20 and
+H12.5/H12.6 batch. Session-history comparisons can group qualified Halloween runs by declared build;
+those local fields are excluded from JSON/CSV exports. Economic totals use the session delta window,
+never prorate account-wide market depth through a character/storage filter, and consume bid depth
+plus fees across session, durable inventory, and the curated `#36038` decision.
+
+The Inventory Advisor leads with the fresh manual queue and folds advanced scope controls. Settings
+shows one accessible category at a time, serializes visible writes, and switches navigation, rows,
+Halloween data, and full-width controls at the documented container breakpoints. This work is not in
+`main` or a release. Real Obsidian visual/keyboard QA and live listings/Refresh/session contrast are
+still required before publication.
+
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
 [Release identity](docs/IDENTITY.md). The repository and the
 [`0.1.13` beta release](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13) are public,

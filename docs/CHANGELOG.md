@@ -1,5 +1,36 @@
 # Changelog
 
+## Candidato sin publicar - H9.5, H9.19, H9.20, H12.5 y H12.6
+
+- H9.5 permite comparar el historial por actividad Halloween y build declarado. Los campos viven
+  solo en el record local, no atraviesan JSON ni CSV, y un grupo exige al menos dos sesiones
+  `exact/high` con valoración completa. Sacos/h y oro/h se agregan ponderando por duración, sin
+  promediar tasas ya redondeadas.
+- H9.19 toma la duración económica de `delta.window`, no de timestamps auxiliares. Un filtro por
+  personaje o almacén conserva cantidades y decisiones, pero retiene el total realizable porque la
+  profundidad y el redondeo de tasas pertenecen al conjunto account-wide. El mejor ask se rotula
+  como referencia bruta de publicación, nunca como venta total realizable.
+- H9.20 reutiliza la profundidad consumible y las tasas del bazar en sesión, inventario durable y el
+  kernel curado del saco `#36038`. Los niveles se consumen una vez por objeto, la cobertura parcial o
+  agotada queda explícita y las rutas curadas fallan cerradas ante profundidad ausente, stale,
+  futura o incompleta.
+- H12.5 abre el análisis del Inventory Advisor con **Qué hacer ahora**, mantiene búsqueda y orden
+  visibles y pliega el resto bajo **Filtros avanzados**. Los resúmenes se nombran como filtros de la
+  lista, no como ejecución, y los controles de una carga quedan deshabilitados de forma nativa.
+- H12.6 muestra una sola de las cuatro categorías de Ajustes mediante navegación accesible, conserva
+  las 26 definiciones y serializa los guardados visibles para que una respuesta antigua no pise una
+  nueva. La navegación pasa de lateral a horizontal bajo 1050 px; filas, tablas Halloween y controles
+  cambian causalmente en 760/480 px. Logging y soporte usan el mismo vocabulario ES/EN y recuerdan
+  revisar el extracto saneado antes de compartirlo.
+- Commits candidatos: `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
+  `85949ae`, `80898b0` y `1747443`. La revisión del gate separó la captura HTTP de listings del
+  modelo/valoradores puros y añadió sabotajes que impiden importarla desde H4.19. Pasan 431 pruebas
+  dirigidas y el gate completo con lint, 167 ficheros/2.316 tests, spike nativo, scanner, 644
+  fronteras de observabilidad, empaquetado reproducible, contratos beta/release/soporte y build. La
+  revisión independiente final queda como último control. Siguen pendientes la QA visual/teclado en
+  Obsidian real y el contraste live de listings, Refresh durable y sesión manual antes de publicar.
+  Nada está en `main` ni publicado.
+
 ## Candidato sin publicar - H6.26 y H12.4
 
 - H6.26 limita cada Refresh del Inventory Advisor a dos observaciones dentro de la misma operación y
