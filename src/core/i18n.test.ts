@@ -32,6 +32,7 @@ describe('i18n catalogue', () => {
 
 const H5_11_KEYS = [
 	'advisor.view.title', 'advisor.view.intro', 'advisor.view.iconDisclosure', 'advisor.view.search', 'advisor.view.searchPlaceholder',
+	'advisor.view.advancedFilters',
 	'advisor.view.filter', 'advisor.view.allActions', 'advisor.view.group', 'advisor.view.groupAction',
 	'advisor.view.groupEvidence', 'advisor.view.include', 'advisor.view.include.bank',
 	'advisor.view.include.materials', 'advisor.view.include.delivery', 'advisor.view.include.keep', 'advisor.view.include.review',
@@ -60,7 +61,9 @@ const H5_11_KEYS = [
 	'advisor.view.blockedReason.preferences_unavailable', 'advisor.view.blockedReason.stale_evidence',
 	'advisor.view.blockedReason.unexpected_failure',
 	'advisor.view.noResults', 'advisor.view.noDirectResults', 'advisor.view.filteredEmpty',
-	'advisor.view.recommendationTitle', 'advisor.view.recommendationIntro', 'advisor.view.recommendationAction', 'advisor.view.tableCaption',
+	'advisor.view.recommendationTitle', 'advisor.view.recommendationIntro', 'advisor.view.recommendationNavigation',
+	'advisor.view.recommendationActionOne', 'advisor.view.recommendationActionMany',
+	'advisor.view.recommendationAction', 'advisor.view.tableCaption',
 	'advisor.view.recommendationValue', 'advisor.view.recommendationPricedAll', 'advisor.view.recommendationUnpriced',
 	'advisor.view.unpricedShort', 'advisor.view.subtotal',
 	'advisor.view.character', 'advisor.view.allCharacters', 'advisor.view.characterScope',

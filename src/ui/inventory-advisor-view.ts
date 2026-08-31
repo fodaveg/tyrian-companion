@@ -461,6 +461,11 @@ function mountInventoryAdvisorView(
 	}
 	sortSelect.value = filters.sort ?? 'value_desc';
 	sortLabelElement.append(sortLabelText, sortSelect);
+	const advancedFilters = createEl('details');
+	advancedFilters.className = 'tyrian-inventory-advisor__advanced-filters';
+	const advancedFiltersSummary = createEl('summary');
+	const advancedFiltersContent = createDiv();
+	advancedFiltersContent.className = 'tyrian-inventory-advisor__advanced-filters-content';
 	const sourceFieldset = createEl('fieldset');
 	sourceFieldset.className = 'tyrian-inventory-advisor__scope';
 	const sourceLegend = createEl('legend');
@@ -483,21 +488,37 @@ function mountInventoryAdvisorView(
 		sourceFieldset.append(label);
 		sourceControls.set(candidate, { input, text, status });
 	}
-	controls.append(searchLabel, actionLabel, groupLabelElement, characterLabel, sortLabelElement, sourceFieldset);
-	const refreshResults = (): void => {
+	advancedFiltersContent.append(actionLabel, groupLabelElement, characterLabel, sourceFieldset);
+	advancedFilters.append(advancedFiltersSummary, advancedFiltersContent);
+	controls.append(searchLabel, sortLabelElement, advancedFilters);
+	const syncFilterControlAvailability = (): boolean => {
+		const loading = model.status === 'loading';
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
+		search.disabled = loading;
+		action.disabled = loading;
+		group.disabled = loading;
+		sortSelect.disabled = loading;
+		sourceFieldset.disabled = loading;
 		let sourceSelectionChanged = false;
-		for (const key of ['bank', 'materials', 'delivery'] as const) {
-			const control = sourceControls.get(key)!;
+		for (const [key, control] of sourceControls) {
+			if (key === 'keep' || key === 'review') {
+				control.input.disabled = loading;
+				continue;
+			}
 			const coverage = model.optionalSources?.[key] ?? null;
 			const available = coverage?.status === 'complete';
-			control.input.disabled = scopedToCharacter || !available;
+			control.input.disabled = loading || scopedToCharacter || !available;
 			control.status.textContent = ` · ${optionalSourceCoverageLabel(coverage, translator)}`;
 			if (!available && control.input.checked) {
 				control.input.checked = false;
 				sourceSelectionChanged = true;
 			}
 		}
+		return sourceSelectionChanged;
+	};
+	const refreshResults = (): void => {
+		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
+		const sourceSelectionChanged = syncFilterControlAvailability();
 		if (sourceSelectionChanged) filters = {
 			...filters,
 			includeBank: sourceControls.get('bank')!.input.checked,
@@ -552,10 +573,18 @@ function mountInventoryAdvisorView(
 	const analysis = createEl('section');
 	analysis.className = 'tyrian-inventory-advisor__analysis';
 	analysis.append(controls, state, results);
-	section.append(heading, intro, iconDisclosure, operations);
-	if (preferencesEditor !== null) section.append(preferencesEditor.element);
-	section.append(analysis);
 	container.replaceChildren(section);
+	let lastFreshOrder: boolean | null = null;
+
+	/** Keeps fresh, manual recommendations ahead of maintenance and history surfaces. */
+	function arrangeSections(): void {
+		const fresh = model.status === 'ready' || model.status === 'limited';
+		if (fresh === lastFreshOrder) return;
+		lastFreshOrder = fresh;
+		const ordered = fresh ? [analysis, operations] : [operations, analysis];
+		if (preferencesEditor !== null) ordered.splice(fresh ? 2 : 1, 0, preferencesEditor.element);
+		section.replaceChildren(heading, intro, iconDisclosure, ...ordered);
+	}
 
 	/** Rebuilds the roster from the observed rows; an absent character falls back to every bag. */
 	function syncCharacterOptions(): void {
@@ -566,7 +595,7 @@ function mountInventoryAdvisorView(
 		for (const name of characters) appendOption(character, name, name, resolved);
 		allCharactersOption.selected = resolved === ALL_CHARACTERS;
 		character.value = resolved;
-		character.disabled = characters.length === 0;
+		character.disabled = model.status === 'loading' || characters.length === 0;
 		if (resolved !== selected) filters = { ...filters, character: resolved };
 	}
 
@@ -574,6 +603,7 @@ function mountInventoryAdvisorView(
 		model = nextModel;
 		translator = nextTranslator;
 		interactions = nextInteractions;
+		arrangeSections();
 		section.setAttribute('aria-label', translator.t('advisor.view.title'));
 		section.setAttribute('aria-busy', String(model.status === 'loading'));
 		heading.textContent = translator.t('advisor.view.title');
@@ -636,10 +666,13 @@ function mountInventoryAdvisorView(
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
 		search.setAttribute('aria-label', translator.t('advisor.view.search'));
+		advancedFiltersSummary.textContent = translator.t('advisor.view.advancedFilters');
 		actionLabelText.textContent = translator.t('advisor.view.filter');
+		action.setAttribute('aria-label', translator.t('advisor.view.filter'));
 		actionOptions.get('all')!.textContent = translator.t('advisor.view.allActions');
 		for (const candidate of inventoryActions()) actionOptions.get(candidate)!.textContent = actionLabelFor(candidate, translator);
 		groupLabelText.textContent = translator.t('advisor.view.group');
+		group.setAttribute('aria-label', translator.t('advisor.view.group'));
 		groupOptions.get('action')!.textContent = translator.t('advisor.view.groupAction');
 		groupOptions.get('evidence')!.textContent = translator.t('advisor.view.groupEvidence');
 		characterLabelText.textContent = translator.t('advisor.view.character');
@@ -653,16 +686,19 @@ function mountInventoryAdvisorView(
 		for (const [candidate, control] of sourceControls) {
 			control.text.textContent = translator.t(`advisor.view.include.${candidate}`);
 		}
-		if (model.status === 'loading') controls.setAttribute('aria-disabled', 'true');
+		const loading = model.status === 'loading';
+		controls.setAttribute('aria-busy', String(loading));
+		if (loading) controls.setAttribute('aria-disabled', 'true');
 		else controls.removeAttribute('aria-disabled');
+		syncFilterControlAvailability();
 		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
 		preferencesEditor?.update();
 		// See `lastResultsKey` above: skip rebuilding the results table when only a
-		// live sync-panel tick changed, not the advisor's actual content or locale.
+		// live sync-panel tick changed, not the advisor's actual content, state, or locale.
 		const resultsKey = model.contentVersion === undefined
 			? `unversioned:${String(unversionedRenders += 1)}`
-			: `${String(model.contentVersion)}:${translator.locale}`;
+			: `${String(model.contentVersion)}:${translator.locale}:${model.status}`;
 		if (resultsKey !== lastResultsKey) {
 			lastResultsKey = resultsKey;
 			refreshResults();
@@ -764,6 +800,9 @@ function renderRecommendationSummary(
 	coverageLine.textContent = totals.unpricedItems === 0
 		? translator.t('advisor.view.recommendationPricedAll')
 		: translator.t('advisor.view.recommendationUnpriced', { items: totals.unpricedItems });
+	const navigationHint = createEl('p');
+	navigationHint.className = 'tyrian-inventory-advisor__recommendation-navigation';
+	navigationHint.textContent = translator.t('advisor.view.recommendationNavigation');
 	const actions = createDiv();
 	actions.className = 'tyrian-inventory-advisor__recommendation-actions';
 	for (const action of DIRECT_INVENTORY_ACTIONS) {
@@ -774,12 +813,14 @@ function renderRecommendationSummary(
 		button.className = 'tyrian-inventory-advisor__recommendation-action';
 		button.setAttribute('aria-pressed', String(selectedAction === action));
 		const label = createEl('strong');
-		label.textContent = actionLabelFor(action, translator);
-		const detail = createSpan();
 		const actionTotals = summarizeInventoryAdvisorRows(actionRows);
+		label.textContent = translator.t(actionTotals.items === 1
+			? 'advisor.view.recommendationActionOne' : 'advisor.view.recommendationActionMany', {
+				items: actionTotals.items, action: actionLabelFor(action, translator),
+			});
+		const detail = createSpan();
 		detail.textContent = translator.t('advisor.view.recommendationAction', {
-			items: actionTotals.items, quantity: actionTotals.units,
-			value: aggregateInventoryAdvisorValue(actionRows, translator),
+			quantity: actionTotals.units, value: aggregateInventoryAdvisorValue(actionRows, translator),
 		});
 		button.append(label, detail);
 		if (actionTotals.unpricedItems > 0) {
@@ -791,7 +832,7 @@ function renderRecommendationSummary(
 		button.addEventListener('click', () => onSelectAction(action));
 		actions.append(button);
 	}
-	summary.append(heading, intro, valueLine, coverageLine, actions);
+	summary.append(heading, intro, valueLine, coverageLine, navigationHint, actions);
 	return summary;
 }
 

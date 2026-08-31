@@ -1198,6 +1198,10 @@
 	color: var(--text-muted);
 }
 
+.tyrian-inventory-advisor__controls > label {
+	flex: 1 1 14rem;
+}
+
 .tyrian-inventory-advisor__controls input,
 .tyrian-inventory-advisor__controls select,
 .tyrian-inventory-advisor__controls button {
@@ -1206,9 +1210,31 @@
 }
 
 .tyrian-inventory-advisor__controls input:focus-visible,
-.tyrian-inventory-advisor__controls select:focus-visible {
+.tyrian-inventory-advisor__controls select:focus-visible,
+.tyrian-inventory-advisor__advanced-filters summary:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
+}
+
+.tyrian-inventory-advisor__advanced-filters {
+	flex: 1 1 100%;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.tyrian-inventory-advisor__advanced-filters summary {
+	min-height: 44px;
+	align-content: center;
+	cursor: pointer;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__advanced-filters-content {
+	display: flex;
+	gap: var(--size-4-3);
+	flex-wrap: wrap;
+	padding-block-start: var(--size-4-2);
 }
 
 .tyrian-inventory-advisor__scope {
@@ -1514,7 +1540,8 @@
 }
 
 .tyrian-inventory-advisor__recommendation-coverage,
-.tyrian-inventory-advisor__recommendation-unpriced {
+.tyrian-inventory-advisor__recommendation-unpriced,
+.tyrian-inventory-advisor__recommendation-navigation {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
@@ -1532,6 +1559,7 @@
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	text-align: start;
+	overflow-wrap: anywhere;
 }
 
 .tyrian-inventory-advisor__recommendation-action span {
@@ -1814,6 +1842,11 @@
 
 	.tyrian-inventory-advisor__recommendation-actions {
 		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.tyrian-inventory-advisor__controls > label,
+	.tyrian-inventory-advisor__advanced-filters-content > label {
+		width: 100%;
 	}
 
 	.tyrian-inventory-advisor__card dl {

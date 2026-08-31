@@ -42,7 +42,8 @@ describe('Inventory Advisor view', () => {
 			expect(copy).toContain(time);
 			expect(copy).toContain(excluded);
 			expect(copy).toContain('gw2-wiki-ecto-yield');
-			expect(find(mount.elements(), 'details')).toHaveLength(2);
+			expect(byClass(mount.elements(), 'tyrian-inventory-advisor__advanced-filters')).toHaveLength(1);
+			expect(find(mount.elements(), 'details')).toHaveLength(3);
 		});
 
 	it('renders the Exotic uncertainty as review without a numeric EV', () => {
@@ -132,6 +133,74 @@ describe('Inventory Advisor view', () => {
 		for (const width of [480, 759]) expect(inventoryAdvisorViewLayout(width)).toBe('cards');
 	});
 
+	it.each([['es', 'Filtros avanzados'], ['en', 'Advanced filters']] as const)(
+		'keeps search and sort visible before one folded advanced-filter disclosure in %s',
+		(locale, disclosure) => {
+			const mount = render(readyModel(), locale);
+			const controls = only(byClass(mount.elements(), 'tyrian-inventory-advisor__controls'));
+			expect(controls.children.map((child) => child.tag)).toEqual(['label', 'label', 'details']);
+			expect(controlWithLabel(walk(controls), 'input', createTranslator(locale).t('advisor.view.search')).disabled).toBe(false);
+			expect(controlWithLabel(walk(controls), 'select', createTranslator(locale).t('advisor.view.sort')).disabled).toBe(false);
+			const advanced = only(byClass(walk(controls), 'tyrian-inventory-advisor__advanced-filters'));
+			expect(advanced.attributes.has('open')).toBe(false);
+			expect(advanced.children[0]?.textContent).toBe(disclosure);
+			const styles = readFileSync('styles.css', 'utf8');
+			expect(styles).toMatch(/tyrian-inventory-advisor__advanced-filters summary\s*\{[\s\S]*?min-height:\s*44px;/u);
+			expect(styles).toMatch(/@container \(max-width: 479px\)[\s\S]*?advanced-filters-content > label[\s\S]*?width:\s*100%;/u);
+		},
+	);
+
+	it('moves a fresh manual queue before sync, history, and preferences, then restores maintenance-first loading order', () => {
+		const interactions: InventoryAdvisorViewInteractions = {
+			onLoadPreferences: vi.fn(),
+			inventorySync: {
+				state: { status: 'idle', lastRun: null }, assetsInstalled: true,
+				onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
+			},
+		};
+		const mount = render(readyModel(), 'es', interactions);
+		expect(mount.section.children.slice(3).map((child) => child.className)).toEqual([
+			'tyrian-inventory-advisor__analysis',
+			'tyrian-inventory-advisor__operations',
+			'tyrian-inventory-advisor__preferences',
+		]);
+		expect(text(walk(mount.section.children[3]!))).toContain('Qué hacer ahora');
+
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement,
+			{ ...readyModel(), status: 'loading', groups: [] },
+			createTranslator('es'), undefined, interactions,
+		);
+		expect(mount.section.children.slice(3).map((child) => child.className)).toEqual([
+			'tyrian-inventory-advisor__operations',
+			'tyrian-inventory-advisor__preferences',
+			'tyrian-inventory-advisor__analysis',
+		]);
+	});
+
+	it('uses native disabled controls and busy semantics while loading, then restores the same controls', () => {
+		const model = { ...readyModel(), status: 'loading' as const, contentVersion: 8 };
+		const mount = render(model);
+		const controls = only(byClass(mount.elements(), 'tyrian-inventory-advisor__controls'));
+		expect(controls.attributes.get('aria-disabled')).toBe('true');
+		expect(controls.attributes.get('aria-busy')).toBe('true');
+		expect(find(walk(controls), 'input').every((control) => control.disabled)).toBe(true);
+		expect(find(walk(controls), 'select').every((control) => control.disabled)).toBe(true);
+		expect(only(find(walk(controls), 'fieldset')).disabled).toBe(true);
+		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__results')).children).toEqual([]);
+
+		renderInventoryAdvisorView(
+			mount.container as unknown as HTMLElement,
+			{ ...readyModel(), contentVersion: 8 }, createTranslator('es'),
+		);
+		expect(controls.attributes.has('aria-disabled')).toBe(false);
+		expect(controls.attributes.get('aria-busy')).toBe('false');
+		expect(find(walk(controls), 'input').every((control) => !control.disabled)).toBe(true);
+		expect(find(walk(controls), 'select').every((control) => !control.disabled)).toBe(true);
+		expect(only(find(walk(controls), 'fieldset')).disabled).toBe(false);
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-summary')).toHaveLength(1);
+	});
+
 	it.each([
 		[{ source: 'character', character: 'Astra', container: 'equipped_bag', bagIndex: 1 }, 'Personaje: Astra · Bolsa equipada 2'],
 		[{ source: 'character', character: 'Astra', container: 'bag', bagIndex: 2, slot: 4 }, 'Personaje: Astra · Bolsa 3, ranura 5'],
@@ -156,8 +225,8 @@ describe('Inventory Advisor view', () => {
 	it('keeps controls, focus, and the live region stable through consecutive search and select events', () => {
 		const mount = render(readyModel());
 		const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
-		const [action, group] = find(mount.elements(), 'select');
-		if (!action || !group) throw new Error('Expected Inventory Advisor filter controls.');
+		const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
+		const group = controlWithLabel(mount.elements(), 'select', 'Agrupar por');
 		const state = only(byClass(mount.elements(), 'tyrian-inventory-advisor__state'));
 		const results = only(byClass(mount.elements(), 'tyrian-inventory-advisor__results'));
 		search.focus();
@@ -192,8 +261,8 @@ describe('Inventory Advisor view', () => {
 		const used = await ambientCapabilityUse(() => {
 			const mount = render(readyModel());
 			const search = only(find(mount.elements(), 'input').filter((input) => input.type === 'search'));
-			const [action, group] = find(mount.elements(), 'select');
-			if (!action || !group) throw new Error('Expected Inventory Advisor filter controls.');
+			const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
+			const group = controlWithLabel(mount.elements(), 'select', 'Agrupar por');
 			search.value = 'material';
 			search.dispatch('input');
 			action.value = 'sell';
@@ -217,8 +286,7 @@ describe('Inventory Advisor view', () => {
 
 	it('keeps discard reviews out of the filter while rendering an explicit warning-only proof surface if wired', () => {
 		const mount = render(readyModel());
-		const action = find(mount.elements(), 'select')[0];
-		if (!action) throw new Error('Expected an action filter.');
+		const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
 		expect(action.children.map((option) => option.value)).not.toEqual(expect.arrayContaining(['keep', 'review', 'discard_review']));
 		expect(text(mount.elements())).not.toContain('⚠ Revisión irreversible');
 		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
@@ -311,8 +379,7 @@ describe('Inventory Advisor view', () => {
 
 	it('offers the observed roster, disables the extra stores while one character is scoped and resets an absent one', () => {
 		const mount = render(twoCharacterModel());
-		const characterSelect = find(mount.elements(), 'select')[2];
-		if (characterSelect === undefined) throw new Error('Expected the character filter.');
+		const characterSelect = controlWithLabel(mount.elements(), 'select', 'Personaje');
 		expect(characterSelect.children.map((option) => option.value)).toEqual(['all', 'Astra', 'Borja']);
 		expect(text(mount.elements())).toContain('Todas las bolsas y compartido');
 		const stores = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').slice(0, 3);
@@ -411,8 +478,7 @@ describe('Inventory Advisor view', () => {
 		expect(walk(subtotal).map((cell) => cell.textContent)).toEqual(
 			expect.arrayContaining(['Subtotal · 2 objetos', '10', '0 oro · 10 plata · 0 cobre']),
 		);
-		const sortSelect = find(mount.elements(), 'select')[3];
-		if (sortSelect === undefined) throw new Error('Expected the sort control.');
+		const sortSelect = controlWithLabel(mount.elements(), 'select', 'Ordenar por');
 		sortSelect.value = 'quantity_desc';
 		sortSelect.dispatch('change');
 		expect(find(mount.elements(), 'article').map((card) => walk(card).some((element) => element.textContent === 'Bajo valor')))
@@ -546,7 +612,7 @@ describe('Inventory Advisor view', () => {
 		expect(find(mount.elements(), 'article')).toHaveLength(8);
 	});
 
-	it('leads with an imperative action queue and lets its buttons drive the stable filter', () => {
+	it('names recommendation summaries as non-executing list filters and handles zero, one, and many types', () => {
 		const model: InventoryAdvisorViewModel = {
 			status: 'limited', title: 'inventory_advisor.title', detail: 'inventory_advisor.limited',
 			groups: [{ key: 'market', rows: [
@@ -563,22 +629,35 @@ describe('Inventory Advisor view', () => {
 		expect(allText).not.toContain('Pilas:');
 		expect(allText).toContain('Valor conocido: 3 oro · 74 plata · 44 cobre');
 		expect(allText).toContain('Todos los objetos visibles tienen precio demostrado.');
-		expect(allText).toContain('Vender ya');
-		expect(allText).toContain('Publicar en el bazar');
-		expect(allText).toContain('Vender al mercader');
+		expect(allText).toContain('Estos resúmenes solo filtran la lista; no ejecutan acciones.');
+		expect(allText).toContain('Ver 1 tipo: Vender ya');
+		expect(allText).toContain('Ver 1 tipo: Publicar en el bazar');
+		expect(allText).toContain('Ver 1 tipo: Vender al mercader');
 		expect(allText).not.toContain('Context only');
 		const summaryButtons = byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action');
 		expect(summaryButtons).toHaveLength(3);
-		const sell = only(summaryButtons.filter((button) => walk(button).some((element) => element.textContent === 'Vender ya')));
+		expect(summaryButtons.every((button) => !button.className.includes('mod-cta'))).toBe(true);
+		const sell = only(summaryButtons.filter((button) => walk(button).some((element) => element.textContent === 'Ver 1 tipo: Vender ya')));
 		sell.dispatch('click');
-		const action = find(mount.elements(), 'select')[0];
-		if (action === undefined) throw new Error('Expected the action filter.');
+		const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
 		expect(action.value).toBe('sell');
 		expect(mount.document.activeElement).toBe(action);
 		expect(find(mount.elements(), 'article')).toHaveLength(1);
 		const pressed = only(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action')
 			.filter((button) => button.attributes.get('aria-pressed') === 'true'));
-		expect(walk(pressed).some((element) => element.textContent === 'Vender ya')).toBe(true);
+		expect(walk(pressed).some((element) => element.textContent === 'Ver 1 tipo: Vender ya')).toBe(true);
+
+		const many = render({
+			...readyModel(),
+			groups: [{ key: 'market', rows: [
+				row({ id: '#/explanations/10/0', itemId: 10, name: 'One', action: 'sell' }),
+				row({ id: '#/explanations/11/0', itemId: 11, name: 'Two', action: 'sell' }),
+			] }],
+		});
+		expect(text(many.elements())).toContain('Ver 2 tipos: Vender ya');
+		const empty = render({ ...readyModel(), groups: [] });
+		expect(byClass(empty.elements(), 'tyrian-inventory-advisor__recommendation-summary')).toEqual([]);
+		expect(text(empty.elements())).toContain('No hay acciones directas.');
 	});
 
 	it('renders only trusted GW2 item icons', () => {
@@ -1131,6 +1210,10 @@ function text(elements: readonly FakeElement[]): string {
 
 function withText(elements: readonly FakeElement[], value: string): FakeElement[] {
 	return elements.filter((element) => element.textContent === value);
+}
+
+function controlWithLabel(elements: readonly FakeElement[], tag: string, label: string): FakeElement {
+	return only(find(elements, tag).filter((element) => element.attributes.get('aria-label') === label));
 }
 
 class FakeDocument {
