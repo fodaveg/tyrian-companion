@@ -29,6 +29,75 @@
   `scripts/action-observability-baseline.json` tras el desplazamiento de una línea que introdujo la
   fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada del censo se alteró.
 
+## Release beta 0.1.20 - superficies cableadas y cierre honesto
+
+- Publicada el 2026-09-01 la
+  [GitHub Release `0.1.20`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.20) desde el
+  tag y commit `be5434b4cfc283198bd0054053bb7092b80decc6`. Los runs de CI terminaron en verde para
+  `main` ([`33509432201`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509432201)) y
+  para el tag ([`33509449053`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509449053)).
+- **Primera publicación por el workflow automático** ([`33509449093`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509449093)),
+  que ejecuta el contrato BRAT como puerta ANTES de publicar en vez de auditar después. Los cinco
+  assets exactos están adjuntos; el ZIP tiene SHA-256
+  `cca1d1f3e6af81cae98258375067782bc660e7a53e1b06ae9cf776d605110c93` y el `main.js` publicado
+  coincide byte a byte con el construido localmente (SHA-256
+  `905c31240f1f54513f4366d810156b1d8bd43b78565ed9a1d89d851e70707618`).
+
+### Superficies que existían y no se mostraban
+
+Cuatro paneles estaban escritos, probados y sin montar, mientras sus comandos, contadores y avisos
+seguían anunciándolos. Ahora se montan: alertas de Halloween (el plugin lanzaba el aviso y no había
+ninguna pantalla donde marcarlo leído, así que el contador de no leídos no podía bajar nunca),
+confirmaciones pendientes (el ribbon mostraba el contador y el comando existía sin vista que pudiera
+mostrar una propuesta), la superficie completa de la detección asistida, y el historial de sesiones.
+Se retiró el test de arquitectura que certificaba que el historial NO estaba conectado.
+
+Añadido el botón **Abrir la nota** tras guardar una sesión, primer `openLinkText` en código de
+producción: hasta ahora el plugin escribía su único entregable y no ofrecía forma de abrirlo.
+Corregido `viewCount` del journal de arranque, que declaraba 3 vistas cuando se registran 2.
+
+El resto de la bitácora de campo antigua se retiró tras comprobar dato a dato cuáles llegaban ya al
+usuario por otra vía. Los que no llegaban por ninguna se integraron en la tarjeta de sesión: calidad
+de la observación, incidentes, comprobación de conexión cuando la cuenta no responde, y la decisión
+de sesión guardada, que antes ofrecía «Iniciar sesión» con el arranque bloqueado por la recuperación.
+
+### Cierre de sesión: se espera a que la API confirme
+
+El snapshot final se capturaba en el instante en que el usuario pulsaba «Terminar sesión». Como la
+API de cuenta sirve desde caché de 5 a 10 minutos, lo ganado en los últimos minutos no había cruzado
+todavía: **todas las sesiones subcontaban su botín, siempre y a la baja**, por un camino que devolvía
+éxito y clasificaba el resultado como exacto.
+
+Ahora la sesión entra en espera declarada, con cuenta atrás visible y un control para capturar ya
+advirtiendo de lo que se pierde. La espera sobrevive a reiniciar Obsidian. Una captura forzada o
+fuera de plazo deja la sesión en `estimada`, nunca en `exacta`.
+
+En la misma medida se corrigió el efecto contrario: la duración facturada pasó a ser tiempo jugado
+(`stoppedAt`) y no la ventana observada, que habría sumado los diez minutos de espera a cada sesión.
+Al unificarla aparecieron **tres** definiciones distintas de «duración» en el código, y un fallo real:
+con la hora de parada ilegible el detalle mostraba un guion y no levantaba incidente.
+
+### Primera ejecución
+
+El idioma se resuelve con `getLanguage()` de Obsidian con reserva `en`, en vez de forzar español a
+todos los usuarios; la elección manual sigue ganando. El registro de diagnóstico nace apagado y en
+nivel `warn`, y la cadencia de consulta por defecto pasa de 2 a 10 minutos. **Los tres solo alcanzan
+instalaciones nuevas**: en disco un valor heredado es indistinguible de uno elegido, así que quien ya
+tenga el registro encendido debe apagarlo en Ajustes.
+
+### Infraestructura
+
+El gate dejó de encadenar sus pasos con `&&`, que ocultaba en silencio los que nunca llegaban a
+correr: ahora son 22 pasos que se ejecutan siempre, cada uno con su veredicto, y un paso no ejecutado
+se imprime por su nombre. Añadidos un contrato que rechaza tests nuevos que aseveran sobre el texto
+fuente de otro módulo (37 congelados, el número solo puede bajar), `noUnusedLocals` en el typecheck,
+y el workflow de publicación por etiqueta. Unificada la máquina de sincronización con el vault, que
+estaba duplicada con diferencia cero entre cartera e inventario.
+
+Se auditaron las 24 reimplementaciones de `canonical()` y **no se unificaron**: 29 cuerpos distintos,
+varios alimentando huellas ya escritas en el vault del usuario. Unificarlas habría cambiado hashes
+persistidos en silencio.
+
 ## Release beta 0.1.19 - companion de farmeo en vivo
 
 - Publicada la [GitHub Release `0.1.19`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19)

@@ -2,12 +2,26 @@
 
 ## Vertical activa
 
-**Release beta `0.1.19` publicada desde el tag y commit
-`8dace194cc7a6b3a9eba58971091d18c719a7647`.** `manifest.json` y `package.json` declaran `0.1.19` y
-su lote de producto es `a24c364`, cuyo asunto es `feat(session): restore the live farming companion`.
-Hueco declarado: este documento todavía no registra la fecha de publicación, los runs de CI, los
-digests remotos de los assets, el SHA-256 del ZIP ni si el canal BRAT quedó actualizado para
-`0.1.19`. No se han medido y no se inventan.
+**Release beta `0.1.20` publicada el 2026-09-01 desde el tag y commit
+`be5434b4cfc283198bd0054053bb7092b80decc6`.** `manifest.json` y `package.json` declaran `0.1.20`.
+Los tres runs terminaron en verde: CI de `main` `33509432201`, CI del tag `33509449053` y el
+workflow `Release` `33509449093`. Es la **primera publicación hecha por el workflow automático**,
+que corre el contrato BRAT como puerta antes de publicar en vez de auditar después.
+
+La release adjunta los cinco assets exactos. El ZIP tiene SHA-256
+`cca1d1f3e6af81cae98258375067782bc660e7a53e1b06ae9cf776d605110c93`, y el `main.js` publicado se
+descargó y comparó: coincide byte a byte con el construido localmente, SHA-256
+`905c31240f1f54513f4366d810156b1d8bd43b78565ed9a1d89d851e70707618`. El contrato BRAT, ejecutado
+contra la salida real de `gh release view`, da `PASS (version=0.1.20; assets=5)`.
+
+**Lo que esa publicación NO acredita, y hay que decirlo así:** nadie ha abierto Obsidian con esta
+versión. No hay evidencia de instalación, de actualización desde BRAT, de carga del plugin, de QA
+visual ni de una sola llamada real a la API de Guild Wars 2 desde el cliente. Canal publicado;
+instalación y runtime pendientes.
+
+El contenido de esta release y su motivación están en el
+[changelog](CHANGELOG.md), entrada `0.1.20`. Los tres lotes que antes figuraban aquí como
+integrados y sin publicar ya están dentro.
 
 **Tres lotes integrados en `main` después de `0.1.19` y todavía sin publicar.**
 
