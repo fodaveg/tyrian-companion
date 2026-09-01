@@ -45,9 +45,14 @@ import {
 	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
-import type { HalloweenAlertPanelActions } from './halloween-alert-panel';
+import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
+import {
+	mountSessionHistoryPanel,
+	SessionHistoryPanelController,
+	type SessionHistoryPanelMount,
+} from './session-history-panel';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -99,6 +104,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
+	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
+	getSavedSessionNotePath?(): string | null;
+	openSavedSessionNote?(): void;
 }
 
 interface CompanionPrimaryAction {
@@ -128,6 +136,9 @@ export class TyrianCompanionView extends ItemView {
 	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
+	/** Retained across rerenders so a loaded history survives a repaint without rescanning the Vault. */
+	private sessionHistoryController: SessionHistoryPanelController | null = null;
+	private sessionHistoryMount: SessionHistoryPanelMount | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -155,6 +166,8 @@ export class TyrianCompanionView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.actions.localDebugViewEvent?.('close');
+		this.sessionHistoryMount?.dispose();
+		this.sessionHistoryMount = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -211,9 +224,43 @@ export class TyrianCompanionView extends ItemView {
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
 		this.renderSimpleSession(surface, connectionState, sessionState, projection);
+		this.renderPendingConfirmationSlot(surface, now);
+		this.renderAssistedDetection(surface, connectionState, sessionState);
+		this.renderHalloweenAlerts(surface);
+		this.renderSessionHistory(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
+	}
+
+	/** Owns the slot the background refresh repaints in place, so the queue never needs a full rerender. */
+	private renderPendingConfirmationSlot(container: HTMLElement, now: number): void {
+		const slot = container.createDiv();
+		this.pendingConfirmationContainer = slot;
+		this.pendingConfirmationKey = this.projectPendingConfirmationKey(now);
+		this.renderPendingConfirmation(slot, now);
+	}
+
+	/** Bridges the data-only Halloween panel onto the Companion surface and the runtime catalogue. */
+	private renderHalloweenAlerts(container: HTMLElement): void {
+		renderHalloweenAlertPanel(
+			container,
+			this.actions,
+			(key, params) => this.t(key as RuntimeTranslationKey, params),
+		);
+	}
+
+	/** Remounts the durable-history panel against its retained controller; mounting never reads the Vault. */
+	private renderSessionHistory(container: HTMLElement): void {
+		this.sessionHistoryController ??= new SessionHistoryPanelController(
+			() => this.actions.loadSessionHistory(),
+		);
+		this.sessionHistoryMount?.dispose();
+		this.sessionHistoryMount = mountSessionHistoryPanel(
+			container,
+			this.actions.getLocale(),
+			this.sessionHistoryController,
+		);
 	}
 
 	private renderSimpleSession(
@@ -288,6 +335,7 @@ export class TyrianCompanionView extends ItemView {
 			const retry = heading.createEl('button', { text: copy.retrySave });
 			retry.addEventListener('click', () => { void this.actions.retrySessionSummarySave?.(); });
 		}
+		this.renderSavedNoteAction(heading, copy);
 		if (this.actions.rotateToNewSession) {
 			const button = header.createEl('button', { text: copy.newSession, cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.rotateToNewSession?.(); });
@@ -298,6 +346,18 @@ export class TyrianCompanionView extends ItemView {
 		if (liveLoot.status === 'idle' && storedLoot !== null) this.renderStoredLoot(card, storedLoot, copy);
 		else if (liveLoot.status === 'idle' && durableLoot !== null) this.renderDurableLoot(card, durableLoot, copy);
 		else this.renderLiveLoot(card, liveLoot, copy);
+	}
+
+	/** The only reachable route to the note the plugin just wrote; absent until a durable path exists. */
+	private renderSavedNoteAction(
+		container: HTMLElement,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const path = this.actions.getSavedSessionNotePath?.() ?? null;
+		if (path === null || this.actions.openSavedSessionNote === undefined) return;
+		const open = container.createEl('button', { text: copy.openNote });
+		open.setAttr('aria-label', `${copy.openNote}: ${path}`);
+		open.addEventListener('click', () => this.actions.openSavedSessionNote?.());
 	}
 
 	private renderStoredLoot(
@@ -865,6 +925,7 @@ export class TyrianCompanionView extends ItemView {
 			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
 			next: addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), values.next),
 		};
+		container.createEl('p', { text: this.t('view.detectionApiLag'), cls: 'tyrian-companion-view__detection-scope' });
 	}
 
 	private refreshDetectionTimeline(): void {
@@ -888,7 +949,7 @@ export class TyrianCompanionView extends ItemView {
 		const lastAttemptAt = scheduler.lastAttemptAt;
 		const last = lastAttemptAt === null
 			? this.t('view.notYet')
-			: this.formatTimestamp(new Date(lastAttemptAt).toISOString());
+			: this.formatQueryClock(new Date(lastAttemptAt).toISOString());
 		let result = this.t('view.noDetectionResult');
 		if (mode === 'off' || state.status === 'disarmed') result = this.t('view.noDetectionResult');
 		else if (state.status === 'arming') result = this.t('view.baselineInProgress');
@@ -909,7 +970,7 @@ export class TyrianCompanionView extends ItemView {
 		else if (state.status === 'start_proposed' || state.status === 'stop_proposed') next = this.t('view.waitingProposalReview');
 		else if (scheduler.status === 'polling') next = this.t('view.now');
 		else if (scheduler.status === 'paused_offline') next = this.t('view.whenOnline');
-		else if (scheduler.nextRunAt !== null) next = this.formatTimestamp(new Date(scheduler.nextRunAt).toISOString());
+		else if (scheduler.nextRunAt !== null) next = this.formatQueryClock(new Date(scheduler.nextRunAt).toISOString());
 		return { last, result, next };
 	}
 
@@ -1188,6 +1249,14 @@ export class TyrianCompanionView extends ItemView {
 		return new Date(value).toLocaleString(this.actions.getLocale());
 	}
 
+	/**
+	 * Detection clocks stop at the minute on purpose: the account inventory reaches the public API
+	 * with minutes of delay, so a second in this column would be precision the plugin cannot hold.
+	 */
+	private formatQueryClock(value: string): string {
+		return new Date(value).toLocaleString(this.actions.getLocale(), { dateStyle: 'short', timeStyle: 'short' });
+	}
+
 	private formatInterval(intervalMs: number | null): string {
 		return intervalMs === null
 			? this.t('time.paused')
@@ -1216,6 +1285,7 @@ function simpleSessionCopy(locale: Locale) {
 		reviewNeeded: 'La sesión necesita revisión', reviewNeededDetail: 'No se pudo cerrar el resumen automáticamente. Revisa solo esta excepción para conservarlo.', review: 'Revisar',
 		summary: 'Resumen de la sesión', saved: 'Resumen guardado', saving: 'Guardando resumen…',
 		notSaved: 'Resumen local pendiente de guardar', localSummary: 'Resumen local disponible', retrySave: 'Reintentar guardado',
+		openNote: 'Abrir la nota',
 		newSession: 'Nueva sesión', loot: 'Botín observado', durableValue: 'Valor neto guardado', durableEmpty: 'El resumen guardado no contiene ganancias.',
 		observedValue: 'Valor observado', empty: 'Aún no hay ganancias visibles en la API.',
 		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
@@ -1230,6 +1300,7 @@ function simpleSessionCopy(locale: Locale) {
 		reviewNeeded: 'The session needs review', reviewNeededDetail: 'The summary could not close automatically. Review this exception only to preserve it.', review: 'Review',
 		summary: 'Session summary', saved: 'Summary saved', saving: 'Saving summary…',
 		notSaved: 'Local summary pending save', localSummary: 'Local summary available', retrySave: 'Retry save',
+		openNote: 'Open the note',
 		newSession: 'New session', loot: 'Observed loot', durableValue: 'Saved net value', durableEmpty: 'The saved summary contains no gains.',
 		observedValue: 'Observed value', empty: 'No gains are visible in the API yet.',
 		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',

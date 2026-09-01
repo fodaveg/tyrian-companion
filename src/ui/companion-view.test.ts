@@ -521,7 +521,7 @@ describe('Companion retained product shell', () => {
 		installRetainedDom(document);
 		const container = new RetainedFakeElement('div', document);
 		const retrySessionSummarySave = vi.fn(async () => undefined);
-		const harness = {
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
 				getLocale: () => 'es' as const,
 				getSessionSummarySaveState: () => 'failed' as const,
@@ -530,7 +530,7 @@ describe('Companion retained product shell', () => {
 				getLootPresentation: () => null,
 			},
 			renderLiveLoot: vi.fn(),
-		};
+		});
 		const session = { version: 1 as const, status: 'complete' as const, sessionId: 'session',
 			startContext: { characterName: 'Rinopopo' } };
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
@@ -582,6 +582,12 @@ describe('Companion retained product shell', () => {
 			projectStatus: () => ({ refreshEveryMs: null }),
 			scheduleRefresh: vi.fn(),
 			renderLocalDebugWarning: vi.fn(),
+			// The panels below have their own behavioural suites; this case only watches the shell.
+			renderPendingConfirmationSlot: vi.fn(),
+			renderAssistedDetection: vi.fn(),
+			renderHalloweenAlerts: vi.fn(),
+			renderSessionHistory: vi.fn(),
+			sessionHistoryMount: null,
 			renderSimpleSession: (container: RetainedFakeElement) => {
 				container.createEl('section', { cls: 'tyrian-companion-session' });
 			},
