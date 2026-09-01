@@ -113,10 +113,10 @@ describe('classifySessionDelta', () => {
 		const estimated = classifySessionDelta(cleanDelta(), { ...exactContext(), declaration: { status: 'unsure' } });
 		expect(isSessionDeltaClassification({ ...estimated, reviewRequests: [] })).toBe(false);
 		expect(isSessionDeltaClassification({ ...estimated, permissions: {
-			...estimated.permissions, finalize: true,
+			...estimated.permissions, finalize: false,
 		} })).toBe(false);
 		const low = classifySessionDelta(cleanDelta(), exactContext({ declaration: { status: 'absent' } }));
-		expect(isSessionDeltaClassification({ ...low, permissions: { ...low.permissions, finalize: true } })).toBe(false);
+		expect(isSessionDeltaClassification({ ...low, permissions: { ...low.permissions, finalize: false } })).toBe(false);
 		const limitedBefore = withoutDelivery(storageDeltaSnapshot());
 		const limitedAfter = withoutDelivery(afterSnapshot());
 		const accepted = classifySessionDelta(compareStorageSnapshots(limitedBefore, limitedAfter), exactContext({

@@ -278,10 +278,12 @@ export function isSessionDeltaClassification(value: unknown): value is SessionDe
 function classificationPermissions(
 	status: SessionDeltaClassification['status'],
 	confidence: SessionDeltaClassification['confidence'],
-	acceptedEstimate = false,
+	_acceptedEstimate = false,
 ): SessionDeltaClassification['permissions'] {
 	return {
-		finalize: status === 'exact' || status === 'contaminated' || (status === 'estimated' && acceptedEstimate),
+		// Estimated sessions are durable outcomes, not unfinished work. Their reasons and
+		// review requests remain visible, while value/recommendation permissions stay conservative.
+		finalize: status === 'exact' || status === 'contaminated' || status === 'estimated',
 		showNet: status !== 'invalid',
 		valueNet: status === 'exact' || status === 'estimated',
 		grossPerHour: status === 'exact',

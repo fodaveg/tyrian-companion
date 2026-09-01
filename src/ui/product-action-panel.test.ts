@@ -163,12 +163,10 @@ describe('product action surface', () => {
 		});
 		const elements = walk(root);
 		expect((mount.panel as unknown as FakeElement).tag).toBe('aside');
-		const panelTitleId = (mount.panel as unknown as FakeElement).attributes.get('aria-labelledby');
-		expect(panelTitleId).toBeTruthy();
-		expect(elements.some((element) => element.attributes.get('id') === panelTitleId)).toBe(true);
+		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);
 		const workspace = elements.find((element) => element.className.includes('tyrian-product-shell__workspace'))!;
-		expect(workspace.children[0]).toBe(mount.panel);
-		expect(workspace.children[1]).toBe(mount.content);
+		expect(workspace.children).toEqual([mount.content]);
+		expect(elements.filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(0);
 		const nav = elements.find((element) => element.className.includes('tyrian-product-shell__nav'))!;
 		const tabs = walk(nav).filter((element) => element.tag === 'button');
 		expect(tabs).toHaveLength(3);
@@ -181,42 +179,16 @@ describe('product action surface', () => {
 		expect(openSettings).toHaveBeenCalledOnce();
 	});
 
-	it('closes the single accessible action disclosure throughout the stacked workspace breakpoint', () => {
-		let resize!: ResizeObserverCallback;
-		const disconnect = vi.fn();
-		vi.stubGlobal('ResizeObserver', class {
-			constructor(callback: ResizeObserverCallback) { resize = callback; }
-			observe(): void { /* Triggered explicitly after the fake layout settles. */ }
-			disconnect(): void { disconnect(); }
-		});
+	it('keeps expert commands in the palette without mounting the 16-action panel at any width', () => {
 		const document = installFakeDocument();
 		const root = new FakeElement('div', document);
 		const mount = renderProductShell(root as unknown as HTMLElement, {
 			locale: 'es', active: 'companion', actions: createController(), missingApiKey: false, openSettings: vi.fn(),
 		});
-		const shell = walk(root).find((element) => element.className.includes('tyrian-product-shell'))!;
-		const panel = mount.panel as unknown as FakeElement;
-		const toggle = walk(panel).find((element) => element.className.includes('tyrian-action-panel__toggle'))!;
-		const contentId = toggle.attributes.get('aria-controls');
-		const content = walk(panel).find((element) => element.attributes.get('id') === contentId)!;
-		const focusedAction = walk(content).find((element) => element.tag === 'button')!;
-		focusedAction.focus();
-
-		resize([{ target: shell as unknown as Element, contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver);
-		expect(panel.attributes.get('data-compact')).toBe('true');
-		expect(toggle.attributes.get('aria-expanded')).toBe('false');
-		expect(content.hidden).toBe(true);
-		expect(document.activeElement).toBe(toggle);
-		expect(walk(content).filter((element) => element.className.includes('tyrian-action-panel__action'))).toHaveLength(16);
-
-		toggle.dispatch('click');
-		expect(toggle.attributes.get('aria-expanded')).toBe('true');
-		expect(content.hidden).toBe(false);
-		resize([{ target: shell as unknown as Element, contentRect: { width: 1_280 } } as ResizeObserverEntry], {} as ResizeObserver);
-		expect(panel.attributes.get('data-compact')).toBe('false');
-		expect(content.hidden).toBe(false);
+		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
+		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(16);
 		mount.dispose();
-		expect(disconnect).toHaveBeenCalledOnce();
 	});
 });
 

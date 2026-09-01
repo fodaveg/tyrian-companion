@@ -9,10 +9,11 @@ describe('H5.5 presentation boundary', () => {
 		}
 	});
 
-	it('feeds the note managed blocks and Companion adapter from the shared view model', () => {
+	it('keeps the completed note model while the core Companion consumes the dedicated live feed', () => {
 		const note = readFileSync(new URL('session-note-renderer.ts', import.meta.url), 'utf8');
 		const view = readFileSync(new URL('../ui/companion-view.ts', import.meta.url), 'utf8');
 		expect(note).toContain('renderLootMarkdown(buildLootPresentation(note))');
-		expect(view).toContain('renderLootPresentationView(surface, loot)');
+		expect(view).toContain('this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.()');
+		expect(view).not.toContain('renderLootPresentationView(surface, loot)');
 	});
 });

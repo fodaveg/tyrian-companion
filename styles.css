@@ -5,6 +5,113 @@
 	overflow-x: hidden;
 }
 
+/* Session companion reset: one primary action and one readable live ledger. */
+.tyrian-companion-session {
+	display: grid;
+	gap: 1.25rem;
+	max-width: 58rem;
+	padding-block: 1rem;
+}
+
+.tyrian-companion-session__header {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 1rem;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-companion-session__header h2,
+.tyrian-companion-session__header p {
+	margin-block: 0 0.35rem;
+}
+
+.tyrian-companion-session__header button,
+.tyrian-companion-settings__essentials button,
+.tyrian-companion-settings__essentials input,
+.tyrian-companion-settings__essentials select {
+	min-height: 44px;
+}
+
+.tyrian-companion-session__loot {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.tyrian-companion-session__total {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 1rem;
+	font-size: var(--font-ui-large);
+}
+
+.tyrian-companion-session__total strong {
+	color: var(--text-accent);
+	font-size: 1.35em;
+}
+
+.tyrian-companion-session__loot-list {
+	display: grid;
+	gap: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tyrian-companion-session__loot-list li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	min-height: 44px;
+	padding: 0.55rem 0;
+	border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.tyrian-companion-session__loot-list li > div {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+}
+
+.tyrian-companion-session__warning {
+	padding: 0.75rem 1rem;
+	border-inline-start: 3px solid var(--color-orange);
+	background: var(--background-secondary);
+}
+
+.tyrian-companion-session__context {
+	color: var(--text-muted);
+}
+
+.tyrian-companion-settings__essentials {
+	margin-block: 1rem 1.5rem;
+}
+
+.tyrian-companion-settings__advanced {
+	margin-top: 1rem;
+}
+
+.tyrian-companion-settings__advanced > summary {
+	min-height: 44px;
+	padding-block: 0.65rem;
+	font-weight: var(--font-semibold);
+}
+
+@container (max-width: 480px) {
+	.tyrian-companion-session__header,
+	.tyrian-companion-session__loot-list li {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.tyrian-companion-session__header button {
+		width: 100%;
+	}
+}
+
 .tyrian-product-shell {
 	color: var(--text-normal);
 }

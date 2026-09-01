@@ -816,14 +816,12 @@ describe('Halloween production gating', () => {
 		);
 	});
 
-	it('discards idle and unaccepted activity, then promotes only an accepted canonical Halloween session', async () => {
+	it('keeps Halloween as automatic enrichment for every active session, never as a live-alert gate', async () => {
 		const delta = { status: 'comparable' } as StorageDelta;
 		const observeHalloweenDelta = vi.fn(async () => undefined);
 		let session: SessionState = { version: SESSION_STATE_VERSION, status: 'idle' };
-		let summary = null as ReturnType<typeof summarizeSessionDetectionQuality>;
 		const harness = {
 			sessions: { getState: () => session },
-			detectionQuality: { getSessionSummary: () => summary },
 			observeHalloweenDelta,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
@@ -833,16 +831,123 @@ describe('Halloween production gating', () => {
 		await observe.call(harness, delta);
 		session = { version: SESSION_STATE_VERSION, status: 'active', sessionId: 'session-halloween' } as SessionState;
 		await observe.call(harness, delta);
-		expect(observeHalloweenDelta).not.toHaveBeenCalled();
-
-		const proposal = halloweenProposal();
-		const accepted = createAcceptedDetectionEvent(
-			'start', 'session-halloween', '2026-08-13T08:00:03.000Z', proposal,
-		);
-		if (!accepted) throw new Error('Invalid accepted Halloween fixture.');
-		summary = summarizeSessionDetectionQuality([accepted], 'session-halloween');
-		await observe.call(harness, delta);
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(delta, 'assisted_poll', 'session:session-halloween');
+	});
+});
+
+describe('non-destructive next-session rotation', () => {
+	it('verifies the previous durable summary without rewriting it before opening the next session', async () => {
+		let state: { status: 'complete' | 'idle' } = { status: 'complete' };
+		const runtime = {
+			state: { status: 'complete' as const, sessionId: 'session-rotation', baseline: { completedAt: '2026-09-01T08:00:00.000Z' } },
+			finalSnapshot: { completedAt: '2026-09-01T09:00:00.000Z' },
+		};
+		const readSession = vi.fn(async () => ({ status: 'found' as const, path: 'session.md', session: {}, loot: null }));
+		const resetCompletedSession = vi.fn(async () => { state = { status: 'idle' }; return true; });
+		const openManualSessionStart = vi.fn();
+		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			sessions: {
+				getCompletedRuntimeRecord: vi.fn(async () => runtime), resetCompletedSession,
+				getState: () => state,
+			},
+			sessionHistory: { readSession },
+			liveSessionLoot: { reset: vi.fn() }, openManualSessionStart,
+			emitNotice: vi.fn(), settings: { language: 'es' as const }, runtimeReady: true,
+			renderViews: vi.fn(), sessionSummarySaveState: 'unknown', storedSessionLootSummary: null,
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit production-method harness.
+		const rotate = (TyrianCompanionPlugin.prototype as unknown as {
+			rotateToNewSession(this: typeof harness): Promise<void>;
+		}).rotateToNewSession;
+
+		await rotate.call(harness);
+		expect(readSession).toHaveBeenCalledOnce();
+		expect(resetCompletedSession).toHaveBeenCalledOnce();
+		expect(openManualSessionStart).toHaveBeenCalledOnce();
+		expect((harness as { emitNotice: ReturnType<typeof vi.fn> }).emitNotice).not.toHaveBeenCalled();
+	});
+});
+
+describe('completed-session summary persistence', () => {
+	it('keeps the durable runtime visible and exposes retry when the Vault write fails', async () => {
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			retrySessionSummarySave(this: unknown): Promise<void>;
+		};
+		const harness = Object.assign(Object.create(proto) as object, {
+			runtimeReady: true,
+			sessionSummarySaveState: 'unknown',
+			sessions: { getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete' }, delta: null })) },
+			sessionNotes: { write: vi.fn(async () => ({ status: 'unavailable', message: 'offline' })) },
+			sessionNoteInput: vi.fn(() => ({ prepared: true })),
+			settings: { language: 'es' as const },
+			emitNotice: vi.fn(), renderViews: vi.fn(), refreshLootPresentation: vi.fn(async () => undefined),
+		});
+
+		await proto.retrySessionSummarySave.call(harness);
+
+		expect((harness as { sessionSummarySaveState: string }).sessionSummarySaveState).toBe('failed');
+		expect((harness as { emitNotice: ReturnType<typeof vi.fn> }).emitNotice).toHaveBeenCalledOnce();
+		expect((harness as { refreshLootPresentation: ReturnType<typeof vi.fn> }).refreshLootPresentation).toHaveBeenCalledOnce();
+	});
+
+	it('writes the core summary before optional Halloween enrichment and keeps it saved when enrichment throws', async () => {
+		const order: string[] = [];
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			finalizeAndPersistStoppedSession(this: unknown, sessionId: string, delta: StorageDelta): Promise<void>;
+		};
+		const delta = { status: 'comparable' } as StorageDelta;
+		const runtime = { state: { status: 'complete' as const, sessionId: 'session-final' } };
+		const harness = Object.assign(Object.create(proto) as object, {
+			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
+			sessions: {
+				reviewContamination: vi.fn(async () => ({
+					status: 'finalized' as const,
+					state: { status: 'complete' as const, sessionId: 'session-final', finalizedAt: '2026-09-01T09:00:00.000Z' },
+					review: { classification: 'estimated' },
+				})),
+				getCompletedRuntimeRecord: vi.fn(async () => runtime),
+			},
+			sessionNotes: { write: vi.fn(async () => { order.push('write'); return { status: 'written' as const, path: 'session.md' }; }) },
+			sessionNoteInput: vi.fn(() => ({ prepared: true })),
+			observeHalloweenDelta: vi.fn(async () => { order.push('halloween'); throw new Error('optional enrichment failed'); }),
+			refreshLootPresentation: vi.fn(async () => undefined),
+			sessionSummarySaveState: 'unknown', runtimeReady: false, localDebugActions: null,
+			emitNotice: vi.fn(), settings: { language: 'es' as const },
+		});
+
+		await expect(proto.finalizeAndPersistStoppedSession.call(harness, 'session-final', delta)).resolves.toBeUndefined();
+		await Promise.resolve();
+
+		expect(order).toEqual(['write', 'halloween']);
+		expect((harness as { sessionSummarySaveState: string }).sessionSummarySaveState).toBe('saved');
+	});
+});
+
+describe('stop observation teardown ordering', () => {
+	it('disarms immediately after stop and stays disarmed when later persistence fails', async () => {
+		const order: string[] = [];
+		let detectorState = 'armed';
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			performStopManualSession(this: unknown): Promise<void>;
+		};
+		const harness = Object.assign(Object.create(proto) as object, {
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
+			sessions: { stop: vi.fn(async () => ({
+				status: 'stopped' as const, state: { sessionId: 'session' }, delta: { status: 'comparable' },
+			})) },
+			assistedDetection: {
+				getState: () => ({ status: detectorState }),
+				disarm: vi.fn(() => { detectorState = 'disarmed'; order.push('disarm'); }),
+			},
+			finalizeAndPersistStoppedSession: vi.fn(async () => { order.push('persist'); throw new Error('Vault unavailable'); }),
+			renderViews: vi.fn(), localDebugActions: null,
+		});
+
+		await expect(proto.performStopManualSession.call(harness)).rejects.toThrow('Vault unavailable');
+
+		expect(order).toEqual(['disarm', 'persist']);
+		expect(detectorState).toBe('disarmed');
 	});
 });
 

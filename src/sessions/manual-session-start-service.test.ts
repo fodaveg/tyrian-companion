@@ -635,7 +635,7 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
-	it('keeps an unsure review provisional, recoverable and editable', async () => {
+	it('finalizes an unsure review as an estimated durable summary', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const service = new ManualSessionStartService(
 			coordinator(),
@@ -648,23 +648,17 @@ describe('ManualSessionStartService', () => {
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await service.stop();
 		await expect(service.reviewContamination(reviewAnswers('unsure'))).resolves.toMatchObject({
-			status: 'reviewed',
-			review: { classification: { status: 'estimated', permissions: { finalize: false } } },
-			state: { status: 'provisional' },
-		});
-		const firstReviewedAt = service.getContaminationReview()?.reviewedAt;
-		await expect(runtimeStore.load()).resolves.toMatchObject({
-			status: 'loaded',
-			record: { state: { status: 'provisional' }, review: { answers: { certainty: 'unsure' } } },
-		});
-
-		await expect(service.reviewContamination(reviewAnswers())).resolves.toMatchObject({
 			status: 'finalized',
-			state: { status: 'complete', classification: 'exact' },
+			review: { classification: { status: 'estimated', permissions: { finalize: true } } },
+			state: { status: 'complete', classification: 'estimated' },
 		});
-		expect(Date.parse(service.getContaminationReview()?.reviewedAt ?? '')).toBeGreaterThan(
-			Date.parse(firstReviewedAt ?? ''),
-		);
+		await expect(runtimeStore.load()).resolves.toMatchObject({
+			status: 'loaded', record: {
+				state: { status: 'complete', classification: 'estimated' },
+				review: { answers: { certainty: 'unsure' } },
+			},
+		});
+		await expect(service.reviewContamination(reviewAnswers())).resolves.toMatchObject({ status: 'failed' });
 	});
 
 	it('loads a completed reviewed session without treating it as crash recovery and resets it explicitly', async () => {

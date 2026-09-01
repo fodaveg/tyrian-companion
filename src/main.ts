@@ -108,20 +108,27 @@ import { proposalIntent, sameProposalIntent, type PendingProposal, type PendingP
 import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from './sessions/loot-presentation';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
+import { LiveSessionLootTracker, type LiveSessionLootState } from './sessions/live-session-loot';
 import {
 	prepareSessionNote,
 	sessionNoteEventDeclarationFromDetectionSummary,
 	type SessionNoteInput,
 } from './sessions/session-note-model';
-import { SessionNoteWriter, writeSessionNoteBeforeClear } from './sessions/session-note-writer';
+import {
+	SessionNoteWriter,
+	writeSessionNoteBeforeClear,
+	type SessionNoteWriteResult,
+} from './sessions/session-note-writer';
 import {
 	SessionHistoryService,
 	SessionHistoryRuntimeAuthority,
+	type DurableSessionLookup,
 	type SessionHistoryExportResult,
 	type SessionHistoryScrubGate,
 	type SessionHistoryScrubPreview,
 	type SessionHistoryScrubResult,
 } from './sessions/session-history';
+import type { StoredSessionLootSummary } from './sessions/session-note-renderer';
 import type { SessionHistoryLoadResult } from './sessions/session-history-summary';
 import {
 	ManualSessionStartService,
@@ -218,7 +225,9 @@ type NoticeDiagnosticSource =
 	| 'plugin_starting'
 	| 'managed_assets_relocated'
 	| 'managed_assets_blocked'
-	| 'session_command';
+	| 'session_command'
+	| 'live_observation'
+	| 'valuable_loot';
 
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = migrateSettings(null);
@@ -240,6 +249,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionNotes!: SessionNoteWriter;
 	private sessionHistory!: SessionHistoryService;
 	private lootPresentation = new LootPresentationCache(() => this.renderViews());
+	private liveSessionLoot!: LiveSessionLootTracker;
+	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
+	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
+	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private inventoryVaultSync!: InventoryVaultSyncController;
 	private inventoryVaultSyncRun!: InventoryVaultOneClickSyncController;
@@ -494,6 +507,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
+		this.liveSessionLoot = new LiveSessionLootTracker({
+			gateway: publicClient,
+			locale: () => this.settings.language,
+			thresholdCopper: () => this.settings.halloweenValueThresholdCopper,
+			onStateChange: () => this.renderViews(),
+			onValuable: ({ name, quantity, totalCopper }) => this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.valuableLoot', {
+					name, quantity, value: formatCopperCompact(totalCopper, this.settings.language),
+				}),
+				'valuable_loot',
+			),
+		});
 		const inventoryTransport = new ObsidianRequestTransport({
 			timeoutMs: 30_000,
 			operationPolicies: GW2_CHARACTER_OPERATION_POLICIES,
@@ -713,9 +738,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			createFolder: async (path) => { await this.app.vault.createFolder(path); },
 			create: async (path, content) => await this.app.vault.create(path, content),
 		});
+		this.detectionQualityInitialization = this.detectionQuality.initialize();
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
-			async () => { await this.detectionQuality.initialize(); this.renderViews(); });
+			async () => { await this.detectionQualityInitialization; this.renderViews(); });
 		this.sessions = new ManualSessionStartService(
 			coordinator,
 			new SessionStartCaptureService(client, snapshots),
@@ -743,7 +769,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.sessions.initialize();
 		const recoveryId = this.pilotRecoveryIdentity();
 		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
-		await this.refreshLootPresentation();
 		this.sessionNotes = new SessionNoteWriter({
 			file: (path) => this.app.vault.getAbstractFileByPath(path),
 			read: async (file) => {
@@ -808,6 +833,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			getSessionState: () => this.sessions.getState(),
 			onStateChange: () => this.refreshBackgroundIndicators(),
 			onObservedDelta: (delta) => {
+				const session = this.sessions.getState();
+				if (session.status === 'active') {
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'session', action: 'session_projection', state: 'live_loot' },
+						() => this.liveSessionLoot.observe(session.sessionId, delta));
+				}
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'halloween', action: 'halloween_refresh' },
 					() => this.observeAcceptedHalloweenDelta(delta));
@@ -830,6 +861,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 		});
 		this.assistedDetection.setOnline(navigator.onLine);
+		const restoredSession = this.sessions.getState();
+		if (restoredSession.status === 'active') this.startLiveObservation(restoredSession.sessionId, true);
+		else if (restoredSession.status === 'complete') await this.inspectCompletedSessionSummary();
+		await this.refreshLootPresentation();
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
@@ -1122,10 +1157,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
 		const session = this.sessions.getState();
 		if (session.status !== 'active') return;
-		const declaration = sessionNoteEventDeclarationFromDetectionSummary(
-			session.sessionId, this.detectionQuality.getSessionSummary(session.sessionId),
-		);
-		if (declaration?.event !== 'halloween') return;
 		await this.observeHalloweenDelta(delta, 'assisted_poll', `session:${session.sessionId}`);
 	}
 
@@ -1688,6 +1719,40 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.lootPresentation.get();
 	}
 
+	getLiveSessionLoot(): LiveSessionLootState {
+		return this.liveSessionLoot.getState();
+	}
+
+	getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed' {
+		return this.sessionSummarySaveState;
+	}
+
+	getStoredSessionLootSummary(): StoredSessionLootSummary | null {
+		return this.storedSessionLootSummary === null ? null : structuredClone(this.storedSessionLootSummary);
+	}
+
+	async retrySessionSummarySave(): Promise<void> {
+		const [quality] = await Promise.allSettled([this.detectionQualityInitialization]);
+		if (quality?.status === 'rejected') {
+			this.sessionSummarySaveState = 'failed';
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+				'session_command',
+			);
+			this.renderViews();
+			return;
+		}
+		const runtime = await this.sessions.getCompletedRuntimeRecord();
+		if (runtime !== null && runtime.state.status === 'complete' && runtime.delta !== null) {
+			if (this.liveSessionLoot.getState().status === 'idle') this.liveSessionLoot.begin(runtime.state.sessionId, true);
+			await this.liveSessionLoot.reconcile(runtime.state.sessionId, runtime.delta);
+		}
+		const note = await this.persistCompletedSessionSummary(true, runtime ?? undefined);
+		if (note?.status === 'written' || note?.status === 'unchanged') await this.inspectCompletedSessionSummary(runtime ?? undefined);
+		await this.refreshLootPresentation();
+		this.renderViews();
+	}
+
 	getManagedAssetsView() { return structuredClone(this.managedAssetsView); }
 
 	getSessionHistoryView() { return { ...this.sessionHistoryView }; }
@@ -1992,6 +2057,23 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'session', action: 'session_clear' }, () => this.sessionCommands.run('clear-completed-session'));
 	}
 
+	async rotateToNewSession(): Promise<void> {
+		const runtime = await this.sessions.getCompletedRuntimeRecord();
+		if (runtime === null || runtime.state.status !== 'complete' || runtime.finalSnapshot === null) return;
+		const archived = await this.inspectCompletedSessionSummary(runtime);
+		if (!archived || !await this.sessions.resetCompletedSession()) {
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.newSessionBlocked'),
+				'session_command',
+			);
+			return;
+		}
+		this.liveSessionLoot.reset();
+		this.storedSessionLootSummary = null;
+		this.sessionSummarySaveState = 'unknown';
+		this.openManualSessionStart();
+	}
+
 	async resetCompletedSession(): Promise<void> {
 		const perform = async () => await this.sessionCommands.run('clear-completed-session');
 		return await (this.localDebugActions?.run({ component: 'session', action: 'session_clear' }, perform) ?? perform());
@@ -2061,6 +2143,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const runtimeLease = this.requireRuntimeMutationLease();
 			const result = await this.sessions.stop().finally(() => runtimeLease.release());
 			if (result.status === 'stopped') {
+				this.assistedDetection.disarm('session_stopped'); this.localDebugActions?.event({ component: 'detection', action: 'detection_disarm', state: 'session_stopped', level: 'info', phase: 'success', code: 'ok' });
+				await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
 				const priceSnapshot = this.sessions.getPriceSnapshot();
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'inventory', action: 'inventory_refresh', state: 'price_history_observe' },
@@ -2083,11 +2167,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 						},
 					},
 					); this.renderViews(); });
-				if (this.localDebugActions) this.localDebugActions.runSync(
-					{ component: 'detection', action: 'detection_disarm', state: 'session_stopped' },
-					() => this.assistedDetection.disarm('session_stopped'),
-				);
-				else this.assistedDetection.disarm('session_stopped');
 				if (intent && pendingClaim) {
 					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
 						throw new Error('Proposal receipt failed.');
@@ -2112,10 +2191,97 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	private async finalizeAndPersistStoppedSession(sessionId: string, delta: StorageDelta): Promise<void> {
+		await this.liveSessionLoot.reconcile(sessionId, delta);
+		const reviewed = await this.sessions.reviewContamination(automaticSessionReview());
+		if (reviewed.status !== 'finalized' || reviewed.state.status !== 'complete') {
+			this.sessionSummarySaveState = 'failed';
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+				'session_command',
+			);
+			return;
+		}
+		void this.pilotMetrics?.sessionCompleted(reviewed.state.sessionId, reviewed.state.finalizedAt);
+		const runtime = await this.sessions.getCompletedRuntimeRecord();
+		if (runtime === null) {
+			this.sessionSummarySaveState = 'failed';
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+				'session_command',
+			);
+			return;
+		}
+		await this.persistCompletedSessionSummary(true, runtime);
+		await this.refreshLootPresentation();
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'halloween', action: 'halloween_refresh', state: 'session_final' },
+			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`, reviewed.review));
+	}
+
+	private async inspectCompletedSessionSummary(existingRuntime?: SessionRuntimeRecord): Promise<boolean> {
+		const runtime = existingRuntime ?? await this.sessions.getCompletedRuntimeRecord();
+		if (runtime === null || runtime.state.status !== 'complete') {
+			this.sessionSummarySaveState = 'failed';
+			this.storedSessionLootSummary = null;
+			return false;
+		}
+		let durable: DurableSessionLookup;
+		try { durable = await this.sessionHistory.readSession(await sha256Text(runtime.state.sessionId)); }
+		catch { durable = { status: 'unavailable' }; }
+		this.sessionSummarySaveState = durable.status === 'found' ? 'saved' : 'failed';
+		this.storedSessionLootSummary = durable.status === 'found' ? durable.loot : null;
+		if (this.runtimeReady) this.renderViews();
+		return durable.status === 'found';
+	}
+
+	private async persistCompletedSessionSummary(
+		notifyFailure: boolean,
+		existingRuntime?: SessionRuntimeRecord,
+	): Promise<SessionNoteWriteResult | null> {
+		this.sessionSummarySaveState = 'saving';
+		if (this.runtimeReady) this.renderViews();
+		const runtime = existingRuntime ?? await this.sessions.getCompletedRuntimeRecord();
+		if (runtime === null) {
+			this.sessionSummarySaveState = 'failed';
+			if (notifyFailure) this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+				'session_command',
+			);
+			return null;
+		}
+		let note: SessionNoteWriteResult;
+		try {
+			note = await this.sessionNotes.write(this.sessionNoteInput(runtime));
+		} catch {
+			this.sessionSummarySaveState = 'failed';
+			if (notifyFailure) this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+				'session_command',
+			);
+			return null;
+		}
+		this.sessionSummarySaveState = note.status === 'written' || note.status === 'unchanged' ? 'saved' : 'failed';
+		if (this.runtimeReady) this.renderViews();
+		if (this.sessionSummarySaveState === 'failed' && notifyFailure) this.emitNotice(
+			translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
+			'session_command',
+		);
+		return note;
+	}
+
 	openManualSessionStart(humanBoundaryAt: string | null = null): void {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'session', action: 'session_start' }, async () => {
-				if (humanBoundaryAt === null) await this.sessionCommands.run('start-farming-session');
+				if (humanBoundaryAt === null) {
+					let connection = this.connection.getState();
+					if (connection.status !== 'connected' && connection.status !== 'warning') {
+						connection = await this.checkConnection();
+					}
+					if (connection.status === 'connected' || connection.status === 'warning') {
+						await this.sessionCommands.run('start-farming-session');
+					}
+				}
 				else this.openManualSessionStartWithBoundary(humanBoundaryAt);
 			});
 	}
@@ -2152,6 +2318,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (runtimeLease === null) throw new Error('Session history scrub is active.');
 			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
 			if (result.status === 'started') {
+				this.startLiveObservation(result.state.sessionId, false);
 				void this.pilotMetrics?.sessionStarted(result.state.sessionId, result.state.baseline.completedAt);
 				await this.detectionQuality.recordAccepted(
 					'start',
@@ -2194,6 +2361,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		} finally {
 			pendingClaim?.stopRenewal();
 		}
+	}
+
+	private startLiveObservation(sessionId: string, restored: boolean): void {
+		this.sessionSummarySaveState = 'unknown';
+		this.storedSessionLootSummary = null;
+		this.liveSessionLoot.begin(sessionId, restored);
+		const baseline = this.sessions.getBaselineSnapshot();
+		const state = baseline === null
+			? { status: 'error' as const }
+			: this.assistedDetection.armFromSnapshot(baseline, this.settings.pollingIntervalMinutes * 60_000);
+		if (state.status !== 'error') return;
+		this.emitNotice(
+			translateRuntime(createTranslator(this.settings.language), 'notices.liveObservationUnavailable'),
+			'live_observation',
+		);
 	}
 
 	async updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult> {
@@ -2611,6 +2793,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
 			throw new Error('Recovery failed.');
 		}
+		const recovered = this.sessions.getState();
+		if (recovered.status === 'active') this.startLiveObservation(recovered.sessionId, true);
 		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'succeeded');
 	}
 
@@ -2669,7 +2853,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return {
 			runtime, valuation: null, reservation: null, hold: null, recommendation: null, envelope: null,
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId)),
-			displayNames: {}, locale: this.settings.language, outputFolder: this.settings.outputFolder,
+			displayNames: this.liveSessionLoot.displayNames(), locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
 	}
 
@@ -2992,6 +3176,25 @@ function detectionActionOutcome(
 	if (request === 'disarm') return state.status === 'disarmed' ? 'completed' : 'unavailable';
 	return state.status === 'armed' || state.status === 'start_proposed' || state.status === 'stop_proposed'
 		? 'completed' : 'unavailable';
+}
+
+function automaticSessionReview(): SessionContaminationAnswers {
+	return {
+		certainty: 'unsure',
+		activities: {
+			open: false, salvage: false, consume: false, craft: false, tpBuy: false,
+			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
+		},
+	};
+}
+
+function formatCopperCompact(copper: number, locale: Locale): string {
+	const gold = Math.floor(copper / 10_000);
+	const silver = Math.floor(copper / 100) % 100;
+	const remainder = copper % 100;
+	return locale === 'es'
+		? `${String(gold)} oro · ${String(silver)} plata · ${String(remainder)} cobre`
+		: `${String(gold)} gold · ${String(silver)} silver · ${String(remainder)} copper`;
 }
 
 function advisorActionOutcome(model: InventoryAdvisorViewModel): ProductActionOutcome {

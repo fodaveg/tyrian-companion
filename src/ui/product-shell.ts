@@ -77,20 +77,16 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	}
 
 	const workspace = shell.createDiv({ cls: 'tyrian-product-shell__workspace' });
-	const actionPanel = mountActionPanel(options.actions, options.locale);
+	// Command-palette actions remain available as expert shortcuts, but no longer compete
+	// with the one primary action on each product surface.
+	const legacyPanel = createEl('aside');
+	legacyPanel.hidden = true;
 	const main = workspace.createEl('main', { cls: 'tyrian-product-shell__content' });
-	// Aside comes first in reading order, then CSS places it beside content only at wide widths.
-	workspace.prepend(actionPanel.element);
-	const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver((entries) => {
-		const shellEntry = entries.find((entry) => entry.target === shell);
-		if (shellEntry) actionPanel.setCompact(shellEntry.contentRect.width < 1_050);
-	});
-	resizeObserver?.observe(shell);
 	return {
 		content: main,
-		panel: actionPanel.element,
-		update: () => actionPanel.update(),
-		dispose: () => { resizeObserver?.disconnect(); actionPanel.dispose(); },
+		panel: legacyPanel,
+		update: () => options.actions.refresh(),
+		dispose: () => undefined,
 	};
 }
 

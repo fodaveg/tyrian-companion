@@ -1,5 +1,11 @@
 import { normalizeSessionOutputFolder } from './session-note-model';
-import { inspectStoredSessionNote, scrubStoredSessionNote, sha256Text } from './session-note-renderer';
+import {
+	inspectStoredSessionLootSummary,
+	inspectStoredSessionNote,
+	scrubStoredSessionNote,
+	sha256Text,
+	type StoredSessionLootSummary,
+} from './session-note-renderer';
 
 export const SESSION_HISTORY_EXPORT_VERSION = 1 as const;
 export const SESSION_HISTORY_JSON_FILE = 'tyrian-companion-sessions-v1.json';
@@ -61,6 +67,10 @@ export type DurableSessionNoteInspection =
 export type SessionHistoryScan =
 	| { status: 'ok'; sessions: readonly DurableSessionHistoryRecord[]; ignored: number }
 	| { status: 'conflict'; invalid: number; duplicates: number };
+
+export type DurableSessionLookup =
+	| { status: 'found'; path: string; session: DurableSessionHistoryRecord; loot: StoredSessionLootSummary | null }
+	| { status: 'missing' | 'unavailable' | 'conflict' };
 
 export type SessionHistoryExportResult =
 	| { status: 'written' | 'unchanged'; sessions: number }
@@ -194,6 +204,28 @@ export class SessionHistoryService {
 			if (invalid > 0 || duplicates > 0) return { status: 'conflict', invalid, duplicates };
 			return { status: 'ok', sessions: sessions.sort(compareSessions), ignored };
 		} catch { return { status: 'conflict', invalid: 1, duplicates: 0 }; }
+	}
+
+	/** Looks up one durable note for startup recovery without ever entering a write path. */
+	async readSession(sessionRef: string): Promise<DurableSessionLookup> {
+		try {
+			const matches: Extract<DurableSessionLookup, { status: 'found' }>[] = [];
+			let unreadable = false;
+			for (const file of this.vault.markdownFiles()) {
+				let content: string;
+				try { content = await this.vault.read(file); }
+				catch { unreadable = true; continue; }
+				const decoded = await decodeDurableSession(content);
+				if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) continue;
+				matches.push({
+					status: 'found', path: file.path, session: decoded.session,
+					loot: await inspectStoredSessionLootSummary(content),
+				});
+			}
+			if (matches.length > 1) return { status: 'conflict' };
+			if (matches.length === 1) return matches[0]!;
+			return { status: unreadable ? 'unavailable' : 'missing' };
+		} catch { return { status: 'unavailable' }; }
 	}
 
 	export(outputFolder: unknown): Promise<SessionHistoryExportResult> {

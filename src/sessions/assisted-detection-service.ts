@@ -189,6 +189,29 @@ export class AssistedDetectionService {
 		return flight;
 	}
 
+	/** Arms polling from the exact session baseline, avoiding a second capture and its blind gap. */
+	armFromSnapshot(snapshot: StorageSnapshot, intervalMs: number): AssistedDetectionState {
+		if (this.disposed) return this.fail('Assisted detection is unavailable.');
+		const interval = positiveInteger(intervalMs, 'intervalMs');
+		if (!stableSnapshot(snapshot)) return this.fail('The account baseline was not stable enough to arm detection.');
+		this.generation += 1;
+		this.intervalMs = interval;
+		this.scheduler.stop();
+		this.resetEvidence();
+		this.previousSnapshot = structuredClone(snapshot);
+		this.previousSessionContext = sessionContext(this.getSessionState());
+		this.state = {
+			status: 'armed',
+			armedAt: canonicalNow(this.now),
+			scheduler: { ...this.scheduler.getState() },
+			lastSnapshotAt: snapshot.completedAt,
+		};
+		this.scheduler.start(interval);
+		this.state.scheduler = { ...this.scheduler.getState() };
+		this.emit();
+		return this.getState();
+	}
+
 	disarm(reason: AssistedDetectionDisarmReason = 'user'): AssistedDetectionState {
 		if (this.disposed) return this.getState();
 		this.generation += 1;

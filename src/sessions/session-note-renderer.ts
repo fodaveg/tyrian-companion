@@ -106,6 +106,44 @@ export async function inspectStoredSessionNote(content: string): Promise<{
 	};
 }
 
+export interface StoredSessionLootSummary {
+	readonly locale: 'es' | 'en';
+	readonly immediateCopper: number | null;
+	readonly rows: readonly {
+		readonly name: string;
+		readonly netQuantity: number;
+		readonly immediateLabel: string;
+	}[];
+}
+
+/** Reads the producer-owned results block without regenerating or mutating the note. */
+export async function inspectStoredSessionLootSummary(content: string): Promise<StoredSessionLootSummary | null> {
+	const parsed = parseFrontmatter(content);
+	if (parsed === null) return null;
+	const ranges = await managedBlockRanges(parsed.body);
+	const locale = parsed.frontmatter.tc_locale;
+	const immediateCopper = parsed.frontmatter.tc_observed_immediate_copper;
+	if (ranges === null || (locale !== 'es' && locale !== 'en') ||
+		!(immediateCopper === null || (typeof immediateCopper === 'number' &&
+			Number.isSafeInteger(immediateCopper) && immediateCopper >= 0))) return null;
+	const results = ranges.find(({ id }) => id === 'results');
+	if (results === undefined) return null;
+	const lines = parsed.body.split('\n').slice(results.start + 1, results.end);
+	const separator = lines.findIndex((line) => /^\|---\|---:\|/u.test(line));
+	if (separator < 0) return null;
+	const rows: StoredSessionLootSummary['rows'][number][] = [];
+	for (const line of lines.slice(separator + 1)) {
+		if (!line.startsWith('|')) break;
+		const cells = parseMarkdownTableRow(line);
+		if (cells === null || cells.length !== 6) return null;
+		const netQuantity = Number(cells[1]);
+		if (!Number.isSafeInteger(netQuantity)) return null;
+		if (cells[0] === '—' && netQuantity === 0) continue;
+		rows.push({ name: cells[0]!, netQuantity, immediateLabel: cells[3]! });
+	}
+	return { locale, immediateCopper, rows };
+}
+
 /**
  * Removes only Tyrian Companion's durable metadata and intact managed blocks.
  * The surviving frontmatter lines and all human body lines retain their original
@@ -323,6 +361,30 @@ async function managedBlockRanges(body: string): Promise<Array<{ id: SessionNote
 	}
 	return open || ranges.length !== SESSION_NOTE_BLOCK_IDS.length ||
 		ranges.some((range, index) => range.id !== SESSION_NOTE_BLOCK_IDS[index]) ? null : ranges;
+}
+
+function parseMarkdownTableRow(line: string): string[] | null {
+	if (!line.startsWith('|') || !line.endsWith('|')) return null;
+	const cells: string[] = [];
+	let cell = '';
+	let escaped = false;
+	for (const character of line.slice(1, -1)) {
+		if (escaped) {
+			cell += character;
+			escaped = false;
+		} else if (character === '\\') escaped = true;
+		else if (character === '|') {
+			cells.push(decodeStoredMarkdown(cell.trim()));
+			cell = '';
+		} else cell += character;
+	}
+	if (escaped) return null;
+	cells.push(decodeStoredMarkdown(cell.trim()));
+	return cells;
+}
+
+function decodeStoredMarkdown(value: string): string {
+	return value.replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&amp;/gu, '&');
 }
 
 function parseFrontmatter(content: string): {

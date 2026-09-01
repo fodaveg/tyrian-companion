@@ -8,7 +8,6 @@ import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import { ProductActionController } from './product-action-controller';
-import { SessionHistoryPanelController } from './session-history-panel';
 
 afterEach(() => {
 	vi.useRealTimers();
@@ -34,13 +33,13 @@ describe('Companion local diagnostics warning', () => {
 			},
 		};
 		const container = { createDiv: () => warning };
-		const harness = {
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
 				getLocalDebugStatus: () => status,
 				getLocale: () => 'en' as const,
 				openLocalDebugSettings: opened,
 			},
-		};
+		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderLocalDebugWarning(this: typeof harness, container: { createDiv(): typeof warning }): void;
@@ -421,7 +420,132 @@ describe('Companion pilot metrics fail-open actions', () => {
 });
 
 describe('Companion retained product shell', () => {
-	it('preserves the aside, panel disclosure and focus across an external render', async () => {
+	it('offers human review only when automatic finalization leaves a provisional session', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const openSessionReview = vi.fn();
+		const harness = {
+			actions: {
+				getLocale: () => 'es' as const,
+				openSessionReview,
+				getLiveSessionLoot: () => ({ status: 'complete' as const, sessionId: 'session', restored: false,
+					rows: [], knownTotalCopper: 0, hasUnknownValue: false, updatedAt: null, error: null }),
+			},
+			renderLiveLoot: vi.fn(),
+		};
+		const session = {
+			version: 1 as const, status: 'provisional' as const, sessionId: 'session',
+			startContext: { characterName: 'Rinopopo' },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [] });
+		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Revisar');
+		expect(button).toBeTruthy();
+		button?.listeners.get('click')?.[0]?.();
+		expect(openSessionReview).toHaveBeenCalledOnce();
+	});
+
+	it('offers one-click next-session rotation from the completed summary', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const rotateToNewSession = vi.fn(async () => undefined);
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				rotateToNewSession,
+				getLootPresentation: () => null,
+				getLiveSessionLoot: () => ({ status: 'complete' as const, sessionId: 'session', restored: false,
+					rows: [], knownTotalCopper: 0, hasUnknownValue: false, updatedAt: null, error: null }),
+			},
+			renderLiveLoot: vi.fn(),
+		});
+		const session = {
+			version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			startContext: { characterName: 'Rinopopo' },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [] });
+		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Nueva sesión');
+		expect(button).toBeTruthy();
+		button?.listeners.get('click')?.[0]?.();
+		expect(rotateToNewSession).toHaveBeenCalledOnce();
+	});
+
+	it('prefers the durable note names after restart when the live tracker is idle', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getSessionSummarySaveState: () => 'saved' as const,
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				getStoredSessionLootSummary: () => ({
+					locale: 'es' as const, immediateCopper: 40_000,
+					rows: [{ name: 'Pimpollo de flor de cerezo', netQuantity: 4, immediateLabel: '4 g 00 s 00 c' }],
+				}),
+				getLootPresentation: () => ({
+					version: 1, locale: 'es', scope: 'observed_storage_net', quality: 'estimated', warnings: [],
+					rows: [{ key: 'item:9349', namespace: 'item', id: 9349, name: 'Objeto #9349', direction: 'gain',
+						netQuantity: 4, evidence: 'estimated_net', valuation: { status: 'complete', immediateCopper: 40_000, listingCopper: 45_000 },
+						allocation: { status: 'not_evaluated' }, recommendation: { status: 'not_evaluated' } }],
+					economy: { immediateCopper: 40_000 }, decision: {},
+				}) as never,
+			},
+			renderLiveLoot: vi.fn(),
+		});
+		const session = { version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			startContext: { characterName: 'Rinopopo' } };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [] });
+		const text = walkRetained(container).map(({ textContent }) => textContent).join(' ');
+		expect(text).toContain('Resumen guardado');
+		expect(text).toContain('Pimpollo de flor de cerezo');
+		expect(text).toContain('×4');
+		expect(text).not.toContain('Objeto guardado');
+	});
+
+	it('shows the real failed save state with one contextual retry action', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const retrySessionSummarySave = vi.fn(async () => undefined);
+		const harness = {
+			actions: {
+				getLocale: () => 'es' as const,
+				getSessionSummarySaveState: () => 'failed' as const,
+				retrySessionSummarySave,
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				getLootPresentation: () => null,
+			},
+			renderLiveLoot: vi.fn(),
+		};
+		const session = { version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			startContext: { characterName: 'Rinopopo' } };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [] });
+		const retry = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Reintentar guardado');
+		expect(walkRetained(container).some(({ textContent }) => textContent.includes('pendiente de guardar'))).toBe(true);
+		expect(retry).toBeTruthy();
+		retry?.listeners.get('click')?.[0]?.();
+		expect(retrySessionSummarySave).toHaveBeenCalledOnce();
+	});
+
+	it('preserves the navigation shell without remounting the removed action panel', async () => {
 		const document = new RetainedFakeDocument();
 		installRetainedDom(document);
 		const contentEl = new RetainedFakeElement('div', document);
@@ -454,22 +578,13 @@ describe('Companion retained product shell', () => {
 			primaryActionButton: null,
 			productShell: null,
 			productShellKey: null,
-			sessionHistoryController: new SessionHistoryPanelController(async () => ({ status: 'ok', sessions: [], ignored: 0 })),
-			sessionHistoryPanel: null,
 			clearRefresh: vi.fn(),
 			projectStatus: () => ({ refreshEveryMs: null }),
-			projectPendingConfirmationKey: () => 'test-pending',
 			scheduleRefresh: vi.fn(),
-			renderLedgerHeader: vi.fn(),
 			renderLocalDebugWarning: vi.fn(),
-			renderStatusRail: vi.fn(),
-			renderSession: vi.fn(),
-			renderAssistedDetection: vi.fn(),
-			renderPendingConfirmation: (container: RetainedFakeElement) => {
-				container.createEl('section', { cls: 'test-pending-confirmation' });
+			renderSimpleSession: (container: RetainedFakeElement) => {
+				container.createEl('section', { cls: 'tyrian-companion-session' });
 			},
-			renderConnectionState: vi.fn(),
-			t: (key: string) => key,
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated retained-view harness.
 		const render = (TyrianCompanionView.prototype as unknown as { render(this: typeof harness): void }).render;
@@ -478,26 +593,14 @@ describe('Companion retained product shell', () => {
 
 		render.call(harness);
 		const main = walkRetained(contentEl).find((element) => element.tag === 'main')!;
-		const sessionDetails = main.children.find((element) => element.tag === 'details' &&
-			element.children.some((child) => child.textContent === 'view.sessionDetails'))!;
-		const detectionDetails = main.children.find((element) => element.tag === 'details' &&
-			element.children.some((child) => child.textContent === 'view.detectionDetails'))!;
-		const pending = main.children.find((element) => element.className.includes('tyrian-companion-view__pending-slot'))!;
-		const history = main.children.find((element) => element.className.includes('tyrian-session-history'))!;
-		expect(main.children.indexOf(sessionDetails)).toBeLessThan(main.children.indexOf(detectionDetails));
-		expect(main.children.indexOf(detectionDetails)).toBeLessThan(main.children.indexOf(pending));
-		expect(main.children.indexOf(pending)).toBeLessThan(main.children.indexOf(history));
-		const aside = walkRetained(contentEl).find((element) => element.tag === 'aside')!;
-		const disclosure = walkRetained(aside).find((element) => element.tag === 'details')!;
-		const focused = walkRetained(disclosure).find((element) => element.tag === 'button')!;
-		disclosure.open = false;
-		focused.focus();
+		expect(main.children).toHaveLength(1);
+		expect(main.children[0]?.className).toContain('tyrian-companion-session');
+		const shell = walkRetained(contentEl).find((element) => element.className.includes('tyrian-product-shell'))!;
+		expect(walkRetained(contentEl).some((element) => element.tag === 'aside')).toBe(false);
 
 		render.call(harness);
-		expect(walkRetained(contentEl).find((element) => element.tag === 'aside')).toBe(aside);
-		expect(walkRetained(aside).find((element) => element.tag === 'details')).toBe(disclosure);
-		expect(disclosure.open).toBe(false);
-		expect(document.activeElement).toBe(focused);
+		expect(walkRetained(contentEl).find((element) => element.className.includes('tyrian-product-shell'))).toBe(shell);
+		expect(walkRetained(contentEl).some((element) => element.tag === 'aside')).toBe(false);
 
 		await close.call(harness);
 		expect(harness.productShell).toBeNull();

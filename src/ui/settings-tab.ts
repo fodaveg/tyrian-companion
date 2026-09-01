@@ -48,6 +48,7 @@ type SettingsWriter = (settings: Partial<TyrianSettings>) => Promise<SettingsUpd
 type CategorizedSettingRenderer = (setting: Setting, save: SettingsWriter) => void;
 interface CategorizedSettingDefinition {
 	category: SettingsCategory;
+	basic?: boolean;
 	name: string;
 	desc: string;
 	render: CategorizedSettingRenderer;
@@ -60,6 +61,13 @@ function optionalInteger(value: string, maximum: number): number | null | 'inval
 	if (value.trim() === '') return null;
 	const parsed = Number(value);
 	return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : 'invalid';
+}
+
+export function goldThresholdToCopper(value: string): number | 'invalid' {
+	if (value.trim() === '') return 'invalid';
+	const gold = Number(value);
+	const copper = gold * 10_000;
+	return Number.isFinite(gold) && gold >= 0 && Number.isSafeInteger(copper) ? copper : 'invalid';
 }
 
 export class TyrianCompanionSettingTab extends PluginSettingTab {
@@ -138,8 +146,26 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		});
 		this.disposeProductShell = () => productShell.dispose();
 		const surface = productShell.content;
+		const definitions = this.definitions();
+		const essentials = surface.createEl('section', { cls: 'tyrian-companion-settings__essentials' });
+		new Setting(essentials)
+			.setName(this.plugin.settings.language === 'es' ? 'Ajustes esenciales' : 'Essential settings')
+			.setHeading();
+		for (const [index, definition] of definitions.entries()) {
+			if (definition.basic !== true) continue;
+			const setting = new Setting(essentials).setName(definition.name).setDesc(definition.desc);
+			setting.settingEl.dataset.tyrianSettingRow = String(index);
+			definition.render(setting, (settings) => this.saveSettings(index, settings));
+			const state = this.saveStates.get(index);
+			if (state !== undefined) renderSettingSaveState(setting.descEl, state, this.t.bind(this));
+		}
+		const advanced = surface.createEl('details', { cls: 'tyrian-companion-settings__advanced' });
+		advanced.open = this.categoryFocusAfterRender !== null;
+		advanced.createEl('summary', {
+			text: this.plugin.settings.language === 'es' ? 'Opciones avanzadas' : 'Advanced options',
+		});
 		const sections = createSettingsSections(
-			surface,
+			advanced,
 			this.activeCategory,
 			this.t.bind(this),
 			(category) => {
@@ -148,7 +174,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				this.renderSettings();
 			},
 		);
-		for (const [index, definition] of this.definitions().entries()) {
+		for (const [index, definition] of definitions.entries()) {
+			if (definition.basic === true) continue;
 			if (!isActiveSettingsCategory(definition.category, this.activeCategory)) continue;
 			const setting = new Setting(sections[definition.category]).setName(definition.name).setDesc(definition.desc);
 			setting.settingEl.dataset.tyrianSettingRow = String(index);
@@ -246,6 +273,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		return [
 			{
 				category: 'account',
+				basic: true,
 				name: this.t('settings.apiKey.name'), desc: this.t('settings.apiKey.desc'),
 				render: (setting, save) => {
 					setting.addComponent((element) =>
@@ -677,16 +705,26 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				category: 'economy',
+				basic: true,
 				name: this.t('settings.halloween.threshold.name'), desc: this.t('settings.halloween.threshold.desc'),
 				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
 					setting.addText((text) => text
-						.setValue(String(this.plugin.settings.halloweenValueThresholdCopper))
-						.setDisabled(!this.plugin.settings.halloweenEnabled)
+						.setValue(String(this.plugin.settings.halloweenValueThresholdCopper / 10_000))
 						.onChange(async (value) => {
-							const threshold = Number(value);
-							if (Number.isSafeInteger(threshold) && threshold >= 0) {
-								await save({ halloweenValueThresholdCopper: threshold });
+							const threshold = goldThresholdToCopper(value);
+							if (threshold === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.halloween.threshold.invalid'));
+								return;
 							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setAttr('role', 'status');
+							feedback.setText('');
+							await save({ halloweenValueThresholdCopper: threshold });
 						}));
 				},
 			},

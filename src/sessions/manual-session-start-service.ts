@@ -204,6 +204,11 @@ export class ManualSessionStartService {
 		return this.priceSnapshot === null ? null : structuredClone(this.priceSnapshot);
 	}
 
+	/** Returns the committed baseline solely so the live observer can share the session boundary. */
+	getBaselineSnapshot(): StorageSnapshot | null {
+		return this.baselineSnapshot === null ? null : structuredClone(this.baselineSnapshot);
+	}
+
 	/** Explicit, read-only helper for the review modal. It never changes review answers or runtime state. */
 	async proposeTradingPostContamination(): Promise<SessionTradingPostContaminationProposal> {
 		if (this.state.status !== 'provisional' || this.baselineSnapshot === null || this.finalSnapshot === null) {

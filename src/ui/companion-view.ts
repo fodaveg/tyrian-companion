@@ -31,8 +31,11 @@ import type { DetectionQualityRecorderState } from '../sessions/session-detectio
 import type { PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import { proposalIntent, type PendingProposal, type PendingProposalIntent } from '../sessions/pending-proposal-model';
-import type { LootPresentationV1 } from '../sessions/loot-presentation';
+import type { LootPresentationRow, LootPresentationV1 } from '../sessions/loot-presentation';
+import { formatLootMoney } from '../sessions/loot-presentation';
+import type { LiveSessionLootState } from '../sessions/live-session-loot';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
+import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import {
 	buildCompanionStatus,
 	localizedCoverageStatus,
@@ -42,15 +45,9 @@ import {
 	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
-import { renderLootPresentationView } from './loot-presentation-view';
-import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
+import type { HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
-import {
-	mountSessionHistoryPanel,
-	SessionHistoryPanelController,
-	type SessionHistoryPanelMount,
-} from './session-history-panel';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -79,6 +76,10 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getProvisionalDelta(): StorageDelta | null;
 	getContaminationReview(): SessionContaminationReview | null;
 	getLootPresentation(): LootPresentationV1 | null;
+	getLiveSessionLoot?(): LiveSessionLootState;
+	getSessionSummarySaveState?(): 'unknown' | 'saving' | 'saved' | 'failed';
+	getStoredSessionLootSummary?(): StoredSessionLootSummary | null;
+	retrySessionSummarySave?(): Promise<void>;
 	reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null>;
 	openSessionReview(): void;
 	confirmClearCompletedSession(): void;
@@ -88,6 +89,7 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	classifyPilotRecovery?(kind: PilotRecoveryKind): Promise<boolean>;
 	openManualSessionStart(humanBoundaryAt?: string | null): void;
 	stopManualSession(humanBoundaryAt?: string | null): Promise<void>;
+	rotateToNewSession?(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
 	loadSessionHistory(): Promise<SessionHistoryLoadResult>;
@@ -126,15 +128,12 @@ export class TyrianCompanionView extends ItemView {
 	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
-	private readonly sessionHistoryController: SessionHistoryPanelController;
-	private sessionHistoryPanel: SessionHistoryPanelMount | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		private readonly actions: CompanionActions,
 	) {
 		super(leaf);
-		this.sessionHistoryController = new SessionHistoryPanelController(() => this.actions.loadSessionHistory());
 	}
 
 	getViewType(): string {
@@ -159,8 +158,6 @@ export class TyrianCompanionView extends ItemView {
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
-		this.sessionHistoryPanel?.dispose();
-		this.sessionHistoryPanel = null;
 		this.clearRefresh();
 	}
 
@@ -211,48 +208,181 @@ export class TyrianCompanionView extends ItemView {
 		}
 		this.productShell?.update();
 		const surface = this.productShell?.content ?? contentEl;
-		this.sessionHistoryPanel?.dispose();
-		this.sessionHistoryPanel = null;
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
-		this.renderLedgerHeader(surface, projection, connectionState, sessionState, now);
+		this.renderSimpleSession(surface, connectionState, sessionState, projection);
 		this.renderLocalDebugWarning(surface);
-		this.renderStatusRail(surface, projection);
-		const sessionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		sessionDetails.open = true;
-		sessionDetails.createEl('summary', { text: this.t('view.sessionDetails') });
-		this.renderSession(sessionDetails, connectionState, sessionState);
-		const detectionDetails = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		detectionDetails.open = true;
-		detectionDetails.createEl('summary', { text: this.t('view.detectionDetails') });
-		this.renderAssistedDetection(detectionDetails, connectionState, sessionState);
-		const pendingConfirmation = surface.createDiv({ cls: 'tyrian-companion-view__pending-slot' });
-		this.pendingConfirmationContainer = pendingConfirmation;
-		this.pendingConfirmationKey = this.projectPendingConfirmationKey(now);
-		this.renderPendingConfirmation(pendingConfirmation, now);
-		this.sessionHistoryPanel = mountSessionHistoryPanel(surface, locale, this.sessionHistoryController);
-		const loot = this.actions.getLootPresentation();
-		if (loot) renderLootPresentationView(surface, loot);
-		renderHalloweenAlertPanel(surface, this.actions, (key, params) => this.t(key as RuntimeTranslationKey, params));
-
-		const account = surface.createEl('details', { cls: 'tyrian-companion-view__disclosure' });
-		account.createEl('summary', { text: this.t('view.accountConnection') });
-		const status = account.createDiv({ cls: 'tyrian-companion-view__status' });
-		status.setAttr('role', connectionState.status === 'error' ? 'alert' : 'status');
-		status.setAttr('aria-live', 'polite');
-		this.renderConnectionState(status, connectionState);
-
-		const checkButton = surface.createEl('button', {
-			text: connectionState.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
-		});
-		this.checkButton = checkButton;
 		const retryAt = getRetryAt(connectionState);
-		checkButton.disabled = connectionState.status === 'checking' || isCoolingDown(retryAt);
-		checkButton.addEventListener('click', () => {
-			void this.checkConnection();
-		});
-
 		this.scheduleRefresh(projection, retryAt, now);
+	}
+
+	private renderSimpleSession(
+		container: HTMLElement,
+		connection: ConnectionState,
+		session: SessionState,
+		projection: CompanionStatusProjection,
+	): void {
+		const copy = simpleSessionCopy(this.actions.getLocale());
+		const observed = session.status === 'error' ? session.failedState : session;
+		const card = container.createEl('section', { cls: 'tyrian-companion-session' });
+		card.setAttr('aria-label', copy.session);
+		const header = card.createEl('header', { cls: 'tyrian-companion-session__header' });
+		const heading = header.createDiv();
+		const sessionProjection = projection.items.find(({ id }) => id === 'session');
+		if (observed.status === 'idle') {
+			heading.createEl('h2', { text: copy.ready });
+			heading.createEl('p', { text: accountSummary(connection, copy) });
+			const button = header.createEl('button', { text: copy.start, cls: 'mod-cta' });
+			button.disabled = !(this.actions.hasConfiguredApiKey?.() ?? true);
+			button.addEventListener('click', () => this.actions.openManualSessionStart());
+			if (button.disabled) heading.createEl('p', { text: copy.missingKey, cls: 'tyrian-companion-session__context' });
+			return;
+		}
+
+		if (observed.status === 'starting') {
+			heading.createEl('h2', { text: copy.preparing });
+			heading.createEl('p', { text: copy.capturing });
+			return;
+		}
+
+		if (observed.status === 'active') {
+			heading.createEl('h2', { text: copy.active });
+			this.headerElapsed = heading.createEl('p', {
+				text: sessionProjection?.detail ?? copy.observing,
+				cls: 'tyrian-companion-view__elapsed',
+			});
+			heading.createEl('p', { text: `${observed.startContext.characterName} · ${copy.observing}` });
+			const button = header.createEl('button', { text: copy.finish, cls: 'mod-cta' });
+			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
+			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
+			const detection = this.actions.getAssistedDetectionState();
+			if (detection.status === 'error' || detection.status === 'disarmed') {
+				const warning = card.createEl('p', { text: copy.observationFailed, cls: 'tyrian-companion-session__warning' });
+				warning.setAttr('role', 'alert');
+			}
+			return;
+		}
+
+		if (observed.status === 'stopping') {
+			heading.createEl('h2', { text: copy.finishing });
+			heading.createEl('p', { text: copy.reconciling });
+			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
+			return;
+		}
+
+		if (observed.status === 'provisional') {
+			heading.createEl('h2', { text: copy.reviewNeeded });
+			heading.createEl('p', { text: copy.reviewNeededDetail });
+			const button = header.createEl('button', { text: copy.review });
+			button.addEventListener('click', () => this.actions.openSessionReview());
+			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
+			return;
+		}
+
+		heading.createEl('h2', { text: copy.summary });
+		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
+		const saveLabel = saveState === 'saved' ? copy.saved
+			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
+		heading.createEl('p', { text: `${observed.startContext.characterName} · ${saveLabel}` });
+		if (saveState === 'failed' && this.actions.retrySessionSummarySave) {
+			const retry = heading.createEl('button', { text: copy.retrySave });
+			retry.addEventListener('click', () => { void this.actions.retrySessionSummarySave?.(); });
+		}
+		if (this.actions.rotateToNewSession) {
+			const button = header.createEl('button', { text: copy.newSession, cls: 'mod-cta' });
+			button.addEventListener('click', () => { void this.actions.rotateToNewSession?.(); });
+		}
+		const liveLoot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' };
+		const storedLoot = this.actions.getStoredSessionLootSummary?.() ?? null;
+		const durableLoot = this.actions.getLootPresentation();
+		if (liveLoot.status === 'idle' && storedLoot !== null) this.renderStoredLoot(card, storedLoot, copy);
+		else if (liveLoot.status === 'idle' && durableLoot !== null) this.renderDurableLoot(card, durableLoot, copy);
+		else this.renderLiveLoot(card, liveLoot, copy);
+	}
+
+	private renderStoredLoot(
+		container: HTMLElement,
+		loot: StoredSessionLootSummary,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
+		region.setAttr('aria-label', copy.loot);
+		const gains = loot.rows.filter(({ netQuantity }) => netQuantity > 0);
+		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
+		summary.createSpan({ text: copy.durableValue });
+		summary.createEl('strong', {
+			text: loot.immediateCopper === null ? copy.valuePending : simpleMoney(loot.immediateCopper, this.actions.getLocale()),
+		});
+		if (gains.length === 0) {
+			region.createEl('p', { text: copy.durableEmpty });
+			return;
+		}
+		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
+		for (const row of gains) {
+			const item = list.createEl('li');
+			const identity = item.createDiv();
+			identity.createEl('strong', { text: row.name });
+			identity.createSpan({ text: `×${String(row.netQuantity)}` });
+			item.createSpan({ text: row.immediateLabel });
+		}
+	}
+
+	private renderDurableLoot(
+		container: HTMLElement,
+		loot: LootPresentationV1,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
+		region.setAttr('aria-label', copy.loot);
+		const gains = loot.rows.filter(({ direction }) => direction === 'gain');
+		const knownValues = gains.map(durableImmediateCopper);
+		const total = loot.economy.immediateCopper
+			?? knownValues.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
+		summary.createSpan({ text: copy.durableValue });
+		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
+		if (gains.length === 0) {
+			region.createEl('p', { text: copy.durableEmpty });
+			return;
+		}
+		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
+		for (const row of gains) {
+			const item = list.createEl('li');
+			const identity = item.createDiv();
+			identity.createEl('strong', { text: durableLootName(row.name, row.namespace, this.actions.getLocale()) });
+			identity.createSpan({ text: `×${String(row.netQuantity)}` });
+			const value = durableImmediateCopper(row);
+			item.createSpan({ text: value === null ? copy.valuePending : simpleMoney(value, this.actions.getLocale()) });
+		}
+	}
+
+	private renderLiveLoot(
+		container: HTMLElement,
+		loot: LiveSessionLootState,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
+		region.setAttr('aria-label', copy.loot);
+		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
+		summary.createSpan({ text: copy.observedValue });
+		const total = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
+		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
+		if (loot.status === 'idle' || loot.rows.length === 0) {
+			region.createEl('p', { text: loot.status !== 'idle' && loot.restored ? copy.restoredEmpty : copy.empty });
+			return;
+		}
+		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
+		for (const row of loot.rows) {
+			const item = list.createEl('li');
+			const identity = item.createDiv();
+			identity.createEl('strong', { text: row.name });
+			identity.createSpan({ text: `×${String(row.quantity)}` });
+			item.createSpan({ text: row.totalCopper === null ? copy.valuePending : simpleMoney(row.totalCopper, this.actions.getLocale()) });
+		}
+		if (loot.error !== null) {
+			const status = region.createEl('p', { text: copy.enrichmentPending, cls: 'tyrian-companion-session__context' });
+			status.setAttr('role', 'status');
+		}
 	}
 
 	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
@@ -1074,6 +1204,61 @@ export class TyrianCompanionView extends ItemView {
 			this.refreshInterval = null;
 		}
 	}
+}
+
+function simpleSessionCopy(locale: Locale) {
+	return locale === 'es' ? {
+		session: 'Sesión de farmeo', ready: 'Listo para empezar', start: 'Iniciar sesión',
+		missingKey: 'Vincula la clave API en Ajustes para empezar.', preparing: 'Preparando la sesión',
+		capturing: 'Capturando el inventario inicial…', active: 'Sesión activa', observing: 'Observando botín automáticamente',
+		finish: 'Terminar', observationFailed: 'La sesión está activa, pero la observación en vivo se ha detenido. No habrá avisos hasta que se recupere.',
+		finishing: 'Terminando sesión', reconciling: 'Reconciliando el inventario y guardando el resumen…',
+		reviewNeeded: 'La sesión necesita revisión', reviewNeededDetail: 'No se pudo cerrar el resumen automáticamente. Revisa solo esta excepción para conservarlo.', review: 'Revisar',
+		summary: 'Resumen de la sesión', saved: 'Resumen guardado', saving: 'Guardando resumen…',
+		notSaved: 'Resumen local pendiente de guardar', localSummary: 'Resumen local disponible', retrySave: 'Reintentar guardado',
+		newSession: 'Nueva sesión', loot: 'Botín observado', durableValue: 'Valor neto guardado', durableEmpty: 'El resumen guardado no contiene ganancias.',
+		observedValue: 'Valor observado', empty: 'Aún no hay ganancias visibles en la API.',
+		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
+		valuePending: 'Valor pendiente', enrichmentPending: 'Algunos nombres o precios siguen pendientes de la API pública.',
+		accountReady: 'Cuenta conectada', accountUnchecked: 'La conexión se comprobará al iniciar', accountUnavailable: 'Cuenta no disponible',
+	} as const : {
+		session: 'Farming session', ready: 'Ready to start', start: 'Start session',
+		missingKey: 'Link the API key in Settings to start.', preparing: 'Preparing session',
+		capturing: 'Capturing the initial inventory…', active: 'Session active', observing: 'Observing loot automatically',
+		finish: 'Finish', observationFailed: 'The session is active, but live observation has stopped. There will be no alerts until it recovers.',
+		finishing: 'Finishing session', reconciling: 'Reconciling inventory and saving the summary…',
+		reviewNeeded: 'The session needs review', reviewNeededDetail: 'The summary could not close automatically. Review this exception only to preserve it.', review: 'Review',
+		summary: 'Session summary', saved: 'Summary saved', saving: 'Saving summary…',
+		notSaved: 'Local summary pending save', localSummary: 'Local summary available', retrySave: 'Retry save',
+		newSession: 'New session', loot: 'Observed loot', durableValue: 'Saved net value', durableEmpty: 'The saved summary contains no gains.',
+		observedValue: 'Observed value', empty: 'No gains are visible in the API yet.',
+		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',
+		valuePending: 'Value pending', enrichmentPending: 'Some names or prices are still pending from the public API.',
+		accountReady: 'Account connected', accountUnchecked: 'Connection will be checked when starting', accountUnavailable: 'Account unavailable',
+	} as const;
+}
+
+function accountSummary(connection: ConnectionState, copy: ReturnType<typeof simpleSessionCopy>): string {
+	if (connection.status === 'connected' || connection.status === 'warning') {
+		return `${copy.accountReady} · ${connection.details.account.name}`;
+	}
+	if (connection.status === 'idle' || connection.status === 'checking') return copy.accountUnchecked;
+	return copy.accountUnavailable;
+}
+
+function simpleMoney(copper: number, locale: Locale): string {
+	return formatLootMoney(copper, locale).visual;
+}
+
+function durableImmediateCopper(row: LootPresentationRow): number | null {
+	return row.valuation.status === 'complete' || row.valuation.status === 'partial'
+		? row.valuation.immediateCopper : null;
+}
+
+function durableLootName(name: string, namespace: LootPresentationRow['namespace'], locale: Locale): string {
+	if (!/#\d+/u.test(name)) return name;
+	if (locale === 'es') return namespace === 'item' ? 'Objeto guardado' : 'Moneda guardada';
+	return namespace === 'item' ? 'Stored item' : 'Stored currency';
 }
 
 export class ConfirmDiscardSessionModal extends Modal {

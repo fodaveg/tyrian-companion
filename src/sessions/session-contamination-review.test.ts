@@ -166,7 +166,7 @@ describe('session contamination review', () => {
 
 		expect(review).toMatchObject({
 			declaration: { status: 'unsure' },
-			classification: { status: 'estimated', permissions: { finalize: false } },
+			classification: { status: 'estimated', permissions: { finalize: true } },
 		});
 	});
 

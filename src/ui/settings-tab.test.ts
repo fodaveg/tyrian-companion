@@ -14,6 +14,7 @@ import {
 } from './settings-i18n';
 import {
 	TyrianCompanionSettingTab,
+	goldThresholdToCopper,
 	isActiveSettingsCategory,
 	nextSettingsCategory,
 	projectLocalDebugStatus,
@@ -22,6 +23,31 @@ import {
 	runSettingWrite,
 	SettingsWriteQueue,
 } from './settings-tab';
+
+describe('essential alert threshold', () => {
+	it('accepts a user-facing gold amount while preserving whole copper internally', () => {
+		expect(goldThresholdToCopper('900')).toBe(9_000_000);
+		expect(goldThresholdToCopper('1.25')).toBe(12_500);
+		expect(goldThresholdToCopper('-1')).toBe('invalid');
+		expect(goldThresholdToCopper('0.00001')).toBe('invalid');
+	});
+
+	it('marks an invalid gold amount and announces actionable feedback without saving it', async () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Alert me from');
+		if (definition === undefined) throw new Error('Expected alert threshold setting.');
+		const control = renderControl(definition, 'text');
+
+		await control.change('-1');
+
+		expect(control.ariaInvalid).toBe('true');
+		expect(control.feedbackRole).toBe('alert');
+		expect(control.feedback).toBe('Enter a non-negative gold amount with at most four decimal places.');
+		expect(plugin.settings.halloweenValueThresholdCopper).toBe(DEFAULT_SETTINGS.halloweenValueThresholdCopper);
+	});
+});
 
 describe('Settings i18n projection', () => {
 	it('keeps the connection error projection exhaustive for every gateway code', () => {
@@ -308,6 +334,9 @@ interface FakeControl {
 	disabled: boolean;
 	options: readonly string[];
 	value: string;
+	ariaInvalid: string | null;
+	feedback: string;
+	feedbackRole: string | null;
 	change(value: string): Promise<void>;
 }
 
@@ -346,15 +375,26 @@ function renderControl(
 ): FakeControl {
 	let listener: (value: string) => Promise<void> | void = () => undefined;
 	let selectedValue = '';
+	let feedback = '';
+	const attributes = new Map<string, string>();
+	const feedbackAttributes = new Map<string, string>();
 	const options: string[] = [];
 	const component = {
 		disabled: false,
+		inputEl: {
+			setAttr: (name: string, value: string) => { attributes.set(name, value); },
+			removeAttribute: (name: string) => { attributes.delete(name); },
+		},
 		addOption: (value: string) => { options.push(value); return component; },
 		setValue: (value: string) => { selectedValue = value; return component; },
 		setDisabled: (disabled: boolean) => { component.disabled = disabled; return component; },
 		onChange: (next: typeof listener) => { listener = next; return component; },
 	};
 	const setting = {
+		descEl: { createDiv: () => ({
+			setAttr: (name: string, value: string) => { feedbackAttributes.set(name, value); },
+			setText: (value: string) => { feedback = value; },
+		}) },
 		addDropdown: (render: (control: typeof component) => unknown) => { if (kind === 'dropdown') render(component); return setting; },
 		addText: (render: (control: typeof component) => unknown) => { if (kind === 'text') render(component); return setting; },
 	};
@@ -362,6 +402,9 @@ function renderControl(
 	return {
 		get disabled() { return component.disabled; },
 		get value() { return selectedValue; },
+		get ariaInvalid() { return attributes.get('aria-invalid') ?? null; },
+		get feedback() { return feedback; },
+		get feedbackRole() { return feedbackAttributes.get('role') ?? null; },
 		options,
 		change: async (value) => { await listener(value); },
 	};

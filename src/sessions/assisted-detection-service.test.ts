@@ -35,6 +35,19 @@ describe('AssistedDetectionService', () => {
 		expect(harness.scheduler.starts).toEqual([15 * 60_000]);
 	});
 
+	it('arms from the committed session baseline without a second capture or blind gap', () => {
+		const harness = createHarness([]);
+		const baseline = snapshot('session-baseline', 0, 0);
+		const state = harness.service.armFromSnapshot(baseline, 120_000);
+
+		expect(state).toMatchObject({
+			status: 'armed', lastSnapshotAt: baseline.completedAt,
+			scheduler: { status: 'scheduled', intervalMs: 120_000 },
+		});
+		expect(harness.captures()).toBe(0);
+		expect(harness.scheduler.starts).toEqual([120_000]);
+	});
+
 	it('deduplicates concurrent arm requests', async () => {
 		let resolveSnapshot!: (value: StorageSnapshot) => void;
 		const pending = new Promise<StorageSnapshot>((resolve) => { resolveSnapshot = resolve; });

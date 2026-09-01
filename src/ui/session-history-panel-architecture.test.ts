@@ -9,15 +9,17 @@ describe('H9.7 durable session history boundary', () => {
 		expect(source).not.toMatch(/sessionRef\s*:|accountRef\s*:/u);
 	});
 
-	it('routes the only scan through the explicit panel action instead of view open or render', () => {
+	it('keeps history off the core surface, with global scans explicit and archival checks exact', () => {
 		const panel = readFileSync(new URL('session-history-panel.ts', import.meta.url), 'utf8');
 		const companion = readFileSync(new URL('companion-view.ts', import.meta.url), 'utf8');
 		const main = readFileSync(new URL('../main.ts', import.meta.url), 'utf8');
 		expect(panel).toContain("button.addEventListener('click', () => { void controller.load(); })");
-		expect(companion).toContain('mountSessionHistoryPanel(surface, locale, this.sessionHistoryController)');
+		expect(companion).not.toContain('mountSessionHistoryPanel(');
 		expect(companion).not.toMatch(/onOpen\(\)[\s\S]{0,250}loadSessionHistory/u);
 		expect(main).toContain('return await this.sessionHistory.scan();');
 		expect(main.match(/this\.sessionHistory\.scan\(\)/gu)).toHaveLength(1);
+		expect(main).toContain('await this.sessionHistory.readSession(await sha256Text(runtime.state.sessionId))');
+		expect(main.match(/this\.sessionHistory\.readSession\(/gu)).toHaveLength(1);
 	});
 
 	it('uses local typed ES/EN copy and the required accessible responsive contracts', () => {

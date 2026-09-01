@@ -60,7 +60,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(text(right.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
 	});
 
-	it('preserves advisor content, filters and focus while the shared action panel updates', async () => {
+	it('preserves advisor content, filters and focus while an expert palette action runs', async () => {
 		installDom();
 		let finish!: () => void;
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
@@ -73,9 +73,8 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		search.value = 'material';
 		search.dispatch('input');
 		search.focus();
-		const openAction = walk(root).find((element) => element.attributes.get('data-command-id') === 'open-companion')!;
-		const openButton = openAction.children.find((element) => element.tag === 'button')!;
-		openButton.dispatch('click');
+		expect(walk(root).some((element) => element.attributes.has('data-command-id'))).toBe(false);
+		void controller.run('open-companion');
 		await Promise.resolve();
 		expect(find(root, 'input').find((input) => input.type === 'search')).toBe(search);
 		expect(search.value).toBe('material');
@@ -87,7 +86,7 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(activeDocument.activeElement).toBe(search);
 	});
 
-	it('projects view-owned analysis busy into the retained panel without remounting it', async () => {
+	it('projects view-owned analysis busy on the local action without mounting the legacy panel', async () => {
 		installDom();
 		let finish!: () => void;
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
@@ -96,22 +95,18 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
-		const panelAction = walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')!;
-		const panelButton = panelAction.children.find((element) => element.tag === 'button')!;
 		const analyzeButton = find(root, 'button').find((candidate) => candidate.textContent === 'Analizar sin escribir')!;
-		expect(panelButton.disabled).toBe(false);
+		expect(walk(root).some((element) => element.attributes.has('data-command-id'))).toBe(false);
 
 		analyzeButton.dispatch('click');
-		expect(walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')).toBe(panelAction);
-		expect(panelAction.attributes.get('data-state')).toBe('running');
-		expect(panelButton.disabled).toBe(true);
+		expect(analyzeButton.textContent).toBe('Analizando…');
+		expect(analyzeButton.disabled).toBe(true);
 
 		finish();
 		await Promise.resolve();
 		await Promise.resolve();
-		expect(walk(root).find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')).toBe(panelAction);
-		expect(panelAction.attributes.get('data-state')).toBe('idle');
-		expect(panelButton.disabled).toBe(false);
+		expect(analyzeButton.textContent).toBe('Analizar sin escribir');
+		expect(analyzeButton.disabled).toBe(false);
 	});
 
 	it('opens without capturing or writing, and a single click on the one guided button runs the whole sync once', async () => {
