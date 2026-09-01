@@ -211,10 +211,19 @@ export class TyrianCompanionView extends ItemView {
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
 		this.renderSimpleSession(surface, connectionState, sessionState, projection);
+		this.renderPendingConfirmationSlot(surface, now);
 		this.renderHalloweenAlerts(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
+	}
+
+	/** Owns the slot the background refresh repaints in place, so the queue never needs a full rerender. */
+	private renderPendingConfirmationSlot(container: HTMLElement, now: number): void {
+		const slot = container.createDiv();
+		this.pendingConfirmationContainer = slot;
+		this.pendingConfirmationKey = this.projectPendingConfirmationKey(now);
+		this.renderPendingConfirmation(slot, now);
 	}
 
 	/** Bridges the data-only Halloween panel onto the Companion surface and the runtime catalogue. */

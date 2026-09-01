@@ -4,6 +4,7 @@ import { TyrianCompanionView, type CompanionActions } from './companion-view';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenPriceNoticeV1 } from '../halloween/halloween-price-alert';
+import type { PendingProposal } from '../sessions/pending-proposal-model';
 import type { SessionState } from '../sessions/session';
 
 /**
@@ -46,6 +47,31 @@ describe('Companion Halloween alert surface', () => {
 		acknowledge?.click();
 		await Promise.resolve();
 		expect(acknowledgeHalloweenPriceNotice).toHaveBeenCalledWith('price-notice');
+	});
+});
+
+describe('Companion pending proposal surface', () => {
+	it('renders the queued proposal and reviews it from the mounted panel', async () => {
+		const reviewPendingProposal = vi.fn(async () => true);
+		const openPendingSessionStart = vi.fn();
+		const { contentEl, render } = mountCompanion({
+			reviewPendingProposal, openPendingSessionStart,
+			getPendingProposalState: () => ({ status: 'ready', pendingCount: 1, next: freshProposal() }),
+		});
+
+		render();
+
+		const section = find(contentEl, (node) => node.className.includes('tyrian-companion-view__pending'));
+		expect(section?.attributes.get('aria-label')).toBe('Confirmaciones de farmeo pendientes');
+		expect(texts(contentEl)).toContain('1 confirmación pendiente');
+		const review = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Revisar e iniciar');
+		expect(review).toBeDefined();
+
+		review?.click();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(reviewPendingProposal).toHaveBeenCalledWith(expect.objectContaining({ proposalId: 'proposal' }));
+		expect(openPendingSessionStart).toHaveBeenCalledWith(expect.objectContaining({ proposalId: 'proposal' }), null);
 	});
 });
 
@@ -127,6 +153,15 @@ function armedDetection(): AssistedDetectionState {
 			lastAttemptAt: attemptedAt, lastSuccessAt: attemptedAt, consecutiveFailures: 0,
 		},
 	};
+}
+
+function freshProposal(): PendingProposal {
+	return {
+		version: 1, phase: 'start', proposalId: 'proposal', accountId: 'account',
+		binding: { kind: 'idle', ruleSetId: 'rules', ruleSetVersion: 1 },
+		proposal: { evidenceQuality: 'complete' }, detectedAt: '2026-08-31T09:59:00.000Z',
+		staleAt: '2099-01-01T00:00:00.000Z',
+	} as unknown as PendingProposal;
 }
 
 function unreadHalloweenState() {
