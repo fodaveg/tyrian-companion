@@ -116,11 +116,17 @@ describe('buildCompanionStatus', () => {
 		expect(projection.refreshEveryMs).toBe(1_000);
 	});
 
-	it('freezes provisional duration at the final snapshot and reports invalid clocks', () => {
+	it('freezes provisional duration at the stop boundary and reports invalid clocks', () => {
 		const provisional = provisionalSession();
 		expect(buildCompanionStatus(input({ session: provisional, now: NOW + 999_000 })).items[1]?.detail)
 			.toBe('00:05:00 · final snapshot captured');
-		const invalid = { ...provisional, finalSnapshot: { ...provisional.finalSnapshot, completedAt: '2026-08-14T11:00:00.000Z' } };
+		// The final capture waits out the API settlement window, so it lands minutes after the
+		// player stopped and must not stretch the duration the note bills for that same session.
+		const late = { ...provisional, finalSnapshot: { ...provisional.finalSnapshot, completedAt: new Date(NOW + 900_000).toISOString() } };
+		expect(buildCompanionStatus(input({ session: late })).items[1]?.detail)
+			.toBe('00:05:00 · final snapshot captured');
+		// The stop boundary is therefore the timestamp whose corruption has to surface as a dash.
+		const invalid = { ...provisional, stoppedAt: '2026-08-14T11:00:00.000Z' };
 		const projection = buildCompanionStatus(input({ session: invalid }));
 		expect(projection.items[1]?.detail).toBe('— · final snapshot captured');
 		expect(projection.errors[0]).toContain('clock window');
