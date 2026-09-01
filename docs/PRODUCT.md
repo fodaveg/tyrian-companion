@@ -27,6 +27,32 @@ El producto nunca promete conocer «todo el loot»: la API de Guild Wars 2 ofrec
 
 Ante datos desconocidos o una regla insuficiente, el advisor debe recomendar conservar o revisar, nunca destruir.
 
+## Decisiones de rumbo del 2026-09-01
+
+Tomadas por David tras la auditoría de cinco ejes de esa fecha. Se anotan aquí porque las tres se
+habían dado por abiertas en discusiones anteriores y ninguna lo está.
+
+**La sesión de farmeo es el núcleo del producto.** No se degrada a función secundaria. La auditoría
+señaló que compite con gw2efficiency y con DRF en desventaja de método, porque medir por diferencia
+de instantáneas nunca verá lo que ve un lector del flujo de objetos dentro del juego. La decisión es
+seguir, con esa desventaja conocida y declarada, no descubierta más tarde.
+
+**Halloween y la Bolsa de truco o trato se mantienen como parte de primera.** El origen del proyecto
+es trackear lo que entra en el Laberinto del Rey Loco, y de ahí viene el peso del objeto `36038` en
+el modelo económico, en la Base de Halloween y en el mapa `866` de la política shadow. Eso no es
+deriva de alcance: es el propósito con el que nació el plugin. La auditoría lo leyó como una fijación
+estacional desproporcionada porque ese origen no estaba escrito en ninguna parte; queda escrito aquí
+para que la próxima revisión no vuelva a proponer sacarlo.
+
+**No se abre el frente de «qué me falta para X»** (materiales que faltan para una legendaria, una
+colección o un ascendido). La auditoría lo propuso como la funcionalidad con más valor por línea
+escrita y la que mejor encaja con vivir dentro de un vault. Queda descartado para esta versión: no
+se empieza, y proponerlo de nuevo exige que David lo reabra.
+
+**La detección asistida se queda y tiene que funcionar** (decidido el mismo día). Se propuso
+eliminarla junto con la instrumentación de piloto que mide su precisión. La vía es cablear y
+verificar, nunca amputar superficie.
+
 ## Alcance de v1
 
 La primera versión de producto incluye:
