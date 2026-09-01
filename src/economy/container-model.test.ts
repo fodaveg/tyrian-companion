@@ -44,7 +44,7 @@ function model(): ContainerModelV1 {
 			},
 		],
 		excluded: [
-			{ category: 'Excluded sample remainder', sampleUnits: 3_000, reason: 'unsupported_long_tail' },
+			{ category: 'Excluded sample remainder', sampleUnits: 3_000, reason: 'unsupported_long_tail', items: [] },
 		],
 		uncertainty: {
 			method: 'confidence_interval',

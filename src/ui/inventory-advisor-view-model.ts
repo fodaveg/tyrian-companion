@@ -22,6 +22,7 @@ export interface InventoryAdvisorViewRow {
 	coverage: InventoryAdvisorPresentationRow['coverage'];
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryAdvisorPresentationRow['discardProof'];
+	containerSeason?: InventoryAdvisorPresentationRow['containerSeason'];
 	containerEconomy?: InventoryAdvisorPresentationRow['containerEconomy'];
 	equipmentSalvage?: InventoryAdvisorPresentationRow['equipmentSalvage'];
 }
@@ -73,6 +74,7 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 				}),
 				irreversibleReviewOnly: row.irreversibleReviewOnly,
 				discardProof: row.discardProof === null ? null : structuredClone(row.discardProof),
+				containerSeason: row.containerSeason == null ? null : { ...row.containerSeason },
 				containerEconomy: row.containerEconomy == null ? null : structuredClone(row.containerEconomy),
 				equipmentSalvage: row.equipmentSalvage == null ? null : structuredClone(row.equipmentSalvage),
 			})),

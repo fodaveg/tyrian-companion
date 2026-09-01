@@ -11,7 +11,7 @@ import {
 	IndexedDbHalloweenStore,
 } from './halloween-store';
 
-const NOW = Date.parse('2026-08-31T12:00:00.000Z');
+const NOW = Date.parse('2026-10-31T12:00:00.000Z');
 
 describe('Halloween price alert runtime', () => {
 	it('does nothing while disabled and never opens the H11 database by construction', async () => {

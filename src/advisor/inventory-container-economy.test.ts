@@ -13,7 +13,10 @@ import {
 	type InventoryContainerEconomyInputV1,
 } from './inventory-container-economy';
 
-const AS_OF = '2026-08-16T05:23:00.000Z';
+// Inside the declared Halloween window. The curated pack is only trusted between
+// its human activation and its TTL, and only advises while the festival is on.
+const AS_OF = '2026-10-16T05:23:00.000Z';
+const CAPTURED_AT = '2026-10-16T05:22:30.000Z';
 
 describe('H4.19 inventory container economy', () => {
 	it('retains a complete pending fixture that fails closed before human activation', () => {
@@ -29,7 +32,8 @@ describe('H4.19 inventory container economy', () => {
 		});
 		expect(isInventoryContainerEconomyPack(value.economyPack)).toBe(true);
 		expect(value.economyPack.expectedPriceItemIds).toEqual([
-			36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002,
+			36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_674, 79_677, 79_679,
+			89_002, 89_007, 89_065, 89_070, 89_071,
 		]);
 		expect(isInventoryContainerPriceEvidence(value.prices)).toBe(true);
 		expect(evaluateInventoryContainerEconomy(value)).toEqual({ status: 'review', reason: 'activation_pending' });
@@ -108,12 +112,14 @@ describe('H4.19 inventory container economy', () => {
 	});
 
 	it('makes human activation effective at its exact timestamp, never before it', () => {
-		const before = fixture('open');
-		before.asOf = '2026-08-16T05:22:23.999Z';
+		const activatedAt = '2026-10-16T05:22:24.000Z';
+		const before = activatedAtSeasonally(fixture('open'), activatedAt);
+		before.asOf = '2026-10-16T05:22:23.999Z';
 		expect(evaluateInventoryContainerEconomy(before)).toEqual({ status: 'review', reason: 'activation_expired' });
-		const exact = fixture('open');
-		exact.asOf = '2026-08-16T05:22:24.000Z';
+		const exact = activatedAtSeasonally(fixture('open'), activatedAt);
+		exact.asOf = activatedAt;
 		exact.prices.capturedAt = exact.asOf;
+		exact.marketDepth!.capturedAt = exact.asOf;
 		expect(evaluateInventoryContainerEconomy(exact)).toMatchObject({ status: 'ready', decision: { action: 'open' } });
 	});
 
@@ -160,10 +166,19 @@ describe('H4.19 inventory container economy', () => {
 		['partial batch', (value: InventoryContainerEconomyInputV1) => {
 			const missing = value.prices.items.pop()!; value.prices.missingItemIds = [missing.itemId]; value.prices.status = 'partial';
 		}, 'price_partial'],
-		['stale batch', (value: InventoryContainerEconomyInputV1) => { value.prices.capturedAt = '2026-08-14T20:00:00.000Z'; }, 'price_stale'],
+		['stale batch', (value: InventoryContainerEconomyInputV1) => { value.prices.capturedAt = '2026-10-14T20:00:00.000Z'; }, 'price_stale'],
 		['identity drift', (value: InventoryContainerEconomyInputV1) => { value.prices.snapshotId = 'snapshot-foreign'; }, 'price_incoherent'],
 		['foreign schema', (value: InventoryContainerEconomyInputV1) => { value.prices.schemaVersion = 'foreign-schema'; }, 'price_incoherent'],
-		['missing outcome bid', (value: InventoryContainerEconomyInputV1) => { value.prices.items[1]!.bid = null; }, 'price_missing'],
+		// A quote without a bid is only unknown when the ORDER BOOK contradicts it.
+		// The measured no-buyer case is covered by its own behaviour test below.
+		['bid missing while the order book still shows buyers', (value: InventoryContainerEconomyInputV1) => {
+			value.prices.items[1]!.bid = null;
+		}, 'open_ev_partial'],
+		['quote absent from a complete batch', (value: InventoryContainerEconomyInputV1) => {
+			value.prices.items[1]!.itemId = 999_999;
+			value.prices.requestedItemIds = value.prices.items.map((item) => item.itemId)
+				.sort((left, right) => left - right);
+		}, 'price_incoherent'],
 		['missing listings port', (value: InventoryContainerEconomyInputV1) => { value.marketDepth = null; }, 'market_depth_missing'],
 		['partial listings evidence', (value: InventoryContainerEconomyInputV1) => {
 			value.marketDepth!.items[0] = { itemId: value.marketDepth!.items[0]!.itemId,
@@ -181,6 +196,85 @@ describe('H4.19 inventory container economy', () => {
 		expect(evaluateInventoryContainerEconomy(value)).toEqual({ status: 'review', reason });
 	});
 
+	it('advises on the real market where six of the eight liquid outcomes have no buyer at all', () => {
+		const result = evaluateInventoryContainerEconomy(todaysMarket());
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		const explanation = result.liquidOnly.explanation;
+		expect(explanation.routes.map((route) => route.saleBasis)).toEqual(['immediate', 'listing']);
+
+		const immediate = explanation.routes[0]!;
+		expect(immediate.execution).toBe('guaranteed_buyer');
+		expect(immediate.open.coverage).toBe('declared_zero');
+		expect(immediate.open.noCounterpartyItemIds).toEqual([36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002]);
+		expect(immediate.sellNow).toMatchObject({ route: 'instant_sell', unitCopper: 358, netCopper: 304 });
+		expect(immediate.open.evPerContainerMicroCopper).toBe(207_369_813);
+		expect(immediate.threshold.requiredOpenMicroCopper).toBe('334400000');
+		expect(immediate.decision).toEqual({ action: 'sell', sellRoute: 'instant_sell' });
+
+		const listing = explanation.routes[1]!;
+		expect(listing.execution).toBe('reference_listing');
+		expect(listing.sellNow).toMatchObject({ route: 'listing', unitCopper: 400, netCopper: 340 });
+		expect(listing.open.evPerContainerMicroCopper).toBe(308_402_590);
+		expect(listing.threshold.requiredOpenMicroCopper).toBe('374000000');
+		expect(listing.decision).toEqual({ action: 'sell', sellRoute: 'listing' });
+
+		expect(explanation.preferredSaleBasis).toBe('immediate');
+		expect(explanation.caveats).toContain('outcomes_without_counterparty_valued_at_zero');
+		expect(explanation.caveats).toContain('listing_route_is_reference_not_demand');
+		expect(result.decision).toMatchObject({ action: 'sell', quantity: 1 });
+	});
+
+	it('recommends through the listing route when the bag itself has no buyer, and says it is a reference', () => {
+		const value = todaysMarket();
+		const bag = value.prices.items.find((item) => item.itemId === 36_038)!;
+		bag.bid = null;
+		value.marketDepth!.items.find((item) => item.itemId === 36_038)!.buys = [];
+		const result = evaluateInventoryContainerEconomy(value);
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		const explanation = result.liquidOnly.explanation;
+		expect(explanation.routes.map((route) => route.saleBasis)).toEqual(['listing']);
+		expect(explanation.preferredSaleBasis).toBe('listing');
+		expect(explanation.sellNow.route).toBe('listing');
+		expect(explanation.caveats).toContain('no_immediate_sale_route');
+		expect(result.decision).toMatchObject({ action: 'sell', quantity: 1 });
+	});
+
+	it('prices the excluded jackpot tail apart without moving the conservative recommendation', () => {
+		const result = evaluateInventoryContainerEconomy(todaysMarket());
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		const explanation = result.liquidOnly.explanation;
+		expect(explanation.tail).toMatchObject({
+			containerItemId: 36_038, bucketSampleUnits: 1_171, itemizedSampleUnits: 13,
+		});
+		expect(explanation.tail?.immediate.evPerContainerMicroCopper).toBe(78_574_569);
+		const immediate = explanation.routes[0]!;
+		// The tail is worth more than a third of the conservative figure and is
+		// still not enough to open: both facts are visible, neither is inferred.
+		expect(immediate.openIncludingTail?.evPerContainerMicroCopper).toBe(285_944_382);
+		expect(immediate.openIncludingTail?.meetsThreshold).toBe(false);
+		expect(immediate.open.evPerContainerMicroCopper).toBe(207_369_813);
+		expect(immediate.decision.action).toBe('sell');
+		expect(explanation.tail!.immediate.deviationPerContainerMicroCopper)
+			.toBeGreaterThan(immediate.openIncludingTail!.evPerContainerMicroCopper * 30);
+	});
+
+	it('stops advising outside the declared festival window and names the month it returns', () => {
+		const value = todaysMarket();
+		// 1 September: the pack is activated, in date, and the order book is fresh.
+		// Everything the old code checked says go; only the calendar says stop.
+		const outOfSeason = '2026-09-01T05:23:00.000Z';
+		value.asOf = outOfSeason;
+		value.prices.capturedAt = outOfSeason;
+		value.marketDepth!.capturedAt = outOfSeason;
+		expect(evaluateInventoryContainerEconomy(value)).toEqual({ status: 'review', reason: 'out_of_season' });
+		expect(value.economyPack.season).toEqual({
+			version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10,
+		});
+	});
+
 	it('returns invalid instead of throwing for hostile or malformed inputs', () => {
 		for (const value of [null, {}, { ...fixture('open'), prices: { then: () => { throw new Error('boom'); } } }]) {
 			expect(() => evaluateInventoryContainerEconomy(value)).not.toThrow();
@@ -188,6 +282,62 @@ describe('H4.19 inventory container economy', () => {
 		}
 	});
 });
+
+/**
+ * The order book as `/v2/commerce/listings` really served it on 2026-09-01.
+ *
+ * Six of the eight liquid outcomes have zero buy orders and tens of millions of
+ * units on sale at 30 copper: that is their normal state all year, not a glitch
+ * of one capture. The two tonics the audit did not list are given the same
+ * shape as their sibling, which is the conservative reading.
+ */
+const TODAYS_BOOK: ReadonlyArray<{ itemId: number; bid: number | null; ask: number | null }> = [
+	{ itemId: 36_038, bid: 358, ask: 400 },
+	{ itemId: 36_041, bid: 67, ask: 72 },
+	{ itemId: 36_059, bid: null, ask: 30 },
+	{ itemId: 36_060, bid: null, ask: 30 },
+	{ itemId: 36_061, bid: null, ask: 30 },
+	{ itemId: 79_673, bid: null, ask: 2 },
+	{ itemId: 79_674, bid: 1_132_705, ask: 1_300_000 },
+	{ itemId: 79_677, bid: null, ask: 2 },
+	{ itemId: 79_679, bid: null, ask: 2 },
+	{ itemId: 89_002, bid: null, ask: 6 },
+	{ itemId: 89_007, bid: 320_307, ask: 360_000 },
+	{ itemId: 89_065, bid: 2_900_120, ask: 3_100_000 },
+	{ itemId: 89_070, bid: 266_276, ask: 300_000 },
+	{ itemId: 89_071, bid: 270_038, ask: 305_000 },
+];
+
+function todaysMarket(): InventoryContainerEconomyInputV1 {
+	const value = fixture('sell');
+	// One free bag, so every figure below is per bag and comparable line by line
+	// with the audited order book instead of with a stack multiple.
+	value.allocation = { ownedQuantity: 10, availableQuantity: 10, reservedQuantity: 3, exceptionQuantity: 2,
+		reviewQuantity: 4, freeQuantity: 1 };
+	value.prices.items = TODAYS_BOOK.map((entry) => ({
+		itemId: entry.itemId,
+		whitelisted: true,
+		bid: entry.bid === null ? null : { unitCopper: entry.bid, quantity: 100_000 },
+		ask: entry.ask === null ? null : { unitCopper: entry.ask, quantity: 30_000_000 },
+	}));
+	value.marketDepth!.items = TODAYS_BOOK.map((entry) => ({
+		itemId: entry.itemId,
+		coverage: 'complete' as const,
+		buys: entry.bid === null ? [] : [{ unitCopper: entry.bid, quantity: 100_000 }],
+		sells: entry.ask === null ? [] : [{ unitCopper: entry.ask, quantity: 30_000_000 }],
+	}));
+	return value;
+}
+
+/** Re-activates the pack inside the declared season and reseals its hash. */
+function activatedAtSeasonally(
+	value: InventoryContainerEconomyInputV1,
+	activatedAt: string,
+): InventoryContainerEconomyInputV1 {
+	value.economyPack.activation = { status: 'enabled', activatedAt };
+	value.economyPack.sha256 = sha256InventoryContainerEconomyPack(value.economyPack);
+	return value;
+}
 
 function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyInputV1 {
 	const loaded = createInventoryAdvisorBuiltinBundleProvider().load(AS_OF);
@@ -227,7 +377,7 @@ function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyIn
 			accountId: 'account-1',
 			snapshotId: 'snapshot-1',
 			schemaVersion: '2024-07-20T01:00:00.000Z',
-			capturedAt: '2026-08-16T05:22:30.000Z',
+			capturedAt: CAPTURED_AT,
 			source: 'gw2-commerce-prices',
 			requestedItemIds: structuredClone(economyPack.expectedPriceItemIds),
 			status: 'complete',
@@ -236,7 +386,7 @@ function fixture(route: 'open' | 'sell' | 'vendor'): InventoryContainerEconomyIn
 		},
 		marketDepth: {
 			version: 1,
-			capturedAt: '2026-08-16T05:22:30.000Z',
+			capturedAt: CAPTURED_AT,
 			source: 'gw2-commerce-listings',
 			requestedItemIds: structuredClone(economyPack.expectedPriceItemIds),
 			status: 'complete',

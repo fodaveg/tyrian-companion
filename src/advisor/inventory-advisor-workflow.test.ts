@@ -118,7 +118,10 @@ describe('H5.11 inventory advisor workflow', () => {
 	it('loads the human-reviewed bundle but invents no action when economic evidence is unavailable', async () => {
 		const fixture = reviewedDiscardFixture();
 		rebaseEvidence(fixture.evidence, '2026-08-16T05:22:30.000Z');
-		const expectedPriceItemIds = [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002];
+		const expectedPriceItemIds = [
+			36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_674, 79_677, 79_679,
+			89_002, 89_007, 89_065, 89_070, 89_071,
+		];
 		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence, containerPrices: {
 			version: INVENTORY_CONTAINER_PRICE_EVIDENCE_VERSION,
 			accountId: fixture.evidence.accountId,

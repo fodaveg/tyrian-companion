@@ -8,20 +8,32 @@ import {
 	isHalloweenPriceValidProjection,
 } from './halloween-price-alert';
 
-const NOW = Date.parse('2026-08-31T12:00:00.000Z');
+const NOW = Date.parse('2026-10-31T12:00:00.000Z');
 
 describe('Halloween price projection', () => {
+	it('does not arm outside the declared festival window, even on a crossing it would otherwise fire', () => {
+		// Identical history to the crossing below, moved forward five months. The
+		// bag quotes all year, so only the calendar can tell these two apart.
+		const march = Date.parse('2027-03-31T12:00:00.000Z');
+		const daily = history(Array.from({ length: 30 }, (_, index) => index + 1), 40, march);
+		expect(evaluateHalloweenPrice(daily, march, 0)).toEqual({ status: 'out_of_season', returnsInMonth: 10 });
+		expect(evaluateHalloweenPrice(daily, march, 0).status).not.toBe('high');
+		const september = Date.parse('2026-09-01T12:00:00.000Z');
+		expect(evaluateHalloweenPrice(history(Array.from({ length: 30 }, (_, index) => index + 1), 40, september),
+			september, 0)).toEqual({ status: 'out_of_season', returnsInMonth: 10 });
+	});
+
 	it('uses today provisionally and the 30 complete immediately preceding UTC days', () => {
 		const daily = history(Array.from({ length: 30 }, (_, index) => index + 1), 40);
 		expect(evaluateHalloweenPrice(daily, NOW, 0)).toEqual({
-			status: 'high', dayUtc: '2026-08-31', bidCopper: 40, p90Copper: 27,
+			status: 'high', dayUtc: '2026-10-31', bidCopper: 40, p90Copper: 27,
 			capturedAtMs: NOW, referenceDays: 30, minimumAboveP90Bps: 0,
 		});
 	});
 
 	it('fails closed for any UTC gap, a null bid, or a missing provisional today close', () => {
-		const gap = history(Array.from({ length: 30 }, (_, index) => index + 1), 40).filter(({ dayUtc }) => dayUtc !== '2026-08-15');
-		expect(evaluateHalloweenPrice(gap, NOW, 0)).toMatchObject({ status: 'insufficient_history', missingDayUtc: '2026-08-15' });
+		const gap = history(Array.from({ length: 30 }, (_, index) => index + 1), 40).filter(({ dayUtc }) => dayUtc !== '2026-10-15');
+		expect(evaluateHalloweenPrice(gap, NOW, 0)).toMatchObject({ status: 'insufficient_history', missingDayUtc: '2026-10-15' });
 		const nullBid = history(Array.from({ length: 30 }, (_, index) => index + 1), 40);
 		nullBid[0]!.bid = null;
 		expect(evaluateHalloweenPrice(nullBid, NOW, 0).status).toBe('insufficient_history');
@@ -54,13 +66,13 @@ describe('Halloween price projection', () => {
 		const notice = createHalloweenPriceNotice('vault', 'account', high, 24);
 		expect(isHalloweenPriceNotice(notice)).toBe(true);
 		expect(isHalloweenPriceNotice({ ...notice, bidCopper: notice.p90Copper })).toBe(false);
-		expect(isHalloweenPriceNotice({ ...notice, observedAt: '2026-08-31T12:00:00.001Z' })).toBe(false);
+		expect(isHalloweenPriceNotice({ ...notice, observedAt: '2026-10-31T12:00:00.001Z' })).toBe(false);
 		expect(isHalloweenPriceNotice({ ...notice, capturedAtMs: notice.capturedAtMs + 1 })).toBe(false);
 	});
 });
 
-function history(reference: number[], today: number): PriceHistoryDailyV1[] {
-	return [...reference.map((close, index) => daily(NOW - (30 - index) * 86_400_000, close)), daily(NOW, today)];
+function history(reference: number[], today: number, at = NOW): PriceHistoryDailyV1[] {
+	return [...reference.map((close, index) => daily(at - (30 - index) * 86_400_000, close)), daily(at, today)];
 }
 
 function daily(timestamp: number, closeCopper: number): PriceHistoryDailyV1 {

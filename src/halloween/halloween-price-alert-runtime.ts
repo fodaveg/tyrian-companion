@@ -21,8 +21,8 @@ export interface HalloweenPriceHistoryPort {
 }
 
 export type HalloweenPriceAlertRuntimeStatus =
-	| 'disabled' | 'loading' | 'waiting_account' | 'insufficient_history' | 'below' | 'high' | 'unread' | 'ready'
-	| 'store_unavailable' | 'store_corrupt' | 'store_future';
+	| 'disabled' | 'loading' | 'waiting_account' | 'out_of_season' | 'insufficient_history' | 'below' | 'high'
+	| 'unread' | 'ready' | 'store_unavailable' | 'store_corrupt' | 'store_future';
 
 export interface HalloweenPriceAlertRuntimeState {
 	status: HalloweenPriceAlertRuntimeStatus;
@@ -133,13 +133,20 @@ export class HalloweenPriceAlertRuntime {
 		}
 		const store = this.store;
 		if (store === null || accountRef === null || accountRef !== this.loadedAccountRef || !this.settings.enabled || this.disposed) return;
+		// Read the calendar BEFORE the history port. Out of season there is nothing
+		// to poll: staying armed for eleven months is the behaviour being removed.
+		const seasonal = evaluateHalloweenPrice([], nowMs, this.settings.minimumAboveP90Bps);
+		if (seasonal.status === 'out_of_season') {
+			this.setState({ status: 'out_of_season', projection: seasonal });
+			return;
+		}
 		try {
 			const fromDayUtc = priceHistoryDayUtc(Math.max(0, nowMs - 30 * DAY_MS));
 			const daily = await port.readDaily(36_038, fromDayUtc);
 			if (!this.owns(generation, store) || accountRef !== this.options.accountRef()) return;
 			const projection = evaluateHalloweenPrice(daily, nowMs, this.settings.minimumAboveP90Bps);
-			if (projection.status === 'insufficient_history') {
-				this.setState({ status: 'insufficient_history', projection });
+			if (projection.status === 'insufficient_history' || projection.status === 'out_of_season') {
+				this.setState({ status: projection.status, projection });
 				return;
 			}
 			const result = await store.commitPriceProjection(
@@ -270,7 +277,7 @@ export class HalloweenPriceAlertRuntime {
 function finishPriceAlertSpan(span: LocalDebugActionSpan, status: HalloweenPriceAlertRuntimeStatus): void {
 	if (status === 'disabled' || status === 'waiting_account') span.skip('unavailable', status);
 	else if (status.startsWith('store_')) span.failure(new Error(`halloween_alert_${status}`), 'storage_failure', status);
-	else if (status === 'insufficient_history') span.skip('skipped', status);
+	else if (status === 'insufficient_history' || status === 'out_of_season') span.skip('skipped', status);
 	else span.success(status);
 }
 

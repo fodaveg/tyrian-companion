@@ -968,8 +968,12 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 	cell.append(explanation);
 	const context = rowContextDetails(row, translator);
 	if (context !== null) cell.append(context);
+	const season = containerSeasonNotice(row, translator);
+	if (season !== null) cell.append(season);
 	const economy = containerEconomyDetails(row, translator);
 	if (economy !== null) cell.append(economy);
+	const tail = containerTailDetails(row, translator);
+	if (tail !== null) cell.append(tail);
 	const salvage = equipmentSalvageDetails(row, translator);
 	if (salvage !== null) cell.append(salvage);
 	return cell;
@@ -1009,8 +1013,12 @@ function renderCards(
 			if (context !== null) article.append(context);
 			const advanced = advancedEvidenceDetails(row.coverage, translator);
 			if (advanced !== null) article.append(advanced);
+			const season = containerSeasonNotice(row, translator);
+			if (season !== null) article.append(season);
 			const economy = containerEconomyDetails(row, translator);
 			if (economy !== null) article.append(economy);
+			const tail = containerTailDetails(row, translator);
+			if (tail !== null) article.append(tail);
 			const salvage = equipmentSalvageDetails(row, translator);
 			if (salvage !== null) article.append(salvage);
 			cards.append(article);
@@ -1369,8 +1377,130 @@ function containerEconomyDetails(
 	outside.textContent = translator.t('advisor.containerEconomy.outsideModel', {
 		units: economy.personal.valuation.outsideModelSampleUnits,
 	});
-	details.append(summary, list, outside);
+	details.append(summary, list, routesTable(economy.liquidOnly.explanation, translator), outside);
 	return details;
+}
+
+/**
+ * Both sale bases as two rows with their own verdict.
+ *
+ * They are shown side by side rather than merged because they answer different
+ * questions and can disagree: the immediate row is money a buyer is already
+ * offering, the listing row is a price nobody has yet accepted. The execution
+ * column carries that difference in words, so the second row can never be read
+ * as a promise of a sale.
+ */
+function routesTable(
+	explanation: NonNullable<InventoryAdvisorViewRow['containerEconomy']>['liquidOnly']['explanation'],
+	translator: Translator,
+): HTMLTableElement {
+	const table = createEl('table');
+	table.className = 'tyrian-inventory-advisor__container-routes';
+	const caption = createEl('caption');
+	caption.textContent = translator.t('advisor.containerEconomy.routes.title');
+	const head = createEl('thead');
+	const headRow = createEl('tr');
+	for (const key of ['basis', 'sale', 'open', 'threshold', 'verdict', 'execution'] as const) {
+		const cell = createEl('th');
+		cell.scope = 'col';
+		cell.textContent = translator.t(`advisor.containerEconomy.routes.${key}`);
+		headRow.append(cell);
+	}
+	head.append(headRow);
+	const body = createEl('tbody');
+	for (const route of explanation.routes) {
+		const row = createEl('tr');
+		const basis = createEl('th');
+		basis.scope = 'row';
+		basis.textContent = route.saleBasis === explanation.preferredSaleBasis
+			? translator.t('advisor.containerEconomy.routes.preferred', {
+				basis: translator.t(`advisor.containerEconomy.routes.basisName.${route.saleBasis}`),
+			})
+			: translator.t(`advisor.containerEconomy.routes.basisName.${route.saleBasis}`);
+		row.append(basis);
+		appendCell(row, formatInventoryAdvisorCopper(route.sellNow.netCopper, translator));
+		appendCell(row, route.open.coverage === 'complete'
+			? formatMicroCopper(route.open.evPerContainerMicroCopper, translator)
+			: translator.t('advisor.containerEconomy.routes.noCounterparty', {
+				value: formatMicroCopper(route.open.evPerContainerMicroCopper, translator),
+				ids: route.open.noCounterpartyItemIds.join(', '),
+			}));
+		appendCell(row, formatMicroCopperString(route.threshold.requiredOpenMicroCopper, translator));
+		appendCell(row, actionLabelFor(route.decision.action, translator));
+		appendCell(row, translator.t(`advisor.containerEconomy.routes.execution.${route.execution}`));
+		body.append(row);
+	}
+	table.append(caption, head, body);
+	return table;
+}
+
+/**
+ * The excluded tail, priced and kept strictly apart.
+ *
+ * It is a separate collapsed disclosure and never touches the recommendation.
+ * The standard deviation travels with the mean on purpose: for this bag it is
+ * two orders of magnitude larger, which is the only honest way to say that the
+ * tail is a real expected return and still not a plan for a hundred bags.
+ */
+function containerTailDetails(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+): HTMLDetailsElement | null {
+	const tail = row.containerEconomy?.liquidOnly.explanation.tail;
+	if (tail == null) return null;
+	const routes = row.containerEconomy?.liquidOnly.explanation.routes ?? [];
+	const details = createEl('details');
+	details.className = 'tyrian-inventory-advisor__container-tail';
+	const summary = createEl('summary');
+	summary.textContent = translator.t('advisor.containerEconomy.tail.title');
+	const intro = createEl('p');
+	intro.textContent = translator.t('advisor.containerEconomy.tail.intro');
+	const list = createEl('dl');
+	for (const route of routes) {
+		const basisName = translator.t(`advisor.containerEconomy.routes.basisName.${route.saleBasis}`);
+		const withTail = route.openIncludingTail;
+		addDefinition(list, translator.t('advisor.containerEconomy.tail.ev', { route: basisName }),
+			withTail === null ? translator.t('advisor.view.value.unavailable')
+				: translator.t('advisor.containerEconomy.tail.variance', {
+					value: formatMicroCopper(withTail.evPerContainerMicroCopper, translator),
+					deviation: formatMicroCopper(withTail.deviationPerContainerMicroCopper, translator),
+					verdict: translator.t(withTail.meetsThreshold
+						? 'advisor.containerEconomy.tail.meetsThreshold'
+						: 'advisor.containerEconomy.tail.belowThreshold'),
+				}));
+		const basisTail = route.saleBasis === 'immediate' ? tail.immediate : tail.listing;
+		if (basisTail.unpricedItemIds.length > 0) {
+			addDefinition(list, translator.t('advisor.containerEconomy.tail.unpriced', { route: basisName }),
+				basisTail.unpricedItemIds.join(', '));
+		}
+	}
+	const itemized = createEl('p');
+	itemized.textContent = translator.t('advisor.containerEconomy.tail.itemized', {
+		itemized: tail.itemizedSampleUnits, bucket: tail.bucketSampleUnits,
+	});
+	details.append(summary, intro, list, itemized);
+	return details;
+}
+
+/** Out of the declared window the advisor says so instead of pretending to watch. */
+function containerSeasonNotice(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+): HTMLParagraphElement | null {
+	const season = row.containerSeason;
+	if (season == null) return null;
+	const notice = createEl('p');
+	notice.className = 'tyrian-inventory-advisor__season';
+	notice.setAttribute('role', 'status');
+	notice.textContent = translator.t('advisor.containerEconomy.season.outOfSeason', {
+		month: monthName(season.returnsInMonth, translator),
+	});
+	return notice;
+}
+
+function monthName(month: number, translator: Translator): string {
+	return new Intl.DateTimeFormat(translator.locale, { month: 'long', timeZone: 'UTC' })
+		.format(new Date(Date.UTC(2000, month - 1, 1)));
 }
 
 /** H9.16/H9.3 disclosure keeps every excluded output and optional preference visible. */

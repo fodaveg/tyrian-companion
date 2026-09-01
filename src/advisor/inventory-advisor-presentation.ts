@@ -85,6 +85,7 @@ export function buildInventoryAdvisorPresentation(
 			}
 			const allocations = allocationsForDecision(source.input, decision.itemId, decision.quantity, decision.allocations);
 			if (allocations === null) throw new Error('Decision allocations do not resolve to current holdings.');
+			const containerOutcome = containerEconomyFor(source, line, decision);
 			return {
 				id: decision.explanationRef,
 				itemId: line.itemId,
@@ -107,7 +108,8 @@ export function buildInventoryAdvisorPresentation(
 				}),
 				irreversibleReviewOnly: presentationAction === 'discard_review',
 				discardProof: discardProof === null ? null : structuredClone(discardProof),
-				containerEconomy: containerEconomyFor(source, line, decision),
+				containerSeason: containerOutcome.season,
+				containerEconomy: containerOutcome.economy,
 				equipmentSalvage: equipmentSalvageFor(source, line, decision),
 			} satisfies InventoryAdvisorPresentationRow;
 			});
@@ -342,19 +344,30 @@ function safeBasisPoints(difference: number, baseline: number): number | null {
 		? Number(value) : null;
 }
 
+interface ContainerOutcome {
+	economy: InventoryAdvisorPresentationRow['containerEconomy'];
+	season: InventoryAdvisorPresentationRow['containerSeason'];
+}
+
+const NO_CONTAINER_OUTCOME: ContainerOutcome = { economy: null, season: null };
+
 function containerEconomyFor(
 	source: InventoryAdvisorPresentationSource,
 	line: InventoryAdvisorLineV1,
 	decision: InventoryRecommendationDecisionV1,
-): InventoryAdvisorPresentationRow['containerEconomy'] {
-	if (!('discardContext' in source) || !['open', 'sell', 'vendor'].includes(decision.action)) return null;
+): ContainerOutcome {
+	// `review` is admitted only so the seasonal notice can reach a row the engine
+	// already parked; the economics below still need a route decision.
+	if (!('discardContext' in source) || !['open', 'sell', 'vendor', 'review'].includes(decision.action)) {
+		return NO_CONTAINER_OUTCOME;
+	}
 	const engine = source.discardContext.engineInput;
 	const economy = engine.containerEconomy;
-	if (economy === undefined) return null;
-	if (economy.pack.model.containerItemId !== line.itemId) return null;
+	if (economy === undefined) return NO_CONTAINER_OUTCOME;
+	if (economy.pack.model.containerItemId !== line.itemId) return NO_CONTAINER_OUTCOME;
 	const input = engine.input;
 	const item = input.catalog.items[String(line.itemId)];
-	if (item === undefined) return null;
+	if (item === undefined) return NO_CONTAINER_OUTCOME;
 	const explanations = new Map(source.result.report?.explanations.map((entry) => [entry.ref, entry.reasonCodes]) ?? []);
 	const availableRefs = new Set(line.positions.filter((position) => position.state === 'loose'
 		|| position.state === 'pending_claim').map((position) => position.ref));
@@ -403,14 +416,28 @@ function containerEconomyFor(
 		marketDepth: economy.marketDepth,
 		...(engine.personalValuation === undefined ? {} : { personalValuation: engine.personalValuation }),
 	});
-	return result.status === 'ready'
-		? structuredClone({
-			recommendation: result.decision,
-			recommendationBasis: result.recommendationBasis,
-			liquidOnly: result.liquidOnly,
-			personal: result.personal,
-		})
-		: null;
+	if (result.status === 'ready' && decision.action !== 'review') {
+		return {
+			economy: structuredClone({
+				recommendation: result.decision,
+				recommendationBasis: result.recommendationBasis,
+				liquidOnly: result.liquidOnly,
+				personal: result.personal,
+			}),
+			season: null,
+		};
+	}
+	if (result.status === 'review' && result.reason === 'out_of_season') {
+		return {
+			economy: null,
+			season: {
+				status: 'out_of_season',
+				seasonId: economy.pack.season.seasonId,
+				returnsInMonth: economy.pack.season.returnsInMonth,
+			},
+		};
+	}
+	return NO_CONTAINER_OUTCOME;
 }
 
 function equipmentSalvageFor(

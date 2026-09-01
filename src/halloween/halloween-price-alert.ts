@@ -1,4 +1,6 @@
 import { priceHistoryDayUtc, type PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
+import { seasonalWindowStatusAtMs } from '../economy/seasonal-window';
 
 const DAY_MS = 86_400_000;
 export const HALLOWEEN_PRICE_ALERT_ITEM_ID = 36_038;
@@ -24,6 +26,7 @@ export interface HalloweenPriceValidProjection {
 }
 
 export type HalloweenPriceProjection =
+	| { status: 'out_of_season'; returnsInMonth: number }
 	| { status: 'insufficient_history'; capturedAtMs: number | null; missingDayUtc: string | null }
 	| HalloweenPriceValidProjection;
 
@@ -53,6 +56,14 @@ export function evaluateHalloweenPrice(
 ): HalloweenPriceProjection {
 	if (!Number.isSafeInteger(nowMs) || nowMs < 0 || isoFromTimestamp(nowMs) === null || !validMinimum(minimumAboveP90Bps)) {
 		return { status: 'insufficient_history', capturedAtMs: null, missingDayUtc: null };
+	}
+	// The bag quotes all year, so nothing in the price series ever says the
+	// festival is over. Only the declared window does, and outside it a crossing
+	// is noise: the alert is not armed rather than fired and later explained.
+	// `undecidable` deliberately falls through: refusing to evaluate because a
+	// calendar could not be read would mute the alert during the festival.
+	if (seasonalWindowStatusAtMs(HALLOWEEN_SEASONAL_WINDOW, nowMs) === 'out_of_season') {
+		return { status: 'out_of_season', returnsInMonth: HALLOWEEN_SEASONAL_WINDOW.returnsInMonth };
 	}
 	const today = priceHistoryDayUtc(nowMs);
 	const byDay = new Map(daily.filter(({ itemId }) => itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)

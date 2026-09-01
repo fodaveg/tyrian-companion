@@ -6,8 +6,18 @@ import {
 	type ContainerDispositionKernelPolicy,
 	type ContainerBindingEvidence,
 } from '../economy/container-disposition-kernel';
-import { isContainerModel, type ContainerModelV1 } from '../economy/container-model';
+import {
+	containerModelPriceItemIds,
+	isContainerModel,
+	type ContainerModelV1,
+} from '../economy/container-model';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
+import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
+import {
+	isSeasonalWindow,
+	seasonalWindowStatusAt,
+	type SeasonalWindowV1,
+} from '../economy/seasonal-window';
 import {
 	isContainerPersonalValuation,
 	resolveContainerPersonalValuation,
@@ -40,6 +50,13 @@ export interface InventoryContainerEconomyPackV1 {
 	packId: string;
 	publishedAt: string;
 	validUntil: string;
+	/**
+	 * Recurring festival window. `validUntil` says when this pack stops being
+	 * trustworthy; `season` says when the festival it describes is actually on.
+	 * They are different facts and conflating them is why a Halloween surface
+	 * stayed armed in March: the bag quotes all year, so no price ever said so.
+	 */
+	season: SeasonalWindowV1;
 	activation: InventoryContainerEconomyActivation;
 	rulePack: { id: string; version: number; sha256: string; ruleId: string };
 	knowledgePackSha256: string;
@@ -98,6 +115,7 @@ export type InventoryContainerEconomyReviewReason =
 	| 'activation_pending'
 	| 'activation_revoked'
 	| 'activation_expired'
+	| 'out_of_season'
 	| 'rule_incoherent'
 	| 'model_incoherent'
 	| 'allocation_incoherent'
@@ -173,6 +191,10 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		if (Date.parse(input.asOf) < Date.parse(pack.activation.activatedAt)
 			|| Date.parse(input.asOf) < Date.parse(pack.publishedAt)
 			|| Date.parse(input.asOf) >= Date.parse(pack.validUntil)) return review('activation_expired');
+		// Out of the declared window there is nothing to advise about and nothing
+		// to poll for. An unreadable window is treated as out of season too: an
+		// advisor that cannot read its own calendar must not claim to be watching.
+		if (seasonalWindowStatusAt(pack.season, input.asOf) !== 'in_season') return review('out_of_season');
 		if (!ruleBinding(input)) return review('rule_incoherent');
 		if (!modelBinding(pack)) return review('model_incoherent');
 		if (!priceBinding(input)) return review(input.prices.status === 'complete'
@@ -186,11 +208,15 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		if (depthAge < -pack.policy.maxFutureSkewMs) return review('market_depth_future');
 		if (depthAge > pack.policy.maxPriceAgeMs) return review('market_depth_stale');
 		const quoteById = new Map(input.prices.items.map((item) => [item.itemId, item]));
-		if (pack.expectedPriceItemIds.some((itemId) => quoteById.get(itemId)?.bid === null)) {
+		// A quote that came back WITHOUT a bid is not a missing quote: it is a
+		// measured absence of demand, and for this bag six of its eight liquid
+		// outcomes are in that state every day of the year. Treating that as
+		// missing evidence is what kept the flagship item permanently in review.
+		if (pack.expectedPriceItemIds.some((itemId) => quoteById.get(itemId) === undefined)) {
 			return review('price_missing');
 		}
 		const containerQuote = quoteById.get(input.container.itemId);
-		if (!containerQuote?.bid) {
+		if (containerQuote === undefined || (containerQuote.bid === null && containerQuote.ask === null)) {
 			return review('price_partial');
 		}
 		const kernel = calculateContainerDispositionKernel({
@@ -248,11 +274,12 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 export function isInventoryContainerEconomyPack(value: unknown): value is InventoryContainerEconomyPackV1 {
 	try {
 		if (!record(value) || !exactKeys(value, [
-			'version', 'packId', 'publishedAt', 'validUntil', 'activation', 'rulePack', 'knowledgePackSha256',
+			'version', 'packId', 'publishedAt', 'validUntil', 'season', 'activation', 'rulePack', 'knowledgePackSha256',
 			'modelFingerprint', 'model', 'expectedPriceItemIds', 'policy', 'sources', 'sha256',
 		]) || value.version !== INVENTORY_CONTAINER_ECONOMY_VERSION || !identifier(value.packId)
 			|| !iso(value.publishedAt) || !iso(value.validUntil)
 			|| Date.parse(value.publishedAt) >= Date.parse(value.validUntil)
+			|| !isSeasonalWindow(value.season)
 			|| !activation(value.activation, value.publishedAt, value.validUntil)
 			|| !record(value.rulePack) || !exactKeys(value.rulePack, ['id', 'version', 'sha256', 'ruleId'])
 			|| !identifier(value.rulePack.id) || !positive(value.rulePack.version)
@@ -330,6 +357,7 @@ function halloweenContainerEconomyPack(
 		packId: 'tc.inventory-container-economy.halloween-v1',
 		publishedAt: '2026-08-14T20:30:00.000Z',
 		validUntil: '2026-11-12T18:04:33.000Z',
+		season: structuredClone(HALLOWEEN_SEASONAL_WINDOW),
 		activation: structuredClone(activation),
 		rulePack: structuredClone(binding.rulePack),
 		knowledgePackSha256: binding.knowledgePackSha256,
@@ -341,7 +369,7 @@ function halloweenContainerEconomyPack(
 			openAdvantageBps: 1_000,
 			maxPriceAgeMs: 15 * 60_000,
 			maxFutureSkewMs: 60_000,
-			saleBasis: 'immediate',
+			saleBasis: 'immediate_and_listing',
 		},
 		sources: [{
 			id: 'gw2-wiki-tot-bag-research-3161313',
@@ -467,8 +495,7 @@ function depthBinding(input: InventoryContainerEconomyInputV1): boolean {
 }
 
 function economicPriceIds(model: ContainerModelV1): number[] {
-	return [model.containerItemId, ...model.outcomes.filter((outcome) => outcome.valuationPolicy === 'liquid_market'
-		&& outcome.sampleUnits > 0).map((outcome) => outcome.id)].sort((left, right) => left - right);
+	return containerModelPriceItemIds(model);
 }
 
 function kernelReason(reason: string): InventoryContainerEconomyReviewReason {
@@ -506,7 +533,8 @@ function container(value: unknown): value is InventoryContainerEconomyInputV1['c
 function kernelPolicy(value: unknown): value is ContainerDispositionKernelPolicy {
 	return record(value) && exactKeys(value, ['version', 'openAdvantageBps', 'maxPriceAgeMs', 'maxFutureSkewMs', 'saleBasis'])
 		&& value.version === 1 && value.openAdvantageBps === 1_000 && value.maxPriceAgeMs === 15 * 60_000
-		&& value.maxFutureSkewMs === 60_000 && value.saleBasis === 'immediate';
+		&& value.maxFutureSkewMs === 60_000
+		&& (value.saleBasis === 'immediate' || value.saleBasis === 'immediate_and_listing');
 }
 
 function source(value: unknown): boolean {
