@@ -19,7 +19,7 @@
   rutas coinciden en vender (207,37 c de EV frente a 334,40 c de umbral por puja; 308,40 c frente a
   374,00 c por anuncio).
 - **La cola excluida deja de ser un cero invisible.** El modelo conservador sigue excluyendo los
-  jackpots —esa decisión de producto no cambia—, pero ahora los nombra: cinco infusiones, 13 de las
+  jackpots (esa decisión de producto no cambia), pero ahora los nombra: cinco infusiones, 13 de las
   50 unidades de muestra del cubo super-raro. Valen **78,57 c por saco a puja**, entre un tercio y
   un 38 % de lo que rinde abrir, y se muestran en un disclosure aparte con su desviación típica, que
   es de unas **113 monedas de plata por saco**: dos órdenes de magnitud por encima de su propia
