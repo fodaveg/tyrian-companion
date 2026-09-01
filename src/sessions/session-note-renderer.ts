@@ -197,7 +197,10 @@ function createFrontmatter(
 		tc_account_ref: accountRef,
 		tc_locale: note.locale,
 		tc_started_at: note.runtime.delta.window!.from,
-		tc_ended_at: note.runtime.delta.window!.to,
+		// The session ends when the player closed it, not when the final capture managed to read
+		// the account. Deriving it from the duration keeps the durable pair arithmetically
+		// consistent, which is exactly what the history reader verifies.
+		tc_ended_at: new Date(Date.parse(note.runtime.delta.window!.from) + note.durationMs).toISOString(),
 		tc_duration_ms: note.durationMs,
 		tc_character: state.startContext.characterName,
 		tc_profession: state.startContext.build.profession,
@@ -536,7 +539,10 @@ function localizedReason(code: SessionClassificationReasonCode, locale: Prepared
 		roster_changed: 'reason.roster_changed', character_unobserved: 'reason.character_unobserved',
 		activity_declared: 'reason.activity_declared',
 		clean_declaration_conflicts_with_evidence: 'reason.clean_declaration_conflicts_with_evidence', delta_limited: 'reason.delta_limited',
-		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed', declaration_not_clean: 'reason.declaration_not_clean',
+		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed',
+		api_settlement_window_skipped: 'reason.api_settlement_window_skipped',
+		api_settlement_window_exceeded: 'reason.api_settlement_window_exceeded',
+		declaration_not_clean: 'reason.declaration_not_clean',
 		trading_post_not_complete_clean_declaration_used: 'reason.trading_post_not_complete_clean_declaration_used',
 	};
 	return noteText(locale, keys[code]);

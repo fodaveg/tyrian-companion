@@ -178,6 +178,55 @@ describe('Companion saved note delivery', () => {
 	});
 });
 
+describe('Companion API settlement surface', () => {
+	it('explains the wait, counts it down and keeps the escape hatch with its cost', async () => {
+		const captureSessionFinalNow = vi.fn(async () => undefined);
+		const { contentEl, render } = mountCompanion({
+			captureSessionFinalNow,
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => ({
+				status: 'waiting', windowMs: 600_000, waitedMs: 180_000, remainingMs: 420_000,
+				dueAt: Date.parse('2026-08-31T10:10:00.000Z'),
+			}),
+		});
+
+		render();
+
+		expect(texts(contentEl)).toContain('Esperando a que la API confirme los últimos minutos');
+		expect(texts(contentEl)).toContain('Captura final en 07:00');
+		const why = texts(contentEl).find((text) => text.includes('varios minutos de retraso'));
+		expect(why).toBeDefined();
+		expect(texts(contentEl)).toContain('El resultado puede no incluir los últimos minutos y la sesión quedará marcada como estimada.');
+
+		const captureNow = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Capturar ya');
+		expect(captureNow).toBeDefined();
+		captureNow?.click();
+		await Promise.resolve();
+		expect(captureSessionFinalNow).toHaveBeenCalledOnce();
+	});
+
+	it('shows the ordinary reconciling copy when no window is pending', () => {
+		const { contentEl, render } = mountCompanion({
+			captureSessionFinalNow: vi.fn(async () => undefined),
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => null,
+		});
+
+		render();
+
+		expect(texts(contentEl)).not.toContain('Esperando a que la API confirme los últimos minutos');
+		expect(find(contentEl, (node) => node.textContent === 'Capturar ya')).toBeUndefined();
+	});
+});
+
+function stoppingSession(): SessionState {
+	return {
+		version: 1, status: 'stopping', sessionId: 'session',
+		stopRequestedAt: '2026-08-31T10:00:00.000Z',
+		startContext: { characterName: 'Rinopopo' },
+	} as unknown as SessionState;
+}
+
 function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	contentEl: FakeElement;
 	actions: CompanionActions;

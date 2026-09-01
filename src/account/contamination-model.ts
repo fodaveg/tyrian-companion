@@ -85,6 +85,12 @@ export interface SessionClassificationContext {
 	};
 	declaration: UserDeclaration;
 	boundaryCertainty: 'manual_confirmed' | 'auto_confirmed' | 'auto_uncertain';
+	/**
+	 * Whether the final snapshot waited the documented Guild Wars 2 cache window before reading
+	 * the account. Absent means the caller has no session stop boundary to declare (the kernel is
+	 * also used to classify a bare pair of snapshots); a session flow always declares it.
+	 */
+	apiSettlement?: 'settled' | 'skipped' | 'exceeded';
 }
 
 export type SessionClassificationStatus = 'exact' | 'estimated' | 'contaminated' | 'invalid';
@@ -110,6 +116,8 @@ export type SessionClassificationReasonCode =
 	| 'clean_declaration_conflicts_with_evidence'
 	| 'delta_limited'
 	| 'boundary_not_manually_confirmed'
+	| 'api_settlement_window_skipped'
+	| 'api_settlement_window_exceeded'
 	| 'declaration_not_clean'
 	| 'trading_post_not_complete_clean_declaration_used';
 
