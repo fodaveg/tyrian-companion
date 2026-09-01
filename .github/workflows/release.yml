@@ -1,0 +1,99 @@
+name: Release
+
+# Publication used to be manual, and 0.1.19 went out without its assets because
+# of it. This workflow owns the tag path end to end: it builds, it proves the
+# BRAT contract holds over the artefacts it is ABOUT to upload, and only then
+# does it create the release.
+#
+# `contents: write` lives here and nowhere else. `ci.yml` runs on every branch
+# and every pull request and keeps `contents: read`; giving it write access so a
+# tag could publish would hand that token to every branch build too.
+
+on:
+  push:
+    tags: ['*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - run: npm ci
+
+      # The gate runs inside the publishing job on purpose. A green run of
+      # ci.yml on the same commit is a different workflow with a different
+      # result, and nothing here can depend on it.
+      - name: Gate
+        run: npm run check
+
+      - name: Build the release package
+        run: npm run release:package
+
+      # From here to the publication step there is no way to reach `gh release
+      # create` with a broken artefact set: the plan refuses to exist if any of
+      # the five files is missing, empty or not a regular file, and the contract
+      # then judges that plan exactly as it judges a published release.
+      - name: Plan the BRAT release
+        run: node scripts/brat-release-plan.mjs --from-staging > .release/planned-release.json
+
+      - name: BRAT contract as a pre-publication gate
+        run: node scripts/brat-release-contract.mjs --release-json .release/planned-release.json
+
+      - name: Refuse a tag that does not match the manifest
+        run: |
+          set -euo pipefail
+          version="$(node -p 'JSON.parse(require("fs").readFileSync("manifest.json","utf8")).version')"
+          if [ "$TAG" != "$version" ]; then
+            echo "tag ${TAG} does not equal manifest version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Collect the exact asset paths
+        run: node scripts/brat-release-plan.mjs --asset-paths > .release/asset-paths.txt
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < .release/asset-paths.txt
+          if [ "${#assets[@]}" -ne 5 ]; then
+            echo "expected 5 assets, planned ${#assets[@]}" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Tyrian Companion ${TAG}. Assets: manifest.json, main.js, styles.css and the reproducible ZIP with its SHA-256." \
+            "${assets[@]}"
+
+      # The contract runs a second time, now against what GitHub actually holds.
+      # The gate above is what prevents a bad release; this proves the upload did
+      # what the plan said, which is the half that 0.1.19 was missing.
+      - name: Confirm the published release against the contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" > .release/published-release.json
+          node scripts/brat-release-plan.mjs --from-github .release/published-release.json > .release/published-normalised.json
+          node scripts/brat-release-contract.mjs --release-json .release/published-normalised.json
+
+      - name: Report the published asset set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$TAG" --json tagName,isDraft,assets
