@@ -2,6 +2,40 @@
 
 ## Vertical activa
 
+**Release beta `0.1.19` publicada desde el tag y commit
+`8dace194cc7a6b3a9eba58971091d18c719a7647`.** `manifest.json` y `package.json` declaran `0.1.19` y
+su lote de producto es `a24c364`, cuyo asunto es `feat(session): restore the live farming companion`.
+Hueco declarado: este documento todavía no registra la fecha de publicación, los runs de CI, los
+digests remotos de los assets, el SHA-256 del ZIP ni si el canal BRAT quedó actualizado para
+`0.1.19`. No se han medido y no se inventan.
+
+**Tres lotes integrados en `main` después de `0.1.19` y todavía sin publicar.**
+
+El lote de superficies desconectadas monta cuatro paneles que ya existían, tenían pruebas y ningún
+punto de entrada construía. Las alertas de Halloween ya tienen pantalla: el plugin emitía avisos sin
+ningún sitio donde marcarlos leídos, así que el contador de no leídos no podía bajar nunca. Las
+confirmaciones pendientes también: el ribbon mostraba el contador y el comando existía, pero ninguna
+vista podía mostrar una propuesta. Se montan además la superficie completa de la detección asistida
+y el historial de sesiones. El lote añade el botón **Abrir la nota** tras guardar una sesión, primer
+uso de `openLinkText` en código de producción del repositorio, porque hasta ahora el plugin escribía
+la nota sin ofrecer forma de abrirla, y corrige el `viewCount` del journal de arranque, que decía 3
+cuando se registran 2 vistas. La línea de tiempo de detección pasa a resolución de minutos: la API
+de cuenta no da precisión al segundo y presentarla al segundo la aparentaba.
+
+El lote de primera ejecución cambia tres valores por defecto, todos en `DEFAULT_SETTINGS` de
+`src/core/settings.ts`. El idioma deja de estar forzado a español y se resuelve desde Obsidian con
+`getLanguage()` con reserva `en`, sin que eso pise una elección manual del usuario. El registro de
+diagnóstico local nace apagado y en nivel `warn`, en vez de encendido en `debug` escribiendo JSONL
+sin parar dentro del vault. El intervalo de consulta pasa de 2 a 10 minutos. **Los tres cambios solo
+alcanzan instalaciones nuevas.** Una instalación existente conserva sus valores porque en disco un
+valor heredado del default es indistinguible de uno elegido; quien ya tenga el registro encendido
+debe apagarlo a mano en Ajustes.
+
+El arreglo del censo reindexa 31 localizadores de `src/ui/settings-tab.ts` en
+`scripts/action-observability-baseline.json` tras un desplazamiento de una línea causado por la
+fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada se alteró.
+
+La evidencia de la release anterior se conserva como histórico.
 **Release beta `0.1.18` publicada el 2026-08-31; canal BRAT actualizado.** El tag y commit
 `6090defe5fd4b485e4f49efdbfd10f395197a716` están disponibles en la
 [GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18). Los runs
@@ -178,9 +212,10 @@ seguridad, censo de observabilidad, contratos de release/beta/soporte y build.
 
 La dirección conserva el panel visible de H12.1 y H12.4 aplica su primera tranche en `0.1.18`:
 ordena Companion como sesión, detección, confirmaciones, historial, botín/Halloween y
-cuenta. El alcance real queda explícito: el polling asistido de
-desarrollo cada dos minutos busca la señal de la Bolsa de truco o trato `#36038`; no refresca todo el
-inventario ni detecta farmeo general. El Inventory Advisor se actualiza manualmente y el histórico
+cuenta. El alcance real queda explícito: el polling asistido busca la señal de la Bolsa de truco o
+trato `#36038`; no refresca todo el inventario ni detecta farmeo general. Su cadencia por defecto en
+una instalación nueva es de 10 minutos, no los 2 de la beta interna; el valor vivo es
+`DEFAULT_SETTINGS.pollingIntervalMinutes` en `src/core/settings.ts`. El Inventory Advisor se actualiza manualmente y el histórico
 de precio usa su propia cadencia.
 
 El mockup navega entre las tres vistas, cuatro categorías de Ajustes y siete escenarios reales;
@@ -485,7 +520,8 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio es público desde el 2026-08-29 y la release actual `0.1.18` desde el 2026-08-31.
+El repositorio es público desde el 2026-08-29. La release actual es `0.1.19`, la versión que declaran
+`manifest.json` y `package.json`; su fecha de publicación no está registrada aquí.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -741,7 +777,17 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
   `npm run check`, benchmark, sabotaje de heap y `git diff --check` pasan en este worktree. No existe
   todavía evidencia de instalación, primera sesión o soporte real en dispositivo.
 
-## Pendientes de producto
+## Deuda conocida
+
+### QA manual: ninguna ejecución, en ninguna plataforma
+
+Los once pendientes de abajo son la misma deuda repetida: **QA manual que nunca se ha ejecutado en
+ninguna plataforma**, ni en Linux/Steam/Proton, ni en macOS/CrossOver, ni en Windows. La beta va por
+la `0.1.19` y no existe ni una sola sesión de QA registrada. Los contratos ejecutables en verde, las
+guías escritas (`docs/QA-MVP.md`) y las releases publicadas no acreditan ninguna de estas líneas;
+por eso los lotes anteriores repiten que su publicación no acredita la QA. La única excepción de la
+lista es el punto 5, cuya parte abierta es una decisión de producto de David y no una prueba; los
+puntos 6 y 8 están cerrados en implementación y solo conservan QA residual.
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6. H7.13 ya agrega y
@@ -761,3 +807,27 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
+
+### Deuda de implementación medida
+
+No es sospecha ni estilo: cada línea trae cómo se vuelve a contar. Ninguna bloquea la release, pero
+todas encarecen cada cambio posterior.
+
+- `src/ui/wallet-vault-sync-controller.ts` y `src/ui/inventory-vault-sync-controller.ts` son dos
+  copias: 131 líneas cada uno, y sustituir «Wallet» por «Inventory» en el primero deja un `diff` de
+  cero líneas contra el segundo. Cualquier arreglo hay que hacerlo dos veces o se hace en uno solo.
+- La función `canonical()` está reimplementada en cada dominio en vez de compartirse. El censo del
+  2026-09-01 contó 24 ficheros; recontando hoy sobre `src/`, `function canonical(` aparece en 16
+  ficheros y el patrón ampliado `function canonical|const canonical =` en 22. La cifra depende del
+  criterio de recuento; lo que no depende del criterio es que no existe una implementación única.
+- El idiom de apertura de IndexedDB está copiado en 10 almacenes:
+  `sessions/session-runtime-store`, `sessions/session-detection-quality-store`,
+  `sessions/pending-proposal-store`, `sessions/pilot-metrics-store`, `sessions/coordination-store`,
+  `halloween/halloween-store`, `economy/price-history-store`, `catalog/persistent-catalog-cache`,
+  `assets/managed-assets-pointer` y `advisor/inventory-preferences-store`. Se recuentan buscando
+  `onupgradeneeded` fuera de los `.test.ts`.
+- 34 ficheros de test aseveran texto fuente, no comportamiento: leen un fichero del repositorio y
+  comprueban que contiene una cadena. Un renombrado los rompe sin que nada esté roto, y un cambio de
+  comportamiento con el mismo texto los deja verdes. Se localizan por `readFileSync` dentro de
+  `src/**/*.test.ts`, donde hoy aparece en 40 ficheros contando también los que leen `docs/` y
+  `scripts/`.
