@@ -2,7 +2,7 @@
 	"version": 3,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 383,
+		"catch_clause": 381,
 		"promise_catch": 29,
 		"void_expression": 83,
 		"callback_registration": 163
@@ -9813,38 +9813,7 @@
 		"src/ui/inventory-vault-sync-controller.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": [
-				{
-					"kind": "catch_clause",
-					"line": 70,
-					"column": 5,
-					"endLine": 75,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "preview",
-						"justification": "The \"preview\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"preview\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"preview\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 96,
-					"column": 5,
-					"endLine": 101,
-					"endColumn": 4,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "apply",
-						"justification": "The \"apply\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"apply\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"apply\"."
-				}
-			]
+			"boundaries": []
 		},
 		"src/ui/inventory-vault-sync-run-controller.ts": {
 			"classification": "production_source",
@@ -10916,15 +10885,15 @@
 				}
 			]
 		},
-		"src/ui/wallet-vault-sync-controller.ts": {
+		"src/ui/vault-sync-controller.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 70,
+					"line": 92,
 					"column": 5,
-					"endLine": 75,
+					"endLine": 97,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10937,9 +10906,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 96,
+					"line": 118,
 					"column": 5,
-					"endLine": 101,
+					"endLine": 123,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10951,6 +10920,11 @@
 					"reason": "Allowlisted catch_clause: The \"apply\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"apply\"."
 				}
 			]
+		},
+		"src/ui/wallet-vault-sync-controller.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/wallet/wallet-vault-sync.ts": {
 			"classification": "production_source",
