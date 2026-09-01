@@ -74,7 +74,10 @@ describe('deferred runtime startup with persisted terminal state', () => {
 
 		await expect(plugin.initializeRuntime()).resolves.toBeUndefined();
 
-		expect(arm).toHaveBeenCalledWith(expect.objectContaining({ snapshotId: record.baselineSnapshot.snapshotId }), 120_000);
+		expect(arm).toHaveBeenCalledWith(
+			expect.objectContaining({ snapshotId: record.baselineSnapshot.snapshotId }),
+			DEFAULT_SETTINGS.pollingIntervalMinutes * 60_000,
+		);
 		expect(plugin.getLiveSessionLoot()).toMatchObject({ status: 'observing', sessionId: 'session-1', restored: true });
 	});
 

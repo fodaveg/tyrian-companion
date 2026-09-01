@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
-import { DEFAULT_SETTINGS, type TyrianSettings } from '../core/settings';
+import { DEFAULT_SETTINGS, POLLING_INTERVAL_OPTIONS, type TyrianSettings } from '../core/settings';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
@@ -154,7 +154,7 @@ describe('Halloween price-alert settings wiring', () => {
 });
 
 describe('assisted-detection polling settings', () => {
-	it('offers and selects the two-minute beta cadence', () => {
+	it('offers every declared cadence and preselects the persisted one', () => {
 		const plugin = settingsPlugin();
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
@@ -163,9 +163,10 @@ describe('assisted-detection polling settings', () => {
 
 		const control = renderControl(definition, 'dropdown');
 
-		expect(plugin.settings.pollingIntervalMinutes).toBe(2);
-		expect(control.options).toContain('2');
-		expect(control.value).toBe('2');
+		expect(plugin.settings.pollingIntervalMinutes).toBe(10);
+		// The default cadence must be selectable, or the dropdown silently shows another value.
+		expect(control.options).toEqual(POLLING_INTERVAL_OPTIONS.map(String));
+		expect(control.value).toBe('10');
 
 		plugin.settings.pollingIntervalMinutes = 60;
 		const existing = renderControl(definition, 'dropdown');

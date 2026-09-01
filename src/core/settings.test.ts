@@ -6,6 +6,7 @@ import {
 	mergeSettingsUpdate,
 	migrateSettings,
 	normalizeVaultFolder,
+	POLLING_INTERVAL_OPTIONS,
 	resolveMaterialStorageCapacity,
 	resolveEquipmentSalvagePreferences,
 	resolveVaultFolderInput,
@@ -16,25 +17,35 @@ import {
 const NESTED_CONFIG_DIR = `config/.${'obsidian'}`;
 
 describe('migrateSettings', () => {
-	it('migrates pre-v11 settings to exhaustive beta diagnostics and preserves valid v11 preferences', () => {
+	it('leaves diagnostics off for a pre-v11 install and preserves valid v11 preferences', () => {
 		expect(migrateSettings({ schemaVersion: 10, debugLoggingEnabled: false, debugLoggingLevel: 'error' }))
-			.toMatchObject({ schemaVersion: 12, debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+			.toMatchObject({ schemaVersion: 12, debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
 		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: false, debugLoggingLevel: 'warn' }))
 			.toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
 		expect(migrateSettings({ schemaVersion: 12, debugLoggingEnabled: true, debugLoggingLevel: 'trace' }))
-			.toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'debug' });
+			.toMatchObject({ debugLoggingEnabled: true, debugLoggingLevel: 'warn' });
 	});
 
-	it('forces the beta polling cadence once when upgrading and respects explicit v12 edits', () => {
+	it('does not write a diagnostic journal on a default install', () => {
+		expect(migrateSettings(null)).toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
+	});
+
+	it('rewrites the polling cadence once when upgrading and respects explicit v12 edits', () => {
 		const upgraded = migrateSettings({
 			schemaVersion: 11,
 			pollingIntervalMinutes: 60,
 		});
 
-		expect(upgraded).toMatchObject({ schemaVersion: 12, pollingIntervalMinutes: 2 });
+		expect(upgraded).toMatchObject({ schemaVersion: 12, pollingIntervalMinutes: 10 });
 		expect(shouldPersistSettingsOnLoad({ schemaVersion: 11, pollingIntervalMinutes: 60 }, upgraded)).toBe(true);
 		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 15 }).pollingIntervalMinutes).toBe(15);
 		expect(mergeSettingsUpdate(upgraded, { pollingIntervalMinutes: 60 }).pollingIntervalMinutes).toBe(60);
+		// A v12 install keeps the cadence it already persisted, inherited default included.
+		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 2 }).pollingIntervalMinutes).toBe(2);
+	});
+
+	it('keeps the default cadence inside the offered options', () => {
+		expect(POLLING_INTERVAL_OPTIONS).toContain(DEFAULT_SETTINGS.pollingIntervalMinutes);
 	});
 
 	it('deep-freezes defaults and returns isolated nested valuation instances', () => {
@@ -95,12 +106,12 @@ describe('migrateSettings', () => {
 				detectionMode: 'automatic',
 			}),
 		).toMatchObject({
-			language: 'es',
+			language: 'en',
 			preferredCharacter: 'Kasmeer',
-			pollingIntervalMinutes: 2,
+			pollingIntervalMinutes: 10,
 			detectionMode: 'off',
 		});
-		expect(migrateSettings({ pollingIntervalMinutes: 2 })).toMatchObject({ pollingIntervalMinutes: 2 });
+		expect(migrateSettings({ pollingIntervalMinutes: 2 })).toMatchObject({ pollingIntervalMinutes: 10 });
 	});
 
 	it('keeps only the SecretStorage name', () => {

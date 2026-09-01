@@ -1,3 +1,5 @@
+import { getLanguage } from 'obsidian';
+
 import { normalizeVaultRelativePath } from './vault-path';
 import type {
 	PriceHistoryDailyRetentionDays,
@@ -56,7 +58,7 @@ export interface TyrianSettings {
 	preferredCharacter: string;
 	pollingIntervalMinutes: number;
 	detectionMode: DetectionMode;
-	/** Exhaustive local-only beta diagnostics. Enabled by default while the plugin remains in beta. */
+	/** Exhaustive local-only diagnostics. Opt-in: a default install must not write a journal. */
 	debugLoggingEnabled: boolean;
 	/** Minimum severity retained by the local diagnostic writer. */
 	debugLoggingLevel: LocalDebugLevel;
@@ -94,14 +96,15 @@ export interface TyrianSettings {
 export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	schemaVersion: SETTINGS_SCHEMA_VERSION,
 	apiKeySecret: '',
-	language: 'es',
+	// Reserve locale only. A fresh install adopts Obsidian's app language, see `hostLanguage`.
+	language: 'en',
 	outputFolder: 'Tyrian Companion',
 	preferredCharacter: '',
-	// Beta-only fast feedback. Raise this before public distribution.
-	pollingIntervalMinutes: 2,
+	// Public cadence: one account poll every ten minutes unless the user picks another one.
+	pollingIntervalMinutes: 10,
 	detectionMode: 'off',
-	debugLoggingEnabled: true,
-	debugLoggingLevel: 'debug',
+	debugLoggingEnabled: false,
+	debugLoggingLevel: 'warn',
 	managedAssetsRoot: null,
 	legacyOutputFolder: null,
 	legacyManagedAssetsRoot: null,
@@ -123,7 +126,9 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	salvageOpportunityCostCopperPerHour: null,
 });
 
-const POLLING_INTERVALS = new Set([2, 15, 30, 60, 120, 240]);
+/** Cadences offered in Settings. The default must stay a member, or the dropdown cannot show it. */
+export const POLLING_INTERVAL_OPTIONS: readonly number[] = [2, 10, 15, 30, 60, 120, 240];
+const POLLING_INTERVALS: ReadonlySet<number> = new Set(POLLING_INTERVAL_OPTIONS);
 const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
 const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
 const PRICE_HISTORY_DAILY_RETENTIONS: ReadonlySet<number> = new Set([42, 90, 180, 365]);
@@ -142,14 +147,15 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 	return {
 		schemaVersion: SETTINGS_SCHEMA_VERSION,
 		apiKeySecret: stringOrDefault(data.apiKeySecret, DEFAULT_SETTINGS.apiKeySecret),
-		language: data.language === 'en' || data.language === 'es' ? data.language : DEFAULT_SETTINGS.language,
+		// An explicit choice always wins; only an absent or unsupported value asks the host.
+		language: data.language === 'en' || data.language === 'es' ? data.language : hostLanguage(),
 		outputFolder: normalizeVaultFolder(data.outputFolder, configDir),
 		preferredCharacter: stringOrDefault(
 			data.preferredCharacter,
 			DEFAULT_SETTINGS.preferredCharacter,
 		).trim(),
-		// v12 is a one-time beta migration: existing installs adopt the fast
-		// feedback cadence, while subsequent explicit edits remain durable.
+		// v12 rewrote the cadence once: a pre-v12 install adopts the current default,
+		// while a value already written by v12 stays durable, edit or inherited alike.
 		pollingIntervalMinutes: data.schemaVersion === SETTINGS_SCHEMA_VERSION &&
 			typeof data.pollingIntervalMinutes === 'number' &&
 			POLLING_INTERVALS.has(data.pollingIntervalMinutes)
@@ -203,8 +209,30 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 function cloneDefaultSettings(): TyrianSettings {
 	return {
 		...DEFAULT_SETTINGS,
+		language: hostLanguage(),
 		halloweenPersonalValuation: { version: 1, values: [] },
 	};
+}
+
+/**
+ * Resolves the interface language a first run starts with from Obsidian's app language.
+ * `getLanguage` exists since Obsidian 1.8.7, well below the manifest's `minAppVersion`.
+ */
+function hostLanguage(): Language {
+	return resolveHostLanguage(getLanguage());
+}
+
+/**
+ * Narrows an Obsidian ISO app language to a shipped locale. Obsidian returns codes such as
+ * `es` or `zh-TW`, so only the primary subtag decides; anything the plugin does not translate
+ * falls back to `DEFAULT_SETTINGS.language`.
+ */
+export function resolveHostLanguage(isoCode: unknown): Language {
+	if (typeof isoCode !== 'string') return DEFAULT_SETTINGS.language;
+	const primarySubtag = isoCode.toLowerCase().split(/[-_]/u)[0];
+	if (primarySubtag === 'es') return 'es';
+	if (primarySubtag === 'en') return 'en';
+	return DEFAULT_SETTINGS.language;
 }
 
 function deepFreeze<T>(value: T): T {
