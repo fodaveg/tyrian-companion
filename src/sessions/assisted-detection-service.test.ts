@@ -9,6 +9,7 @@ import {
 } from './api-poll-scheduler';
 import {
 	AssistedDetectionService,
+	DEFAULT_INACTIVITY_THRESHOLD_MS,
 	HALLOWEEN_RELEVANT_ITEM_RULE_SET,
 } from './assisted-detection-service';
 import type { SessionState } from './session';
@@ -103,7 +104,7 @@ describe('AssistedDetectionService', () => {
 			pollingIntervalMs: 900_000,
 			lastSnapshotAt: '2026-08-13T10:30:02.000Z',
 			proposal: {
-				ruleSet: { id: 'halloween.trick-or-treat-bag', version: 1 },
+				ruleSet: { id: 'halloween.labyrinth-drops', version: 2 },
 				firstSignal: { gains: [{ itemId: 36_038, quantity: 1 }] },
 				confirmationSignal: { gains: [{ itemId: 36_038, quantity: 1 }] },
 			},
@@ -318,12 +319,42 @@ describe('AssistedDetectionService', () => {
 		expect(second.status === 'start_proposed' && second.proposal.firstSignal.gains[0]?.quantity).toBe(1);
 	});
 
-	it('uses the verified public item id for the initial Halloween rule', () => {
+	it('watches every verified Labyrinth drop id under a rule named after them', () => {
+		// Verified against https://api.guildwars2.com/v2/items?ids=36038,36041,36059,36060,36061:
+		// Trick-or-Treat Bag, Piece of Candy Corn, Plastic Fangs, Chattering Skull, Nougat Center.
 		expect(HALLOWEEN_RELEVANT_ITEM_RULE_SET).toEqual({
-			id: 'halloween.trick-or-treat-bag',
-			version: 1,
-			itemIds: [36_038],
+			id: 'halloween.labyrinth-drops',
+			version: 2,
+			itemIds: [36_038, 36_041, 36_059, 36_060, 36_061],
 		});
+		// The identifier must not name one item while the rule watches five.
+		expect(HALLOWEEN_RELEVANT_ITEM_RULE_SET.id).not.toBe('halloween.trick-or-treat-bag');
+	});
+
+	it('proposes a start from two drops that are not the bag', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0),
+			snapshot('b', 15, 0, 36_059),
+			snapshot('c', 30, 0, 36_059, 36_061),
+		]);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState()).toMatchObject({
+			status: 'start_proposed',
+			proposal: {
+				ruleSet: { id: 'halloween.labyrinth-drops', version: 2 },
+				firstSignal: { gains: [{ itemId: 36_059, quantity: 1 }] },
+				confirmationSignal: { gains: [{ itemId: 36_061, quantity: 1 }] },
+			},
+		});
+	});
+
+	it('keeps the quiet-threshold default above the account API cache ceiling', () => {
+		expect(DEFAULT_INACTIVITY_THRESHOLD_MS).toBe(15 * 60_000);
+		expect(DEFAULT_INACTIVITY_THRESHOLD_MS).toBeGreaterThan(10 * 60_000);
+		expect(DEFAULT_INACTIVITY_THRESHOLD_MS).toBeLessThan(30 * 60_000);
 	});
 });
 
@@ -471,11 +502,11 @@ function snapshot(
 	id: string,
 	minute: number,
 	bagCount: number,
-	otherItemId?: number,
+	...otherItemIds: number[]
 ): StorageSnapshot {
 	const holdings = [
 		...(bagCount > 0 ? [looseHolding(36_038, bagCount, { source: 'bank', slot: 0 })] : []),
-		...(otherItemId ? [looseHolding(otherItemId, 1, { source: 'bank', slot: 1 })] : []),
+		...otherItemIds.map((itemId, index) => looseHolding(itemId, 1, { source: 'bank', slot: index + 1 })),
 	];
 	return storageDeltaSnapshot({
 		snapshotId: id,

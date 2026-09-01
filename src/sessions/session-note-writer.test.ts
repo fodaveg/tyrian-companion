@@ -138,7 +138,14 @@ describe('session note model and renderer', () => {
 		for (const changed of [
 			{ ...proposal, proposalId: `x${proposal.proposalId}` },
 			{ ...proposal, proposalId: `${proposal.proposalId}:suffix` },
-			{ ...proposal, ruleSet: { ...proposal.ruleSet, version: 2 } },
+			{ ...proposal, ruleSet: { ...proposal.ruleSet, version: proposal.ruleSet.version + 1 } },
+			// A proposal recorded by the retired v1 rule keeps its own provenance and is no longer
+			// canonical for the rule that ships today, even with a self-consistent proposal id.
+			{
+				...proposal,
+				ruleSet: { id: 'halloween.trick-or-treat-bag', version: 1 },
+				proposalId: 'relevant-start:halloween.trick-or-treat-bag:1:halloween-before:halloween-after',
+			},
 		]) {
 			const event = { ...accepted, proposalId: changed.proposalId, startProposal: changed };
 			expect(sessionNoteEventDeclarationFromDetectionSummary('session-sensitive-id', { ...summary, start: event })).toBeNull();
@@ -412,7 +419,11 @@ function sessionInput(classification: 'exact' | 'contaminated' = 'exact', locale
 }
 
 function halloweenProposal(): RelevantStartProposal {
-	const ruleSet = { id: 'halloween.trick-or-treat-bag', version: 1 };
+	// Derived from the shipped rule so widening the watched drops cannot rot this fixture.
+	const ruleSet = {
+		id: HALLOWEEN_RELEVANT_ITEM_RULE_SET.id,
+		version: HALLOWEEN_RELEVANT_ITEM_RULE_SET.version,
+	};
 	const firstSignal = {
 		accountId: 'account-anonymous', beforeSnapshotId: 'halloween-before', afterSnapshotId: 'halloween-middle',
 		window: { from: '2026-08-13T08:00:00.000Z', to: '2026-08-13T08:00:01.000Z' },

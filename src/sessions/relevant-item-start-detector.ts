@@ -2,6 +2,32 @@ import type { StorageDeltaStatus } from '../account/storage-delta-model';
 
 export const RELEVANT_START_PROPOSAL_VERSION = 1 as const;
 
+/**
+ * Documented ceiling of the Guild Wars 2 account cache chain, «5-10 minutes (nested caches)»
+ * according to ArenaNet's own API developer; the same source `session-api-settlement` cites.
+ * Below this ceiling two consecutive polls can read byte-identical bytes while the player is
+ * farming, so consecutiveness is not evidence of anything and must not gate a proposal.
+ */
+export const RELEVANT_EVIDENCE_CACHE_CEILING_MS = 10 * 60_000;
+
+/** Relevant gains needed inside the trailing evidence before a start is proposed. */
+export const RELEVANT_EVIDENCE_REQUIRED_GAINS = 2;
+
+/**
+ * Trailing evidence retained for the two-gain criterion: never fewer than this many contiguous
+ * samples, and never a shorter span than `RELEVANT_EVIDENCE_WINDOW_MS`.
+ *
+ * With a poll interval `P` the retained span is `max(3·P, 30 min)`, and observing two distinct
+ * cache generations needs at most `CACHE_CEILING + 2·P`. The floor covers every `P >= 10 min`
+ * (`3·P - (10 + 2·P) = P - 10 >= 0`) and the window covers every `P <= 10 min`
+ * (`30 >= 10 + 2·P`), so the criterion is reachable at any cadence instead of only at slow ones.
+ */
+export const RELEVANT_EVIDENCE_MIN_SAMPLES = 3;
+export const RELEVANT_EVIDENCE_WINDOW_MS = 30 * 60_000;
+
+/** Hard cap so a pathological cadence cannot grow the retained evidence without bound. */
+export const RELEVANT_EVIDENCE_MAX_SAMPLES = 64;
+
 export interface RelevantItemRuleSet {
 	id: string;
 	version: number;
@@ -45,12 +71,17 @@ export type RelevantStartObservation =
 	| { status: 'proposed'; proposal: RelevantStartProposal };
 
 /**
- * Turns two contiguous relevant positive deltas into a proposal. It never starts
- * a session, performs I/O, or infers relevance from mutable catalog text.
+ * Turns two relevant positive deltas inside a trailing evidence window into a proposal. It never
+ * starts a session, performs I/O, or infers relevance from mutable catalog text.
+ *
+ * The window is deliberately not «two consecutive polls»: the account API answers from a 5-10
+ * minute cache, so at a fast cadence the gains land on every other poll at best and a
+ * consecutiveness rule never fires. Quiet samples no longer discard the evidence, they only age
+ * it out.
  */
 export class RelevantItemStartDetector {
 	private readonly ruleSet: { id: string; version: number; itemIds: Set<number> };
-	private firstSignal: RelevantDeltaSignal | null = null;
+	private readonly samples: EvidenceSample[] = [];
 	private proposal: RelevantStartProposal | null = null;
 	private lastDeltaIdentity: string | null = null;
 
@@ -76,32 +107,62 @@ export class RelevantItemStartDetector {
 		}
 		this.lastDeltaIdentity = identity;
 
-		const signal = relevantSignal(delta, this.ruleSet.itemIds);
-		if (!signal) {
-			this.firstSignal = null;
-			return { status: 'no_signal', reason: 'no_relevant_gain', proposal: null };
+		const sample: EvidenceSample = {
+			accountId: delta.accountId,
+			beforeSnapshotId: delta.beforeSnapshotId,
+			afterSnapshotId: delta.afterSnapshotId,
+			window: { ...delta.window },
+			deltaStatus: delta.status,
+			signal: relevantSignal(delta, this.ruleSet.itemIds),
+		};
+
+		// A break in the snapshot chain means the retained samples no longer describe one
+		// uninterrupted observation of the same account: they are evidence of nothing together.
+		const previous = this.samples.at(-1);
+		if (previous && !areContiguous(previous, sample)) this.samples.length = 0;
+		this.samples.push(sample);
+		this.pruneEvidence();
+
+		if (!sample.signal) return { status: 'no_signal', reason: 'no_relevant_gain', proposal: null };
+
+		const firstGainIndex = this.samples.findIndex((entry) => entry.signal !== null);
+		const gains = this.samples.reduce((total, entry) => total + (entry.signal ? 1 : 0), 0);
+		if (gains < RELEVANT_EVIDENCE_REQUIRED_GAINS) {
+			return { status: 'first_signal', signal: structuredClone(sample.signal), proposal: null };
 		}
 
-		if (!this.firstSignal || !areContiguous(this.firstSignal, signal)) {
-			this.firstSignal = signal;
-			return { status: 'first_signal', signal: structuredClone(signal), proposal: null };
-		}
-
-		const proposal = buildProposal(this.ruleSet, this.firstSignal, signal);
+		const proposal = buildProposal(this.ruleSet, this.samples.slice(firstGainIndex));
 		this.proposal = proposal;
 		return { status: 'proposed', proposal: structuredClone(proposal) };
 	}
 
 	reset(): void {
-		this.firstSignal = null;
+		this.resetPending();
 		this.proposal = null;
-		this.lastDeltaIdentity = null;
 	}
 
 	private resetPending(): void {
-		this.firstSignal = null;
+		this.samples.length = 0;
 		this.lastDeltaIdentity = null;
 	}
+
+	/** Ages evidence out by span and by count, always retaining the minimum sample floor. */
+	private pruneEvidence(): void {
+		while (this.samples.length > RELEVANT_EVIDENCE_MIN_SAMPLES && (
+			this.samples.length > RELEVANT_EVIDENCE_MAX_SAMPLES ||
+			evidenceSpanMs(this.samples) > RELEVANT_EVIDENCE_WINDOW_MS
+		)) this.samples.shift();
+	}
+}
+
+/** One observed delta kept in the trailing window, with or without a relevant gain. */
+interface EvidenceSample {
+	accountId: string;
+	beforeSnapshotId: string;
+	afterSnapshotId: string;
+	window: { from: string; to: string };
+	deltaStatus: Exclude<StorageDeltaStatus, 'invalid'>;
+	signal: RelevantDeltaSignal | null;
 }
 
 interface ParsedDelta {
@@ -196,17 +257,31 @@ function relevantSignal(delta: ParsedDelta, relevantIds: ReadonlySet<number>): R
 	};
 }
 
-function areContiguous(first: RelevantDeltaSignal, second: RelevantDeltaSignal): boolean {
+function areContiguous(first: EvidenceSample, second: EvidenceSample): boolean {
 	return first.accountId === second.accountId &&
 		first.afterSnapshotId === second.beforeSnapshotId &&
 		Date.parse(first.window.to) <= Date.parse(second.window.from);
 }
 
+function evidenceSpanMs(samples: readonly EvidenceSample[]): number {
+	const oldest = samples[0];
+	const newest = samples.at(-1);
+	if (!oldest || !newest) return 0;
+	return Date.parse(newest.window.to) - Date.parse(oldest.window.from);
+}
+
+/**
+ * Builds the proposal from the retained span that starts at the oldest gain and ends at the
+ * newest one. Coverage is judged over the whole span, quiet samples included: a `limited` delta
+ * in the middle did not read the full surface, so it cannot back a `complete` claim.
+ */
 function buildProposal(
 	ruleSet: { id: string; version: number },
-	first: RelevantDeltaSignal,
-	confirmation: RelevantDeltaSignal,
+	span: readonly EvidenceSample[],
 ): RelevantStartProposal {
+	const first = span[0]?.signal;
+	const confirmation = span.at(-1)?.signal;
+	if (!first || !confirmation) throw new TypeError('Relevant start evidence span is incomplete.');
 	const from = Date.parse(first.window.from);
 	const to = Date.parse(first.window.to);
 	return {
@@ -215,10 +290,7 @@ function buildProposal(
 		accountId: first.accountId,
 		ruleSet: { id: ruleSet.id, version: ruleSet.version },
 		possibleStart: { from: first.window.from, to: first.window.to, uncertaintyMs: to - from },
-		evidenceQuality:
-			first.deltaStatus === 'comparable' && confirmation.deltaStatus === 'comparable'
-				? 'complete'
-				: 'limited',
+		evidenceQuality: span.every((entry) => entry.deltaStatus === 'comparable') ? 'complete' : 'limited',
 		confirmedAt: confirmation.window.to,
 		firstSignal: structuredClone(first),
 		confirmationSignal: structuredClone(confirmation),

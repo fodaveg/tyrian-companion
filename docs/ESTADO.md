@@ -226,11 +226,13 @@ seguridad, censo de observabilidad, contratos de release/beta/soporte y build.
 
 La dirección conserva el panel visible de H12.1 y H12.4 aplica su primera tranche en `0.1.18`:
 ordena Companion como sesión, detección, confirmaciones, historial, botín/Halloween y
-cuenta. El alcance real queda explícito: el polling asistido busca la señal de la Bolsa de truco o
-trato `#36038`; no refresca todo el inventario ni detecta farmeo general. Su cadencia por defecto en
-una instalación nueva es de 10 minutos, no los 2 de la beta interna; el valor vivo es
-`DEFAULT_SETTINGS.pollingIntervalMinutes` en `src/core/settings.ts`. El Inventory Advisor se actualiza manualmente y el histórico
-de precio usa su propia cadencia.
+cuenta. El alcance real queda explícito: el polling asistido busca la señal de los cinco drops del
+Laberinto que la regla vigila; no refresca todo el inventario ni detecta farmeo general. Su cadencia
+por defecto en una instalación nueva es de 10 minutos, que además es ya la más rápida ofrecida: la
+opción de 2 minutos se retiró por quedar por debajo de la caché de 5-10 minutos de la API, y una
+instalación que la tuviera guardada adopta el defecto al cargar. Los valores vivos son
+`DEFAULT_SETTINGS.pollingIntervalMinutes` y `POLLING_INTERVAL_OPTIONS` en `src/core/settings.ts`. El
+Inventory Advisor se actualiza manualmente y el histórico de precio usa su propia cadencia.
 
 El mockup navega entre las tres vistas, cuatro categorías de Ajustes y siete escenarios reales;
 conserva las 16 acciones, claro/oscuro y responsive hasta 390 px. La QA standalone con Firefox cubre

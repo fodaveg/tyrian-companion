@@ -240,6 +240,7 @@ describe('Companion pilot metrics fail-open actions', () => {
 			renderDetectionQualityStatus: vi.fn(),
 			renderDetectionTimeline: vi.fn(),
 			renderProposalDetails: vi.fn(),
+			renderStopProposalLag: vi.fn(),
 			addDismissAndDisarm: vi.fn(),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated fail-open harness.
@@ -563,6 +564,39 @@ function walkRetained(root: RetainedFakeElement): RetainedFakeElement[] {
 }
 
 interface RetainedFakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
+
+describe('Companion stop proposal staleness', () => {
+	function renderLag(possibleTo: string, detectedAt: string): RetainedFakeElement {
+		const document = new RetainedFakeDocument();
+		const container = new RetainedFakeElement('div', document);
+		const harness = {
+			t: (key: string, params?: Record<string, string | number>) => `${key}:${String(params?.duration)}`,
+			formatDuration: (durationMs: number) => `${String(durationMs / 60_000)}min`,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated render harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderStopProposalLag(this: typeof harness, container: HTMLElement, possibleTo: string, detectedAt: string): void;
+		}).renderStopProposalLag;
+		render.call(harness, container as unknown as HTMLElement, possibleTo, detectedAt);
+		return container;
+	}
+
+	it('states how much later than the possible end the quiet was confirmed', () => {
+		// Stopping settles the session at the moment the button is pressed, so a proposal that
+		// arrives long after its own frontier must say so instead of looking current.
+		const container = renderLag('2026-08-20T10:00:00.000Z', '2026-08-20T10:20:00.000Z');
+
+		expect(walkRetained(container).map((element) => element.textContent))
+			.toContain('view.stopProposalLag:20min');
+	});
+
+	it.each([
+		['2026-08-20T10:00:00.000Z', '2026-08-20T10:00:00.000Z'],
+		['2026-08-20T10:00:00.000Z', 'not-a-timestamp'],
+	])('says nothing when there is no lag to declare (%s, %s)', (possibleTo, detectedAt) => {
+		expect(walkRetained(renderLag(possibleTo, detectedAt))).toHaveLength(1);
+	});
+});
 
 function pilotWindow() {
 	return { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 };

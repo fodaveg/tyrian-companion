@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
-import { RelevantItemStartDetector } from './relevant-item-start-detector';
+import {
+	RELEVANT_EVIDENCE_CACHE_CEILING_MS,
+	RelevantItemStartDetector,
+	type RelevantStartObservation,
+} from './relevant-item-start-detector';
 
 const RULE_SET = { id: 'halloween.labyrinth', version: 1, itemIds: [36_001, 36_002] } as const;
 
@@ -50,14 +54,65 @@ describe('RelevantItemStartDetector', () => {
 		expect(result).toEqual({ status: 'no_signal', reason: 'no_relevant_gain', proposal: null });
 	});
 
-	it('resets the streak when a valid delta has no relevant gain', () => {
+	it('keeps the evidence across one cached poll with no relevant gain', () => {
 		const detector = new RelevantItemStartDetector(RULE_SET);
 		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
-		detector.observe(delta('b', 'c', 1, []));
+		expect(detector.observe(delta('b', 'c', 1, []))).toEqual({
+			status: 'no_signal', reason: 'no_relevant_gain', proposal: null,
+		});
 		const result = detector.observe(delta('c', 'd', 2, [{ id: 36_001, delta: 1 }]));
 
-		expect(result.status).toBe('first_signal');
+		expect(result).toMatchObject({
+			status: 'proposed',
+			proposal: {
+				firstSignal: { beforeSnapshotId: 'a', afterSnapshotId: 'b' },
+				confirmationSignal: { beforeSnapshotId: 'c', afterSnapshotId: 'd' },
+				confirmedAt: '2026-08-13T10:03:00.000Z',
+			},
+		});
+	});
+
+	it('never proposes on a sample without a relevant gain', () => {
+		const detector = new RelevantItemStartDetector(RULE_SET);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
+		const quiet = detector.observe(delta('b', 'c', 1, []));
+
+		expect(quiet).toEqual({ status: 'no_signal', reason: 'no_relevant_gain', proposal: null });
 		expect(detector.getProposal()).toBeNull();
+	});
+
+	it('ages the evidence out once the trailing window is exceeded', () => {
+		const detector = new RelevantItemStartDetector(RULE_SET);
+		detector.observe(delta('s0', 's1', 0, [{ id: 36_001, delta: 1 }]));
+		// One quiet minute-long sample per minute: after 30 of them the first gain is out of window.
+		for (let minute = 1; minute <= 31; minute += 1) {
+			detector.observe(delta(`s${minute}`, `s${minute + 1}`, minute, []));
+		}
+		const late = detector.observe(delta('s32', 's33', 32, [{ id: 36_001, delta: 1 }]));
+
+		expect(late.status).toBe('first_signal');
+		expect(detector.getProposal()).toBeNull();
+	});
+
+	it('retains the minimum sample floor even when three samples outlast the window', () => {
+		const detector = new RelevantItemStartDetector(RULE_SET);
+		detector.observe(hourly('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
+		detector.observe(hourly('b', 'c', 1, []));
+		const result = detector.observe(hourly('c', 'd', 2, [{ id: 36_001, delta: 1 }]));
+
+		expect(result.status).toBe('proposed');
+	});
+
+	it('downgrades coverage when a quiet sample inside the span was limited', () => {
+		const detector = new RelevantItemStartDetector(RULE_SET);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 1 }]));
+		const quiet = delta('b', 'c', 1, []);
+		quiet.status = 'limited';
+		quiet.currencySurface = 'wallet_only';
+		detector.observe(quiet);
+		const result = detector.observe(delta('c', 'd', 2, [{ id: 36_001, delta: 1 }]));
+
+		expect(result).toMatchObject({ status: 'proposed', proposal: { evidenceQuality: 'limited' } });
 	});
 
 	it('uses a non-contiguous positive delta as a new first signal', () => {
@@ -211,6 +266,134 @@ describe('RelevantItemStartDetector', () => {
 		expect(() => new RelevantItemStartDetector(rules)).toThrow(TypeError);
 	});
 });
+
+/**
+ * The account API answers from a 5-10 minute cache chain, so a poll faster than that reads the
+ * same bytes twice while the player farms without pause. A criterion of «two consecutive polls
+ * with a gain» is unreachable there: the gains land on every second, third or fifth poll.
+ */
+describe('RelevantItemStartDetector against the account API cache', () => {
+	it.each([
+		{ intervalMinutes: 2, refreshMinutes: 5 },
+		{ intervalMinutes: 2, refreshMinutes: 10 },
+		{ intervalMinutes: 10, refreshMinutes: 10 },
+		{ intervalMinutes: 15, refreshMinutes: 10 },
+		{ intervalMinutes: 30, refreshMinutes: 10 },
+		{ intervalMinutes: 60, refreshMinutes: 10 },
+		{ intervalMinutes: 120, refreshMinutes: 10 },
+		{ intervalMinutes: 240, refreshMinutes: 10 },
+	])(
+		'proposes a start while farming at $intervalMinutes min against a $refreshMinutes min cache',
+		({ intervalMinutes, refreshMinutes }) => {
+			const detector = new RelevantItemStartDetector(RULE_SET);
+			const observations = replayCachedFarming({
+				detector,
+				intervalMs: intervalMinutes * 60_000,
+				refreshMs: refreshMinutes * 60_000,
+				polls: 20,
+			});
+
+			expect(observations.map(({ status }) => status)).toContain('proposed');
+			expect(detector.getProposal()?.confirmationSignal.gains[0]?.itemId).toBe(36_001);
+		},
+	);
+
+	it('confirms across a cached poll because two gains never land in a row', () => {
+		const statuses = replayCachedFarming({
+			detector: new RelevantItemStartDetector(RULE_SET),
+			intervalMs: 2 * 60_000,
+			refreshMs: 5 * 60_000,
+			polls: 20,
+		}).map(({ status }) => status);
+		const firstSignal = statuses.indexOf('first_signal');
+
+		expect(firstSignal).toBeGreaterThanOrEqual(0);
+		// The poll right after the first gain reads the very same cached bytes. A criterion of
+		// two consecutive gains discards the evidence here and never recovers it.
+		expect(statuses[firstSignal + 1]).toBe('no_signal');
+		expect(statuses.indexOf('proposed')).toBe(firstSignal + 2);
+	});
+
+	it('states the cache ceiling it is designed against', () => {
+		expect(RELEVANT_EVIDENCE_CACHE_CEILING_MS).toBe(10 * 60_000);
+	});
+});
+
+/**
+ * Replays an uninterrupted farming run seen through the cache: the account gains one relevant
+ * item per cache refresh, and the plugin polls on its own cadence. Contiguous windows mirror
+ * what `AssistedDetectionService` feeds the detector from consecutive snapshots.
+ */
+function replayCachedFarming(options: {
+	detector: RelevantItemStartDetector;
+	intervalMs: number;
+	refreshMs: number;
+	polls: number;
+}): RelevantStartObservation[] {
+	const start = Date.UTC(2026, 9, 31, 20, 0, 0);
+	const observations: RelevantStartObservation[] = [];
+	let previousAt = start;
+	let served = 0;
+	for (let poll = 1; poll <= options.polls; poll += 1) {
+		const at = start + poll * options.intervalMs;
+		const nextServed = Math.floor((at - start) / options.refreshMs);
+		observations.push(options.detector.observe(cachedDelta({
+			beforeSnapshotId: `poll-${poll - 1}`,
+			afterSnapshotId: `poll-${poll}`,
+			from: new Date(previousAt).toISOString(),
+			to: new Date(at).toISOString(),
+			before: served,
+			after: nextServed,
+		})));
+		previousAt = at;
+		served = nextServed;
+	}
+	return observations;
+}
+
+function cachedDelta(options: {
+	beforeSnapshotId: string;
+	afterSnapshotId: string;
+	from: string;
+	to: string;
+	before: number;
+	after: number;
+}): StorageDelta {
+	return {
+		version: 1,
+		status: 'comparable',
+		accountId: 'account',
+		beforeSnapshotId: options.beforeSnapshotId,
+		afterSnapshotId: options.afterSnapshotId,
+		window: { from: options.from, to: options.to },
+		surface: 'core_and_delivery',
+		currencySurface: 'wallet_and_delivery',
+		reasons: [],
+		warnings: [],
+		itemChanges: options.after === options.before ? [] : [{
+			id: 36_001, before: options.before, after: options.after, delta: options.after - options.before,
+		}],
+		currencyChanges: [],
+		availabilityChanges: [],
+		compositionChanges: [],
+	};
+}
+
+/** Same evidence at an hourly cadence: three samples already outlast the trailing window. */
+function hourly(
+	beforeSnapshotId: string,
+	afterSnapshotId: string,
+	hour: number,
+	changes: Array<{ id: number; delta: number }>,
+): StorageDelta {
+	return {
+		...delta(beforeSnapshotId, afterSnapshotId, 0, changes),
+		window: {
+			from: new Date(Date.UTC(2026, 7, 13, 10 + hour)).toISOString(),
+			to: new Date(Date.UTC(2026, 7, 13, 11 + hour)).toISOString(),
+		},
+	};
+}
 
 function delta(
 	beforeSnapshotId: string,
