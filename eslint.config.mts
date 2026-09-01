@@ -8,6 +8,7 @@ export const defaultProjectFiles = [
 	'scripts/release-preflight.mjs',
 	'scripts/release-package.mjs',
 	'scripts/release-identity-contract.mjs',
+	'scripts/brat-release-contract.mjs',
 	'scripts/beta-channel-contract.mjs',
 	'scripts/install-beta.mjs',
 	'scripts/prepare-beta-artifact.mjs',
@@ -18,6 +19,7 @@ export const defaultProjectFiles = [
 	'scripts/h8-native-decision-contract.mjs',
 	'scripts/tests/probar-release-package.mjs',
 	'scripts/tests/probar-release-identity-contract.mjs',
+	'scripts/tests/probar-brat-release-contract.mjs',
 	'scripts/tests/probar-beta-channel.mjs',
 	'scripts/tests/probar-beta-runtime.mjs',
 	'scripts/tests/probar-h8-helper-decision-contract.mjs',
@@ -27,7 +29,7 @@ export const defaultProjectFiles = [
 	'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
 ] as const;
 
-export const defaultProjectCapacity = 26;
+export const defaultProjectCapacity = 28;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(

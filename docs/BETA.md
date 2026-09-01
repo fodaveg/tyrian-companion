@@ -46,6 +46,19 @@ interno ni se admite otra variante de la acción de upload en ese job.
 Un tag solo es aceptado cuando coincide **exactamente** con `manifest.version`, sin prefijo `v`. La
 pipeline tiene permisos `contents: read` y no crea tags, GitHub Releases ni publicaciones.
 
+La publicación manual debe usar también `manifest.version` como nombre exacto de la GitHub Release.
+Después de publicarla, valida los metadatos que sirve GitHub y el conjunto exacto de cinco assets:
+
+```sh
+gh release view "<versión>" --json tagName,name,isDraft,assets \
+  | npm run release:brat-verify -- --release-json -
+```
+
+El verificador rechaza un nombre o tag distinto de `manifest.version`, una release draft y cualquier
+asset ausente, duplicado, extra, no terminado de subir o vacío. GitHub puede tardar entre 5 y 15
+minutos en reflejar una release a BRAT. Hasta comprobar instalación y carga desde BRAT en Obsidian
+real, la formulación correcta es «canal publicado; instalación/runtime pendiente».
+
 Referencias del contrato:
 
 - [Cómo Obsidian descarga plugins](https://github.com/obsidianmd/obsidian-releases/blob/master/README.md#how-community-plugins-are-pulled)

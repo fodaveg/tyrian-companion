@@ -98,6 +98,18 @@ function testPackageScriptBypass() {
 		new Map([['package.json', json(identityTest)]]),
 		'package-identity-test-script',
 	);
+
+	const bratRelease = parse('package.json');
+	bratRelease.scripts['release:brat-verify'] = 'node -e "process.exit(0)"';
+	expectFinding('brat-release-bypass', new Map([['package.json', json(bratRelease)]]), 'package-brat-release-script');
+
+	const bratTest = parse('package.json');
+	bratTest.scripts['test:brat-release-contract'] = 'node -e "process.exit(0)"';
+	expectFinding(
+		'brat-test-bypass',
+		new Map([['package.json', json(bratTest)]]),
+		'package-brat-release-test-script',
+	);
 }
 
 function testTestRunnerBypass() {
@@ -107,6 +119,7 @@ function testTestRunnerBypass() {
 		['test-runner-semicolon', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:release-identity-contract; true')],
 		['test-runner-substitution', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:support-contract')],
 		['test-runner-beta-runtime-missing', (source) => source.replace(' && npm run test:beta-runtime', '')],
+		['test-runner-brat-release-missing', (source) => source.replace(' && npm run test:brat-release-contract', '')],
 	]) {
 		const packageJson = parse('package.json');
 		packageJson.scripts.test = mutate(packageJson.scripts.test);

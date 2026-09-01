@@ -443,6 +443,16 @@ The release preflight requires an attached `HEAD` and an exactly clean
 untracked, unstaged, and staged entries, never paths or file contents.
 It does not verify semantic change scope or replace the test and CI gates.
 
+After publishing a GitHub Release, verify the metadata and exact BRAT asset set returned by GitHub:
+
+```sh
+gh release view "<version>" --json tagName,name,isDraft,assets \
+  | npm run release:brat-verify -- --release-json -
+```
+
+The release name, tag and `manifest.version` must be identical. Allow 5–15 minutes for GitHub/BRAT
+caching, and do not claim installation or runtime success until the real BRAT/Obsidian client passes.
+
 The production build creates `main.js` in the project root. Installation and update inside Obsidian
 remain human QA even when the package and CI gates are green.
 
