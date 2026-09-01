@@ -1178,6 +1178,7 @@ describe('completed session note delivery', () => {
 			settings: { language: 'en' as const },
 			sessionNotes: { write },
 			sessionNoteInput: () => ({ session: 'input' }),
+			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		};
@@ -1208,6 +1209,7 @@ describe('completed session note delivery', () => {
 			settings: { language: 'en' as const },
 			sessionNotes: { write: vi.fn(async () => ({ status: 'conflict' as const, message: 'conflict' })) },
 			sessionNoteInput: () => ({ session: 'input' }),
+			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		};
