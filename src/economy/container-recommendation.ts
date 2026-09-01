@@ -12,7 +12,11 @@ import {
 	type ContainerMarketQuote,
 	type ContainerTradingAccess,
 } from './container-expected-value';
-import { calculateContainerDispositionKernel } from './container-disposition-kernel';
+import {
+	calculateContainerDispositionKernel,
+	type ContainerDispositionKernelDecision,
+	type ContainerDispositionKernelExplanation,
+} from './container-disposition-kernel';
 import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from './commerce-listings';
 import { isContainerModel, type ContainerModelV1 } from './container-model';
 import { calculateTradingPostFees } from './gw2-fees';
@@ -177,49 +181,26 @@ export interface ContainerDispositionRecommendation {
 		held: HeldContainerAllocation[];
 		freeQuantity: number;
 	};
-	economicDecision: null | {
-		action: 'open' | 'sell';
-		quantity: number;
+	/**
+	 * The session surface pins `saleBasis: 'immediate'`, so the kernel cannot
+	 * hand it a listing route. The narrower type states that instead of leaving
+	 * downstream note and loot rendering to discover a third route at runtime.
+	 */
+	economicDecision: null | (Omit<ContainerDispositionKernelDecision, 'sellRoute'> & {
 		sellRoute: 'instant_sell' | 'vendor';
-	};
-	explanation: null | {
-		sellNow: {
-			route: 'instant_sell' | 'vendor';
-			unitCopper: number;
-			grossCopper: number;
-			listingFeeCopper: number;
-			exchangeFeeCopper: number;
-			totalFeesCopper: number;
-			netCopper: number;
-		};
-		open: {
-			evPerContainerMicroCopper: number;
-			totalExpectedMicroCopper: string;
-			coverage: 'complete';
-			modelId: string;
-			modelVersion: number;
-			sampleContainers: number;
-			excludedSampleUnits: number;
-			rareTreatment: ContainerModelV1['uncertainty']['rareDropTreatment'];
-		};
-		threshold: {
-			marginBps: number;
-			requiredOpenMicroCopper: string;
-		};
-		comparison: {
-			differenceMicroCopper: string;
-			advantageBps: number | null;
-			rule: 'open_at_or_above_threshold';
-		};
-		freshness: {
-			asOf: string;
-			priceCapturedAt: string;
-			priceAgeMs: number;
+	});
+	/**
+	 * The kernel explanation verbatim, plus the model-review freshness this
+	 * session surface owns. It is reproduced from the kernel types instead of
+	 * being restated, so a new route or disclosure cannot exist in one of the
+	 * two surfaces and be silently dropped by the other.
+	 */
+	explanation: null | (Omit<ContainerDispositionKernelExplanation, 'freshness'> & {
+		freshness: ContainerDispositionKernelExplanation['freshness'] & {
 			modelReviewedAt: string;
 			modelReviewAgeMs: number;
 		};
-		caveats: string[];
-	};
+	});
 	reasons: ContainerRecommendationReason[];
 }
 
@@ -530,9 +511,12 @@ function calculateEconomics(
 	if (result.status !== 'ready') {
 		return { status: result.status === 'invalid' ? 'invalid' : 'blocked', reason: result.reason };
 	}
+	if (result.decision.sellRoute === 'listing') {
+		return { status: 'invalid', reason: 'model_ev_inconsistent' };
+	}
 	return {
 		status: 'ok',
-		decision: result.decision,
+		decision: { ...result.decision, sellRoute: result.decision.sellRoute },
 		explanation: {
 			...result.explanation,
 			freshness: {
@@ -608,7 +592,7 @@ function isRecommendationAllocations(value: unknown): value is ContainerDisposit
 function isEconomicDecision(value: unknown, freeQuantity: number): value is NonNullable<ContainerDispositionRecommendation['economicDecision']> {
 	return isRecord(value) && exactKeys(value, ['action', 'quantity', 'sellRoute']) &&
 		(value.action === 'open' || value.action === 'sell') && positive(value.quantity) &&
-		value.quantity === freeQuantity && (value.sellRoute === 'instant_sell' || value.sellRoute === 'vendor');
+		value.quantity === freeQuantity && SELL_ROUTES.includes(String(value.sellRoute));
 }
 
 function isEconomicExplanation(
@@ -618,11 +602,13 @@ function isEconomicExplanation(
 	const quantity = decision.quantity;
 	if (!isRecord(value) || !exactKeys(value, [
 		'sellNow', 'open', 'threshold', 'comparison', 'freshness', 'caveats',
+		'preferredSaleBasis', 'routes', 'tail',
 	]) || !isSellNow(value.sellNow, quantity) || !isRecord(value.open) || !exactKeys(value.open, [
-		'evPerContainerMicroCopper', 'totalExpectedMicroCopper', 'coverage', 'modelId', 'modelVersion',
-		'sampleContainers', 'excludedSampleUnits', 'rareTreatment',
+		'evPerContainerMicroCopper', 'totalExpectedMicroCopper', 'coverage', 'noCounterpartyItemIds', 'modelId',
+		'modelVersion', 'sampleContainers', 'excludedSampleUnits', 'rareTreatment',
 	]) || !nonNegative(value.open.evPerContainerMicroCopper) || !decimal(value.open.totalExpectedMicroCopper) ||
-		value.open.coverage !== 'complete' || !trimmed(value.open.modelId, 128) || !positive(value.open.modelVersion) ||
+		!isDeclaredZeroCoverage(value.open.coverage, value.open.noCounterpartyItemIds) ||
+		!trimmed(value.open.modelId, 128) || !positive(value.open.modelVersion) ||
 		!positive(value.open.sampleContainers) || !nonNegative(value.open.excludedSampleUnits) ||
 		!['excluded', 'observed_only', 'bounded'].includes(String(value.open.rareTreatment)) ||
 		BigInt(value.open.totalExpectedMicroCopper) !== BigInt(value.open.evPerContainerMicroCopper) * BigInt(quantity)) return false;
@@ -652,8 +638,29 @@ function isEconomicExplanation(
 		value.comparison.advantageBps !== expectedAdvantage || decision.action !== expectedAction ||
 		value.freshness.priceAgeMs !== Math.max(0, asOf - priceCapturedAt) ||
 		modelReviewedAt > asOf || value.freshness.modelReviewAgeMs !== asOf - modelReviewedAt) return false;
+	// This surface pins `saleBasis: 'immediate'`, so exactly one route exists and
+	// it must reproduce the headline figures. Widening the policy here without
+	// widening this check turns the assertion red instead of dropping a route.
+	if (value.preferredSaleBasis !== 'immediate' || value.tail !== null || !Array.isArray(value.routes)
+		|| value.routes.length !== 1 || !isRecord(value.routes[0])
+		|| value.routes[0].saleBasis !== 'immediate' || value.routes[0].execution !== 'guaranteed_buyer'
+		|| value.routes[0].openIncludingTail !== null
+		|| sha256CanonicalValue(value.routes[0].sellNow) !== sha256CanonicalValue(value.sellNow)
+		|| sha256CanonicalValue(value.routes[0].open) !== sha256CanonicalValue(value.open)
+		|| sha256CanonicalValue(value.routes[0].threshold) !== sha256CanonicalValue(value.threshold)
+		|| sha256CanonicalValue(value.routes[0].comparison) !== sha256CanonicalValue(value.comparison)
+		|| sha256CanonicalValue(value.routes[0].decision)
+			!== sha256CanonicalValue({ action: decision.action, sellRoute: decision.sellRoute })) return false;
 	const caveats = value.caveats;
 	return caveats.every((entry, index) => index === 0 || caveats[index - 1]!.localeCompare(entry) < 0);
+}
+
+const SELL_ROUTES = ['instant_sell', 'listing', 'vendor'];
+
+function isDeclaredZeroCoverage(coverage: unknown, ids: unknown): boolean {
+	if (!Array.isArray(ids) || !ids.every(positive)
+		|| !ids.every((id, index) => index === 0 || (ids[index - 1] as number) < id)) return false;
+	return coverage === (ids.length === 0 ? 'complete' : 'declared_zero');
 }
 
 function isSellNow(
@@ -662,7 +669,7 @@ function isSellNow(
 ): value is NonNullable<ContainerDispositionRecommendation['explanation']>['sellNow'] {
 	if (!isRecord(value) || !exactKeys(value, [
 		'route', 'unitCopper', 'grossCopper', 'listingFeeCopper', 'exchangeFeeCopper', 'totalFeesCopper', 'netCopper',
-	]) || !['instant_sell', 'vendor'].includes(String(value.route)) || !nonNegative(value.unitCopper) ||
+	]) || !SELL_ROUTES.includes(String(value.route)) || !nonNegative(value.unitCopper) ||
 		!nonNegative(value.grossCopper) || !nonNegative(value.listingFeeCopper) || !nonNegative(value.exchangeFeeCopper) ||
 		!nonNegative(value.totalFeesCopper) || !nonNegative(value.netCopper)) return false;
 	const fees = safeSum([value.listingFeeCopper, value.exchangeFeeCopper]);

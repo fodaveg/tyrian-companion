@@ -544,7 +544,7 @@ describe('recommendContainerDisposition', () => {
 	it('keeps excluded rare outcomes visible in the numeric explanation', () => {
 		const value = input();
 		value.model.sample.observations += 1;
-		value.model.excluded = [{ category: 'Rare', sampleUnits: 1, reason: 'super_rare_jackpot' }];
+		value.model.excluded = [{ category: 'Rare', sampleUnits: 1, reason: 'super_rare_jackpot', items: [] }];
 		value.model.uncertainty.rareDropTreatment = 'excluded';
 		value.modelReview.modelFingerprint = containerModelFingerprint(value.model)!;
 		const result = ready(value);
@@ -557,7 +557,7 @@ describe('recommendContainerDisposition', () => {
 		const withJackpot = input({ modelEvMicro: 102_300_000 });
 		withJackpot.model.sample.observations += 50;
 		withJackpot.model.excluded = [{
-			category: 'Unpriced jackpot', sampleUnits: 50, reason: 'super_rare_jackpot',
+			category: 'Unpriced jackpot', sampleUnits: 50, reason: 'super_rare_jackpot', items: [],
 		}];
 		withJackpot.model.uncertainty.rareDropTreatment = 'excluded';
 		withJackpot.modelReview.modelFingerprint = containerModelFingerprint(withJackpot.model)!;

@@ -16,6 +16,7 @@ const ALLOWED_DEPENDENCIES = {
 		'./commerce-listings',
 		'./container-expected-value',
 		'./container-model',
+		'./container-tail-valuation',
 		'./gw2-fees',
 	]),
 	advisor: new Set([
@@ -25,7 +26,9 @@ const ALLOWED_DEPENDENCIES = {
 		'../economy/container-disposition-kernel',
 		'../economy/container-model',
 		'../economy/container-personal-valuation',
+		'../economy/models/halloween-season',
 		'../economy/models/halloween-trick-or-treat-bag',
+		'../economy/seasonal-window',
 		'./inventory-advisor-contract',
 		'./inventory-advisor-model',
 	]),

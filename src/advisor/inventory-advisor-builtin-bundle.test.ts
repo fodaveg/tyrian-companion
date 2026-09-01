@@ -52,10 +52,14 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			economyPack: {
 				packId: 'tc.inventory-container-economy.halloween-v1',
 				activation: { status: 'enabled', activatedAt: '2026-08-16T05:22:24.000Z' },
-				modelFingerprint: '7501839c02bbbcf5e07e6fe662d1ae3ceaf5e6b5a423f9d6a09432b1ab524fc1',
-				expectedPriceItemIds: [36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002],
-				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate' },
-				sha256: 'ba445d034b605d9c5db6219c1a8a689f334a62816aed75ba70b2f17d99dc0f5f',
+				modelFingerprint: '97341d809b96df1bd575e42cb72fb7f23b3c9fd8dea548fa5bbc6fb53a310a8a',
+				season: { version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 },
+				expectedPriceItemIds: [
+					36_038, 36_041, 36_059, 36_060, 36_061, 79_673, 79_674, 79_677, 79_679,
+					89_002, 89_007, 89_065, 89_070, 89_071,
+				],
+				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate_and_listing' },
+				sha256: '461b12fda69634a29de6668025f7404d83ca27865cc1cdfbbb2f022d5af7eacf',
 			},
 		});
 		expect(result.bundle.rulePack.sources).toEqual(sources());
@@ -152,16 +156,16 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	});
 
 	it('routes the human-enabled built-in through the H4.19 kernel and reproduces its result', () => {
-		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:23:00.000Z');
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-10-16T05:23:00.000Z');
 		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
 		const bundle = structuredClone(loaded.bundle);
-		const input = advisorInput(bundle, '2026-08-16T05:23:00.000Z', 36_038);
+		const input = advisorInput(bundle, '2026-10-16T05:23:00.000Z', 36_038);
 		const prices: InventoryContainerPriceEvidenceV1 = {
 			version: 1 as const,
 			accountId: input.snapshot.accountId,
 			snapshotId: input.snapshot.snapshotId,
 			schemaVersion: PINNED_SCHEMA,
-			capturedAt: '2026-08-16T05:22:30.000Z',
+			capturedAt: '2026-10-16T05:22:30.000Z',
 			source: 'gw2-commerce-prices' as const,
 			requestedItemIds: structuredClone(bundle.economyPack.expectedPriceItemIds),
 			status: 'complete' as const,
@@ -235,8 +239,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(isInventoryAdvisorResultForInput(revokedResult, input, bundle.knowledgePack, revokedEconomy)).toBe(true);
 		const partial = structuredClone(engineInput);
 		partial.containerEconomy.prices.status = 'partial';
-		partial.containerEconomy.prices.missingItemIds = [89_002];
-		partial.containerEconomy.prices.items.pop();
+		partial.containerEconomy.prices.missingItemIds = [partial.containerEconomy.prices.items.pop()!.itemId];
 		expect(isInventoryContainerPriceEvidence(partial.containerEconomy.prices)).toBe(true);
 		const reviewed = classifyInventoryAdvisor(partial);
 		expect(reviewed.report?.lines[0]?.decisions).toEqual([expect.objectContaining({ action: 'review' })]);

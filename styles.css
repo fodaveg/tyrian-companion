@@ -1866,6 +1866,65 @@
 	overflow-wrap: anywhere;
 }
 
+.tyrian-inventory-advisor__container-routes {
+	inline-size: 100%;
+	margin-block-start: var(--size-4-2);
+	border-collapse: collapse;
+}
+
+.tyrian-inventory-advisor__container-routes caption {
+	text-align: start;
+	padding-block-end: var(--size-4-1);
+	color: var(--text-muted);
+}
+
+.tyrian-inventory-advisor__container-routes th,
+.tyrian-inventory-advisor__container-routes td {
+	text-align: start;
+	vertical-align: top;
+	padding: var(--size-4-1) var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__container-routes th[scope='row'] {
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__container-tail {
+	margin-block-start: var(--size-4-2);
+	padding: var(--size-4-2);
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.tyrian-inventory-advisor__container-tail summary {
+	display: flex;
+	align-items: center;
+	min-block-size: 44px;
+	cursor: pointer;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-inventory-advisor__container-tail dl {
+	display: grid;
+	grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__container-tail dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__season {
+	margin-block-start: var(--size-4-2);
+	padding: var(--size-4-2);
+	border-inline-start: 3px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
 @container (max-width: 759px) {
 	.tyrian-price-history__controls {
 		grid-template-columns: repeat(2, minmax(0, 1fr));

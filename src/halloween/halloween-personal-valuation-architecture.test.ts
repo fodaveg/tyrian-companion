@@ -12,11 +12,11 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		if (loaded.status !== 'available') throw new Error('Expected built-in bundle.');
 		const model = halloweenTrickOrTreatBagModel();
 		expect(loaded.bundle.economyPack.modelFingerprint).toBe(
-			'7501839c02bbbcf5e07e6fe662d1ae3ceaf5e6b5a423f9d6a09432b1ab524fc1',
+			'97341d809b96df1bd575e42cb72fb7f23b3c9fd8dea548fa5bbc6fb53a310a8a',
 		);
 		expect(loaded.bundle.economyPack.modelFingerprint).toBe(sha256StandardCanonicalValue(model));
 		expect(loaded.bundle.economyPack.sha256).toBe(
-			'ba445d034b605d9c5db6219c1a8a689f334a62816aed75ba70b2f17d99dc0f5f',
+			'461b12fda69634a29de6668025f7404d83ca27865cc1cdfbbb2f022d5af7eacf',
 		);
 		expect(JSON.stringify(model)).not.toContain('personalValuation');
 		expect(JSON.stringify(loaded.bundle.economyPack)).not.toContain('personalValuation');

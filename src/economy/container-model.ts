@@ -19,6 +19,29 @@ export interface ContainerOutcomeModel {
 	valuationPolicy: OutcomeValuationPolicy;
 }
 
+/**
+ * One named drop inside an excluded bucket.
+ *
+ * The bucket keeps its aggregate `sampleUnits` and stays out of the
+ * conservative expected value; itemizing it changes nothing about that
+ * decision. It exists so the excluded tail can be PRICED and shown separately,
+ * instead of the player being told a number is missing without being told how
+ * big it is. `sampleUnits` across the items may cover only part of the bucket,
+ * and the gap is reported rather than closed by guessing.
+ */
+export interface ContainerExcludedItemModel {
+	id: number;
+	label: string;
+	sampleUnits: number;
+}
+
+export interface ContainerExcludedBucketModel {
+	category: string;
+	sampleUnits: number;
+	reason: 'unsupported_long_tail' | 'super_rare_jackpot';
+	items: ContainerExcludedItemModel[];
+}
+
 export interface ContainerModelV1 {
 	schemaVersion: typeof CONTAINER_MODEL_SCHEMA_VERSION;
 	modelId: string;
@@ -38,11 +61,7 @@ export interface ContainerModelV1 {
 		observedUntil: string | null;
 	};
 	outcomes: ContainerOutcomeModel[];
-	excluded: Array<{
-		category: string;
-		sampleUnits: number;
-		reason: 'unsupported_long_tail' | 'super_rare_jackpot';
-	}>;
+	excluded: ContainerExcludedBucketModel[];
 	uncertainty: {
 		method: 'sample_only' | 'confidence_interval' | 'curated_bounds';
 		confidenceBasisPoints: number | null;
@@ -92,7 +111,31 @@ export function isContainerModel(value: unknown): value is ContainerModelV1 {
 		...value.excluded.map((entry) => entry.sampleUnits)]
 		.reduce((sum, units) => Number.isSafeInteger(sum + units) ? sum + units : Number.NaN, 0);
 	if (accounted !== sample.observations) return false;
-	return true;
+	const excludedIds = value.excluded.flatMap((entry) => entry.items.map((item) => item.id));
+	if (new Set(excludedIds).size !== excludedIds.length) return false;
+	const modelledItemIds = new Set(outcomes.filter((outcome) => outcome.namespace === 'item')
+		.map((outcome) => outcome.id));
+	return excludedIds.every((id) => !modelledItemIds.has(id));
+}
+
+/**
+ * Every item id whose public price this model needs.
+ *
+ * Both the kernel and its contextual guard derive the expected price request
+ * from this one function so they cannot disagree about the list: a guard that
+ * asks for a superset and a kernel that demands an exact match is how a market
+ * batch ends up rejected as incoherent for carrying the very quotes that were
+ * requested.
+ */
+export function containerModelPriceItemIds(model: ContainerModelV1): number[] {
+	const ids = new Set<number>([model.containerItemId]);
+	for (const outcome of model.outcomes) {
+		if (outcome.namespace === 'item' && outcome.valuationPolicy === 'liquid_market' && outcome.sampleUnits > 0) {
+			ids.add(outcome.id);
+		}
+	}
+	for (const bucket of model.excluded) for (const item of bucket.items) ids.add(item.id);
+	return [...ids].sort((left, right) => left - right);
 }
 
 export function containerOutcomeKey(namespace: ContainerOutcomeNamespace, id: number): string {
@@ -134,12 +177,22 @@ function isOutcome(value: unknown): value is ContainerOutcomeModel {
 	return true;
 }
 
-function isExcluded(value: unknown): value is ContainerModelV1['excluded'][number] {
-	return isRecord(value)
-		&& exactKeys(value, ['category', 'sampleUnits', 'reason'])
-		&& nonEmptyString(value.category)
-		&& positiveInteger(value.sampleUnits)
-		&& ['unsupported_long_tail', 'super_rare_jackpot'].includes(value.reason as string);
+function isExcluded(value: unknown): value is ContainerExcludedBucketModel {
+	if (!isRecord(value)
+		|| !exactKeys(value, ['category', 'sampleUnits', 'reason', 'items'])
+		|| !nonEmptyString(value.category)
+		|| !positiveInteger(value.sampleUnits)
+		|| !['unsupported_long_tail', 'super_rare_jackpot'].includes(value.reason as string)
+		|| !Array.isArray(value.items) || !value.items.every(isExcludedItem)) return false;
+	const items = value.items;
+	if (!items.every((item, index) => index === 0 || items[index - 1]!.id < item.id)) return false;
+	const itemized = items.reduce((sum, item) => sum + item.sampleUnits, 0);
+	return Number.isSafeInteger(itemized) && itemized <= value.sampleUnits;
+}
+
+function isExcludedItem(value: unknown): value is ContainerExcludedItemModel {
+	return isRecord(value) && exactKeys(value, ['id', 'label', 'sampleUnits'])
+		&& positiveInteger(value.id) && nonEmptyString(value.label) && positiveInteger(value.sampleUnits);
 }
 
 function validValuationPolicy(namespace: unknown, policy: unknown): policy is OutcomeValuationPolicy {

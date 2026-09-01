@@ -100,6 +100,12 @@ export interface InventoryAdvisorPresentationRow {
 	materialStorage?: InventoryRecommendationDecisionV1['materialStorage'] | null;
 	irreversibleReviewOnly: boolean;
 	discardProof: InventoryDiscardAllowlistProofV1 | null;
+	/**
+	 * Present only when the curated container pack declares a festival window and
+	 * the snapshot falls outside it. It carries no economics: out of season there
+	 * is nothing to advise, and saying so is the point.
+	 */
+	containerSeason?: { status: 'out_of_season'; seasonId: string; returnsInMonth: number } | null;
 	containerEconomy?: {
 		recommendation: InventoryContainerEconomyDecisionV1;
 		recommendationBasis: 'liquid_only' | 'personal';

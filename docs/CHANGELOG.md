@@ -1,5 +1,39 @@
 # Changelog
 
+## Integrado en main sin publicar - la Bolsa de truco o trato deja de estar muda
+
+- **El objeto insignia del plugin llevaba todo el año en «revisión».** La Bolsa de truco o trato
+  (`36038`) tiene ocho resultados líquidos y, medido el 2026-09-01 contra `/v2/commerce/listings`,
+  **seis de ellos no tienen ni una sola orden de compra**: cuarenta millones de unidades a 30 cobre
+  y demanda cero, que es su estado normal, no una anomalía. El kernel leía esa ausencia como
+  evidencia que faltaba y se callaba. Ahora un resultado cuya cotización llega SIN puja y cuyo libro
+  de órdenes confirma que no hay compradores vale **cero declarado**, con su lista de ids a la
+  vista; solo se sigue considerando desconocido cuando las dos lecturas se contradicen.
+- **Segunda base de venta: el anuncio.** El kernel compara ahora la venta inmediata (consumiendo
+  pujas reales) y la publicación al mejor ask, cada una con su umbral y su veredicto, y la vista
+  muestra las dos filas. La ruta de anuncio **nunca** encabeza la recomendación mientras exista una
+  ruta ejecutable, y la interfaz dice en cada fila qué garantiza: el mejor ask sigue siendo solo
+  referencia estimada de publicación, ni demanda ni ejecución. Con los precios del 2026-09-01 ambas
+  rutas coinciden en vender (207,37 c de EV frente a 334,40 c de umbral por puja; 308,40 c frente a
+  374,00 c por anuncio).
+- **La cola excluida deja de ser un cero invisible.** El modelo conservador sigue excluyendo los
+  jackpots —esa decisión de producto no cambia—, pero ahora los nombra: cinco infusiones, 13 de las
+  50 unidades de muestra del cubo super-raro. Valen **78,57 c por saco a puja**, entre un tercio y
+  un 38 % de lo que rinde abrir, y se muestran en un disclosure aparte con su desviación típica, que
+  es de unas **113 monedas de plata por saco**: dos órdenes de magnitud por encima de su propia
+  media, o sea que la cola es retorno esperado real y aun así no es un plan para cien sacos. La
+  recomendación principal sigue siendo la conservadora.
+- **Halloween pasa a tener calendario.** No había ninguno: un grep de `october|season|festival` en
+  `src/` no daba una sola coincidencia en producción, así que en marzo el saco seguía consultándose
+  y la alerta de precio seguía armada, porque el saco cotiza todo el año y ningún precio dice nunca
+  que la fiesta terminó. La ventana se declara como dato dentro del pack curado
+  (`1 de octubre - 15 de noviembre`, UTC, ambos extremos incluidos) y viaja hasheada con él. Fuera
+  de ventana el asesor responde `out_of_season`, la vista dice «Halloween vuelve en octubre» y la
+  alerta de precio ni siquiera abre el histórico. Un `29-02` como extremo se rechaza al validar.
+- Reindexados los localizadores de `scripts/action-observability-baseline.json` con LCS contra el
+  padre: solo se transfirió lo que sobrevivió byte a byte, 0 decisiones descartadas, 0 huérfanas y
+  0 fronteras sin revisar. Nunca se usó `--write-baseline`.
+
 ## Integrado en main sin publicar - superficies conectadas, primera ejecución y censo
 
 - Montadas cuatro superficies que ya existían, tenían pruebas y ningún punto de entrada las

@@ -39,6 +39,15 @@ const SOURCE_OUTCOMES: SourceOutcome[] = [
 	{ id: 89_002, label: 'Soul Pastry', sampleUnits: 4_273, valuationPolicy: 'liquid_market' },
 ];
 
+// The named part of the super-rare bucket, from the same revision. Ascending by id.
+const SUPER_RARE_JACKPOTS = [
+	{ id: 79_674, label: 'Phospholuminescent Infusion', sampleUnits: 1 },
+	{ id: 89_007, label: 'Polysaturating Reverberating Infusion (Gray)', sampleUnits: 4 },
+	{ id: 89_065, label: 'Ember Infusion', sampleUnits: 2 },
+	{ id: 89_070, label: 'Polysaturating Reverberating Infusion (Purple)', sampleUnits: 3 },
+	{ id: 89_071, label: 'Polysaturating Reverberating Infusion (Red)', sampleUnits: 3 },
+];
+
 const candidate: ContainerModelV1 = {
 	schemaVersion: 1,
 	modelId: HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
@@ -64,8 +73,12 @@ const candidate: ContainerModelV1 = {
 		expectedUnitsMillionths: expectedUnitsMillionths(outcome.sampleUnits, CONTAINERS_OPENED)!,
 	})),
 	excluded: [
-		{ category: 'Rare long tail except Soul Pastry', sampleUnits: 1_121, reason: 'unsupported_long_tail' },
-		{ category: 'Super rare jackpots', sampleUnits: 50, reason: 'super_rare_jackpot' },
+		{ category: 'Rare long tail except Soul Pastry', sampleUnits: 1_121, reason: 'unsupported_long_tail', items: [] },
+		// 13 of the 50 super-rare units are named by the same wiki revision. They stay
+		// OUT of the conservative expected value; itemizing them only lets the tail be
+		// priced and shown apart, because five infusions at hundreds of gold each are
+		// the difference between a lottery ticket and a loss for whoever opens at scale.
+		{ category: 'Super rare jackpots', sampleUnits: 50, reason: 'super_rare_jackpot', items: SUPER_RARE_JACKPOTS },
 	],
 	uncertainty: {
 		method: 'sample_only',

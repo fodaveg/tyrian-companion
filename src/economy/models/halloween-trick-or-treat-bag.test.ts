@@ -32,9 +32,19 @@ describe('Halloween Trick-or-Treat Bag model', () => {
 		expect(model.uncertainty.rareDropTreatment).toBe('excluded');
 		expect(model.outcomes.some((outcome) => outcome.label.includes('Infusion'))).toBe(false);
 		expect(model.excluded).toEqual([
-			{ category: 'Rare long tail except Soul Pastry', sampleUnits: 1_121, reason: 'unsupported_long_tail' },
-			{ category: 'Super rare jackpots', sampleUnits: 50, reason: 'super_rare_jackpot' },
+			{ category: 'Rare long tail except Soul Pastry', sampleUnits: 1_121, reason: 'unsupported_long_tail', items: [] },
+			{ category: 'Super rare jackpots', sampleUnits: 50, reason: 'super_rare_jackpot', items: [
+				{ id: 79_674, label: 'Phospholuminescent Infusion', sampleUnits: 1 },
+				{ id: 89_007, label: 'Polysaturating Reverberating Infusion (Gray)', sampleUnits: 4 },
+				{ id: 89_065, label: 'Ember Infusion', sampleUnits: 2 },
+				{ id: 89_070, label: 'Polysaturating Reverberating Infusion (Purple)', sampleUnits: 3 },
+				{ id: 89_071, label: 'Polysaturating Reverberating Infusion (Red)', sampleUnits: 3 },
+			] },
 		]);
+		// Naming the jackpots must not move a single copper of the conservative EV:
+		// they stay out of `outcomes`, which is the only list the kernel values.
+		expect(model.outcomes.map((outcome) => outcome.id))
+			.not.toEqual(expect.arrayContaining([79_674, 89_007, 89_065, 89_070, 89_071]));
 		expect(model.outcomes.reduce((sum, outcome) => sum + outcome.sampleUnits, 0)
 			+ model.excluded.reduce((sum, entry) => sum + entry.sampleUnits, 0)).toBe(model.sample.observations);
 		expect(model.outcomes.filter((outcome) => outcome.valuationPolicy === 'liquid_market')

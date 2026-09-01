@@ -133,6 +133,7 @@ describe('container expected value', () => {
 			category: 'Zero sample remainder',
 			sampleUnits: 1,
 			reason: 'unsupported_long_tail',
+			items: [],
 		}];
 		const result = calculateContainerExpectedValue(model, withQuote ? [{
 			itemId: 1, whitelisted: true, bidUnitCopper: 100, askUnitCopper: 100,

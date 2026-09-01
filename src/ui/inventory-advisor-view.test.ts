@@ -117,6 +117,55 @@ describe('Inventory Advisor view', () => {
 		expect(copy).not.toContain(locale === 'es' ? '0 cobre esperado como límite inferior' : '0 expected copper as a lower bound');
 	});
 
+	it.each([
+		['es', 'Venta inmediata (puja)', 'Anuncio (mejor ask)', 'recomendación principal',
+			'referencia estimada de publicación', 'sin comprador y valorados a cero: 36059, 36060'],
+		['en', 'Immediate sale (bid)', 'Listing (best ask)', 'headline recommendation',
+			'estimated listing reference', 'no buyer and valued at zero: 36059, 36060'],
+	] as const)('shows both sale bases with their own verdict and never promises a listing in %s',
+		(locale, immediate, listing, preferred, reference, declaredZero) => {
+			const copy = text(render(economyModel(twoRouteDisclosure()), locale).elements());
+			expect(copy).toContain(immediate);
+			expect(copy).toContain(listing);
+			expect(copy).toContain(preferred);
+			expect(copy).toContain(reference);
+			expect(copy).toContain(declaredZero);
+			expect(copy).toContain(locale === 'es' ? 'Vender ya' : 'Sell now');
+		});
+
+	it.each([
+		['es', 'EV incluyendo la cola excluida (informativo)', 'La recomendación de arriba NO usa estas cifras',
+			'desviación típica por saco', 'no supera el umbral de abrir',
+			'Cola nombrada: 13 de 1171 unidades de muestra excluidas'],
+		['en', 'EV including the excluded tail (informational)', 'The recommendation above does NOT use these figures',
+			'standard deviation per bag', 'does not clear the open threshold',
+			'Named tail: 13 of 1171 excluded sample units'],
+	] as const)('discloses the excluded tail with its deviation, apart from the recommendation, in %s',
+		(locale, title, intro, deviation, verdict, itemized) => {
+			const copy = text(render(economyModel(twoRouteDisclosure()), locale).elements());
+			expect(copy).toContain(title);
+			expect(copy).toContain(intro);
+			expect(copy).toContain(deviation);
+			expect(copy).toContain(verdict);
+			expect(copy).toContain(itemized);
+		});
+
+	it.each([
+		['es', 'Halloween vuelve en octubre'],
+		['en', 'Halloween returns in October'],
+	] as const)('says when Halloween returns instead of pretending to watch, in %s', (locale, expected) => {
+		const model = economyModel(personalDisclosure('partial', false));
+		const target = model.groups[0]!.rows[0]!;
+		target.containerEconomy = null;
+		target.containerSeason = { status: 'out_of_season', seasonId: 'halloween', returnsInMonth: 10 };
+		const mount = render(model, locale);
+		const copy = text(mount.elements());
+		expect(copy).toContain(expected);
+		expect(copy).not.toContain(locale === 'es' ? 'Rutas de venta comparadas' : 'Compared sale routes');
+		// Once in the table layout and once in the card layout; CSS hides one.
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__season')).toHaveLength(2);
+	});
+
 	it.each([[479, 'cards'], [480, 'cards'], [759, 'cards'], [760, 'table']] as const)(
 		'selects the semantic H5.11 layout at %ipx',
 		(width, expected) => expect(inventoryAdvisorViewLayout(width)).toBe(expected),
@@ -1052,6 +1101,57 @@ function economyModel(containerEconomy: NonNullable<InventoryAdvisorViewRow['con
 	};
 }
 
+/**
+ * The 2026-09-01 order book in disclosure shape: the bag has a buyer, six of
+ * its outcomes have none, and both bases end on sell.
+ */
+function twoRouteDisclosure(): NonNullable<InventoryAdvisorViewRow['containerEconomy']> {
+	const disclosure = personalDisclosure('partial', true);
+	const explanation = disclosure.liquidOnly.explanation;
+	const immediate = {
+		saleBasis: 'immediate' as const, execution: 'guaranteed_buyer' as const,
+		sellNow: { route: 'instant_sell' as const, unitCopper: 358, grossCopper: 358,
+			listingFeeCopper: 18, exchangeFeeCopper: 36, totalFeesCopper: 54, netCopper: 304 },
+		open: { evPerContainerMicroCopper: 207_369_813, totalExpectedMicroCopper: '207369813',
+			coverage: 'declared_zero' as const,
+			noCounterpartyItemIds: [36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002],
+			modelId: 'model', modelVersion: 1, sampleContainers: 106_264,
+			excludedSampleUnits: 1_171, rareTreatment: 'excluded' as const },
+		threshold: { marginBps: 1_000, requiredOpenMicroCopper: '334400000' },
+		comparison: { differenceMicroCopper: '-127030187', advantageBps: -3_178,
+			rule: 'open_at_or_above_threshold' as const },
+		decision: { action: 'sell' as const, sellRoute: 'instant_sell' as const },
+		openIncludingTail: { evPerContainerMicroCopper: 285_944_382, totalExpectedMicroCopper: '285944382',
+			deviationPerContainerMicroCopper: 11_349_785_993, meetsThreshold: false },
+	};
+	const listing = {
+		...immediate,
+		saleBasis: 'listing' as const, execution: 'reference_listing' as const,
+		sellNow: { route: 'listing' as const, unitCopper: 400, grossCopper: 400,
+			listingFeeCopper: 20, exchangeFeeCopper: 40, totalFeesCopper: 60, netCopper: 340 },
+		open: { ...immediate.open, evPerContainerMicroCopper: 308_402_590,
+			totalExpectedMicroCopper: '308402590', coverage: 'complete' as const, noCounterpartyItemIds: [] },
+		threshold: { marginBps: 1_000, requiredOpenMicroCopper: '374000000' },
+		decision: { action: 'sell' as const, sellRoute: 'listing' as const },
+	};
+	explanation.sellNow = immediate.sellNow;
+	explanation.open = immediate.open;
+	explanation.threshold = immediate.threshold;
+	explanation.preferredSaleBasis = 'immediate';
+	explanation.routes = [immediate, listing];
+	explanation.tail = {
+		version: 1, modelId: 'model', modelVersion: 1, containerItemId: 36_038,
+		sampleContainers: 106_264, bucketSampleUnits: 1_171, itemizedSampleUnits: 13,
+		immediate: { basis: 'immediate', evPerContainerMicroCopper: 78_574_569,
+			deviationPerContainerMicroCopper: 11_349_785_993, unpricedItemIds: [] },
+		listing: { basis: 'listing', evPerContainerMicroCopper: 105_340_000,
+			deviationPerContainerMicroCopper: 13_000_000_000, unpricedItemIds: [] },
+	};
+	disclosure.liquidOnly.decision = { action: 'sell', quantity: 1, ruleId: null };
+	disclosure.recommendation = { action: 'sell', quantity: 1, ruleId: null };
+	return disclosure;
+}
+
 function equipmentSalvageModel(): InventoryAdvisorViewModel {
 	return {
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
@@ -1097,13 +1197,28 @@ function personalDisclosure(
 				sellNow: { route: 'instant_sell', unitCopper: 1_000, grossCopper: 3_000,
 					listingFeeCopper: 150, exchangeFeeCopper: 300, totalFeesCopper: 450, netCopper: 2_550 },
 				open: { evPerContainerMicroCopper: 1_234_567_890, totalExpectedMicroCopper: '3703703670',
-					coverage: 'complete', modelId: 'model', modelVersion: 1, sampleContainers: 106_264,
-					excludedSampleUnits: 1_171, rareTreatment: 'excluded' },
+					coverage: 'complete', noCounterpartyItemIds: [], modelId: 'model', modelVersion: 1,
+					sampleContainers: 106_264, excludedSampleUnits: 1_171, rareTreatment: 'excluded' },
 				threshold: { marginBps: 1_000, requiredOpenMicroCopper: '2805000000' },
 				comparison: { differenceMicroCopper: '898703670', advantageBps: 4_500,
 					rule: 'open_at_or_above_threshold' },
 				freshness: { asOf: '2026-08-29T00:00:00.000Z', priceCapturedAt: '2026-08-29T00:00:00.000Z', priceAgeMs: 0 },
 				caveats: ['excluded_outcomes_not_valued'],
+				preferredSaleBasis: 'immediate',
+				routes: [{
+					saleBasis: 'immediate', execution: 'guaranteed_buyer',
+					sellNow: { route: 'instant_sell', unitCopper: 1_000, grossCopper: 3_000,
+						listingFeeCopper: 150, exchangeFeeCopper: 300, totalFeesCopper: 450, netCopper: 2_550 },
+					open: { evPerContainerMicroCopper: 1_234_567_890, totalExpectedMicroCopper: '3703703670',
+						coverage: 'complete', noCounterpartyItemIds: [], modelId: 'model', modelVersion: 1,
+						sampleContainers: 106_264, excludedSampleUnits: 1_171, rareTreatment: 'excluded' },
+					threshold: { marginBps: 1_000, requiredOpenMicroCopper: '2805000000' },
+					comparison: { differenceMicroCopper: '898703670', advantageBps: 4_500,
+						rule: 'open_at_or_above_threshold' },
+					decision: { action: liquidAction, sellRoute: 'instant_sell' },
+					openIncludingTail: null,
+				}],
+				tail: null,
 			},
 		},
 		personal: {

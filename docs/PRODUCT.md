@@ -149,6 +149,29 @@ La versión `0.1.0` valida la base técnica:
 - H4.8 calcula el EV conservador de abrir en microcobre y mantiene dos cifras distintas: venta inmediata al bid y listado al ask, ambas netas de tasas. Los premios excluidos o ligados suman exactamente cero oro líquido; si falta una cotización, el total de esa ruta queda desconocido y solo se muestra el subtotal respaldado.
 - H4.9 reserva el balance final para objetivos activos sin duplicar unidades: distingue propiedad de disponibilidad, prioridad, faltantes, uso previsto y cobertura demostrada por namespace. Sus allowances dicen qué cantidad sigue elegible para liquidar, abrir, consumir, canjear o gastar; evidencia desconocida bloquea ese cálculo. El overlay solo acepta evidencia H4.5 coherente, separa cantidades protegidas/elegibles y conserva intactos importes, fees, cobertura y tasas. Todavía no persiste objetivos/planes, muestra UI ni recomienda una acción.
 - H4.10 emite una recomendación pura y trazable de abrir o vender únicamente para la parte no reservada de un contenedor. H4.19 extrae su comparación a un kernel independiente de sesión, reutilizable solo con datos explícitos. Exige modelo aprobado y vigente, un único batch de precios fresco, identidad coherente y una ruta de venta realizable. Recalcula tasas para la pila libre y compara con enteros exactos contra un margen versionado; igualdad abre. Evidencia limitada bloquea sin acción y evidencia incoherente invalida. No abre, vende ni persiste.
+- H4.20 compara las DOS bases de venta del contenedor en vez de solo la inmediata: consumir pujas
+  reales y publicar al mejor ask, cada una con su umbral del 10 % y su veredicto propio, visibles
+  como dos filas. La ruta de anuncio nunca encabeza la recomendación mientras exista una ruta
+  ejecutable, y cada fila declara qué garantiza: el mejor ask sigue siendo solo referencia estimada
+  de publicación, ni demanda ni ejecución. Un resultado cuya cotización llega sin puja y cuyo libro
+  de órdenes confirma que no hay compradores vale cero declarado, con sus ids a la vista; dos
+  lecturas que se contradicen siguen siendo desconocidas. Sin esa distinción, seis de los ocho
+  resultados líquidos de `#36038` —sin una sola orden de compra todo el año— dejaban al objeto
+  insignia permanentemente en revisión. La base activa es un dato del pack (`saleBasis`), no una
+  versión.
+- H4.20 valora además la cola que el modelo conservador excluye, sin incorporarla: el pack nombra
+  los jackpots, se calculan aparte su EV por ruta y su desviación típica por saco, y se muestran en
+  un disclosure separado y etiquetado como informativo. La recomendación principal sigue siendo la
+  conservadora. La desviación viaja siempre con la media porque para `#36038` es dos órdenes de
+  magnitud mayor, que es la única forma honesta de decir que la cola es retorno esperado real y aun
+  así no es un plan para cien sacos. La parte del cubo que el modelo no nombra sigue sin valorar y
+  esa diferencia se declara.
+- H4.21 declara la ventana de temporada del festival como dato dentro del pack curado, hasheada con
+  él: dos extremos `MM-DD` en UTC, ambos incluidos, con soporte de ventanas que cruzan el año y
+  rechazo explícito del 29 de febrero como extremo. `validUntil` dice cuándo deja de ser fiable el
+  pack; la ventana dice cuándo está viva la fiesta, y son hechos distintos. Fuera de ventana el
+  asesor no recomienda, la vista dice cuándo vuelve el festival y la alerta de precio no abre
+  siquiera el histórico, en lugar de fingir que vigila mientras el saco cotiza todo el año.
 - H4.11 permite expresar una intención explícita de conservar items hasta un precio o deadline. Las intenciones activas comparten sin duplicar la cantidad libre posterior a reservas; alcanzar el precio, cancelar o expirar devuelve unidades a H4.10, y un precio ausente conserva temporalmente en vez de inventar una señal. La salida explica asignación, faltante y neto objetivo con las tasas H4.2. Todavía no persiste ni edita intenciones y nunca opera sobre la cuenta.
 - H4.12 convierte cada resultado en un envelope JSON manual y sin efectos laterales. Reserva, retención, recomendación económica o revisión quedan como decisiones con cantidades y referencias internas; ningún dato contiene callbacks, credenciales, órdenes ejecutadas o una capacidad de operar. El guard arquitectónico impide que la frontera de recomendaciones importe clientes/transportes/stores/secretos o invoque métodos de ejecución.
 - H4.13 fija el contrato defensivo del Inventory Advisor para `supported_storage_v1`, no para toda la cuenta. Catálogo, precios, objetivos, excepciones de conservación, desbloqueos y reglas revisadas quedan ligados al mismo snapshot. La salida particiona cantidades y solo describe acciones manuales; `discard_candidate` es una revisión irreversible curada y nunca una orden de destruir. H4.14-H4.16 cubren captura, motor y allowlist pura. H4.18 aporta el bundle source-backed para 36038. H4.19 añade su economía manual: Refresh captura exactamente el saco y los ocho outcomes líquidos, y un pack hasheado liga modelo, regla, activación humana, TTL, cobertura, binding, reservas y excepciones. David aprobó el pack el 2026-08-16; solo evidencia completa y margen del 10% permiten `open`, `sell` o `vendor`, mientras cualquier parcial, revocación, caducidad o incoherencia revisa. No hay listing, executor, background ni descarte. H5.11 añade la vista manual separada y H5.12 permite editar objetivos/excepciones con CAS sin operar en GW2.
