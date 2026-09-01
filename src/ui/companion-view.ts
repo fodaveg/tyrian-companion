@@ -30,7 +30,7 @@ import {
 import type { DetectionQualityRecorderState } from '../sessions/session-detection-quality-recorder';
 import type { PilotRecoveryKind } from '../sessions/pilot-metrics-model';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
-import { proposalIntent, type PendingProposal, type PendingProposalIntent } from '../sessions/pending-proposal-model';
+import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-proposal-model';
 import type { LootPresentationRow, LootPresentationV1 } from '../sessions/loot-presentation';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import type { LiveSessionLootState } from '../sessions/live-session-loot';
@@ -39,10 +39,6 @@ import type { StoredSessionLootSummary } from '../sessions/session-note-renderer
 import {
 	buildCompanionStatus,
 	localizedCoverageStatus,
-	localizedClassificationStatus,
-	localizedConfidence,
-	localizedDeltaStatus,
-	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
 import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
@@ -109,31 +105,17 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	openSavedSessionNote?(): void;
 }
 
-interface CompanionPrimaryAction {
-	readonly key: string;
-	readonly label: string;
-	readonly disabled: boolean;
-	readonly run: () => void;
-}
-
 export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
-	private readonly dynamicStatusNodes = new Map<string, { value: HTMLElement; detail: HTMLElement }>();
-	private headerPhase: HTMLElement | null = null;
 	private headerElapsed: HTMLElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
-	private readonly cooldownNodes: HTMLElement[] = [];
 	private incident: HTMLElement | null = null;
 	private incidentMessage: HTMLElement | null = null;
 	private incidentMore: HTMLElement | null = null;
-	private ledger: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
 	private pendingConfirmationContainer: HTMLElement | null = null;
 	private pendingConfirmationFocusTarget: HTMLElement | null = null;
 	private pendingConfirmationKey: string | null = null;
-	private primaryActionContainer: HTMLElement | null = null;
-	private primaryActionButton: HTMLButtonElement | null = null;
-	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	/** Retained across rerenders so a loaded history survives a repaint without rescanning the Vault. */
@@ -182,22 +164,15 @@ export class TyrianCompanionView extends ItemView {
 		const now = Date.now();
 		const projection = this.projectStatus(now);
 
-		this.dynamicStatusNodes.clear();
-		this.headerPhase = null;
 		this.headerElapsed = null;
 		this.checkButton = null;
-		this.cooldownNodes.length = 0;
 		this.incident = null;
 		this.incidentMessage = null;
 		this.incidentMore = null;
-		this.ledger = null;
 		this.detectionTimelineNodes = null;
 		this.pendingConfirmationContainer = null;
 		this.pendingConfirmationFocusTarget = null;
 		this.pendingConfirmationKey = null;
-		this.primaryActionContainer = null;
-		this.primaryActionButton = null;
-		this.primaryActionKey = null;
 		contentEl.addClass('tyrian-companion-view');
 		const actionController = this.actions.getProductActionController?.();
 		const locale = this.actions.getLocale();
@@ -276,13 +251,21 @@ export class TyrianCompanionView extends ItemView {
 		const header = card.createEl('header', { cls: 'tyrian-companion-session__header' });
 		const heading = header.createDiv();
 		const sessionProjection = projection.items.find(({ id }) => id === 'session');
+		this.renderIncident(card, projection);
+		this.renderMeasuredQuality(card, projection);
 		if (observed.status === 'idle') {
+			const recovery = this.actions.getSessionRecoveryState();
+			if (recovery.status !== 'none') {
+				this.renderRecovery(heading, header, recovery);
+				return;
+			}
 			heading.createEl('h2', { text: copy.ready });
 			heading.createEl('p', { text: accountSummary(connection, copy) });
 			const button = header.createEl('button', { text: copy.start, cls: 'mod-cta' });
 			button.disabled = !(this.actions.hasConfiguredApiKey?.() ?? true);
 			button.addEventListener('click', () => this.actions.openManualSessionStart());
 			if (button.disabled) heading.createEl('p', { text: copy.missingKey, cls: 'tyrian-companion-session__context' });
+			this.renderConnectionCheck(header, connection);
 			return;
 		}
 
@@ -294,10 +277,7 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'active') {
 			heading.createEl('h2', { text: copy.active });
-			this.headerElapsed = heading.createEl('p', {
-				text: sessionProjection?.detail ?? copy.observing,
-				cls: 'tyrian-companion-view__elapsed',
-			});
+			this.renderElapsed(heading, sessionProjection?.detail ?? copy.observing);
 			heading.createEl('p', { text: `${observed.startContext.characterName} · ${copy.observing}` });
 			const button = header.createEl('button', { text: copy.finish, cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
@@ -312,6 +292,7 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'stopping') {
 			heading.createEl('h2', { text: copy.finishing });
+			this.renderElapsed(heading, sessionProjection?.detail);
 			heading.createEl('p', { text: copy.reconciling });
 			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
 			return;
@@ -319,6 +300,7 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'provisional') {
 			heading.createEl('h2', { text: copy.reviewNeeded });
+			this.renderElapsed(heading, sessionProjection?.detail);
 			heading.createEl('p', { text: copy.reviewNeededDetail });
 			const button = header.createEl('button', { text: copy.review });
 			button.addEventListener('click', () => this.actions.openSessionReview());
@@ -327,6 +309,7 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		heading.createEl('h2', { text: copy.summary });
+		this.renderElapsed(heading, sessionProjection?.detail);
 		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
 		const saveLabel = saveState === 'saved' ? copy.saved
 			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
@@ -346,6 +329,105 @@ export class TyrianCompanionView extends ItemView {
 		if (liveLoot.status === 'idle' && storedLoot !== null) this.renderStoredLoot(card, storedLoot, copy);
 		else if (liveLoot.status === 'idle' && durableLoot !== null) this.renderDurableLoot(card, durableLoot, copy);
 		else this.renderLiveLoot(card, liveLoot, copy);
+	}
+
+	/**
+	 * The one place the projected incidents reach the user now that the status rail is gone. It is
+	 * always mounted and stays hidden while nothing needs attention, so the background refresh can
+	 * repaint it in place instead of rebuilding the card and stealing focus.
+	 */
+	private renderIncident(card: HTMLElement, projection: CompanionStatusProjection): void {
+		const incident = card.createEl('p', { cls: 'tyrian-companion-session__warning' });
+		incident.setAttr('role', 'alert');
+		incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
+		incident.hidden = projection.errors.length === 0;
+		this.incident = incident;
+		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? this.t('view.currentStateAttention') });
+		this.incidentMore = incident.createEl('small', {
+			text: this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }),
+		});
+		this.incidentMore.hidden = projection.errors.length <= 1;
+	}
+
+	/**
+	 * States how trustworthy the measured net is, and only once a measurement exists. A running
+	 * session has nothing honest to claim: the account API answers from a cache of several minutes,
+	 * so the numbers on screen are always the last ones it published, never the current inventory.
+	 */
+	private renderMeasuredQuality(card: HTMLElement, projection: CompanionStatusProjection): void {
+		if (this.actions.getProvisionalDelta() === null && this.actions.getContaminationReview() === null) return;
+		const quality = projection.items.find(({ id }) => id === 'quality');
+		if (quality === undefined) return;
+		card.createEl('p', {
+			text: `${quality.label}: ${quality.value} · ${quality.detail}`,
+			cls: 'tyrian-companion-session__context',
+		});
+	}
+
+	/** Retains the duration line so the one-second refresh can tick it without repainting the card. */
+	private renderElapsed(heading: HTMLElement, detail: string | undefined): void {
+		if (detail === undefined) return;
+		this.headerElapsed = heading.createEl('p', { text: detail, cls: 'tyrian-companion-view__elapsed' });
+	}
+
+	/**
+	 * Settings owns the full connection detail; the card only offers the retry, and only while the
+	 * account is not answering, because that is where the failure is read.
+	 */
+	private renderConnectionCheck(container: HTMLElement, connection: ConnectionState): void {
+		if (connection.status === 'connected' || connection.status === 'warning') return;
+		const button = container.createEl('button', {
+			text: connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
+		});
+		button.disabled = connection.status === 'checking' || isCoolingDown(getRetryAt(connection));
+		button.addEventListener('click', () => { void this.checkConnection(); });
+		this.checkButton = button;
+	}
+
+	/**
+	 * A saved session that never closed replaces the ready state instead of sitting beside it:
+	 * starting a new one is blocked until it is resolved, so offering "start" here would be a trap.
+	 */
+	private renderRecovery(
+		heading: HTMLElement,
+		container: HTMLElement,
+		recovery: Exclude<SessionRecoveryState, { status: 'none' }>,
+	): void {
+		heading.createEl('h2', { text: this.t(recoveryTitleKey(recovery)) });
+		heading.createEl('p', { text: this.t(recoveryDetailKey(recovery)) });
+		if (recovery.status === 'error') return;
+		const working = recovery.status === 'working';
+		const recover = container.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
+		const discard = container.createEl('button', { text: this.t('view.discardSaved') });
+		recover.disabled = working || recovery.status === 'busy';
+		discard.disabled = working || recovery.status === 'busy';
+		recover.addEventListener('click', () => { void this.runRecovery(); });
+		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
+		this.renderPilotRecoveryKind(heading, working);
+	}
+
+	/** Only route to the human classification the pilot metrics need; absent unless the pilot asks. */
+	private renderPilotRecoveryKind(container: HTMLElement, working: boolean): void {
+		if (!(this.actions.isPilotRecoveryClassificationRequired?.() ?? false)) return;
+		const recoveryKind = this.actions.getPilotRecoveryKind?.() ?? null;
+		const label = container.createEl('label', { text: this.t('view.pilotRecoveryKind') });
+		const select = label.createEl('select');
+		select.createEl('option', { text: this.t('view.pilotRecoveryChoose'), value: '' });
+		select.createEl('option', { text: this.t('view.pilotRecoveryForced'), value: 'forced_restart' });
+		select.createEl('option', { text: this.t('view.pilotRecoveryOrganic'), value: 'organic' });
+		select.value = recoveryKind ?? '';
+		select.disabled = working || recoveryKind !== null;
+		select.addEventListener('change', () => {
+			if (select.value !== 'forced_restart' && select.value !== 'organic') return;
+			void this.actions.classifyPilotRecovery?.(select.value).catch(() => undefined);
+		});
+	}
+
+	private async runRecovery(): Promise<void> {
+		const recovery = this.actions.recoverSession();
+		this.render();
+		await recovery;
+		this.render();
 	}
 
 	/** The only reachable route to the note the plugin just wrote; absent until a durable path exists. */
@@ -567,29 +649,14 @@ export class TyrianCompanionView extends ItemView {
 		const projection = this.projectStatus(now);
 		const connection = this.actions.getConnectionState();
 		this.refreshDetectionTimeline();
-		const restorePendingFocus = this.refreshPendingConfirmation(now);
-		this.refreshPrimaryAction(projection, connection, now, restorePendingFocus);
-		for (const status of projection.items.filter((item) => item.id !== 'session')) {
-			const nodes = this.dynamicStatusNodes.get(status.id);
-			nodes?.value.setText(status.value);
-			nodes?.detail.setText(status.detail);
-		}
+		if (this.refreshPendingConfirmation(now)) this.pendingConfirmationFocusTarget?.focus();
 		const session = projection.items.find((status) => status.id === 'session');
-		if (session) {
-			this.headerPhase?.setText(session.value);
-			this.headerElapsed?.setText(session.detail);
-		}
+		if (session) this.headerElapsed?.setText(session.detail);
 		const retryAt = getRetryAt(connection);
-		const coolingDown = isCoolingDown(retryAt);
 		if (this.checkButton) {
-			this.checkButton.disabled = connection.status === 'checking' || coolingDown;
+			this.checkButton.disabled = connection.status === 'checking' || isCoolingDown(retryAt);
 			this.checkButton.setText(connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'));
 		}
-		for (const node of this.cooldownNodes) {
-			node.hidden = !coolingDown;
-			if (coolingDown) node.setText(this.cooldownText(retryAt));
-		}
-		if (this.ledger) this.ledger.setAttr('data-tone', projection.surfaceTone);
 		if (this.incident && this.incidentMessage && this.incidentMore) {
 			this.incident.hidden = projection.errors.length === 0;
 			this.incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
@@ -598,148 +665,6 @@ export class TyrianCompanionView extends ItemView {
 			this.incidentMore.setText(this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }));
 		}
 		this.scheduleRefresh(projection, retryAt, now);
-	}
-
-	private renderLedgerHeader(
-		container: HTMLElement,
-		projection: CompanionStatusProjection,
-		connection: ConnectionState,
-		session: SessionState,
-		now: number,
-	): void {
-		const header = container.createEl('header', { cls: 'tyrian-companion-view__masthead' });
-		const title = header.createDiv({ cls: 'tyrian-companion-view__title' });
-		title.createEl('p', { text: this.t('view.fieldLedger'), cls: 'tyrian-companion-view__eyebrow' });
-		const sessionStatus = projection.items.find((status) => status.id === 'session');
-		if (sessionStatus) {
-			this.headerPhase = title.createEl('h2', { text: sessionStatus.value, cls: 'tyrian-companion-view__phase' });
-			this.headerElapsed = title.createEl('p', { text: sessionStatus.detail, cls: 'tyrian-companion-view__elapsed' });
-		}
-		const action = header.createDiv({ cls: 'tyrian-companion-view__primary-action' });
-		this.primaryActionContainer = action;
-		this.primaryActionKey = this.renderPrimaryAction(action, projection, connection, now);
-	}
-
-	private renderStatusRail(container: HTMLElement, projection: CompanionStatusProjection): void {
-		const ledger = container.createEl('section', { cls: 'tyrian-companion-view__ledger' });
-		this.ledger = ledger;
-		ledger.setAttr('aria-label', this.t('view.farmingStatus'));
-		ledger.setAttr('data-tone', projection.surfaceTone);
-		const rail = ledger.createDiv({ cls: 'tyrian-companion-view__rail' });
-		for (const status of visibleRailItems(projection)) {
-			const cell = rail.createDiv({ cls: 'tyrian-companion-view__rail-item' });
-			if (status.id === 'account') cell.addClass('tyrian-companion-view__account-mark');
-			cell.setAttr('data-tone', status.tone);
-			cell.createSpan({ text: status.label, cls: 'tyrian-companion-view__rail-label' });
-			const value = cell.createEl('strong', { text: status.value });
-			const detail = cell.createEl('small', { text: status.detail });
-			if (status.id !== 'account') this.dynamicStatusNodes.set(status.id, { value, detail });
-		}
-		const incident = ledger.createDiv({ cls: 'tyrian-companion-view__incident' });
-		this.incident = incident;
-		incident.hidden = projection.errors.length === 0;
-		incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
-		incident.setAttr('role', 'alert');
-		incident.createEl('strong', { text: this.t('view.attention') });
-		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? this.t('view.currentStateAttention') });
-		this.incidentMore = incident.createEl('small', { text: this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }) });
-		this.incidentMore.hidden = projection.errors.length <= 1;
-	}
-
-	private renderPrimaryAction(
-		container: HTMLElement,
-		projection: CompanionStatusProjection,
-		connection: ConnectionState,
-		now = Date.now(),
-	): string | null {
-		const action = this.projectPrimaryAction(projection, connection, now);
-		if (action === null) return null;
-		this.primaryActionButton = this.appendPrimaryAction(container, action);
-		return action.key;
-	}
-
-	private refreshPrimaryAction(
-		projection: CompanionStatusProjection,
-		connection: ConnectionState,
-		now = Date.now(),
-		forceFocus = false,
-	): void {
-		if (this.primaryActionContainer === null) return;
-		const action = this.projectPrimaryAction(projection, connection, now);
-		const key = action?.key ?? null;
-		if (key === this.primaryActionKey) {
-			if (forceFocus) (this.primaryActionButton ?? this.pendingConfirmationFocusTarget)?.focus();
-			return;
-		}
-		const restoreFocus = this.primaryActionContainer.contains(this.primaryActionContainer.ownerDocument.activeElement);
-		this.primaryActionContainer.empty();
-		this.primaryActionButton = null;
-		this.primaryActionKey = key;
-		if (action === null) {
-			if (forceFocus) this.pendingConfirmationFocusTarget?.focus();
-			return;
-		}
-		const button = this.appendPrimaryAction(this.primaryActionContainer, action);
-		this.primaryActionButton = button;
-		if (restoreFocus || forceFocus) button.focus();
-	}
-
-	private projectPrimaryAction(
-		projection: CompanionStatusProjection,
-		connection: ConnectionState,
-		now = Date.now(),
-	): CompanionPrimaryAction | null {
-		const pending = this.actions.getPendingProposalState();
-		const next = pending.status === 'ready' ? pending.next : null;
-		if (next !== null && Date.parse(next.staleAt) > now) {
-			return {
-				key: `pending:${next.proposalId}:${next.phase}`,
-				label: next.phase === 'start' ? this.t('view.reviewStart') : this.t('view.reviewStop'),
-				disabled: false,
-				run: () => this.reviewPending(next),
-			};
-		}
-		const detection = this.actions.getAssistedDetectionState();
-		const session = this.actions.getSessionState();
-		if (detection.status === 'start_proposed') {
-			const disabled = session.status !== 'idle';
-			return { key: `detection:start:${String(disabled)}`, label: this.t('view.reviewStart'), disabled,
-				run: () => this.actions.openManualSessionStart(null) };
-		}
-		if (detection.status === 'stop_proposed') {
-			const disabled = session.status !== 'active';
-			return { key: `detection:stop:${String(disabled)}`, label: this.t('view.stopSession'), disabled,
-				run: () => { void this.actions.stopManualSession(null); } };
-		}
-		if (projection.primaryAction === 'stop') {
-			return { key: 'session:stop', label: this.t('view.stopSession'), disabled: false,
-				run: () => { void this.actions.stopManualSession(); } };
-		}
-		if (projection.primaryAction === 'review') {
-			return { key: 'session:review', label: this.t('view.reviewActivity'), disabled: false,
-				run: () => this.actions.openSessionReview() };
-		}
-		if (projection.primaryAction === 'clear') {
-			return { key: 'session:clear', label: this.t('view.clearSession'), disabled: false,
-				run: () => this.actions.confirmClearCompletedSession() };
-		}
-		if (projection.primaryAction === 'recover') {
-			return { key: 'session:recover', label: this.t('view.recoverSession'), disabled: false,
-				run: () => { void this.runRecovery(); } };
-		}
-		if (projection.primaryAction === 'start') {
-			const disabled = connection.status !== 'connected' && connection.status !== 'warning';
-			return { key: `session:start:${String(disabled)}`, label: this.t('view.startSession'), disabled,
-				run: () => this.actions.openManualSessionStart() };
-		}
-		return null;
-	}
-
-	private appendPrimaryAction(container: HTMLElement, action: CompanionPrimaryAction): HTMLButtonElement {
-		const button = container.createEl('button', { text: action.label, cls: 'mod-cta' });
-		button.disabled = action.disabled;
-		button.addEventListener('click', action.run);
-		return button;
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
@@ -758,67 +683,11 @@ export class TyrianCompanionView extends ItemView {
 		return state.status === 'ready' && state.next !== null && Date.parse(state.next.staleAt) > now;
 	}
 
-	private reviewPending(next: PendingProposal): void {
-		const intent = proposalIntent(next);
-		void this.actions.reviewPendingProposal(intent).then((reviewed) => {
-			if (!reviewed) return;
-			if (next.phase === 'start') this.actions.openPendingSessionStart(intent, null);
-			else void this.actions.stopPendingSession(intent, null);
-		});
-	}
-
 	private async checkConnection(): Promise<void> {
 		const check = this.actions.checkConnection();
 		this.render();
 		await check;
 		this.render();
-	}
-
-	private renderConnectionState(container: HTMLElement, state: ConnectionState): void {
-		if (state.status === 'idle') {
-			container.createEl('h3', { text: this.t('view.notChecked') });
-			container.createEl('p', { text: this.t('view.noNetworkRequest') });
-			return;
-		}
-		if (state.status === 'checking') {
-			container.createEl('h3', { text: this.t('view.checkingConnection') });
-			container.createEl('p', { text: this.t('view.checkingConnectionDetail') });
-			return;
-		}
-		if (state.status === 'error') {
-			container.createEl('h3', { text: this.t('view.connectionFailed') });
-			container.createEl('p', { text: this.t('status.operationFailed') });
-			if (isCoolingDown(state.retryAt)) {
-				this.cooldownNodes.push(container.createEl('p', {
-					text: this.cooldownText(state.retryAt),
-				}));
-			}
-			return;
-		}
-
-		container.createEl('h3', {
-			text: state.status === 'warning' ? this.t('view.connectedWithWarnings') : this.t('status.connected'),
-		});
-		if (state.status === 'warning') {
-			container.createEl('p', { text: this.t('status.attention') });
-			if (isCoolingDown(state.retryAt)) {
-				this.cooldownNodes.push(container.createEl('p', { text: this.cooldownText(state.retryAt) }));
-			}
-		}
-		const details = container.createEl('dl');
-		addDetail(details, this.t('status.account'), state.details.account.name);
-		addDetail(details, this.t('view.apiKeyName'), state.details.keyName);
-		addDetail(details, this.t('view.permissions'), state.details.scopes.join(', '));
-		if (state.details.missingRecommendedScopes.length > 0) {
-			addDetail(
-				details,
-				this.t('view.missingFuturePermissions'),
-				state.details.missingRecommendedScopes.join(', '),
-			);
-		}
-		if (state.details.hasFutureUrlRestrictions) {
-			addDetail(details, this.t('view.futureUrlAccess'), this.t('view.restrictedSubtoken'));
-		}
 	}
 
 	private renderAssistedDetection(
@@ -1030,221 +899,6 @@ export class TyrianCompanionView extends ItemView {
 		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(quality, (key, params) => this.t(key, params)));
 	}
 
-	private renderSession(
-		container: HTMLElement,
-		connection: ConnectionState,
-		state: SessionState,
-	): void {
-		const card = container.createDiv({ cls: 'tyrian-companion-view__session' });
-		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
-		card.setAttr('aria-live', 'polite');
-		card.createEl('h3', { text: this.t('view.farmingSession') });
-
-		if (state.status === 'idle') {
-			const recovery = this.actions.getSessionRecoveryState();
-			if (recovery.status !== 'none') {
-				this.renderRecovery(card, recovery);
-				return;
-			}
-			card.createEl('p', { text: this.t('view.noActiveSession') });
-			const failure = this.actions.getSessionStartFailure();
-			if (failure) card.createEl('p', { text: this.t('status.operationFailed'), cls: 'tyrian-companion-view__session-error' });
-			const start = card.createEl('button', { text: this.t('view.startSession') });
-			const connected = connection.status === 'connected' || connection.status === 'warning';
-			start.disabled = !connected;
-			start.addEventListener('click', () => this.actions.openManualSessionStart());
-			if (!connected) {
-				card.createEl('p', {
-					text: this.t('view.checkBeforeStarting'),
-				});
-			}
-			return;
-		}
-
-		if (state.status === 'starting') {
-			card.createEl('p', { text: this.t('view.capturingStart') });
-			const button = card.createEl('button', { text: this.t('view.starting') });
-			button.disabled = true;
-			return;
-		}
-
-		if (state.status === 'stopping') {
-			const failure = this.actions.getSessionStopFailure();
-			card.createEl('p', {
-				text: failure
-					? this.t('view.finalSnapshotFailed') : this.t('view.capturingFinal'),
-			});
-			if (failure) {
-				card.createEl('p', { text: this.t('status.operationFailed'), cls: 'tyrian-companion-view__session-error' });
-			}
-			const button = card.createEl('button', { text: failure ? this.t('view.retryStop') : this.t('status.stopping') });
-			button.disabled = failure === null;
-			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
-			this.renderSessionDetails(card, state);
-			return;
-		}
-
-		if (state.status === 'provisional') {
-			card.createEl('p', {
-				text: this.t('view.provisionalDetail'),
-			});
-			this.renderSessionDetails(card, state);
-			const delta = this.actions.getProvisionalDelta();
-			if (delta) {
-				const details = card.createEl('dl');
-			addDetail(details, this.t('view.deltaQuality'), localizedDeltaStatus(delta.status, (key, params) => this.t(key, params)));
-				addDetail(details, this.t('view.changedItemIds'), String(delta.itemChanges.length));
-				addDetail(details, this.t('view.changedCurrencies'), String(delta.currencyChanges.length));
-			}
-			const review = this.actions.getContaminationReview();
-			if (review) this.renderReviewSummary(card, review);
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const reviewButton = actions.createEl('button', {
-				text: review ? this.t('view.reviewAgain') : this.t('view.reviewActivity'),
-			});
-			reviewButton.addEventListener('click', () => this.actions.openSessionReview());
-			return;
-		}
-
-		if (state.status === 'complete') {
-			card.createEl('p', { text: this.t('view.reviewComplete') });
-			this.renderSessionDetails(card, state);
-			const review = this.actions.getContaminationReview();
-			if (review) this.renderReviewSummary(card, review);
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const reset = actions.createEl('button', { text: this.t('view.clearCompleted') });
-			reset.addEventListener('click', () => this.actions.confirmClearCompletedSession());
-			return;
-		}
-
-		const observed = state.status === 'error' ? state.failedState : state;
-		if (observed.status === 'active' || observed.status === 'stopping' || observed.status === 'provisional') {
-			card.createEl('p', {
-				text: state.status === 'error' ? this.t('view.authorityLost') : this.t('view.baselineCaptured'),
-			});
-			this.renderSessionDetails(card, observed);
-			if (state.status === 'active') {
-				const stop = card.createEl('button', { text: this.t('view.stopSession') });
-				stop.addEventListener('click', () => { void this.actions.stopManualSession(); });
-			}
-			return;
-		}
-
-		card.createEl('p', { text: this.t('view.sessionStatus', { status: sessionStateLabel(state.status, this.actions.getLocale()) }) });
-	}
-
-	private renderReviewSummary(container: HTMLElement, review: SessionContaminationReview): void {
-		const details = container.createEl('dl');
-		addDetail(details, this.t('view.classification'), localizedClassificationStatus(review.classification.status, (key, params) => this.t(key, params)));
-		addDetail(details, this.t('view.confidence'), localizedConfidence(review.classification.confidence, (key, params) => this.t(key, params)));
-		addDetail(details, this.t('view.reviewed'), this.formatTimestamp(review.reviewedAt));
-		const selected = SESSION_ACTIVITY_KEYS.filter((key) => review.answers.activities[key]);
-		addDetail(details, this.t('view.declaredActivity'), selected.length === 0
-			? review.answers.certainty === 'confirmed' ? this.t('view.noneConfirmed') : this.t('view.unsure')
-			: selected.map((key) => activityLabel(key, this.actions.getLocale())).join(', '));
-	}
-
-	private renderRecovery(container: HTMLElement, recovery: SessionRecoveryState): void {
-		if (recovery.status === 'none') return;
-		if (recovery.status === 'error') {
-			container.setAttr('role', 'alert');
-			container.createEl('p', {
-				text: this.t('status.operationFailed'),
-				cls: 'tyrian-companion-view__session-error',
-			});
-			container.createEl('p', {
-				text: this.t('view.recoveryOverwriteBlocked'),
-			});
-			return;
-		}
-		const observed = recovery.state.status === 'error'
-			? recovery.state.failedState
-			: recovery.state;
-		if (recovery.status === 'busy') container.setAttr('role', 'alert');
-		container.createEl('p', {
-			text: recovery.status === 'working'
-				? recovery.action === 'recover' ? this.t('view.recovering') : this.t('view.discarding')
-				: this.t('view.recoveryAvailable'),
-		});
-		this.renderSessionDetails(container, observed);
-		if ('message' in recovery && recovery.message) {
-			container.createEl('p', {
-				text: this.t(recovery.status === 'busy' ? 'status.recoveryOwner' : 'status.operationFailed'),
-				cls: recovery.status === 'busy' ? 'tyrian-companion-view__session-error' : undefined,
-			});
-		}
-		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const recover = actions.createEl('button', { text: this.t('view.recoverSession') });
-		const discard = actions.createEl('button', { text: this.t('view.discardSaved') });
-		const working = recovery.status === 'working';
-		const pilotClassificationRequired = this.actions.isPilotRecoveryClassificationRequired?.() ?? false;
-		const recoveryKind = this.actions.getPilotRecoveryKind?.() ?? null;
-		if (pilotClassificationRequired) {
-			const label = container.createEl('label', { text: this.t('view.pilotRecoveryKind') });
-			const select = label.createEl('select');
-			select.createEl('option', { text: this.t('view.pilotRecoveryChoose'), value: '' });
-			select.createEl('option', { text: this.t('view.pilotRecoveryForced'), value: 'forced_restart' });
-			select.createEl('option', { text: this.t('view.pilotRecoveryOrganic'), value: 'organic' });
-			select.value = recoveryKind ?? '';
-			select.disabled = working || recoveryKind !== null;
-			select.addEventListener('change', () => {
-				if (select.value !== 'forced_restart' && select.value !== 'organic') return;
-				void this.actions.classifyPilotRecovery?.(select.value).catch(() => undefined);
-			});
-		}
-		recover.disabled = working;
-		discard.disabled = working;
-		recover.addEventListener('click', () => { void this.runRecovery(); });
-		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
-	}
-
-	private async runRecovery(): Promise<void> {
-		const recovery = this.actions.recoverSession();
-		this.render();
-		await recovery;
-		this.render();
-	}
-
-	private renderSessionDetails(
-		container: HTMLElement,
-		state: Extract<SessionState, { status: 'active' | 'stopping' | 'provisional' | 'complete' }>,
-	): void {
-		const details = container.createEl('dl');
-		addDetail(details, this.t('view.character'), state.startContext.characterName);
-		addDetail(details, this.t('view.build'), state.startContext.build.name || state.startContext.build.profession);
-		addDetail(details, this.t('view.profession'), state.startContext.build.profession);
-		addDetail(details, this.t('view.magicFind'), `${state.startContext.magicFind.value} (${this.t('view.manual')})`);
-		addDetail(details, this.t('view.started'), this.formatTimestamp(state.baseline.completedAt));
-		this.renderSessionDetectionQuality(details, state.sessionId);
-	}
-
-	private renderSessionDetectionQuality(
-		details: HTMLDListElement,
-		sessionId: string,
-	): void {
-		const summary = this.actions.getSessionDetectionQuality(sessionId);
-		if (!summary) return;
-		addDetail(details, this.t('view.detectionMode'), detectionModeLabel(summary.mode, this.actions.getLocale()));
-		addDetail(details, this.t('view.startCause'), summary.start ? detectionCauseLabel(summary.start.cause, this.actions.getLocale()) : this.t('view.notRecorded'));
-		addDetail(details, this.t('view.startUncertainty'), summary.start ? this.formatDuration(summary.start.uncertaintyMs) : this.t('view.unknown'));
-		if (summary.stop) {
-			addDetail(details, this.t('view.stopCause'), detectionCauseLabel(summary.stop.cause, this.actions.getLocale()));
-			addDetail(details, this.t('view.stopUncertainty'), this.formatDuration(summary.stop.uncertaintyMs));
-		}
-		addDetail(details, this.t('view.correctedFalsePositives'), String(summary.correctedFalsePositives.length));
-		if (summary.correctedFalsePositives.length > 0) {
-			addDetail(
-				details,
-				this.t('view.correctionCauses'),
-				summary.correctedFalsePositives.map((event) => detectionCauseLabel(event.cause, this.actions.getLocale())).join(', '),
-			);
-		}
-	}
-
-	private cooldownText(retryAt: number): string {
-		return this.t('time.retryIn', { seconds: Math.max(1, Math.ceil((retryAt - Date.now()) / 1_000)) });
-	}
-
 	private formatTimestamp(value: string): string {
 		return new Date(value).toLocaleString(this.actions.getLocale());
 	}
@@ -1307,6 +961,20 @@ function simpleSessionCopy(locale: Locale) {
 		valuePending: 'Value pending', enrichmentPending: 'Some names or prices are still pending from the public API.',
 		accountReady: 'Account connected', accountUnchecked: 'Connection will be checked when starting', accountUnavailable: 'Account unavailable',
 	} as const;
+}
+
+/** Names the phase of the saved-session decision with the same copy the projection already uses. */
+function recoveryTitleKey(recovery: Exclude<SessionRecoveryState, { status: 'none' }>): RuntimeTranslationKey {
+	if (recovery.status === 'working') return recovery.action === 'recover' ? 'status.recovering' : 'status.discarding';
+	if (recovery.status === 'busy') return 'status.recoveryBlocked';
+	return recovery.status === 'error' ? 'status.recoveryError' : 'status.recoveryAvailable';
+}
+
+/** Says what the user can do about it; the incident line carries the failure itself. */
+function recoveryDetailKey(recovery: Exclude<SessionRecoveryState, { status: 'none' }>): RuntimeTranslationKey {
+	if (recovery.status === 'working') return recovery.action === 'recover' ? 'view.recovering' : 'view.discarding';
+	if (recovery.status === 'busy') return 'status.recoveryOwner';
+	return recovery.status === 'error' ? 'view.recoveryOverwriteBlocked' : 'view.recoveryAvailable';
 }
 
 function accountSummary(connection: ConnectionState, copy: ReturnType<typeof simpleSessionCopy>): string {
@@ -1676,13 +1344,6 @@ function correctionCauses(phase: 'start' | 'stop'): DetectionCorrectionCause[] {
 	return allowed.filter((cause) => DETECTION_CORRECTION_CAUSES.includes(cause));
 }
 
-function detectionModeLabel(mode: SessionDetectionQualitySummary['mode'], locale: Locale): string {
-	const labels: Record<SessionDetectionQualitySummary['mode'], RuntimeTranslationKey> = {
-		manual: 'detection.mode.manual', assisted: 'detection.mode.assisted', mixed: 'detection.mode.mixed', incomplete: 'detection.mode.incomplete',
-	};
-	return runtimeText(locale, labels[mode]);
-}
-
 function detectionCauseLabel(cause: DetectionDecisionCause, locale: Locale): string {
 	const labels: Record<DetectionDecisionCause, RuntimeTranslationKey> = {
 		manual_start: 'detection.cause.manual_start', manual_stop: 'detection.cause.manual_stop',
@@ -1699,14 +1360,6 @@ function schedulerStatusLabel(status: AssistedDetectionState['scheduler']['statu
 		idle: 'status.idle', scheduled: 'status.scheduled', polling: 'status.checkingNow',
 		paused_offline: 'status.offline', paused_sleep: 'status.resuming', backoff: 'status.backingOff',
 		fatal: 'status.failed', disposed: 'status.unavailable',
-	};
-	return runtimeText(locale, labels[status]);
-}
-
-function sessionStateLabel(status: SessionState['status'], locale: Locale): string {
-	const labels: Record<SessionState['status'], RuntimeTranslationKey> = {
-		idle: 'status.idle', starting: 'status.starting', active: 'status.active',
-		stopping: 'status.stopping', provisional: 'status.reviewNeeded', complete: 'status.complete', error: 'status.error',
 	};
 	return runtimeText(locale, labels[status]);
 }
