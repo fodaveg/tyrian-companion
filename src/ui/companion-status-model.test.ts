@@ -11,7 +11,6 @@ import {
 	localizedCoverageStatus,
 	localizedDeltaStatus,
 	formatElapsed,
-	visibleRailItems,
 	type CompanionStatusInput,
 } from './companion-status-model';
 import { createTranslator } from '../core/i18n';
@@ -202,12 +201,6 @@ describe('buildCompanionStatus', () => {
 		expect(projection.primaryAction).toBe('recover');
 	});
 
-	it('exports exactly Detector, Polling, Quality and Account for the visible rail', () => {
-		const rail = visibleRailItems(buildCompanionStatus(input()));
-		expect(rail.map((item) => item.id)).toEqual(['detection', 'polling', 'quality', 'account']);
-		expect(rail.map((item) => item.label)).toEqual(['Detection', 'Polling', 'Quality', 'Account']);
-	});
-
 	it('suppresses stale detector and scheduler failures while assisted detection is off', () => {
 		const stale = detection('error');
 		stale.scheduler.status = 'fatal';
@@ -270,7 +263,6 @@ describe('status projection boundary', () => {
 		const source = readFileSync(new URL('./companion-view.ts', import.meta.url), 'utf8');
 		expect(source).not.toMatch(/setInterval\s*\(\s*\(\)\s*=>\s*this\.render\s*\(/);
 		expect(source).toContain('setInterval(() => this.refreshDynamicStatus()');
-		expect(source).toContain('for (const status of visibleRailItems(projection))');
 		expect(source).toContain('this.checkButton.disabled');
 		expect(source).toContain('this.incident.hidden');
 	});

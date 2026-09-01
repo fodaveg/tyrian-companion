@@ -5,6 +5,7 @@ import type { AssistedDetectionState } from '../sessions/assisted-detection-serv
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenPriceNoticeV1 } from '../halloween/halloween-price-alert';
 import type { PendingProposal } from '../sessions/pending-proposal-model';
+import type { SessionRecoveryState } from '../sessions/manual-session-start-service';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
 
@@ -219,12 +220,185 @@ describe('Companion API settlement surface', () => {
 	});
 });
 
+describe('Companion incident line', () => {
+	it('carries the first projected incident into the card and counts the rest', () => {
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => stoppingSession(),
+			getSessionStopFailure: () => ({ code: 'rate_limited', message: 'rate limited' }),
+			getConnectionState: () => ({ status: 'error', code: 'unavailable', message: 'offline', retryAt: null }),
+		});
+
+		render();
+
+		const incident = incidentLine(contentEl);
+		expect(incident?.hidden).toBe(false);
+		expect(incident?.attributes.get('role')).toBe('alert');
+		expect(incident?.children[0]?.textContent).toContain('Final: ');
+		expect(incident?.children[1]?.textContent).toBe('+1 más');
+		expect(incident?.children[1]?.hidden).toBe(false);
+	});
+
+	it('keeps the line mounted and silent while nothing needs attention', () => {
+		const { contentEl, render } = mountCompanion();
+
+		render();
+
+		const incident = incidentLine(contentEl);
+		expect(incident).toBeDefined();
+		expect(incident?.hidden).toBe(true);
+	});
+});
+
+describe('Companion measured quality line', () => {
+	it('states how trustworthy the measured net is once a delta exists', () => {
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => provisionalSession(),
+			getProvisionalDelta: () => ({
+				status: 'limited', itemChanges: [], currencyChanges: [], window: null,
+			}) as never,
+		});
+
+		render();
+
+		expect(texts(contentEl)).toContain('Calidad: Limitada · Comparación de almacenamiento · Limitado');
+	});
+
+	it('claims nothing while the session is still running', () => {
+		const { contentEl, render } = mountCompanion({ getSessionState: () => activeSession() });
+
+		render();
+
+		expect(texts(contentEl).some((text) => text.startsWith('Calidad: '))).toBe(false);
+	});
+});
+
+describe('Companion saved-session decision', () => {
+	it('replaces the start action with recovery instead of offering a start that would be refused', async () => {
+		const recoverSession = vi.fn(async () => undefined);
+		const openManualSessionStart = vi.fn();
+		const { contentEl, render } = mountCompanion({
+			recoverSession, openManualSessionStart,
+			getSessionRecoveryState: () => availableRecovery(),
+		});
+
+		render();
+
+		expect(texts(contentEl)).toContain('Recuperación disponible');
+		expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Iniciar sesión')).toBeUndefined();
+		const discard = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Descartar sesión guardada');
+		expect(discard).toBeDefined();
+		const recover = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Recuperar sesión');
+		expect(recover?.disabled).toBe(false);
+
+		recover?.click();
+		await Promise.resolve();
+		expect(recoverSession).toHaveBeenCalledOnce();
+		expect(openManualSessionStart).not.toHaveBeenCalled();
+	});
+
+	it('classifies the pilot recovery from the same card and only when the pilot asks', () => {
+		const classifyPilotRecovery = vi.fn(async () => true);
+		const { contentEl, render } = mountCompanion({
+			classifyPilotRecovery,
+			getSessionRecoveryState: () => availableRecovery(),
+			isPilotRecoveryClassificationRequired: () => true,
+			getPilotRecoveryKind: () => null,
+		});
+
+		render();
+
+		const select = find(contentEl, (node) => node.tag === 'select');
+		expect(select?.disabled).toBe(false);
+		if (select === undefined) throw new Error('Expected the pilot classification control.');
+		select.value = 'forced_restart';
+		select.listeners.get('change')?.[0]?.();
+		expect(classifyPilotRecovery).toHaveBeenCalledWith('forced_restart');
+	});
+
+	it('omits the classification control while the pilot does not require it', () => {
+		const { contentEl, render } = mountCompanion({ getSessionRecoveryState: () => availableRecovery() });
+
+		render();
+
+		expect(find(contentEl, (node) => node.tag === 'select')).toBeUndefined();
+	});
+});
+
+describe('Companion account check', () => {
+	it('offers the check on the surface that shows the failure', async () => {
+		const checkConnection = vi.fn(async () => ({ status: 'idle' }) as never);
+		const { contentEl, render } = mountCompanion({
+			checkConnection,
+			getConnectionState: () => ({ status: 'error', code: 'unavailable', message: 'offline', retryAt: null }),
+		});
+
+		render();
+
+		const check = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Comprobar conexión');
+		expect(check?.disabled).toBe(false);
+
+		check?.click();
+		await Promise.resolve();
+		expect(checkConnection).toHaveBeenCalledOnce();
+	});
+
+	it('keeps the check disabled while the shared cooldown runs', () => {
+		const { contentEl, render } = mountCompanion({
+			getConnectionState: () => ({
+				status: 'error', code: 'rate_limited', message: 'wait', retryAt: Date.now() + 30_000,
+			}),
+		});
+
+		render();
+
+		const check = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Comprobar conexión');
+		expect(check?.disabled).toBe(true);
+	});
+
+	it('omits the check while the account is answering', () => {
+		const { contentEl, render } = mountCompanion();
+
+		render();
+
+		expect(find(contentEl, (node) => node.textContent === 'Comprobar conexión')).toBeUndefined();
+	});
+});
+
+/** The card's single alert line, found by its role rather than by its position. */
+function incidentLine(root: FakeElement): FakeElement | undefined {
+	return find(root, (node) => node.tag === 'p'
+		&& node.className.includes('tyrian-companion-session__warning')
+		&& node.attributes.get('role') === 'alert');
+}
+
 function stoppingSession(): SessionState {
 	return {
 		version: 1, status: 'stopping', sessionId: 'session',
 		stopRequestedAt: '2026-08-31T10:00:00.000Z',
+		baseline: { completedAt: '2026-08-31T09:00:00.000Z' },
 		startContext: { characterName: 'Rinopopo' },
 	} as unknown as SessionState;
+}
+
+function activeSession(): SessionState {
+	return {
+		version: 1, status: 'active', sessionId: 'session',
+		baseline: { completedAt: '2026-08-31T09:00:00.000Z' },
+		startContext: { characterName: 'Rinopopo' },
+	} as unknown as SessionState;
+}
+
+function provisionalSession(): SessionState {
+	return {
+		version: 1, status: 'provisional', sessionId: 'session',
+		baseline: { completedAt: '2026-08-31T09:00:00.000Z' },
+		finalSnapshot: { completedAt: '2026-08-31T10:10:00.000Z' },
+		startContext: { characterName: 'Rinopopo' },
+	} as unknown as SessionState;
+}
+
+function availableRecovery(): SessionRecoveryState {
+	return { status: 'available', state: activeSession() } as unknown as SessionRecoveryState;
 }
 
 function mountCompanion(overrides: Partial<CompanionActions> = {}): {
@@ -235,14 +409,15 @@ function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	const document = new FakeDocument();
 	const contentEl = new FakeElement('div', document);
 	const actions: CompanionActions = { ...baseActions(), ...overrides };
+	// No projection stub: the card is asserted against the real status projection, because a fake
+	// one would keep every integrated line green while the model stopped feeding it.
 	const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 		actions, contentEl, refreshInterval: null,
-		dynamicStatusNodes: new Map(), headerPhase: null, headerElapsed: null, checkButton: null,
-		cooldownNodes: [], incident: null, incidentMessage: null, incidentMore: null, ledger: null,
+		headerElapsed: null, settlementCountdown: null, checkButton: null,
+		incident: null, incidentMessage: null, incidentMore: null,
 		detectionTimelineNodes: null, pendingConfirmationContainer: null, pendingConfirmationFocusTarget: null,
-		pendingConfirmationKey: null, primaryActionContainer: null, primaryActionButton: null, primaryActionKey: null,
+		pendingConfirmationKey: null,
 		productShell: null, productShellKey: null, sessionHistoryController: null, sessionHistoryMount: null,
-		projectStatus: () => ({ items: [], errors: [], surfaceTone: 'neutral', refreshEveryMs: null, primaryAction: null }),
 	});
 	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 	const render = (TyrianCompanionView.prototype as unknown as { render(this: typeof harness): void }).render;
@@ -314,6 +489,9 @@ function idleScheduler(): AssistedDetectionState['scheduler'] {
 function completedSession(): SessionState {
 	return {
 		version: 1, status: 'complete', sessionId: 'session',
+		baseline: { completedAt: '2026-08-31T09:00:00.000Z' },
+		finalSnapshot: { completedAt: '2026-08-31T10:10:00.000Z' },
+		classification: 'exact',
 		startContext: { characterName: 'Rinopopo' },
 	} as unknown as SessionState;
 }

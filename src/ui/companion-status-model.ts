@@ -31,10 +31,6 @@ export interface CompanionStatusItem {
 	tone: CompanionStatusTone;
 }
 
-export interface CompanionRailItem extends Omit<CompanionStatusItem, 'id'> {
-	id: CompanionStatusItem['id'] | 'account';
-}
-
 export interface CompanionStatusProjection {
 	locale: Locale;
 	connection: { value: string; tone: CompanionStatusTone };
@@ -89,23 +85,6 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 		surfaceTone: errors.length > 0 && hasErrorIncident(input) ? 'error' : strongestTone([detection.item, session.item, polling.item, quality]),
 		refreshEveryMs,
 	};
-}
-
-/** The visible rail is deliberately limited to three operational signals plus account. */
-export function visibleRailItems(projection: CompanionStatusProjection): CompanionRailItem[] {
-	const items: CompanionRailItem[] = [];
-	for (const id of ['detection', 'polling', 'quality'] as const) {
-		const status = projection.items.find((item) => item.id === id);
-		if (status) items.push({ ...status });
-	}
-	items.push({
-		id: 'account',
-		label: statusText(projection.locale, 'status.account'),
-		value: projection.connection.value,
-		detail: statusText(projection.locale, 'status.accountDetail'),
-		tone: projection.connection.tone,
-	});
-	return items;
 }
 
 function recoverySessionStatus(
@@ -201,10 +180,6 @@ export function localizedConfidence(status: 'high' | 'medium' | 'low', t: Status
 		high: 'enum.confidence.high', medium: 'enum.confidence.medium', low: 'enum.confidence.low',
 	};
 	return t(keys[status]);
-}
-
-function statusText(locale: Locale, key: RuntimeTranslationKey): string {
-	return translateRuntime(createTranslator(locale), key);
 }
 
 function sessionStatus(

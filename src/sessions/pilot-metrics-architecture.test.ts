@@ -46,7 +46,7 @@ describe('pilot metrics architecture', () => {
 		expect(pending).not.toContain('.finally(');
 		expect(pending).not.toContain('PilotBoundaryModal');
 		expect(pending).toContain('openPendingSessionStart(intent, null)');
-		const recovery = view.slice(view.indexOf('private renderRecovery('), view.indexOf('private renderSessionDetails'));
+		const recovery = view.slice(view.indexOf('private renderRecovery('), view.indexOf('private async runRecovery'));
 		expect(recovery).toContain('recover.disabled = working');
 		expect(recovery).not.toContain('recoveryKind === null');
 		expect(recovery).toContain('select.disabled = working || recoveryKind !== null');
