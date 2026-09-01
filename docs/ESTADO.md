@@ -2,54 +2,40 @@
 
 ## Vertical activa
 
-**Release beta `0.1.20` publicada el 2026-09-01 desde el tag y commit
-`be5434b4cfc283198bd0054053bb7092b80decc6`.** `manifest.json` y `package.json` declaran `0.1.20`.
-Los tres runs terminaron en verde: CI de `main` `33509432201`, CI del tag `33509449053` y el
-workflow `Release` `33509449093`. Es la **primera publicación hecha por el workflow automático**,
-que corre el contrato BRAT como puerta antes de publicar en vez de auditar después.
+**Release beta `0.1.21` publicada el 2026-09-01 desde el tag y commit `PENDIENTE-SHA`.**
+`manifest.json` y `package.json` declaran `0.1.21`. Runs de CI de `main`, del tag y del workflow
+`Release`: `PENDIENTE-RUNS`.
 
-La release adjunta los cinco assets exactos. El ZIP tiene SHA-256
-`cca1d1f3e6af81cae98258375067782bc660e7a53e1b06ae9cf776d605110c93`, y el `main.js` publicado se
-descargó y comparó: coincide byte a byte con el construido localmente, SHA-256
-`905c31240f1f54513f4366d810156b1d8bd43b78565ed9a1d89d851e70707618`. El contrato BRAT, ejecutado
-contra la salida real de `gh release view`, da `PASS (version=0.1.20; assets=5)`.
+La release adjunta los cinco assets exactos. El ZIP tiene SHA-256 `PENDIENTE-SHA256`.
 
-**Lo que esa publicación NO acredita, y hay que decirlo así:** nadie ha abierto Obsidian con esta
-versión. No hay evidencia de instalación, de actualización desde BRAT, de carga del plugin, de QA
-visual ni de una sola llamada real a la API de Guild Wars 2 desde el cliente. Canal publicado;
-instalación y runtime pendientes.
+**Canal publicado; instalación y runtime pendientes.** Nadie ha abierto Obsidian con esta versión:
+no hay evidencia de instalación, de carga del plugin, de QA visual ni de una sola llamada real a la
+API de Guild Wars 2 desde el cliente.
 
-El contenido de esta release y su motivación están en el
-[changelog](CHANGELOG.md), entrada `0.1.20`. Los tres lotes que antes figuraban aquí como
-integrados y sin publicar ya están dentro.
-
-**Tres lotes integrados en `main` después de `0.1.19` y todavía sin publicar.**
-
-El lote de superficies desconectadas monta cuatro paneles que ya existían, tenían pruebas y ningún
-punto de entrada construía. Las alertas de Halloween ya tienen pantalla: el plugin emitía avisos sin
-ningún sitio donde marcarlos leídos, así que el contador de no leídos no podía bajar nunca. Las
-confirmaciones pendientes también: el ribbon mostraba el contador y el comando existía, pero ninguna
-vista podía mostrar una propuesta. Se montan además la superficie completa de la detección asistida
-y el historial de sesiones. El lote añade el botón **Abrir la nota** tras guardar una sesión, primer
-uso de `openLinkText` en código de producción del repositorio, porque hasta ahora el plugin escribía
-la nota sin ofrecer forma de abrirla, y corrige el `viewCount` del journal de arranque, que decía 3
-cuando se registran 2 vistas. La línea de tiempo de detección pasa a resolución de minutos: la API
-de cuenta no da precisión al segundo y presentarla al segundo la aparentaba.
-
-El lote de primera ejecución cambia tres valores por defecto, todos en `DEFAULT_SETTINGS` de
-`src/core/settings.ts`. El idioma deja de estar forzado a español y se resuelve desde Obsidian con
-`getLanguage()` con reserva `en`, sin que eso pise una elección manual del usuario. El registro de
-diagnóstico local nace apagado y en nivel `warn`, en vez de encendido en `debug` escribiendo JSONL
-sin parar dentro del vault. El intervalo de consulta pasa de 2 a 10 minutos. **Los tres cambios solo
-alcanzan instalaciones nuevas.** Una instalación existente conserva sus valores porque en disco un
-valor heredado del default es indistinguible de uno elegido; quien ya tenga el registro encendido
-debe apagarlo a mano en Ajustes.
-
-El arreglo del censo reindexa 31 localizadores de `src/ui/settings-tab.ts` en
-`scripts/action-observability-baseline.json` tras un desplazamiento de una línea causado por la
-fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada se alteró.
+El contenido de esta release y su motivación están en el [changelog](CHANGELOG.md), entrada
+`0.1.21`. Absorbe tres lotes integrados en `main` después de `0.1.20`: la Bolsa de truco o trato
+deja de estar muda, la nota de sesión da un número económico por primera vez (antes escribía
+`valuation: null` a mano en todas las sesiones), y el detector asistido pasa a proponer de verdad
+(antes exigía dos consultas consecutivas con ganancia, algo que la caché de 5 a 10 minutos de la
+API de cuenta nunca permitía).
 
 La evidencia de la release anterior se conserva como histórico.
+**Release beta `0.1.20` publicada el 2026-09-01 desde el tag y commit
+`be5434b4cfc283198bd0054053bb7092b80decc6`.** `manifest.json` y `package.json` declaraban `0.1.20`.
+Los tres runs terminaron en verde: CI de `main` `33509432201`, CI del tag `33509449053` y el
+workflow `Release` `33509449093`. Fue la primera publicación hecha por el workflow automático, que
+corre el contrato BRAT como puerta antes de publicar en vez de auditar después.
+
+La release adjuntó los cinco assets exactos. El ZIP tiene SHA-256
+`cca1d1f3e6af81cae98258375067782bc660e7a53e1b06ae9cf776d605110c93`, y el `main.js` publicado se
+descargó y comparó: coincidió byte a byte con el construido localmente, SHA-256
+`905c31240f1f54513f4366d810156b1d8bd43b78565ed9a1d89d851e70707618`. El contrato BRAT, ejecutado
+contra la salida real de `gh release view`, dio `PASS (version=0.1.20; assets=5)`.
+
+Esa publicación no acreditó instalación, actualización desde BRAT, carga del plugin, QA visual ni
+llamadas reales a la API de Guild Wars 2 desde el cliente.
+
+La evidencia de la release anterior a esa se conserva como histórico.
 **Release beta `0.1.18` publicada el 2026-08-31; canal BRAT actualizado.** El tag y commit
 `6090defe5fd4b485e4f49efdbfd10f395197a716` están disponibles en la
 [GitHub Release pública](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18). Los runs
