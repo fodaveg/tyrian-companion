@@ -190,6 +190,11 @@ async function completedSessionNote(runtime: ReturnType<typeof completedSessionR
 	if (runtime.state.status !== 'complete' || runtime.delta === null) throw new Error('Expected completed runtime.');
 	const item = runtime.delta.itemChanges.find(({ delta }) => delta > 0);
 	if (item === undefined) throw new Error('Expected a positive item delta.');
+	// This fixture is a restore test, not an economy test, and its record was captured without a
+	// close-time price snapshot. `valuation: null` is the outcome the runtime owes such a record;
+	// asserting that here keeps this from silently becoming the "no note is ever valued" fixture
+	// it used to be. Sessions that do carry prices are covered by main-session-note-economy.test.ts.
+	if (runtime.priceSnapshot !== null) throw new Error('Expected a runtime record without prices.');
 	const prepared = prepareSessionNote({
 		runtime, valuation: null, reservation: null, hold: null, recommendation: null, envelope: null,
 		eventDeclaration: {

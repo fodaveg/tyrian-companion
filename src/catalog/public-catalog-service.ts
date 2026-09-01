@@ -10,6 +10,7 @@ import type { PublicCatalogGateway } from './public-catalog-client';
 import {
 	type CatalogEntityByKind,
 	type CatalogIdCoverage,
+	type CatalogItem,
 	type CatalogKind,
 	type CatalogLocale,
 	type CatalogResolution,
@@ -77,6 +78,23 @@ export class PublicCatalogService {
 		});
 		this.inFlight.set(flightKey, promise);
 		return promise;
+	}
+
+	/**
+	 * Resolves item metadata for a bounded id list, keyed by decimal id.
+	 *
+	 * A session note only ever values the items the session gained, so making it resolve a whole
+	 * account snapshot would trade a handful of ids for thousands. Ids the API does not know are
+	 * simply absent from the result; the caller decides what a missing entry means.
+	 */
+	async resolveItems(
+		itemIds: readonly number[],
+		locale: CatalogLocale,
+	): Promise<Record<string, CatalogItem>> {
+		const ids = uniqueSorted([...itemIds]);
+		if (ids.length === 0) return {};
+		const items = await this.resolveKind('items', ids, locale, parseCatalogItem, this.now());
+		return mapEntities(items.entities);
 	}
 
 	private async resolveInternal(

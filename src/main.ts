@@ -12,6 +12,7 @@ import { StorageSnapshotService } from './account/storage-snapshot-service';
 import { TradingPostHistoryEvidenceService } from './account/trading-post-evidence';
 import { RateLimitedStorageSnapshotService } from './account/rate-limited-storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
+import type { CatalogItem } from './catalog/public-catalog-model';
 import { PublicCatalogService } from './catalog/public-catalog-service';
 import { createCatalogCacheAdapter } from './catalog/persistent-catalog-cache';
 import type { StorageDelta } from './account/storage-delta-model';
@@ -109,6 +110,11 @@ import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-rene
 import type { LootPresentationV1 } from './sessions/loot-presentation';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { LiveSessionLootTracker, type LiveSessionLootState } from './sessions/live-session-loot';
+import {
+	buildSessionEconomyEvidence,
+	sessionValuationItemIds,
+	type SessionEconomyEvidence,
+} from './sessions/session-economy-evidence';
 import {
 	prepareSessionNote,
 	sessionNoteEventDeclarationFromDetectionSummary,
@@ -253,6 +259,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private liveSessionLoot!: LiveSessionLootTracker;
 	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
+	/** Economic evidence measured for the completed session on screen, or `null` while unmeasured. */
+	private sessionEconomy: { key: string; evidence: SessionEconomyEvidence } | null = null;
+	/** Deferred so the catalog database is only opened when a session actually has to be valued. */
+	private sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null = null;
+	private sessionCatalog: PublicCatalogService | null = null;
 	/** Vault path of the note written for the session on screen; the only handle the view can open. */
 	private savedSessionNotePath: string | null = null;
 	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
@@ -535,6 +546,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// inventory advisor, or price history blocks every other caller until it clears.
 		const rateLimitCoordinator = new RateLimitCoordinator({ diagnostics: this.localDebugActions ?? undefined });
 		const catalogDiagnostics = this.persistenceDiagnostics('inventory', 'inventory_refresh');
+		// Opened on the first session that has to be valued, not on load: a vault that never closes
+		// a session never pays for the catalog database.
+		this.sessionCatalogFactory = async () => new PublicCatalogService(
+			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+		);
 		this.halloweenPriceAlert = new HalloweenPriceAlertRuntime({
 			factory: window.indexedDB, vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
@@ -2293,6 +2309,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 			return null;
 		}
+		// Writing the note is the user's own retry, so the economy is measured again here rather
+		// than reused: a catalog that was unreachable at close must not freeze the note as unvalued.
+		await this.prepareSessionEconomyEvidence(runtime, true);
 		let note: SessionNoteWriteResult;
 		try {
 			note = await this.sessionNotes.write(this.sessionNoteInput(runtime));
@@ -2896,11 +2915,69 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
 		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
+		const economy = this.sessionEconomyFor(runtime);
 		return {
-			runtime, valuation: null, reservation: null, hold: null, recommendation: null, envelope: null,
+			runtime, valuation: economy.valuation, reservation: economy.reservation, hold: economy.hold,
+			// H4.12 container recommendations have no runtime producer: `recommendContainerDisposition`
+			// needs a reviewed `ContainerModelReview`, and nothing in the tree builds one. Declaring
+			// them measured here would be an invention rather than an omission.
+			recommendation: null, envelope: null,
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId)),
 			displayNames: this.liveSessionLoot.displayNames(), locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
+	}
+
+	/** Only evidence measured from *this* runtime record may travel with it into the note. */
+	private sessionEconomyFor(runtime: SessionRuntimeRecord): SessionEconomyEvidence {
+		const key = sessionEconomyKey(runtime);
+		return key !== null && this.sessionEconomy?.key === key
+			? this.sessionEconomy.evidence
+			: { valuation: null, reservation: null, hold: null };
+	}
+
+	/**
+	 * Measures the completed session's economy before the note is built. This is the step whose
+	 * absence made every published note say `not_evaluated`: the ingredients were already captured
+	 * and nothing ever called the valuation with them.
+	 */
+	private async prepareSessionEconomyEvidence(runtime: SessionRuntimeRecord, remeasure = false): Promise<void> {
+		const key = sessionEconomyKey(runtime);
+		if (key === null) { this.sessionEconomy = null; return; }
+		if (!remeasure && this.sessionEconomy?.key === key) return;
+		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+			component: 'session', action: 'session_projection', state: 'session_valuation',
+		});
+		const catalogItems = await this.resolveSessionCatalogItems(sessionValuationItemIds(runtime), span.context);
+		const evidence = buildSessionEconomyEvidence({
+			runtime, catalogItems, goals: this.inventoryPreferences.current().goals,
+		});
+		this.sessionEconomy = { key, evidence };
+		span.success(evidence.valuation === null ? 'not_evaluated' : evidence.valuation.coverage);
+	}
+
+	/**
+	 * Public catalog metadata for the gained items. A catalog the plugin cannot reach leaves the
+	 * valuation with no vendor floor and no trading-post eligibility, which the kernel already
+	 * reports as `catalog_missing`; it must never abort the note.
+	 */
+	private async resolveSessionCatalogItems(
+		itemIds: number[],
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<Record<string, CatalogItem>> {
+		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
+		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+			component: 'session', action: 'session_projection', state: 'session_catalog',
+			...(parent === undefined ? {} : { parent: { actionId: parent.actionId, correlationId: parent.correlationId } }),
+		});
+		try {
+			this.sessionCatalog ??= await this.sessionCatalogFactory();
+			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
+			span.success('resolved');
+			return items;
+		} catch (error) {
+			span.failure(error, 'network_failure', 'session_catalog_unavailable');
+			return {};
+		}
 	}
 
 	private async refreshLootPresentation(): Promise<void> {
@@ -2908,7 +2985,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 			component: 'session', action: 'session_projection', state: 'loot_projection',
 		});
 		const result = await this.lootPresentation.refresh(
-			async () => await this.sessions.getCompletedRuntimeRecord(),
+			async () => {
+				const runtime = await this.sessions.getCompletedRuntimeRecord();
+				// The projection itself is synchronous, so the economy has to be measured while the
+				// record is still being loaded or the loot panel would render its own `not_evaluated`.
+				if (runtime !== null) await this.prepareSessionEconomyEvidence(runtime);
+				return runtime;
+			},
 			(runtime) => {
 				const prepared = prepareSessionNote(this.sessionNoteInput(runtime));
 				return prepared.status === 'ok' ? prepared.note : null;
@@ -2962,6 +3045,18 @@ const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	},
 	lastSnapshotAt: null,
 };
+
+/**
+ * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session
+ * keeps its id while replacing its closing snapshot, and evidence measured from the older snapshot
+ * would be rejected by the note as an identity mismatch instead of published.
+ */
+function sessionEconomyKey(runtime: SessionRuntimeRecord): string | null {
+	const snapshotId = runtime.finalSnapshot?.snapshotId;
+	return runtime.state.status === 'complete' && snapshotId !== undefined && (runtime.delta ?? null) !== null
+		? `${runtime.state.sessionId} ${snapshotId}`
+		: null;
+}
 
 function disabledPriceHistoryState(): PriceHistoryRuntimeState {
 	return {
