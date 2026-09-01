@@ -104,6 +104,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
+	/** Vault path of the note written for the session currently on screen, or null when none is durable. */
+	getSavedSessionNotePath?(): string | null;
+	openSavedSessionNote?(): void;
 }
 
 interface CompanionPrimaryAction {
@@ -332,6 +335,7 @@ export class TyrianCompanionView extends ItemView {
 			const retry = heading.createEl('button', { text: copy.retrySave });
 			retry.addEventListener('click', () => { void this.actions.retrySessionSummarySave?.(); });
 		}
+		this.renderSavedNoteAction(heading, copy);
 		if (this.actions.rotateToNewSession) {
 			const button = header.createEl('button', { text: copy.newSession, cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.rotateToNewSession?.(); });
@@ -342,6 +346,18 @@ export class TyrianCompanionView extends ItemView {
 		if (liveLoot.status === 'idle' && storedLoot !== null) this.renderStoredLoot(card, storedLoot, copy);
 		else if (liveLoot.status === 'idle' && durableLoot !== null) this.renderDurableLoot(card, durableLoot, copy);
 		else this.renderLiveLoot(card, liveLoot, copy);
+	}
+
+	/** The only reachable route to the note the plugin just wrote; absent until a durable path exists. */
+	private renderSavedNoteAction(
+		container: HTMLElement,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const path = this.actions.getSavedSessionNotePath?.() ?? null;
+		if (path === null || this.actions.openSavedSessionNote === undefined) return;
+		const open = container.createEl('button', { text: copy.openNote });
+		open.setAttr('aria-label', `${copy.openNote}: ${path}`);
+		open.addEventListener('click', () => this.actions.openSavedSessionNote?.());
 	}
 
 	private renderStoredLoot(
@@ -1269,6 +1285,7 @@ function simpleSessionCopy(locale: Locale) {
 		reviewNeeded: 'La sesión necesita revisión', reviewNeededDetail: 'No se pudo cerrar el resumen automáticamente. Revisa solo esta excepción para conservarlo.', review: 'Revisar',
 		summary: 'Resumen de la sesión', saved: 'Resumen guardado', saving: 'Guardando resumen…',
 		notSaved: 'Resumen local pendiente de guardar', localSummary: 'Resumen local disponible', retrySave: 'Reintentar guardado',
+		openNote: 'Abrir la nota',
 		newSession: 'Nueva sesión', loot: 'Botín observado', durableValue: 'Valor neto guardado', durableEmpty: 'El resumen guardado no contiene ganancias.',
 		observedValue: 'Valor observado', empty: 'Aún no hay ganancias visibles en la API.',
 		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
@@ -1283,6 +1300,7 @@ function simpleSessionCopy(locale: Locale) {
 		reviewNeeded: 'The session needs review', reviewNeededDetail: 'The summary could not close automatically. Review this exception only to preserve it.', review: 'Review',
 		summary: 'Session summary', saved: 'Summary saved', saving: 'Saving summary…',
 		notSaved: 'Local summary pending save', localSummary: 'Local summary available', retrySave: 'Retry save',
+		openNote: 'Open the note',
 		newSession: 'New session', loot: 'Observed loot', durableValue: 'Saved net value', durableEmpty: 'The saved summary contains no gains.',
 		observedValue: 'Observed value', empty: 'No gains are visible in the API yet.',
 		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',

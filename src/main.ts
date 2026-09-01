@@ -1,4 +1,4 @@
-import { apiVersion, Menu, Notice, Platform, Plugin, TFile } from 'obsidian';
+import { apiVersion, Menu, Notice, Platform, Plugin, TFile, type ViewCreator } from 'obsidian';
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
 
@@ -252,6 +252,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private liveSessionLoot!: LiveSessionLootTracker;
 	private sessionSummarySaveState: 'unknown' | 'saving' | 'saved' | 'failed' = 'unknown';
 	private storedSessionLootSummary: StoredSessionLootSummary | null = null;
+	/** Vault path of the note written for the session on screen; the only handle the view can open. */
+	private savedSessionNotePath: string | null = null;
 	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
 	private inventoryAdvisor!: InventoryAdvisorPresentationController;
 	private inventoryVaultSync!: InventoryVaultSyncController;
@@ -317,19 +319,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.localDebug?.flush();
 			throw settingsLoadFailure instanceof Error ? settingsLoadFailure : new Error('Settings load failed.');
 		}
+		// One source for both the registration loop and the journal count, so they cannot drift apart.
+		const viewFactories: Record<string, ViewCreator> = {
+			[COMPANION_VIEW_TYPE]: (leaf) => new TyrianCompanionView(leaf, this),
+			[INVENTORY_ADVISOR_VIEW_TYPE]: (leaf) => new InventoryAdvisorItemView(leaf, this),
+		};
 		await this.localDebugActions!.run({
 			component: 'plugin', action: 'plugin_load',
-			details: { commandCount: PRODUCT_ACTION_IDS.length, viewCount: 3 },
+			details: { commandCount: PRODUCT_ACTION_IDS.length, viewCount: Object.keys(viewFactories).length },
 		}, async () => {
 
-		this.registerView(
-			COMPANION_VIEW_TYPE,
-			(leaf) => new TyrianCompanionView(leaf, this),
-		);
-		this.registerView(
-			INVENTORY_ADVISOR_VIEW_TYPE,
-			(leaf) => new InventoryAdvisorItemView(leaf, this),
-		);
+		for (const [type, factory] of Object.entries(viewFactories)) this.registerView(type, factory);
 		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
 		this.setupSessionCommands();
@@ -1731,6 +1731,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.storedSessionLootSummary === null ? null : structuredClone(this.storedSessionLootSummary);
 	}
 
+	getSavedSessionNotePath(): string | null {
+		return this.savedSessionNotePath;
+	}
+
+	/** Opens the note the plugin just wrote; it is the only delivery of the completed summary. */
+	openSavedSessionNote(): void {
+		const path = this.savedSessionNotePath;
+		if (path === null) return;
+		void this.app.workspace.openLinkText(path, '', false);
+	}
+
 	async retrySessionSummarySave(): Promise<void> {
 		const [quality] = await Promise.allSettled([this.detectionQualityInitialization]);
 		if (quality?.status === 'rejected') {
@@ -2071,6 +2082,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.liveSessionLoot.reset();
 		this.storedSessionLootSummary = null;
 		this.sessionSummarySaveState = 'unknown';
+		this.savedSessionNotePath = null;
 		this.openManualSessionStart();
 	}
 
@@ -2261,7 +2273,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 			return null;
 		}
-		this.sessionSummarySaveState = note.status === 'written' || note.status === 'unchanged' ? 'saved' : 'failed';
+		const durable = note.status === 'written' || note.status === 'unchanged' ? note : null;
+		this.sessionSummarySaveState = durable === null ? 'failed' : 'saved';
+		this.savedSessionNotePath = durable?.path ?? null;
 		if (this.runtimeReady) this.renderViews();
 		if (this.sessionSummarySaveState === 'failed' && notifyFailure) this.emitNotice(
 			translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
@@ -2366,6 +2380,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private startLiveObservation(sessionId: string, restored: boolean): void {
 		this.sessionSummarySaveState = 'unknown';
 		this.storedSessionLootSummary = null;
+		this.savedSessionNotePath = null;
 		this.liveSessionLoot.begin(sessionId, restored);
 		const baseline = this.sessions.getBaselineSnapshot();
 		const state = baseline === null

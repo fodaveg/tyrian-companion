@@ -1129,6 +1129,97 @@ describe('deferred runtime boot guard', () => {
 		expect(() => plugin.openManualSessionStart()).not.toThrow();
 		await expect(plugin.stopManualSession()).resolves.toBeUndefined();
 	});
+
+	it('journals the number of views it actually registers', async () => {
+		const fakeRibbon = { setAttr: () => undefined, toggleClass: () => undefined } as unknown as HTMLElement;
+		const fakeApp = {
+			vault: { configDir: 'test-config-dir' },
+			workspace: { onLayoutReady: () => undefined },
+		} as unknown as App;
+		const fakeManifest = { id: 'tyrian-companion' } as unknown as PluginManifest;
+		const plugin = new TyrianCompanionPlugin(fakeApp, fakeManifest);
+		plugin.app = fakeApp;
+		plugin.manifest = fakeManifest;
+		plugin.loadData = async () => undefined;
+		plugin.saveData = async () => undefined;
+		const registerView = vi.fn();
+		plugin.registerView = registerView;
+		plugin.addSettingTab = vi.fn();
+		plugin.addCommand = vi.fn((command: unknown) => command) as unknown as typeof plugin.addCommand;
+		plugin.registerDomEvent = vi.fn();
+		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
+		const run = vi.spyOn(LocalDebugActionRunner.prototype, 'run');
+		vi.stubGlobal('window', {});
+		vi.stubGlobal('document', {});
+
+		await plugin.onload();
+		vi.unstubAllGlobals();
+
+		const load = run.mock.calls.find(([input]) => input.action === 'plugin_load' && input.details !== undefined);
+		const registeredViewTypes = new Set(registerView.mock.calls.map((call: unknown[]) => call[0]));
+		expect(registeredViewTypes.size).toBeGreaterThan(0);
+		expect(load?.[0].details).toMatchObject({ viewCount: registeredViewTypes.size });
+		run.mockRestore();
+	});
+});
+
+describe('completed session note delivery', () => {
+	it('remembers the note it just wrote and opens exactly that path', async () => {
+		const openLinkText = vi.fn(async () => undefined);
+		const write = vi.fn(async () => ({ status: 'written' as const, path: 'Tyrian Companion/Sessions/2026-08-31.md' }));
+		const harness = {
+			app: { workspace: { openLinkText } },
+			runtimeReady: true,
+			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
+			savedSessionNotePath: null as string | null,
+			settings: { language: 'en' as const },
+			sessionNotes: { write },
+			sessionNoteInput: () => ({ session: 'input' }),
+			renderViews: vi.fn(),
+			emitNotice: vi.fn(),
+		};
+		const methods = TyrianCompanionPlugin.prototype as unknown as {
+			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
+			getSavedSessionNotePath(this: typeof harness): string | null;
+			openSavedSessionNote(this: typeof harness): void;
+		};
+
+		methods.openSavedSessionNote.call(harness);
+		expect(openLinkText).not.toHaveBeenCalled();
+
+		await methods.persistCompletedSessionSummary.call(harness, true, { state: { status: 'complete' } });
+
+		expect(harness.sessionSummarySaveState).toBe('saved');
+		expect(methods.getSavedSessionNotePath.call(harness)).toBe('Tyrian Companion/Sessions/2026-08-31.md');
+		methods.openSavedSessionNote.call(harness);
+		expect(openLinkText).toHaveBeenCalledWith('Tyrian Companion/Sessions/2026-08-31.md', '', false);
+	});
+
+	it('keeps no path to open when the note could not be written', async () => {
+		const openLinkText = vi.fn(async () => undefined);
+		const harness = {
+			app: { workspace: { openLinkText } },
+			runtimeReady: true,
+			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
+			savedSessionNotePath: 'stale/path.md' as string | null,
+			settings: { language: 'en' as const },
+			sessionNotes: { write: vi.fn(async () => ({ status: 'conflict' as const, message: 'conflict' })) },
+			sessionNoteInput: () => ({ session: 'input' }),
+			renderViews: vi.fn(),
+			emitNotice: vi.fn(),
+		};
+		const methods = TyrianCompanionPlugin.prototype as unknown as {
+			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
+			openSavedSessionNote(this: typeof harness): void;
+		};
+
+		await methods.persistCompletedSessionSummary.call(harness, false, { state: { status: 'complete' } });
+
+		expect(harness.sessionSummarySaveState).toBe('failed');
+		expect(harness.savedSessionNotePath).toBeNull();
+		methods.openSavedSessionNote.call(harness);
+		expect(openLinkText).not.toHaveBeenCalled();
+	});
 });
 
 describe('local diagnostics composition', () => {

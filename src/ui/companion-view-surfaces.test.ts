@@ -144,6 +144,40 @@ describe('Companion durable history surface', () => {
 	});
 });
 
+describe('Companion saved note delivery', () => {
+	it('offers the note the plugin just wrote and opens it', () => {
+		const openSavedSessionNote = vi.fn();
+		const { contentEl, render } = mountCompanion({
+			openSavedSessionNote,
+			getSavedSessionNotePath: () => 'Tyrian Companion/Sessions/2026-08-31.md',
+			getSessionState: () => completedSession(),
+			getSessionSummarySaveState: () => 'saved',
+		});
+
+		render();
+
+		const open = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Abrir la nota');
+		expect(open).toBeDefined();
+		expect(open?.attributes.get('aria-label')).toBe('Abrir la nota: Tyrian Companion/Sessions/2026-08-31.md');
+
+		open?.click();
+		expect(openSavedSessionNote).toHaveBeenCalledOnce();
+	});
+
+	it('omits the action while no note is durable', () => {
+		const { contentEl, render } = mountCompanion({
+			openSavedSessionNote: vi.fn(),
+			getSavedSessionNotePath: () => null,
+			getSessionState: () => completedSession(),
+			getSessionSummarySaveState: () => 'failed',
+		});
+
+		render();
+
+		expect(find(contentEl, (node) => node.textContent === 'Abrir la nota')).toBeUndefined();
+	});
+});
+
 function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	contentEl: FakeElement;
 	actions: CompanionActions;
@@ -226,6 +260,13 @@ function armedDetection(): AssistedDetectionState {
 
 function idleScheduler(): AssistedDetectionState['scheduler'] {
 	return { status: 'idle', intervalMs: null, nextRunAt: null, lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0 };
+}
+
+function completedSession(): SessionState {
+	return {
+		version: 1, status: 'complete', sessionId: 'session',
+		startContext: { characterName: 'Rinopopo' },
+	} as unknown as SessionState;
 }
 
 function freshProposal(): PendingProposal {
