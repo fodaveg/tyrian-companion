@@ -171,8 +171,8 @@ describe('assisted-detection polling settings', () => {
 		plugin.settings.pollingIntervalMinutes = 60;
 		const existing = renderControl(definition, 'dropdown');
 		expect(existing.value).toBe('60');
-		return expect(existing.change('2')).resolves.toBeUndefined().then(() => {
-			expect(plugin.settings.pollingIntervalMinutes).toBe(2);
+		return expect(existing.change('15')).resolves.toBeUndefined().then(() => {
+			expect(plugin.settings.pollingIntervalMinutes).toBe(15);
 		});
 	});
 });

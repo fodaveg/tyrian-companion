@@ -41,11 +41,29 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 15 }).pollingIntervalMinutes).toBe(15);
 		expect(mergeSettingsUpdate(upgraded, { pollingIntervalMinutes: 60 }).pollingIntervalMinutes).toBe(60);
 		// A v12 install keeps the cadence it already persisted, inherited default included.
-		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 2 }).pollingIntervalMinutes).toBe(2);
+		expect(migrateSettings({ ...upgraded, pollingIntervalMinutes: 30 }).pollingIntervalMinutes).toBe(30);
 	});
 
 	it('keeps the default cadence inside the offered options', () => {
 		expect(POLLING_INTERVAL_OPTIONS).toContain(DEFAULT_SETTINGS.pollingIntervalMinutes);
+	});
+
+	it('offers no cadence below the account API cache ceiling', () => {
+		// The API serves account data from a 5-10 minute cache chain; a faster poll only spends
+		// the shared request budget on bytes that cannot have changed yet.
+		expect(POLLING_INTERVAL_OPTIONS).toEqual([10, 15, 30, 60, 120, 240]);
+		expect(Math.min(...POLLING_INTERVAL_OPTIONS)).toBeGreaterThanOrEqual(10);
+	});
+
+	it('rewrites a persisted two-minute cadence that is no longer offered', () => {
+		const persisted = { ...migrateSettings({ schemaVersion: 11 }), pollingIntervalMinutes: 2 };
+
+		const migrated = migrateSettings(persisted);
+
+		expect(migrated.pollingIntervalMinutes).toBe(10);
+		// The correction is written back, so the install does not reload the retired value.
+		expect(shouldPersistSettingsOnLoad(persisted, migrated)).toBe(true);
+		expect(mergeSettingsUpdate(migrated, { pollingIntervalMinutes: 2 }).pollingIntervalMinutes).toBe(10);
 	});
 
 	it('deep-freezes defaults and returns isolated nested valuation instances', () => {

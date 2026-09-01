@@ -126,8 +126,18 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	salvageOpportunityCostCopperPerHour: null,
 });
 
-/** Cadences offered in Settings. The default must stay a member, or the dropdown cannot show it. */
-export const POLLING_INTERVAL_OPTIONS: readonly number[] = [2, 10, 15, 30, 60, 120, 240];
+/**
+ * Cadences offered in Settings. The default must stay a member, or the dropdown cannot show it.
+ *
+ * The floor is ten minutes because the account API answers from a 5-10 minute cache chain: a
+ * faster poll spends the shared request budget re-reading bytes that cannot have changed.
+ *
+ * Retiring the two-minute option needs no schema bump: `migrateSettings` validates the stored
+ * cadence against this list on every load, so an install that saved 2 adopts the default and
+ * `shouldPersistSettingsOnLoad` writes the correction back. Bumping the schema instead would
+ * discard every deliberate choice of 30, 60 or 240 along with it.
+ */
+export const POLLING_INTERVAL_OPTIONS: readonly number[] = [10, 15, 30, 60, 120, 240];
 const POLLING_INTERVALS: ReadonlySet<number> = new Set(POLLING_INTERVAL_OPTIONS);
 const PRICE_HISTORY_INTERVALS: ReadonlySet<number> = new Set([5, 15, 30, 60]);
 const PRICE_HISTORY_RAW_RETENTIONS: ReadonlySet<number> = new Set([2, 7, 14, 30]);
