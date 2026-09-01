@@ -1,6 +1,8 @@
 # Changelog
 
-## Integrado en main sin publicar - la Bolsa de truco o trato deja de estar muda
+## Release beta 0.1.21 - la sesión por fin da un número
+
+### La Bolsa de truco o trato deja de estar muda
 
 - **El objeto insignia del plugin llevaba todo el año en «revisión».** La Bolsa de truco o trato
   (`36038`) tiene ocho resultados líquidos y, medido el 2026-09-01 contra `/v2/commerce/listings`,
@@ -34,34 +36,75 @@
   padre: solo se transfirió lo que sobrevivió byte a byte, 0 decisiones descartadas, 0 huérfanas y
   0 fronteras sin revisar. Nunca se usó `--write-baseline`.
 
-## Integrado en main sin publicar - superficies conectadas, primera ejecución y censo
+### La nota de sesión nunca había dado un número económico (`8ef1ca7`)
 
-- Montadas cuatro superficies que ya existían, tenían pruebas y ningún punto de entrada las
-  construía. Alertas de Halloween: el plugin emitía avisos sin ninguna pantalla donde marcarlos
-  leídos, así que el contador de no leídos no podía bajar nunca. Confirmaciones pendientes: el
-  ribbon mostraba el contador y el comando existía, pero ninguna vista podía mostrar la propuesta.
-  Detección asistida: pasa a exponerse completa, no en resumen. Historial de sesiones: se monta la
-  vista que ya construía el modelo.
-- Añadido el botón **Abrir la nota** después de guardar una sesión. Es el primer uso de
-  `openLinkText` en código de producción del repositorio: hasta ahora el plugin escribía la nota y
-  no ofrecía ninguna forma de abrirla.
-- Corregido el `viewCount` del journal de arranque, que declaraba 3 cuando se registran 2 vistas.
-- La línea de tiempo de detección pasa a resolución de minutos. La API de cuenta no da precisión al
-  segundo y presentarla lo aparentaba.
-- Primera ejecución: el idioma deja de estar forzado a español. Se resuelve desde Obsidian con
-  `getLanguage()` y reserva `en`; una elección manual del usuario sigue ganando sobre esa
-  resolución.
-- Primera ejecución: el registro de diagnóstico local nace apagado y en nivel `warn`. Venía
-  encendido en nivel `debug` desde Settings v11, escribiendo JSONL de forma continua dentro del
-  vault.
-- Primera ejecución: el intervalo de consulta por defecto pasa de 2 a 10 minutos. Los tres valores
-  viven en `DEFAULT_SETTINGS` de `src/core/settings.ts`.
-- **Los tres cambios de primera ejecución solo alcanzan instalaciones nuevas.** Una instalación
-  existente conserva sus valores, porque en disco un valor heredado del default es indistinguible de
-  uno elegido por el usuario. Quien ya tenga el registro encendido debe apagarlo a mano en Ajustes.
-- Reindexados 31 localizadores de `src/ui/settings-tab.ts` en
-  `scripts/action-observability-baseline.json` tras el desplazamiento de una línea que introdujo la
-  fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada del censo se alteró.
+- `calculateSessionValuation` (`src/economy/session-valuation.ts:89`) tenía una sola aparición en
+  producción: su propia definición. `src/main.ts`, en `sessionNoteInput`, pasaba `valuation: null`
+  escrito a mano. Todo el motor económico (el modelo de 106.264 sacos, precios y tasas) estaba
+  desconectado del único sitio donde el usuario lo vería. Consecuencia: la nota decía «No evaluado»
+  en oro, oro/hora, sacos y sacos/hora en todas las sesiones desde siempre, y por eso ninguna
+  entraba nunca en el panel de rendimiento.
+- Fichero nuevo `src/sessions/session-economy-evidence.ts` (puro):
+  `buildSessionEconomyEvidence(runtime, catalogItems, goals)` construye valoración, reserva y hold
+  desde el runtime de la sesión.
+- `src/catalog/public-catalog-service.ts` gana `resolveItems(ids, locale)`, porque `resolve()` solo
+  aceptaba un snapshot entero de la cuenta y una sesión necesita el puñado de ids ganados.
+- La vinculación (bound/unbound) sale del snapshot de cierre y no del delta: `compareComposition`
+  (`src/account/storage-delta.ts:361`, dentro de la función que arranca en la línea 354) hace
+  `continue` sobre todo id cuya cantidad haya cambiado, así que un objeto ganado nunca aparece en
+  los cambios de composición.
+- Dos junturas había que cablear a la vez o no funcionaba nada. Primera: `reservation` no era
+  opcional, porque `src/sessions/session-note-model.ts:221` revalida con `sackItemIds` vacío si la
+  reserva no es válida, y entonces la valoración que cuenta sacos se rechaza como `invalid`.
+  Segunda: con `hold: null` la nota seguía diciendo «evidencia económica no válida», porque
+  `src/sessions/loot-presentation.ts:162` corta con `if (note.hold.status !== 'valid')` y eso
+  invalida el bloque de economía entero. El hold va con lista de intents vacía, que es lo cierto:
+  nada en el árbol produce un `HoldIntentV1`.
+- Siguen en `null` a propósito `recommendation` y `envelope`: `recommendContainerDisposition` exige
+  un `ContainerModelReview` y no hay ningún productor de ese tipo en el árbol.
+- Prueba negativa: devolver `valuation: null` pone 4 de 5 casos en rojo, con
+  `expected 'not_evaluated' to be 'complete'`.
+- La nota que ahora se escribe lleva `tc_valuation_coverage: complete`, `tc_sacks: 240`,
+  `tc_sacks_per_hour_milli: 240000`, `tc_observed_immediate_copper: 32640` y un bloque de economía
+  con «Liquidación neta: 3g 26s 40c».
+
+### El detector asistido no proponía nunca (`3d8c62b`, `43cd2a7`, `71a206a`, `9b21d52`)
+
+- `src/sessions/relevant-item-start-detector.ts` exigía dos consultas consecutivas con ganancia, y
+  cualquier consulta sin ganancia borraba la evidencia acumulada. Con la caché de la API de cuenta
+  de 5 a 10 minutos y la cadencia de 2 minutos que era el valor por defecto, nunca hay dos seguidas:
+  el detector no proponía nunca. Ahora usa una ventana deslizante de `max(3 muestras, 30 min)`,
+  alcanzable a cualquier cadencia; una muestra `limited` dentro del tramo degrada la propuesta a
+  `evidenceQuality: 'limited'`.
+- `src/sessions/assisted-detection-service.ts` vigilaba un solo objeto, el saco `36038`. Ahora
+  vigila los cinco drops del Laberinto, verificados contra `/v2/items` en vivo: `36038`
+  Trick-or-Treat Bag, `36041` Piece of Candy Corn, `36059` Plastic Fangs, `36060` Chattering Skull,
+  `36061` Nougat Center. La regla pasa de `halloween.trick-or-treat-bag` v1 a
+  `halloween.labyrinth-drops` v2.
+- `DEFAULT_INACTIVITY_THRESHOLD_MS` baja de 30 a 15 minutos, que sigue por encima del techo
+  documentado de la caché.
+- La tarjeta del Companion (`src/ui/companion-view.ts`) declara cuánto retraso lleva la propuesta de
+  parada, porque detener en ese momento graba ese margen como tiempo jugado.
+- `POLLING_INTERVAL_OPTIONS` (`src/core/settings.ts`) retira la cadencia de 2 minutos: está por
+  debajo del suelo de la caché de la API, así que solo gastaba cuota releyendo bytes idénticos. La
+  migración no sube `SETTINGS_SCHEMA_VERSION` a propósito, para no tirar también las elecciones
+  deliberadas de 30, 60 o 240 minutos.
+
+### Lo que la 0.1.21 no arregla, y tiene que quedar dicho
+
+- El panel de rendimiento sigue dejando fuera las sesiones iniciadas a mano: `buildPerformance`
+  (`src/sessions/session-history-summary.ts`) agrupa por `tc_event`, y su único productor en
+  runtime (`sessionNoteEventDeclarationFromDetectionSummary`, `src/sessions/session-note-model.ts`)
+  solo devuelve `source: 'assisted'` o `null`. El tipo `manual_explicit` existe en el modelo pero no
+  tiene productor.
+- `humanBoundaryAt` no mueve la frontera real de la sesión: solo alimenta las métricas del piloto
+  (`src/sessions/pilot-metrics-recorder.ts`, `src/sessions/pilot-metrics-model.ts`). «Detener
+  sesión» sigue cerrando en el instante del clic.
+- El bundle curado del saco caduca en silencio el 2026-11-12
+  (`VALID_UNTIL`, `src/advisor/inventory-advisor-builtin-bundle.ts:42`): pasada esa fecha `load()`
+  devuelve `{ status: 'unavailable', reason: 'expired' }` sin ninguna notificación al usuario.
+- El rendimiento sigue sin agrupar por Magic Find, aunque `tc_magic_find` sí se persiste
+  (`src/sessions/session-note-renderer.ts:208`).
 
 ## Release beta 0.1.20 - superficies cableadas y cierre honesto
 
@@ -88,7 +131,9 @@ Se retiró el test de arquitectura que certificaba que el historial NO estaba co
 
 Añadido el botón **Abrir la nota** tras guardar una sesión, primer `openLinkText` en código de
 producción: hasta ahora el plugin escribía su único entregable y no ofrecía forma de abrirlo.
-Corregido `viewCount` del journal de arranque, que declaraba 3 vistas cuando se registran 2.
+Corregido `viewCount` del journal de arranque, que declaraba 3 vistas cuando se registran 2. La
+línea de tiempo de detección pasa a resolución de minutos, porque la API de cuenta no da precisión
+al segundo y presentarla lo aparentaba.
 
 El resto de la bitácora de campo antigua se retiró tras comprobar dato a dato cuáles llegaban ya al
 usuario por otra vía. Los que no llegaban por ninguna se integraron en la tarjeta de sesión: calidad
@@ -131,6 +176,10 @@ estaba duplicada con diferencia cero entre cartera e inventario.
 Se auditaron las 24 reimplementaciones de `canonical()` y **no se unificaron**: 29 cuerpos distintos,
 varios alimentando huellas ya escritas en el vault del usuario. Unificarlas habría cambiado hashes
 persistidos en silencio.
+
+Reindexados 31 localizadores de `src/ui/settings-tab.ts` en
+`scripts/action-observability-baseline.json` tras el desplazamiento de una línea que introdujo la
+fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada del censo se alteró.
 
 ## Release beta 0.1.19 - companion de farmeo en vivo
 
