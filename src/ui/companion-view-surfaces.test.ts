@@ -5,6 +5,7 @@ import type { AssistedDetectionState } from '../sessions/assisted-detection-serv
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenPriceNoticeV1 } from '../halloween/halloween-price-alert';
 import type { PendingProposal } from '../sessions/pending-proposal-model';
+import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
 
 /**
@@ -119,6 +120,27 @@ describe('Companion assisted detection surface', () => {
 		arm?.click();
 		await Promise.resolve();
 		expect(armAssistedDetection).toHaveBeenCalledOnce();
+	});
+});
+
+describe('Companion durable history surface', () => {
+	it('mounts the panel idle and only reads the Vault when its action is pressed', async () => {
+		const loadSessionHistory = vi.fn(async (): Promise<SessionHistoryLoadResult> => ({ status: 'ok', sessions: [], ignored: 0 }));
+		const { contentEl, render } = mountCompanion({ loadSessionHistory });
+
+		render();
+
+		const panel = find(contentEl, (node) => node.className.includes('tyrian-session-history'));
+		expect(panel).toBeDefined();
+		expect(loadSessionHistory).not.toHaveBeenCalled();
+		const load = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Cargar historial');
+		expect(load?.attributes.get('aria-controls')).toBeDefined();
+
+		load?.click();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(loadSessionHistory).toHaveBeenCalledOnce();
+		expect(texts(contentEl)).toContain('No hay sesiones finalizadas');
 	});
 });
 

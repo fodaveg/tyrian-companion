@@ -48,6 +48,11 @@ import {
 import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
+import {
+	mountSessionHistoryPanel,
+	SessionHistoryPanelController,
+	type SessionHistoryPanelMount,
+} from './session-history-panel';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -128,6 +133,9 @@ export class TyrianCompanionView extends ItemView {
 	private primaryActionKey: string | null = null;
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
+	/** Retained across rerenders so a loaded history survives a repaint without rescanning the Vault. */
+	private sessionHistoryController: SessionHistoryPanelController | null = null;
+	private sessionHistoryMount: SessionHistoryPanelMount | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -155,6 +163,8 @@ export class TyrianCompanionView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.actions.localDebugViewEvent?.('close');
+		this.sessionHistoryMount?.dispose();
+		this.sessionHistoryMount = null;
 		this.productShell?.dispose();
 		this.productShell = null;
 		this.productShellKey = null;
@@ -214,6 +224,7 @@ export class TyrianCompanionView extends ItemView {
 		this.renderPendingConfirmationSlot(surface, now);
 		this.renderAssistedDetection(surface, connectionState, sessionState);
 		this.renderHalloweenAlerts(surface);
+		this.renderSessionHistory(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
@@ -233,6 +244,19 @@ export class TyrianCompanionView extends ItemView {
 			container,
 			this.actions,
 			(key, params) => this.t(key as RuntimeTranslationKey, params),
+		);
+	}
+
+	/** Remounts the durable-history panel against its retained controller; mounting never reads the Vault. */
+	private renderSessionHistory(container: HTMLElement): void {
+		this.sessionHistoryController ??= new SessionHistoryPanelController(
+			() => this.actions.loadSessionHistory(),
+		);
+		this.sessionHistoryMount?.dispose();
+		this.sessionHistoryMount = mountSessionHistoryPanel(
+			container,
+			this.actions.getLocale(),
+			this.sessionHistoryController,
 		);
 	}
 

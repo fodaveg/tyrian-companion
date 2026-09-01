@@ -14,7 +14,8 @@ describe('H9.7 durable session history boundary', () => {
 		const companion = readFileSync(new URL('companion-view.ts', import.meta.url), 'utf8');
 		const main = readFileSync(new URL('../main.ts', import.meta.url), 'utf8');
 		expect(panel).toContain("button.addEventListener('click', () => { void controller.load(); })");
-		expect(companion).not.toContain('mountSessionHistoryPanel(');
+		// The panel is mounted by the Companion surface, but only the button may reach the Vault.
+		expect(companion).toContain('mountSessionHistoryPanel(');
 		expect(companion).not.toMatch(/onOpen\(\)[\s\S]{0,250}loadSessionHistory/u);
 		expect(main).toContain('return await this.sessionHistory.scan();');
 		expect(main.match(/this\.sessionHistory\.scan\(\)/gu)).toHaveLength(1);
