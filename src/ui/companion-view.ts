@@ -212,6 +212,7 @@ export class TyrianCompanionView extends ItemView {
 		surface.addClass('tyrian-companion-view__page');
 		this.renderSimpleSession(surface, connectionState, sessionState, projection);
 		this.renderPendingConfirmationSlot(surface, now);
+		this.renderAssistedDetection(surface, connectionState, sessionState);
 		this.renderHalloweenAlerts(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
@@ -884,6 +885,7 @@ export class TyrianCompanionView extends ItemView {
 			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
 			next: addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), values.next),
 		};
+		container.createEl('p', { text: this.t('view.detectionApiLag'), cls: 'tyrian-companion-view__detection-scope' });
 	}
 
 	private refreshDetectionTimeline(): void {
@@ -907,7 +909,7 @@ export class TyrianCompanionView extends ItemView {
 		const lastAttemptAt = scheduler.lastAttemptAt;
 		const last = lastAttemptAt === null
 			? this.t('view.notYet')
-			: this.formatTimestamp(new Date(lastAttemptAt).toISOString());
+			: this.formatQueryClock(new Date(lastAttemptAt).toISOString());
 		let result = this.t('view.noDetectionResult');
 		if (mode === 'off' || state.status === 'disarmed') result = this.t('view.noDetectionResult');
 		else if (state.status === 'arming') result = this.t('view.baselineInProgress');
@@ -928,7 +930,7 @@ export class TyrianCompanionView extends ItemView {
 		else if (state.status === 'start_proposed' || state.status === 'stop_proposed') next = this.t('view.waitingProposalReview');
 		else if (scheduler.status === 'polling') next = this.t('view.now');
 		else if (scheduler.status === 'paused_offline') next = this.t('view.whenOnline');
-		else if (scheduler.nextRunAt !== null) next = this.formatTimestamp(new Date(scheduler.nextRunAt).toISOString());
+		else if (scheduler.nextRunAt !== null) next = this.formatQueryClock(new Date(scheduler.nextRunAt).toISOString());
 		return { last, result, next };
 	}
 
@@ -1205,6 +1207,14 @@ export class TyrianCompanionView extends ItemView {
 
 	private formatTimestamp(value: string): string {
 		return new Date(value).toLocaleString(this.actions.getLocale());
+	}
+
+	/**
+	 * Detection clocks stop at the minute on purpose: the account inventory reaches the public API
+	 * with minutes of delay, so a second in this column would be precision the plugin cannot hold.
+	 */
+	private formatQueryClock(value: string): string {
+		return new Date(value).toLocaleString(this.actions.getLocale(), { dateStyle: 'short', timeStyle: 'short' });
 	}
 
 	private formatInterval(intervalMs: number | null): string {

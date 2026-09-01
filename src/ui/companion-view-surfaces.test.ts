@@ -75,6 +75,53 @@ describe('Companion pending proposal surface', () => {
 	});
 });
 
+describe('Companion assisted detection surface', () => {
+	it('renders the armed timeline, the signal quality and the honest API lag caveat', () => {
+		const { contentEl, render } = mountCompanion({
+			getAssistedDetectionState: () => armedDetection(),
+			getDetectionQualityStats: () => ({
+				acceptedBoundaries: 3, correctedFalsePositives: 1,
+				correctionsByCause: { not_farming: 1, still_farming: 0, temporary_pause: 0, unrelated_account_activity: 0, other: 0 },
+			}),
+		});
+
+		render();
+
+		expect(texts(contentEl)).toContain('Detección del saco #36038');
+		const timeline = find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-timeline'));
+		expect(timeline?.attributes.get('aria-label')).toContain('Última consulta, resultado y próxima consulta');
+		expect(termsAndDetails(contentEl)).toEqual(expect.arrayContaining([
+			['Última consulta'], ['Resultado'], ['Próxima consulta'],
+		]));
+		expect(texts(contentEl)).toContain('Límites registrados');
+		expect(texts(contentEl)).toContain('Propuestas corregidas');
+		const lag = texts(contentEl).find((text) => text.includes('minutos de retraso'));
+		expect(lag).toBeDefined();
+		// The queried clock stops at the minute; a seconds field would promise precision the API lacks.
+		const queried = definitionValue(contentEl, 'Última consulta');
+		expect(queried).toBeDefined();
+		expect(queried).not.toMatch(/\d{1,2}:\d{2}:\d{2}/u);
+	});
+
+	it('arms the detection from the mounted disarmed card', async () => {
+		const armAssistedDetection = vi.fn(async () => 'completed' as const);
+		const { contentEl, render } = mountCompanion({
+			armAssistedDetection,
+			getAssistedDetectionState: () => ({ status: 'disarmed', reason: 'initial', scheduler: idleScheduler(), lastSnapshotAt: null }),
+		});
+
+		render();
+
+		const arm = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Activar detección');
+		expect(arm).toBeDefined();
+		expect(arm?.disabled).toBe(false);
+
+		arm?.click();
+		await Promise.resolve();
+		expect(armAssistedDetection).toHaveBeenCalledOnce();
+	});
+});
+
 function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	contentEl: FakeElement;
 	actions: CompanionActions;
@@ -155,6 +202,10 @@ function armedDetection(): AssistedDetectionState {
 	};
 }
 
+function idleScheduler(): AssistedDetectionState['scheduler'] {
+	return { status: 'idle', intervalMs: null, nextRunAt: null, lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0 };
+}
+
 function freshProposal(): PendingProposal {
 	return {
 		version: 1, phase: 'start', proposalId: 'proposal', accountId: 'account',
@@ -192,6 +243,19 @@ function find(root: FakeElement, predicate: (node: FakeElement) => boolean): Fak
 
 function texts(root: FakeElement): string[] {
 	return walk(root).map(({ textContent }) => textContent);
+}
+
+function termsAndDetails(root: FakeElement): string[][] {
+	return walk(root).filter(({ tag }) => tag === 'dt').map(({ textContent }) => [textContent]);
+}
+
+/** Reads the `dd` that follows a `dt` with the given term, wherever the list nests it. */
+function definitionValue(root: FakeElement, term: string): string | undefined {
+	for (const node of walk(root)) {
+		const index = node.children.findIndex((child) => child.tag === 'dt' && child.textContent === term);
+		if (index >= 0) return node.children[index + 1]?.textContent;
+	}
+	return undefined;
 }
 
 interface FakeOptions {
