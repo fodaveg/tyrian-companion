@@ -816,6 +816,7 @@ export class TyrianCompanionView extends ItemView {
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
 			card.createEl('p', { text: this.t('view.stopProposalDetail') });
 			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
+			this.renderStopProposalLag(card, state.proposal.possibleStop.to, state.proposal.detectedAt);
 			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const stop = actions.createEl('button', { text: this.t('view.stopSession') });
 			stop.disabled = session.status !== 'active';
@@ -938,6 +939,21 @@ export class TyrianCompanionView extends ItemView {
 		const details = container.createEl('dl');
 		addDetail(details, this.t('view.recordedBoundaries'), String(stats.acceptedBoundaries));
 		addDetail(details, this.t('view.correctedProposals'), String(stats.correctedFalsePositives));
+	}
+
+	/**
+	 * States how much later than the proposed end the quiet was confirmed. The stop button
+	 * settles the session at the moment it is pressed, not at `possibleStop`, so without this
+	 * line the extra time is recorded as played without anything saying so. Measured between two
+	 * instants the proposal already carries, never against the wall clock.
+	 */
+	private renderStopProposalLag(container: HTMLElement, possibleTo: string, detectedAt: string): void {
+		const lagMs = Date.parse(detectedAt) - Date.parse(possibleTo);
+		if (!Number.isFinite(lagMs) || lagMs <= 0) return;
+		container.createEl('p', {
+			text: this.t('view.stopProposalLag', { duration: this.formatDuration(lagMs) }),
+			cls: 'tyrian-companion-view__detection-scope',
+		});
 	}
 
 	private renderProposalDetails(

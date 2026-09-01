@@ -24,6 +24,7 @@ import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
 import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
+import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './sessions/assisted-detection-service';
 import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
 import { proposalIntent, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
@@ -1037,14 +1038,18 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 }
 
 function halloweenProposal(): RelevantStartProposal {
-	const ruleSet = { id: 'halloween.trick-or-treat-bag', version: 1 };
+	// Derived from the shipped rule so widening the watched drops cannot rot this fixture.
+	const ruleSet = {
+		id: HALLOWEEN_RELEVANT_ITEM_RULE_SET.id,
+		version: HALLOWEEN_RELEVANT_ITEM_RULE_SET.version,
+	};
 	const firstSignal = { accountId: 'account', beforeSnapshotId: 'before', afterSnapshotId: 'middle',
 		window: { from: '2026-08-13T08:00:00.000Z', to: '2026-08-13T08:00:01.000Z' },
 		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }] };
 	const confirmationSignal = { accountId: 'account', beforeSnapshotId: 'middle', afterSnapshotId: 'after',
 		window: { from: '2026-08-13T08:00:01.000Z', to: '2026-08-13T08:00:02.000Z' },
 		deltaStatus: 'comparable' as const, gains: [{ itemId: 36_038, quantity: 1 }] };
-	return { version: 1, proposalId: `relevant-start:${ruleSet.id}:1:before:after`, accountId: 'account', ruleSet,
+	return { version: 1, proposalId: `relevant-start:${ruleSet.id}:${String(ruleSet.version)}:before:after`, accountId: 'account', ruleSet,
 		possibleStart: { ...firstSignal.window, uncertaintyMs: 1_000 }, evidenceQuality: 'complete',
 		confirmedAt: confirmationSignal.window.to, firstSignal, confirmationSignal };
 }

@@ -21,13 +21,35 @@ import {
 } from './relevant-item-start-detector';
 import type { SessionState } from './session';
 
+/**
+ * Public item ids that the Mad King's Labyrinth drops together, verified against
+ * `https://api.guildwars2.com/v2/items` and not inferred from mutable catalog text:
+ * 36038 Trick-or-Treat Bag, 36041 Piece of Candy Corn, 36059 Plastic Fangs,
+ * 36060 Chattering Skull, 36061 Nougat Center.
+ *
+ * They all ride the snapshot already captured, so watching five instead of one costs no extra
+ * request and makes a poll far less likely to read zero relevant gain while the player farms.
+ *
+ * v2 renamed the rule: v1 was `halloween.trick-or-treat-bag` and watched 36038 alone, so its
+ * identifier stopped describing what the rule looks at. Proposals recorded under the old pair
+ * keep their own provenance and are never rewritten.
+ */
 export const HALLOWEEN_RELEVANT_ITEM_RULE_SET = Object.freeze({
-	id: 'halloween.trick-or-treat-bag',
-	version: 1,
-	itemIds: Object.freeze([36_038]),
+	id: 'halloween.labyrinth-drops',
+	version: 2,
+	itemIds: Object.freeze([36_038, 36_041, 36_059, 36_060, 36_061]),
 }) satisfies RelevantItemRuleSet;
 
-export const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60_000;
+/**
+ * Continuous quiet that stops looking like cache lag and starts looking like a finished run.
+ *
+ * The account API answers from a documented 5-10 minute cache chain, so quiet shorter than ten
+ * minutes proves nothing at all. Fifteen minutes clears that ceiling with margin at every
+ * cadence the plugin offers, and halves the delay the previous thirty minutes added on top of
+ * the cache lag before the player was even asked. Proposing early costs one dismissal; proposing
+ * late silently records a session longer than the one that was played.
+ */
+export const DEFAULT_INACTIVITY_THRESHOLD_MS = 15 * 60_000;
 
 export type AssistedDetectionDisarmReason =
 	| 'initial'
