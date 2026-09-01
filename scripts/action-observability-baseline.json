@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 382,
 		"promise_catch": 29,
-		"void_expression": 86,
-		"callback_registration": 165
+		"void_expression": 79,
+		"callback_registration": 159
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -8085,9 +8085,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 293,
+					"line": 275,
 					"column": 4,
-					"endLine": 293,
+					"endLine": 275,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8101,9 +8101,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 312,
+					"line": 295,
 					"column": 4,
-					"endLine": 312,
+					"endLine": 295,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8117,9 +8117,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 312,
+					"line": 295,
 					"column": 45,
-					"endLine": 312,
+					"endLine": 295,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8132,9 +8132,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 335,
+					"line": 318,
 					"column": 4,
-					"endLine": 335,
+					"endLine": 318,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8148,9 +8148,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 347,
+					"line": 330,
 					"column": 4,
-					"endLine": 347,
+					"endLine": 330,
 					"endColumn": 93,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8164,9 +8164,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 347,
+					"line": 330,
 					"column": 44,
-					"endLine": 347,
+					"endLine": 330,
 					"endColumn": 89,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8179,9 +8179,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 352,
+					"line": 335,
 					"column": 4,
-					"endLine": 352,
+					"endLine": 335,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8195,9 +8195,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 352,
+					"line": 335,
 					"column": 45,
-					"endLine": 352,
+					"endLine": 335,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8210,663 +8210,40 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 371,
+					"line": 388,
 					"column": 3,
-					"endLine": 371,
-					"endColumn": 78,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSavedNoteAction",
-						"justification": "The \"renderSavedNoteAction\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSavedNoteAction\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSavedNoteAction\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 470,
-					"column": 4,
-					"endLine": 470,
-					"endColumn": 83,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderLocalDebugWarning",
-						"justification": "The \"renderLocalDebugWarning\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderLocalDebugWarning\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderLocalDebugWarning\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 534,
-					"column": 3,
-					"endLine": 534,
-					"endColumn": 74,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 536,
-					"column": 3,
-					"endLine": 542,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 537,
-					"column": 4,
-					"endLine": 541,
-					"endColumn": 6,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.reviewPendingProposal().then",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.reviewPendingProposal().then\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 537,
-					"column": 9,
-					"endLine": 541,
-					"endColumn": 6,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 540,
-					"column": 10,
-					"endLine": 540,
-					"endColumn": 60,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopPendingSession",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopPendingSession\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 544,
-					"column": 3,
-					"endLine": 550,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderPendingConfirmation",
-						"justification": "The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderPendingConfirmation\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 724,
-					"column": 18,
-					"endLine": 724,
-					"endColumn": 59,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
-						"scope": "run",
-						"justification": "The \"run\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"run\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"run\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 728,
-					"column": 18,
-					"endLine": 728,
-					"endColumn": 55,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
-						"scope": "run",
-						"justification": "The \"run\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"run\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"run\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 740,
-					"column": 18,
-					"endLine": 740,
-					"endColumn": 41,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.runRecovery",
-						"scope": "run",
-						"justification": "The \"run\" owner deliberately detaches \"this.runRecovery\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"run\" owner deliberately detaches \"this.runRecovery\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.runRecovery\" in \"run\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 775,
-					"column": 3,
-					"endLine": 775,
-					"endColumn": 92,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSettlementWait",
-						"justification": "The \"renderSettlementWait\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSettlementWait\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSettlementWait\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 775,
-					"column": 44,
-					"endLine": 775,
-					"endColumn": 88,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.captureSessionFinalNow",
-						"scope": "renderSettlementWait",
-						"justification": "The \"renderSettlementWait\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderSettlementWait\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.captureSessionFinalNow\" in \"renderSettlementWait\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 811,
-					"column": 27,
-					"endLine": 811,
-					"endColumn": 99,
-					"registration": "setInterval",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "setInterval",
-						"scope": "scheduleRefresh",
-						"justification": "The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setInterval\" in \"scheduleRefresh\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 822,
-					"column": 3,
-					"endLine": 826,
-					"endColumn": 5,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.reviewPendingProposal().then",
-						"scope": "reviewPending",
-						"justification": "The \"reviewPending\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"reviewPending\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.reviewPendingProposal().then\" in \"reviewPending\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 822,
-					"column": 8,
-					"endLine": 826,
-					"endColumn": 5,
-					"registration": "then",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "then",
-						"scope": "reviewPending",
-						"justification": "The \"reviewPending\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"reviewPending\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"reviewPending\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 825,
-					"column": 9,
-					"endLine": 825,
-					"endColumn": 59,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopPendingSession",
-						"scope": "reviewPending",
-						"justification": "The \"reviewPending\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"reviewPending\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopPendingSession\" in \"reviewPending\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 912,
-					"column": 4,
-					"endLine": 912,
-					"endColumn": 70,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 912,
-					"column": 42,
-					"endLine": 912,
-					"endColumn": 66,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.armDetection",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.armDetection\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 932,
-					"column": 4,
-					"endLine": 932,
-					"endColumn": 72,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 932,
-					"column": 44,
-					"endLine": 932,
-					"endColumn": 68,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.armDetection",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.armDetection\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 934,
-					"column": 4,
-					"endLine": 934,
-					"endColumn": 82,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 940,
-					"column": 4,
-					"endLine": 940,
+					"endLine": 388,
 					"endColumn": 75,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 946,
-					"column": 4,
-					"endLine": 946,
-					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "addEventListener",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "renderConnectionCheck",
+						"justification": "The \"renderConnectionCheck\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "catch_clause",
-					"line": 953,
-					"column": 4,
-					"endLine": 953,
-					"endColumn": 75,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 959,
-					"column": 4,
-					"endLine": 959,
-					"endColumn": 88,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+					"reason": "Allowlisted callback_registration: The \"renderConnectionCheck\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderConnectionCheck\"."
 				},
 				{
 					"kind": "void_expression",
-					"line": 959,
-					"column": 43,
-					"endLine": 959,
-					"endColumn": 84,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
-						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"renderAssistedDetection\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1046,
-					"column": 3,
-					"endLine": 1046,
-					"endColumn": 81,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "addDisarmButton",
-						"justification": "The \"addDisarmButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"addDisarmButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDisarmButton\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1051,
-					"column": 3,
-					"endLine": 1058,
-					"endColumn": 5,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "addDismissAndDisarm",
-						"justification": "The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDismissAndDisarm\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1060,
-					"column": 3,
-					"endLine": 1060,
-					"endColumn": 81,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "addDismissAndDisarm",
-						"justification": "The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDismissAndDisarm\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1114,
-					"column": 4,
-					"endLine": 1114,
-					"endColumn": 80,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1147,
-					"column": 6,
-					"endLine": 1147,
-					"endColumn": 99,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1147,
-					"column": 51,
-					"endLine": 1147,
-					"endColumn": 95,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.captureSessionFinalNow",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderSession\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.captureSessionFinalNow\" in \"renderSession\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1159,
-					"column": 4,
-					"endLine": 1159,
-					"endColumn": 86,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1159,
-					"column": 45,
-					"endLine": 1159,
-					"endColumn": 82,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderSession\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"renderSession\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1182,
-					"column": 4,
-					"endLine": 1182,
-					"endColumn": 82,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1193,
-					"column": 4,
-					"endLine": 1193,
-					"endColumn": 86,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1205,
-					"column": 5,
-					"endLine": 1205,
-					"endColumn": 85,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderSession\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSession\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1205,
+					"line": 388,
 					"column": 44,
-					"endLine": 1205,
-					"endColumn": 81,
+					"endLine": 388,
+					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
-						"scope": "renderSession",
-						"justification": "The \"renderSession\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
+						"target": "this.checkConnection",
+						"scope": "renderConnectionCheck",
+						"justification": "The \"renderConnectionCheck\" owner deliberately detaches \"this.checkConnection\"; that named operation owns rejection and terminal diagnostics."
 					},
-					"reason": "Allowlisted void_expression: The \"renderSession\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"renderSession\"."
+					"reason": "Allowlisted void_expression: The \"renderConnectionCheck\" owner deliberately detaches \"this.checkConnection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.checkConnection\" in \"renderConnectionCheck\"."
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1267,
-					"column": 4,
-					"endLine": 1270,
-					"endColumn": 6,
-					"registration": "addEventListener",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_registered_callback",
-						"registration": "addEventListener",
-						"scope": "renderRecovery",
-						"justification": "The \"renderRecovery\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
-					},
-					"reason": "Allowlisted callback_registration: The \"renderRecovery\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderRecovery\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1269,
-					"column": 5,
-					"endLine": 1269,
-					"endColumn": 83,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.actions.classifyPilotRecovery().catch",
-						"scope": "renderRecovery",
-						"justification": "The \"renderRecovery\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics."
-					},
-					"reason": "Allowlisted void_expression: The \"renderRecovery\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.classifyPilotRecovery().catch\" in \"renderRecovery\"."
-				},
-				{
-					"kind": "promise_catch",
-					"line": 1269,
-					"column": 10,
-					"endLine": 1269,
-					"endColumn": 83,
-					"registration": "catch",
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "renderRecovery",
-						"justification": "The \"renderRecovery\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
-					},
-					"reason": "Allowlisted promise_catch: The \"renderRecovery\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderRecovery\"."
-				},
-				{
-					"kind": "callback_registration",
-					"line": 1274,
+					"line": 409,
 					"column": 3,
-					"endLine": 1274,
+					"endLine": 409,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8880,9 +8257,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1274,
+					"line": 409,
 					"column": 45,
-					"endLine": 1274,
+					"endLine": 409,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8895,9 +8272,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1275,
+					"line": 410,
 					"column": 3,
-					"endLine": 1275,
+					"endLine": 410,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8911,9 +8288,431 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1434,
+					"line": 425,
 					"column": 3,
-					"endLine": 1434,
+					"endLine": 428,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPilotRecoveryKind",
+						"justification": "The \"renderPilotRecoveryKind\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderPilotRecoveryKind\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderPilotRecoveryKind\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 427,
+					"column": 4,
+					"endLine": 427,
+					"endColumn": 82,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.classifyPilotRecovery().catch",
+						"scope": "renderPilotRecoveryKind",
+						"justification": "The \"renderPilotRecoveryKind\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderPilotRecoveryKind\" owner deliberately detaches \"this.actions.classifyPilotRecovery().catch\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.classifyPilotRecovery().catch\" in \"renderPilotRecoveryKind\"."
+				},
+				{
+					"kind": "promise_catch",
+					"line": 427,
+					"column": 9,
+					"endLine": 427,
+					"endColumn": 82,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderPilotRecoveryKind",
+						"justification": "The \"renderPilotRecoveryKind\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderPilotRecoveryKind\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderPilotRecoveryKind\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 447,
+					"column": 3,
+					"endLine": 447,
+					"endColumn": 78,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderSavedNoteAction",
+						"justification": "The \"renderSavedNoteAction\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderSavedNoteAction\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSavedNoteAction\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 546,
+					"column": 4,
+					"endLine": 546,
+					"endColumn": 83,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderLocalDebugWarning",
+						"justification": "The \"renderLocalDebugWarning\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderLocalDebugWarning\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderLocalDebugWarning\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 610,
+					"column": 3,
+					"endLine": 610,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderPendingConfirmation\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 612,
+					"column": 3,
+					"endLine": 618,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 613,
+					"column": 4,
+					"endLine": 617,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.reviewPendingProposal().then",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.reviewPendingProposal().then\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.reviewPendingProposal().then\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 613,
+					"column": 9,
+					"endLine": 617,
+					"endColumn": 6,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 616,
+					"column": 10,
+					"endLine": 616,
+					"endColumn": 60,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.stopPendingSession",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderPendingConfirmation\" owner deliberately detaches \"this.actions.stopPendingSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopPendingSession\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 620,
+					"column": 3,
+					"endLine": 626,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderPendingConfirmation",
+						"justification": "The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderPendingConfirmation\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderPendingConfirmation\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 701,
+					"column": 3,
+					"endLine": 701,
+					"endColumn": 92,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderSettlementWait",
+						"justification": "The \"renderSettlementWait\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderSettlementWait\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderSettlementWait\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 701,
+					"column": 44,
+					"endLine": 701,
+					"endColumn": 88,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.captureSessionFinalNow",
+						"scope": "renderSettlementWait",
+						"justification": "The \"renderSettlementWait\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderSettlementWait\" owner deliberately detaches \"this.actions.captureSessionFinalNow\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.captureSessionFinalNow\" in \"renderSettlementWait\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 730,
+					"column": 27,
+					"endLine": 730,
+					"endColumn": 99,
+					"registration": "setInterval",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "setInterval",
+						"scope": "scheduleRefresh",
+						"justification": "The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"scheduleRefresh\" owner registers \"setInterval\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"setInterval\" in \"scheduleRefresh\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 775,
+					"column": 4,
+					"endLine": 775,
+					"endColumn": 70,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 775,
+					"column": 42,
+					"endLine": 775,
+					"endColumn": 66,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.armDetection",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.armDetection\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 795,
+					"column": 4,
+					"endLine": 795,
+					"endColumn": 72,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 795,
+					"column": 44,
+					"endLine": 795,
+					"endColumn": 68,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.armDetection",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.armDetection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.armDetection\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 797,
+					"column": 4,
+					"endLine": 797,
+					"endColumn": 82,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 803,
+					"column": 4,
+					"endLine": 803,
+					"endColumn": 75,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 809,
+					"column": 4,
+					"endLine": 809,
+					"endColumn": 84,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 816,
+					"column": 4,
+					"endLine": 816,
+					"endColumn": 75,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 822,
+					"column": 4,
+					"endLine": 822,
+					"endColumn": 88,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "void_expression",
+					"line": 822,
+					"column": 43,
+					"endLine": 822,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.stopManualSession",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"renderAssistedDetection\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 909,
+					"column": 3,
+					"endLine": 909,
+					"endColumn": 81,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "addDisarmButton",
+						"justification": "The \"addDisarmButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"addDisarmButton\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDisarmButton\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 914,
+					"column": 3,
+					"endLine": 921,
+					"endColumn": 5,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "addDismissAndDisarm",
+						"justification": "The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDismissAndDisarm\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 923,
+					"column": 3,
+					"endLine": 923,
+					"endColumn": 81,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "addDismissAndDisarm",
+						"justification": "The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"addDismissAndDisarm\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"addDismissAndDisarm\"."
+				},
+				{
+					"kind": "callback_registration",
+					"line": 1078,
+					"column": 3,
+					"endLine": 1078,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8927,9 +8726,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1435,
+					"line": 1079,
 					"column": 3,
-					"endLine": 1439,
+					"endLine": 1083,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8943,9 +8742,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1438,
+					"line": 1082,
 					"column": 4,
-					"endLine": 1438,
+					"endLine": 1082,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8958,9 +8757,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1438,
+					"line": 1082,
 					"column": 9,
-					"endLine": 1438,
+					"endLine": 1082,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -8974,9 +8773,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1462,
+					"line": 1106,
 					"column": 3,
-					"endLine": 1462,
+					"endLine": 1106,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -8990,9 +8789,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1463,
+					"line": 1107,
 					"column": 3,
-					"endLine": 1467,
+					"endLine": 1111,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9006,9 +8805,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1466,
+					"line": 1110,
 					"column": 4,
-					"endLine": 1466,
+					"endLine": 1110,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9021,9 +8820,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1466,
+					"line": 1110,
 					"column": 9,
-					"endLine": 1466,
+					"endLine": 1110,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9037,9 +8836,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1511,
+					"line": 1155,
 					"column": 3,
-					"endLine": 1511,
+					"endLine": 1155,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9053,9 +8852,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1512,
+					"line": 1156,
 					"column": 3,
-					"endLine": 1534,
+					"endLine": 1178,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9069,9 +8868,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1529,
+					"line": 1173,
 					"column": 4,
-					"endLine": 1533,
+					"endLine": 1177,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9084,9 +8883,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1529,
+					"line": 1173,
 					"column": 9,
-					"endLine": 1529,
+					"endLine": 1173,
 					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9100,9 +8899,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1529,
+					"line": 1173,
 					"column": 9,
-					"endLine": 1533,
+					"endLine": 1177,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9116,9 +8915,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1613,
+					"line": 1257,
 					"column": 3,
-					"endLine": 1613,
+					"endLine": 1257,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9132,9 +8931,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1614,
+					"line": 1258,
 					"column": 3,
-					"endLine": 1639,
+					"endLine": 1283,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9148,9 +8947,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1626,
+					"line": 1270,
 					"column": 4,
-					"endLine": 1638,
+					"endLine": 1282,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9163,9 +8962,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1626,
+					"line": 1270,
 					"column": 9,
-					"endLine": 1634,
+					"endLine": 1278,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9179,9 +8978,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1626,
+					"line": 1270,
 					"column": 9,
-					"endLine": 1638,
+					"endLine": 1282,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9195,9 +8994,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1656,
+					"line": 1300,
 					"column": 3,
-					"endLine": 1698,
+					"endLine": 1342,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9210,9 +9009,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1656,
+					"line": 1300,
 					"column": 8,
-					"endLine": 1696,
+					"endLine": 1340,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9226,9 +9025,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1656,
+					"line": 1300,
 					"column": 8,
-					"endLine": 1698,
+					"endLine": 1342,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9242,9 +9041,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1682,
+					"line": 1326,
 					"column": 4,
-					"endLine": 1690,
+					"endLine": 1334,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9258,9 +9057,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1691,
+					"line": 1335,
 					"column": 4,
-					"endLine": 1695,
+					"endLine": 1339,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",

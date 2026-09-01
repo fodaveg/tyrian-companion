@@ -191,11 +191,11 @@ contents, or unredacted screenshots/logs in a report.
 
 The current `0.1.19` vertical provides:
 
-- A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
+- A loadable, note-independent Obsidian view and the **Open companion** command. One session card keeps the phase and the elapsed time first, then the highest-priority incident and, once a measurement exists, how trustworthy it is; detector and polling detail stay in the detection panel, and the account detail lives in Settings.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
 - H5.3 durable confirmation queue in a dedicated local IndexedDB: assisted proposals survive a closed note or restart, remain data-only in the background, and reappear as a count plus one review summary without notices, notifications, focus changes, or automatic session transitions.
 - H5.4 writes a completed session to a vault note before local runtime can be cleared: hashed account/session references, stable `tc_*` frontmatter and verified managed blocks preserve human notes without exposing raw account evidence.
-- H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion ledger; unreliable evidence withholds value and recommendations instead of guessing.
+- H5.5 projects completed-session loot once into a data-only bilingual view model shared by the managed note blocks and the responsive Companion card; unreliable evidence withholds value and recommendations instead of guessing.
 - H5.6 installs a generic Obsidian Base only after an explicit preview/apply action. A versioned manifest and resumable CAS journal distinguish intact, missing, modified, foreign and future assets without scanning or overwriting user files.
 - H5.8 keeps all accepted and generated Vault paths portable across macOS, Linux, Windows, and Obsidian Sync; session filenames remain UTC plus hashes, never account or character names.
 - H5.9 provides a typed, exhaustive ES/EN catalogue for visible settings, Companion state, actions, notices, confirmations, generated notes, loot and managed Bases while retaining stable command IDs, `tc_*` properties and Base query keys.

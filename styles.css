@@ -77,9 +77,29 @@
 }
 
 .tyrian-companion-session__warning {
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	flex-wrap: wrap;
 	padding: 0.75rem 1rem;
 	border-inline-start: 3px solid var(--color-orange);
 	background: var(--background-secondary);
+}
+
+/* An incident the projection classified as an error must not read like an ordinary warning. */
+.tyrian-companion-session__warning[data-tone="error"] {
+	border-inline-start-color: var(--text-error);
+}
+
+.tyrian-companion-session__warning > span {
+	min-width: 0;
+	flex: 1;
+	overflow-wrap: anywhere;
+}
+
+/* `display: flex` above would otherwise beat the hidden attribute of the quiet incident line. */
+.tyrian-companion-session__warning[hidden] {
+	display: none;
 }
 
 .tyrian-companion-session__context {
@@ -612,41 +632,8 @@
 	overflow-x: hidden;
 }
 
-.tyrian-companion-view__masthead {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
-	align-items: center;
-	gap: var(--size-4-3);
-	margin-block-end: var(--size-4-4);
-}
-
-.tyrian-companion-view__title {
-	min-width: 0;
-}
-
-.tyrian-companion-view__title h2,
-.tyrian-companion-view__eyebrow,
 .tyrian-companion-view__elapsed {
 	margin: 0;
-}
-
-.tyrian-companion-view__phase {
-	display: block;
-	color: var(--text-normal);
-	font-size: var(--font-ui-large);
-}
-
-.tyrian-companion-view__eyebrow,
-.tyrian-companion-view__rail-label,
-.tyrian-companion-view__account-mark .tyrian-companion-view__rail-label {
-	color: var(--text-muted);
-	font-size: var(--font-smallest);
-	font-weight: var(--font-semibold);
-	letter-spacing: .08em;
-	text-transform: uppercase;
-}
-
-.tyrian-companion-view__elapsed {
 	color: var(--text-muted);
 	font-family: var(--font-monospace);
 	font-variant-numeric: tabular-nums;
@@ -664,87 +651,6 @@
 	outline-offset: 2px;
 }
 
-.tyrian-companion-view__ledger {
-	margin-block-end: var(--size-4-5);
-	border-block: 1px solid var(--background-modifier-border);
-}
-
-.tyrian-companion-view__rail {
-	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.tyrian-companion-view__rail-item {
-	display: grid;
-	align-content: start;
-	gap: var(--size-4-1);
-	min-width: 0;
-	padding: var(--size-4-3);
-	border-inline-end: 1px solid var(--background-modifier-border);
-}
-
-.tyrian-companion-view__rail-item:last-child {
-	border-inline-end: 0;
-}
-
-.tyrian-companion-view__rail-item strong,
-.tyrian-companion-view__account-mark strong {
-	color: var(--text-normal);
-	font-size: var(--font-ui-medium);
-	overflow-wrap: anywhere;
-}
-
-.tyrian-companion-view__rail-item[data-tone="error"] strong,
-.tyrian-companion-view__incident[data-tone="error"] {
-	color: var(--text-error);
-}
-
-.tyrian-companion-view__rail-item[data-tone="warning"] strong {
-	color: var(--text-warning);
-}
-
-.tyrian-companion-view__rail-item[data-tone="active"] strong,
-.tyrian-companion-view__rail-item[data-tone="good"] strong,
-.tyrian-companion-view__account-mark[data-tone="good"] strong {
-	color: var(--interactive-accent);
-}
-
-.tyrian-companion-view__rail-item small {
-	color: var(--text-muted);
-	line-height: var(--line-height-tight);
-	overflow-wrap: anywhere;
-}
-
-.tyrian-companion-view__account-mark,
-.tyrian-companion-view__incident {
-	min-width: 0;
-}
-
-.tyrian-companion-view__incident {
-	display: flex;
-	align-items: center;
-	gap: var(--size-4-2);
-	flex-wrap: wrap;
-	padding: var(--size-4-2) var(--size-4-3);
-	border-block-start: 1px solid var(--background-modifier-border);
-	background: var(--background-modifier-error);
-}
-
-.tyrian-companion-view__incident[data-tone="warning"] {
-	color: var(--text-warning);
-	background: var(--background-modifier-hover);
-}
-
-.tyrian-companion-view__incident[hidden] {
-	display: none;
-}
-
-.tyrian-companion-view__incident span {
-	min-width: 0;
-	flex: 1;
-	overflow-wrap: anywhere;
-}
-
 .tyrian-companion-view__disclosure {
 	border-block-start: 1px solid var(--background-modifier-border);
 }
@@ -760,7 +666,6 @@
 	color: var(--text-muted);
 }
 
-.tyrian-companion-view__session,
 .tyrian-companion-view__detection,
 .tyrian-companion-view__pending {
 	margin: 0;
@@ -806,13 +711,11 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-companion-view__session h3,
 .tyrian-companion-view__detection h3,
 .tyrian-companion-view__pending h3 {
 	margin-block-start: 0;
 }
 
-.tyrian-companion-view__session dl,
 .tyrian-companion-view__detection dl,
 .tyrian-companion-view__pending dl,
 .tyrian-companion-view__status dl {
@@ -821,7 +724,6 @@
 	gap: var(--size-4-1) var(--size-4-3);
 }
 
-.tyrian-companion-view__session dd,
 .tyrian-companion-view__detection dd,
 .tyrian-companion-view__pending dd,
 .tyrian-companion-view__status dd {
@@ -1196,47 +1098,6 @@
 @container (max-width: 479px) {
 	.tyrian-companion-view__detection-timeline {
 		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.tyrian-companion-view__rail {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.tyrian-companion-view__rail-item:nth-child(2) {
-		border-inline-end: 0;
-	}
-
-	.tyrian-companion-view__rail-item:nth-child(-n + 2) {
-		border-block-end: 1px solid var(--background-modifier-border);
-	}
-}
-
-@container (max-width: 360px) {
-	.tyrian-companion-view__masthead {
-		grid-template-columns: auto minmax(0, 1fr);
-	}
-
-	.tyrian-companion-view__primary-action {
-		grid-column: 1 / -1;
-	}
-
-	.tyrian-companion-view__primary-action button {
-		width: 100%;
-	}
-}
-
-@container (max-width: 280px) {
-	.tyrian-companion-view__rail {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.tyrian-companion-view__rail-item {
-		border-inline-end: 0;
-		border-block-end: 1px solid var(--background-modifier-border);
-	}
-
-	.tyrian-companion-view__rail-item:last-child {
-		border-block-end: 0;
 	}
 }
 
