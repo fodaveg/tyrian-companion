@@ -38,6 +38,9 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/ui/inventory-sync-panel-view.ts',
 	'src/ui/inventory-vault-sync-controller.ts',
 	'src/ui/inventory-vault-sync-run-controller.ts',
+	// Memory-only preview/apply state machine shared by the wallet and inventory bindings;
+	// the reviewed module has no outbound or credential capability.
+	'src/ui/vault-sync-controller.ts',
 	'src/ui/wallet-vault-sync-controller.ts',
 	'src/wallet/wallet-vault-sync.ts',
 ];
