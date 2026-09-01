@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { compareStorageSnapshots } from '../account/storage-delta';
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
 	ManualSessionStartService,
+	type ManualSessionStopResult,
 	type SessionLeaseCoordinator,
 } from './manual-session-start-service';
 import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-runtime-store';
@@ -20,6 +21,8 @@ import type { SessionStartCaptureResult } from './session-start-capture';
 const REVIEWED_AT = '2026-08-13T12:00:00.000Z';
 
 describe('session contamination review', () => {
+	beforeEach(() => { workflowClock = Date.parse('2026-08-13T07:59:59.500Z'); });
+
 	it('classifies an explicit clean confirmation as exact', () => {
 		const { before, after, delta } = fixtures();
 		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
@@ -78,7 +81,7 @@ describe('session contamination review', () => {
 			const input = answers();
 			input.activities[key] = true;
 			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
-			const stopped = await first.stop();
+			const stopped = await stopWorkflow(first);
 			const reviewed = await first.reviewContamination(input);
 
 			const second = workflowService(runtimeStore, false);
@@ -267,7 +270,7 @@ describe('session contamination review', () => {
 		});
 		const service = workflowService(runtimeStore, true, { capture });
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await service.stop();
+		await stopWorkflow(service);
 
 		const beforeState = service.getState();
 		const proposal = await service.proposeTradingPostContamination();
@@ -379,13 +382,28 @@ function workflowService(
 		},
 		{
 			runtimeStore,
-			now: () => Date.parse('2026-08-13T07:59:59.500Z'),
+			now: () => workflowClock,
 			sessionId: () => workflowHandle.sessionId,
 			setInterval: () => 1,
 			clearInterval: () => undefined,
 			tradingPostHistoryCapture,
 		},
 	);
+}
+
+/** Movable so a workflow can wait out the API settlement window before the final capture. */
+let workflowClock = Date.parse('2026-08-13T07:59:59.500Z');
+
+/**
+ * Requests the stop and waits out the documented Guild Wars 2 cache window, which is what an
+ * unhurried stop does; the fixture's final snapshot starts at 09:00:00.
+ */
+async function stopWorkflow(service: ManualSessionStartService): Promise<ManualSessionStopResult> {
+	workflowClock = Date.parse('2026-08-13T08:49:00.000Z');
+	const requested = await service.stop();
+	if (requested.status !== 'awaiting_settlement') return requested;
+	workflowClock = Date.parse('2026-08-13T09:00:30.000Z');
+	return await service.stop();
 }
 
 function workflowCoordinator(): SessionLeaseCoordinator {

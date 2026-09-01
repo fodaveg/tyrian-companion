@@ -45,6 +45,13 @@ import {
 	type SessionStartCaptureResult,
 	type SessionStartInput,
 } from './session-start-capture';
+import {
+	API_SETTLEMENT_TICK_MS,
+	captureSettlement,
+	settlementWait,
+	type SessionApiSettlement,
+	type SessionSettlementWait,
+} from './session-api-settlement';
 
 export interface SessionLeaseCoordinator {
 	acquire(sessionId: string): Promise<AcquireLeaseResult>;
@@ -111,6 +118,12 @@ export type ManualSessionStopResult =
 			state: Extract<SessionState, { status: 'provisional' }>;
 			delta: StorageDelta;
 	  }
+	| {
+			/** The stop is committed; the final snapshot waits for the Guild Wars 2 cache window. */
+			status: 'awaiting_settlement';
+			state: Extract<SessionState, { status: 'stopping' }>;
+			wait: SessionSettlementWait;
+	  }
 	| { status: 'failed'; failure: SessionStopFailure };
 
 export type SessionContaminationReviewResult =
@@ -127,6 +140,12 @@ export interface ManualSessionStartServiceOptions {
 	setInterval?: (callback: () => void, milliseconds: number) => unknown;
 	clearInterval?: (handle: unknown) => void;
 	onStateChange?: () => void;
+	/**
+	 * Called once the grace window elapses so the host can run the same stop pipeline it runs for
+	 * an immediate capture. The service captures on its own even without it; the callback exists
+	 * because note writing, valuation and detection bookkeeping live outside this class.
+	 */
+	onSettlementDue?: () => void;
 	runtimeStore: SessionRuntimeStore;
 	priceCapture?: SessionPriceCapture;
 	tradingPostHistoryCapture?: {
@@ -141,6 +160,7 @@ export class ManualSessionStartService {
 	private currentHandle: ActiveSessionLeaseHandle | null = null;
 	private heartbeatHandle: unknown = null;
 	private heartbeatFlight: Promise<void> | null = null;
+	private settlementHandle: unknown = null;
 	private authorityFailure: SessionStartFailure | null = null;
 	private startFlight: Promise<ManualSessionStartResult> | null = null;
 	private stopFlight: Promise<ManualSessionStopResult> | null = null;
@@ -161,6 +181,7 @@ export class ManualSessionStartService {
 	private readonly scheduleInterval: (callback: () => void, milliseconds: number) => unknown;
 	private readonly cancelInterval: (handle: unknown) => void;
 	private readonly onStateChange: () => void;
+	private readonly onSettlementDue: () => void;
 	private readonly runtimeStore: SessionRuntimeStore;
 	private readonly priceCapture: SessionPriceCapture | null;
 	private readonly tradingPostHistoryCapture: ManualSessionStartServiceOptions['tradingPostHistoryCapture'];
@@ -175,6 +196,7 @@ export class ManualSessionStartService {
 		this.scheduleInterval = options.setInterval ?? ((callback, milliseconds) => window.setInterval(callback, milliseconds));
 		this.cancelInterval = options.clearInterval ?? ((handle) => window.clearInterval(handle as number));
 		this.onStateChange = options.onStateChange ?? (() => undefined);
+		this.onSettlementDue = options.onSettlementDue ?? (() => { void this.stop(); });
 		this.runtimeStore = options.runtimeStore;
 		this.priceCapture = options.priceCapture ?? null;
 		this.tradingPostHistoryCapture = options.tradingPostHistoryCapture;
@@ -270,9 +292,41 @@ export class ManualSessionStartService {
 		return flight;
 	}
 
+	/**
+	 * Commits the stop and captures the final snapshot only once the grace window has elapsed.
+	 * While it has not, the session stays `stopping` and the result says how long is left.
+	 */
 	stop(): Promise<ManualSessionStopResult> {
+		return this.runStop(false);
+	}
+
+	/**
+	 * Captures the final snapshot right now, on explicit human demand. The result is degraded to an
+	 * estimate because the snapshot cannot contain what the Guild Wars 2 cache has not published yet.
+	 */
+	captureFinalNow(): Promise<ManualSessionStopResult> {
+		return this.runStop(true);
+	}
+
+	/** Countdown of the grace window, or null when no session is waiting for it. */
+	getSettlementWait(): SessionSettlementWait | null {
+		if (this.state.status !== 'stopping') return null;
+		try {
+			return settlementWait(this.state.stopRequestedAt, this.safeNow());
+		} catch {
+			return null;
+		}
+	}
+
+	/** Declared quality of the captured boundary, or null while there is nothing captured yet. */
+	getApiSettlement(): SessionApiSettlement | null {
+		if (this.state.status !== 'provisional' && this.state.status !== 'complete') return null;
+		return this.stateSettlement(this.state);
+	}
+
+	private runStop(force: boolean): Promise<ManualSessionStopResult> {
 		if (this.stopFlight) return this.stopFlight;
-		const flight = this.stopInternal().finally(() => {
+		const flight = this.stopInternal(force).finally(() => {
 			if (this.stopFlight === flight) this.stopFlight = null;
 		});
 		this.stopFlight = flight;
@@ -308,6 +362,7 @@ export class ManualSessionStartService {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.stopHeartbeat();
+		this.stopSettlement();
 		await this.heartbeatFlight;
 		const handle = this.currentHandle;
 		this.currentHandle = null;
@@ -453,6 +508,9 @@ export class ManualSessionStartService {
 		this.recoveryState = { status: 'none' };
 		this.startHeartbeat(handle);
 		this.onStateChange();
+		// A session recovered mid-wait keeps waiting, and one whose window already elapsed while
+		// Obsidian was closed captures now instead of losing the stop the player already requested.
+		if (this.state.status === 'stopping') this.armSettlement();
 		return { status: 'recovered', state: this.getState() };
 	}
 
@@ -530,7 +588,7 @@ export class ManualSessionStartService {
 		}
 	}
 
-	private async stopInternal(): Promise<ManualSessionStopResult> {
+	private async stopInternal(force: boolean): Promise<ManualSessionStopResult> {
 		this.lastStopFailure = null;
 		if (this.disposed) {
 			return this.failStop('coordination_unavailable', 'Session coordination is unavailable.');
@@ -556,6 +614,16 @@ export class ManualSessionStartService {
 			if (stopping.status !== 'stopping') {
 				return this.failStop('unexpected', 'The session could not enter the stopping state.');
 			}
+			const wait = settlementWait(stopping.stopRequestedAt, this.safeNow());
+			if (wait === null) {
+				return this.failStop('unexpected', 'The session stop boundary is unusable.');
+			}
+			if (!force && wait.status === 'waiting') {
+				this.armSettlement();
+				this.onStateChange();
+				return { status: 'awaiting_settlement', state: structuredClone(stopping), wait };
+			}
+			this.stopSettlement();
 			const finalSnapshot = await this.baselineCapture.captureFinal();
 			const finalReference = snapshotReference(finalSnapshot);
 			const delta = compareStorageSnapshots(this.baselineSnapshot, finalSnapshot);
@@ -653,6 +721,7 @@ export class ManualSessionStartService {
 			this.provisionalDelta,
 			answers,
 			reviewedAt,
+			this.stateSettlement(this.state),
 		);
 		if (!review) return { status: 'failed', message: 'The contamination review is invalid.' };
 		const owned = await this.safeAssert(this.currentHandle);
@@ -707,6 +776,17 @@ export class ManualSessionStartService {
 		if (handle) await this.safeRelease(handle);
 		this.onStateChange();
 		return { status: 'finalized', review: structuredClone(review), state: this.getState() as Extract<SessionState, { status: 'complete' }> };
+	}
+
+	/**
+	 * Reads the settlement back out of the session's own evidence: the instant the player asked to
+	 * stop and the instant the final capture started reading. Because both are already persisted,
+	 * the quality of the measurement survives a restart without a new stored field.
+	 */
+	private stateSettlement(
+		state: Extract<SessionState, { status: 'provisional' | 'complete' }>,
+	): SessionApiSettlement {
+		return captureSettlement(state.stopRequestedAt, state.finalSnapshot.startedAt);
 	}
 
 	private apply(event: SessionEvent): void {
@@ -826,6 +906,40 @@ export class ManualSessionStartService {
 			this.cancelInterval(this.heartbeatHandle);
 			this.heartbeatHandle = null;
 		}
+	}
+
+	/**
+	 * Watches the grace window while the session is `stopping`. It re-reads the clock on every tick
+	 * instead of counting ticks, so a suspended machine or a reopened vault resolves the wait with
+	 * the real elapsed time rather than with how often this callback happened to run.
+	 */
+	private armSettlement(): void {
+		if (this.settlementHandle === null && !this.disposed) {
+			this.settlementHandle = this.scheduleInterval(() => this.checkSettlement(), API_SETTLEMENT_TICK_MS);
+		}
+		this.checkSettlement();
+	}
+
+	private stopSettlement(): void {
+		if (this.settlementHandle !== null) {
+			this.cancelInterval(this.settlementHandle);
+			this.settlementHandle = null;
+		}
+	}
+
+	private checkSettlement(): void {
+		if (this.disposed || this.state.status !== 'stopping') {
+			this.stopSettlement();
+			return;
+		}
+		const wait = this.getSettlementWait();
+		if (wait === null || wait.status === 'waiting') return;
+		// A stop already in flight owns the decision; the next tick sees whatever it left behind.
+		if (this.stopFlight) return;
+		this.stopSettlement();
+		// One dispatch per due window. A capture that fails leaves the session `stopping` with its
+		// stop failure visible, which is the existing retry path, instead of hammering the API.
+		this.onSettlementDue();
 	}
 
 	private async cleanupFailedStart(failed: SessionStartFailure, authority: ReturnType<typeof sessionAuthorityFromLease>): Promise<void> {

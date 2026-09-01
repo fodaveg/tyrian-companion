@@ -86,6 +86,20 @@
 	color: var(--text-muted);
 }
 
+.tyrian-companion-session__countdown {
+	font-variant-numeric: tabular-nums;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-companion-session__settlement {
+	margin-top: 0.75rem;
+}
+
+.tyrian-companion-session__settlement > button {
+	min-height: 44px;
+}
+
 .tyrian-companion-settings__essentials {
 	margin-block: 1rem 1.5rem;
 }

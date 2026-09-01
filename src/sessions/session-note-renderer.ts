@@ -536,7 +536,10 @@ function localizedReason(code: SessionClassificationReasonCode, locale: Prepared
 		roster_changed: 'reason.roster_changed', character_unobserved: 'reason.character_unobserved',
 		activity_declared: 'reason.activity_declared',
 		clean_declaration_conflicts_with_evidence: 'reason.clean_declaration_conflicts_with_evidence', delta_limited: 'reason.delta_limited',
-		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed', declaration_not_clean: 'reason.declaration_not_clean',
+		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed',
+		api_settlement_window_skipped: 'reason.api_settlement_window_skipped',
+		api_settlement_window_exceeded: 'reason.api_settlement_window_exceeded',
+		declaration_not_clean: 'reason.declaration_not_clean',
 		trading_post_not_complete_clean_declaration_used: 'reason.trading_post_not_complete_clean_declaration_used',
 	};
 	return noteText(locale, keys[code]);

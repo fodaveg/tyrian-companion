@@ -10,6 +10,10 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import {
 	isTradingPostHistoryEvidence,
 } from '../account/trading-post-evidence';
+import {
+	SESSION_API_SETTLEMENTS,
+	type SessionApiSettlement,
+} from './session-api-settlement';
 
 export const SESSION_CONTAMINATION_REVIEW_VERSION = 1 as const;
 
@@ -68,6 +72,7 @@ export function createSessionContaminationReview(
 	delta: StorageDelta,
 	answers: unknown,
 	reviewedAt: string,
+	apiSettlement: SessionApiSettlement = 'settled',
 ): SessionContaminationReview | null {
 	if (!isSessionContaminationAnswers(answers) || !isIsoTimestamp(reviewedAt)) return null;
 	if (Date.parse(reviewedAt) < Date.parse(after.completedAt)) return null;
@@ -78,6 +83,7 @@ export function createSessionContaminationReview(
 		tradingPost: { status: 'unavailable', events: [] },
 		declaration,
 		boundaryCertainty: 'manual_confirmed',
+		apiSettlement,
 	});
 	if (boundary.status !== 'valid' || classification.status === 'invalid') return null;
 	return {
@@ -90,11 +96,19 @@ export function createSessionContaminationReview(
 	};
 }
 
+/**
+ * Recomputes the review from its evidence. `apiSettlement` is optional on purpose: a caller that
+ * wants to assert *which* settlement produced the review pins it, and a caller that only stores or
+ * values the evidence accepts any of them. Persistence deliberately does not pin it, so a record
+ * written before the grace window existed keeps validating instead of turning corrupt on upgrade;
+ * the session service is the single producer, and it always declares the measured settlement.
+ */
 export function isSessionContaminationReview(
 	value: unknown,
 	before: StorageSnapshot,
 	after: StorageSnapshot,
 	delta: StorageDelta,
+	apiSettlement?: SessionApiSettlement,
 ): value is SessionContaminationReview {
 	if (!isRecord(value) || !hasOnlyKeys(value, [
 		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification',
@@ -102,7 +116,25 @@ export function isSessionContaminationReview(
 	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
 		return false;
 	}
-	const expected = createSessionContaminationReview(before, after, delta, value.answers, value.reviewedAt);
+	const candidates = apiSettlement === undefined ? SESSION_API_SETTLEMENTS : [apiSettlement];
+	return candidates.some((settlement) => matchesRecomputedReview(value, before, after, delta, settlement));
+}
+
+function matchesRecomputedReview(
+	value: Record<string, unknown>,
+	before: StorageSnapshot,
+	after: StorageSnapshot,
+	delta: StorageDelta,
+	apiSettlement: SessionApiSettlement,
+): boolean {
+	const expected = createSessionContaminationReview(
+		before,
+		after,
+		delta,
+		value.answers,
+		value.reviewedAt as string,
+		apiSettlement,
+	);
 	if (expected === null) return false;
 	if (JSON.stringify(expected) === JSON.stringify(value)) return true;
 	if (!isRecord(value.classification) || value.classification.version !== 1) return false;

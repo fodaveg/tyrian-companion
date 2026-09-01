@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest mocks are standalone arrow functions in this suite. */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	afterSnapshot,
@@ -12,6 +12,7 @@ import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { SessionContaminationAnswers } from './session-contamination-review';
 import {
 	ManualSessionStartService,
+	type ManualSessionStopResult,
 	type SessionLeaseCoordinator,
 	type ManualSessionStartServiceOptions,
 } from './manual-session-start-service';
@@ -68,11 +69,17 @@ function coordinator(overrides: Partial<SessionLeaseCoordinator> = {}): SessionL
 	};
 }
 
+/**
+ * Movable so a test can cross the API settlement window. The suite reads it through
+ * `serviceOptions`, so every service in a test shares the same clock.
+ */
+let clock = Date.parse('2026-08-13T07:59:59.500Z');
+
 function serviceOptions(
 	extra: Partial<ManualSessionStartServiceOptions> = {},
 ): ManualSessionStartServiceOptions {
 	return {
-		now: () => Date.parse('2026-08-13T07:59:59.500Z'),
+		now: () => clock,
 		sessionId: () => 'session-1',
 		setInterval: vi.fn(() => 17),
 		clearInterval: vi.fn(),
@@ -81,7 +88,22 @@ function serviceOptions(
 	};
 }
 
+/**
+ * Ordinary stop: ask to stop, wait out the documented Guild Wars 2 cache window and let the final
+ * capture happen. The clock lands the request and the capture around the fixture's after snapshot
+ * (09:00:00) so the resulting session is `settled`, which is what an unhurried stop produces.
+ */
+async function stopAfterSettlement(service: ManualSessionStartService): Promise<ManualSessionStopResult> {
+	clock = Date.parse('2026-08-13T08:49:00.000Z');
+	const requested = await service.stop();
+	if (requested.status !== 'awaiting_settlement') return requested;
+	clock = Date.parse('2026-08-13T09:00:30.000Z');
+	return await service.stop();
+}
+
 describe('ManualSessionStartService', () => {
+	beforeEach(() => { clock = Date.parse('2026-08-13T07:59:59.500Z'); });
+
 	it('acquires, captures, fences and exposes an active manual session', async () => {
 		const leases = coordinator();
 		const baseline = { capture: vi.fn(async () => structuredClone(captured)) };
@@ -319,7 +341,7 @@ describe('ManualSessionStartService', () => {
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		const result = await service.stop();
+		const result = await stopAfterSettlement(service);
 
 		expect(result).toMatchObject({
 			status: 'stopped',
@@ -363,7 +385,7 @@ describe('ManualSessionStartService', () => {
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		await expect(service.stop()).resolves.toMatchObject({ status: 'stopped' });
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({ status: 'stopped' });
 		expect(service.getPriceSnapshot()).toMatchObject({
 			status: 'unavailable',
 			source: 'gw2-commerce-prices',
@@ -384,6 +406,9 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
+		clock = Date.parse('2026-08-13T08:49:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({ status: 'awaiting_settlement' });
+		clock = Date.parse('2026-08-13T09:00:30.000Z');
 		const first = service.stop();
 		const second = service.stop();
 		expect(second).toBe(first);
@@ -403,7 +428,7 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		await expect(service.stop()).resolves.toMatchObject({
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
 			failure: { code: 'snapshot_failed' },
 		});
@@ -424,7 +449,7 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		await expect(service.stop()).resolves.toEqual({
+		await expect(stopAfterSettlement(service)).resolves.toEqual({
 			status: 'failed',
 			failure: {
 				code: 'delta_invalid',
@@ -447,7 +472,7 @@ describe('ManualSessionStartService', () => {
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		const stopped = await service.stop();
+		const stopped = await stopAfterSettlement(service);
 
 		// The bank gain of the rest of the account survives the unreadable character.
 		expect(stopped).toMatchObject({
@@ -485,7 +510,7 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(leases, capture, serviceOptions());
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		await expect(service.stop()).resolves.toMatchObject({
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
 			failure: { code: 'lease_lost' },
 		});
@@ -518,7 +543,7 @@ describe('ManualSessionStartService', () => {
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 
-		await expect(service.stop()).resolves.toMatchObject({
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
 			failure: { code: 'coordination_unavailable' },
 		});
@@ -542,10 +567,12 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(
 			leases,
 			capture,
-			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+			// The heartbeat registers first; the settlement watcher registers later and must not
+			// shadow it, because this test drives the heartbeat by hand.
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick ??= callback; return 17; }) }),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await service.stop();
+		await stopAfterSettlement(service);
 		expect(service.getState().status).toBe('stopping');
 
 		tick?.();
@@ -566,10 +593,11 @@ describe('ManualSessionStartService', () => {
 		const service = new ManualSessionStartService(
 			leases,
 			capture,
-			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
+			// Same as above: keep the heartbeat callback, not the settlement watcher registered later.
+			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick ??= callback; return 17; }) }),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await service.stop();
+		await stopAfterSettlement(service);
 		expect(service.getState().status).toBe('provisional');
 
 		tick?.();
@@ -596,7 +624,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({ runtimeStore }),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		const stopped = await service.stop();
+		const stopped = await stopAfterSettlement(service);
 		expect(stopped).toMatchObject({ status: 'stopped' });
 		expect(service.getState()).toMatchObject({ status: 'provisional' });
 
@@ -624,7 +652,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await service.stop();
+		await stopAfterSettlement(service);
 		const answers = reviewAnswers();
 		answers.activities.open = true;
 
@@ -646,7 +674,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({ runtimeStore }),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await service.stop();
+		await stopAfterSettlement(service);
 		await expect(service.reviewContamination(reviewAnswers('unsure'))).resolves.toMatchObject({
 			status: 'finalized',
 			review: { classification: { status: 'estimated', permissions: { finalize: true } } },
@@ -672,7 +700,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({ runtimeStore }),
 		);
 		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await first.stop();
+		await stopAfterSettlement(first);
 		await first.reviewContamination(reviewAnswers());
 
 		const second = new ManualSessionStartService(
@@ -752,7 +780,7 @@ describe('ManualSessionStartService', () => {
 				serviceOptions({ runtimeStore }),
 			);
 			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
-			await first.stop();
+			await stopAfterSettlement(first);
 			expect(first.getState().status).toBe(status);
 			await first.dispose();
 
