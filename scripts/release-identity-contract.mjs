@@ -24,7 +24,35 @@ const IDENTITY = Object.freeze({
 });
 const LICENSE_SHA256 = '4561c26198648e92896e252319c02fa6116b3d38ce85e8deb138bd3d2e041144';
 const IDENTITY_DOCUMENT_SHA256 = '6a1c684986c744abf2ca2952b1a7939c55e8517bcacc8ddae11c8f772a16dda1';
-const TEST_SCRIPT = 'vitest run --configLoader runner && npm run test:h8-crossover-spike && npm run test:release-preflight && npm run test:brat-release-contract && npm run test:security-scan && npm run test:action-observability && npm run test:release-package && npm run test:release-identity-contract && npm run test:beta-channel && npm run test:beta-runtime && npm run test:support-contract && npm run test:h8-helper-decision-contract';
+const TEST_SCRIPT = 'node scripts/run-gate.mjs test';
+const CHECK_SCRIPT = 'node scripts/run-gate.mjs check';
+/**
+ * The gate used to be one `&&` chain, and freezing that literal was what stopped
+ * a step from being dropped. The chain is gone, so the same guarantee now has to
+ * be expressed as a census of the scripts that must exist with their exact
+ * command. `scripts/tests/probar-run-gate.mjs` closes the other half: it proves
+ * the runner's manifest still covers every entry of this list.
+ */
+const REQUIRED_SCRIPTS = Object.freeze({
+	'test:h8-crossover-spike': 'bash scripts/tests/probar-h8-crossover-spike.sh',
+	'test:release-preflight': 'bash scripts/tests/probar-release-preflight.sh',
+	'test:brat-release-contract': 'node scripts/tests/probar-brat-release-contract.mjs',
+	'test:security-scan': 'node scripts/tests/probar-security-scan.mjs',
+	'test:action-observability': 'node scripts/tests/probar-action-observability-census.mjs && node scripts/action-observability-census.mjs',
+	'test:release-package': 'node scripts/tests/probar-release-package.mjs',
+	'test:release-identity-contract': 'node scripts/tests/probar-release-identity-contract.mjs',
+	'test:beta-channel': 'node scripts/tests/probar-beta-channel.mjs',
+	'test:beta-runtime': 'bash scripts/tests/probar-beta-runtime.sh',
+	'test:support-contract': 'node scripts/tests/probar-support-contract.mjs',
+	'test:h8-helper-decision-contract': 'node scripts/tests/probar-h8-helper-decision-contract.mjs',
+	'test:source-text-assertion-contract': 'node scripts/tests/probar-source-text-assertion-contract.mjs',
+	'test:run-gate': 'node scripts/tests/probar-run-gate.mjs',
+	'test:brat-release-plan': 'node scripts/tests/probar-brat-release-plan.mjs',
+	'test:release-workflow': 'node scripts/tests/probar-release-workflow.mjs',
+	'release:brat-plan': 'node scripts/brat-release-plan.mjs --from-staging',
+	'release:workflow-contract': 'node scripts/release-workflow-contract.mjs',
+	'source-text:assertion-contract': 'node scripts/source-text-assertion-contract.mjs',
+});
 
 /** Validates the deliberately fixed H7.1 release identity without making a network request. */
 export function validateReleaseIdentityContract(root = process.cwd()) {
@@ -89,6 +117,12 @@ function validatePackage(packageJson, findings) {
 	}
 	if (scripts.test !== TEST_SCRIPT) {
 		findings.push('package-test-script');
+	}
+	if (scripts.check !== CHECK_SCRIPT) {
+		findings.push('package-check-script');
+	}
+	for (const [name, command] of Object.entries(REQUIRED_SCRIPTS)) {
+		if (scripts[name] !== command) findings.push('package-gate-step-script');
 	}
 }
 

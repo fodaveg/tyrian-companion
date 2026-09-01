@@ -19,6 +19,7 @@ try {
 	testRepositoryIdentity();
 	testPackageScriptBypass();
 	testTestRunnerBypass();
+	testGateStepCensus();
 	testLicenseIdentity();
 	testDecisionEvidence();
 	testReadmeIdentity();
@@ -115,16 +116,48 @@ function testPackageScriptBypass() {
 function testTestRunnerBypass() {
 	for (const [name, mutate] of [
 		['test-runner-echo', (source) => `echo ${source}`],
-		['test-runner-ignore-failure', (source) => source.replace('npm run test:release-identity-contract', '(npm run test:release-identity-contract || true)')],
-		['test-runner-semicolon', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:release-identity-contract; true')],
-		['test-runner-substitution', (source) => source.replace('npm run test:release-identity-contract', 'npm run test:support-contract')],
-		['test-runner-beta-runtime-missing', (source) => source.replace(' && npm run test:beta-runtime', '')],
-		['test-runner-brat-release-missing', (source) => source.replace(' && npm run test:brat-release-contract', '')],
+		['test-runner-ignore-failure', (source) => `(${source} || true)`],
+		['test-runner-semicolon', (source) => `${source}; true`],
+		['test-runner-bypass', () => 'node -e "process.exit(0)"'],
+		['test-runner-wrong-group', (source) => source.replace('run-gate.mjs test', 'run-gate.mjs check')],
+		['test-runner-missing-group', (source) => source.replace(' test', '')],
 	]) {
 		const packageJson = parse('package.json');
 		packageJson.scripts.test = mutate(packageJson.scripts.test);
 		expectFinding(name, new Map([['package.json', json(packageJson)]]), 'package-test-script');
 	}
+
+	for (const [name, mutate] of [
+		['check-runner-bypass', () => 'node -e "process.exit(0)"'],
+		['check-runner-wrong-group', (source) => source.replace('run-gate.mjs check', 'run-gate.mjs test')],
+	]) {
+		const packageJson = parse('package.json');
+		packageJson.scripts.check = mutate(packageJson.scripts.check);
+		expectFinding(name, new Map([['package.json', json(packageJson)]]), 'package-check-script');
+	}
+}
+
+/**
+ * The `&&` chain used to be the thing that made a dropped step visible. Now the
+ * chain is a manifest, so the census of declared scripts is what has to be
+ * unforgeable: dropping one, or pointing it at a no-op, must still be red.
+ */
+function testGateStepCensus() {
+	const dropped = parse('package.json');
+	delete dropped.scripts['test:beta-runtime'];
+	expectFinding('gate-step-dropped', new Map([['package.json', json(dropped)]]), 'package-gate-step-script');
+
+	const neutered = parse('package.json');
+	neutered.scripts['test:support-contract'] = 'node -e "process.exit(0)"';
+	expectFinding('gate-step-neutered', new Map([['package.json', json(neutered)]]), 'package-gate-step-script');
+
+	const sourceTextDropped = parse('package.json');
+	delete sourceTextDropped.scripts['test:source-text-assertion-contract'];
+	expectFinding('gate-step-source-text-dropped', new Map([['package.json', json(sourceTextDropped)]]), 'package-gate-step-script');
+
+	const contractDropped = parse('package.json');
+	delete contractDropped.scripts['source-text:assertion-contract'];
+	expectFinding('gate-step-source-text-contract-dropped', new Map([['package.json', json(contractDropped)]]), 'package-gate-step-script');
 }
 
 function testLicenseIdentity() {
