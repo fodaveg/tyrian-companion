@@ -35,10 +35,8 @@ export interface CompanionStatusProjection {
 	locale: Locale;
 	connection: { value: string; tone: CompanionStatusTone };
 	items: CompanionStatusItem[];
-	primaryAction: 'start' | 'stop' | 'review' | 'clear' | 'recover' | 'none';
 	errors: string[];
 	incidentTone: 'warning' | 'error' | null;
-	surfaceTone: CompanionStatusTone;
 	refreshEveryMs: 1_000 | null;
 }
 
@@ -79,10 +77,8 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 		locale,
 		connection,
 		items: [detection.item, session.item, polling.item, quality],
-		primaryAction: primaryAction(input.session, input.recovery),
 		errors,
 		incidentTone: errors.length === 0 ? null : hasErrorIncident(input) ? 'error' : 'warning',
-		surfaceTone: errors.length > 0 && hasErrorIncident(input) ? 'error' : strongestTone([detection.item, session.item, polling.item, quality]),
 		refreshEveryMs,
 	};
 }
@@ -106,19 +102,6 @@ function recoverySessionStatus(
 		return { item: item('session', t('status.session'), t('status.recoveryError'), t('status.operationFailed'), 'error'), live: false };
 	}
 	return fallback;
-}
-
-function primaryAction(
-	session: SessionState,
-	recovery: SessionRecoveryState,
-): CompanionStatusProjection['primaryAction'] {
-	if (recovery.status === 'available') return 'recover';
-	if (recovery.status !== 'none') return 'none';
-	if (session.status === 'idle') return 'start';
-	if (session.status === 'active') return 'stop';
-	if (session.status === 'provisional') return 'review';
-	if (session.status === 'complete') return 'clear';
-	return 'none';
 }
 
 function connectionStatus(state: ConnectionState, t: StatusText): CompanionStatusProjection['connection'] {
@@ -182,6 +165,29 @@ export function localizedConfidence(status: 'high' | 'medium' | 'low', t: Status
 	return t(keys[status]);
 }
 
+/** Every session phase that already holds a baseline, and therefore a measurable duration. */
+type MeasuredSessionState = Extract<
+	SessionState,
+	{ status: 'active' | 'stopping' | 'provisional' | 'complete' }
+>;
+
+/**
+ * Instant the played window closes, which is the only end this projection is allowed to measure
+ * against.
+ *
+ * The durable note bills `stoppedAt − baseline.completedAt` through `sessionPlayedDurationMs`,
+ * never the instant the final snapshot managed to read the account: the API settlement window
+ * holds those up to ten minutes apart on purpose. Closing the window on the capture instead
+ * would make this card announce seventy minutes for the hour the note publishes, so both
+ * surfaces close it on the same human boundary. `companion-status-played-duration.test.ts`
+ * compares the two and goes red if they ever drift apart again.
+ */
+function playedUntil(state: MeasuredSessionState, now: number): number {
+	if (state.status === 'active') return now;
+	// `confirm_stop` records `stoppedAt` as the stop *request*, so both names read the same instant.
+	return Date.parse(state.status === 'stopping' ? state.stopRequestedAt : state.stoppedAt);
+}
+
 function sessionStatus(
 	state: SessionState,
 	now: number,
@@ -203,11 +209,10 @@ function sessionStatus(
 			live: false,
 		};
 	}
-	const startedAt = Date.parse(state.baseline.completedAt);
+	// A stopping session keeps ticking even though its duration below is already frozen: the
+	// settlement countdown beside it is what the second still repaints.
 	const live = state.status === 'active' || state.status === 'stopping';
-	const endedAt = state.status === 'provisional' || state.status === 'complete'
-		? Date.parse(state.finalSnapshot.completedAt) : now;
-	const elapsed = elapsedOrNull(startedAt, endedAt);
+	const elapsed = elapsedOrNull(Date.parse(state.baseline.completedAt), playedUntil(state, now));
 	const duration = elapsed === null ? '—' : formatElapsed(elapsed);
 	if (state.status === 'active') {
 		return { item: item('session', t('status.session'), t('status.active'), t('status.activeDetail', { duration, character: state.startContext.characterName }), 'good'), live };
@@ -426,12 +431,6 @@ function appendLastSnapshot(detail: string, lastSnapshotAt: string | null, now: 
 	return `${detail} · ${t('status.lastSnapshot', { duration: formatCompactDuration(safeElapsed(Date.parse(lastSnapshotAt), now)) })}`;
 }
 
-function strongestTone(items: readonly CompanionStatusItem[]): CompanionStatusTone {
-	const rank: Record<CompanionStatusTone, number> = { quiet: 0, good: 1, active: 2, warning: 3, error: 4 };
-	return items.reduce<CompanionStatusTone>((strongest, status) =>
-		rank[status.tone] > rank[strongest] ? status.tone : strongest, 'quiet');
-}
-
 function item(
 	id: CompanionStatusItem['id'],
 	label: string,
@@ -468,16 +467,21 @@ function elapsedOrNull(start: number, end: number): number | null {
 	return Math.min(Number.MAX_SAFE_INTEGER, Math.floor(end - start));
 }
 
+/**
+ * Raises the incident on the same pair the card prints, so a boundary the projection cannot read
+ * can never show up as a silent «—» with no warning beside it.
+ */
 function sessionHasClockIncident(state: SessionState, now: number): boolean {
 	if (state.status === 'idle' || state.status === 'starting') return false;
-	const observed = state.status === 'error' ? state.failedState : state;
-	if (!('baseline' in observed)) return false;
-	const end = observed.status === 'provisional'
-		? Date.parse(observed.finalSnapshot.completedAt)
-		: state.status === 'complete'
-			? Date.parse(state.finalSnapshot.completedAt)
-			: state.status === 'error' ? Date.parse(state.failedAt) : now;
-	return elapsedOrNull(Date.parse(observed.baseline.completedAt), end) === null;
+	if (state.status !== 'error') {
+		return elapsedOrNull(Date.parse(state.baseline.completedAt), playedUntil(state, now)) === null;
+	}
+	const failed = state.failedState;
+	if (!('baseline' in failed)) return false;
+	// A failed session declares the *observed* time before the error, so its check keeps that pair.
+	const end = failed.status === 'provisional'
+		? Date.parse(failed.finalSnapshot.completedAt) : Date.parse(state.failedAt);
+	return elapsedOrNull(Date.parse(failed.baseline.completedAt), end) === null;
 }
 
 export function formatElapsed(durationMs: number): string {

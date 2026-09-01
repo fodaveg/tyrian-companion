@@ -579,7 +579,7 @@ function localizedCurrencySurface(
 	return noteText(locale, keys[surface]);
 }
 
-function localizedPriceSource(source: 'gw2-commerce-prices', locale: PreparedSessionNote['locale']): string {
+function localizedPriceSource(_source: 'gw2-commerce-prices', locale: PreparedSessionNote['locale']): string {
 	return noteText(locale, 'enum.priceSource.gw2Commerce');
 }
 

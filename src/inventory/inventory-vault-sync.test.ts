@@ -278,7 +278,7 @@ describe('inventory Vault preview and apply', () => {
 	});
 
 	it.each([
-		['foreign target', (content: string) => '# foreign\n'],
+		['foreign target', (_content: string) => '# foreign\n'],
 		['human modification', (content: string) => `${content}\nhuman edit\n`],
 		['future schema', (content: string) => content.replace('schema=1', 'schema=2')],
 	])('blocks %s without mutating Vault', async (_label, corrupt) => {

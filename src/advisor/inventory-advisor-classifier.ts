@@ -207,7 +207,7 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
-	const route = chooseRoute(input, knowledge, itemId, freeQuantity);
+	const route = chooseRoute(input, knowledge, itemId);
 	const routeEvidenceReady = evidenceReady && (route.action === 'market' || curatedKnowledgeReady);
 	if (route.action === 'review' || !routeEvidenceReady) {
 		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0,
@@ -452,7 +452,7 @@ function isPotentialEquipmentSalvageItem(input: InventoryAdvisorInputV1, itemId:
 		&& (item.rarity === 'Rare' || item.rarity === 'Exotic') && item.level >= 68;
 }
 
-function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number, quantity: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
+function chooseRoute(input: InventoryAdvisorInputV1, knowledge: InventoryKnowledgeEntryV1 | undefined, itemId: number): { action: 'use' | 'open' | 'salvage' | 'review' | 'market' | 'economy'; reason: string; ruleId: string | null } {
 	/* An absent curated entry withholds irreversible/use/open/salvage advice. It
 	 * may fall through to the independently reproduced liquid route only when
 	 * the rule pack has no applicable curated capability for this item. */

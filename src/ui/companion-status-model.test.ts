@@ -116,11 +116,17 @@ describe('buildCompanionStatus', () => {
 		expect(projection.refreshEveryMs).toBe(1_000);
 	});
 
-	it('freezes provisional duration at the final snapshot and reports invalid clocks', () => {
+	it('freezes provisional duration at the stop boundary and reports invalid clocks', () => {
 		const provisional = provisionalSession();
 		expect(buildCompanionStatus(input({ session: provisional, now: NOW + 999_000 })).items[1]?.detail)
 			.toBe('00:05:00 · final snapshot captured');
-		const invalid = { ...provisional, finalSnapshot: { ...provisional.finalSnapshot, completedAt: '2026-08-14T11:00:00.000Z' } };
+		// The final capture waits out the API settlement window, so it lands minutes after the
+		// player stopped and must not stretch the duration the note bills for that same session.
+		const late = { ...provisional, finalSnapshot: { ...provisional.finalSnapshot, completedAt: new Date(NOW + 900_000).toISOString() } };
+		expect(buildCompanionStatus(input({ session: late })).items[1]?.detail)
+			.toBe('00:05:00 · final snapshot captured');
+		// The stop boundary is therefore the timestamp whose corruption has to surface as a dash.
+		const invalid = { ...provisional, stoppedAt: '2026-08-14T11:00:00.000Z' };
 		const projection = buildCompanionStatus(input({ session: invalid }));
 		expect(projection.items[1]?.detail).toBe('— · final snapshot captured');
 		expect(projection.errors[0]).toContain('clock window');
@@ -148,7 +154,7 @@ describe('buildCompanionStatus', () => {
 			qualityState: { status: 'unavailable', message: 'Recorder unavailable.' },
 		}));
 		expect(projection.errors[0]).toBe('Recovery: The operation could not be completed safely.');
-		expect(projection.surfaceTone).toBe('error');
+		expect(projection.incidentTone).toBe('error');
 		expect(projection.errors).toHaveLength(4);
 	});
 
@@ -180,25 +186,23 @@ describe('buildCompanionStatus', () => {
 	});
 
 	it.each([
-		[{ status: 'available', state: activeSession() }, 'Recovery available', 'recover'],
-		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked', 'none'],
-		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering', 'none'],
-		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding', 'none'],
-		[{ status: 'error', message: 'Store failed.' }, 'Recovery error', 'none'],
-	] as const)('gives recovery %s precedence in the header', (recovery, phase, action) => {
+		[{ status: 'available', state: activeSession() }, 'Recovery available'],
+		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked'],
+		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering'],
+		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding'],
+		[{ status: 'error', message: 'Store failed.' }, 'Recovery error'],
+	] as const)('gives recovery %s precedence in the header', (recovery, phase) => {
 		const projection = buildCompanionStatus(input({ recovery }));
 		expect(projection.items[1]?.value).toBe(phase);
-		expect(projection.primaryAction).toBe(action);
 	});
 
-	it('shows available recovery as the first incident without losing phase or action', () => {
+	it('shows available recovery as the first incident without losing the phase', () => {
 		const projection = buildCompanionStatus(input({
 			recovery: { status: 'available', state: activeSession(), message: 'Resume the saved run.' },
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 		}));
 		expect(projection.errors[0]).toBe('Recovery: A saved farming session needs a decision.');
 		expect(projection.items[1]?.value).toBe('Recovery available');
-		expect(projection.primaryAction).toBe('recover');
 	});
 
 	it('suppresses stale detector and scheduler failures while assisted detection is off', () => {

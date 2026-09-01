@@ -20,9 +20,9 @@ export function renderLootPresentationView(container: HTMLElement, presentation:
 	const heading = createEl('h3');
 	heading.textContent = lootPresentationRegionLabel(presentation);
 	section.append(heading);
-	section.append(renderTable(container, presentation));
-	section.append(renderCards(container, presentation));
-	section.append(renderEconomy(container, presentation));
+	section.append(renderTable(presentation));
+	section.append(renderCards(presentation));
+	section.append(renderEconomy(presentation));
 	container.append(section);
 }
 
@@ -36,8 +36,7 @@ export function lootPresentationRegionAttributes(
 	return { 'aria-label': lootPresentationRegionLabel(presentation) };
 }
 
-function renderTable(container: HTMLElement, presentation: LootPresentationV1): HTMLTableElement {
-	const doc = container.ownerDocument;
+function renderTable(presentation: LootPresentationV1): HTMLTableElement {
 	const table = createEl('table');
 	table.className = 'tyrian-companion-loot__table';
 	const caption = createEl('caption');
@@ -57,69 +56,67 @@ function renderTable(container: HTMLElement, presentation: LootPresentationV1): 
 	}
 	head.append(headRow); table.append(head);
 	const body = createEl('tbody');
-	for (const row of presentation.rows) body.append(renderTableRow(doc, row, presentation));
+	for (const row of presentation.rows) body.append(renderTableRow(row, presentation));
 	table.append(body);
 	return table;
 }
 
-function renderTableRow(doc: Document, row: LootPresentationRow, presentation: LootPresentationV1): HTMLTableRowElement {
+function renderTableRow(row: LootPresentationRow, presentation: LootPresentationV1): HTMLTableRowElement {
 	const tr = createEl('tr');
 	const name = createEl('th'); name.scope = 'row'; name.textContent = row.name; tr.append(name);
-	appendCell(doc, tr, String(row.netQuantity));
+	appendCell(tr, String(row.netQuantity));
 	if (row.allocation.status === 'known') {
-		appendCell(doc, tr, String(row.allocation.reserved));
-		appendCell(doc, tr, String(row.allocation.held));
-		appendCell(doc, tr, String(row.allocation.free));
+		appendCell(tr, String(row.allocation.reserved));
+		appendCell(tr, String(row.allocation.held));
+		appendCell(tr, String(row.allocation.free));
 	} else {
-		for (let index = 0; index < 3; index += 1) appendCell(doc, tr, localizedLootState(presentation.locale, row.allocation.status));
+		for (let index = 0; index < 3; index += 1) appendCell(tr, localizedLootState(presentation.locale, row.allocation.status));
 	}
-	appendCell(doc, tr, valuation(row, 'immediate', presentation));
-	appendCell(doc, tr, valuation(row, 'listing', presentation));
-	appendCell(doc, tr, recommendation(row, presentation));
-	appendCompactCell(doc, tr, row.allocation.status === 'known'
+	appendCell(tr, valuation(row, 'immediate', presentation));
+	appendCell(tr, valuation(row, 'listing', presentation));
+	appendCell(tr, recommendation(row, presentation));
+	appendCompactCell(tr, row.allocation.status === 'known'
 		? `${String(row.allocation.reserved)} · ${String(row.allocation.held)} · ${String(row.allocation.free)}`
 		: localizedLootState(presentation.locale, row.allocation.status));
-	appendCompactCell(doc, tr, `${valuation(row, 'immediate', presentation)} · ${valuation(row, 'listing', presentation)}`);
+	appendCompactCell(tr, `${valuation(row, 'immediate', presentation)} · ${valuation(row, 'listing', presentation)}`);
 	return tr;
 }
 
-function renderCards(container: HTMLElement, presentation: LootPresentationV1): HTMLElement {
-	const doc = container.ownerDocument;
+function renderCards(presentation: LootPresentationV1): HTMLElement {
 	const list = createDiv(); list.className = 'tyrian-companion-loot__cards';
 	for (const row of presentation.rows) {
 		const article = createEl('article'); article.className = 'tyrian-companion-loot__card';
 		const heading = createEl('h4'); heading.textContent = row.name; article.append(heading);
-		article.append(definitionList(doc, presentation, row));
+		article.append(definitionList(presentation, row));
 		list.append(article);
 	}
 	return list;
 }
 
-function definitionList(doc: Document, presentation: LootPresentationV1, row: LootPresentationRow): HTMLDListElement {
+function definitionList(presentation: LootPresentationV1, row: LootPresentationRow): HTMLDListElement {
 	const dl = createEl('dl');
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Cambio neto' : 'Net delta', String(row.netQuantity));
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Destino' : 'Destination', row.allocation.status === 'known'
+	addDefinition(dl, presentation.locale === 'es' ? 'Cambio neto' : 'Net delta', String(row.netQuantity));
+	addDefinition(dl, presentation.locale === 'es' ? 'Destino' : 'Destination', row.allocation.status === 'known'
 		? `${String(row.allocation.reserved)} · ${String(row.allocation.held)} · ${String(row.allocation.free)}`
 		: localizedLootState(presentation.locale, row.allocation.status));
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Valor' : 'Value',
+	addDefinition(dl, presentation.locale === 'es' ? 'Valor' : 'Value',
 		`${valuation(row, 'immediate', presentation)} · ${valuation(row, 'listing', presentation)}`);
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Siguiente paso' : 'Next step', recommendation(row, presentation));
+	addDefinition(dl, presentation.locale === 'es' ? 'Siguiente paso' : 'Next step', recommendation(row, presentation));
 	return dl;
 }
 
-function renderEconomy(container: HTMLElement, presentation: LootPresentationV1): HTMLElement {
-	const doc = container.ownerDocument;
+function renderEconomy(presentation: LootPresentationV1): HTMLElement {
 	const economy = createEl('section'); economy.className = 'tyrian-companion-loot__economy';
 	const heading = createEl('h4'); heading.textContent = presentation.economy.label; economy.append(heading);
 	const dl = createEl('dl');
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Neto inmediato' : 'Immediate net',
+	addDefinition(dl, presentation.locale === 'es' ? 'Neto inmediato' : 'Immediate net',
 		money(presentation.economy.immediateCopper, presentation));
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Neto listado' : 'Listing net',
+	addDefinition(dl, presentation.locale === 'es' ? 'Neto listado' : 'Listing net',
 		money(presentation.economy.listingCopper, presentation));
-	addDefinition(doc, dl, presentation.locale === 'es' ? 'Moneda neta' : 'Net coin',
+	addDefinition(dl, presentation.locale === 'es' ? 'Moneda neta' : 'Net coin',
 		money(presentation.economy.coinNetCopper, presentation));
 	if (presentation.economy.valuedItemKinds !== null && presentation.economy.totalItemKinds !== null) {
-		addDefinition(doc, dl, presentation.locale === 'es' ? 'Tipos valorados' : 'Valued kinds',
+		addDefinition(dl, presentation.locale === 'es' ? 'Tipos valorados' : 'Valued kinds',
 			`${String(presentation.economy.valuedItemKinds)}/${String(presentation.economy.totalItemKinds)}`);
 	}
 	economy.append(dl);
@@ -151,13 +148,15 @@ function money(value: number | null, presentation: LootPresentationV1): string {
 	return `${formatted.visual} (${formatted.accessible})`;
 }
 
-function appendCell(doc: Document, row: HTMLTableRowElement, text: string): void {
+// `createEl` is Obsidian's element factory and resolves the owning document itself, so none of
+// the builders below ever needed the `Document` that used to be threaded through all of them.
+function appendCell(row: HTMLTableRowElement, text: string): void {
 	const cell = createEl('td'); cell.textContent = text; row.append(cell);
 }
-function appendCompactCell(doc: Document, row: HTMLTableRowElement, text: string): void {
+function appendCompactCell(row: HTMLTableRowElement, text: string): void {
 	const cell = createEl('td'); cell.className = 'tyrian-companion-loot__compact'; cell.textContent = text; row.append(cell);
 }
-function addDefinition(doc: Document, list: HTMLDListElement, term: string, value: string): void {
+function addDefinition(list: HTMLDListElement, term: string, value: string): void {
 	const dt = createEl('dt'); dt.textContent = term; list.append(dt);
 	const dd = createEl('dd'); dd.textContent = value; list.append(dd);
 }
