@@ -3,20 +3,21 @@
 ## Estado actual
 
 La beta pública actual es
-[`0.1.18`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18), tag y commit
-`6090defe5fd4b485e4f49efdbfd10f395197a716`. Los runs de CI de `main` `33422321993` y del tag
-`33422707286` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.18.zip` y `tyrian-companion-0.1.18.zip.sha256`, por lo que el
+[`0.1.19`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19), tag y commit
+`8dace194cc7a6b3a9eba58971091d18c719a7647`. Los runs de CI de `main` `33483237535` y del tag
+`33483584673` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
+`styles.css`, `tyrian-companion-0.1.19.zip` y `tyrian-companion-0.1.19.zip.sha256`, por lo que el
 canal BRAT está publicado. El ZIP tiene SHA-256
-`fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`. La instalación, primera
+`2e816cb9d25a5633645ddfc9c2824677477f9e0aa8f743ab5684a465a9fcbc40`. La instalación, primera
 carga y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
 siguen pendientes de QA humana. Una release publicada o un artifact verde de CI no demuestran esos
 flujos.
 
-`0.1.18` incorpora el HUD priorizado, historial y comparativas de sesión, métricas del piloto,
-profundidad real y tasas en las valoraciones económicas, el Advisor orientado a decisiones manuales,
-Ajustes y Halloween responsive, y el endurecimiento acumulado de polling, assets y diagnóstico. No
-incluye el helper H8 en el paquete productivo.
+`0.1.19` recupera el acompañamiento en vivo de la sesión de farmeo sobre lo que ya traía `0.1.18`:
+HUD priorizado, historial y comparativas de sesión, métricas del piloto, profundidad real y tasas en
+las valoraciones económicas, el Advisor orientado a decisiones manuales, Ajustes y Halloween
+responsive, y el endurecimiento acumulado de polling, assets y diagnóstico. No incluye el helper H8
+en el paquete productivo.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de
@@ -65,7 +66,12 @@ Referencias del contrato:
 - [Guía de BRAT para desarrolladores](https://tfthacker.com/brat-developers)
 - [`versions.json` en la documentación de Obsidian](https://docs.obsidian.md/Reference/Versions)
 
-## QA manual desde un artifact de rama
+## QA manual desde un artifact de rama (solo para desarrolladores)
+
+Esta vía existe para probar un commit concreto que todavía no tiene release, y exige el repositorio
+clonado, Node.js 22 y un CLI `obsidian` capaz de evaluar en la instancia viva. Quien solo quiera
+instalar o actualizar el plugin usa BRAT: el [README](../README.md#install-the-beta) tiene el
+procedimiento completo y no necesita nada de esto.
 
 1. Descarga el artifact de CI correspondiente al SHA que se va a probar.
 2. Comprueba que el artifact contiene `tyrian-companion-<versión>.zip`, su `.sha256` e
@@ -75,7 +81,7 @@ Referencias del contrato:
    ```sh
    node install-beta.mjs install \
      --vault "/ruta/a/una-bóveda-desechable" \
-     --archive "tyrian-companion-0.1.18.zip" \
+     --archive "tyrian-companion-<versión>.zip" \
      --confirm-obsidian-closed
    ```
 
@@ -103,7 +109,10 @@ Referencias del contrato:
 
    El preflight lee `manifest.json` del plugin instalado y obtiene desde la instancia viva, mediante
    `obsidian eval`, la bóveda efectiva, el estado activado, el manifest registrado y la versión del
-   objeto de plugin cargado. La QA de instalación o actualización no es válida sin `PASS`, incluso si
+   objeto de plugin cargado. Ese `obsidian` es un CLI externo que el script espera en el `PATH`; si
+   se llama de otra forma, indícalo con `--obsidian-cli <ruta>`. Sin ese CLI el preflight no puede
+   ejecutarse y la QA se registra como pendiente, no como fallida.
+   La QA de instalación o actualización no es válida sin `PASS`, incluso si
    la versión en disco ya es la esperada. Un `runtime-version-mismatch` exige recargar el plugin o
    reiniciar Obsidian y repetir el preflight. En una instalación desde artifact, usa la copia del
    script correspondiente al mismo commit; el script no forma parte de los tres assets del plugin.
@@ -113,7 +122,7 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
-La release `0.1.18` incorpora el journal local H7.13 para preparar esa evidencia, pero publicarlo no
+La release `0.1.19` incorpora el journal local H7.13 para preparar esa evidencia, pero publicarlo no
 acredita el piloto. Antes de H7.7 todavía hay que ejecutar el dry run instrumentado en
 Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
 que limpiar/desactivar funciona dentro de Obsidian real. El dry run debe incluir además una revisión
@@ -131,13 +140,13 @@ una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Canal BRAT publicado
 
-La release pública `0.1.18` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
+La release pública `0.1.19` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
 adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
 usarse para instalación manual y su SHA-256 es
-`fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`; no sustituye los tres assets
+`2e816cb9d25a5633645ddfc9c2824677477f9e0aa8f743ab5684a465a9fcbc40`; no sustituye los tres assets
 que descarga BRAT.
 
-Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.18`. Antes de
+Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.19`. Antes de
 dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
 sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
 una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT

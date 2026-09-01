@@ -21,7 +21,7 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.13` is a public beta distributed through its GitHub Release and the active BRAT channel.
+> `0.1.19` is a public beta distributed through its GitHub Release and the active BRAT channel.
 > Installation, update, and runtime QA in Obsidian are still pending across the platform matrix, so
 > use a disposable vault while validating it.
 
@@ -41,36 +41,19 @@ still required before publication.
 
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
 [Release identity](docs/IDENTITY.md). The repository and the
-[`0.1.13` beta release](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.13) are public,
+[`0.1.19` beta release](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19) are public,
 and its three plugin assets are available to BRAT.
 
-## Install a beta candidate
+## Install the beta
 
-Requirements: desktop Obsidian `1.11.4` or newer. For BRAT, add
-`fodaveg/tyrian-companion`; BRAT installs the individual `manifest.json`, `main.js`, and `styles.css`
-assets from release `0.1.13`. For the guarded manual path, Node.js 22 and the ZIP, `.sha256`, and
-`install-beta.mjs` files must come from the same named CI artifact.
+Requirements: desktop Obsidian `1.11.4` or newer, and a disposable vault. BRAT is the supported way
+to install and update this beta; nothing else is needed.
 
-1. Confirm the artifact belongs to the commit you intend to test. The checksum proves integrity, not
-   who produced the artifact.
-2. Close Obsidian and run the guarded installer from the extracted artifact directory:
-
-   ```sh
-   node install-beta.mjs install \
-     --vault "/path/to/disposable-vault" \
-     --archive "tyrian-companion-0.1.13.zip" \
-     --confirm-obsidian-closed
-   ```
-
-   It verifies the checksum, ZIP and manifest, writes only the three managed plugin files and rolls
-   back a detected write or swap failure. Use `--config-dir <name>` only when that vault deliberately
-   uses a non-default Obsidian config directory.
-3. Open Obsidian, go to **Settings → Community plugins**, enable Tyrian Companion, and then open its
-   settings page.
-   Before accepting install or update QA, run
-   `npm run beta:verify-runtime -- --vault "/path/to/disposable-vault"` from this checkout while
-   Obsidian and the plugin are running. The result must be `PASS`; the disk version alone is not
-   evidence that Obsidian loaded that version.
+1. From **Settings → Community plugins → Browse**, install and enable
+   [BRAT](https://github.com/TfTHacker/obsidian42-brat).
+2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select version
+   `0.1.19`. BRAT downloads `manifest.json`, `main.js`, and `styles.css` from that GitHub Release.
+3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
 4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the
    **API key** setting. Paste the value only into Obsidian Secret Storage; the plugin setting keeps
    only the secret name.
@@ -78,7 +61,13 @@ assets from release `0.1.13`. For the guarded manual path, Node.js 22 and the ZI
    a farming session also requires `characters`, `inventories`, and `builds`.
 6. Open the command palette and run **Open companion**. This opens the Companion view, not Settings.
 
-The full BRAT, manual install, update, and rollback procedure is in the [beta guide](docs/BETA.md).
+To update, use **Check for updates** in BRAT. GitHub can take between 5 and 15 minutes to serve a new
+release to BRAT.
+
+Developers who need a specific commit instead of a published release have a separate guarded path
+with Node.js 22 and a CI artifact, documented in the
+[beta guide](docs/BETA.md#qa-manual-desde-un-artifact-de-rama-solo-para-desarrolladores). It is for
+development only and is not the supported way to install the plugin.
 
 ## First farming session
 
@@ -200,7 +189,7 @@ For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.
 
-The current `0.1.4` vertical provides:
+The current `0.1.19` vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. Its H5.1 field ledger keeps session phase and elapsed time first, then detector, polling, evidence quality, account and the highest-priority incident; verbose diagnostics remain collapsed.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
