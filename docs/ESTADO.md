@@ -2,15 +2,23 @@
 
 ## Vertical activa
 
-**Release beta `0.1.21` publicada el 2026-09-01 desde el tag y commit `PENDIENTE-SHA`.**
+**Release beta `0.1.21` publicada el 2026-09-01 desde el tag y commit `1514bf3c52e4f71158a7a724b6c227c5930c4bc0`.**
 `manifest.json` y `package.json` declaran `0.1.21`. Runs de CI de `main`, del tag y del workflow
-`Release`: `PENDIENTE-RUNS`.
+`Release`: `33525623408` (CI de `main`), `33525647496` (CI del tag) y `33525647471` (workflow `Release`), los tres en verde.
 
-La release adjunta los cinco assets exactos. El ZIP tiene SHA-256 `PENDIENTE-SHA256`.
+La release adjunta los cinco assets exactos. El ZIP tiene SHA-256
+`8f8ab5f5f48d12584bef417b3e74aa31113b431411c6107cedb96f8ddcdb263d`, que coincide con el fichero
+`.sha256` que la propia release adjunta. El `main.js` publicado se descargó y se comparó con el
+construido localmente: idénticos byte a byte, SHA-256
+`d95d8312e838407c3363ebef9ca22a591d22a279fb4755556631c2c04477349f`. El contrato BRAT, ejecutado
+contra la salida real de `gh release view`, da `PASS (version=0.1.21; assets=5)`.
 
-**Canal publicado; instalación y runtime pendientes.** Nadie ha abierto Obsidian con esta versión:
-no hay evidencia de instalación, de carga del plugin, de QA visual ni de una sola llamada real a la
-API de Guild Wars 2 desde el cliente.
+**Canal publicado; runtime pendiente.** Los tres ficheros (`main.js`, `manifest.json`, `styles.css`)
+se copiaron a la bóveda real de David y se verificaron por `sha256sum`, no por la salida del `cp`;
+`manifest.json` instalado declara `0.1.21` y `data.json` no se tocó. Pero **Obsidian estaba ABIERTO
+durante la copia**, así que el plugin cargado en memoria sigue siendo la build anterior hasta que se
+recargue. No hay evidencia de carga del plugin, de QA visual ni de una sola llamada real a la API de
+Guild Wars 2 desde el cliente con esta versión.
 
 El contenido de esta release y su motivación están en el [changelog](CHANGELOG.md), entrada
 `0.1.21`. Absorbe tres lotes integrados en `main` después de `0.1.20`: la Bolsa de truco o trato
