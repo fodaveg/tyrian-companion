@@ -45,7 +45,7 @@ import {
 	visibleRailItems,
 	type CompanionStatusProjection,
 } from './companion-status-model';
-import type { HalloweenAlertPanelActions } from './halloween-alert-panel';
+import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 
@@ -211,9 +211,19 @@ export class TyrianCompanionView extends ItemView {
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
 		this.renderSimpleSession(surface, connectionState, sessionState, projection);
+		this.renderHalloweenAlerts(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
+	}
+
+	/** Bridges the data-only Halloween panel onto the Companion surface and the runtime catalogue. */
+	private renderHalloweenAlerts(container: HTMLElement): void {
+		renderHalloweenAlertPanel(
+			container,
+			this.actions,
+			(key, params) => this.t(key as RuntimeTranslationKey, params),
+		);
 	}
 
 	private renderSimpleSession(
