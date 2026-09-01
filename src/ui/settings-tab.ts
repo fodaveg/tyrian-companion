@@ -17,6 +17,7 @@ import {
 } from '../assets/managed-assets-ui';
 import {
 	MATERIAL_STORAGE_CAPACITIES,
+	POLLING_INTERVAL_OPTIONS,
 	resolveVaultFolderInput,
 	type MaterialStorageCapacity,
 	type TyrianSettings,
@@ -348,7 +349,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
 				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
-					for (const minutes of [2, 15, 30, 60, 120, 240]) {
+						for (const minutes of POLLING_INTERVAL_OPTIONS) {
 							dropdown.addOption(String(minutes), this.t('settings.minutes', { minutes }));
 						}
 						dropdown

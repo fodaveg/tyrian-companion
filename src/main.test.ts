@@ -91,7 +91,10 @@ describe('connection diagnostics composition', () => {
 describe('atomic settings persistence', () => {
 	it('flushes the settings terminal before disabling capture and emits one event when enabling it again', async () => {
 		const events: string[] = [];
-		const settings = { ...DEFAULT_SETTINGS } as TyrianSettings;
+		// Capture is off by default, so this scenario states its own precondition.
+		const settings = {
+			...DEFAULT_SETTINGS, debugLoggingEnabled: true, debugLoggingLevel: 'debug',
+		} as TyrianSettings;
 		const localDebug = {
 			flush: vi.fn(async () => { events.push('flush'); }),
 			setMinimumLevel: vi.fn((level: string) => { events.push(`level:${level}`); }),

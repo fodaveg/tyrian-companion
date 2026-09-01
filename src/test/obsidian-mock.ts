@@ -48,6 +48,18 @@ export async function requestUrl(): Promise<{ status: number; headers: Record<st
 	return { status: 200, headers: {}, json: {} };
 }
 
+let appLanguage = 'en';
+
+/** Mirrors Obsidian's configured app language, which defaults to `en` like the real API. */
+export function getLanguage(): string {
+	return appLanguage;
+}
+
+/** Test-only companion to `getLanguage`; the real Obsidian API exposes no setter. */
+export function setMockLanguage(isoCode: string): void {
+	appLanguage = isoCode;
+}
+
 /** Records the requested Lucide icon id on the element instead of rendering real markup. */
 export function setIcon(el: { setAttribute(name: string, value: string): void }, iconId: string): void {
 	el.setAttribute('data-icon', iconId);
