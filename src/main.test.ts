@@ -958,7 +958,7 @@ describe('managed-assets root reconciliation', () => {
 	it('relocates already-installed Bases when the output folder changes, and equalizes both roots', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Origin' });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Origin' });
 
 		await harness.applyManagedAssets();
 		expect(harness.settings.managedAssetsRoot).toBe('Origin');
@@ -978,11 +978,11 @@ describe('managed-assets root reconciliation', () => {
 		// Bootstraps a real install at the shallow root, then walks the setting forward without
 		// going through updateSettings, mirroring the persisted-data.json shape this heals: an
 		// old install whose managed root never followed a later, deeper output-folder change.
-		const bootstrapHarness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Tyrian Companion' });
+		const bootstrapHarness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Tyrian Companion' });
 		await bootstrapHarness.applyManagedAssets();
 		expect(vault.contents.has('Tyrian Companion/Bases/Sessions.base')).toBe(true);
 
-		const harness = buildManagedAssetsRootHarness(vault, manager, {
+		const harness = buildManagedAssetsRootHarness(manager, {
 			...DEFAULT_SETTINGS,
 			outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion',
 			managedAssetsRoot: 'Tyrian Companion',
@@ -998,7 +998,7 @@ describe('managed-assets root reconciliation', () => {
 	it('never auto-adopts a retained legacy managed-assets root; only an explicit Move may', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(vault, manager, {
+		const harness = buildManagedAssetsRootHarness(manager, {
 			...DEFAULT_SETTINGS,
 			outputFolder: 'New Home',
 			managedAssetsRoot: null,
@@ -1014,7 +1014,7 @@ describe('managed-assets root reconciliation', () => {
 	it('leaves an already-matching root untouched and does not report it as relocated', async () => {
 		const vault = new MemoryAssetVault();
 		const manager = await buildManagedAssetsManager(vault);
-		const harness = buildManagedAssetsRootHarness(vault, manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
 		await harness.applyManagedAssets();
 		const before = vault.writeCount;
 
@@ -1430,7 +1430,6 @@ interface ManagedAssetsRootHarness {
  * leaf I/O effect (saveData, render, sync invalidation) that reconciliation does not assert on.
  */
 function buildManagedAssetsRootHarness(
-	vault: MemoryAssetVault,
 	manager: ManagedAssetsManager,
 	initialSettings: TyrianSettings,
 ): ManagedAssetsRootHarness {

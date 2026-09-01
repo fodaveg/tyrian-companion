@@ -1,4 +1,3 @@
-import { IDBFactory } from 'fake-indexeddb';
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
