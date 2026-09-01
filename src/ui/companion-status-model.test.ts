@@ -154,7 +154,7 @@ describe('buildCompanionStatus', () => {
 			qualityState: { status: 'unavailable', message: 'Recorder unavailable.' },
 		}));
 		expect(projection.errors[0]).toBe('Recovery: The operation could not be completed safely.');
-		expect(projection.surfaceTone).toBe('error');
+		expect(projection.incidentTone).toBe('error');
 		expect(projection.errors).toHaveLength(4);
 	});
 
@@ -186,25 +186,23 @@ describe('buildCompanionStatus', () => {
 	});
 
 	it.each([
-		[{ status: 'available', state: activeSession() }, 'Recovery available', 'recover'],
-		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked', 'none'],
-		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering', 'none'],
-		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding', 'none'],
-		[{ status: 'error', message: 'Store failed.' }, 'Recovery error', 'none'],
-	] as const)('gives recovery %s precedence in the header', (recovery, phase, action) => {
+		[{ status: 'available', state: activeSession() }, 'Recovery available'],
+		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked'],
+		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering'],
+		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding'],
+		[{ status: 'error', message: 'Store failed.' }, 'Recovery error'],
+	] as const)('gives recovery %s precedence in the header', (recovery, phase) => {
 		const projection = buildCompanionStatus(input({ recovery }));
 		expect(projection.items[1]?.value).toBe(phase);
-		expect(projection.primaryAction).toBe(action);
 	});
 
-	it('shows available recovery as the first incident without losing phase or action', () => {
+	it('shows available recovery as the first incident without losing the phase', () => {
 		const projection = buildCompanionStatus(input({
 			recovery: { status: 'available', state: activeSession(), message: 'Resume the saved run.' },
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 		}));
 		expect(projection.errors[0]).toBe('Recovery: A saved farming session needs a decision.');
 		expect(projection.items[1]?.value).toBe('Recovery available');
-		expect(projection.primaryAction).toBe('recover');
 	});
 
 	it('suppresses stale detector and scheduler failures while assisted detection is off', () => {

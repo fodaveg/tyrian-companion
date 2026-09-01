@@ -35,10 +35,8 @@ export interface CompanionStatusProjection {
 	locale: Locale;
 	connection: { value: string; tone: CompanionStatusTone };
 	items: CompanionStatusItem[];
-	primaryAction: 'start' | 'stop' | 'review' | 'clear' | 'recover' | 'none';
 	errors: string[];
 	incidentTone: 'warning' | 'error' | null;
-	surfaceTone: CompanionStatusTone;
 	refreshEveryMs: 1_000 | null;
 }
 
@@ -79,10 +77,8 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 		locale,
 		connection,
 		items: [detection.item, session.item, polling.item, quality],
-		primaryAction: primaryAction(input.session, input.recovery),
 		errors,
 		incidentTone: errors.length === 0 ? null : hasErrorIncident(input) ? 'error' : 'warning',
-		surfaceTone: errors.length > 0 && hasErrorIncident(input) ? 'error' : strongestTone([detection.item, session.item, polling.item, quality]),
 		refreshEveryMs,
 	};
 }
@@ -106,19 +102,6 @@ function recoverySessionStatus(
 		return { item: item('session', t('status.session'), t('status.recoveryError'), t('status.operationFailed'), 'error'), live: false };
 	}
 	return fallback;
-}
-
-function primaryAction(
-	session: SessionState,
-	recovery: SessionRecoveryState,
-): CompanionStatusProjection['primaryAction'] {
-	if (recovery.status === 'available') return 'recover';
-	if (recovery.status !== 'none') return 'none';
-	if (session.status === 'idle') return 'start';
-	if (session.status === 'active') return 'stop';
-	if (session.status === 'provisional') return 'review';
-	if (session.status === 'complete') return 'clear';
-	return 'none';
 }
 
 function connectionStatus(state: ConnectionState, t: StatusText): CompanionStatusProjection['connection'] {
@@ -446,12 +429,6 @@ function sessionEvidenceQuality(summary: SessionDetectionQualitySummary): 'compl
 function appendLastSnapshot(detail: string, lastSnapshotAt: string | null, now: number, t: StatusText): string {
 	if (lastSnapshotAt === null) return `${detail} · ${t('status.noSnapshot')}`;
 	return `${detail} · ${t('status.lastSnapshot', { duration: formatCompactDuration(safeElapsed(Date.parse(lastSnapshotAt), now)) })}`;
-}
-
-function strongestTone(items: readonly CompanionStatusItem[]): CompanionStatusTone {
-	const rank: Record<CompanionStatusTone, number> = { quiet: 0, good: 1, active: 2, warning: 3, error: 4 };
-	return items.reduce<CompanionStatusTone>((strongest, status) =>
-		rank[status.tone] > rank[strongest] ? status.tone : strongest, 'quiet');
 }
 
 function item(

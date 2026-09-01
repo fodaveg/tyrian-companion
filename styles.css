@@ -651,21 +651,6 @@
 	outline-offset: 2px;
 }
 
-.tyrian-companion-view__disclosure {
-	border-block-start: 1px solid var(--background-modifier-border);
-}
-
-.tyrian-companion-view__disclosure > summary {
-	display: flex;
-	align-items: center;
-	font-weight: var(--font-semibold);
-}
-
-.tyrian-companion-view__status {
-	padding-block: var(--size-4-2) var(--size-4-4);
-	color: var(--text-muted);
-}
-
 .tyrian-companion-view__detection,
 .tyrian-companion-view__pending {
 	margin: 0;
@@ -717,16 +702,14 @@
 }
 
 .tyrian-companion-view__detection dl,
-.tyrian-companion-view__pending dl,
-.tyrian-companion-view__status dl {
+.tyrian-companion-view__pending dl {
 	display: grid;
 	grid-template-columns: minmax(7rem, max-content) 1fr;
 	gap: var(--size-4-1) var(--size-4-3);
 }
 
 .tyrian-companion-view__detection dd,
-.tyrian-companion-view__pending dd,
-.tyrian-companion-view__status dd {
+.tyrian-companion-view__pending dd {
 	margin-inline-start: 0;
 	min-width: 0;
 	overflow-wrap: anywhere;

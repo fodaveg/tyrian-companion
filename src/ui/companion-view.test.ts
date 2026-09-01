@@ -162,9 +162,7 @@ describe('Companion game HUD narrative', () => {
 				dismissPendingProposal: vi.fn(async () => undefined),
 				openManualSessionStart,
 			};
-			const projection = {
-				primaryAction: 'start', refreshEveryMs: null, items: [], errors: [], surfaceTone: 'neutral',
-			};
+			const projection = { refreshEveryMs: null, items: [], errors: [] };
 			const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 				actions, contentEl, refreshInterval: null,
 				headerElapsed: null, checkButton: null,
@@ -501,7 +499,6 @@ describe('Companion retained product shell', () => {
 			pendingConfirmationContainer: null,
 			pendingConfirmationFocusTarget: null,
 			pendingConfirmationKey: null,
-			primaryActionButton: null,
 			productShell: null,
 			productShellKey: null,
 			clearRefresh: vi.fn(),
