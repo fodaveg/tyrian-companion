@@ -14,6 +14,10 @@ import type {
 	SessionStopFailure,
 } from '../sessions/manual-session-start-service';
 import {
+	settlementRemainingSeconds,
+	type SessionSettlementWait,
+} from '../sessions/session-api-settlement';
+import {
 	SESSION_ACTIVITY_KEYS,
 	type SessionActivityKey,
 	type SessionContaminationAnswers,
@@ -90,6 +94,9 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	classifyPilotRecovery?(kind: PilotRecoveryKind): Promise<boolean>;
 	openManualSessionStart(humanBoundaryAt?: string | null): void;
 	stopManualSession(humanBoundaryAt?: string | null): Promise<void>;
+	/** Countdown of the grace window the final capture waits for, or null when nothing waits. */
+	getSessionSettlementWait?(): SessionSettlementWait | null;
+	captureSessionFinalNow?(): Promise<void>;
 	rotateToNewSession?(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
@@ -108,6 +115,7 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
 	private headerElapsed: HTMLElement | null = null;
+	private settlementCountdown: HTMLElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
 	private incident: HTMLElement | null = null;
 	private incidentMessage: HTMLElement | null = null;
@@ -165,6 +173,7 @@ export class TyrianCompanionView extends ItemView {
 		const projection = this.projectStatus(now);
 
 		this.headerElapsed = null;
+		this.settlementCountdown = null;
 		this.checkButton = null;
 		this.incident = null;
 		this.incidentMessage = null;
@@ -277,7 +286,10 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'active') {
 			heading.createEl('h2', { text: copy.active });
-			this.renderElapsed(heading, sessionProjection?.detail ?? copy.observing);
+			this.headerElapsed = heading.createEl('p', {
+				text: sessionProjection?.detail ?? copy.observing,
+				cls: 'tyrian-companion-view__elapsed',
+			});
 			heading.createEl('p', { text: `${observed.startContext.characterName} · ${copy.observing}` });
 			const button = header.createEl('button', { text: copy.finish, cls: 'mod-cta' });
 			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
@@ -292,15 +304,15 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'stopping') {
 			heading.createEl('h2', { text: copy.finishing });
-			this.renderElapsed(heading, sessionProjection?.detail);
-			heading.createEl('p', { text: copy.reconciling });
+			const wait = this.settlementWait();
+			if (wait === null) heading.createEl('p', { text: copy.reconciling });
+			else this.renderSettlementWait(card, heading, wait);
 			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
 			return;
 		}
 
 		if (observed.status === 'provisional') {
 			heading.createEl('h2', { text: copy.reviewNeeded });
-			this.renderElapsed(heading, sessionProjection?.detail);
 			heading.createEl('p', { text: copy.reviewNeededDetail });
 			const button = header.createEl('button', { text: copy.review });
 			button.addEventListener('click', () => this.actions.openSessionReview());
@@ -309,7 +321,6 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		heading.createEl('h2', { text: copy.summary });
-		this.renderElapsed(heading, sessionProjection?.detail);
 		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
 		const saveLabel = saveState === 'saved' ? copy.saved
 			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
@@ -362,12 +373,6 @@ export class TyrianCompanionView extends ItemView {
 			text: `${quality.label}: ${quality.value} · ${quality.detail}`,
 			cls: 'tyrian-companion-session__context',
 		});
-	}
-
-	/** Retains the duration line so the one-second refresh can tick it without repainting the card. */
-	private renderElapsed(heading: HTMLElement, detail: string | undefined): void {
-		if (detail === undefined) return;
-		this.headerElapsed = heading.createEl('p', { text: detail, cls: 'tyrian-companion-view__elapsed' });
 	}
 
 	/**
@@ -652,6 +657,7 @@ export class TyrianCompanionView extends ItemView {
 		if (this.refreshPendingConfirmation(now)) this.pendingConfirmationFocusTarget?.focus();
 		const session = projection.items.find((status) => status.id === 'session');
 		if (session) this.headerElapsed?.setText(session.detail);
+		this.refreshSettlementCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {
 			this.checkButton.disabled = connection.status === 'checking' || isCoolingDown(retryAt);
@@ -665,6 +671,53 @@ export class TyrianCompanionView extends ItemView {
 			this.incidentMore.setText(this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }));
 		}
 		this.scheduleRefresh(projection, retryAt, now);
+	}
+
+	/** Only a session that is still waiting has a countdown; a due one is already capturing. */
+	private settlementWait(): SessionSettlementWait | null {
+		const wait = this.actions.getSessionSettlementWait?.() ?? null;
+		return wait !== null && wait.status === 'waiting' ? wait : null;
+	}
+
+	/**
+	 * Explains the wait instead of leaving a dead screen, and keeps the escape hatch visible: the
+	 * player can always capture now, told in the same breath what that costs.
+	 */
+	private renderSettlementWait(
+		card: HTMLElement,
+		heading: HTMLElement,
+		wait: SessionSettlementWait,
+	): void {
+		heading.createEl('p', { text: this.t('view.settlementWaiting') });
+		this.settlementCountdown = heading.createEl('p', {
+			text: this.settlementCountdownText(wait),
+			cls: 'tyrian-companion-session__countdown',
+		});
+		this.settlementCountdown.setAttr('aria-live', 'polite');
+		const details = card.createDiv({ cls: 'tyrian-companion-session__settlement' });
+		details.createEl('p', { text: this.t('view.settlementWhy'), cls: 'tyrian-companion-session__context' });
+		if (!this.actions.captureSessionFinalNow) return;
+		const button = details.createEl('button', { text: this.t('view.captureNow') });
+		button.addEventListener('click', () => { void this.actions.captureSessionFinalNow?.(); });
+		details.createEl('p', {
+			text: this.t('view.captureNowWarning'),
+			cls: 'tyrian-companion-session__warning',
+		});
+	}
+
+	private settlementCountdownText(wait: SessionSettlementWait): string {
+		return this.t('view.settlementCountdown', {
+			time: formatCountdown(settlementRemainingSeconds(wait)),
+		});
+	}
+
+	private refreshSettlementCountdown(): void {
+		const node = this.settlementCountdown;
+		if (!node) return;
+		const wait = this.actions.getSessionSettlementWait?.() ?? null;
+		node.setText(wait === null || wait.status === 'due'
+			? this.t('view.settlementDue')
+			: this.settlementCountdownText(wait));
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
@@ -1288,6 +1341,14 @@ export class SessionContaminationReviewModal extends Modal {
 			if (this.visible) status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceError'));
 		});
 	}
+}
+
+/** `mm:ss` for the grace window. Seconds are already rounded up, so it never reads 00:00 too early. */
+function formatCountdown(totalSeconds: number): string {
+	const safeSeconds = Math.max(0, totalSeconds);
+	const minutes = Math.floor(safeSeconds / 60);
+	const seconds = safeSeconds % 60;
+	return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function addDetail(list: HTMLDListElement, term: string, detail: string): void {

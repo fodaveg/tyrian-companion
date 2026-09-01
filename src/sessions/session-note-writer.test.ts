@@ -64,11 +64,14 @@ describe('session note model and renderer', () => {
 			tc_recommendation_action: null, tc_recommendation_quantity: null, tc_recommendation_route: null,
 		});
 		expect(first.note.frontmatter.tc_session_ref).toMatch(/^[a-f0-9]{64}$/u);
+		// The durable pair is the played window: it ends when the player closed the session, not
+		// when the final capture started reading the account one second later.
 		expect(first.note.frontmatter).toMatchObject({
 			tc_started_at: input.runtime.delta?.window?.from,
-			tc_ended_at: input.runtime.delta?.window?.to,
-			tc_duration_ms: 3_599_000,
+			tc_ended_at: '2026-08-13T08:59:59.000Z',
+			tc_duration_ms: 3_598_000,
 		});
+		expect(first.note.frontmatter.tc_ended_at).not.toBe(input.runtime.delta?.window?.to);
 		expect(first.note.frontmatter.tc_ended_at).not.toBe(input.runtime.finalSnapshot?.completedAt);
 		expect(first.note.content).not.toContain('session-sensitive-id');
 		expect(first.note.content).not.toContain(input.runtime.finalSnapshot?.accountId);

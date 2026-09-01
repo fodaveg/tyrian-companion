@@ -207,6 +207,17 @@ function classifyValidatedSessionDelta(
 		estimates.push({ code: 'boundary_not_manually_confirmed' });
 		reviews.push({ code: 'confirm_session_boundaries' });
 	}
+	// The account reaches the public API through nested caches. A capture that did not wait the
+	// documented window cannot have seen the last minutes, and one taken far too late may already
+	// include activity from after the session: neither is exact, both remain usable estimates.
+	if (context.apiSettlement === 'skipped') {
+		estimates.push({ code: 'api_settlement_window_skipped' });
+		reviews.push({ code: 'confirm_session_boundaries' });
+	}
+	if (context.apiSettlement === 'exceeded') {
+		estimates.push({ code: 'api_settlement_window_exceeded' });
+		reviews.push({ code: 'confirm_session_boundaries' });
+	}
 	if (context.declaration.status !== 'confirmed_clean') {
 		estimates.push({ code: 'declaration_not_clean' });
 		reviews.push({ code: 'confirm_session_cleanliness' });
@@ -298,7 +309,8 @@ const CLASSIFICATION_REASONS = new Set<string>([
 	'wallet_decreased', 'wallet_increased_ambiguous', 'wallet_increase_clean_confirmation_used',
 	'roster_changed', 'character_unobserved', 'activity_declared',
 	'clean_declaration_conflicts_with_evidence', 'delta_limited',
-	'boundary_not_manually_confirmed', 'declaration_not_clean',
+	'boundary_not_manually_confirmed', 'api_settlement_window_skipped',
+	'api_settlement_window_exceeded', 'declaration_not_clean',
 	'trading_post_not_complete_clean_declaration_used',
 ]);
 const REVIEW_REQUESTS = new Set<string>([
@@ -318,6 +330,8 @@ const ESTIMATE_REVIEW = new Map<string, string>([
 	['delta_limited', 'review_limited_surface'],
 	['character_unobserved', 'review_limited_surface'],
 	['boundary_not_manually_confirmed', 'confirm_session_boundaries'],
+	['api_settlement_window_skipped', 'confirm_session_boundaries'],
+	['api_settlement_window_exceeded', 'confirm_session_boundaries'],
 	['declaration_not_clean', 'confirm_session_cleanliness'],
 ]);
 const EXACT_INFO_REASONS = new Set<string>([
@@ -429,10 +443,17 @@ export function isStorageDelta(value: unknown): value is StorageDelta {
 
 function isClassificationContext(value: unknown): value is SessionClassificationContext {
 	return isRecord(value) && hasOnlyKeys(value, [
-		'boundary', 'tradingPost', 'declaration', 'boundaryCertainty',
+		'boundary', 'tradingPost', 'declaration', 'boundaryCertainty', 'apiSettlement',
 	]) && isBoundaryEvidenceShape(value.boundary) && isTradingPostEvidence(value.tradingPost) &&
 		isDeclaration(value.declaration) &&
-		['manual_confirmed', 'auto_confirmed', 'auto_uncertain'].includes(String(value.boundaryCertainty));
+		['manual_confirmed', 'auto_confirmed', 'auto_uncertain'].includes(String(value.boundaryCertainty)) &&
+		isApiSettlement(value.apiSettlement);
+}
+
+/** Absent is legal: only a session stop boundary can declare how long the capture waited. */
+function isApiSettlement(value: unknown): boolean {
+	return value === undefined
+		|| (typeof value === 'string' && ['settled', 'skipped', 'exceeded'].includes(value));
 }
 
 function isBoundaryEvidenceShape(value: unknown): value is BoundaryEvidence {

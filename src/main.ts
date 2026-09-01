@@ -136,6 +136,7 @@ import {
 	type SessionStartFailure,
 	type SessionStopFailure,
 } from './sessions/manual-session-start-service';
+import type { SessionSettlementWait } from './sessions/session-api-settlement';
 import { IndexedDbSessionRuntimeStore, type SessionRuntimeRecord } from './sessions/session-runtime-store';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
@@ -756,6 +757,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 					if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 						{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
 						() => this.reconcilePendingProposals());
+				},
+				// The grace window ends outside any click: the same stop pipeline has to run then,
+				// or the note, the valuation and the detection bookkeeping would never happen.
+				onSettlementDue: () => {
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'session', action: 'session_finish', state: 'settlement_due' },
+						() => this.performStopManualSession());
 				},
 				runtimeStore: new IndexedDbSessionRuntimeStore(
 					window.indexedDB,
@@ -2139,9 +2147,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return await (this.localDebugActions?.run({ component: 'session', action: 'session_finish' }, perform) ?? perform());
 	}
 
+	/** Countdown of the grace window the final capture is waiting for; null when nothing waits. */
+	getSessionSettlementWait(): SessionSettlementWait | null {
+		return this.sessions.getSettlementWait();
+	}
+
+	/** Explicit human override: capture the final snapshot without waiting out the cache window. */
+	async captureSessionFinalNow(): Promise<void> {
+		const perform = async () => await this.performStopManualSession(undefined, null, true);
+		return await (this.localDebugActions?.run(
+			{ component: 'session', action: 'session_finish', state: 'settlement_skipped' },
+			perform,
+		) ?? perform());
+	}
+
 	private async performStopManualSession(
 		intent?: PendingProposalIntent,
 		humanBoundaryAt: string | null = null,
+		captureNow = false,
 	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
@@ -2153,32 +2176,40 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 		try {
 			const runtimeLease = this.requireRuntimeMutationLease();
-			const result = await this.sessions.stop().finally(() => runtimeLease.release());
-			if (result.status === 'stopped') {
+			const result = await (captureNow ? this.sessions.captureFinalNow() : this.sessions.stop())
+				.finally(() => runtimeLease.release());
+			// The stop itself is decided the moment the session leaves `active`, even when the final
+			// snapshot still waits out the API cache window: the detector must not keep proposing and
+			// the accepted proposal must not stay claimed for ten minutes waiting for a receipt.
+			if (result.status !== 'failed') {
 				this.assistedDetection.disarm('session_stopped'); this.localDebugActions?.event({ component: 'detection', action: 'detection_disarm', state: 'session_stopped', level: 'info', phase: 'success', code: 'ok' });
-				await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
-				const priceSnapshot = this.sessions.getPriceSnapshot();
-				fireAndForgetLocal(this.localDebugActions,
-					{ component: 'inventory', action: 'inventory_refresh', state: 'price_history_observe' },
-					async () => { await this.priceHistory?.observeSessionItemIds([
-						...result.delta.itemChanges.map(({ id }) => id),
-						...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
-						...(priceSnapshot?.missingItemIds ?? []),
-					]); });
-				fireAndForgetLocal(this.localDebugActions,
-					{ component: 'detection', action: 'detection_proposal', state: 'accept_stop' },
-					async () => { await this.detectionQuality.recordAccepted(
-					'stop',
-					result.state.sessionId,
-					result.state.finalSnapshot.completedAt,
-					proposal ?? {
-						mode: 'manual',
-						window: {
-							from: result.state.stopRequestedAt,
-							to: result.state.finalSnapshot.completedAt,
+				if (result.status === 'stopped') {
+					await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
+					const priceSnapshot = this.sessions.getPriceSnapshot();
+					const stopped = result.state;
+					const delta = result.delta;
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'inventory', action: 'inventory_refresh', state: 'price_history_observe' },
+						async () => { await this.priceHistory?.observeSessionItemIds([
+							...delta.itemChanges.map(({ id }) => id),
+							...(priceSnapshot?.items.map(({ itemId }) => itemId) ?? []),
+							...(priceSnapshot?.missingItemIds ?? []),
+						]); });
+					fireAndForgetLocal(this.localDebugActions,
+						{ component: 'detection', action: 'detection_proposal', state: 'accept_stop' },
+						async () => { await this.detectionQuality.recordAccepted(
+						'stop',
+						stopped.sessionId,
+						stopped.finalSnapshot.completedAt,
+						proposal ?? {
+							mode: 'manual',
+							window: {
+								from: stopped.stopRequestedAt,
+								to: stopped.finalSnapshot.completedAt,
+							},
 						},
-					},
-					); this.renderViews(); });
+						); this.renderViews(); });
+				}
 				if (intent && pendingClaim) {
 					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
 						throw new Error('Proposal receipt failed.');
