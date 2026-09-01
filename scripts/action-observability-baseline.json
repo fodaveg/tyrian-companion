@@ -7733,9 +7733,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 81,
+					"line": 85,
 					"column": 2,
-					"endLine": 81,
+					"endLine": 85,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7769,9 +7769,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 467,
+					"line": 470,
 					"column": 4,
-					"endLine": 467,
+					"endLine": 470,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7784,9 +7784,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 619,
+					"line": 622,
 					"column": 107,
-					"endLine": 619,
+					"endLine": 622,
 					"endColumn": 159,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7799,9 +7799,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 629,
+					"line": 632,
 					"column": 4,
-					"endLine": 634,
+					"endLine": 637,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {

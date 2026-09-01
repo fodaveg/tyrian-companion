@@ -197,7 +197,10 @@ function createFrontmatter(
 		tc_account_ref: accountRef,
 		tc_locale: note.locale,
 		tc_started_at: note.runtime.delta.window!.from,
-		tc_ended_at: note.runtime.delta.window!.to,
+		// The session ends when the player closed it, not when the final capture managed to read
+		// the account. Deriving it from the duration keeps the durable pair arithmetically
+		// consistent, which is exactly what the history reader verifies.
+		tc_ended_at: new Date(Date.parse(note.runtime.delta.window!.from) + note.durationMs).toISOString(),
 		tc_duration_ms: note.durationMs,
 		tc_character: state.startContext.characterName,
 		tc_profession: state.startContext.build.profession,

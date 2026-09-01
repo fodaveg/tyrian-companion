@@ -33,6 +33,13 @@ export interface SessionValuationInput {
 	catalogItems: Record<string, CatalogItem>;
 	bindingByItem: Record<string, SessionBindingEvidence>;
 	sackItemIds: number[];
+	/**
+	 * Instant the player closed the session (`stoppedAt`). The delta window ends when the final
+	 * capture *started reading*, which is up to ten minutes later because the account has to cross
+	 * the Guild Wars 2 caches first; dividing by that window would understate every rate. Absent
+	 * means the caller holds no human boundary, and the observed window remains the only estimate.
+	 */
+	playedUntil?: string | null;
 }
 
 export interface SessionValuationLine {
@@ -85,7 +92,7 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 	if (!isStorageDelta(delta) || delta.status === 'invalid' || !isSessionPriceSnapshot(prices, sessionId, delta)) {
 		return { status: 'invalid', reason: 'evidence_mismatch' };
 	}
-	const durationMs = durationFromDelta(delta);
+	const durationMs = sessionPlayedDurationMs(delta, input.playedUntil);
 	if (durationMs === null) return { status: 'invalid', reason: 'invalid_duration' };
 	if (!validIdList(sackItemIds)) return { status: 'invalid', reason: 'invalid_sack_ids' };
 	if (!validCatalog(catalogItems) || !validBindings(bindingByItem)) return { status: 'invalid', reason: 'invalid_metadata' };
@@ -156,24 +163,39 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 		},
 		warnings: [...warnings].sort(),
 	};
-	return isSessionValuation(valuation, delta, sackItemIds)
+	return isSessionValuation(valuation, delta, sackItemIds, input.playedUntil)
 		? { status: 'ok', valuation }
 		: { status: 'invalid', reason: 'valuation_arithmetic_invalid' };
 }
 
+/**
+ * `playedUntil` pins which duration this valuation was allowed to declare. A caller that holds the
+ * human stop boundary passes it and gets the exact check; one that only holds the delta — the
+ * reservation kernel — still gets a real bound, because the played window can never exceed the
+ * observed one. A valuation written before the grace window existed declares the observed window
+ * and keeps validating under both, so no stored session turns invalid on upgrade.
+ */
 export function isSessionValuation(
 	value: unknown,
 	delta: unknown,
 	sackItemIds: unknown,
+	playedUntil?: string | null,
 ): value is SessionValuation {
 	if (!isStorageDelta(delta) || delta.status === 'invalid' || !validIdList(sackItemIds) ||
 		!isSessionValuationRecord(value, sackItemIds)) return false;
 	const valuation = value;
 	const positive = delta.itemChanges.filter((change) => change.delta > 0);
 	const coinNetCopper = delta.currencyChanges.find((change) => change.id === 1)?.delta ?? 0;
+	const observed = durationFromDelta(delta);
+	const boundarySupplied = playedUntil !== undefined && playedUntil !== null;
+	const played = boundarySupplied ? sessionPlayedDurationMs(delta, playedUntil) : null;
+	// A boundary that was supplied and cannot be read is evidence that disagrees with itself.
+	if (boundarySupplied && played === null) return false;
+	const declaredDuration = observed !== null && valuation.durationMs > 0 && valuation.durationMs <= observed
+		&& (played === null || valuation.durationMs === played || valuation.durationMs === observed);
 	return valuation.lines.length === positive.length && valuation.lines.every((line, index) =>
 		line.itemId === positive[index]!.id && line.quantity === positive[index]!.delta) &&
-		valuation.durationMs === durationFromDelta(delta) &&
+		declaredDuration &&
 		valuation.totals.coinNetCopper === coinNetCopper &&
 		valuation.warnings.includes('item_losses_not_valued') ===
 			delta.itemChanges.some((change) => change.delta < 0);
@@ -377,18 +399,37 @@ function isSessionValuationWarning(value: unknown): value is SessionValuation['w
 }
 
 function isInputShell(value: unknown): value is SessionValuationInput {
+	const required = ['sessionId', 'delta', 'prices', 'catalogItems', 'bindingByItem', 'sackItemIds'];
 	return isRecord(value)
-		&& exactKeys(value, ['sessionId', 'delta', 'prices', 'catalogItems', 'bindingByItem', 'sackItemIds'])
+		&& (exactKeys(value, required) || exactKeys(value, [...required, 'playedUntil']))
 		&& typeof value.sessionId === 'string' && value.sessionId.length > 0
 		&& isRecord(value.delta) && isRecord(value.prices)
 		&& isRecord(value.catalogItems) && isRecord(value.bindingByItem)
-		&& Array.isArray(value.sackItemIds);
+		&& Array.isArray(value.sackItemIds)
+		&& (value.playedUntil === undefined || value.playedUntil === null || validIso(value.playedUntil));
 }
 
+/** Observed window: from the baseline completing to the final capture starting to read. */
 function durationFromDelta(delta: StorageDelta): number | null {
 	if (delta.window === null) return null;
 	const duration = Date.parse(delta.window.to) - Date.parse(delta.window.from);
 	return Number.isSafeInteger(duration) && duration > 0 ? duration : null;
+}
+
+/**
+ * Duration the player actually farmed: from the baseline to the instant they closed the session,
+ * never to the instant the plugin managed to read the account. Returns null when the boundary is
+ * unusable, so a broken timestamp can never silently widen or narrow a rate.
+ */
+export function sessionPlayedDurationMs(delta: StorageDelta, playedUntil: string | null | undefined): number | null {
+	const observed = durationFromDelta(delta);
+	if (observed === null) return null;
+	if (playedUntil === undefined || playedUntil === null) return observed;
+	if (!validIso(playedUntil)) return null;
+	const duration = Date.parse(playedUntil) - Date.parse(delta.window!.from);
+	// The human boundary is fenced to be at or before the final capture, so a longer played window
+	// than the observed one means the evidence disagrees with itself.
+	return Number.isSafeInteger(duration) && duration > 0 && duration <= observed ? duration : null;
 }
 
 function validCatalog(value: Record<string, CatalogItem>): boolean {

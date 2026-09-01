@@ -11,7 +11,11 @@ import {
 	isSessionValuationReservationOverlay,
 	partitionSessionValuation,
 } from '../economy/reservation';
-import { isSessionValuation, type SessionValuation } from '../economy/session-valuation';
+import {
+	isSessionValuation,
+	sessionPlayedDurationMs,
+	type SessionValuation,
+} from '../economy/session-valuation';
 import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { isSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
 import {
@@ -108,10 +112,11 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	if (runtime.review.classification.status !== runtime.state.classification) {
 		return { status: 'invalid', reason: 'invalid_runtime' };
 	}
-	const durationMs = runtime.delta.window === null
-		? Number.NaN
-		: Date.parse(runtime.delta.window.to) - Date.parse(runtime.delta.window.from);
-	if (!Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: 'invalid', reason: 'invalid_runtime' };
+	// The note reports the time the player farmed, not the time the plugin needed to read the
+	// account afterwards: with the API settlement window those differ by up to ten minutes, and
+	// dividing loot by the longer one understates every rate the note publishes.
+	const playedMs = sessionPlayedDurationMs(runtime.delta, runtime.state.stoppedAt);
+	if (playedMs === null) return { status: 'invalid', reason: 'invalid_runtime' };
 	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames)) {
 		return { status: 'invalid', reason: 'invalid_input' };
 	}
@@ -123,7 +128,10 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	const identity = identityMismatch(value, runtime);
 	if (identity) return { status: 'invalid', reason: 'identity_mismatch' };
 	const reservation = optionalReservation(value.reservation, value.valuation, runtime);
-	const valuation = optionalValuation(value.valuation, reservation, runtime, durationMs);
+	const valuation = optionalValuation(value.valuation, reservation, runtime);
+	// A session valued before this rule existed declared the observed window; the note keeps
+	// publishing that same number instead of silently restating a saved measurement.
+	const durationMs = valuation.status === 'valid' ? valuation.value.durationMs : playedMs;
 	const hold = optional(value.hold, isHoldPlan);
 	let recommendation = optionalRecommendation(value.recommendation);
 	const envelope = optional(value.envelope, isRecommendationEnvelope);
@@ -208,11 +216,10 @@ function optionalValuation(
 	value: unknown,
 	reservation: PreparedSessionNote['reservation'],
 	runtime: PreparedSessionNote['runtime'],
-	durationMs: number,
 ): OptionalEvidence<SessionValuation> {
 	if (value === null) return { status: 'not_evaluated' };
 	const sackItemIds = reservation.status === 'valid' ? reservation.value.overlay.sackItemIds : [];
-	if (!isSessionValuation(value, runtime.delta, sackItemIds) || value.durationMs !== durationMs ||
+	if (!isSessionValuation(value, runtime.delta, sackItemIds, runtime.state.stoppedAt) ||
 		value.priceCapturedAt !== runtime.priceSnapshot?.capturedAt || value.priceSource !== runtime.priceSnapshot?.source) {
 		return { status: 'invalid' };
 	}
