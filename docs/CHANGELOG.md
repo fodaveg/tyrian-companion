@@ -1,5 +1,44 @@
 # Changelog
 
+## Integrado en main sin publicar - superficies conectadas, primera ejecución y censo
+
+- Montadas cuatro superficies que ya existían, tenían pruebas y ningún punto de entrada las
+  construía. Alertas de Halloween: el plugin emitía avisos sin ninguna pantalla donde marcarlos
+  leídos, así que el contador de no leídos no podía bajar nunca. Confirmaciones pendientes: el
+  ribbon mostraba el contador y el comando existía, pero ninguna vista podía mostrar la propuesta.
+  Detección asistida: pasa a exponerse completa, no en resumen. Historial de sesiones: se monta la
+  vista que ya construía el modelo.
+- Añadido el botón **Abrir la nota** después de guardar una sesión. Es el primer uso de
+  `openLinkText` en código de producción del repositorio: hasta ahora el plugin escribía la nota y
+  no ofrecía ninguna forma de abrirla.
+- Corregido el `viewCount` del journal de arranque, que declaraba 3 cuando se registran 2 vistas.
+- La línea de tiempo de detección pasa a resolución de minutos. La API de cuenta no da precisión al
+  segundo y presentarla lo aparentaba.
+- Primera ejecución: el idioma deja de estar forzado a español. Se resuelve desde Obsidian con
+  `getLanguage()` y reserva `en`; una elección manual del usuario sigue ganando sobre esa
+  resolución.
+- Primera ejecución: el registro de diagnóstico local nace apagado y en nivel `warn`. Venía
+  encendido en nivel `debug` desde Settings v11, escribiendo JSONL de forma continua dentro del
+  vault.
+- Primera ejecución: el intervalo de consulta por defecto pasa de 2 a 10 minutos. Los tres valores
+  viven en `DEFAULT_SETTINGS` de `src/core/settings.ts`.
+- **Los tres cambios de primera ejecución solo alcanzan instalaciones nuevas.** Una instalación
+  existente conserva sus valores, porque en disco un valor heredado del default es indistinguible de
+  uno elegido por el usuario. Quien ya tenga el registro encendido debe apagarlo a mano en Ajustes.
+- Reindexados 31 localizadores de `src/ui/settings-tab.ts` en
+  `scripts/action-observability-baseline.json` tras el desplazamiento de una línea que introdujo la
+  fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada del censo se alteró.
+
+## Release beta 0.1.19 - companion de farmeo en vivo
+
+- Publicada la [GitHub Release `0.1.19`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19)
+  desde el tag y commit `8dace194cc7a6b3a9eba58971091d18c719a7647`. `manifest.json` y `package.json`
+  declaran `0.1.19`.
+- El lote de producto es `a24c364`, cuyo asunto es
+  `feat(session): restore the live farming companion`.
+- Hueco declarado: esta entrada no registra la fecha de publicación, los runs de CI, los digests
+  remotos de los assets ni el SHA-256 del ZIP de `0.1.19`. No se han medido y no se inventan.
+
 ## Release beta 0.1.18 - HUD, historial, Advisor y endurecimiento
 
 - Publicada el 2026-08-31 la
@@ -360,6 +399,25 @@
   hallazgos y el gate completo quedó verde con 147 ficheros y 1.968 tests, además de seguridad,
   contratos, build y paquete. No forma parte de `0.1.13` ni acredita QA visual o instalación en
   Obsidian.
+
+## Release beta 0.1.14
+
+Entrada recuperada el 2026-09-01 del commit `afd505e` de la rama `codex/docs-release-0.1.14`, que
+nunca llegó a `main`: el changelog saltaba de `0.1.13` a `0.1.16` y esta publicación quedó sin
+documentar.
+
+- Publicada el 2026-08-30 la
+  [GitHub Release `0.1.14`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.14) desde el
+  tag y commit `c55b869da8894b400b085f1138529f762f0c1cb1`.
+- Incluye H9.16/H9.3 y los lotes H9.2, H9.17/H9.18, H9.8/H9.14 y H9.10-H9.13 integrados después de
+  `0.1.13`.
+- BRAT dispone de `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP
+  reproducible tiene SHA-256
+  `a39efff6788708ab75d85bdb35797cca1ea97fe00d6dc3be7b2df82ea4ea9e57`. Los cinco assets publicados,
+  incluidos ZIP y `.sha256`, coinciden byte a byte con el paquete verificado; CI quedó verde para
+  `main` y para el tag.
+- La publicación hace instalable la beta, pero no acredita todavía instalación, actualización, QA
+  visual ni ejecución real dentro de Obsidian.
 
 ## Release beta 0.1.13
 

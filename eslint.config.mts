@@ -26,10 +26,23 @@ export const defaultProjectFiles = [
 	'scripts/tests/probar-security-scan.mjs',
 	'scripts/tests/probar-action-observability-census.mjs',
 	'scripts/tests/probar-support-contract.mjs',
+	'scripts/gate-steps.mjs',
+	'scripts/run-gate.mjs',
+	'scripts/source-text-assertion-contract.mjs',
+	'scripts/brat-release-plan.mjs',
+	'scripts/release-workflow-contract.mjs',
+	'scripts/tests/probar-run-gate.mjs',
+	'scripts/tests/probar-source-text-assertion-contract.mjs',
+	'scripts/tests/probar-brat-release-plan.mjs',
+	'scripts/tests/probar-release-workflow.mjs',
 	'spikes/h8-mumble-crossover/validate-preprocessed.mjs',
 ] as const;
 
-export const defaultProjectCapacity = 28;
+// Raised from 28 to 37 when the gate runner, the source text assertion contract
+// and the release publication gate added nine scripts. The headroom below is
+// unchanged on purpose: the point of this bound is that growing it stays a
+// deliberate edit rather than something that drifts.
+export const defaultProjectCapacity = 37;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(
