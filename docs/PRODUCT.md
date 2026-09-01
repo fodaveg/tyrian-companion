@@ -193,7 +193,9 @@ La versión `0.1.0` valida la base técnica:
   `exact/high` y completamente valoradas. Pondera por duración total y mantiene actividad/build
   fuera de los exports JSON/CSV, por lo que la agrupación sigue siendo local y explícita.
 - Las entradas H2.7 se validan en runtime y cualquier estructura corrupta produce una clasificación inválida segura, nunca una atribución optimista ni una excepción hacia la UI futura.
-- `account`, `advisor`, `sessions` y `objectives` tienen límites de módulo explícitos.
+- `account`, `advisor` y `sessions` tienen límites de módulo explícitos. `objectives` no: es un
+  fichero de interfaces, `src/objectives/objective.ts`, sin implementación ni consumidores en el
+  repositorio, así que no hay código suyo al que poner límites.
 
 ## Fuera de alcance de la vertical 0.1.0
 
