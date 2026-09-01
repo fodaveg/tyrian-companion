@@ -400,6 +400,25 @@
   contratos, build y paquete. No forma parte de `0.1.13` ni acredita QA visual o instalación en
   Obsidian.
 
+## Release beta 0.1.14
+
+Entrada recuperada el 2026-09-01 del commit `afd505e` de la rama `codex/docs-release-0.1.14`, que
+nunca llegó a `main`: el changelog saltaba de `0.1.13` a `0.1.16` y esta publicación quedó sin
+documentar.
+
+- Publicada el 2026-08-30 la
+  [GitHub Release `0.1.14`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.14) desde el
+  tag y commit `c55b869da8894b400b085f1138529f762f0c1cb1`.
+- Incluye H9.16/H9.3 y los lotes H9.2, H9.17/H9.18, H9.8/H9.14 y H9.10-H9.13 integrados después de
+  `0.1.13`.
+- BRAT dispone de `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP
+  reproducible tiene SHA-256
+  `a39efff6788708ab75d85bdb35797cca1ea97fe00d6dc3be7b2df82ea4ea9e57`. Los cinco assets publicados,
+  incluidos ZIP y `.sha256`, coinciden byte a byte con el paquete verificado; CI quedó verde para
+  `main` y para el tag.
+- La publicación hace instalable la beta, pero no acredita todavía instalación, actualización, QA
+  visual ni ejecución real dentro de Obsidian.
+
 ## Release beta 0.1.13
 
 - Publicada el 2026-08-29 la
