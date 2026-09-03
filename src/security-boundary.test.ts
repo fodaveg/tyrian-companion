@@ -69,6 +69,9 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/halloween/halloween-evidence-service.ts',
 	'src/halloween/halloween-unlocks.ts',
 	'src/main.ts',
+	// H13.10. Composition only: it names the transport type so it can hand the
+	// one the plugin already built to the sell signal. It opens no call itself.
+	'src/runtime/assemble-price-history.ts',
 	'src/sessions/api-poll-scheduler.ts',
 	'src/sessions/assisted-detection-service.ts',
 	'src/sessions/manual-session-start-service.ts',

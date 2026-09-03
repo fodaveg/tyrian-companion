@@ -62,7 +62,7 @@ import {
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { translateRuntime, type RuntimeTranslationKey } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
-import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
+import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { halloweenObservationActive } from './halloween/halloween-activation';
 import type { HalloweenAlertItem } from './halloween/halloween-model';
 import { IndexedDbHalloweenStore } from './halloween/halloween-store';
@@ -79,9 +79,9 @@ import type {
 	PriceHistorySide,
 	PriceHistoryWindowDays,
 } from './economy/price-history-model';
-import { SellSignalRuntime } from './economy/sell-signal-runtime';
+import type { SellSignalRuntime } from './economy/sell-signal-runtime';
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
-import type { HttpTransport } from './core/http';
+import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
 import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
@@ -618,22 +618,31 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		this.halloweenPriceAlert = halloweenServices.priceAlert;
 		this.halloween = halloweenServices.runtime;
-		this.sellSignal = this.buildSellSignalRuntime(transport);
-		this.priceHistory = new PriceHistoryRuntime({
+		const priceServices = assemblePriceHistory({
 			factory: window.indexedDB,
 			vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
-			persistenceDiagnostics: this.persistenceDiagnostics('price_history', 'price_history_capture'),
+			capturePersistence: this.persistenceDiagnostics('price_history', 'price_history_capture'),
 			gateway: publicClient,
 			rateLimit: rateLimitCoordinator,
+			transport,
 			onStateChange: () => this.renderInventoryAdvisorViews(),
-			afterCompaction: async (port) => {
+			evaluatePriceAlert: async (port) => {
 				await this.halloweenPriceAlert?.evaluate({
 					readDaily: async (itemId, fromDayUtc) => await port.readDaily(itemId, fromDayUtc),
 				}, port.nowMs, port.actionContext);
-				await this.evaluateSellSignal(port);
 			},
+			evaluateSellSignal: async (port) => { await this.evaluateSellSignal(port); },
+			// No network without a session, the seed included.
+			sessionActive: () => this.sessions?.getState().status === 'active',
+			emittedAlerts: () => this.emittedAlerts,
+			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
+			heldQuantity: () => this.observedBagQuantity(),
+			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
+			emitAlert: (alert) => { this.dispatchAlert(alert); },
 		});
+		this.sellSignal = priceServices.sellSignal;
+		this.priceHistory = priceServices.priceHistory;
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
 			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
@@ -1951,38 +1960,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
 			async () => await this.emitAlert(alert));
-	}
-
-	/**
-	 * Builds the H13.2 detector, or does not build it at all.
-	 *
-	 * The percentage that decides when selling is worth saying is a datum of the
-	 * curated pack, so an unavailable or expired pack means there is no rule to
-	 * run: the runtime is left null rather than fed a constant from here, which
-	 * is the whole reason the number lives in the pack.
-	 */
-	private buildSellSignalRuntime(transport: HttpTransport): SellSignalRuntime | null {
-		const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
-		if (loaded.status !== 'available') return null;
-		const pack = loaded.bundle.economyPack;
-		return new SellSignalRuntime({
-			itemId: HALLOWEEN_PRICE_ALERT_ITEM_ID,
-			parameters: {
-				minimumOfMaxBps: pack.sellSignal.minimumOfMaxBps,
-				referenceDays: pack.sellSignal.referenceDays,
-				minimumReferenceDays: pack.sellSignal.minimumReferenceDays,
-			},
-			transport,
-			now: () => Date.now(),
-			// No network without a session, the seed included.
-			sessionActive: () => this.sessions?.getState().status === 'active',
-			emittedAlerts: () => this.emittedAlerts,
-			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
-			heldQuantity: () => this.observedBagQuantity(),
-			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
-			emit: (alert) => { this.dispatchAlert(alert); },
-			diagnostics: this.localDebugActions ?? undefined,
-		});
 	}
 
 	/** Seeds once and reads the merged series. Never throws into the compaction that called it. */
