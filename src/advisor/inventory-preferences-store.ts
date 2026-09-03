@@ -19,6 +19,7 @@ import {
 	type InventoryPreferencesV1,
 	type InventoryPreferencesWriteResult,
 } from './inventory-preferences-model';
+import { openIndexedDb } from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 /** Lets composition classify read and write persistence under their real actions. */
@@ -146,43 +147,32 @@ export class IndexedDbInventoryPreferencesStore implements InventoryPreferencesS
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
 		const attempt = diagnostics.begin('inventory_preferences', 'open', actionContext);
-		const opening = new Promise<IDBDatabase>((resolve, reject) => {
-			let settled = false;
-			const request = this.factory.open(this.databaseName, INVENTORY_PREFERENCES_DB_VERSION);
-			request.onupgradeneeded = () => {
-				if (!request.result.objectStoreNames.contains(INVENTORY_PREFERENCES_STORE_NAME)) {
-					request.result.createObjectStore(INVENTORY_PREFERENCES_STORE_NAME);
-				}
-			};
-			request.onerror = () => rejectOnce(request.error?.name === 'VersionError' ? 'future_schema' : 'unavailable');
-			request.onblocked = () => rejectOnce('unavailable');
-			request.onsuccess = () => {
-				const database = request.result;
-				if (settled || this.disposed || !database.objectStoreNames.contains(INVENTORY_PREFERENCES_STORE_NAME)) {
-					database.close();
-					rejectOnce(this.disposed ? 'unavailable' : 'corrupt');
-					return;
-				}
-				settled = true;
-				database.onversionchange = () => {
-					database.close();
-					if (this.database === database) this.database = null;
-					this.disposed = true;
-				};
-				this.database = database;
-				attempt.success();
-				resolve(database);
-			};
-			function rejectOnce(code: InventoryPreferencesFailureCode): void {
-				if (settled) return;
-				settled = true;
-				attempt.failure(code === 'corrupt' || code === 'future_schema' ? 'validation_failed' : 'storage_failure');
-				reject(new StorageFailure(code));
-			}
+		const opening = openIndexedDb({
+			factory: this.factory,
+			databaseName: this.databaseName,
+			databaseVersion: INVENTORY_PREFERENCES_DB_VERSION,
+			schema: [{ name: INVENTORY_PREFERENCES_STORE_NAME }],
+			// A database that opened without the store is corrupt, not merely
+			// unavailable, and the two codes reach the caller differently.
+			accept: (database) => !this.disposed
+				&& database.objectStoreNames.contains(INVENTORY_PREFERENCES_STORE_NAME),
+			onVersionChange: (database) => {
+				if (this.database === database) this.database = null;
+				this.disposed = true;
+			},
+			toError: (reason, error) => new StorageFailure(reason === 'refused'
+				? (this.disposed ? 'unavailable' : 'corrupt')
+				: reason === 'error' && error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
 		});
 		this.opening = opening;
 		try {
-			return await opening;
+			const database = await opening;
+			this.database = database;
+			attempt.success();
+			return database;
+		} catch (error) {
+			attempt.failure(preferenceFailureCode(error instanceof StorageFailure ? error.code : 'unavailable'));
+			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;
 		}

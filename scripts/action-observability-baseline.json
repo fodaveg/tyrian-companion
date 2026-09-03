@@ -2,7 +2,7 @@
 	"version": 3,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 400,
+		"catch_clause": 406,
 		"promise_catch": 29,
 		"void_expression": 79,
 		"callback_registration": 166
@@ -106,9 +106,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 100,
+					"line": 101,
 					"column": 4,
-					"endLine": 102,
+					"endLine": 103,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -121,9 +121,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 117,
+					"line": 118,
 					"column": 4,
-					"endLine": 124,
+					"endLine": 125,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -189,9 +189,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 109,
+					"line": 110,
 					"column": 4,
-					"endLine": 118,
+					"endLine": 119,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -204,9 +204,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 259,
+					"line": 260,
 					"column": 4,
-					"endLine": 266,
+					"endLine": 267,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -546,9 +546,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 89,
 					"column": 4,
-					"endLine": 88,
+					"endLine": 89,
 					"endColumn": 31,
 					"classification": "allowlisted",
 					"evidence": {
@@ -561,9 +561,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 97,
+					"line": 98,
 					"column": 4,
-					"endLine": 97,
+					"endLine": 98,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -576,9 +576,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 134,
+					"line": 135,
 					"column": 4,
-					"endLine": 134,
+					"endLine": 135,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -591,9 +591,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 262,
+					"line": 263,
 					"column": 124,
-					"endLine": 262,
+					"endLine": 263,
 					"endColumn": 147,
 					"classification": "allowlisted",
 					"evidence": {
@@ -861,9 +861,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 37,
+					"line": 38,
 					"column": 56,
-					"endLine": 37,
+					"endLine": 38,
 					"endColumn": 79,
 					"classification": "allowlisted",
 					"evidence": {
@@ -876,9 +876,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 80,
+					"line": 81,
 					"column": 4,
-					"endLine": 80,
+					"endLine": 81,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -891,9 +891,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 529,
+					"line": 530,
 					"column": 4,
-					"endLine": 529,
+					"endLine": 530,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1229,9 +1229,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 78,
+					"line": 79,
 					"column": 5,
-					"endLine": 82,
+					"endLine": 83,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1244,9 +1244,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 126,
+					"line": 127,
 					"column": 5,
-					"endLine": 130,
+					"endLine": 131,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1259,9 +1259,24 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 201,
+					"line": 173,
+					"column": 5,
+					"endLine": 176,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 191,
 					"column": 6,
-					"endLine": 204,
+					"endLine": 194,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1274,9 +1289,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 212,
+					"line": 202,
 					"column": 7,
-					"endLine": 215,
+					"endLine": 205,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1660,9 +1675,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 44,
+					"line": 45,
 					"column": 5,
-					"endLine": 47,
+					"endLine": 48,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1675,9 +1690,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 67,
+					"line": 68,
 					"column": 7,
-					"endLine": 67,
+					"endLine": 68,
 					"endColumn": 37,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1690,9 +1705,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 76,
+					"line": 77,
 					"column": 5,
-					"endLine": 79,
+					"endLine": 80,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1702,6 +1717,21 @@
 						"justification": "The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"compareAndSet\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 110,
+					"column": 5,
+					"endLine": 113,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
 				},
 				{
 					"kind": "callback_registration",
@@ -1931,9 +1961,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 46,
+					"line": 47,
 					"column": 5,
-					"endLine": 49,
+					"endLine": 50,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1946,9 +1976,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 74,
+					"line": 75,
 					"column": 5,
-					"endLine": 77,
+					"endLine": 78,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1961,9 +1991,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 89,
+					"line": 90,
 					"column": 5,
-					"endLine": 92,
+					"endLine": 93,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1976,9 +2006,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 134,
+					"line": 135,
 					"column": 4,
-					"endLine": 139,
+					"endLine": 140,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1991,9 +2021,24 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 192,
+					"line": 169,
+					"column": 5,
+					"endLine": 172,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 183,
 					"column": 6,
-					"endLine": 196,
+					"endLine": 187,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2006,9 +2051,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 229,
+					"line": 220,
 					"column": 6,
-					"endLine": 233,
+					"endLine": 224,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2021,9 +2066,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 256,
+					"line": 247,
 					"column": 4,
-					"endLine": 258,
+					"endLine": 249,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2062,9 +2107,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 76,
+					"line": 77,
 					"column": 19,
-					"endLine": 78,
+					"endLine": 79,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -2078,9 +2123,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 221,
+					"line": 222,
 					"column": 5,
-					"endLine": 234,
+					"endLine": 235,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2093,9 +2138,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 273,
+					"line": 274,
 					"column": 6,
-					"endLine": 278,
+					"endLine": 279,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2208,6 +2253,11 @@
 			"boundaries": []
 		},
 		"src/core/i18n.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/core/indexed-db-open.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -2864,9 +2914,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 170,
+					"line": 171,
 					"column": 4,
-					"endLine": 172,
+					"endLine": 173,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2879,9 +2929,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 209,
+					"line": 210,
 					"column": 4,
-					"endLine": 211,
+					"endLine": 212,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2900,9 +2950,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 30,
+					"line": 31,
 					"column": 70,
-					"endLine": 30,
+					"endLine": 31,
 					"endColumn": 92,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2915,9 +2965,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 56,
+					"line": 57,
 					"column": 65,
-					"endLine": 56,
+					"endLine": 57,
 					"endColumn": 88,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2930,9 +2980,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 224,
+					"line": 225,
 					"column": 84,
-					"endLine": 224,
+					"endLine": 225,
 					"endColumn": 107,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3215,9 +3265,24 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 155,
+					"line": 115,
+					"column": 5,
+					"endLine": 118,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 156,
 					"column": 7,
-					"endLine": 155,
+					"endLine": 156,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3230,9 +3295,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 161,
+					"line": 162,
 					"column": 10,
-					"endLine": 162,
+					"endLine": 163,
 					"endColumn": 77,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -3246,9 +3311,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 201,
+					"line": 202,
 					"column": 9,
-					"endLine": 201,
+					"endLine": 202,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3261,9 +3326,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 203,
+					"line": 204,
 					"column": 7,
-					"endLine": 203,
+					"endLine": 204,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3276,9 +3341,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 239,
+					"line": 240,
 					"column": 9,
-					"endLine": 239,
+					"endLine": 240,
 					"endColumn": 62,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3291,9 +3356,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 241,
+					"line": 242,
 					"column": 7,
-					"endLine": 241,
+					"endLine": 242,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3306,9 +3371,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 247,
+					"line": 248,
 					"column": 10,
-					"endLine": 252,
+					"endLine": 253,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -3322,9 +3387,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 256,
+					"line": 257,
 					"column": 10,
-					"endLine": 261,
+					"endLine": 262,
 					"endColumn": 90,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -3338,9 +3403,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 299,
+					"line": 300,
 					"column": 6,
-					"endLine": 299,
+					"endLine": 300,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3353,9 +3418,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 319,
+					"line": 320,
 					"column": 7,
-					"endLine": 319,
+					"endLine": 320,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3368,9 +3433,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 333,
+					"line": 334,
 					"column": 7,
-					"endLine": 333,
+					"endLine": 334,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3383,9 +3448,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 365,
+					"line": 366,
 					"column": 8,
-					"endLine": 365,
+					"endLine": 366,
 					"endColumn": 61,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3398,9 +3463,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 370,
+					"line": 371,
 					"column": 6,
-					"endLine": 370,
+					"endLine": 371,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3413,9 +3478,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 375,
+					"line": 376,
 					"column": 6,
-					"endLine": 375,
+					"endLine": 376,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3428,9 +3493,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 414,
+					"line": 415,
 					"column": 5,
-					"endLine": 414,
+					"endLine": 415,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3443,9 +3508,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 433,
+					"line": 434,
 					"column": 7,
-					"endLine": 433,
+					"endLine": 434,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3458,9 +3523,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 446,
+					"line": 447,
 					"column": 7,
-					"endLine": 446,
+					"endLine": 447,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3473,9 +3538,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 460,
+					"line": 461,
 					"column": 5,
-					"endLine": 460,
+					"endLine": 461,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3488,9 +3553,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 483,
+					"line": 484,
 					"column": 4,
-					"endLine": 483,
+					"endLine": 484,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3503,9 +3568,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 488,
+					"line": 489,
 					"column": 6,
-					"endLine": 490,
+					"endLine": 491,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3565,9 +3630,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 37,
+					"line": 39,
 					"column": 4,
-					"endLine": 39,
+					"endLine": 41,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3580,9 +3645,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 46,
+					"line": 48,
 					"column": 4,
-					"endLine": 48,
+					"endLine": 50,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3595,9 +3660,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 89,
+					"line": 91,
 					"column": 4,
-					"endLine": 91,
+					"endLine": 93,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3610,9 +3675,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 125,
+					"line": 120,
 					"column": 4,
-					"endLine": 127,
+					"endLine": 122,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3636,9 +3701,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 95,
+					"line": 96,
 					"column": 4,
-					"endLine": 97,
+					"endLine": 98,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3651,9 +3716,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 306,
+					"line": 307,
 					"column": 4,
-					"endLine": 306,
+					"endLine": 307,
 					"endColumn": 27,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4260,9 +4325,24 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 179,
+					"line": 129,
+					"column": 5,
+					"endLine": 132,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 168,
 					"column": 7,
-					"endLine": 179,
+					"endLine": 168,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4275,9 +4355,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 202,
+					"line": 191,
 					"column": 7,
-					"endLine": 202,
+					"endLine": 191,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4290,9 +4370,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 211,
+					"line": 200,
 					"column": 8,
-					"endLine": 211,
+					"endLine": 200,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4305,9 +4385,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 248,
+					"line": 237,
 					"column": 11,
-					"endLine": 248,
+					"endLine": 237,
 					"endColumn": 55,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4320,9 +4400,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 250,
+					"line": 239,
 					"column": 9,
-					"endLine": 250,
+					"endLine": 239,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4335,9 +4415,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 253,
+					"line": 242,
 					"column": 23,
-					"endLine": 253,
+					"endLine": 242,
 					"endColumn": 67,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4350,9 +4430,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 275,
+					"line": 264,
 					"column": 7,
-					"endLine": 275,
+					"endLine": 264,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4365,9 +4445,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 301,
+					"line": 290,
 					"column": 8,
-					"endLine": 301,
+					"endLine": 290,
 					"endColumn": 52,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4380,9 +4460,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 304,
+					"line": 293,
 					"column": 22,
-					"endLine": 304,
+					"endLine": 293,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4395,9 +4475,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 343,
+					"line": 332,
 					"column": 7,
-					"endLine": 343,
+					"endLine": 332,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4410,9 +4490,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 397,
+					"line": 386,
 					"column": 10,
-					"endLine": 397,
+					"endLine": 386,
 					"endColumn": 54,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4425,9 +4505,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 401,
+					"line": 390,
 					"column": 7,
-					"endLine": 401,
+					"endLine": 390,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4440,9 +4520,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 418,
+					"line": 407,
 					"column": 7,
-					"endLine": 418,
+					"endLine": 407,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4455,9 +4535,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 467,
 					"column": 7,
-					"endLine": 478,
+					"endLine": 467,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4470,9 +4550,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 492,
+					"line": 481,
 					"column": 7,
-					"endLine": 492,
+					"endLine": 481,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4485,9 +4565,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 509,
+					"line": 498,
 					"column": 7,
-					"endLine": 509,
+					"endLine": 498,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4500,9 +4580,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 538,
+					"line": 527,
 					"column": 7,
-					"endLine": 538,
+					"endLine": 527,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4515,9 +4595,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 554,
+					"line": 543,
 					"column": 7,
-					"endLine": 554,
+					"endLine": 543,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4530,9 +4610,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 568,
+					"line": 557,
 					"column": 7,
-					"endLine": 568,
+					"endLine": 557,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4545,9 +4625,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 585,
+					"line": 574,
 					"column": 7,
-					"endLine": 585,
+					"endLine": 574,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4560,9 +4640,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 602,
+					"line": 591,
 					"column": 7,
-					"endLine": 602,
+					"endLine": 591,
 					"endColumn": 51,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4575,9 +4655,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 632,
+					"line": 621,
 					"column": 4,
-					"endLine": 632,
+					"endLine": 621,
 					"endColumn": 77,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4590,9 +4670,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 637,
+					"line": 626,
 					"column": 6,
-					"endLine": 639,
+					"endLine": 628,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6625,9 +6705,24 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 74,
+					"line": 53,
+					"column": 5,
+					"endLine": 56,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "rethrow",
+						"scope": "open",
+						"justification": "The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed."
+					},
+					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 67,
 					"column": 6,
-					"endLine": 77,
+					"endLine": 70,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6640,9 +6735,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 96,
+					"line": 89,
 					"column": 6,
-					"endLine": 99,
+					"endLine": 92,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6655,9 +6750,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 109,
+					"line": 102,
 					"column": 7,
-					"endLine": 112,
+					"endLine": 105,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7361,9 +7456,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 57,
+					"line": 58,
 					"column": 5,
-					"endLine": 60,
+					"endLine": 61,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7376,9 +7471,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 81,
+					"line": 82,
 					"column": 7,
-					"endLine": 84,
+					"endLine": 85,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7391,9 +7486,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 92,
+					"line": 93,
 					"column": 5,
-					"endLine": 95,
+					"endLine": 96,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7406,9 +7501,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 134,
+					"line": 131,
 					"column": 5,
-					"endLine": 137,
+					"endLine": 134,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7675,9 +7770,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 100,
+					"line": 101,
 					"column": 5,
-					"endLine": 100,
+					"endLine": 101,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7690,9 +7785,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 110,
+					"line": 111,
 					"column": 5,
-					"endLine": 110,
+					"endLine": 111,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7705,9 +7800,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 137,
+					"line": 138,
 					"column": 5,
-					"endLine": 137,
+					"endLine": 138,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7720,9 +7815,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 170,
+					"line": 171,
 					"column": 5,
-					"endLine": 170,
+					"endLine": 171,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7735,9 +7830,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 211,
+					"line": 212,
 					"column": 5,
-					"endLine": 211,
+					"endLine": 212,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7750,9 +7845,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 276,
+					"line": 277,
 					"column": 5,
-					"endLine": 276,
+					"endLine": 277,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7765,9 +7860,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 300,
+					"line": 301,
 					"column": 5,
-					"endLine": 300,
+					"endLine": 301,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7780,9 +7875,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 304,
+					"line": 305,
 					"column": 3,
-					"endLine": 304,
+					"endLine": 305,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7795,9 +7890,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 304,
+					"line": 305,
 					"column": 8,
-					"endLine": 304,
+					"endLine": 305,
 					"endColumn": 59,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -7811,9 +7906,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 304,
+					"line": 305,
 					"column": 8,
-					"endLine": 304,
+					"endLine": 305,
 					"endColumn": 82,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7827,9 +7922,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 349,
+					"line": 350,
 					"column": 5,
-					"endLine": 349,
+					"endLine": 350,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7842,9 +7937,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 389,
+					"line": 390,
 					"column": 5,
-					"endLine": 389,
+					"endLine": 390,
 					"endColumn": 36,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7930,9 +8025,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 88,
+					"line": 89,
 					"column": 5,
-					"endLine": 91,
+					"endLine": 92,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7945,9 +8040,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 103,
+					"line": 104,
 					"column": 5,
-					"endLine": 106,
+					"endLine": 107,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7960,9 +8055,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 158,
+					"line": 143,
 					"column": 5,
-					"endLine": 161,
+					"endLine": 146,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7975,9 +8070,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 172,
+					"line": 157,
 					"column": 6,
-					"endLine": 175,
+					"endLine": 160,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7990,9 +8085,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 194,
+					"line": 179,
 					"column": 6,
-					"endLine": 197,
+					"endLine": 182,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8244,9 +8339,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 85,
+					"line": 89,
 					"column": 2,
-					"endLine": 85,
+					"endLine": 89,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8413,9 +8508,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 125,
+					"line": 126,
 					"column": 5,
-					"endLine": 128,
+					"endLine": 129,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8428,9 +8523,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 150,
+					"line": 151,
 					"column": 5,
-					"endLine": 153,
+					"endLine": 154,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8443,9 +8538,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 172,
+					"line": 173,
 					"column": 5,
-					"endLine": 175,
+					"endLine": 176,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8458,9 +8553,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 227,
+					"line": 212,
 					"column": 5,
-					"endLine": 230,
+					"endLine": 215,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8473,9 +8568,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 241,
+					"line": 226,
 					"column": 6,
-					"endLine": 244,
+					"endLine": 229,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8488,9 +8583,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 263,
+					"line": 248,
 					"column": 6,
-					"endLine": 266,
+					"endLine": 251,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8503,9 +8598,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 277,
+					"line": 262,
 					"column": 7,
-					"endLine": 280,
+					"endLine": 265,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {

@@ -1,4 +1,5 @@
 import type { PendingProposalQueueRecord } from './pending-proposal-model';
+import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	type LocalDebugPersistenceContext,
@@ -108,27 +109,23 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
 		const attempt = this.diagnostics.begin('pending_proposal', 'open', context);
-		const opening = new Promise<IDBDatabase>((resolve, reject) => {
-			const request = this.factory.open(this.databaseName, PROPOSAL_QUEUE_DB_VERSION);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				if (!request.result.objectStoreNames.contains(PROPOSAL_QUEUE_STORE_NAME)) request.result.createObjectStore(PROPOSAL_QUEUE_STORE_NAME);
-			};
-			request.onerror = () => fail('Could not open confirmation queue.');
-			request.onblocked = () => fail('Confirmation queue upgrade was blocked.');
-			request.onsuccess = () => {
-				if (settled) { request.result.close(); return; }
-				if (this.unavailable) { request.result.close(); fail('Confirmation queue was closed while opening.'); return; }
-				settled = true;
-				this.database = request.result;
-				request.result.onversionchange = () => { request.result.close(); this.database = null; this.unavailable = true; };
-				resolve(request.result);
-			};
-			function fail(message: string): void { if (!settled) reject(new Error(message)); settled = true; }
+		const opening = openIndexedDb({
+			factory: this.factory,
+			databaseName: this.databaseName,
+			databaseVersion: PROPOSAL_QUEUE_DB_VERSION,
+			schema: [{ name: PROPOSAL_QUEUE_STORE_NAME }],
+			accept: () => !this.unavailable,
+			onVersionChange: () => { this.database = null; this.unavailable = true; },
+			toError: (reason) => new Error(reason === 'blocked'
+				? 'Confirmation queue upgrade was blocked.'
+				: reason === 'refused'
+					? 'Confirmation queue was closed while opening.'
+					: 'Could not open confirmation queue.'),
 		});
 		this.opening = opening;
 		try {
 			const database = await opening;
+			this.database = database;
 			attempt.success();
 			return database;
 		} catch (error) {

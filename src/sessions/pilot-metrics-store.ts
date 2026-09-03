@@ -16,6 +16,7 @@ import {
 	type PilotSessionObservationV1,
 	type PilotVerificationV1,
 } from './pilot-metrics-model';
+import { openIndexedDb } from '../core/indexed-db-open';
 
 export const PILOT_METRICS_DB_NAME = 'tyrian-companion-pilot-metrics';
 export const PILOT_METRICS_DB_VERSION = 2;
@@ -399,23 +400,19 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 
 	private async open(): Promise<IDBDatabase> {
 		if (this.unavailable) throw new Error('Pilot metrics storage is unavailable.');
-		this.database ??= new Promise((resolve, reject) => {
-			const request = this.indexedDb.open(this.databaseName, PILOT_METRICS_DB_VERSION);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				const database = request.result;
-				if (!database.objectStoreNames.contains(PILOT_METRICS_PROFILE_STORE)) database.createObjectStore(PILOT_METRICS_PROFILE_STORE);
-				if (!database.objectStoreNames.contains(PILOT_METRICS_OBSERVATION_STORE)) database.createObjectStore(PILOT_METRICS_OBSERVATION_STORE);
-				if (!database.objectStoreNames.contains(PILOT_METRICS_VERIFICATION_STORE)) database.createObjectStore(PILOT_METRICS_VERIFICATION_STORE);
-			};
-			request.onsuccess = () => {
-				if (settled) { request.result.close(); return; }
-				settled = true;
-				request.result.onversionchange = () => { request.result.close(); this.unavailable = true; };
-				resolve(request.result);
-			};
-			request.onerror = () => { if (!settled) { settled = true; reject(new Error('Could not open pilot metrics storage.')); } };
-			request.onblocked = () => { if (!settled) { settled = true; reject(new Error('Pilot metrics storage upgrade was blocked.')); } };
+		this.database ??= openIndexedDb({
+			factory: this.indexedDb,
+			databaseName: this.databaseName,
+			databaseVersion: PILOT_METRICS_DB_VERSION,
+			schema: [
+				{ name: PILOT_METRICS_PROFILE_STORE },
+				{ name: PILOT_METRICS_OBSERVATION_STORE },
+				{ name: PILOT_METRICS_VERIFICATION_STORE },
+			],
+			onVersionChange: () => { this.unavailable = true; },
+			toError: (reason) => new Error(reason === 'blocked'
+				? 'Pilot metrics storage upgrade was blocked.'
+				: 'Could not open pilot metrics storage.'),
 		});
 		return await this.database;
 	}

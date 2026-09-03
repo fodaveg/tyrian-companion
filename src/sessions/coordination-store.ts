@@ -1,4 +1,5 @@
 import type { CoordinationState } from './coordination-model';
+import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	type LocalDebugPersistenceContext,
@@ -30,39 +31,31 @@ export class IndexedDbCoordinationStore implements CoordinationStore {
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
-	static open(
+	static async open(
 		factory: IDBFactory,
 		databaseName = COORDINATION_DB_NAME,
 		databaseVersion = COORDINATION_DB_VERSION,
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbCoordinationStore> {
 		const attempt = diagnostics.begin('coordination', 'open');
-		return new Promise((resolve, reject) => {
-			const request = factory.open(databaseName, databaseVersion);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				if (!request.result.objectStoreNames.contains(COORDINATION_STORE_NAME)) {
-					request.result.createObjectStore(COORDINATION_STORE_NAME);
-				}
-			};
-			request.onerror = () => settleError('Could not open coordination storage.');
-			request.onblocked = () => settleError('Coordination storage upgrade was blocked.');
-			request.onsuccess = () => {
-				if (settled) {
-					request.result.close();
-					return;
-				}
-				settled = true;
-				request.result.onversionchange = () => request.result.close();
-				attempt.success();
-				resolve(new IndexedDbCoordinationStore(request.result, diagnostics));
-			};
-
-			function settleError(message: string): void {
-				if (!settled) { attempt.failure(); reject(new Error(message)); }
-				settled = true;
-			}
-		});
+		let database: IDBDatabase;
+		try {
+			database = await openIndexedDb({
+				factory,
+				databaseName,
+				databaseVersion,
+				schema: [{ name: COORDINATION_STORE_NAME }],
+				onVersionChange: 'close',
+				toError: (reason) => new Error(reason === 'blocked'
+					? 'Coordination storage upgrade was blocked.'
+					: 'Could not open coordination storage.'),
+			});
+		} catch (error) {
+			attempt.failure();
+			throw error;
+		}
+		attempt.success();
+		return new IndexedDbCoordinationStore(database, diagnostics);
 	}
 
 	read(context?: LocalDebugPersistenceContext): Promise<unknown> {

@@ -1,3 +1,4 @@
+import { openIndexedDb } from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 export const MANAGED_ASSETS_POINTER_DB = 'tyrian-companion-managed-assets';
@@ -91,28 +92,27 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
 		const attempt = this.diagnostics.begin('managed_assets_pointer', 'open');
-		const opening = new Promise<IDBDatabase>((resolve, reject) => {
-			const request = this.factory.open(this.databaseName, 1);
-			let settled = false;
-			request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE); };
-			request.onerror = () => fail(); request.onblocked = () => fail();
-			request.onsuccess = () => {
-				if (settled || this.closed) { request.result.close(); if (!settled) fail(); return; }
-				settled = true; this.database = request.result;
-				request.result.onversionchange = () => { request.result.close(); this.database = null; this.closed = true; };
-				attempt.success();
-				resolve(request.result);
-			};
-			const fail = () => {
-				if (!settled) {
-					attempt.failure('storage_failure');
-					reject(new Error('Managed-assets pointer could not be opened.'));
-				}
-				settled = true;
-			};
+		const opening = openIndexedDb({
+			factory: this.factory,
+			databaseName: this.databaseName,
+			databaseVersion: 1,
+			schema: [{ name: STORE }],
+			accept: () => !this.closed,
+			onVersionChange: () => { this.database = null; this.closed = true; },
+			toError: () => new Error('Managed-assets pointer could not be opened.'),
 		});
 		this.opening = opening;
-		try { return await opening; } finally { if (this.opening === opening) this.opening = null; }
+		try {
+			const database = await opening;
+			this.database = database;
+			attempt.success();
+			return database;
+		} catch (error) {
+			attempt.failure('storage_failure');
+			throw error;
+		} finally {
+			if (this.opening === opening) this.opening = null;
+		}
 	}
 }
 

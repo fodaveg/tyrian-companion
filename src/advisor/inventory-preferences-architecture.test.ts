@@ -11,7 +11,9 @@ const PRODUCT_MODULES = readdirSync(new URL('.', import.meta.url))
 const FORBIDDEN_IMPORTS = ["'../ui/", "'../sessions/", "'../account/", "'../catalog/", "'obsidian'"];
 const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
 	['inventory-preferences-runtime.ts', ['../core/local-debug-action-runner']],
-	['inventory-preferences-store.ts', ['../core/local-debug-persistence']],
+	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
+	// only the shared open handshake, so it widens no capability this boundary guards.
+	['inventory-preferences-store.ts', ['../core/indexed-db-open', '../core/local-debug-persistence']],
 ]);
 
 describe('inventory preferences architecture', () => {

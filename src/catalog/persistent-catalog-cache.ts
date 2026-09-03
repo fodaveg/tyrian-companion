@@ -10,6 +10,7 @@ import type {
 	CatalogKind,
 } from './public-catalog-model';
 import { isCatalogJsonValue, isNormalizedCatalogEntity } from './public-catalog-validators';
+import { openIndexedDb } from '../core/indexed-db-open';
 import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 export const CATALOG_CACHE_DB_NAME = 'tyrian-companion-public-catalog';
@@ -146,41 +147,31 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
-	static open(
+	static async open(
 		factory: IDBFactory,
 		databaseName: string,
 		databaseVersion = CATALOG_CACHE_DB_VERSION,
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbCatalogRecordStore> {
 		const attempt = diagnostics.begin('catalog', 'open');
-		return new Promise((resolve, reject) => {
-			const request = factory.open(databaseName, databaseVersion);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				const database = request.result;
-				if (!database.objectStoreNames.contains(CATALOG_CACHE_STORE_NAME)) {
-					database.createObjectStore(CATALOG_CACHE_STORE_NAME);
-				}
-			};
-			request.onerror = () => {
-				if (!settled) { attempt.failure(); reject(new Error('Could not open the public catalog cache.')); }
-				settled = true;
-			};
-			request.onblocked = () => {
-				if (!settled) { attempt.failure(); reject(new Error('Public catalog cache upgrade was blocked.')); }
-				settled = true;
-			};
-			request.onsuccess = () => {
-				if (settled) {
-					request.result.close();
-					return;
-				}
-				settled = true;
-				request.result.onversionchange = () => request.result.close();
-				attempt.success();
-				resolve(new IndexedDbCatalogRecordStore(request.result, diagnostics));
-			};
-		});
+		let database: IDBDatabase;
+		try {
+			database = await openIndexedDb({
+				factory,
+				databaseName,
+				databaseVersion,
+				schema: [{ name: CATALOG_CACHE_STORE_NAME }],
+				onVersionChange: 'close',
+				toError: (reason) => new Error(reason === 'blocked'
+					? 'Public catalog cache upgrade was blocked.'
+					: 'Could not open the public catalog cache.'),
+			});
+		} catch (error) {
+			attempt.failure();
+			throw error;
+		}
+		attempt.success();
+		return new IndexedDbCatalogRecordStore(database, diagnostics);
 	}
 
 	get(key: string): Promise<unknown> {

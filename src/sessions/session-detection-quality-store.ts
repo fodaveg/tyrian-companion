@@ -3,6 +3,7 @@ import {
 	isDetectionQualityEvent,
 	type DetectionQualityEvent,
 } from './session-detection-quality';
+import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	type LocalDebugPersistenceContext,
@@ -119,40 +120,24 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
 		const attempt = this.diagnostics.begin('detection_quality', 'open', context);
-		const opening = new Promise<IDBDatabase>((resolve, reject) => {
-			const request = this.factory.open(this.databaseName, DETECTION_QUALITY_DB_VERSION);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				if (!request.result.objectStoreNames.contains(DETECTION_QUALITY_STORE_NAME)) {
-					request.result.createObjectStore(DETECTION_QUALITY_STORE_NAME);
-				}
-			};
-			request.onerror = () => fail('Could not open detection quality storage.');
-			request.onblocked = () => fail('Detection quality storage upgrade was blocked.');
-			request.onsuccess = () => {
-				if (settled || this.unavailable) {
-					request.result.close();
-					return;
-				}
-				settled = true;
-				const database = request.result;
-				database.onversionchange = () => {
-					database.close();
-					if (this.database === database) this.database = null;
-					this.unavailable = true;
-				};
-				this.database = database;
-				resolve(database);
-			};
-
-			function fail(message: string): void {
-				if (!settled) reject(new Error(message));
-				settled = true;
-			}
+		const opening = openIndexedDb({
+			factory: this.factory,
+			databaseName: this.databaseName,
+			databaseVersion: DETECTION_QUALITY_DB_VERSION,
+			schema: [{ name: DETECTION_QUALITY_STORE_NAME }],
+			accept: () => !this.unavailable,
+			onVersionChange: (database) => {
+				if (this.database === database) this.database = null;
+				this.unavailable = true;
+			},
+			toError: (reason) => new Error(reason === 'blocked'
+				? 'Detection quality storage upgrade was blocked.'
+				: 'Could not open detection quality storage.'),
 		});
 		this.opening = opening;
 		try {
 			const database = await opening;
+			this.database = database;
 			attempt.success();
 			return database;
 		} catch (error) {

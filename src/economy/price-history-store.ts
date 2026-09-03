@@ -14,6 +14,7 @@ import {
 	type PriceHistoryWatchItemV1,
 } from './price-history-model';
 import { buildPriceHistoryDailyAggregates } from './price-history-statistics';
+import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
@@ -71,52 +72,52 @@ export class IndexedDbPriceHistoryStore {
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
-	static open(
+	static async open(
 		factory: IDBFactory,
 		databaseName = PRICE_HISTORY_DB_NAME,
 		databaseVersion = PRICE_HISTORY_DB_VERSION,
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbPriceHistoryStore> {
 		const attempt = diagnostics.begin('price_history', 'open');
-		return new Promise((resolve, reject) => {
-			const request = factory.open(databaseName, databaseVersion);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				const database = request.result;
-				if (!database.objectStoreNames.contains(PRICE_HISTORY_SNAPSHOT_STORE)) {
-					const snapshots = database.createObjectStore(PRICE_HISTORY_SNAPSHOT_STORE, { keyPath: ['vaultId', 'slotStartMs'] });
-					snapshots.createIndex('by-vault-captured', ['vaultId', 'capturedAtMs']);
-				}
-				if (!database.objectStoreNames.contains(PRICE_HISTORY_DAILY_STORE)) {
-					const daily = database.createObjectStore(PRICE_HISTORY_DAILY_STORE, { keyPath: ['vaultId', 'itemId', 'dayUtc'] });
-					daily.createIndex('by-vault-day', ['vaultId', 'dayUtc']);
-					daily.createIndex('by-vault-item-day', ['vaultId', 'itemId', 'dayUtc']);
-				}
-				if (!database.objectStoreNames.contains(PRICE_HISTORY_WATCH_STORE)) {
-					const watch = database.createObjectStore(PRICE_HISTORY_WATCH_STORE, { keyPath: ['vaultId', 'itemId'] });
-					watch.createIndex('by-vault-observed', ['vaultId', 'lastObservedAtMs']);
-				}
-				if (!database.objectStoreNames.contains(PRICE_HISTORY_META_STORE)) {
-					database.createObjectStore(PRICE_HISTORY_META_STORE, { keyPath: ['vaultId', 'key'] });
-				}
-			};
-			request.onblocked = () => fail(new PriceHistoryStoreError('blocked'));
-			request.onerror = () => {
-				const future = request.error?.name === 'VersionError';
-				fail(new PriceHistoryStoreError(future ? 'future_schema' : 'unavailable'));
-			};
-			request.onsuccess = () => {
-				if (settled) { request.result.close(); return; }
-				settled = true;
-				request.result.onversionchange = () => request.result.close();
-				attempt.success();
-				resolve(new IndexedDbPriceHistoryStore(request.result, diagnostics));
-			};
-			function fail(error: Error): void {
-				if (!settled) { attempt.failure(localDebugStorageFailureCode(error)); reject(error); }
-				settled = true;
-			}
+		const opening = openIndexedDb({
+			factory,
+			databaseName,
+			databaseVersion,
+			schema: [
+				{
+					name: PRICE_HISTORY_SNAPSHOT_STORE,
+					keyPath: ['vaultId', 'slotStartMs'],
+					indexes: [{ name: 'by-vault-captured', keyPath: ['vaultId', 'capturedAtMs'] }],
+				},
+				{
+					name: PRICE_HISTORY_DAILY_STORE,
+					keyPath: ['vaultId', 'itemId', 'dayUtc'],
+					indexes: [
+						{ name: 'by-vault-day', keyPath: ['vaultId', 'dayUtc'] },
+						{ name: 'by-vault-item-day', keyPath: ['vaultId', 'itemId', 'dayUtc'] },
+					],
+				},
+				{
+					name: PRICE_HISTORY_WATCH_STORE,
+					keyPath: ['vaultId', 'itemId'],
+					indexes: [{ name: 'by-vault-observed', keyPath: ['vaultId', 'lastObservedAtMs'] }],
+				},
+				{ name: PRICE_HISTORY_META_STORE, keyPath: ['vaultId', 'key'] },
+			],
+			onVersionChange: 'close',
+			toError: (reason, error) => new PriceHistoryStoreError(reason === 'blocked'
+				? 'blocked'
+				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
 		});
+		let database: IDBDatabase;
+		try {
+			database = await opening;
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error));
+			throw error;
+		}
+		attempt.success();
+		return new IndexedDbPriceHistoryStore(database, diagnostics);
 	}
 
 	async ensureSeedWatchList(vaultId: string, nowMs: number): Promise<PriceHistoryWatchItemV1[]> {

@@ -20,8 +20,11 @@ const IMPORTS = new Map<string, string[]>([
 		'./price-history-capture', './price-history-model', './price-history-store',
 	]],
 	['src/economy/price-history-statistics.ts', ['./price-history-model']],
+	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
+	// only the shared open handshake, so it widens no capability this boundary guards.
 	['src/economy/price-history-store.ts', [
-		'../core/local-debug-persistence', './price-history-model', './price-history-statistics',
+		'../core/indexed-db-open', '../core/local-debug-persistence',
+		'./price-history-model', './price-history-statistics',
 	]],
 ]);
 

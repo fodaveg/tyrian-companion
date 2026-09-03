@@ -22,6 +22,7 @@ import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
 } from '../core/local-debug-persistence';
+import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	EMITTED_ALERT_RETENTION,
 	isEmittedAlertRecord,
@@ -77,72 +78,60 @@ export class IndexedDbHalloweenStore {
 		database.onversionchange = () => { this.closed = true; database.close(); };
 	}
 
-	static open(
+	static async open(
 		factory: IDBFactory,
 		databaseName = HALLOWEEN_DB_NAME,
 		databaseVersion = HALLOWEEN_DB_VERSION,
 		diagnostics = new LocalDebugPersistenceProbe(),
 	): Promise<IndexedDbHalloweenStore> {
 		const attempt = diagnostics.begin('halloween', 'open');
-		return new Promise((resolve, reject) => {
-			const request = factory.open(databaseName, databaseVersion);
-			let settled = false;
-			request.onupgradeneeded = () => {
-				const db = request.result;
-				if (!db.objectStoreNames.contains(HALLOWEEN_OBSERVATION_STORE)) {
-					db.createObjectStore(HALLOWEEN_OBSERVATION_STORE, { keyPath: ['vaultId', 'accountRef', 'observationId'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_SEEN_STORE)) {
-					db.createObjectStore(HALLOWEEN_SEEN_STORE, { keyPath: ['vaultId', 'accountRef', 'itemId'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_NOTICE_STORE)) {
-					const notices = db.createObjectStore(HALLOWEEN_NOTICE_STORE, { keyPath: ['vaultId', 'accountRef', 'noticeId'] });
-					notices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_EPISODE_STORE)) {
-					db.createObjectStore(HALLOWEEN_EPISODE_STORE, { keyPath: ['vaultId', 'accountRef', 'episodeId', 'itemId'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_EPISODE_META_STORE)) {
-					db.createObjectStore(HALLOWEEN_EPISODE_META_STORE, { keyPath: ['vaultId', 'accountRef', 'episodeId'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_META_STORE)) {
-					db.createObjectStore(HALLOWEEN_META_STORE, { keyPath: ['vaultId', 'accountRef'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_COMPARISON_STORE)) {
-					const comparisons = db.createObjectStore(HALLOWEEN_COMPARISON_STORE, {
-						keyPath: ['vaultId', 'accountRef', 'episodeId'],
-					});
-					comparisons.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_PRICE_ALERT_STORE)) {
-					db.createObjectStore(HALLOWEEN_PRICE_ALERT_STORE, { keyPath: ['vaultId', 'accountRef', 'itemId'] });
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_PRICE_NOTICE_STORE)) {
-					const priceNotices = db.createObjectStore(HALLOWEEN_PRICE_NOTICE_STORE, {
-						keyPath: ['vaultId', 'accountRef', 'noticeId'],
-					});
-					priceNotices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
-				}
-				if (!db.objectStoreNames.contains(HALLOWEEN_EMITTED_ALERT_STORE)) {
-					const emitted = db.createObjectStore(HALLOWEEN_EMITTED_ALERT_STORE, {
-						keyPath: ['vaultId', 'accountRef', 'alertId'],
-					});
-					emitted.createIndex('by-scope-emitted', ['vaultId', 'accountRef', 'emittedAt']);
-				}
-			};
-			request.onerror = () => fail(new HalloweenStoreError(request.error?.name === 'VersionError' ? 'future_schema' : 'unavailable'));
-			request.onblocked = () => fail(new HalloweenStoreError('blocked'));
-			request.onsuccess = () => {
-				if (settled) { request.result.close(); return; }
-				settled = true;
-				attempt.success();
-				resolve(new IndexedDbHalloweenStore(request.result, diagnostics));
-			};
-			function fail(error: HalloweenStoreError): void {
-				if (!settled) { attempt.failure(localDebugStorageFailureCode(error)); reject(error); }
-				settled = true;
-			}
+		const opening = openIndexedDb({
+			factory,
+			databaseName,
+			databaseVersion,
+			schema: [
+				{ name: HALLOWEEN_OBSERVATION_STORE, keyPath: ['vaultId', 'accountRef', 'observationId'] },
+				{ name: HALLOWEEN_SEEN_STORE, keyPath: ['vaultId', 'accountRef', 'itemId'] },
+				{
+					name: HALLOWEEN_NOTICE_STORE,
+					keyPath: ['vaultId', 'accountRef', 'noticeId'],
+					indexes: [{ name: 'by-scope-observed', keyPath: ['vaultId', 'accountRef', 'observedAt'] }],
+				},
+				{ name: HALLOWEEN_EPISODE_STORE, keyPath: ['vaultId', 'accountRef', 'episodeId', 'itemId'] },
+				{ name: HALLOWEEN_EPISODE_META_STORE, keyPath: ['vaultId', 'accountRef', 'episodeId'] },
+				{ name: HALLOWEEN_META_STORE, keyPath: ['vaultId', 'accountRef'] },
+				{
+					name: HALLOWEEN_COMPARISON_STORE,
+					keyPath: ['vaultId', 'accountRef', 'episodeId'],
+					indexes: [{ name: 'by-scope-observed', keyPath: ['vaultId', 'accountRef', 'observedAt'] }],
+				},
+				{ name: HALLOWEEN_PRICE_ALERT_STORE, keyPath: ['vaultId', 'accountRef', 'itemId'] },
+				{
+					name: HALLOWEEN_PRICE_NOTICE_STORE,
+					keyPath: ['vaultId', 'accountRef', 'noticeId'],
+					indexes: [{ name: 'by-scope-observed', keyPath: ['vaultId', 'accountRef', 'observedAt'] }],
+				},
+				{
+					name: HALLOWEEN_EMITTED_ALERT_STORE,
+					keyPath: ['vaultId', 'accountRef', 'alertId'],
+					indexes: [{ name: 'by-scope-emitted', keyPath: ['vaultId', 'accountRef', 'emittedAt'] }],
+				},
+			],
+			// No `onversionchange` handler, exactly as before: this store's methods
+			// keep using the connection and closing it underneath them would fail them.
+			toError: (reason, error) => new HalloweenStoreError(reason === 'blocked'
+				? 'blocked'
+				: error?.name === 'VersionError' ? 'future_schema' : 'unavailable'),
 		});
+		let database: IDBDatabase;
+		try {
+			database = await opening;
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error));
+			throw error;
+		}
+		attempt.success();
+		return new IndexedDbHalloweenStore(database, diagnostics);
 	}
 
 	async applyBackfill(
