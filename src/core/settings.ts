@@ -1,5 +1,6 @@
 import { getLanguage } from 'obsidian';
 
+import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from '../alerts/alert-contract';
 import { normalizeVaultRelativePath } from './vault-path';
 import type {
 	PriceHistoryDailyRetentionDays,
@@ -75,9 +76,24 @@ export interface TyrianSettings {
 	priceHistoryIntervalMinutes: PriceHistoryIntervalMinutes;
 	priceHistoryRawRetentionDays: PriceHistoryRawRetentionDays;
 	priceHistoryDailyRetentionDays: PriceHistoryDailyRetentionDays;
-	/** Halloween observation and alerts are an explicit opt-in. */
+	/**
+	 * Manual widening of the Halloween observation window. Since H13.3 the
+	 * calendar turns the surface on by itself, so this can only extend it, never
+	 * narrow it: see `halloweenObservationActive`.
+	 */
 	halloweenEnabled: boolean;
+	/** Net value per UNIT from which the Halloween policy adds its `valuable` reason. */
 	halloweenValueThresholdCopper: number;
+	/**
+	 * Net TOTAL of one observed gain from which a drop alerts on its own.
+	 *
+	 * Deliberately a second number rather than a new meaning for the one above:
+	 * they measure different things, and reusing the existing field would have
+	 * silently rewritten the per-unit policy of every install that had tuned it.
+	 */
+	valuableLootThresholdCopper: number;
+	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
+	alertWebhookUrl: string;
 	/** Local bid-vs-p90 alert. It cannot activate price history. */
 	halloweenPriceAlertEnabled: boolean;
 	halloweenPriceAlertMinimumAboveP90Bps: number;
@@ -115,6 +131,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	priceHistoryDailyRetentionDays: 180,
 	halloweenEnabled: false,
 	halloweenValueThresholdCopper: 10_000,
+	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
+	alertWebhookUrl: '',
 	halloweenPriceAlertEnabled: false,
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
@@ -197,6 +215,12 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		halloweenEnabled: data.halloweenEnabled === true,
 		halloweenValueThresholdCopper: safeNonNegativeInteger(data.halloweenValueThresholdCopper,
 			DEFAULT_SETTINGS.halloweenValueThresholdCopper),
+		// Absent on every pre-H13.3 install, which is why both read defensively instead of riding
+		// a schema bump: bumping would have reset the polling cadence and the debug opt-out of
+		// every existing install along with them.
+		valuableLootThresholdCopper: safeNonNegativeInteger(data.valuableLootThresholdCopper,
+			DEFAULT_SETTINGS.valuableLootThresholdCopper),
+		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		halloweenPriceAlertEnabled: data.halloweenPriceAlertEnabled === true,
 		halloweenPriceAlertMinimumAboveP90Bps: boundedNonNegativeInteger(
 			data.halloweenPriceAlertMinimumAboveP90Bps, DEFAULT_SETTINGS.halloweenPriceAlertMinimumAboveP90Bps, 100_000,
@@ -267,6 +291,22 @@ function halloweenPersonalValuation(value: unknown): ContainerPersonalValuationV
 
 function boundedNonNegativeInteger(value: unknown, fallback: number, maximum: number): number {
 	return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= maximum ? value as number : fallback;
+}
+
+/**
+ * Retains only an HTTPS destination.
+ *
+ * Anything else becomes the empty string, which means "off". A webhook URL is a
+ * bearer capability, so a stored `http://` entry is discarded on load rather
+ * than kept around waiting to be used in the clear.
+ */
+export function alertWebhookDestination(value: unknown): string {
+	if (typeof value !== 'string') return DEFAULT_SETTINGS.alertWebhookUrl;
+	const trimmed = value.trim();
+	if (trimmed.length === 0 || trimmed.length > 512) return DEFAULT_SETTINGS.alertWebhookUrl;
+	try {
+		return new URL(trimmed).protocol === 'https:' ? trimmed : DEFAULT_SETTINGS.alertWebhookUrl;
+	} catch { return DEFAULT_SETTINGS.alertWebhookUrl; }
 }
 
 function safeNonNegativeInteger(value: unknown, fallback: number): number {

@@ -468,6 +468,7 @@ function baseActions(): CompanionActions {
 		acknowledgeHalloweenNotice: async () => false,
 		getHalloweenPriceAlertState: () => ({ status: 'ready', projection: null, notices: [], unreadCount: 0 }),
 		acknowledgeHalloweenPriceNotice: async () => false,
+		getEmittedAlerts: () => [],
 	};
 }
 

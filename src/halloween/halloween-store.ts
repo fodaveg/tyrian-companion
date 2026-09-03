@@ -21,9 +21,15 @@ import {
 	LocalDebugPersistenceProbe,
 	localDebugStorageFailureCode,
 } from '../core/local-debug-persistence';
+import {
+	EMITTED_ALERT_RETENTION,
+	isEmittedAlertRecord,
+	type EmittedAlertRecordV1,
+} from '../alerts/alert-queue-record';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-export const HALLOWEEN_DB_VERSION = 5;
+/** v6 adds the H13.4 emitted-alert queue. Purely additive: no existing store is read or rewritten. */
+export const HALLOWEEN_DB_VERSION = 6;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
@@ -33,6 +39,7 @@ export const HALLOWEEN_META_STORE = 'meta-v1';
 export const HALLOWEEN_COMPARISON_STORE = 'loot-comparisons-v1';
 export const HALLOWEEN_PRICE_ALERT_STORE = 'price-alert-state-v1';
 export const HALLOWEEN_PRICE_NOTICE_STORE = 'price-notices-v1';
+export const HALLOWEEN_EMITTED_ALERT_STORE = 'emitted-alerts-v1';
 
 export type HalloweenStoreFailure = 'unavailable' | 'blocked' | 'future_schema' | 'corrupt' | 'quota';
 
@@ -114,6 +121,12 @@ export class IndexedDbHalloweenStore {
 						keyPath: ['vaultId', 'accountRef', 'noticeId'],
 					});
 					priceNotices.createIndex('by-scope-observed', ['vaultId', 'accountRef', 'observedAt']);
+				}
+				if (!db.objectStoreNames.contains(HALLOWEEN_EMITTED_ALERT_STORE)) {
+					const emitted = db.createObjectStore(HALLOWEEN_EMITTED_ALERT_STORE, {
+						keyPath: ['vaultId', 'accountRef', 'alertId'],
+					});
+					emitted.createIndex('by-scope-emitted', ['vaultId', 'accountRef', 'emittedAt']);
 				}
 			};
 			request.onerror = () => fail(new HalloweenStoreError(request.error?.name === 'VersionError' ? 'future_schema' : 'unavailable'));
@@ -494,6 +507,51 @@ export class IndexedDbHalloweenStore {
 		});
 	}
 
+	/**
+	 * Writes one emitted alert and trims the queue to its retention in the same transaction.
+	 *
+	 * The trim lives here rather than in a periodic sweep because there is no
+	 * sweep to hang it on: this database is only opened while the Halloween
+	 * surface is alive, so a queue that only ever grows would be trimmed exactly
+	 * never. Trimming on write also means the bound holds after a crash.
+	 */
+	enqueueAlert(record: EmittedAlertRecordV1): Promise<EmittedAlertRecordV1> {
+		if (!isEmittedAlertRecord(record)) return Promise.reject(new HalloweenStoreError('corrupt'));
+		return this.run([HALLOWEEN_EMITTED_ALERT_STORE], 'readwrite', (tx, resolve, reject) => {
+			const store = tx.objectStore(HALLOWEEN_EMITTED_ALERT_STORE);
+			store.put(structuredClone(record));
+			const upperBound = String.fromCharCode(0xff_ff);
+			const scope = IDBKeyRange.bound(
+				[record.vaultId, record.accountRef, ''], [record.vaultId, record.accountRef, upperBound],
+			);
+			const request = store.index('by-scope-emitted').getAllKeys(scope);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const excess = request.result.length - EMITTED_ALERT_RETENTION;
+					for (let index = 0; index < excess; index += 1) store.delete(request.result[index]!);
+					tx.oncomplete = () => resolve(structuredClone(record));
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	/** Newest first, so the panel's first row is the alert the player may have missed. */
+	readEmittedAlerts(vaultId: string, accountRef: string): Promise<EmittedAlertRecordV1[]> {
+		return this.run([HALLOWEEN_EMITTED_ALERT_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_EMITTED_ALERT_STORE).index('by-scope-emitted')
+				.getAll(IDBKeyRange.bound([vaultId, accountRef, ''], [vaultId, accountRef, String.fromCharCode(0xff_ff)]));
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					const alerts = request.result.map(parseEmittedAlert)
+						.sort((left, right) => right.emittedAt.localeCompare(left.emittedAt) || right.alertId.localeCompare(left.alertId));
+					tx.oncomplete = () => resolve(alerts);
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
 	readNotices(vaultId: string, accountRef: string): Promise<HalloweenNoticeV1[]> {
 		return this.run([HALLOWEEN_NOTICE_STORE], 'readonly', (tx, resolve, reject) => {
 			const request = tx.objectStore(HALLOWEEN_NOTICE_STORE).index('by-scope-observed')
@@ -603,6 +661,11 @@ function parseComparison(value: unknown, vaultId: string, accountRef: string): H
 
 function parsePriceNotice(value: unknown): HalloweenPriceNoticeV1 {
 	if (!isHalloweenPriceNotice(value)) throw new HalloweenStoreError('corrupt');
+	return structuredClone(value);
+}
+
+function parseEmittedAlert(value: unknown): EmittedAlertRecordV1 {
+	if (!isEmittedAlertRecord(value)) throw new HalloweenStoreError('corrupt');
 	return structuredClone(value);
 }
 

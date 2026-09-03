@@ -5,7 +5,7 @@ import { LiveSessionLootTracker } from './live-session-loot';
 
 describe('LiveSessionLootTracker', () => {
 	it('accumulates positive poll gains, resolves readable names, and alerts independently from Halloween', async () => {
-		const onValuable = vi.fn();
+		const onAlert = vi.fn();
 		const gateway = {
 			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
 				? { status: 200, headers: {}, body: [{ id: 19722, name: 'Pimpollo de madera ancestral' }] }
@@ -13,7 +13,7 @@ describe('LiveSessionLootTracker', () => {
 					buys: { quantity: 100, unit_price: 20_000 }, sells: { quantity: 100, unit_price: 21_000 } }] }),
 		};
 		const tracker = new LiveSessionLootTracker({
-			gateway, locale: () => 'es', thresholdCopper: () => 30_000, onValuable,
+			gateway, locale: () => 'es', thresholdCopper: () => 30_000, onAlert,
 		});
 		tracker.begin('session');
 		await tracker.observe('session', delta(19722, 2));
@@ -23,26 +23,27 @@ describe('LiveSessionLootTracker', () => {
 			status: 'observing', knownTotalCopper: 51_000,
 			rows: [{ itemId: 19722, name: 'Pimpollo de madera ancestral', quantity: 3, unitCopper: 17_000, totalCopper: 51_000 }],
 		});
-		expect(onValuable).toHaveBeenCalledOnce();
-		expect(onValuable).toHaveBeenCalledWith({ name: 'Pimpollo de madera ancestral', quantity: 2, totalCopper: 34_000 });
+		expect(onAlert).toHaveBeenCalledOnce();
+		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 19722, name: 'Pimpollo de madera ancestral',
+			quantity: 2, totalCopper: 34_000, reason: 'valuable' });
 		expect(tracker.displayNames()).toEqual({ 'item:19722': 'Pimpollo de madera ancestral' });
 	});
 
 	it('reconciles the accumulated feed against the final session net without emitting a second alert', async () => {
-		const onValuable = vi.fn();
+		const onAlert = vi.fn();
 		const gateway = {
 			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
 				? { status: 200, headers: {}, body: [{ id: 1, name: 'Infusión valiosa' }] }
 				: { status: 200, headers: {}, body: [{ id: 1, whitelisted: true,
 					buys: { quantity: 1, unit_price: 1_000_000 }, sells: { quantity: 1, unit_price: 1_100_000 } }] }),
 		};
-		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 10_000, onValuable });
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 10_000, onAlert });
 		tracker.begin('session');
 		await tracker.observe('session', delta(1, 2));
 		await tracker.reconcile('session', delta(1, 1));
 
 		expect(tracker.getState()).toMatchObject({ status: 'complete', rows: [{ quantity: 1, totalCopper: 850_000 }] });
-		expect(onValuable).toHaveBeenCalledTimes(1);
+		expect(onAlert).toHaveBeenCalledTimes(1);
 	});
 
 	it('never exposes a raw id when public metadata is unavailable', async () => {
@@ -61,7 +62,7 @@ describe('LiveSessionLootTracker', () => {
 	});
 
 	it('retries unresolved enrichment on an empty later poll and emits one pending valuable alert', async () => {
-		const onValuable = vi.fn();
+		const onAlert = vi.fn();
 		let available = false;
 		const gateway = {
 			requestDetailed: vi.fn(async (path: string) => {
@@ -72,10 +73,10 @@ describe('LiveSessionLootTracker', () => {
 						buys: { quantity: 1, unit_price: 1_000_000 }, sells: { quantity: 1, unit_price: 1_100_000 } }] };
 			}),
 		};
-		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 500_000, onValuable });
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 500_000, onAlert });
 		tracker.begin('session');
 		await tracker.observe('session', delta(1, 1));
-		expect(onValuable).not.toHaveBeenCalled();
+		expect(onAlert).not.toHaveBeenCalled();
 
 		available = true;
 		await tracker.observe('session', delta(1, 0));
@@ -84,8 +85,9 @@ describe('LiveSessionLootTracker', () => {
 		expect(tracker.getState()).toMatchObject({
 			rows: [{ name: 'Infusión valiosa', quantity: 1, totalCopper: 850_000 }], error: null,
 		});
-		expect(onValuable).toHaveBeenCalledOnce();
-		expect(onValuable).toHaveBeenCalledWith({ name: 'Infusión valiosa', quantity: 1, totalCopper: 850_000 });
+		expect(onAlert).toHaveBeenCalledOnce();
+		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 1, name: 'Infusión valiosa',
+			quantity: 1, totalCopper: 850_000, reason: 'valuable' });
 	});
 
 	it('batches public item and price requests in groups of at most 200 ids', async () => {

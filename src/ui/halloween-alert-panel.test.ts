@@ -15,6 +15,7 @@ describe('Halloween alert panel DOM', () => {
 			acknowledgeHalloweenNotice: acknowledge,
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
 		}, translator('en'));
 		expect(acknowledge).not.toHaveBeenCalled();
 		const all = walk(mount);
@@ -47,6 +48,7 @@ describe('Halloween alert panel DOM', () => {
 			acknowledgeHalloweenNotice: acknowledge,
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
 		}, translator('en'));
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
@@ -74,6 +76,7 @@ describe('Halloween alert panel DOM', () => {
 				? { status: 'store_corrupt' as const, projection: null, notices: [], unreadCount: 0 }
 				: disabledPriceState(),
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
 		}, translator('en'));
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
@@ -108,6 +111,7 @@ describe('Halloween alert panel DOM', () => {
 			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: () => ({ status: 'unread', projection: null, notices: [price], unreadCount: 1 }),
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => true),
+			getEmittedAlerts: () => [],
 		}, translator('en'));
 		const all = walk(mount);
 		expect(all.filter(({ tag }) => tag === 'tbody')[0]?.children).toHaveLength(18);

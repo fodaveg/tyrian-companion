@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { compareStorageSnapshots } from './account/storage-delta';
+import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS } from './alerts/alert-contract';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
 import TyrianCompanionPlugin from './main';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
@@ -74,9 +75,10 @@ describe('deferred runtime startup with persisted terminal state', () => {
 
 		await expect(plugin.initializeRuntime()).resolves.toBeUndefined();
 
+		// H13.3: an active session polls at five minutes, not at the idle detection cadence.
 		expect(arm).toHaveBeenCalledWith(
 			expect.objectContaining({ snapshotId: record.baselineSnapshot.snapshotId }),
-			DEFAULT_SETTINGS.pollingIntervalMinutes * 60_000,
+			ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS,
 		);
 		expect(plugin.getLiveSessionLoot()).toMatchObject({ status: 'observing', sessionId: 'session-1', restored: true });
 	});

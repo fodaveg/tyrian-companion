@@ -54,7 +54,7 @@ describe('H11-A architecture and UI contract', () => {
 		expect(main).toMatch(/vault\.on\('modify',[\s\S]*refreshHalloweenBackfill/u);
 		expect(main).toMatch(/vault\.on\('rename',[\s\S]*refreshHalloweenBackfill/u);
 		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
-		expect(store).toContain('HALLOWEEN_DB_VERSION = 5');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 6');
 		expect(store).toContain("HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1'");
 		expect(store).toContain("HALLOWEEN_META_STORE = 'meta-v1'");
 	});

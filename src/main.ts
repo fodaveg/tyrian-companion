@@ -3,6 +3,22 @@ import { apiVersion, Menu, Notice, Platform, Plugin, TFile, type ViewCreator } f
 import { shell } from 'electron';
 
 import { GuildWars2AccountGateway } from './account/account-service';
+import {
+	ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS,
+	ALERT_LATENCY_MINUTES,
+	type AlertKind,
+	type AlertV1,
+} from './alerts/alert-contract';
+import { AlertEmitter, type AlertDeliveryReport } from './alerts/alert-emitter';
+import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
+import { EmittedAlertQueue } from './alerts/emitted-alert-queue';
+import { browserAlertAudioContextFactory, playAlertSound } from './alerts/alert-sound';
+import {
+	hostSystemNotificationConstructor,
+	showSystemNotification,
+} from './alerts/alert-system-notification';
+import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
+import { alwaysAlertReasonsOf, decideLootAlert } from './alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import {
 	GuildWars2Client,
@@ -44,10 +60,13 @@ import {
 	LocalDebugPersistenceProbe,
 } from './core/local-debug-persistence';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
-import { translateRuntime } from './core/i18n-runtime-catalog';
+import { translateRuntime, type RuntimeTranslationKey } from './core/i18n-runtime-catalog';
 import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
+import { halloweenObservationActive } from './halloween/halloween-activation';
+import type { HalloweenAlertItem } from './halloween/halloween-model';
 import { HalloweenEvidenceService } from './halloween/halloween-evidence-service';
+import { IndexedDbHalloweenStore } from './halloween/halloween-store';
 import { scanHalloweenSessionNotes } from './halloween/halloween-note-backfill';
 import { HalloweenRuntime, type HalloweenRuntimeState } from './halloween/halloween-runtime';
 import { HalloweenUnlockService } from './halloween/halloween-unlocks';
@@ -279,6 +298,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	private halloweenAccountRef: string | null = null;
+	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
+	private alertEmitter: AlertEmitter | null = null;
+	/** Scope of the durable alert queue. Resolved from the session baseline when Halloween has not set it. */
+	private alertAccountRef: string | null = null;
+	private alertScopeFlight: Promise<string | null> | null = null;
+	private alertQueue: EmittedAlertQueue | null = null;
+	private emittedAlerts: readonly EmittedAlertRecordV1[] = [];
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -519,17 +545,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		const client = new GuildWars2Client(transport, apiKeyProvider);
 		const publicClient = new GuildWars2PublicCatalogClient(transport);
+		this.alertQueue = new EmittedAlertQueue({
+			vaultId,
+			open: async () => await IndexedDbHalloweenStore.open(
+				window.indexedDB, undefined, undefined, this.persistenceDiagnostics('halloween', 'halloween_alert'),
+			),
+			accountRef: () => this.resolveAlertAccountRef(),
+		});
+		this.alertEmitter = this.buildAlertEmitter(this.alertQueue);
 		this.liveSessionLoot = new LiveSessionLootTracker({
 			gateway: publicClient,
 			locale: () => this.settings.language,
-			thresholdCopper: () => this.settings.halloweenValueThresholdCopper,
+			thresholdCopper: () => this.settings.valuableLootThresholdCopper,
 			onStateChange: () => this.renderViews(),
-			onValuable: ({ name, quantity, totalCopper }) => this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.valuableLoot', {
-					name, quantity, value: formatCopperCompact(totalCopper, this.settings.language),
-				}),
-				'valuable_loot',
-			),
+			onAlert: (alert) => { this.dispatchAlert(alert); },
 		});
 		const inventoryTransport = new ObsidianRequestTransport({
 			timeoutMs: 30_000,
@@ -556,10 +585,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 			diagnostics: this.localDebugActions ?? undefined,
 			persistenceDiagnostics: this.persistenceDiagnostics('halloween', 'halloween_alert'),
 			accountRef: () => this.halloweenAccountRef,
-			onNotice: () => this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.halloweenPriceHigh'),
-				'halloween_price_alert',
-			),
+			// H13.4 routes the price surface through the one exit point. The evaluation behind
+			// it is still the local p90 crossing; H13.2 replaces the detector, not the kind.
+			onNotice: (notice) => { this.dispatchAlert({
+				kind: 'sell_signal', itemId: notice.itemId, quantity: 1,
+				name: translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
+				totalCopper: notice.bidCopper, reason: 'bid_above_reference',
+			}); },
 			onStateChange: () => this.renderViews(),
 		});
 		this.priceHistory = new PriceHistoryRuntime({
@@ -603,17 +635,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 				active: () => this.settings.priceHistoryEnabled,
 				observeItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
 			},
-			onNotice: (notice) => this.emitNotice(
-				translateRuntime(createTranslator(this.settings.language), 'notices.halloweenObserved', { count: notice.items.length }),
-				'halloween_observation',
-			),
+			// The policy verdict is the "always alert" half of the H13.3 OR: one alert per item
+			// that earned a value-free reason, instead of one toast counting them.
+			onNotice: (notice) => { for (const item of notice.items) this.dispatchPolicyAlert(item); },
 			onStateChange: () => this.renderViews(),
 		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
 			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
 			const renamedSessionNote = typeof oldPath === 'string' && oldPath.endsWith('.md') && oldPath.startsWith(sessionRoot);
-			if (this.settings.halloweenEnabled && (currentSessionNote || renamedSessionNote)) {
+			if (this.halloweenObservationActive() && (currentSessionNote || renamedSessionNote)) {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'halloween', action: 'halloween_backfill' },
 					async () => { await this.halloween?.refreshBackfill(); });
@@ -896,7 +927,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
 			this.priceHistory.setOnline(navigator.onLine);
 		}
-		if (this.settings.halloweenEnabled) {
+		if (this.halloweenObservationActive()) {
 			await this.halloween.activate();
 			this.halloween.setOnline(navigator.onLine);
 		}
@@ -934,6 +965,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.priceHistory?.dispose();
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
+		this.alertQueue?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -1172,9 +1204,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 		episodeId: string,
 		review?: Parameters<HalloweenRuntime['observeDelta']>[0]['review'],
 	): Promise<void> {
-		if (!this.settings.halloweenEnabled || this.halloween === null || delta.status === 'invalid' || delta.accountId === null) return;
+		if (delta.status === 'invalid' || delta.accountId === null) return;
+		// The account hash is resolved before the seasonal gate, not after it: it scopes the
+		// durable alert queue too, and outside the festival window that queue is the only
+		// surface still writing.
 		const accountRef = await this.switchHalloweenAccount(delta.accountId);
 		if (accountRef !== this.halloweenAccountRef) return;
+		if (!this.halloweenObservationActive() || this.halloween === null) return;
 		await this.halloween.observeDelta({ delta, source, episodeId, review });
 	}
 
@@ -1189,15 +1225,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		parent?: ResolvedLocalDebugActionContext,
 	): Promise<string> {
 		const accountRef = await sha256Text(accountId);
+		this.alertAccountRef = accountRef;
 		if (accountRef === this.halloweenAccountRef) {
-			if (this.settings.halloweenEnabled && this.halloween !== null) await this.halloween.activate(parent);
+			if (this.halloweenObservationActive() && this.halloween !== null) await this.halloween.activate(parent);
 			return accountRef;
 		}
 		this.halloweenAccountRef = accountRef;
 		await this.halloweenPriceAlert?.configure(
 			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,
 		);
-		if (!this.settings.halloweenEnabled || this.halloween === null) return accountRef;
+		if (!this.halloweenObservationActive() || this.halloween === null) return accountRef;
 		this.halloween.disable(parent);
 		await this.halloween.activate(parent);
 		this.halloween.setOnline(navigator.onLine);
@@ -1895,6 +1932,181 @@ export default class TyrianCompanionPlugin extends Plugin {
 		);
 	}
 
+	/** True while the Halloween observation surface is live: the pack's window, or the manual widening. */
+	private halloweenObservationActive(): boolean {
+		return halloweenObservationActive(this.settings.halloweenEnabled, Date.now());
+	}
+
+	/**
+	 * The single exit point for loot and price alerts.
+	 *
+	 * Operational messages (sync results, command failures, "the plugin is still
+	 * starting") keep going through `emitNotice`: they are answers to something
+	 * the user just did, and waking the desktop and the speakers for them would
+	 * make the channels that matter meaningless.
+	 */
+	emitAlert(alert: AlertV1): Promise<AlertDeliveryReport> {
+		const emitter = this.alertEmitter;
+		if (emitter === null) return Promise.resolve({ delivered: [], failed: [], rejected: true });
+		return emitter.emit(alert);
+	}
+
+	/** Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback. */
+	private dispatchAlert(alert: AlertV1): void {
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
+			async () => await this.emitAlert(alert));
+	}
+
+	/** Projects one policy verdict onto the value-free half of the H13.3 OR and emits it. */
+	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
+		const alert = decideLootAlert({
+			itemId: item.itemId,
+			name: item.name ?? translateRuntime(createTranslator(this.settings.language), 'halloween.unknownItem', {
+				itemId: item.itemId,
+			}),
+			quantity: item.quantity,
+			totalCopper: null,
+			alwaysAlertReasons: alwaysAlertReasonsOf(item),
+		}, this.settings.valuableLootThresholdCopper);
+		if (alert !== null) this.dispatchAlert(alert);
+	}
+
+	/**
+	 * Builds the five channels once, in the order the player perceives them.
+	 *
+	 * Each closure reads `this.settings` at delivery time rather than capturing
+	 * it: a webhook the user pastes mid-session has to work on the next alert
+	 * without rebuilding the emitter.
+	 */
+	private buildAlertEmitter(queue: EmittedAlertQueue): AlertEmitter {
+		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
+		// same transport every other call uses instead of reaching for Obsidian's request API
+		// here. Configured never to retry: a webhook host that is down is not worth a second
+		// attempt in the middle of a run.
+		const webhookTransport = new ObsidianRequestTransport({
+			maxRetries: 0, timeoutMs: ALERT_WEBHOOK_TIMEOUT_MS, diagnostics: this.localDebugActions ?? undefined,
+		});
+		return new AlertEmitter([
+			{
+				id: 'toast',
+				deliver: (alert) => { this.emitNotice(this.alertToastText(alert), alertNoticeSource(alert.kind)); },
+			},
+			{
+				id: 'system_notification',
+				deliver: (alert) => {
+					const translator = createTranslator(this.settings.language);
+					const outcome = showSystemNotification(hostSystemNotificationConstructor(window), {
+						title: translateRuntime(translator, alertTitleKey(alert.kind)),
+						body: this.alertBodyText(alert),
+						// Optional chaining for the same reason `diagnosticPlatform` uses it: an
+						// embedding host without `Platform` must degrade, not throw.
+						platform: Platform?.isLinux ? 'linux' : 'other',
+					});
+					if (outcome !== 'shown') throw new Error(`System notification ${outcome}.`);
+				},
+			},
+			{
+				id: 'sound',
+				deliver: () => {
+					if (playAlertSound(browserAlertAudioContextFactory(window)) !== 'played') {
+						throw new Error('No audio output was available.');
+					}
+				},
+			},
+			{
+				id: 'webhook',
+				deliver: async (alert) => {
+					const outcome = await postAlertWebhook(
+						this.settings.alertWebhookUrl, alert, this.alertBodyText(alert),
+						{ post: async (request) => await webhookTransport.send(request) },
+						{
+							schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+							cancel: (handle) => { window.clearTimeout(handle as number); },
+						},
+					);
+					if (outcome === 'failed') throw new Error('The alert webhook did not answer in time.');
+				},
+			},
+			{
+				id: 'queue',
+				deliver: async (alert) => {
+					if (!await queue.enqueue(alert)) throw new Error('The durable alert queue is unavailable.');
+					this.refreshEmittedAlerts();
+				},
+			},
+		]);
+	}
+
+	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */
+	private resolveAlertAccountRef(): Promise<string | null> {
+		if (this.alertAccountRef !== null) return Promise.resolve(this.alertAccountRef);
+		if (this.alertScopeFlight !== null) return this.alertScopeFlight;
+		const accountId = this.sessions?.getBaselineSnapshot()?.accountId ?? null;
+		if (accountId === null) return Promise.resolve(null);
+		const flight = sha256Text(accountId).then(
+			(accountRef) => { this.alertAccountRef = accountRef; return accountRef; },
+			() => null,
+		).finally(() => { if (this.alertScopeFlight === flight) this.alertScopeFlight = null; });
+		this.alertScopeFlight = flight;
+		return flight;
+	}
+
+	/** Newest first. Read by the panel so a dropped banner is still recoverable. */
+	getEmittedAlerts(): readonly EmittedAlertRecordV1[] {
+		return this.emittedAlerts;
+	}
+
+	/**
+	 * Reloads the durable queue into the synchronous view model.
+	 *
+	 * Only called once an alert has been written or an account resolved, never
+	 * on load: the queue opens its database on first use, and a vault that never
+	 * farms must not pay for a connection it will not read.
+	 */
+	private refreshEmittedAlerts(): void {
+		const queue = this.alertQueue;
+		if (queue === null) return;
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'halloween', action: 'halloween_alert', state: 'alert_queue_read' },
+			async () => {
+				this.emittedAlerts = await queue.read();
+				this.renderViews();
+			});
+	}
+
+	/** Toast copy: the alert plus the latency the interface owes the player. */
+	private alertToastText(alert: AlertV1): string {
+		const translator = createTranslator(this.settings.language);
+		return `${this.alertBodyText(alert)} ${translateRuntime(translator, 'notices.alertLatency', {
+			minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
+		})}`;
+	}
+
+	/** One line per kind. A price signal never borrows the loot wording: it is not a find. */
+	private alertBodyText(alert: AlertV1): string {
+		const translator = createTranslator(this.settings.language);
+		const reason = translateRuntime(translator, alertReasonKey(alert.reason));
+		if (alert.kind === 'hold_signal') return translateRuntime(translator, 'notices.holdSignal');
+		if (alert.kind === 'sell_signal') {
+			return translateRuntime(translator, 'notices.sellSignal', {
+				name: alert.name,
+				value: alert.totalCopper === null
+					? translateRuntime(translator, 'alerts.queue.noValue')
+					: formatCopperCompact(alert.totalCopper, this.settings.language),
+			});
+		}
+		if (alert.totalCopper === null) {
+			return translateRuntime(translator, 'notices.alwaysAlertLoot', {
+				name: alert.name, quantity: alert.quantity, reason,
+			});
+		}
+		return translateRuntime(translator, 'notices.valuableLoot', {
+			name: alert.name, quantity: alert.quantity,
+			value: formatCopperCompact(alert.totalCopper, this.settings.language),
+		});
+	}
+
 	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
 	private emitNotice(message: string, source: NoticeDiagnosticSource): void {
 		const deliver = (): void => { new Notice(message); };
@@ -2427,6 +2639,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Starts the loot poll of an active session, manual or assisted alike.
+	 *
+	 * The cadence here is deliberately NOT `pollingIntervalMinutes`. That setting
+	 * is the idle detection cadence, floored at ten minutes because a background
+	 * hunt for a start proposal re-reads bytes a 5-10 minute cache cannot have
+	 * changed. Once a session is open the player is farming and the alert is the
+	 * product, so it polls at the five minutes H13.3 declares: the fastest
+	 * cadence that still buys new bytes, and the one the latency copy quotes.
+	 */
 	private startLiveObservation(sessionId: string, restored: boolean): void {
 		this.sessionSummarySaveState = 'unknown';
 		this.storedSessionLootSummary = null;
@@ -2435,7 +2657,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const baseline = this.sessions.getBaselineSnapshot();
 		const state = baseline === null
 			? { status: 'error' as const }
-			: this.assistedDetection.armFromSnapshot(baseline, this.settings.pollingIntervalMinutes * 60_000);
+			: this.assistedDetection.armFromSnapshot(baseline, ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS);
 		if (state.status !== 'error') return;
 		this.emitNotice(
 			translateRuntime(createTranslator(this.settings.language), 'notices.liveObservationUnavailable'),
@@ -2478,10 +2700,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.settingTab.refreshForLocaleChange();
 		}
-		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off') {
+		// Turning assisted detection off never silences an active session: H13.3 made the loot
+		// poll a property of the session, not of the detection surface, so the disarm only
+		// applies while there is nothing being farmed.
+		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off' &&
+			this.sessions.getState().status !== 'active') {
 			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
 		}
-		if (previousPollingInterval !== nextSettings.pollingIntervalMinutes) {
+		// The Settings cadence is the idle detection cadence. An active session polls at the
+		// H13.3 five minutes and must not be slowed down to 60 by an unrelated preference edit.
+		if (previousPollingInterval !== nextSettings.pollingIntervalMinutes &&
+			this.sessions.getState().status !== 'active') {
 			this.runRuntimeMutation(() => this.assistedDetection.updateInterval(nextSettings.pollingIntervalMinutes * 60_000));
 		}
 		if (secretChanged) {
@@ -2516,13 +2745,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			this.renderInventoryAdvisorViews();
 		}
 		if (this.halloween !== null && previousHalloweenEnabled !== this.settings.halloweenEnabled) {
-			if (this.settings.halloweenEnabled) {
+			// The override only widens: inside the seasonal window, clearing it leaves the
+			// surface running because the calendar, not the setting, is what turned it on.
+			if (this.halloweenObservationActive()) {
 				await this.halloween.activate(context);
 				this.halloween.setOnline(navigator.onLine);
 			} else this.halloween.disable(context);
 			this.settingTab.refreshForSettingsChange();
 		}
-		if (this.halloween !== null && secretChanged && this.settings.halloweenEnabled) {
+		if (this.halloween !== null && secretChanged && this.halloweenObservationActive()) {
 			await this.halloween.activate(context);
 			this.halloween.setOnline(navigator.onLine);
 		}
@@ -3086,9 +3317,14 @@ function priceHistorySettingsFrom(settings: TyrianSettings): PriceHistorySetting
 	};
 }
 
-function halloweenPriceAlertSettingsFrom(settings: TyrianSettings) {
+/**
+ * The price alert keeps its own opt-in, but its Halloween half now follows the
+ * calendar: after H13.3 `halloweenEnabled` only widens the window, so reading it
+ * directly would have left the price surface dark during the festival.
+ */
+function halloweenPriceAlertSettingsFrom(settings: TyrianSettings, nowMs: number = Date.now()) {
 	return {
-		enabled: settings.halloweenEnabled && settings.halloweenPriceAlertEnabled,
+		enabled: halloweenObservationActive(settings.halloweenEnabled, nowMs) && settings.halloweenPriceAlertEnabled,
 		minimumAboveP90Bps: settings.halloweenPriceAlertMinimumAboveP90Bps,
 		cooldownHours: settings.halloweenPriceAlertCooldownHours,
 	};
@@ -3327,6 +3563,30 @@ function automaticSessionReview(): SessionContaminationAnswers {
 			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
 		},
 	};
+}
+
+/** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */
+function alertNoticeSource(kind: AlertKind): NoticeDiagnosticSource {
+	if (kind === 'valuable_loot') return 'valuable_loot';
+	if (kind === 'always_alert') return 'halloween_observation';
+	return 'halloween_price_alert';
+}
+
+function alertTitleKey(kind: AlertKind): RuntimeTranslationKey {
+	if (kind === 'valuable_loot') return 'alerts.title.valuable_loot';
+	if (kind === 'always_alert') return 'alerts.title.always_alert';
+	if (kind === 'sell_signal') return 'alerts.title.sell_signal';
+	return 'alerts.title.hold_signal';
+}
+
+function alertReasonKey(reason: AlertV1['reason']): RuntimeTranslationKey {
+	if (reason === 'valuable') return 'alerts.reason.valuable';
+	if (reason === 'rare_unpriced_or_bound') return 'alerts.reason.rare_unpriced_or_bound';
+	if (reason === 'first_seen') return 'alerts.reason.first_seen';
+	if (reason === 'skin_not_unlocked') return 'alerts.reason.skin_not_unlocked';
+	if (reason === 'mini_not_unlocked') return 'alerts.reason.mini_not_unlocked';
+	if (reason === 'bid_above_reference') return 'alerts.reason.bid_above_reference';
+	return 'alerts.reason.bid_below_reference';
 }
 
 function formatCopperCompact(copper: number, locale: Locale): string {

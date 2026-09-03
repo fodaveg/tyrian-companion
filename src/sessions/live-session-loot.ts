@@ -1,5 +1,7 @@
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
+import type { AlertV1 } from '../alerts/alert-contract';
+import { decideLootAlert } from '../alerts/loot-alert-criteria';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
 
@@ -26,18 +28,13 @@ export type LiveSessionLootState =
 		readonly error: LiveSessionLootError;
 	};
 
-export interface ValuableLiveLoot {
-	readonly name: string;
-	readonly quantity: number;
-	readonly totalCopper: number;
-}
-
 interface LiveSessionLootOptions {
 	readonly gateway: PublicCatalogGateway;
 	readonly locale: () => 'es' | 'en';
 	readonly thresholdCopper: () => number;
 	readonly onStateChange?: () => void;
-	readonly onValuable?: (loot: ValuableLiveLoot) => void;
+	/** Receives one alert per resolved gain that meets the H13.3 criteria. */
+	readonly onAlert?: (alert: AlertV1) => void;
 	readonly now?: () => Date;
 }
 
@@ -195,6 +192,14 @@ export class LiveSessionLootTracker {
 		if (price !== undefined) row.unitCopper = price;
 	}
 
+	/**
+	 * Turns resolved gains into alerts through the shared H13.3 criteria.
+	 *
+	 * The tracker only ever holds value evidence, so the "always alert" half of
+	 * the OR is empty here and is contributed by the Halloween policy on its own
+	 * path. Routing through `decideLootAlert` anyway keeps one implementation of
+	 * the threshold comparison instead of two that can drift.
+	 */
 	private emitResolvedValuableGains(): void {
 		for (let index = this.pendingValuableGains.length - 1; index >= 0; index -= 1) {
 			const pending = this.pendingValuableGains[index];
@@ -203,11 +208,14 @@ export class LiveSessionLootTracker {
 			const observedValue = safeProduct(row?.unitCopper ?? null, pending.quantity);
 			if (observedValue === null) continue;
 			this.pendingValuableGains.splice(index, 1);
-			if (observedValue >= this.options.thresholdCopper()) {
-				this.options.onValuable?.({
-					name: row?.name ?? this.unknownItemName(), quantity: pending.quantity, totalCopper: observedValue,
-				});
-			}
+			const alert = decideLootAlert({
+				itemId: pending.itemId,
+				name: row?.name ?? this.unknownItemName(),
+				quantity: pending.quantity,
+				totalCopper: observedValue,
+				alwaysAlertReasons: [],
+			}, this.options.thresholdCopper());
+			if (alert !== null) this.options.onAlert?.(alert);
 		}
 	}
 

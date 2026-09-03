@@ -16,6 +16,7 @@ import {
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
 import {
+	alertWebhookDestination,
 	MATERIAL_STORAGE_CAPACITIES,
 	POLLING_INTERVAL_OPTIONS,
 	resolveVaultFolderInput,
@@ -726,6 +727,55 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							feedback.setAttr('role', 'status');
 							feedback.setText('');
 							await save({ halloweenValueThresholdCopper: threshold });
+						}));
+				},
+			},
+			{
+				category: 'economy',
+				basic: true,
+				name: this.t('settings.alerts.threshold.name'), desc: this.t('settings.alerts.threshold.desc'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.valuableLootThresholdCopper / 10_000))
+						.onChange(async (value) => {
+							const threshold = goldThresholdToCopper(value);
+							if (threshold === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.halloween.threshold.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setAttr('role', 'status');
+							feedback.setText('');
+							await save({ valuableLootThresholdCopper: threshold });
+						}));
+				},
+			},
+			{
+				category: 'economy',
+				name: this.t('settings.alerts.webhook.name'), desc: this.t('settings.alerts.webhook.desc'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setValue(this.plugin.settings.alertWebhookUrl)
+						.onChange(async (value) => {
+							const destination = alertWebhookDestination(value);
+							if (destination.length === 0 && value.trim().length > 0) {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.alerts.webhook.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setAttr('role', 'status');
+							feedback.setText('');
+							await save({ alertWebhookUrl: destination });
 						}));
 				},
 			},

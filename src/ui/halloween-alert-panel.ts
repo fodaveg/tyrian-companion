@@ -1,3 +1,5 @@
+import { ALERT_LATENCY_MINUTES } from '../alerts/alert-contract';
+import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import type { HalloweenAlertReason, HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenRuntimeState } from '../halloween/halloween-runtime';
 import type { HalloweenPriceAlertRuntimeState } from '../halloween/halloween-price-alert-runtime';
@@ -7,6 +9,8 @@ export interface HalloweenAlertPanelActions {
 	acknowledgeHalloweenNotice(noticeId: string): Promise<boolean>;
 	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState;
 	acknowledgeHalloweenPriceNotice(noticeId: string): Promise<boolean>;
+	/** Durable copy of every alert emitted for this account, newest first. */
+	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 }
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -40,9 +44,49 @@ export function renderHalloweenAlertPanel(
 	if (state.status !== 'ready' && state.status !== 'unread') {
 		status.setText(t(`halloween.state.${state.status}`));
 	}
+	renderEmittedAlerts(body, actions.getEmittedAlerts(), t);
 	renderComparison(body, state, t);
 	renderPriceAlerts(body, actions, priceState, t);
 	for (const notice of state.notices) renderNotice(body, notice, actions, t);
+}
+
+/**
+ * The durable copy of what was already announced, and the place the declared
+ * latency lives.
+ *
+ * A desktop banner can be missed for a dozen reasons the plugin does not
+ * control, so the panel is the surface that has to be complete. It also states
+ * the 5 to 20 minute delay here rather than only inside the transient toast:
+ * that number explains a whole class of "the plugin told me late" and it must
+ * still be readable an hour after the banner is gone.
+ */
+function renderEmittedAlerts(
+	container: HTMLElement,
+	alerts: readonly EmittedAlertRecordV1[],
+	t: Translate,
+): void {
+	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__alerts' });
+	section.createEl('h3', { text: t('alerts.queue.title') });
+	section.createEl('p', { text: t('alerts.queue.latency', {
+		minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
+	}) });
+	if (alerts.length === 0) {
+		const empty = section.createEl('p');
+		empty.setAttr('aria-live', 'polite');
+		empty.setText(t('alerts.queue.empty'));
+		return;
+	}
+	const list = section.createEl('ul');
+	for (const alert of alerts) {
+		const row = list.createEl('li');
+		row.createSpan({ text: t('alerts.queue.entry', {
+			name: alert.name,
+			quantity: alert.quantity,
+			reason: t(`alerts.reason.${alert.reason}`),
+		}) });
+		row.createEl('time', { text: new Date(alert.emittedAt).toLocaleString() })
+			.setAttr('datetime', alert.emittedAt);
+	}
 }
 
 function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, t: Translate): void {
