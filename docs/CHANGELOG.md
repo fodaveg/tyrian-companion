@@ -1,5 +1,72 @@
 # Changelog
 
+## Release beta 0.1.23 - el webhook deja de contar lo que no le toca, y el aviso puede salir dentro del juego
+
+### Arreglo de privacidad en un canal ya publicado
+
+- **El webhook de la `0.1.22` mandaba a un destino de terceros si el jugador tenía desbloqueada o no
+  una skin o una mini.** El fichero prometía en su propio comentario de cabecera que no salían «los
+  códigos de motivo que describen la colección de desbloqueos», y hacía lo contrario: la función que
+  construía el cuerpo aceptaba una cadena ya compuesta, y quien la llamaba le pasaba la copia del
+  toast, que para un aviso `always_alert` termina en el motivo traducido. El campo estructurado
+  estaba acotado a tres claves y un test lo vigilaba, pero la fuga viajaba por el parámetro de texto
+  libre, que ningún test de forma cubría.
+- **El arreglo es estructural, no de contenido.** `alertWebhookPayload` ya no tiene parámetro de
+  prosa: compone el texto a partir de los mismos campos declarados, así que quien la llama no tiene
+  dónde meter una frase. Verificado ejecutando el camino real, no leyendo la firma: el cuerpo sale
+  `{"content":"<nombre> ×<n> · no quoted value","version":1,"name":…,"quantity":…,"totalCopper":…}`
+  y el motivo no aparece en ninguna de las cuatro clases de aviso por los siete motivos.
+
+### Sexto canal: el aviso dentro del juego (Nexus y Blish HUD)
+
+- **Un servidor TCP en `127.0.0.1` al que se conecta un addon del juego, apagado de serie.** El
+  plugin escucha en el puerto de ajustes (47823 por defecto), los addons conectan y cada aviso cruza
+  como una línea JSON de 512 bytes como máximo. Con dos anfitriones instalados el plugin manda a los
+  dos. Sin cliente conectado el canal se declara `failed` en el informe del emisor: no encola ni
+  reenvía, porque la cola durable ya guarda el histórico.
+- **El canal es de una sola dirección a propósito.** Del cliente se lee exactamente una línea de
+  presentación y después se deja de leer; cualquier byte posterior cierra la conexión. Eso es lo que
+  mantiene el addon dentro de la clasificación de «utility que ayuda al jugador sin afectar a otros»
+  de la política de terceros de ArenaNet: el addon solo dibuja, nunca puede desencadenar una acción.
+- **Lo que cruza son siete campos y ni uno más**: `v`, `seq`, `kind`, `name`, `quantity`,
+  `totalCopper` y la línea ya compuesta. No cruzan la clave de API, el account ID, el identificador
+  de aviso, el motivo, el ID de objeto, ningún snapshot, el identificador de bóveda, el idioma ni el
+  texto del toast. Igual que en el webhook, la función que construye el cuerpo recibe solo el aviso y
+  no acepta cadenas de fuera.
+- **El censo de frontera tenía un agujero y ahora no lo tiene.** `src/security-boundary.test.ts`
+  vigilaba `requestUrl`, `fetch`, `WebSocket` y los imports HTTP, pero `node:net` no lo casaba ningún
+  patrón: el canal nuevo podía haber entrado sin que el guardarraíl lo viera, en verde. Ahora hay un
+  patrón propio y una lista revisada de un solo fichero, comprobada rompiéndola a propósito.
+- Los dos addons viven en repositorios aparte y **no forman parte de esta release**. El
+  contrato de cable, el reparto y los riesgos medidos están en `docs/SPEC-puente-ingame.md`.
+
+### Robustez y deuda
+
+- **El cuerpo que devuelve datawars2 se acota antes de que nada lo parsee**, en vez de después.
+- **`main.ts` baja de 3.811 a 3.563 líneas**: Halloween, el histórico de precios, el advisor de
+  inventario y los servicios de sesión se ensamblan en cuatro funciones propias fuera de
+  `initializeRuntime`, con tests de cableado en lugar de suites que aseveraban texto fuente.
+- **Los diez almacenes de IndexedDB abren por un único handshake compartido.** Dos de ellos
+  (`session-runtime-store` y `session-detection-quality-store`) se colgaban para siempre si la
+  apertura no resolvía.
+- **Las copias de los ayudantes de JSON canónico se comparten** en lugar de duplicarse, y la
+  divergencia que queda entre las dos que tratan un `Date` distinto está fijada en un test que la
+  documenta sin arreglarla.
+- **`obsidian` queda fijado a la versión instalada** (`1.13.1`) en lugar de `latest`, que hacía que
+  dos instalaciones del mismo commit pudieran compilar contra API distinta.
+- **La divergencia entre las dos aritméticas de comisión del bazar queda medida y congelada** en un
+  test: 14.927 de 15.706 brutos muestreados difieren, con una brecha de −0,75 a +0,60 cobre.
+  Coinciden solo cuando el bruto es múltiplo de 20. El test no unifica nada: unificar mueve cifras
+  ya escritas en notas de sesión y es una decisión del dueño del repositorio.
+
+### Documentación
+
+- **El histórico se separa de lo vigente.** `docs/CHANGELOG.md` baja de 125.961 a 31.302 bytes y
+  `docs/ESTADO.md` de 80.788 a 46.476, con lo movido íntegro en
+  `docs/historico/CHANGELOG-hasta-0.1.17.md` y `docs/historico/ESTADO-lotes-cerrados.md`.
+  Comprobado línea a línea que no se perdió contenido: del changelog viejo, cero líneas no aparecen
+  ni en el vivo ni en el histórico.
+
 ## Release beta 0.1.22 - aviso de drop valioso y señal de venta del saco
 
 ### Aviso de drop valioso sin interruptores
