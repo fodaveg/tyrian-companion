@@ -24,6 +24,13 @@ ya comprometida, un reporte humano que ignore la redacción ni un paquete de des
   desde el plugin. H8.5/H8.6 implementan servidor y cliente core y H8.7 solo el adapter inyectado,
   pero no existe executor ni composición que abra proceso o socket. Cablearlo exige trust anchor,
   nueva revisión y QA real.
+- El puente de avisos dentro del juego (H13.9/H13.15) sí abre un socket, y es el único: un servidor
+  TCP en `127.0.0.1` exclusivamente, apagado por defecto, arrancado de forma perezosa solo tras
+  activarlo en ajustes. Envía los mismos tres campos que el webhook (nombre, cantidad, valor) más
+  `kind` y `seq`; nunca clave, `accountId`, `accountRef`, `alertId`, `itemId` ni `reason`. La
+  dirección es de una sola vía a nivel de socket: tras el `hello` del cliente el plugin deja de leer
+  esa conexión, y cualquier byte posterior la cierra, así que un addon conectado no tiene ningún
+  camino de vuelta hacia una acción.
 - Cada Refresh del Inventory Advisor reemplaza un único recibo diagnóstico local dentro de la carpeta
   del plugin; una fuente fallida expone como máximo `http|timeout|network`, estado HTTP y espera acotada,
   y su contrato cerrado conserva resultado, duración, calidad y coberturas por pasada/fuente —incluidos
@@ -49,7 +56,8 @@ Los errores HTTP se reducen a estado y mensaje estable: no incluyen URL, cabecer
 | Superficie | Datos | Retención y borrado actuales |
 | --- | --- | --- |
 | `SecretStorage` de Obsidian | Token GW2 crudo | Ciclo de vida controlado por Obsidian y el usuario. El plugin lee el valor de forma efímera y solo selecciona su nombre. |
-| Settings (`data.json` del plugin) | Nombre de la entrada secreta, locale, carpeta de salida, personaje preferido, modo/sondeo de detección, opt-in/intervalo/retenciones del histórico de precios y rutas/estado de assets gestionados | Persiste hasta cambiar ajustes, desinstalar o borrar los datos del plugin. La carga elimina campos antiguos de credencial y fuerza su reescritura incluso si también debe retener rutas legacy. Según la configuración del usuario, Obsidian podría sincronizar settings; este proyecto no controla ni ha verificado ese servicio. |
+| Settings (`data.json` del plugin) | Nombre de la entrada secreta, locale, carpeta de salida, personaje preferido, modo/sondeo de detección, opt-in/intervalo/retenciones del histórico de precios, interruptor/puerto del puente dentro del juego y rutas/estado de assets gestionados | Persiste hasta cambiar ajustes, desinstalar o borrar los datos del plugin. La carga elimina campos antiguos de credencial y fuerza su reescritura incluso si también debe retener rutas legacy. Según la configuración del usuario, Obsidian podría sincronizar settings; este proyecto no controla ni ha verificado ese servicio. |
+| Servidor del puente dentro del juego | Conteo de clientes TCP conectados y un contador `seq` por proceso | Solo memoria del proceso del plugin; no se persiste ni sobrevive a un `onunload`/reinicio. Se cierra al desactivar el canal, al cambiar el puerto o al descargar el plugin. |
 | Estado de conexión en memoria | Cuenta, mundo, fecha de creación, access/scopes y nombre de la key | No se persiste por este estado; se descarta al descargar/reiniciar el plugin o cambiar/desconectar el secreto. El ID del token solo existe durante la validación. |
 | `tyrian-companion-session-runtime` | Una sesión activa/recuperable: `accountId`, personaje, inventario/build/wallet inicial y final, deltas, revisión y precios | Se conserva hasta descartar la sesión o limpiarla después de escribir con seguridad la nota. No tiene expiración automática. Los esquemas exactos rechazan campos extra. |
 | `tyrian-companion-coordination` | IDs de máquina, instancia y sesión; fences, leases y timestamps | Se sobrescribe o libera durante la coordinación; los leases expiran, aunque el registro local puede permanecer. No contiene token. |
@@ -112,6 +120,7 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 | Datos remotos o IndexedDB corruptos | Parsers y esquemas exactos fallan cerrados ante tipos, campos o valores inesperados. | La disponibilidad puede degradarse y requerir limpieza local; no hay reparación automática de todos los stores. |
 | Sobrescritura de contenido del vault | Rutas normalizadas, ownership explícito, manifest/bloques con hash y escritura controlada; contenido ajeno no se adopta silenciosamente. | El usuario u otro plugin pueden editar/copiar notas con información sensible; Sync de Obsidian queda fuera del control del proyecto. |
 | Sync o soporte futuros y exports locales explícitos | No hay Sync ni exportación automática de soporte. H5.10 y H7.13 solo exportan tras preview/acción humana, con allowlist, saneado, rutas normalizadas y escritura create-only. | Un export ya creado pertenece al Vault, puede ser copiado o sincronizado y no desaparece al limpiar su store de origen. Un módulo con nombre atípico o fuera del árbol inspeccionado exige review manual. Antes de Sync propio deben definirse autenticación, cifrado, retención, revocación, residencia y metadatos. |
+| Addon dentro del juego bidireccional o filtración por el puente H13.9/H13.15 | `alertIngamePayload`/`alertIngameContent` no aceptan un parámetro de cadena ya compuesta, la misma defensa estructural que el webhook; el test de privacidad recorre todos los `kind`/`reason` del contrato con control positivo sobre el compositor real del toast. El servidor escucha solo en `127.0.0.1` (no es un parámetro) y verifica la dirección resuelta tras `listen`; lee como máximo una línea por cliente y cierra la conexión ante cualquier byte posterior, así que un addon conectado no tiene ningún camino de vuelta hacia una acción. Apagado por defecto; `deliver` falla en el informe del emisor con cero clientes en vez de fingir éxito. | Cualquier proceso local puede conectar al puerto y leer los avisos; los datos son mínimos (nombre, cantidad, valor). No hay secreto compartido en la v1. El addon en sí (Nexus, Blish HUD) vive en un repositorio aparte y no está cubierto por este modelo de amenazas. |
 
 ## Controles ejecutables
 
@@ -155,7 +164,8 @@ Los snapshots completos permiten comparar el antes y el después, pero elevan el
 - `npm run test:h8-crossover-spike` compila el decoder normal y con ASan/UBSan, syntax-checkea el
   wrapper, valida su expansión real `cc -E -P`, ejecuta fixtures corruptos/interleaved y demuestra rojos causales para offset, 5.460,
   512, ocho pares y `9007199254740991`. No sustituye la ejecución del PE dentro de CrossOver.
-- `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras.
+- `src/security-boundary.test.ts` ejecuta el flujo real de credencial hasta la única salida permitida, invoca la persistencia real de settings y descubre recursivamente fronteras presentes y futuras. Censa además cada import de `net` contra una lista revisada explícita (hoy solo `alert-ingame-server.ts`); un `net` en un fichero no censado pone el test en rojo.
+- `src/alerts/alert-ingame.test.ts` prueba la privacidad del payload dentro del juego con control positivo (el compositor real del toast sí contiene el motivo antes de comprobar que el JSON no) recorriendo `ALERT_KINDS`/`ALERT_REASONS` del contrato. `src/alerts/alert-ingame-server.test.ts` ejecuta el servidor loopback contra sockets reales: framing de una sola línea, cierre ante cualquier byte tras el `hello`, reintento de puerto ocupado y el fallo cerrado si el `net` inyectado no confirma loopback. `src/main-alert-wiring.test.ts` cubre el cableado del sexto canal, apagado por defecto y fallando con cero clientes conectados.
 - `src/economy/price-history-architecture.test.ts` cierra las dependencias del histórico, prohíbe capacidades de cuenta/Vault/secreto en sus módulos y exige la única frontera HTTP pública revisada.
 - Los tests de `session-runtime-store`, `session-detection-quality-store` y `session-note-writer` demuestran que los sumideros productivos rechazan capacidad de credencial antes de escribir.
 - `npm run check` incluye lint, tests, preflights, pruebas del scanner, scanner, TypeScript y build. CI ejecuta ese mismo gate en Node 22.20.0 y 22.x.

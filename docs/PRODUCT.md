@@ -65,12 +65,15 @@ La primera versión de producto incluye:
 - Inventory Advisor limitado a reglas de alta confianza.
 
 La cuenta se consulta exclusivamente por la API oficial de Guild Wars 2. El plugin incluye además
-dos salidas de red opcionales que no tocan la cuenta. La semilla de datawars2 es una lectura de
+tres salidas opcionales que no tocan la cuenta. La semilla de datawars2 es una lectura de
 precios públicos del objeto `#36038` desde `https://api.datawars2.ie`, sin clave, una sola vez,
 solo para inicializar el histórico local; si falla, el plugin declara «sin semilla» y captura a
 partir de ese momento. El webhook es una salida al destino que elige el usuario en ajustes (vacía
 por defecto); si se proporciona, el plugin envía solo nombre del objeto, cantidad y valor en cobre
-cuando detecta un drop valioso.
+cuando detecta un drop valioso. El puente dentro del juego (H13.9/H13.15) es un servidor TCP en
+`127.0.0.1`, apagado por defecto, al que se conectan addons de Nexus o Blish HUD instalados aparte
+para pintar el mismo aviso encima de la ventana del juego; envía los mismos tres campos que el
+webhook, es de una sola dirección y falla en el informe del emisor si ningún addon está conectado.
 Linux con Steam/Proton es la plataforma primaria, macOS con CrossOver la secundaria y Windows
 permanece en beta. La matriz de soporte, los gates y las métricas del piloto se fijan en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
@@ -79,9 +82,10 @@ Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones
 backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato
 previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el
 runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
-Un aviso dentro del juego irá por un addon de Nexus separado posterior (H13.9); ese addon, cuando
-exista, será un addon de terceros que corre dentro del proceso del juego, dentro de lo que la
-política de addons de terceros de ArenaNet permite, y lo instala el usuario aparte.
+El aviso dentro del juego (H13.9/H13.15) se ve por un addon de Nexus o un módulo de Blish HUD
+instalados aparte por el usuario; son addons de terceros que corren dentro del proceso del juego o
+al lado de él, dentro de lo que la política de addons de terceros de ArenaNet permite. El addon en
+sí (Nexus en Rust, Blish HUD en C#) vive en un repositorio aparte y no forma parte de este plugin.
 
 H9.6 descarta el benchmarking de clan en el producto actual. Comparar cuentas exigiría intercambio de
 datos o un backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se podrá

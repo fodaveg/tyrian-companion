@@ -32,6 +32,25 @@ y sin ninguna información de la cuenta. El destino de la URL es responsabilidad
 plugin nunca genera credenciales, no las almacena, no las valida y no persiste el resultado de la
 llamada.
 
+## Puente de avisos dentro del juego (H13.9/H13.15)
+
+El sexto canal de aviso, `ingame`, es opcional y viene apagado por defecto en ajustes. Cuando se
+activa, el plugin abre un servidor TCP que escucha exclusivamente en `127.0.0.1`, en el puerto
+que el usuario elige (1024-65535). Adiciones de Nexus y de Blish HUD instaladas aparte por el
+usuario —cada una en su propio repositorio, ninguna se distribuye desde este— se conectan a ese
+puerto para pintar el aviso encima de la ventana del juego. El canal envía exactamente los mismos
+campos que el webhook (nombre, cantidad, valor en cobre) más un identificador de tipo de aviso y
+un contador de secuencia; nunca la clave de API, el `accountId`, `accountRef`, `alertId`, el
+`itemId` ni el motivo (`reason`) que describe el progreso de desbloqueo del jugador.
+
+**El canal es de una sola dirección.** Tras la línea `hello` inicial del addon, el plugin deja de
+leer esa conexión; cualquier byte posterior la cierra. El addon no puede mandar nada de vuelta que
+desencadene una acción, ni un comando, ni una consulta. Es exactamente el límite que mantiene esto
+dentro de «utility that helps players without affecting others» de la política de terceros de
+ArenaNet: el addon solo dibuja lo que el plugin le manda, nunca actúa sobre el juego ni sobre la
+cuenta. Sin cliente conectado, el canal falla en el informe del emisor en vez de fingir éxito; no
+hay cola ni replay al reconectar, la cola durable de Obsidian ya guarda el histórico de avisos.
+
 ## Límite del MVP: solo API
 
 El MVP puede consultar exclusivamente endpoints oficiales de Guild Wars 2. La carga del plugin y
@@ -41,11 +60,12 @@ puertas de entrada a las consultas ya descritas en
 [Arquitectura](ARCHITECTURE.md).
 
 El MVP no integra Mumble Link ni depende de Steam, Proton o CrossOver para obtener evidencia.
-El plugin de Obsidian obtiene avisos únicamente por API; un aviso dentro del juego irá por un addon
-de Nexus separado e instalado aparte (ticket H13.9, posterior). El addon de Nexus, cuando exista,
-será un addon de terceros que corre dentro del proceso del juego, dentro de lo que la política de
-addons de terceros de ArenaNet permite, y lo instala el usuario aparte; el plugin seguirá sin
-inspeccionar el cliente.
+El plugin de Obsidian obtiene toda su evidencia únicamente por API; un aviso dentro del juego se ve
+por un addon de Nexus o un módulo de Blish HUD, instalados aparte por el usuario, que se conectan
+al servidor TCP en loopback descrito arriba (H13.9/H13.15). Esos addons son terceros que corren
+dentro del proceso del juego o al lado de él, dentro de lo que la política de addons de terceros de
+ArenaNet permite; sus repositorios son independientes de este y el plugin sigue sin inspeccionar el
+cliente ni leer su memoria.
 Inicio y parada asistidos siguen siendo propuestas: una persona debe aceptarlas o descartarlas.
 Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar cualquier otra operación
 dentro del juego o sobre la cuenta queda siempre fuera del companion.

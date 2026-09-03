@@ -683,6 +683,42 @@ H11.5 no crea cliente HTTP, scheduler ni timer. Después de una captura y compac
 
 Los defaults introducidos por Settings v7 mantienen el aviso desactivado, margen mínimo 0 puntos básicos y cooldown 24 h, con opciones 6/12/24/48. Cada cambio reconstruye el tab abierto para habilitar o deshabilitar sus controles inmediatamente. El estado durable y atómico solo avisa en cruce válido `below→high`, como máximo una vez por día UTC y después del cooldown; una evaluación válida `below` es la única que rearma. `lastValidCapturedAtMs` hace monotónica la decisión multiwindow: una evaluación igual o anterior no sobrescribe `armed` y el runtime proyecta la decisión realmente aceptada por IndexedDB. Cambiar ajustes no borra la supresión diaria. Proyección y notice validan que `high`/`below`, puja, umbral, p90, captura, `observedAt` y día UTC sean coherentes. Cambiar de cuenta limpia primero la proyección/outbox visible, cerca cada lectura asíncrona y reactiva para la referencia capturada estable. El notice guarda puja, p90, referencia 30 días, captura y filtro, sin cantidad inventada, y comparte la bandeja visual y el reconocimiento explícito de Halloween mediante un outbox local separado.
 
+## Puente de avisos dentro del juego H13.9/H13.15
+
+El sexto canal, `ingame`, se reparte igual que el webhook: un módulo puro (`alert-ingame.ts`) y uno
+de E/S (`alert-ingame-server.ts`), cableados en `buildAlertEmitter`. `alertIngamePayload(alert,
+seq?)` es la única función que compone el cuerpo del mensaje y solo recibe `AlertV1` más un número
+de secuencia opcional; ninguna función del módulo acepta una cadena ya compuesta, la misma defensa
+estructural que cierra el H13.4/webhook: el texto del toast (`alertBodyText`/`alertToastText` en
+`main.ts`) incorpora `reason` traducido para un `always_alert`, y ese es exactamente el dato que
+nunca debe tener dónde entrar. El test de privacidad recorre `ALERT_KINDS` y `ALERT_REASONS` desde
+el contrato, con control positivo: primero comprueba que el compositor real del toast sí contiene
+el motivo, luego que el JSON del payload no.
+
+`alert-ingame-server.ts` es el único módulo que importa `net` (censado en `security-boundary.test.ts`
+a propósito, con su propio patrón `NET_IMPORT_PATTERN`, que antes no casaba nada). `createServer`
+escucha solo en `127.0.0.1`; el host no es un parámetro, así que ningún llamante puede pedirle otra
+interfaz, y además verifica tras `listen` que la dirección resuelta sea loopback antes de devolver
+el handle, para que un `net` inyectado que ignore el host no pase silenciosamente. Reintenta un
+puerto ocupado con el mismo backoff `[250, 500, 1000, 2000, 5000]` ms de H8, sobre el mismo servidor.
+De cada cliente se lee como máximo una línea, el `hello`, hasta 128 bytes; en cuanto llega el salto
+de línea el socket deja de leerse, y cualquier byte posterior —en la misma escritura o en una
+posterior— cierra la conexión. El broadcast hacia los clientes conectados lanza en vez de truncar si
+la línea compuesta supera 512 bytes, y no reutiliza el framer incremental de H8 (`src/platform/`):
+es una implementación nueva de unas 60 líneas, para no arrastrar este canal al censo ni al modelo de
+amenazas de Mumble.
+
+El cableado en `main.ts` no abre el servidor al cargar el plugin: `ensureAlertIngameServer` lo
+arranca de forma perezosa en la primera entrega tras activarse, y lo reabre si el puerto configurado
+cambia, leyendo `this.settings.alertIngameEnabled`/`alertIngamePort` en el momento de entregar, igual
+que el webhook lee su URL. Con el canal apagado, `deliver` es un no-op que cuenta como entregado, el
+mismo patrón que una URL de webhook vacía. Con el canal encendido, `deliver` lanza si hay cero
+clientes conectados, para que el informe del emisor marque `failed` y el usuario sepa que el juego
+no estaba escuchando; no hay cola ni reintento aquí, la cola durable de Obsidian ya conserva el
+histórico. `ALERT_CHANNEL_IDS` pasa a seis y el test de cableado en `main-alert-wiring.test.ts` cubre
+tanto el canal apagado por defecto como el caso de cero clientes, del mismo estilo que los otros
+cinco canales: son las dos pruebas que hacen falta, porque la del módulo puro no ve el cableado.
+
 ## Valoración personal H11.6
 
 H11.6 añade un overlay V1 propiedad del usuario y separado del modelo curado, del economy pack, de sus hashes y del EV líquido H4.19. Cada entrada tiene forma cerrada `{outcomeKey,unitCopper,origin:'manual'}`; la clave debe ser canónica, el cobre un entero seguro no negativo y solo son elegibles los diez outcomes explícitos cuyo `valuationPolicy` es `excluded`. Ausencia significa desconocido y `0` es un valor manual conocido. Claves ajenas o líquidas, duplicados, extras y overflow fallan cerrados. El resolver usa `BigInt(expectedUnitsMillionths) * BigInt(unitCopper)`, devuelve `none|partial|complete`, el ajuste conocido, líneas y pendientes; `totalAdjustment` solo existe al cubrir las diez filas. Las categorías agregadas de cola rara y jackpots —1.171 unidades de la muestra— nunca son direccionables, valorables ni necesarias para cobertura. El resolver puro queda exportado como frontera de lectura para H11.3, pero no modifica ni reinterpreta sus comparaciones estadísticas curadas.
