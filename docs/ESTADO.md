@@ -787,6 +787,25 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
   `npm run check`, benchmark, sabotaje de heap y `git diff --check` pasan en este worktree. No existe
   todavía evidencia de instalación, primera sesión o soporte real en dispositivo.
 
+## Publicación de la 0.1.22 (2026-09-03)
+
+Publicada desde el tag y commit `5ab35766e6db01dde84cad9607a3a99fb2dfe42c`, que es también
+`origin/main`. La creó el workflow `Release` al empujar el tag, con los cinco assets y contrato BRAT
+`PASS (version=0.1.22; assets=5)` contra la salida real de `gh release view`. Los tres ficheros
+publicados se descargaron y coinciden byte a byte con los construidos aquí (`main.js`
+`c1404e00…4e7561`). Tres runs de CI en verde sobre ese SHA: `33732841358`, `33732841344` y
+`33732840955`. Gate local antes de etiquetar: `check` 22/22, `test` 18/18, 2.632 tests en 194
+ficheros, `tsc --noEmit` exit 0.
+
+Instalada en la bóveda real y verificada por `sha256sum` contra los ficheros publicados, sin tocar
+`data.json`. **La copia se hizo con Obsidian abierto**, así que hasta que se recargue el plugin en
+memoria sigue corriendo la `0.1.21`: canal publicado, runtime pendiente.
+
+Lo que esto **no** acredita, y sigue siendo lo único que bloquea: que el banner del sistema con
+`urgency: critical` cruce por encima de Guild Wars 2 en ventana sin bordes y en pantalla completa
+exclusiva bajo GNOME, y que una sesión de farmeo repetida salga ahora `estimated` con banda en vez
+de con el veredicto económico suprimido. Las dos son pruebas humanas y no se han ejecutado.
+
 ## Deuda conocida
 
 ### H13.1 — Primera ejecución humana (2026-09-03)

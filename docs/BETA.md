@@ -2,10 +2,20 @@
 
 ## Estado actual
 
-La última beta **publicada** sigue siendo la `0.1.21`. La `0.1.22` está integrada en `main` y pasa el
-gate completo (22 pasos en verde, 2.589 tests en 193 ficheros, `tsc --noEmit` exit 0), pero **aún no
-está publicada**: su tag, sus runs de CI y sus assets no existen hasta que se publique desde el
-commit de release, y hasta entonces esta sección no puede citarlos.
+La beta pública es la
+[`0.1.22`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.22), tag y commit
+`5ab35766e6db01dde84cad9607a3a99fb2dfe42c`. El tag remoto y `origin/main` apuntan al mismo SHA. La
+release la creó el workflow `Release` al empujar el tag y adjunta exactamente los cinco assets
+(`manifest.json`, `main.js`, `styles.css`, `tyrian-companion-0.1.22.zip` y su `.sha256`), con
+contrato BRAT `PASS (version=0.1.22; assets=5)` verificado contra la salida real de
+`gh release view`. El ZIP tiene SHA-256
+`3d8e00333f511712a0f33e312e122911295775d95a666b64f67799041f75e060`. Los tres ficheros publicados se
+descargaron y coinciden byte a byte con los construidos localmente: `main.js`
+`c1404e0022ed3becd0cdb3d13b90d05b29fdeb8914d20434df38cf39744e7561`, `manifest.json`
+`4a575ad35401748cecdb238eead41e42498ca4699885836121c2f105b4df9511` y `styles.css`
+`34b240370a57420412cd9d40da3d7f3d96c4243f902c12e715a25cd7ccfc8a67`. Runs de CI en verde sobre ese
+SHA: `33732841358` (Release), `33732841344` y `33732840955`. El gate local antes de etiquetar dio
+`check` 22/22, `test` 18/18, 2.632 tests en 194 ficheros y `tsc --noEmit` exit 0.
 
 `0.1.22` añade aviso de drop valioso encendido de serie sin interruptores (cinco canales a la vez:
 toast, notificación del sistema con urgencia critical, sonido embebido, webhook opcional y cola
