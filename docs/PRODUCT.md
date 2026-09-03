@@ -64,11 +64,24 @@ La primera versión de producto incluye:
 - Notas y Bases instalables sin sobrescribir contenido del usuario.
 - Inventory Advisor limitado a reglas de alta confianza.
 
-El MVP es estrictamente API-only. Linux con Steam/Proton es la plataforma primaria, macOS con
-CrossOver la secundaria y Windows permanece en beta. La matriz de soporte, los gates y las métricas
-del piloto se fijan en [Política de plataformas e integraciones](PLATFORM_POLICY.md).
+La cuenta se consulta exclusivamente por la API oficial de Guild Wars 2. El plugin incluye además
+dos salidas de red opcionales que no tocan la cuenta. La semilla de datawars2 es una lectura de
+precios públicos del objeto `#36038` desde `https://api.datawars2.ie`, sin clave, una sola vez,
+solo para inicializar el histórico local; si falla, el plugin declara «sin semilla» y captura a
+partir de ese momento. El webhook es una salida al destino que elige el usuario en ajustes (vacía
+por defecto); si se proporciona, el plugin envía solo nombre del objeto, cantidad y valor en cobre
+cuando detecta un drop valioso.
+Linux con Steam/Proton es la plataforma primaria, macOS con CrossOver la secundaria y Windows
+permanece en beta. La matriz de soporte, los gates y las métricas del piloto se fijan en
+[Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
+Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un
+backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato
+previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el
+runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
+Un aviso dentro del juego irá por un addon de Nexus separado posterior (H13.9); ese addon, cuando
+exista, será un addon de terceros que corre dentro del proceso del juego, dentro de lo que la
+política de addons de terceros de ArenaNet permite, y lo instala el usuario aparte.
 
 H9.6 descarta el benchmarking de clan en el producto actual. Comparar cuentas exigiría intercambio de
 datos o un backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se podrá

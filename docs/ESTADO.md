@@ -789,6 +789,12 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Deuda conocida
 
+### H13.1 — Primera ejecución humana preparada (2026-09-03)
+
+La bóveda desechable `~/tyrian-qa-h13-1` existe con el build `0.1.21` instalado y verificado por
+SHA-256. El protocolo de ejecución vive en `docs/QA-MVP.md`, sección H13.1. La ejecución humana
+está pendiente; una bóveda preparada no acredita una prueba superada.
+
 ### QA manual: ninguna ejecución, en ninguna plataforma
 
 Los once pendientes de abajo son la misma deuda repetida: **QA manual que nunca se ha ejecutado en

@@ -97,6 +97,74 @@ candidato y reabrir Obsidian. Verificar por separado que el plugin carga y que l
 secreto sigue siendo una referencia, no un valor visible. Esta fila no acredita recovery; el
 recovery se valida con el cierre forzado anterior.
 
+## H13.1 — Primera ejecución humana
+
+Esta sección documenta el protocolo de validación de H13.1 en la bóveda desechable creada por
+David. La bóveda está preparada con el build de producción `0.1.21` verificado por SHA-256, y
+aguarda ejecución humana.
+
+### Recorrido de la sesión
+
+1. Abrir la bóveda desechable en Obsidian.
+2. En Ajustes, verificar que el secreto de API está seleccionado y ejecutar **Check connection**;
+   debe marcar `connected` o `warning`.
+3. Ejecutar **Iniciar sesión de farmeo**, introducir personaje y Magic Find manual, confirmar y
+   esperar a que el estado pase a `active`.
+4. Farmear un mapa durante al menos 15 minutos. La API de cuenta sirve desde caché de 5 a 10
+   minutos, así que un recorrido más corto puede dar delta vacío y hacer fallar la prueba por el
+   instrumento en vez de por el plugin.
+5. Ejecutar **Finalizar sesión de farmeo** y esperar a `provisional`.
+6. Abrir **Revisar sesión**, responder la declaración de contaminación y confirmar.
+7. Ejecutar **Limpiar sesión completada**.
+8. Abrir la nota generada bajo `Tyrian Companion QA/sessions/<año UTC>/` y verificar que contiene
+   valores económicos y no dice `valuation: null`.
+9. Esta ejecución NO prueba el aviso nuevo de drop valioso (H13.3/H13.4, posterior). Si la detección
+   asistida estuvo armada, abrir la bandeja de Halloween en Ajustes y verificar que no hay errores
+   en el histórico de propuestas presentadas.
+
+### Datos que anotarás
+
+Conserva solo estos datos; nunca incluyas token ni `accountId`:
+
+- Versión del plugin: `0.1.21` (de `manifest.json`).
+- SHA del commit de `main` con el que se construyó el build.
+- Versión de Obsidian (Ajustes > About).
+- Sistema operativo (Linux/macOS/Windows, con distribución/versión).
+- Hora UTC de inicio y fin de la sesión (formato ISO 8601).
+- Ruta relativa de la nota generada, por ejemplo `Tyrian Companion QA/sessions/2026/2026-09-03.md`.
+- SHA-256 de la nota generada (comando `sha256sum <fichero>` o `shasum -a 256 <fichero>`).
+- ¿Se vio el aviso en la pantalla (para drops valiosos)? (sí/no/no aplicable).
+- ¿Se vio una entrada en la bandeja de Halloween? (sí/no/no aplicable).
+- Observaciones: cualquier diferencia notable, error o comportamiento inesperado.
+
+### Secreto de API y privacidad
+
+- El secreto se crea como un secreto de Obsidian directamente en la bóveda desechable, no en la
+  bóveda real.
+- La clave de API debe tener los permisos descritos en [API-KEY.md](API-KEY.md).
+- Nunca pegues la clave, su ID ni el `accountId` en notas, capturas, logs o informes.
+- Recorta cualquier captura de pantalla de forma que oculte el nombre de cuenta, rutas personales
+  y valores de configuración.
+
+### Recarga del plugin
+
+Importante: si ejecutas esta prueba sobre la bóveda real de David en lugar de una desechable,
+antes de empezar recarga el plugin en Obsidian (Ajustes > Community plugins > Tyrian Companion >
+reload, o Ctrl+P > "Reload app without saving"). Esto garantiza que ejecutas `0.1.21` y no la
+versión anterior que estaba en memoria al instalar el build.
+
+### Matriz de validación
+
+| Paso | Criterio PASS | Resultado (PASS/FAIL) |
+| --- | --- | --- |
+| Check connection | `connected` o `warning` | PENDIENTE |
+| Iniciar sesión | Modal de personaje y Magic Find aceptado; estado → `active` | PENDIENTE |
+| Farmeo en vivo | Sin errores en la bitácora durante al menos 15 minutos de actividad | PENDIENTE |
+| Finalizar sesión | Captura sin error; estado → `provisional` | PENDIENTE |
+| Revisar sesión | Confirmación sin error; estado → `complete` | PENDIENTE |
+| Nota generada | Existe la nota; contiene valores económicos (no `valuation: null`) | PENDIENTE |
+| Aviso (si aplica) | No aplicable: la `0.1.21` no incluye el aviso nuevo (H13.3/H13.4). Si la detección asistida está armada, verificar que no hay errores en el histórico de propuestas. | NO APLICABLE |
+
 ## Matriz de resultados
 
 | Caso | Criterio PASS | Evidencia mínima | Resultado (PASS/FAIL) |

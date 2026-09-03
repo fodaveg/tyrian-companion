@@ -16,6 +16,22 @@ Las métricas se publican separadas por plataforma y versión de Steam/Proton, C
 Windows, Obsidian y Tyrian Companion. Un agregado global no puede ocultar una regresión de la
 plataforma primaria. La compatibilidad móvil sigue fuera de alcance.
 
+## Semilla histórica de precios y webhook de aviso (H13.2 y H13.4)
+
+El plugin puede opcionalmente descargar una serie histórica de precios diarios del objeto `#36038`
+desde el servicio de terceros datawars2, mediante el endpoint público
+`https://api.datawars2.ie/gw2/v1/history?itemID=36038`. Esta descarga es única, sin clave, ocurre
+únicamente durante una sesión activa a la primera petición de histórico, y siembra la IndexedDB local
+con los datos antecedentes. Si la descarga falla, el plugin declara «sin semilla» y construye su serie
+desde las capturas propias realizadas después; nunca inventa valores ausentes.
+
+El webhook de aviso de drop valioso es completamente opcional y se configura mediante una URL
+vacía por defecto en ajustes. Si se proporciona, el plugin envía únicamente nombre del objeto,
+cantidad detectada y valor en cobre, sin clave de API, sin `accountId`, sin snapshot de inventario
+y sin ninguna información de la cuenta. El destino de la URL es responsabilidad del usuario; el
+plugin nunca genera credenciales, no las almacena, no las valida y no persiste el resultado de la
+llamada.
+
 ## Límite del MVP: solo API
 
 El MVP puede consultar exclusivamente endpoints oficiales de Guild Wars 2. La carga del plugin y
@@ -24,10 +40,15 @@ de la detección asistida y la activación explícita del histórico público de
 puertas de entrada a las consultas ya descritas en
 [Arquitectura](ARCHITECTURE.md).
 
-El MVP no integra Mumble Link, no inspecciona el cliente de juego y no depende de Steam, Proton o
-CrossOver para obtener evidencia. Inicio y parada asistidos siguen siendo propuestas: una persona
-debe aceptarlas o descartarlas. Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar
-cualquier otra operación dentro del juego o sobre la cuenta queda siempre fuera del companion.
+El MVP no integra Mumble Link ni depende de Steam, Proton o CrossOver para obtener evidencia.
+El plugin de Obsidian obtiene avisos únicamente por API; un aviso dentro del juego irá por un addon
+de Nexus separado e instalado aparte (ticket H13.9, posterior). El addon de Nexus, cuando exista,
+será un addon de terceros que corre dentro del proceso del juego, dentro de lo que la política de
+addons de terceros de ArenaNet permite, y lo instala el usuario aparte; el plugin seguirá sin
+inspeccionar el cliente.
+Inicio y parada asistidos siguen siendo propuestas: una persona debe aceptarlas o descartarlas.
+Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar cualquier otra operación
+dentro del juego o sobre la cuenta queda siempre fuera del companion.
 
 ## Histórico público de precios H9.1
 
