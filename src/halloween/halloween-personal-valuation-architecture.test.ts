@@ -39,7 +39,9 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(
 			settingsTab.indexOf("settings.halloween.enabled.name"),
 		);
-		expect(main).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
+		expect(readFileSync('src/runtime/assemble-advisor.ts', 'utf8'))
+			.toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
+		expect(main).toContain('personalValuation: () => this.settings.halloweenPersonalValuation');
 		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\([^)]*\)/u);
 	});
 

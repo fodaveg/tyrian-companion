@@ -5,11 +5,11 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import type { InventoryAdvisorCaptureReceiptV1 } from '../advisor/inventory-advisor-evidence-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
-import TyrianCompanionPlugin, {
-	createInventoryAdvisorCommandCallbacks,
+import TyrianCompanionPlugin, { createInventoryAdvisorCommandCallbacks } from '../main';
+import {
 	inventoryAdvisorWorkflowFailureReceipt,
 	inventoryAdvisorWorkflowReceipt,
-} from '../main';
+} from '../runtime/assemble-advisor';
 
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
@@ -32,8 +32,12 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
 		expect(source).toMatch(/const inventoryTransport = new ObsidianRequestTransport\(\{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
 		expect(source.match(/operationPolicies: GW2_CHARACTER_OPERATION_POLICIES/gu)).toHaveLength(2);
-		expect(source).toContain('inventoryClient, inventoryPublicClient, inventorySnapshots,');
-		const runtime = source.slice(source.indexOf('function createInventoryAdvisorRuntime('), source.indexOf('\nfunction managedAssetsFailureCode('));
+		// The advisor stack gets the inventory-scoped client, catalog and snapshots, never the
+		// session ones: its 30 s timeout and its own rate-limit share are the reason they exist.
+		expect(source).toContain('client: inventoryClient,');
+		expect(source).toContain('publicClient: inventoryPublicClient,');
+		expect(source).toContain('snapshots: inventorySnapshots,');
+		const runtime = readFileSync('src/runtime/assemble-advisor.ts', 'utf8');
 		expect(runtime).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(source).toContain('() => this.settings.halloweenPersonalValuation');
 		expect(runtime).toContain('capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) =>');

@@ -82,20 +82,16 @@ import type {
 import type { SellSignalRuntime } from './economy/sell-signal-runtime';
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
-import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
-import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
-import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
+import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import {
-	createInventoryAdvisorBuiltinRulesProvider,
-	InventoryAdvisorWorkflow,
-	type InventoryAdvisorWorkflowResult,
-} from './advisor/inventory-advisor-workflow';
-import { IndexedDbInventoryPreferencesStore } from './advisor/inventory-preferences-store';
-import { InventoryPreferencesService } from './advisor/inventory-preferences-service';
-import {
+	assembleAdvisor,
+	type InventoryAdvisorCaptureProgressListenerRef,
+	type InventoryAdvisorPhaseListenerRef,
+} from './runtime/assemble-advisor';
+import type {
 	InventoryPreferencesRuntime,
-	type InventoryPreferencesEditorSession,
-	type InventoryPreferencesEditorState,
+	InventoryPreferencesEditorSession,
+	InventoryPreferencesEditorState,
 } from './advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
@@ -743,31 +739,27 @@ export default class TyrianCompanionPlugin extends Plugin {
 			},
 			apply: async (plan) => await walletVaultWriter.apply(plan),
 		});
-		this.inventoryPreferences = new InventoryPreferencesRuntime(
-			new InventoryPreferencesService(new IndexedDbInventoryPreferencesStore(
-				window.indexedDB,
-				undefined,
-				{
-					read: this.persistenceDiagnostics('advisor', 'inventory_preferences_read'),
-					write: this.persistenceDiagnostics('advisor', 'inventory_preferences_write'),
-				},
-			)),
+		const advisorServices = assembleAdvisor({
+			factory: window.indexedDB,
 			vaultId,
-			this.localDebugActions ?? undefined,
-		);
-		this.inventoryAdvisor = createInventoryAdvisorRuntime(
-			inventoryClient, inventoryPublicClient, inventorySnapshots, rateLimitCoordinator,
-			() => this.settings.language,
-			() => this.settings.halloweenPersonalValuation,
-			() => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
-			() => resolveEquipmentSalvagePreferences(this.settings),
-			this.inventoryPreferences,
-			(receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
-			this.inventoryAdvisorPhaseListener,
-			this.inventoryAdvisorCaptureProgressListener,
-			catalogDiagnostics,
-			this.localDebugActions,
-		);
+			client: inventoryClient,
+			publicClient: inventoryPublicClient,
+			snapshots: inventorySnapshots,
+			rateLimit: rateLimitCoordinator,
+			locale: () => this.settings.language,
+			personalValuation: () => this.settings.halloweenPersonalValuation,
+			materialStorageCapacity: () => resolveMaterialStorageCapacity(this.settings.materialStorageCapacity),
+			equipmentSalvagePreferences: () => resolveEquipmentSalvagePreferences(this.settings),
+			writeCaptureReceipt: (receipt) => this.writeInventoryAdvisorCaptureReceipt(receipt),
+			phaseListener: this.inventoryAdvisorPhaseListener,
+			captureProgressListener: this.inventoryAdvisorCaptureProgressListener,
+			catalogPersistence: catalogDiagnostics,
+			preferencesReadPersistence: this.persistenceDiagnostics('advisor', 'inventory_preferences_read'),
+			preferencesWritePersistence: this.persistenceDiagnostics('advisor', 'inventory_preferences_write'),
+			diagnostics: this.localDebugActions,
+		});
+		this.inventoryPreferences = advisorServices.preferences;
+		this.inventoryAdvisor = advisorServices.controller;
 		this.detectionQuality = new DetectionQualityRecorder(
 			new IndexedDbDetectionQualityStore(
 				window.indexedDB,
@@ -3396,185 +3388,6 @@ export function createInventoryAdvisorCommandCallbacks(actions: {
 		open: () => { Promise.resolve().then(() => actions.open()).catch(() => undefined); },
 		refresh: () => { Promise.resolve().then(() => actions.refresh()).catch(() => undefined); },
 	};
-}
-
-/** A mutable slot the one-click sync run swaps in for the duration of one refresh call. */
-interface InventoryAdvisorPhaseListenerRef {
-	current: ((phase: 'capture' | 'preferences' | 'classification') => void) | null;
-}
-
-/** Same shape, for the capture phase's own real request counters. */
-interface InventoryAdvisorCaptureProgressListenerRef {
-	current: ((progress: InventoryAdvisorCaptureProgress) => void) | null;
-}
-
-function createInventoryAdvisorRuntime(
-	client: GuildWars2Client,
-	publicClient: GuildWars2PublicCatalogClient,
-	snapshots: Pick<StorageSnapshotService, 'captureInventoryWithOperation'>,
-	rateLimitCoordinator: RateLimitCoordinator,
-	locale: () => Locale,
-	personalValuation: () => TyrianSettings['halloweenPersonalValuation'],
-	materialStorageCapacity: () => ReturnType<typeof resolveMaterialStorageCapacity>,
-	equipmentSalvagePreferences: () => ReturnType<typeof resolveEquipmentSalvagePreferences>,
-	preferences: InventoryPreferencesRuntime,
-	writeCaptureReceipt: (receipt: InventoryAdvisorCaptureReceiptV1) => void | Promise<void>,
-	phaseListener: InventoryAdvisorPhaseListenerRef,
-	captureProgressListener: InventoryAdvisorCaptureProgressListenerRef,
-	catalogDiagnostics: LocalDebugPersistenceProbe,
-	diagnostics: LocalDebugActionRunner | null,
-): InventoryAdvisorPresentationController {
-	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
-	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
-	let workflowStartedAt = 0;
-	let workflowStage: 'capture' | 'preferences' | 'classification' = 'capture';
-	const enterWorkflowStage = (stage: typeof workflowStage): void => {
-		workflowStage = stage;
-		phaseListener.current?.(stage);
-	};
-	const writeWorkflowReceipt = async (
-		workflow: NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>,
-		parent?: ResolvedLocalDebugActionContext,
-	): Promise<void> => {
-		const receipt = latestCaptureReceipt ?? emptyInventoryAdvisorCaptureReceipt();
-		const span = startLocalDebugAction(diagnostics ?? undefined, {
-			component: 'advisor', action: 'inventory_advisor_refresh', state: 'workflow_receipt',
-			...(parent === undefined ? {} : {
-				parent: { actionId: parent.actionId, correlationId: parent.correlationId },
-			}),
-		});
-		try {
-			await writeCaptureReceipt({ ...receipt, workflow });
-			span.success('workflow_receipt_written');
-		} catch (error) {
-			span.failure(error, 'storage_failure', 'workflow_receipt_failed');
-			/* Local receipt persistence must never become an advisor dependency. */
-		}
-	};
-	const inventoryWorkflow = new InventoryAdvisorWorkflow({
-		diagnostics: diagnostics ?? undefined,
-		capture: { capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) => {
-			if (inventoryEvidence === null) {
-				const catalogCache = await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics });
-				inventoryEvidence = new InventoryAdvisorEvidenceService(
-					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
-					Date.now, async (receipt) => {
-						latestCaptureReceipt = structuredClone(receipt);
-						await writeCaptureReceipt(receipt);
-					}, rateLimitCoordinator,
-				);
-			}
-			return await inventoryEvidence.capture(captureLocale, expectedPriceItemIds, (progress) => {
-				captureProgressListener.current?.(progress);
-			}, actionContext);
-		} },
-		preferences: { load: async (capture, parent) => {
-			enterWorkflowStage('preferences');
-			await writeWorkflowReceipt({
-				status: 'progress', stage: 'preferences',
-				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
-			}, parent);
-			const loaded = await preferences.load(capture, parent);
-			enterWorkflowStage('classification');
-			await writeWorkflowReceipt({
-				status: 'progress', stage: 'classification',
-				elapsedMs: Math.max(0, Date.now() - workflowStartedAt),
-			}, parent);
-			return loaded;
-		} },
-		rules: createInventoryAdvisorBuiltinRulesProvider(
-			inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,
-			equipmentSalvagePreferences,
-		),
-	});
-	return new InventoryAdvisorPresentationController({
-		load: async (parent) => {
-			latestCaptureReceipt = null;
-			workflowStartedAt = Date.now();
-			enterWorkflowStage('capture');
-			try {
-				const result = await inventoryWorkflow.refresh(locale(), parent);
-				await writeWorkflowReceipt(inventoryAdvisorWorkflowReceipt(result), parent);
-				return result;
-			} catch (error) {
-				await writeWorkflowReceipt(inventoryAdvisorWorkflowFailureReceipt(
-					error, workflowStage, Math.max(0, Date.now() - workflowStartedAt),
-				), parent);
-				throw error;
-			}
-		},
-		reclassify: (parent) => inventoryWorkflow.reclassify(parent),
-		invalidate: () => inventoryWorkflow.invalidate(),
-	});
-}
-
-export function inventoryAdvisorWorkflowFailureReceipt(
-	error: unknown,
-	stage: 'capture' | 'preferences' | 'classification',
-	elapsedMs: number,
-): Extract<NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']>, { status: 'failed' }> {
-	return {
-		status: 'failed',
-		stage,
-		reason: error instanceof Error && error.message === 'inventory_advisor_input_invalid'
-			? 'input_invalid' : 'unexpected_failure',
-		elapsedMs: Number.isSafeInteger(elapsedMs) && elapsedMs >= 0 ? elapsedMs : 0,
-	};
-}
-
-function emptyInventoryAdvisorCaptureReceipt(): InventoryAdvisorCaptureReceiptV1 {
-	return {
-		version: 1,
-		recordedAt: new Date().toISOString(),
-		status: 'unavailable',
-		failure: null,
-		evidenceCoverage: null,
-		evidenceDetails: null,
-		containerPrices: 'not_requested',
-		workflow: null,
-		snapshot: null,
-	};
-}
-
-export function inventoryAdvisorWorkflowReceipt(
-	result: InventoryAdvisorWorkflowResult,
-): NonNullable<InventoryAdvisorCaptureReceiptV1['workflow']> {
-	if (result.status === 'blocked') return { status: 'blocked', reason: result.reason };
-	const report = result.source.result.report;
-	if (report === null) {
-		return {
-			status: 'ready',
-			resultStatus: result.source.result.status,
-			lineCount: 0,
-			decisionCount: 0,
-			defaultVisibleDecisionCount: 0,
-			actionCounts: [],
-			reasonCounts: [],
-		};
-	}
-	const decisions = report.lines.flatMap((line) => line.decisions);
-	return {
-		status: 'ready',
-		resultStatus: result.source.result.status,
-		lineCount: report.lines.length,
-		decisionCount: decisions.length,
-		defaultVisibleDecisionCount: decisions.filter((decision) => decision.action !== 'review').length,
-		actionCounts: counts(decisions.map((decision) => decision.action), 'action'),
-		reasonCounts: counts(
-			report.explanations.flatMap((explanation) => explanation.reasonCodes),
-			'reason',
-		),
-	};
-}
-
-function counts<Key extends 'action' | 'reason'>(
-	values: readonly string[],
-	key: Key,
-): Array<Record<Key, string> & { count: number }> {
-	const totals = new Map<string, number>();
-	for (const value of values) totals.set(value, (totals.get(value) ?? 0) + 1);
-	return [...totals].sort(([left], [right]) => left.localeCompare(right))
-		.map(([value, count]) => ({ [key]: value, count }) as Record<Key, string> & { count: number });
 }
 
 function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'unavailable'): ManagedAssetsMessageCode {
