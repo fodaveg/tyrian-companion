@@ -435,7 +435,15 @@ function parseFrontmatter(content: string): {
 	return { body: content.slice(end + 5), humanLines, tags, sessionRef, frontmatter, hasInvalidScalar };
 }
 
-/** Parses producer-owned scalars with YAML Core and requires the renderer's exact scalar styles. */
+/**
+ * Parses producer-owned scalars with YAML Core and requires the renderer's exact scalar styles.
+ *
+ * The STYLE is the check, which is why this reads the document tree instead of
+ * the values Obsidian's `parseYaml(yaml: string): any` would hand back: a
+ * `tc_` string is only accepted as `QUOTE_DOUBLE` and a `tc_` number only as
+ * `PLAIN`, and a parser that answers plain JavaScript has already thrown that
+ * away by the time it returns. Nothing else in the host API carries it.
+ */
 function parseStrictTcFrontmatter(content: string): {
 	frontmatter: Record<string, string | number | null>;
 } | null {

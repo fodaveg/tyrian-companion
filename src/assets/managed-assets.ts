@@ -665,6 +665,21 @@ function tombstoneFor(kind: ManagedAssetEntry['kind'], operation: string): strin
 }
 function serializeManifest(value: ManagedAssetsManifest): string { return `${JSON.stringify(value, null, 2)}\n`; }
 
+/**
+ * Hashes what a base MEANS, so a reformatted file is not mistaken for an edited one.
+ *
+ * This is the one place the `yaml` dependency cannot be traded for Obsidian's
+ * own `parseYaml`, and the reason is the OPTIONS rather than the parsing: the
+ * host signature is `parseYaml(yaml: string): any`, with nowhere to ask for the
+ * four things this hash is built on. `uniqueKeys` and the `errors`/`warnings`
+ * lists are what make an ambiguous file unhashable instead of silently hashed;
+ * `mapAsMap` is what lets `canonicalYamlValue` refuse a non-string key rather
+ * than watch it be coerced into one; and `maxAliasCount: 0` is what stops an
+ * anchor from expanding, which on a file the plugin fetches is a decompression
+ * bomb with a YAML syntax. Swapping in a parser that answers a plain value
+ * would also move the hash itself, and every installed asset would read as
+ * drifted on the next check.
+ */
 async function baseSemanticHash(content: string): Promise<string | null> {
 	try {
 		const document = parseDocument(normalizeLf(content), { prettyErrors: false, uniqueKeys: true });

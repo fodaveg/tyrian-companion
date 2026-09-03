@@ -1885,9 +1885,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 674,
+					"line": 689,
 					"column": 4,
-					"endLine": 676,
+					"endLine": 691,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1900,9 +1900,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 711,
+					"line": 726,
 					"column": 4,
-					"endLine": 711,
+					"endLine": 726,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8280,9 +8280,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 470,
+					"line": 478,
 					"column": 4,
-					"endLine": 470,
+					"endLine": 478,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8295,9 +8295,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 624,
+					"line": 632,
 					"column": 107,
-					"endLine": 624,
+					"endLine": 632,
 					"endColumn": 159,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8310,9 +8310,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 634,
+					"line": 642,
 					"column": 4,
-					"endLine": 639,
+					"endLine": 647,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
