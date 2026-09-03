@@ -332,9 +332,9 @@ configuración de símbolos/PDB. Rust concentra el riesgo en la frontera `unsafe
 linker y dependencias. El ADR se reabre si Rust no puede respetar H8.1, producir el PE único
 reproducible o cubrir la matriz con menos riesgo que C# NativeAOT.
 
-El helper tendrá un ZIP separado, nunca el ZIP BRAT del plugin. El paquete futuro contendrá
-exactamente `tyrian-mumble-helper.exe`, `helper-manifest.json`, `SHA256SUMS`, `LICENSE` y
-`THIRD-PARTY-LICENSES.txt`; manifest y checksums deberán ligar el mismo build/target. La firma
+El helper tendrá un ZIP separado, nunca el ZIP BRAT del plugin; sus cinco entradas exactas y el
+requisito de que manifest y checksums liguen el mismo build/target están en [ADR
+0001](adr/0001-h8-3-native-mumble-helper.md), sección `package`. La firma
 Authenticode y todo el empaquetado productivo siguen pendientes. H8.5 transforma el guard H8.3 en
 un censo positivo de la raíz Rust, toolchain, dependencias, única isla `unsafe`, APIs Win32 y tests;
 continúa rechazando outputs nativos tracked/no ignorados y cualquier raíz nativa alternativa. Un
