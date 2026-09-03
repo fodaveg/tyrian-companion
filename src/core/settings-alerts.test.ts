@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from '../alerts/alert-contract';
 import {
+	alertIngamePortValue,
 	alertWebhookDestination,
+	DEFAULT_ALERT_INGAME_PORT,
 	DEFAULT_SETTINGS,
 	migrateSettings,
 	SETTINGS_SCHEMA_VERSION,
@@ -73,5 +75,38 @@ describe('H13.3 and H13.4 settings', () => {
 			expect(migrateSettings({ valuableLootThresholdCopper: rejected }).valuableLootThresholdCopper).toBe(50_000);
 		}
 		expect(migrateSettings({ valuableLootThresholdCopper: 0 }).valuableLootThresholdCopper).toBe(0);
+	});
+});
+
+describe('H13.9/H13.15 in-game alert settings', () => {
+	it('ships the in-game bridge off, with the default port', () => {
+		expect(DEFAULT_SETTINGS.alertIngameEnabled).toBe(false);
+		expect(DEFAULT_SETTINGS.alertIngamePort).toBe(DEFAULT_ALERT_INGAME_PORT);
+	});
+
+	it('retains only a port between 1024 and 65535', () => {
+		expect(alertIngamePortValue(47_823)).toBe(47_823);
+		expect(alertIngamePortValue(1_024)).toBe(1_024);
+		expect(alertIngamePortValue(65_535)).toBe(65_535);
+		for (const rejected of [1_023, 65_536, -1, 0, 1.5, Number.NaN, '47823', null, undefined]) {
+			expect(alertIngamePortValue(rejected), String(rejected)).toBe(DEFAULT_ALERT_INGAME_PORT);
+		}
+	});
+
+	it('adopts the enabled flag and port on migration without discarding what the install already had', () => {
+		const migrated = migrateSettings({
+			schemaVersion: SETTINGS_SCHEMA_VERSION,
+			alertIngameEnabled: true,
+			alertIngamePort: 50_000,
+			pollingIntervalMinutes: 60,
+		});
+		expect(migrated.alertIngameEnabled).toBe(true);
+		expect(migrated.alertIngamePort).toBe(50_000);
+		expect(migrated.pollingIntervalMinutes).toBe(60);
+	});
+
+	it('discards a stored out-of-range port on load instead of trying to bind it', () => {
+		expect(migrateSettings({ alertIngamePort: 80 }).alertIngamePort).toBe(DEFAULT_ALERT_INGAME_PORT);
+		expect(migrateSettings({ alertIngamePort: 99_999 }).alertIngamePort).toBe(DEFAULT_ALERT_INGAME_PORT);
 	});
 });

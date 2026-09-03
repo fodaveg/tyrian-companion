@@ -105,8 +105,10 @@ describe('H13.4 alert channel cabling', () => {
 		const report = await plugin.emitAlert(VALUABLE);
 
 		expect(report.rejected).toBe(false);
+		// `ingame` ships disabled: like the empty-URL webhook, an off channel is a
+		// silent success rather than a failure the player has to explain to themselves.
 		expect([...report.delivered].sort())
-			.toEqual(['queue', 'sound', 'system_notification', 'toast', 'webhook']);
+			.toEqual(['ingame', 'queue', 'sound', 'system_notification', 'toast', 'webhook']);
 		expect(banners).toHaveLength(1);
 		expect(banners[0]?.title).toBe('Hallazgo valioso');
 		expect(banners[0]?.options.body).toContain('Bolsa de truco o trato');
@@ -133,10 +135,32 @@ describe('H13.4 alert channel cabling', () => {
 		})();
 
 		expect([...report.failed].sort()).toEqual(['sound', 'system_notification']);
-		expect([...report.delivered].sort()).toEqual(['queue', 'toast', 'webhook']);
+		expect([...report.delivered].sort()).toEqual(['ingame', 'queue', 'toast', 'webhook']);
 		await vi.waitFor(() => {
 			expect(plugin.getEmittedAlerts()).toHaveLength(1);
 		});
+	});
+
+	it('fails the in-game channel when it is enabled but no addon is connected', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const plugin = alertWiringPlugin(new IDBFactory());
+		plugin.settings.alertIngameEnabled = true;
+		plugin.settings.alertIngamePort = 0;
+
+		await plugin.initializeRuntime();
+		const report = await plugin.emitAlert(VALUABLE);
+
+		// Enabled but unreachable must NOT read as success: the whole point of this
+		// channel is a banner inside the game, and a swallowed failure here is a
+		// banner the player never gets shown with nothing in the report to say why.
+		expect(report.failed).toContain('ingame');
+		expect(report.delivered).not.toContain('ingame');
+
+		// Port 0 really opens a loopback listener; close it so the suite does not
+		// leak a socket per run.
+		await (plugin as unknown as { alertIngameServer: { close(): Promise<void> } | null }).alertIngameServer?.close();
 	});
 
 	it('refuses to build an alert that is not the signed contract', async () => {

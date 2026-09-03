@@ -18,6 +18,8 @@ import {
 	showSystemNotification,
 } from './alerts/alert-system-notification';
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
+import { alertIngamePayload } from './alerts/alert-ingame';
+import { startAlertIngameServer, type AlertIngameServerHandle } from './alerts/alert-ingame-server';
 import { alwaysAlertReasonsOf, decideLootAlert } from './alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import {
@@ -305,6 +307,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertScopeFlight: Promise<string | null> | null = null;
 	private alertQueue: EmittedAlertQueue | null = null;
 	private emittedAlerts: readonly EmittedAlertRecordV1[] = [];
+	/** In-game bridge (H13.9/H13.15). Null until an alert actually needs it, or after it fails to bind. */
+	private alertIngameServer: AlertIngameServerHandle | null = null;
+	private alertIngameServerPort: number | null = null;
+	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
+	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
+	private alertIngameSeq = 0;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
@@ -943,6 +951,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
 		this.alertQueue?.dispose();
+		void this.alertIngameServer?.close();
+		this.alertIngameServer = null;
 		this.startModal?.close();
 		this.reviewModal?.close();
 		this.discardModal?.close();
@@ -1968,11 +1978,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	/**
-	 * Builds the five channels once, in the order the player perceives them.
+	 * Builds the six channels once, in the order the player perceives them.
 	 *
 	 * Each closure reads `this.settings` at delivery time rather than capturing
 	 * it: a webhook the user pastes mid-session has to work on the next alert
-	 * without rebuilding the emitter.
+	 * without rebuilding the emitter, and the in-game bridge follows the same
+	 * rule for its enabled flag and port.
 	 */
 	private buildAlertEmitter(queue: EmittedAlertQueue): AlertEmitter {
 		// The reviewed outbound boundary stays at exactly one module, so the webhook rides the
@@ -2024,6 +2035,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 			{
+				id: 'ingame',
+				deliver: async (alert) => {
+					// Off ships as a silent success, exactly like the webhook's empty URL: a
+					// fresh install pays nothing for a channel it never enabled. Enabled but
+					// unreachable is different, and must NOT look like success: the addon
+					// exists to be seen mid-game, and a swallowed failure here is a banner
+					// the player never gets shown, with nothing in the emitter report to say why.
+					if (!this.settings.alertIngameEnabled) return;
+					const server = await this.ensureAlertIngameServer();
+					if (server === null) throw new Error('The in-game alert server is not available.');
+					if (server.clientCount() === 0) throw new Error('No in-game addon is connected.');
+					server.broadcast(JSON.stringify(alertIngamePayload(alert, this.nextAlertIngameSeq())));
+				},
+			},
+			{
 				id: 'queue',
 				deliver: async (alert) => {
 					if (!await queue.enqueue(alert)) throw new Error('The durable alert queue is unavailable.');
@@ -2031,6 +2057,36 @@ export default class TyrianCompanionPlugin extends Plugin {
 				},
 			},
 		]);
+	}
+
+	/**
+	 * Lazily starts (or restarts, on a port change) the in-game loopback server.
+	 *
+	 * Read at delivery time, the same way the webhook channel reads `this.settings.alertWebhookUrl`
+	 * fresh on every alert: a player who flips the setting or edits the port mid-session must not
+	 * have to reload the plugin for the next alert to reach the game. Concurrent alerts share one
+	 * in-flight start instead of racing two servers onto the same port.
+	 */
+	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
+		const port = this.settings.alertIngamePort;
+		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
+		if (this.alertIngameServer !== null) {
+			const stale = this.alertIngameServer;
+			this.alertIngameServer = null;
+			void stale.close();
+		}
+		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
+		const flight = startAlertIngameServer(port, { schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds) })
+			.then((server) => { this.alertIngameServer = server; this.alertIngameServerPort = port; return server; })
+			.catch(() => null)
+			.finally(() => { this.alertIngameServerFlight = null; });
+		this.alertIngameServerFlight = flight;
+		return await flight;
+	}
+
+	private nextAlertIngameSeq(): number {
+		this.alertIngameSeq += 1;
+		return this.alertIngameSeq;
 	}
 
 	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */

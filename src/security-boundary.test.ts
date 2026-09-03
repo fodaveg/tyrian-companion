@@ -18,6 +18,11 @@ const REQUEST_URL_CAPABILITY_PATTERN = /\brequestUrl\b/u;
 const FETCH_CAPABILITY_PATTERN = /\bfetch\b/u;
 const WEB_SOCKET_CAPABILITY_PATTERN = /\bWebSocket\b/u;
 const HTTP_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:(?:node:)?https?|axios|undici|[^'"]*\/(?:http|obsidian-http))['"]/mu;
+// H13.9/H13.15. `node:net` opens a loopback socket, which is an outbound capability
+// `HTTP_IMPORT_PATTERN` above never covered: it only casts a net as wide as https(s),
+// axios and undici. Without a pattern of its own, `alert-ingame-server.ts` could have
+// carried the in-game bridge's TCP listener onto this census's blind spot in silence.
+const NET_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:node:)?net['"]/mu;
 const SECRET_PROVIDER_IMPORT_PATTERN = /from\s+['"][^'"]*(?:^|\/)secret-provider['"]/u;
 const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|ObsidianApiKeyProvider|readSelectedApiKey|secretStorage)\b/u;
 const REVIEWED_FUTURE_OUTBOUND_FILES = [
@@ -47,6 +52,11 @@ const REVIEWED_FUTURE_OUTBOUND_FILES = [
 const REVIEWED_REQUEST_URL_FILES = ['src/core/obsidian-http.ts'];
 const REVIEWED_FETCH_FILES: readonly string[] = [];
 const REVIEWED_WEB_SOCKET_FILES: readonly string[] = [];
+// H13.9/H13.15. The only module allowed to open `node:net`: a loopback-only TCP
+// server for the in-game alert bridge. Reviewed: it binds `127.0.0.1` exclusively,
+// reads at most one line from a client before refusing further input, and never
+// imports `src/platform/` (H8/Mumble).
+const REVIEWED_NET_IMPORT_FILES = ['src/alerts/alert-ingame-server.ts'];
 const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/account/account-service.ts',
 	'src/account/guild-wars-2-client.ts',
@@ -201,6 +211,7 @@ describe('H6.7 credential boundary', () => {
 		expect(filesMatching(FETCH_CAPABILITY_PATTERN)).toEqual(REVIEWED_FETCH_FILES);
 		expect(filesMatching(WEB_SOCKET_CAPABILITY_PATTERN)).toEqual(REVIEWED_WEB_SOCKET_FILES);
 		expect(filesMatching(HTTP_IMPORT_PATTERN)).toEqual(REVIEWED_HTTP_IMPORT_FILES);
+		expect(filesMatching(NET_IMPORT_PATTERN)).toEqual(REVIEWED_NET_IMPORT_FILES);
 		expect(filesMatching(SECRET_PROVIDER_IMPORT_PATTERN)).toEqual(REVIEWED_SECRET_PROVIDER_IMPORT_FILES);
 		expect(filesMatching(SECRET_CAPABILITY_PATTERN)).toEqual(REVIEWED_SECRET_CAPABILITY_FILES);
 		for (const source of [
@@ -213,6 +224,14 @@ describe('H6.7 credential boundary', () => {
 			expect(HTTP_IMPORT_PATTERN.test(source), `${source} bypassed the HTTP import census`).toBe(true);
 		}
 		expect(HTTP_IMPORT_PATTERN.test("const moduleName = 'node:http'; await import(moduleName);")).toBe(false);
+		for (const source of [
+			"import { createServer } from 'node:net';",
+			"const net = require('net');",
+			"await import(\n  'node:net'\n);",
+		]) {
+			expect(NET_IMPORT_PATTERN.test(source), `${source} bypassed the net import census`).toBe(true);
+		}
+		expect(NET_IMPORT_PATTERN.test("const moduleName = 'node:net'; await import(moduleName);")).toBe(false);
 	});
 
 	it('keeps the production composition on the fixed authenticated client constructor', () => {

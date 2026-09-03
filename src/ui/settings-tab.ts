@@ -16,6 +16,7 @@ import {
 	type ManagedAssetsAction,
 } from '../assets/managed-assets-ui';
 import {
+	alertIngamePortValue,
 	alertWebhookDestination,
 	MATERIAL_STORAGE_CAPACITIES,
 	POLLING_INTERVAL_OPTIONS,
@@ -776,6 +777,44 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							feedback.setAttr('role', 'status');
 							feedback.setText('');
 							await save({ alertWebhookUrl: destination });
+						}));
+				},
+			},
+			{
+				category: 'economy',
+				name: this.t('settings.alerts.ingame.enabled.name'), desc: this.t('settings.alerts.ingame.enabled.desc'),
+				render: (setting, save) => {
+					setting.addDropdown((dropdown) => dropdown
+						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
+						.setValue(this.plugin.settings.alertIngameEnabled ? 'on' : 'off')
+						.onChange(async (value) => {
+							await save({ alertIngameEnabled: value === 'on' });
+							this.refreshForSettingsChange();
+						}));
+				},
+			},
+			{
+				category: 'economy',
+				name: this.t('settings.alerts.ingame.port.name'), desc: this.t('settings.alerts.ingame.port.desc'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.alertIngamePort))
+						.setDisabled(!this.plugin.settings.alertIngameEnabled)
+						.onChange(async (value) => {
+							const port = alertIngamePortValue(Number(value));
+							if (String(port) !== value.trim()) {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.alerts.ingame.port.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setAttr('role', 'status');
+							feedback.setText('');
+							await save({ alertIngamePort: port });
 						}));
 				},
 			},

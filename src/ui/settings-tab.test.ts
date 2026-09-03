@@ -178,13 +178,13 @@ describe('assisted-detection polling settings', () => {
 });
 
 describe('settings information architecture', () => {
-	it('assigns all 28 existing rows to explicit intent categories', () => {
+	it('assigns all 30 existing rows to explicit intent categories', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(28);
+		expect(assignments).toHaveLength(30);
 		expect(assignments.filter(({ category }) => category === 'account')).toHaveLength(7);
 		expect(assignments.filter(({ category }) => category === 'inventory')).toHaveLength(5);
-		expect(assignments.filter(({ category }) => category === 'economy')).toHaveLength(12);
+		expect(assignments.filter(({ category }) => category === 'economy')).toHaveLength(14);
 		expect(assignments.filter(({ category }) => category === 'diagnostics')).toHaveLength(4);
 		expect(assignments.every(({ category }) => ['account', 'inventory', 'economy', 'diagnostics'].includes(category))).toBe(true);
 	});

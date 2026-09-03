@@ -14,7 +14,7 @@ import { isAlert, type AlertV1 } from './alert-contract';
  * Channels are started synchronously, before the first await, so a webhook with
  * a four second deadline cannot delay the banner behind it.
  */
-export const ALERT_CHANNEL_IDS = ['toast', 'system_notification', 'sound', 'webhook', 'queue'] as const;
+export const ALERT_CHANNEL_IDS = ['toast', 'system_notification', 'sound', 'webhook', 'ingame', 'queue'] as const;
 export type AlertChannelId = typeof ALERT_CHANNEL_IDS[number];
 
 export interface AlertChannel {

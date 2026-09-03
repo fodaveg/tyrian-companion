@@ -24,6 +24,12 @@ import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract
 
 export const SETTINGS_SCHEMA_VERSION = 12 as const;
 
+/** Lowest port the in-game bridge accepts. Below this range needs a privilege the plugin never asks for. */
+export const ALERT_INGAME_MIN_PORT = 1_024;
+export const ALERT_INGAME_MAX_PORT = 65_535;
+/** Arbitrary and unregistered; chosen once so an addon's default matches without discovery. */
+export const DEFAULT_ALERT_INGAME_PORT = 47_823;
+
 export type Language = 'es' | 'en';
 export type DetectionMode = 'off' | 'assisted';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
@@ -94,6 +100,10 @@ export interface TyrianSettings {
 	valuableLootThresholdCopper: number;
 	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
 	alertWebhookUrl: string;
+	/** Optional in-game alert relay (H13.9/H13.15). Off by default: no port opens on a fresh install. */
+	alertIngameEnabled: boolean;
+	/** Loopback TCP port the in-game bridge listens on when `alertIngameEnabled` is true. */
+	alertIngamePort: number;
 	/** Local bid-vs-p90 alert. It cannot activate price history. */
 	halloweenPriceAlertEnabled: boolean;
 	halloweenPriceAlertMinimumAboveP90Bps: number;
@@ -133,6 +143,8 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenValueThresholdCopper: 10_000,
 	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
 	alertWebhookUrl: '',
+	alertIngameEnabled: false,
+	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
 	halloweenPriceAlertEnabled: false,
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
@@ -221,6 +233,8 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		valuableLootThresholdCopper: safeNonNegativeInteger(data.valuableLootThresholdCopper,
 			DEFAULT_SETTINGS.valuableLootThresholdCopper),
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
+		alertIngameEnabled: data.alertIngameEnabled === true,
+		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
 		halloweenPriceAlertEnabled: data.halloweenPriceAlertEnabled === true,
 		halloweenPriceAlertMinimumAboveP90Bps: boundedNonNegativeInteger(
 			data.halloweenPriceAlertMinimumAboveP90Bps, DEFAULT_SETTINGS.halloweenPriceAlertMinimumAboveP90Bps, 100_000,
@@ -307,6 +321,12 @@ export function alertWebhookDestination(value: unknown): string {
 	try {
 		return new URL(trimmed).protocol === 'https:' ? trimmed : DEFAULT_SETTINGS.alertWebhookUrl;
 	} catch { return DEFAULT_SETTINGS.alertWebhookUrl; }
+}
+
+/** Retains only a port in the unprivileged, non-ephemeral-conflict-prone range; anything else falls back to the default. */
+export function alertIngamePortValue(value: unknown): number {
+	return Number.isSafeInteger(value) && (value as number) >= ALERT_INGAME_MIN_PORT && (value as number) <= ALERT_INGAME_MAX_PORT
+		? value as number : DEFAULT_ALERT_INGAME_PORT;
 }
 
 function safeNonNegativeInteger(value: unknown, fallback: number): number {
