@@ -1,5 +1,32 @@
 # Changelog
 
+## Release beta 0.1.25 - el canal del aviso dentro del juego abre el puerto al encenderlo
+
+### El interruptor no abría nada
+
+- **Encender el aviso dentro del juego no abría el servidor.** Medido en la máquina de un jugador
+  con el juego delante: con el ajuste activado, `ss -ltn` no encontraba a nadie escuchando en el
+  puerto, y el panel del addon dentro de Guild Wars 2 se quedaba en «esperando al plugin» para
+  siempre. El socket solo se abría dentro de la entrega de un aviso.
+- **Y el primer aviso se habría perdido.** La entrega abría el servidor en ese mismo instante y acto
+  seguido comprobaba si había algún addon conectado. No lo había, porque el addon necesita unos
+  milisegundos para conectarse a un puerto que acaba de aparecer, así que ese primer aviso se
+  declaraba fallido y no llegaba al juego. Solo llegaba el segundo. En una sesión de farmeo, el
+  primer hallazgo valioso es justamente el que importa.
+- **Ahora el servidor se abre en cuanto se activa el interruptor**, y también al cargar el plugin si
+  ya venía activado de una sesión anterior. Al apagarlo se cierra, y al cambiar el puerto se cierra
+  el viejo y se abre el nuevo. Un fallo al abrir el puerto (ocupado, permiso) se registra y no tumba
+  la carga del plugin.
+- **Lo que no cambia**: si no hay ningún addon conectado cuando salta un aviso, el canal sigue
+  declarándose fallido en el informe. Eso es deliberado, para que el jugador sepa que el juego no lo
+  recibió.
+- **El test que faltaba.** Había test de que el servidor funciona y test de que el canal está
+  cableado, y ninguno de que **encender el ajuste abre el puerto**. Por eso el defecto llegó a la
+  pantalla de un jugador. El test nuevo activa el ajuste sin emitir ningún aviso y comprueba con un
+  socket TCP real que el puerto escucha y acepta la conexión, y que apagarlo lo cierra.
+- `docs/PLATFORM_POLICY.md` precisa que «ninguna llamada de red al cargar» significa ninguna petición
+  **saliente**, y que abrir un socket de escucha en `127.0.0.1` no es una excepción a esa regla.
+
 ## Release beta 0.1.24 - la comisión del bazar deja de calcularse de dos formas, y una de las dos estaba mal
 
 ### La aritmética de la comisión se unifica sobre la que usa el juego
