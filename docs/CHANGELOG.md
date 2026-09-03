@@ -34,6 +34,20 @@
   atribución, con sus causas nombradas. Medido sobre una sesión real: antes daba cero cifras, ahora
   da 47.851 cobre con banda de 47.851 a 49.176.
 
+### El detector exige la bolsa, y el ritmo se publica como banda
+
+- **`halloween.labyrinth-drops` sube a v3 y nombra `36038` como ancla.** Antes los cinco drops del
+  Laberinto eran intercambiables, así que unos colmillos bastaban para proponer inicio de sesión.
+  Ahora la subida de la bolsa es necesaria, los otros cuatro siguen contando como ganancia pero no la
+  sustituyen, y una bajada de la bolsa dentro del mismo delta invalida la muestra con razón
+  `anchor_decreased`: una bolsa que baja se está abriendo, no farmeando.
+- **Sacos por hora, valor inmediato y valor de listado se publican como banda**, no como número
+  exacto. El margen no es una constante nueva, es `API_SETTLEMENT_WINDOW_MS`, y la banda lleva
+  `windowMs`, `marginMs` y los dos extremos de ventana para que se puedan recomputar en vez de
+  creérselos. La nota dice de dónde sale la banda («ventana de 60 min ± 10 min de caché de la API»)
+  y la tarjeta de sesión mantiene un contador de sacos en vivo sobre el tick de un segundo que ya
+  movía el reloj.
+
 ### Política y producto reescritos
 
 - H13.8 y H13.1 integran datawars2, el webhook y el addon de Nexus en la política de producto. Primera
