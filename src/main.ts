@@ -25,7 +25,6 @@ import {
 	GW2_CHARACTER_OPERATION_POLICIES,
 } from './account/guild-wars-2-client';
 import { StorageSnapshotService } from './account/storage-snapshot-service';
-import { TradingPostHistoryEvidenceService } from './account/trading-post-evidence';
 import { RateLimitedStorageSnapshotService } from './account/rate-limited-storage-snapshot-service';
 import { GuildWars2PublicCatalogClient } from './catalog/public-catalog-client';
 import type { CatalogItem } from './catalog/public-catalog-model';
@@ -61,7 +60,6 @@ import {
 } from './core/local-debug-persistence';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { translateRuntime, type RuntimeTranslationKey } from './core/i18n-runtime-catalog';
-import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import type { PriceHistoryRuntime, PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { halloweenObservationActive } from './halloween/halloween-activation';
 import type { HalloweenAlertItem } from './halloween/halloween-model';
@@ -112,23 +110,19 @@ import {
 import type { SessionContaminationAnswers } from './sessions/session-contamination-review';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
-import { DetectionQualityRecorder, type DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
-import { IndexedDbDetectionQualityStore } from './sessions/session-detection-quality-store';
-import { PilotMetricsExporter, type PilotMetricsExportPreview, type PilotMetricsExportResult } from './sessions/pilot-metrics-export';
-import {
-	PILOT_METRICS_MAX_OBSERVATIONS,
-	type PilotJournalHealth,
-	type PilotJournalSnapshotV1,
-	type PilotPlatform,
-	type PilotRecoveryKind,
-	type PilotSilentLossReview,
+import type { DetectionQualityRecorder, DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
+import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from './sessions/pilot-metrics-export';
+import type {
+	PilotJournalHealth,
+	PilotJournalSnapshotV1,
+	PilotPlatform,
+	PilotRecoveryKind,
+	PilotSilentLossReview,
 } from './sessions/pilot-metrics-model';
-import { PilotMetricsRecorder, type PilotMetricsState } from './sessions/pilot-metrics-recorder';
-import { IndexedDbPilotMetricsStore } from './sessions/pilot-metrics-store';
-import { PendingProposalService, type ProposalQueueState } from './sessions/pending-proposal-service';
-import { IndexedDbPendingProposalStore } from './sessions/pending-proposal-store';
+import type { PilotMetricsRecorder, PilotMetricsState } from './sessions/pilot-metrics-recorder';
+import type { PendingProposalService, ProposalQueueState } from './sessions/pending-proposal-service';
 import { proposalIntent, sameProposalIntent, type PendingProposal, type PendingProposalIntent } from './sessions/pending-proposal-model';
-import { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
+import type { PendingProposalRenewalRegistry } from './sessions/pending-proposal-renewal';
 import type { LootPresentationV1 } from './sessions/loot-presentation';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import { LiveSessionLootTracker, type LiveSessionLootState } from './sessions/live-session-loot';
@@ -143,13 +137,13 @@ import {
 	type SessionNoteInput,
 } from './sessions/session-note-model';
 import {
-	SessionNoteWriter,
 	writeSessionNoteBeforeClear,
+	type SessionNoteWriter,
 	type SessionNoteWriteResult,
 } from './sessions/session-note-writer';
 import {
-	SessionHistoryService,
 	SessionHistoryRuntimeAuthority,
+	type SessionHistoryService,
 	type DurableSessionLookup,
 	type SessionHistoryExportResult,
 	type SessionHistoryScrubGate,
@@ -158,16 +152,17 @@ import {
 } from './sessions/session-history';
 import type { StoredSessionLootSummary } from './sessions/session-note-renderer';
 import type { SessionHistoryLoadResult } from './sessions/session-history-summary';
-import {
+import type {
 	ManualSessionStartService,
-	type SessionRecoveryState,
-	type SessionStartFailure,
-	type SessionStopFailure,
+	SessionRecoveryState,
+	SessionStartFailure,
+	SessionStopFailure,
 } from './sessions/manual-session-start-service';
 import type { SessionSettlementWait } from './sessions/session-api-settlement';
-import { IndexedDbSessionRuntimeStore, type SessionRuntimeRecord } from './sessions/session-runtime-store';
+import type { SessionRuntimeRecord } from './sessions/session-runtime-store';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
-import { SessionStartCaptureService, type SessionStartInput } from './sessions/session-start-capture';
+import type { SessionStartInput } from './sessions/session-start-capture';
+import { assembleSessions } from './runtime/assemble-sessions';
 import {
 	COMPANION_VIEW_TYPE,
 	ConfirmClearCompletedSessionModal,
@@ -760,128 +755,88 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		this.inventoryPreferences = advisorServices.preferences;
 		this.inventoryAdvisor = advisorServices.controller;
-		this.detectionQuality = new DetectionQualityRecorder(
-			new IndexedDbDetectionQualityStore(
-				window.indexedDB,
-				undefined,
-				this.persistenceDiagnostics('detection', 'detection_proposal'),
-			),
-		);
-		this.pilotMetrics = new PilotMetricsRecorder(
-			new IndexedDbPilotMetricsStore(window.indexedDB, vaultId),
-			PILOT_METRICS_MAX_OBSERVATIONS,
-		);
-		this.pilotMetricsExporter = new PilotMetricsExporter({
-			file: (path) => this.app.vault.getAbstractFileByPath(path),
-			read: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Pilot metrics export is not a file.');
-				return await this.app.vault.read(target);
-			},
-			createFolder: async (path) => { await this.app.vault.createFolder(path); },
-			create: async (path, content) => await this.app.vault.create(path, content),
-		});
-		this.detectionQualityInitialization = this.detectionQuality.initialize();
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
-			async () => { await this.detectionQualityInitialization; this.renderViews(); });
-		this.sessions = new ManualSessionStartService(
+		const sessionServices = assembleSessions({
+			factory: window.indexedDB,
+			vaultId,
+			client,
+			priceGateway: publicClient,
+			snapshots,
 			coordinator,
-			new SessionStartCaptureService(client, snapshots),
-			{
-				onStateChange: () => {
-					const session = this.sessions.getState();
-					const recoveryId = this.pilotRecoveryIdentity();
-					if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
-					if (session.status !== 'complete') this.lootPresentation.invalidate();
-					this.renderViews();
-					if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
-					if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
-						{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
-						() => this.reconcilePendingProposals());
+			instanceId: crypto.randomUUID(),
+			sessionNoteVault: {
+				file: (path) => this.app.vault.getAbstractFileByPath(path),
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
+					return await this.app.vault.read(target);
 				},
-				// The grace window ends outside any click: the same stop pipeline has to run then,
-				// or the note, the valuation and the detection bookkeeping would never happen.
-				onSettlementDue: () => {
-					fireAndForgetLocal(this.localDebugActions,
-						{ component: 'session', action: 'session_finish', state: 'settlement_due' },
-						() => this.performStopManualSession());
+				createFolder: async (path) => { await this.app.vault.createFolder(path); },
+				create: async (path, content) => await this.app.vault.create(path, content),
+				process: async (file, update) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
+					return await this.app.vault.process(target, update);
 				},
-				runtimeStore: new IndexedDbSessionRuntimeStore(
-					window.indexedDB,
-					undefined,
-					this.persistenceDiagnostics('session', 'session_recover'),
-				),
-				priceCapture: new SessionPriceSnapshotService(publicClient),
-				tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(client),
 			},
-		);
-		await this.sessions.initialize();
-		const recoveryId = this.pilotRecoveryIdentity();
-		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
-		this.sessionNotes = new SessionNoteWriter({
-			file: (path) => this.app.vault.getAbstractFileByPath(path),
-			read: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
-				return await this.app.vault.read(target);
+			sessionHistoryVault: {
+				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
+				exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
+				file: (path) => {
+					const target = this.app.vault.getAbstractFileByPath(path);
+					return target instanceof TFile ? { path: target.path } : null;
+				},
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
+					return await this.app.vault.read(target);
+				},
+				process: async (file, update) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
+					await this.app.vault.process(target, update);
+				},
+				createFolder: async (path) => { await this.app.vault.createFolder(path); },
+				create: async (path, content) => {
+					const file = await this.app.vault.create(path, content);
+					return { path: file.path };
+				},
 			},
-			createFolder: async (path) => { await this.app.vault.createFolder(path); },
-			create: async (path, content) => await this.app.vault.create(path, content),
-			process: async (file, update) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Session note is not a file.');
-				return await this.app.vault.process(target, update);
+			pilotMetricsVault: {
+				file: (path) => this.app.vault.getAbstractFileByPath(path),
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Pilot metrics export is not a file.');
+					return await this.app.vault.read(target);
+				},
+				createFolder: async (path) => { await this.app.vault.createFolder(path); },
+				create: async (path, content) => await this.app.vault.create(path, content),
 			},
-		});
-		this.sessionHistory = new SessionHistoryService({
-			markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
-			exists: (path) => this.app.vault.getAbstractFileByPath(path) !== null,
-			file: (path) => {
-				const target = this.app.vault.getAbstractFileByPath(path);
-				return target instanceof TFile ? { path: target.path } : null;
+			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
+			clearInterval: (handle) => { window.clearInterval(handle); },
+			sessionState: () => this.sessions.getState(),
+			onSessionStateChange: () => {
+				const session = this.sessions.getState();
+				const recoveryId = this.pilotRecoveryIdentity();
+				if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
+				if (session.status !== 'complete') this.lootPresentation.invalidate();
+				this.renderViews();
+				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
+				if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
+					{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
+					() => this.reconcilePendingProposals());
 			},
-			read: async (file) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
-				return await this.app.vault.read(target);
+			// The grace window ends outside any click: the same stop pipeline has to run then,
+			// or the note, the valuation and the detection bookkeeping would never happen.
+			onSettlementDue: () => {
+				fireAndForgetLocal(this.localDebugActions,
+					{ component: 'session', action: 'session_finish', state: 'settlement_due' },
+					() => this.performStopManualSession());
 			},
-			process: async (file, update) => {
-				const target = this.app.vault.getAbstractFileByPath(file.path);
-				if (!(target instanceof TFile)) throw new Error('Session history note is not a file.');
-				await this.app.vault.process(target, update);
-			},
-			createFolder: async (path) => { await this.app.vault.createFolder(path); },
-			create: async (path, content) => {
-				const file = await this.app.vault.create(path, content);
-				return { path: file.path };
-			},
-		});
-		this.pendingProposals = new PendingProposalService(
-			new IndexedDbPendingProposalStore(
-				window.indexedDB,
-				undefined,
-				this.persistenceDiagnostics('detection', 'detection_proposal'),
-			),
-			crypto.randomUUID(),
-			undefined,
-			() => this.refreshBackgroundIndicators(),
-			(proposalId, reason, resolvedAt) => {
+			onProposalQueueStateChange: () => this.refreshBackgroundIndicators(),
+			onProposalExcluded: (proposalId, reason, resolvedAt) => {
 				void this.pilotMetrics.proposalExcluded(proposalId, reason, resolvedAt);
 			},
-		);
-		this.pendingClaimRenewals = new PendingProposalRenewalRegistry({
-			setInterval: (callback, intervalMs) => window.setInterval(callback, intervalMs),
-			clearInterval: (handle) => window.clearInterval(handle),
-		});
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
-			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
-		this.assistedDetection = new AssistedDetectionService({
-			snapshots,
-			diagnostics: this.localDebugActions ?? undefined,
-			getSessionState: () => this.sessions.getState(),
-			onStateChange: () => this.refreshBackgroundIndicators(),
+			onDetectionStateChange: () => this.refreshBackgroundIndicators(),
 			onObservedDelta: (delta) => {
 				const session = this.sessions.getState();
 				if (session.status === 'active') {
@@ -909,7 +864,33 @@ export default class TyrianCompanionPlugin extends Plugin {
 					return result.status !== 'unavailable';
 				} finally { runtimeLease.release(); }
 			},
+			diagnostics: this.localDebugActions,
+			detectionQualityPersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
+			proposalQueuePersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
+			sessionRecoverPersistence: this.persistenceDiagnostics('session', 'session_recover'),
 		});
+		// Publication order is the contract, not construction order: the session state
+		// callback above reconciles against `pendingProposals` only once it exists, so
+		// the restore below must still run before the queue is reachable.
+		this.detectionQuality = sessionServices.detectionQuality;
+		this.pilotMetrics = sessionServices.pilotMetrics;
+		this.pilotMetricsExporter = sessionServices.pilotMetricsExporter;
+		this.detectionQualityInitialization = this.detectionQuality.initialize();
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_poll', state: 'quality_initialize' },
+			async () => { await this.detectionQualityInitialization; this.renderViews(); });
+		this.sessions = sessionServices.sessions;
+		await this.sessions.initialize();
+		const recoveryId = this.pilotRecoveryIdentity();
+		if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
+		this.sessionNotes = sessionServices.sessionNotes;
+		this.sessionHistory = sessionServices.sessionHistory;
+		this.pendingProposals = sessionServices.pendingProposals;
+		this.pendingClaimRenewals = sessionServices.pendingClaimRenewals;
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_proposal', state: 'queue_initialize' },
+			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
+		this.assistedDetection = sessionServices.assistedDetection;
 		this.assistedDetection.setOnline(navigator.onLine);
 		const restoredSession = this.sessions.getState();
 		if (restoredSession.status === 'active') this.startLiveObservation(restoredSession.sessionId, true);

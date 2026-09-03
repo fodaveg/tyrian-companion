@@ -16,15 +16,12 @@ describe('pending confirmation background boundary', () => {
 
 	it('routes detector background changes through the in-place status port', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		// `.setOnline(navigator.onLine)` is the unique initial call inside `initializeRuntime`;
-		// the deferred boot guard also references `.setOnline(true|false)` earlier, from the
-		// `online`/`offline` listeners registered synchronously in `onload`.
-		const detector = source.slice(
-			source.indexOf('this.assistedDetection = new AssistedDetectionService'),
-			source.indexOf('this.assistedDetection.setOnline(navigator.onLine)'),
-		);
-		expect(detector).toContain('onStateChange: () => this.refreshBackgroundIndicators()');
-		expect(detector).not.toContain('this.renderViews()');
+		const composition = readFileSync('src/runtime/assemble-sessions.ts', 'utf8');
+		// The detector's state change is an in-place status refresh, never a repaint: the
+		// composition forwards it untouched and the plugin answers with the status port.
+		expect(source).toContain('onDetectionStateChange: () => this.refreshBackgroundIndicators()');
+		expect(composition).toMatch(/new AssistedDetectionService\(\{[\s\S]*onStateChange: input\.onDetectionStateChange/u);
+		expect(composition).not.toContain('renderViews');
 
 		const view = readFileSync('src/ui/companion-view.ts', 'utf8');
 		const refresh = view.slice(view.indexOf('refreshBackgroundStatus(): void'), view.indexOf('private projectStatus'));
@@ -51,7 +48,9 @@ describe('pending confirmation background boundary', () => {
 
 	it('registers claim renewal timers with plugin unload lifecycle', () => {
 		const source = readFileSync('src/main.ts', 'utf8');
-		expect(source).toContain('this.pendingClaimRenewals = new PendingProposalRenewalRegistry');
+		expect(source).toContain('this.pendingClaimRenewals = sessionServices.pendingClaimRenewals');
+		expect(readFileSync('src/runtime/assemble-sessions.ts', 'utf8'))
+			.toContain('new PendingProposalRenewalRegistry({');
 		expect(source).toContain('this.pendingClaimRenewals?.dispose()');
 		expect(source).toContain('const stopRenewal = this.pendingClaimRenewals.start');
 		expect(source).not.toMatch(/window\.setInterval\(\(\) => \{\s*void this\.pendingProposals\.renew/u);

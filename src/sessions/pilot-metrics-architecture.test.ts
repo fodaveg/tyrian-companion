@@ -62,7 +62,9 @@ describe('pilot metrics architecture', () => {
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
 		const main = readFileSync('src/main.ts', 'utf8');
-		expect(main).toContain('new IndexedDbPilotMetricsStore(window.indexedDB, vaultId)');
+		expect(main).toMatch(/assembleSessions\(\{\s*\n\s*factory: window\.indexedDB,\s*\n\s*vaultId,/u);
+		expect(readFileSync('src/runtime/assemble-sessions.ts', 'utf8'))
+			.toContain('new IndexedDbPilotMetricsStore(input.factory, input.vaultId)');
 		const store = readFileSync('src/sessions/pilot-metrics-store.ts', 'utf8');
 		expect(store).toContain('async disable()');
 		expect(store).toContain('PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE');
