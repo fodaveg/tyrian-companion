@@ -27,6 +27,19 @@ const DECLARED_ACTIVITIES: ReadonlySet<DeclaredActivity> = new Set([
 	'other',
 ]);
 
+/**
+ * The only wallet currencies whose decrease is evidence of *spending*, which is what can inject
+ * loot the session did not farm: `1` is Coin, the account's money, and `4` is Gem, which converts
+ * both ways with Coin and buys from the store.
+ *
+ * Every other currency in `/v2/currencies` — keys, vials, volatile magic, karma, reward-track
+ * tokens — is a farming INPUT: it goes down precisely because the player opened a chest or bought
+ * from a currency vendor while farming, and that is the activity being measured, not a
+ * contamination of it. Treating those as external activity is what invalidated a real 54-minute
+ * session over a single Exalted Key (`37`) and a single Vial of Chak Acid (`42`).
+ */
+const MONETARY_WALLET_CURRENCY_IDS: ReadonlySet<number> = new Set([1, 4]);
+
 /** Projects only boundary-sensitive evidence without consulting the network or mutating snapshots. */
 export function buildBoundaryEvidence(before: unknown, after: unknown): BoundaryEvidence {
 	const reasons: BoundaryEvidenceReason[] = [];
@@ -158,15 +171,25 @@ function classifyValidatedSessionDelta(
 	if (context.tradingPost.events.some((event) => event.kind === 'sell')) {
 		contamination.push({ code: 'tp_sell_observed' });
 	}
-	const walletDeltas = context.boundary.wallet.coverage === 'complete_both'
-		? context.boundary.wallet.currencies.map((currency) => currency.delta)
+	const walletCurrencies = context.boundary.wallet.coverage === 'complete_both'
+		? context.boundary.wallet.currencies
 		: [];
-	if (walletDeltas.some((change) => change < 0)) contamination.push({ code: 'wallet_decreased' });
+	const walletDeltas = walletCurrencies.map((currency) => currency.delta);
+	if (walletCurrencies.some((currency) =>
+		currency.delta < 0 && MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) {
+		contamination.push({ code: 'wallet_decreased' });
+	}
 	if (delta.warnings.some((warning) => warning.code === 'roster_changed')) {
 		contamination.push({ code: 'roster_changed' });
 	}
+	// Opening containers IS farming, so it degrades the reading to a band below instead of
+	// contaminating it. Every other declared activity still moves value in or out of the account
+	// for reasons the delta cannot attribute.
+	const openDeclared = context.declaration.status === 'activities' &&
+		context.declaration.activities.includes('open');
 	if (context.declaration.status === 'activities') {
 		for (const activity of context.declaration.activities) {
+			if (activity === 'open') continue;
 			contamination.push({ code: 'activity_declared', detail: activity });
 		}
 	}
@@ -192,6 +215,23 @@ function classifyValidatedSessionDelta(
 	if (walletDeltas.some((change) => change > 0) && !walletIncreaseConfirmedClean) {
 		estimates.push({ code: 'wallet_increased_ambiguous' });
 		reviews.push({ code: 'review_wallet_increase' });
+	}
+	// The three signals of a session that consumed its own inputs. None of them is external
+	// activity, so none contaminates; together they are why the yield is published as a band.
+	if (walletCurrencies.some((currency) =>
+		currency.delta < 0 && !MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) {
+		estimates.push({ code: 'consumable_currency_spent' });
+		reviews.push({ code: 'review_consumed_inputs' });
+	}
+	if (openDeclared) {
+		estimates.push({ code: 'open_activity_declared' });
+		reviews.push({ code: 'review_consumed_inputs' });
+	}
+	// A net item loss cannot prove an opening — the delta never sees the act — but it does prove
+	// that units left the account, so the observed net is not pure yield.
+	if (delta.itemChanges.some((change) => change.delta < 0)) {
+		estimates.push({ code: 'item_losses_observed' });
+		reviews.push({ code: 'review_consumed_inputs' });
 	}
 	if (delta.status !== 'comparable' || delta.surface !== 'core_and_delivery' || delta.currencySurface !== 'wallet_and_delivery') {
 		estimates.push({ code: 'delta_limited' });
@@ -262,6 +302,17 @@ function classification(
 	};
 }
 
+/**
+ * Whether the classification says the session consumed its own inputs: containers opened, or a
+ * non-monetary currency spent. Consumers read this instead of re-listing the reason codes, so the
+ * band and the kernel can never drift apart about what causes it.
+ */
+export function declaresConsumedInputs(
+	value: Pick<SessionDeltaClassification, 'reasons'>,
+): boolean {
+	return value.reasons.some((reason) => CONSUMED_INPUT_REASONS.has(reason.code));
+}
+
 /** Validates the self-contained H2.7 classification envelope. Evidence-bound reviews still recompute it. */
 export function isSessionDeltaClassification(value: unknown): value is SessionDeltaClassification {
 	if (!isRecord(value) || !hasExactKeys(value, [
@@ -306,9 +357,10 @@ const CLASSIFICATION_REASONS = new Set<string>([
 	'delta_invalid', 'boundary_invalid', 'boundary_delta_mismatch', 'boundary_arithmetic_invalid',
 	'delta_arithmetic_invalid', 'classification_context_invalid', 'trading_post_evidence_invalid',
 	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
-	'wallet_decreased', 'wallet_increased_ambiguous', 'wallet_increase_clean_confirmation_used',
-	'roster_changed', 'character_unobserved', 'activity_declared',
-	'clean_declaration_conflicts_with_evidence', 'delta_limited',
+	'wallet_decreased', 'consumable_currency_spent', 'wallet_increased_ambiguous',
+	'wallet_increase_clean_confirmation_used',
+	'roster_changed', 'character_unobserved', 'activity_declared', 'open_activity_declared',
+	'item_losses_observed', 'clean_declaration_conflicts_with_evidence', 'delta_limited',
 	'boundary_not_manually_confirmed', 'api_settlement_window_skipped',
 	'api_settlement_window_exceeded', 'declaration_not_clean',
 	'trading_post_not_complete_clean_declaration_used',
@@ -316,6 +368,7 @@ const CLASSIFICATION_REASONS = new Set<string>([
 const REVIEW_REQUESTS = new Set<string>([
 	'repair_boundary_evidence', 'review_detected_external_activity', 'confirm_session_boundaries',
 	'confirm_session_cleanliness', 'review_wallet_increase', 'review_limited_surface',
+	'review_consumed_inputs',
 ]);
 const FATAL_REASONS = new Set<string>([
 	'delta_invalid', 'boundary_invalid', 'boundary_delta_mismatch', 'boundary_arithmetic_invalid',
@@ -325,8 +378,14 @@ const CONTAMINATING_REASONS = new Set<string>([
 	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
 	'wallet_decreased', 'roster_changed', 'activity_declared',
 ]);
+const CONSUMED_INPUT_REASONS = new Set<string>([
+	'consumable_currency_spent', 'open_activity_declared', 'item_losses_observed',
+]);
 const ESTIMATE_REVIEW = new Map<string, string>([
 	['wallet_increased_ambiguous', 'review_wallet_increase'],
+	['consumable_currency_spent', 'review_consumed_inputs'],
+	['open_activity_declared', 'review_consumed_inputs'],
+	['item_losses_observed', 'review_consumed_inputs'],
 	['delta_limited', 'review_limited_surface'],
 	['character_unobserved', 'review_limited_surface'],
 	['boundary_not_manually_confirmed', 'confirm_session_boundaries'],

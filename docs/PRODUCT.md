@@ -21,8 +21,8 @@ Está pensado tanto para un jugador individual como para grupos o clanes que qui
 El producto nunca promete conocer «todo el loot»: la API de Guild Wars 2 ofrece snapshots, no un flujo de cada objeto obtenido. Toda medición futura deberá declarar uno de estos estados:
 
 - `exacta`: snapshots estables y sin actividad externa detectada o declarada.
-- `estimada`: resultado útil con una limitación conocida, como una ubicación no validada o incertidumbre temporal.
-- `contaminada`: compras, ventas, aperturas, reciclaje, consumo u otros movimientos impiden atribuir todo el delta al farmeo.
+- `estimada`: resultado útil con una limitación conocida, como una ubicación no validada, incertidumbre temporal o insumos consumidos durante el farmeo (contenedores abiertos, llaves o viales gastados). El rendimiento se publica como banda observada, con sus dos extremos y su motivo, nunca como cifra exacta.
+- `contaminada`: compras, ventas, reciclaje, consumo u otros movimientos impiden atribuir todo el delta al farmeo. Una bajada de oro sí contamina; una bajada de una divisa que se gasta farmeando, no.
 - `inválida`: faltan datos esenciales; no se calcula rendimiento ni se emite recomendación económica.
 
 Ante datos desconocidos o una regla insuficiente, el advisor debe recomendar conservar o revisar, nunca destruir.

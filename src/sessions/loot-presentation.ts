@@ -1,3 +1,4 @@
+import { declaresConsumedInputs } from '../account/contamination';
 import type { ContainerDispositionRecommendation } from '../economy/container-recommendation';
 import type { PreparedSessionNote, SessionNoteLocale } from './session-note-model';
 
@@ -31,6 +32,25 @@ export interface LootPresentationRow {
 	recommendation: LootRecommendation;
 }
 
+/**
+ * How much of the observed value this session may claim as its own yield, as an interval.
+ *
+ * Both extremes are measured, never modelled: `lowCopper` values every priced gain at the
+ * demonstrated instant-sell depth (or its vendor floor) and `highCopper` at the listing price net
+ * of fees, both from the same captured price snapshot, plus the observed coin net. A kind that
+ * could not be priced adds zero to both, which is why it is counted apart in `unvaluedItemKinds`.
+ *
+ * `partially_attributed` is the H13.6 outcome: the session consumed its own inputs — containers
+ * opened, keys or vials spent — so part of the observed loot may come from stock built before the
+ * window. That is a band, not a contamination: the yield is bracketed, not withheld.
+ */
+export interface LootAttributionBand {
+	status: 'attributed' | 'partially_attributed' | 'unavailable';
+	lowCopper: number | null;
+	highCopper: number | null;
+	causes: string[];
+}
+
 export interface LootEconomyPresentation {
 	status: 'total' | 'subtotal' | 'nonvaluable' | 'not_evaluated' | 'withheld' | 'invalid';
 	immediateCopper: number | null;
@@ -45,6 +65,7 @@ export interface LootEconomyPresentation {
 	coverage: 'complete' | 'partial' | null;
 	immediateCopperPerHour: number | null;
 	listingCopperPerHour: number | null;
+	attribution: LootAttributionBand;
 	label: string;
 }
 
@@ -227,6 +248,7 @@ function buildEconomy(note: PreparedSessionNote, rows: LootPresentationRow[]): L
 	const totalItemKinds = value.lines.length;
 	return {
 		status: value.coverage === 'complete' ? 'total' : 'subtotal',
+		attribution: buildAttributionBand(note, unvaluedItemKinds),
 		immediateCopper: value.totals.observedImmediateCopper,
 		listingCopper: value.totals.observedListingCopper,
 		coinNetCopper: value.totals.coinNetCopper,
@@ -241,6 +263,37 @@ function buildEconomy(note: PreparedSessionNote, rows: LootPresentationRow[]): L
 		listingCopperPerHour: classification.permissions.grossPerHour ? value.rates.listingCopperPerHour : null,
 		label: localized(note.locale, value.coverage === 'complete' ? 'observed_total' : 'known_subtotal'),
 	};
+}
+
+/**
+ * Brackets the observed yield instead of publishing a single figure the evidence cannot support.
+ *
+ * Every number here is read from the valuation that was already computed from the captured
+ * quotes; nothing is modelled or extrapolated. The causes are what makes the interval an interval,
+ * and each one is an observation: a price spread that exists, kinds that came back without a
+ * price, inputs the account demonstrably consumed.
+ */
+function buildAttributionBand(note: PreparedSessionNote, unvaluedItemKinds: number): LootAttributionBand {
+	if (note.valuation.status !== 'valid') return unavailableAttribution();
+	const totals = note.valuation.value.totals;
+	const lowCopper = Math.min(totals.observedImmediateCopper, totals.observedListingCopper);
+	const highCopper = Math.max(totals.observedImmediateCopper, totals.observedListingCopper);
+	const causes: string[] = [];
+	if (highCopper > lowCopper) causes.push(localized(note.locale, 'band_route_spread'));
+	if (unvaluedItemKinds > 0) causes.push(localized(note.locale, 'band_unvalued_kinds'));
+	if (declaresConsumedInputs(note.runtime.review.classification)) {
+		causes.push(localized(note.locale, 'band_consumed_inputs'));
+	}
+	return {
+		status: causes.length === 0 ? 'attributed' : 'partially_attributed',
+		lowCopper,
+		highCopper,
+		causes,
+	};
+}
+
+function unavailableAttribution(): LootAttributionBand {
+	return { status: 'unavailable', lowCopper: null, highCopper: null, causes: [] };
 }
 
 function buildDecision(note: PreparedSessionNote, rows: LootPresentationRow[]): LootDecisionPresentation {
@@ -305,7 +358,7 @@ function emptyEconomy(status: LootEconomyPresentation['status'], label: string):
 		status, immediateCopper: null, listingCopper: null, coinNetCopper: null,
 		nonLiquidQuantity: null, valuedItemKinds: null, totalItemKinds: null, unvaluedItemKinds: null, priceSource: null,
 		priceCapturedAt: null, coverage: null, immediateCopperPerHour: null,
-		listingCopperPerHour: null, label,
+		listingCopperPerHour: null, attribution: unavailableAttribution(), label,
 	};
 }
 
@@ -331,7 +384,8 @@ function safeSum(values: number[]): number | null {
 type CopyKey = 'item' | 'currency' | 'observed_total' | 'known_subtotal' | 'not_evaluated' |
 	'evidence_invalid' | 'contaminated_block' | 'recommendation_blocked' | 'manual_footer' |
 	'availability_changed' | 'composition_changed' | 'catalog_missing' | 'binding_unknown' |
-	'price_incomplete' | 'market_depth_incomplete' | 'item_losses_not_valued';
+	'price_incomplete' | 'market_depth_incomplete' | 'item_losses_not_valued' |
+	'band_route_spread' | 'band_unvalued_kinds' | 'band_consumed_inputs';
 
 const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 	es: {
@@ -346,6 +400,9 @@ const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 		price_incomplete: 'Faltan precios para parte del botín.',
 		market_depth_incomplete: 'La profundidad del bazar no cubre por completo parte del botín.',
 		item_losses_not_valued: 'Las pérdidas no se valoran como botín.',
+		band_route_spread: 'El extremo bajo vuelca el botín contra las pujas demostradas y el alto lo coloca a precio de venta.',
+		band_unvalued_kinds: 'Los tipos que volvieron sin precio cuentan como cero en los dos extremos.',
+		band_consumed_inputs: 'Se consumieron insumos durante la sesión: parte del botín puede salir de existencias anteriores.',
 	},
 	en: {
 		item: 'Item', currency: 'Currency', observed_total: 'Observed total', known_subtotal: 'Known subtotal',
@@ -359,6 +416,9 @@ const COPY: Record<SessionNoteLocale, Record<CopyKey, string>> = {
 		price_incomplete: 'Prices are missing for part of the loot.',
 		market_depth_incomplete: 'Trading Post depth does not fully cover part of the loot.',
 		item_losses_not_valued: 'Losses are not valued as loot.',
+		band_route_spread: 'The low end dumps the loot into demonstrated buy orders; the high end lists it at selling price.',
+		band_unvalued_kinds: 'Kinds that came back without a price count as zero at both ends.',
+		band_consumed_inputs: 'Inputs were consumed during the session: part of the loot may come from earlier stock.',
 	},
 };
 

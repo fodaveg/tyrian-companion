@@ -106,9 +106,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 87,
+					"line": 100,
 					"column": 4,
-					"endLine": 89,
+					"endLine": 102,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -121,9 +121,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 104,
+					"line": 117,
 					"column": 4,
-					"endLine": 111,
+					"endLine": 124,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6723,9 +6723,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 90,
+					"line": 111,
 					"column": 4,
-					"endLine": 92,
+					"endLine": 113,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8269,9 +8269,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 622,
+					"line": 624,
 					"column": 107,
-					"endLine": 622,
+					"endLine": 624,
 					"endColumn": 159,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8284,9 +8284,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 632,
+					"line": 634,
 					"column": 4,
-					"endLine": 637,
+					"endLine": 639,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {

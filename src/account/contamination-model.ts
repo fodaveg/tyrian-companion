@@ -108,11 +108,14 @@ export type SessionClassificationReasonCode =
 	| 'tp_buy_observed'
 	| 'tp_sell_observed'
 	| 'wallet_decreased'
+	| 'consumable_currency_spent'
 	| 'wallet_increased_ambiguous'
 	| 'wallet_increase_clean_confirmation_used'
 	| 'roster_changed'
 	| 'character_unobserved'
 	| 'activity_declared'
+	| 'open_activity_declared'
+	| 'item_losses_observed'
 	| 'clean_declaration_conflicts_with_evidence'
 	| 'delta_limited'
 	| 'boundary_not_manually_confirmed'
@@ -132,7 +135,8 @@ export type SessionReviewRequestCode =
 	| 'confirm_session_boundaries'
 	| 'confirm_session_cleanliness'
 	| 'review_wallet_increase'
-	| 'review_limited_surface';
+	| 'review_limited_surface'
+	| 'review_consumed_inputs';
 
 export interface SessionReviewRequest {
 	code: SessionReviewRequestCode;

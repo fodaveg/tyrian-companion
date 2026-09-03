@@ -439,7 +439,7 @@ describe('classifySessionDelta', () => {
 	});
 
 	it.each<DeclaredActivity>([
-		'open', 'salvage', 'consume', 'craft', 'tp', 'vendor', 'transfer', 'other',
+		'salvage', 'consume', 'craft', 'tp', 'vendor', 'transfer', 'other',
 	])('classifies declared %s activity as contaminated', (activity) => {
 		const result = classifySessionDelta(
 			cleanDelta(),
@@ -449,6 +449,31 @@ describe('classifySessionDelta', () => {
 			status: 'contaminated',
 			permissions: { finalize: true, showNet: true, valueNet: false, grossPerHour: false },
 		});
+	});
+
+	// H13.6: opening containers is the farming being measured, not activity that pollutes it.
+	it('classifies a declared opening as estimated and keeps the value permission', () => {
+		const result = classifySessionDelta(
+			cleanDelta(),
+			exactContext({ declaration: { status: 'activities', activities: ['open'] } }),
+		);
+		expect(result).toMatchObject({
+			status: 'estimated',
+			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
+		});
+		expect(result.reasons).toContainEqual({ code: 'open_activity_declared' });
+		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		expect(isSessionDeltaClassification(result)).toBe(true);
+	});
+
+	it('still contaminates when an opening is declared next to real external activity', () => {
+		const result = classifySessionDelta(
+			cleanDelta(),
+			exactContext({ declaration: { status: 'activities', activities: ['open', 'tp'] } }),
+		);
+		expect(result.status).toBe('contaminated');
+		expect(result.reasons).toContainEqual({ code: 'activity_declared', detail: 'tp' });
+		expect(result.reasons).not.toContainEqual({ code: 'activity_declared', detail: 'open' });
 	});
 
 	it('lets observed evidence dominate a conflicting clean declaration', () => {

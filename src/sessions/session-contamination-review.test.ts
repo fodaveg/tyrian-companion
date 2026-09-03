@@ -34,7 +34,6 @@ describe('session contamination review', () => {
 	});
 
 	it.each([
-		['open', 'open'],
 		['salvage', 'salvage'],
 		['consume', 'consume'],
 		['craft', 'craft'],
@@ -56,6 +55,25 @@ describe('session contamination review', () => {
 		});
 	});
 
+	// H13.6: the review is the caller of the classifier, so the opening rule is asserted on the
+	// review it actually produces, not on the kernel in isolation.
+	it('maps open to a declared open activity that estimates the session instead of contaminating it', () => {
+		const { before, after, delta } = fixtures();
+		const input = answers();
+		input.activities.open = true;
+		const review = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
+
+		expect(review).toMatchObject({
+			declaration: { status: 'activities', activities: ['open'] },
+			classification: {
+				status: 'estimated',
+				permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
+			},
+		});
+		expect(review?.classification.reasons).toContainEqual({ code: 'open_activity_declared' });
+		expect(review?.classification.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+	});
+
 	it('deduplicates buy and sell within each declared activity family', () => {
 		const { before, after, delta } = fixtures();
 		const input = answers();
@@ -69,7 +87,6 @@ describe('session contamination review', () => {
 	});
 
 	it.each([
-		['open', 'open', 'open'],
 		['salvage', 'salvage', 'salvage'],
 		['Trading Post buy', 'tpBuy', 'tp'],
 		['vendor buy', 'vendorBuy', 'vendor'],

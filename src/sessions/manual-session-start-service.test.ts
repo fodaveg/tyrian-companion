@@ -654,13 +654,43 @@ describe('ManualSessionStartService', () => {
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await stopAfterSettlement(service);
 		const answers = reviewAnswers();
-		answers.activities.open = true;
+		answers.activities.salvage = true;
 
 		await expect(service.reviewContamination(answers)).resolves.toMatchObject({
 			status: 'finalized',
-			review: { declaration: { status: 'activities', activities: ['open'] } },
+			review: { declaration: { status: 'activities', activities: ['salvage'] } },
 			state: { status: 'complete', classification: 'contaminated' },
 		});
+	});
+
+	// H13.6 wiring: the service is the caller that turns the human answers into a classification,
+	// so the opening rule has to hold here and not only inside the kernel.
+	it('persists a declared opening as an estimated completed session that may still be valued', async () => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions(),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await stopAfterSettlement(service);
+		const answers = reviewAnswers();
+		answers.activities.open = true;
+
+		const result = await service.reviewContamination(answers);
+
+		expect(result).toMatchObject({
+			status: 'finalized',
+			review: {
+				declaration: { status: 'activities', activities: ['open'] },
+				classification: { status: 'estimated', permissions: { valueNet: true } },
+			},
+			state: { status: 'complete', classification: 'estimated' },
+		});
+		expect(result.status === 'finalized' ? result.review.classification.reasons : null)
+			.toContainEqual({ code: 'open_activity_declared' });
 	});
 
 	it('finalizes an unsure review as an estimated durable summary', async () => {

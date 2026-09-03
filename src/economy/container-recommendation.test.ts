@@ -620,7 +620,9 @@ function input(options: {
 			open: false, salvage: false, consume: false, craft: false, tpBuy: false, tpSell: false,
 			vendorBuy: false, vendorSell: false, transfer: false, other: false,
 	};
-	if (options.reviewKind === 'contaminated') activities.open = true;
+	// Since H13.6 a declared opening only estimates the session; contamination needs an activity
+	// that actually moves value in or out of the account.
+	if (options.reviewKind === 'contaminated') activities.tpBuy = true;
 	const review = createSessionContaminationReview(beforeSnapshot, after, delta, {
 		certainty: options.reviewKind === 'estimated' ? 'unsure' : 'confirmed', activities,
 	}, '2026-08-13T09:00:02.000Z');

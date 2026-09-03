@@ -73,6 +73,7 @@ function renderEconomy(presentation: LootPresentationV1): string {
 		`**${escapeMarkdown(economy.label)}**`,
 		`- ${markdownText(locale, 'markdown.immediateNet')}: ${money(economy.immediateCopper, presentation)}`,
 		`- ${markdownText(locale, 'markdown.listingNet')}: ${money(economy.listingCopper, presentation)}`,
+		...attributionLines(presentation),
 		`- ${markdownText(locale, 'markdown.coinNet')}: ${money(economy.coinNetCopper, presentation)}`,
 		`- ${markdownText(locale, 'markdown.nonLiquid')}: ${quantity(economy.nonLiquidQuantity)}`,
 		...(economy.valuedItemKinds === null || economy.totalItemKinds === null ? []
@@ -83,6 +84,26 @@ function renderEconomy(presentation: LootPresentationV1): string {
 		...(economy.immediateCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.immediatePerHour')}: ${money(economy.immediateCopperPerHour, presentation)}`]),
 		...(economy.listingCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.listingPerHour')}: ${money(economy.listingCopperPerHour, presentation)}`]),
 	].join('\n');
+}
+
+/**
+ * Publishes the yield as an interval with its causes. A session whose value could not be measured
+ * at all prints nothing here: an empty band would read as "between nothing and nothing".
+ */
+function attributionLines(presentation: LootPresentationV1): string[] {
+	const band = presentation.economy.attribution;
+	const locale = presentation.locale;
+	if (band.status === 'unavailable' || band.lowCopper === null || band.highCopper === null) return [];
+	return [
+		`- ${markdownText(locale, 'markdown.attributionBand')}: ${markdownText(locale, 'markdown.bandRange', {
+			low: money(band.lowCopper, presentation), high: money(band.highCopper, presentation),
+		})}`,
+		`- ${markdownText(locale, 'markdown.attribution')}: ${markdownText(
+			locale,
+			band.status === 'attributed' ? 'enum.attribution.attributed' : 'enum.attribution.partially_attributed',
+		)}`,
+		...band.causes.map((cause) => `- ${markdownText(locale, 'markdown.reason')}: ${escapeMarkdown(cause)}`),
+	];
 }
 
 function money(value: number | null, presentation: LootPresentationV1): string {
@@ -96,8 +117,12 @@ function escapeMarkdown(value: string): string {
 		.replace(/[\r\n]+/gu, ' ');
 }
 
-function markdownText(locale: SessionNoteLocale, key: RuntimeTranslationKey): string {
-	return translateRuntime(createTranslator(locale), key);
+function markdownText(
+	locale: SessionNoteLocale,
+	key: RuntimeTranslationKey,
+	params?: Record<string, string | number>,
+): string {
+	return translateRuntime(createTranslator(locale), key, params);
 }
 
 function localizedSellRoute(route: 'instant_sell' | 'vendor', locale: SessionNoteLocale): string {

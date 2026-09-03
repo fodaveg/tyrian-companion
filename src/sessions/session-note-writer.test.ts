@@ -452,7 +452,8 @@ function completeRuntime(classification: 'exact' | 'contaminated'): SessionRunti
 	});
 	const delta = compareStorageSnapshots(baseline, final);
 	const activities = {
-		open: classification === 'contaminated', salvage: false, consume: false, craft: false,
+		// A declared opening only estimates the session since H13.6; salvaging still contaminates.
+		open: false, salvage: classification === 'contaminated', consume: false, craft: false,
 		tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
 	};
 	const review = createSessionContaminationReview(
