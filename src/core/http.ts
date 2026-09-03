@@ -11,6 +11,10 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	'material_categories', 'account_skins', 'account_minis', 'account_recipes',
 	'account_achievements', 'recipes_search',
 	'commerce_transactions_current', 'commerce_transactions_history', 'character_build',
+	// The one endpoint that is not ArenaNet's: the once-per-session price-history
+	// seed. It is named here so diagnostics can count it without ever recording
+	// the URL, exactly like every official route above.
+	'price_history_seed',
 ] as const;
 export type HttpLogicalEndpoint = typeof HTTP_LOGICAL_ENDPOINTS[number];
 

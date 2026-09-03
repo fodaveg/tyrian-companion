@@ -53,7 +53,7 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'binding_unknown', 'tp_access_unknown', 'position_not_actionable', 'reserved_for_goal',
 	'user_keep_exception', 'rule_missing', 'rule_stale', 'rule_conflict', 'economic_comparison_missing',
 	'economic_activation_pending',
-	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'no_sell',
+	'unlock_coverage_unknown', 'collection_coverage_unknown', 'already_unlocked', 'seasonal_hold', 'no_sell',
 	'no_salvage', 'salvage_value_unknown', 'salvage_exotic_rate_unverified',
 	'salvage_mystic_cost_unmodeled', 'salvage_item_evidence_uncertain', 'delete_warning', 'alternative_route_exists',
 	'material_storage_space_available', 'discard_not_allowlisted', 'arithmetic_overflow',

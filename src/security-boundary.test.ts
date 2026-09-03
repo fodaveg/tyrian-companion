@@ -58,6 +58,14 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/core/obsidian-http.ts',
 	'src/economy/commerce-listings-capture.ts',
 	'src/economy/price-history-capture.ts',
+	// H13.2. The only outbound call in the plugin that is not to ArenaNet: one
+	// unauthenticated GET for the price history the official API does not
+	// publish. Reviewed: it sends an item id and nothing else, it carries no
+	// key, no account id and no snapshot, and it never runs without a session.
+	'src/economy/price-seed-source.ts',
+	// Owns that call's lifecycle (once per activation, never retried). It holds
+	// the transport it was handed and adds no outbound capability of its own.
+	'src/economy/sell-signal-runtime.ts',
 	'src/halloween/halloween-evidence-service.ts',
 	'src/halloween/halloween-unlocks.ts',
 	'src/main.ts',

@@ -503,7 +503,7 @@ function containerEconomyDecision(
 	reviewQuantity: number,
 	positions: InventoryAdvisorPositionV1[],
 	knowledgePackSha256: string,
-): { action: 'open' | 'sell' | 'vendor'; reason: string; ruleId: string | null }
+): { action: 'open' | 'sell' | 'vendor' | 'keep'; reason: string; ruleId: string | null }
 	| { action: 'review'; reason: string; ruleId: null } {
 	if (economy === undefined) return { action: 'review', reason: 'price_partial', ruleId: null };
 	const catalogItem = input.catalog.items[String(itemId)];
@@ -545,6 +545,13 @@ function containerEconomyDecision(
 	});
 	if (result.status !== 'ready') return { action: 'review', reason: result.status === 'invalid'
 		? 'rule_conflict' : economyReason(result.reason), ruleId: null };
+	// The economy layer's third outcome lands on the advisor's existing `keep`
+	// rather than on a fourth action of its own: to the player the row already
+	// means "do nothing with this stack", and the reason code is what says WHY
+	// this one is being kept.
+	if (result.decision.action === 'hold') {
+		return { action: 'keep', reason: 'seasonal_hold', ruleId: result.decision.ruleId };
+	}
 	return {
 		action: result.decision.action,
 		reason: result.decision.action === 'open' ? 'curated_open'

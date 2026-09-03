@@ -6,6 +6,7 @@ import { inventorySyncPanel, inventorySyncSummaryParams } from './inventory-sync
 import { renderPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
+import type { InventoryContainerEconomyDecisionV1 } from '../advisor/inventory-container-economy';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { ReservationRequirement } from '../economy/reservation-model';
 import type {
@@ -1129,6 +1130,15 @@ function actionLabelFor(action: InventoryAdvisorViewAction, translator: Translat
 	return translator.t(`advisor.view.action.${action}`);
 }
 
+/**
+ * The economy layer's `hold` reads as `keep` on screen, the same mapping the
+ * classifier applies. Two vocabularies for one outcome would put "hold" in the
+ * detail panel and "keep" in the row above it for the same stack.
+ */
+function economyActionLabel(action: InventoryContainerEconomyDecisionV1['action']): InventoryAdvisorViewAction {
+	return action === 'hold' ? 'keep' : action;
+}
+
 function decisionLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
 	if (row.action !== 'discard_review') return actionLabelFor(row.action, translator);
 	return `⚠ ${translator.t('advisor.view.irreversibleReview')}`;
@@ -1361,9 +1371,9 @@ function containerEconomyDetails(
 				economy.liquidOnly.explanation.threshold.requiredOpenMicroCopper, translator,
 			),
 		}));
-	const liquidAction = actionLabelFor(economy.liquidOnly.decision.action, translator);
+	const liquidAction = actionLabelFor(economyActionLabel(economy.liquidOnly.decision.action), translator);
 	const personalAction = economy.personal.decision === null
-		? null : actionLabelFor(economy.personal.decision.action, translator);
+		? null : actionLabelFor(economyActionLabel(economy.personal.decision.action), translator);
 	addDefinition(list, translator.t('advisor.containerEconomy.decisions'), personalAction === null
 		? translator.t('advisor.containerEconomy.liquidDecisionOnly', { liquid: liquidAction })
 		: personalAction === liquidAction

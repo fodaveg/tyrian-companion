@@ -29,6 +29,11 @@ const ES = {
 		'notices.alwaysAlertLoot': 'Hallazgo destacado: {{name}} ×{{quantity}} · {{reason}}.',
 		'notices.holdSignal': 'Momento de guardar la bolsa de Halloween, no de venderla.',
 		'notices.sellSignal': 'Buen momento para vender {{name}}: puja actual {{value}}.',
+		// La ganancia va en cobre absoluto y sobre la cantidad que se tiene: un
+		// porcentaje no le dice a nadie si merece la pena. La amplitud anual de la
+		// bolsa es 1,35x, que suena enorme y son unos 5 oros con 500 sacos.
+		'notices.sellSignalGain': 'Buen momento para vender {{name}} ×{{quantity}}: vender hoy vale {{gain}} más que en el mínimo del último año.',
+		'notices.holdSignalGain': 'Momento de guardar {{name}} ×{{quantity}}: la puja está en el mínimo del último año y esperar al máximo vale {{gain}}.',
 		'notices.alertLatency': 'La API de cuenta sirve desde caché: el aviso llega entre {{minimum}} y {{maximum}} minutos después del drop.',
 		'alerts.title.valuable_loot': 'Hallazgo valioso',
 		'alerts.title.always_alert': 'Hallazgo destacado',
@@ -542,6 +547,7 @@ const ES = {
 		'advisor.view.reason.unlock_coverage_unknown': 'No se conocen todos los desbloqueos.',
 		'advisor.view.reason.collection_coverage_unknown': 'No se conocen todas las colecciones.',
 		'advisor.view.reason.already_unlocked': 'El desbloqueo ya está obtenido.',
+		'advisor.view.reason.seasonal_hold': 'La puja de hoy es el mínimo del último año: guárdalas en vez de venderlas.',
 		'advisor.view.reason.no_sell': 'No hay una ruta de venta segura.',
 		'advisor.view.reason.no_salvage': 'El objeto no se puede reciclar.',
 		'advisor.view.reason.salvage_value_unknown': 'No se conoce el valor de reciclaje.',
@@ -812,6 +818,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'notices.alwaysAlertLoot': 'Notable find: {{name}} ×{{quantity}} · {{reason}}.',
 	'notices.holdSignal': 'Time to hold the Halloween bag rather than sell it.',
 	'notices.sellSignal': 'Good moment to sell {{name}}: current bid {{value}}.',
+	'notices.sellSignalGain': 'Good moment to sell {{name}} ×{{quantity}}: selling today is worth {{gain}} more than at last year\'s floor.',
+	'notices.holdSignalGain': 'Time to hold {{name}} ×{{quantity}}: the bid is at last year\'s floor and waiting for the ceiling is worth {{gain}}.',
 	'notices.alertLatency': 'The account API answers from cache: the alert arrives between {{minimum}} and {{maximum}} minutes after the drop.',
 	'alerts.title.valuable_loot': 'Valuable find',
 	'alerts.title.always_alert': 'Notable find',
@@ -1274,6 +1282,7 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'advisor.view.reason.unlock_coverage_unknown': 'Unlock coverage is incomplete.',
 	'advisor.view.reason.collection_coverage_unknown': 'Collection coverage is incomplete.',
 	'advisor.view.reason.already_unlocked': 'The unlock is already owned.',
+	'advisor.view.reason.seasonal_hold': "Today's bid is the last year's floor: hold the stack rather than sell it.",
 	'advisor.view.reason.no_sell': 'There is no safe selling route.',
 	'advisor.view.reason.no_salvage': 'The item cannot be salvaged.',
 	'advisor.view.reason.salvage_value_unknown': 'Salvage value is unknown.',

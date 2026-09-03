@@ -168,7 +168,9 @@ describe('H5.11 inventory advisor workflow', () => {
 			capture: { capture },
 			preferences: { load: preferences },
 			rules: createInventoryAdvisorBuiltinRulesProvider(inventoryAdvisorBuiltinBundleProvider),
-		now: () => Date.parse('2026-11-12T18:04:33.000Z'),
+		// H13.7 moved the expiry past the close of the Halloween window; the
+		// instant that must fail closed moved with it.
+		now: () => Date.parse('2026-12-01T00:00:00.000Z'),
 		});
 		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'missing_rules' });
 		expect(capture).not.toHaveBeenCalled();

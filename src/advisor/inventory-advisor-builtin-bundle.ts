@@ -39,9 +39,20 @@ export interface InventoryAdvisorBuiltinBundleProvider {
 
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
 const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
-const VALID_UNTIL = '2026-11-12T18:04:33.000Z';
-const RULE_PACK_SHA256 = 'dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c';
-const KNOWLEDGE_PACK_SHA256 = '505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686';
+/**
+ * H13.7. Ninety days from publication landed on 12 November, three days INSIDE
+ * the Halloween window this bundle exists to serve: the rule pack and the
+ * knowledge pack would both have expired with the festival still running, and
+ * the bundle expires on the earlier of the two. The date is now past the close
+ * of the window (15 November UTC, inclusive), which is the same invariant
+ * `isInventoryContainerEconomyPack` now enforces on the economy pack.
+ */
+const VALID_UNTIL = '2026-12-01T00:00:00.000Z';
+// `validUntil` is hashed content, so moving it for H13.7 changed both digests.
+// Recomputed with the repository's own hash functions, never transcribed:
+// `node node_modules/jiti/lib/jiti-cli.mjs scripts/recompute-bundle-hashes.ts`.
+const RULE_PACK_SHA256 = '0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c';
+const KNOWLEDGE_PACK_SHA256 = '2cdae85cb1dbe9d517b603ea5cb4f5c11f1cce5ccf72b7624196647c89114d46';
 
 const SOURCES = [
 	{ id: 'gw2-api-item-36038', url: 'https://api.guildwars2.com/v2/items/36038?lang=en', retrievedAt: PUBLISHED_AT },

@@ -74,7 +74,16 @@ import {
 	HalloweenPriceAlertRuntime,
 	type HalloweenPriceAlertRuntimeState,
 } from './halloween/halloween-price-alert-runtime';
-import type { PriceHistorySettings, PriceHistorySide, PriceHistoryWindowDays } from './economy/price-history-model';
+import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
+import type {
+	PriceHistoryDailyV1,
+	PriceHistorySettings,
+	PriceHistorySide,
+	PriceHistoryWindowDays,
+} from './economy/price-history-model';
+import { SellSignalRuntime } from './economy/sell-signal-runtime';
+import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
+import type { HttpTransport } from './core/http';
 import { InventoryAdvisorEvidenceService } from './advisor/inventory-advisor-evidence';
 import type { InventoryAdvisorCaptureProgress, InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
@@ -297,6 +306,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private priceHistory: PriceHistoryRuntime | null = null;
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
+	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
+	private sellSignal: SellSignalRuntime | null = null;
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -594,6 +605,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}); },
 			onStateChange: () => this.renderViews(),
 		});
+		this.sellSignal = this.buildSellSignalRuntime(transport);
 		this.priceHistory = new PriceHistoryRuntime({
 			factory: window.indexedDB,
 			vaultId,
@@ -606,6 +618,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				await this.halloweenPriceAlert?.evaluate({
 					readDaily: async (itemId, fromDayUtc) => await port.readDaily(itemId, fromDayUtc),
 				}, port.nowMs, port.actionContext);
+				await this.evaluateSellSignal(port);
 			},
 		});
 		const halloweenEvidence = new HalloweenEvidenceService(
@@ -965,6 +978,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.priceHistory?.dispose();
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
+		this.sellSignal?.dispose();
 		this.alertQueue?.dispose();
 		this.startModal?.close();
 		this.reviewModal?.close();
@@ -1958,6 +1972,56 @@ export default class TyrianCompanionPlugin extends Plugin {
 			async () => await this.emitAlert(alert));
 	}
 
+	/**
+	 * Builds the H13.2 detector, or does not build it at all.
+	 *
+	 * The percentage that decides when selling is worth saying is a datum of the
+	 * curated pack, so an unavailable or expired pack means there is no rule to
+	 * run: the runtime is left null rather than fed a constant from here, which
+	 * is the whole reason the number lives in the pack.
+	 */
+	private buildSellSignalRuntime(transport: HttpTransport): SellSignalRuntime | null {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+		if (loaded.status !== 'available') return null;
+		const pack = loaded.bundle.economyPack;
+		return new SellSignalRuntime({
+			itemId: HALLOWEEN_PRICE_ALERT_ITEM_ID,
+			parameters: {
+				minimumOfMaxBps: pack.sellSignal.minimumOfMaxBps,
+				referenceDays: pack.sellSignal.referenceDays,
+				minimumReferenceDays: pack.sellSignal.minimumReferenceDays,
+			},
+			transport,
+			now: () => Date.now(),
+			// No network without a session, the seed included.
+			sessionActive: () => this.sessions?.getState().status === 'active',
+			emittedAlerts: () => this.emittedAlerts,
+			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
+			heldQuantity: () => this.observedBagQuantity(),
+			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
+			emit: (alert) => { this.dispatchAlert(alert); },
+			diagnostics: this.localDebugActions ?? undefined,
+		});
+	}
+
+	/** Seeds once and reads the merged series. Never throws into the compaction that called it. */
+	private async evaluateSellSignal(port: { nowMs: number; readDaily: PriceHistoryDailyReader }): Promise<void> {
+		const runtime = this.sellSignal;
+		if (runtime === null) return;
+		try {
+			await runtime.ensureSeed();
+			const fromDayUtc = new Date(Math.max(0, port.nowMs - SELL_SIGNAL_SERIES_SPAN_MS)).toISOString().slice(0, 10);
+			runtime.evaluate(await port.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc), port.nowMs);
+		} catch { /* The sell signal never fails a price-history compaction. */ }
+	}
+
+	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
+	private observedBagQuantity(): number {
+		const state = this.liveSessionLoot?.getState();
+		if (state === undefined || state.status === 'idle') return 0;
+		return state.rows.find((row) => row.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.quantity ?? 0;
+	}
+
 	/** Projects one policy verdict onto the value-free half of the H13.3 OR and emits it. */
 	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
 		const alert = decideLootAlert({
@@ -2087,13 +2151,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertBodyText(alert: AlertV1): string {
 		const translator = createTranslator(this.settings.language);
 		const reason = translateRuntime(translator, alertReasonKey(alert.reason));
-		if (alert.kind === 'hold_signal') return translateRuntime(translator, 'notices.holdSignal');
-		if (alert.kind === 'sell_signal') {
-			return translateRuntime(translator, 'notices.sellSignal', {
+		// A price signal says what acting on it is WORTH, in copper, on the stack
+		// the player actually holds. The amplitude of this bag is 1,35x, which is
+		// about five gold over five hundred bags and nothing over one: the ratio
+		// is the same in both cases and only the absolute number decides.
+		if (alert.kind === 'hold_signal' || alert.kind === 'sell_signal') {
+			if (alert.totalCopper === null) {
+				return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignal' : 'notices.holdSignal', {
+					name: alert.name, value: translateRuntime(translator, 'alerts.queue.noValue'),
+				});
+			}
+			return translateRuntime(translator, alert.kind === 'sell_signal' ? 'notices.sellSignalGain' : 'notices.holdSignalGain', {
 				name: alert.name,
-				value: alert.totalCopper === null
-					? translateRuntime(translator, 'alerts.queue.noValue')
-					: formatCopperCompact(alert.totalCopper, this.settings.language),
+				quantity: alert.quantity,
+				gain: formatCopperCompact(alert.totalCopper, this.settings.language),
 			});
 		}
 		if (alert.totalCopper === null) {
@@ -3267,6 +3338,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 }
 
 /** Identical to `AssistedDetectionService`'s own freshly-constructed, never-armed state. */
+/**
+ * How far back the daily store is read for the sell signal.
+ *
+ * A day of margin over the reference window, so a compaction running just
+ * before midnight UTC still has the whole year behind it.
+ */
+const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000;
+
+type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
+
 const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	status: 'disarmed',
 	reason: 'initial',

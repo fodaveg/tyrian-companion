@@ -29,6 +29,10 @@ const ALLOWED_DEPENDENCIES = {
 		'../economy/models/halloween-season',
 		'../economy/models/halloween-trick-or-treat-bag',
 		'../economy/seasonal-window',
+		// H13.2: type-only. The projection is computed in the economy layer and
+		// handed in as an input, so the boundary stays pure and gains no reader
+		// of the price series it decides on.
+		'../economy/sell-signal',
 		'./inventory-advisor-contract',
 		'./inventory-advisor-model',
 	]),

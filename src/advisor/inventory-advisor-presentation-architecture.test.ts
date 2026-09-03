@@ -73,6 +73,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 	['src/ui/inventory-advisor-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
+			// H13.2: type-only, for the decision union the economy layer owns. The
+			// view maps its `hold` onto the existing `keep` label and calls nothing.
+			'../advisor/inventory-container-economy',
 			'../economy/reservation-model', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view'],
 		portCalls: [],

@@ -15,6 +15,7 @@ export const defaultProjectFiles = [
 	'scripts/verify-beta-runtime.mjs',
 	'scripts/security-scan.mjs',
 	'scripts/action-observability-census.mjs',
+	'scripts/reindex-action-observability-baseline.mjs',
 	'scripts/support-contract.mjs',
 	'scripts/h8-native-decision-contract.mjs',
 	'scripts/tests/probar-release-package.mjs',
@@ -39,10 +40,11 @@ export const defaultProjectFiles = [
 ] as const;
 
 // Raised from 28 to 37 when the gate runner, the source text assertion contract
-// and the release publication gate added nine scripts. The headroom below is
-// unchanged on purpose: the point of this bound is that growing it stays a
-// deliberate edit rather than something that drifts.
-export const defaultProjectCapacity = 37;
+// and the release publication gate added nine scripts, and to 38 for H13.2's
+// census reindexer. The headroom below is unchanged on purpose: the point of
+// this bound is that growing it stays a deliberate edit rather than something
+// that drifts.
+export const defaultProjectCapacity = 38;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(

@@ -1095,7 +1095,9 @@ function economyModel(containerEconomy: NonNullable<InventoryAdvisorViewRow['con
 		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
 		optionalSources: null,
 		groups: [{ key: 'curated', rows: [row({
-			itemId: 36_038, name: 'Trick-or-Treat Bag', action: containerEconomy.recommendation.action,
+			itemId: 36_038, name: 'Trick-or-Treat Bag',
+			// `hold` reaches the row as `keep`, the same mapping the classifier makes.
+			action: containerEconomy.recommendation.action === 'hold' ? 'keep' : containerEconomy.recommendation.action,
 			containerEconomy,
 		})] }],
 	};

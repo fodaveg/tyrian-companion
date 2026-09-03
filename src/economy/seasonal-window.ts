@@ -65,6 +65,35 @@ export function seasonalWindowStatusAt(window: unknown, asOf: unknown): Seasonal
 	return seasonalWindowStatusAtMs(window, parsed);
 }
 
+/**
+ * End of the first closing day of the window at or after `fromMs`, exclusive.
+ *
+ * H13.7 exists because a pack expired on 12 November while the window it
+ * describes stays open until the 15th: for three days the plugin would have had
+ * a live festival and a dead pack, and nothing said so. Expressing "the pack
+ * must outlive its own window" needs this instant, so it is computed from the
+ * window rather than written down beside it, where it would rot the next time
+ * the boundaries move.
+ *
+ * Returns null for an unreadable window or clock, never a guess.
+ */
+export function seasonalWindowClosesAfterMs(window: unknown, fromMs: unknown): number | null {
+	if (!isSeasonalWindow(window) || typeof fromMs !== 'number' || !Number.isSafeInteger(fromMs)) return null;
+	const from = new Date(fromMs);
+	const iso = Number.isFinite(from.getTime()) ? from.toISOString() : null;
+	if (iso === null) return null;
+	const year = Number.parseInt(iso.slice(0, 4), 10);
+	// The day after the closing day, at midnight: the window includes its closing
+	// day in full, so anything valid "until the close" must reach past midnight.
+	for (const candidate of [year, year + 1]) {
+		const closes = Date.parse(`${String(candidate)}-${window.closesOn}T00:00:00.000Z`);
+		if (!Number.isFinite(closes)) return null;
+		const endsAt = closes + 86_400_000;
+		if (endsAt >= fromMs) return endsAt;
+	}
+	return null;
+}
+
 function utcMonthDay(epochMs: number): string | null {
 	const date = new Date(epochMs);
 	const iso = Number.isFinite(date.getTime()) ? date.toISOString() : null;

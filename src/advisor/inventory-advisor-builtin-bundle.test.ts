@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
+import { seasonalWindowClosesAfterMs } from '../economy/seasonal-window';
 import {
 	createInventoryAdvisorBuiltinBundleProvider,
 	inventoryAdvisorBuiltinBundleProvider,
@@ -32,7 +33,7 @@ import {
 } from './inventory-container-economy';
 import type { InventoryAdvisorInputV1 } from './inventory-advisor-model';
 
-const BEFORE_EXPIRY = '2026-11-11T23:59:59.999Z';
+const BEFORE_EXPIRY = '2026-11-30T23:59:59.999Z';
 
 describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	it('loads the exact deterministic policy and source-backed curated packs', () => {
@@ -45,7 +46,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			rulePack: {
 				id: 'tc.inventory-rules.curated-v2', version: 2,
 				reviewStatus: 'human_reviewed', reviewedAt: '2026-08-16T05:22:24.000Z',
-				sha256: 'dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c',
+				sha256: '0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c',
 				rules: [{ ruleId: 'open-36038-capability-v1', recommendation: { status: 'enabled' } }],
 			},
 			knowledgePack: { id: 'tc.inventory-knowledge.curated-v2', version: 2 },
@@ -59,7 +60,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 					89_002, 89_007, 89_065, 89_070, 89_071,
 				],
 				policy: { openAdvantageBps: 1_000, saleBasis: 'immediate_and_listing' },
-				sha256: '461b12fda69634a29de6668025f7404d83ca27865cc1cdfbbb2f022d5af7eacf',
+				sha256: 'ae719b5517565933d510a55e10217059675c2c94ec49ba4853095e2995975172',
 			},
 		});
 		expect(result.bundle.rulePack.sources).toEqual(sources());
@@ -78,11 +79,11 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(sha256InventoryContainerEconomyPack(result.bundle.economyPack)).toBe(result.bundle.economyPack.sha256);
 		expect(result.bundle.rulePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-16T05:22:24.000Z', reviewStatus: 'human_reviewed',
-			validUntil: '2026-11-12T18:04:33.000Z',
+			validUntil: '2026-12-01T00:00:00.000Z',
 		});
 		expect(result.bundle.knowledgePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-14T18:04:33.000Z',
-			validUntil: '2026-11-12T18:04:33.000Z',
+			validUntil: '2026-12-01T00:00:00.000Z',
 		});
 	});
 
@@ -256,7 +257,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(isInventoryAdvisorResultForInput(beforeResult, beforeExpiry, loaded.bundle.knowledgePack)).toBe(true);
 		expect(applyInventoryDiscardAllowlist({ engineInput: beforeEngine, producerResult: beforeResult }).status).toBe('ready');
 
-		const atExpiry = rebaseInput(advisorInput(loaded.bundle, '2026-11-12T18:04:33.000Z', 36038), '2026-11-12T18:04:33.000Z');
+		const atExpiry = rebaseInput(advisorInput(loaded.bundle, '2026-12-01T00:00:00.000Z', 36038), '2026-12-01T00:00:00.000Z');
 		const atExpiryEngine = { input: atExpiry, knowledgePack: loaded.bundle.knowledgePack };
 		const rejectedByClassifier = classifyInventoryAdvisor(atExpiryEngine);
 		expect(rejectedByClassifier.status).toBe('limited');
@@ -345,18 +346,18 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		const result = createInventoryAdvisorBuiltinBundleProvider().load(BEFORE_EXPIRY);
 		if (result.status !== 'available') throw new Error(`expected bundle for ${locale}`);
 		expect(JSON.stringify(result.bundle)).not.toContain('locale');
-		expect(result.bundle.rulePack.sha256).toBe('dd6c60dfe745e7914ddaf4e46ee21ef1a0d8b00d266ac79246283b62ec2e191c');
-		expect(result.bundle.knowledgePack.sha256).toBe('505dbf960ec582614b9ffcba5b8432d3da5f31666678c5bcd06840a1db8fc686');
+		expect(result.bundle.rulePack.sha256).toBe('0e2fa8b0711ca13673a0a11ce9892dcd9c05a8a8ea86d9b6027587790abece6c');
+		expect(result.bundle.knowledgePack.sha256).toBe('2cdae85cb1dbe9d517b603ea5cb4f5c11f1cce5ccf72b7624196647c89114d46');
 	});
 
 	it('treats human activation as inclusive and validUntil as exclusive', () => {
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:23.999Z')).toEqual({ status: 'unavailable', reason: 'invalid', bundle: null });
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-08-16T05:22:24.000Z').status).toBe('available');
 		expect(inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY).status).toBe('available');
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-12T18:04:33.000Z')).toEqual({
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-12-01T00:00:00.000Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
 		});
-		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-12T18:04:33.001Z')).toEqual({
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-12-01T00:00:00.001Z')).toEqual({
 			status: 'unavailable', reason: 'expired', bundle: null,
 		});
 		expect(inventoryAdvisorBuiltinBundleProvider.load('not-a-date')).toEqual({
@@ -365,6 +366,36 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-11T23:59:59Z')).toEqual({
 			status: 'unavailable', reason: 'invalid', bundle: null,
 		});
+	});
+
+	/**
+	 * H13.7. The bundle used to expire on 12 November while the Halloween window
+	 * it serves stays open until the 15th: for three days of every festival the
+	 * advisor would have gone quiet with the season live, and nothing said so.
+	 * The dates are asserted against the WINDOW rather than against a literal, so
+	 * moving one of the two without the other turns this red.
+	 */
+	it('stays valid past the close of the window it describes', () => {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
+		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
+		const season = loaded.bundle.economyPack.season;
+		const closesAfter = seasonalWindowClosesAfterMs(season, Date.parse(loaded.bundle.economyPack.publishedAt));
+
+		expect(season.closesOn).toBe('11-15');
+		expect(closesAfter).not.toBeNull();
+		expect(Date.parse(loaded.bundle.economyPack.validUntil)).toBeGreaterThanOrEqual(closesAfter ?? 0);
+		expect(Date.parse(loaded.bundle.rulePack.validUntil)).toBeGreaterThanOrEqual(closesAfter ?? 0);
+		expect(Date.parse(loaded.bundle.knowledgePack.validUntil)).toBeGreaterThanOrEqual(closesAfter ?? 0);
+		// The last day of the festival must still load the bundle.
+		expect(inventoryAdvisorBuiltinBundleProvider.load('2026-11-15T23:59:59.999Z').status).toBe('available');
+	});
+
+	it('rejects an economy pack that would expire inside its own window', () => {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
+		if (loaded.status !== 'available') throw new Error('expected built-in bundle');
+		const expiringMidSeason = { ...loaded.bundle.economyPack, validUntil: '2026-11-12T18:04:33.000Z' };
+
+		expect(isInventoryContainerEconomyPack(expiringMidSeason)).toBe(false);
 	});
 
 	it('fails closed for altered, extra-field and hostile sources without mutating them', () => {

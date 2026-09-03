@@ -261,18 +261,91 @@ describe('H4.19 inventory container economy', () => {
 			.toBeGreaterThan(immediate.openIncludingTail!.evPerContainerMicroCopper * 30);
 	});
 
-	it('stops advising outside the declared festival window and names the month it returns', () => {
+	/**
+	 * H13.2 inverted this deliberately.
+	 *
+	 * The advisor used to refuse outside the window, which meant refusing for
+	 * eleven months of the year including every month in which the bag is worth
+	 * the most. The bag quotes all year and selling it is an out-of-season act,
+	 * so the calendar no longer gates the recommendation; it gates the hold.
+	 */
+	it('keeps advising outside the declared festival window, where the price peaks', () => {
 		const value = todaysMarket();
-		// 1 September: the pack is activated, in date, and the order book is fresh.
-		// Everything the old code checked says go; only the calendar says stop.
 		const outOfSeason = '2026-09-01T05:23:00.000Z';
 		value.asOf = outOfSeason;
 		value.prices.capturedAt = outOfSeason;
 		value.marketDepth!.capturedAt = outOfSeason;
-		expect(evaluateInventoryContainerEconomy(value)).toEqual({ status: 'review', reason: 'out_of_season' });
+
+		const result = evaluateInventoryContainerEconomy(value);
+
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		expect(result.decision.action).toBe('sell');
 		expect(value.economyPack.season).toEqual({
 			version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10,
 		});
+	});
+
+	/**
+	 * An unreadable calendar still fails closed, one layer earlier than the
+	 * seasonal check.
+	 *
+	 * The window is hashed into the pack, so a malformed one cannot reach the
+	 * seasonal comparison at all: the pack fails validation first. The
+	 * `undecidable` branch inside `evaluateInventoryContainerEconomy` is
+	 * therefore defensive rather than reachable through a valid pack, and this
+	 * case pins the outcome that IS reachable.
+	 */
+	it('refuses a pack whose window cannot be read, rather than assuming a season', () => {
+		const value = todaysMarket();
+		const outOfSeason = '2026-09-01T05:23:00.000Z';
+		value.asOf = outOfSeason;
+		value.prices.capturedAt = outOfSeason;
+		value.marketDepth!.capturedAt = outOfSeason;
+		(value.economyPack.season as { closesOn: string }).closesOn = 'not-a-day';
+
+		expect(evaluateInventoryContainerEconomy(value)).toEqual({ status: 'invalid', reason: 'malformed_input' });
+	});
+
+	it('recommends `hold` inside the window when the annual series says today is the floor', () => {
+		const value = todaysMarket();
+		const inSeason = '2026-10-20T05:23:00.000Z';
+		value.asOf = inSeason;
+		value.prices.capturedAt = inSeason;
+		value.marketDepth!.capturedAt = inSeason;
+		value.sellSignal = {
+			status: 'decided', signal: 'hold', dayUtc: '2026-10-20', bidCopper: 300,
+			referenceMaxCopper: 451, referenceMinCopper: 300, referenceDayCount: 360,
+			sellThresholdCopper: 406, inSeason: true, origin: 'seeded',
+		};
+
+		const result = evaluateInventoryContainerEconomy(value);
+
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		expect(result.decision.action).toBe('hold');
+		// The liquid economics stay visible underneath: the player is told what
+		// holding is instead of, not only that it is advised.
+		expect(result.liquidOnly.decision.action).toBe('sell');
+	});
+
+	it('ignores a hold signal raised outside the window', () => {
+		const value = todaysMarket();
+		const outOfSeason = '2026-09-01T05:23:00.000Z';
+		value.asOf = outOfSeason;
+		value.prices.capturedAt = outOfSeason;
+		value.marketDepth!.capturedAt = outOfSeason;
+		value.sellSignal = {
+			status: 'decided', signal: 'hold', dayUtc: '2026-09-01', bidCopper: 300,
+			referenceMaxCopper: 451, referenceMinCopper: 300, referenceDayCount: 360,
+			sellThresholdCopper: 406, inSeason: false, origin: 'seeded',
+		};
+
+		const result = evaluateInventoryContainerEconomy(value);
+
+		expect(result.status).toBe('ready');
+		if (result.status !== 'ready') return;
+		expect(result.decision.action).toBe('sell');
 	});
 
 	it('returns invalid instead of throwing for hostile or malformed inputs', () => {

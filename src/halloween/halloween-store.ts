@@ -1,3 +1,4 @@
+import { alertCooldownUntilMs } from '../alerts/alert-cooldown';
 import {
 	isHalloweenObservation,
 	type HalloweenAlertItem,
@@ -465,8 +466,11 @@ export class IndexedDbHalloweenStore {
 						lastValidCapturedAtMs: projection.capturedAtMs,
 						lastValidProjection: structuredClone(projection),
 						lastNotifiedDayUtc: notice?.dayUtc ?? prior?.lastNotifiedDayUtc ?? null,
+						// Shared with H13.2 rather than copied: the sell and hold signals
+						// re-arm on the same rule, and two copies of this addition would
+						// eventually disagree about when an alert may speak again.
 						cooldownUntilMs: notice === null ? prior?.cooldownUntilMs ?? 0 :
-							projection.capturedAtMs + cooldownHours * 3_600_000,
+							alertCooldownUntilMs(projection.capturedAtMs, cooldownHours),
 					});
 					tx.oncomplete = () => resolve({
 						notice, shouldNotify, accepted: true, projection: structuredClone(projection),

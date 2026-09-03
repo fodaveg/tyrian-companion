@@ -12,9 +12,11 @@ import {
 	type ContainerModelV1,
 } from '../economy/container-model';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
+import type { SellSignalProjection } from '../economy/sell-signal';
 import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
 import {
 	isSeasonalWindow,
+	seasonalWindowClosesAfterMs,
 	seasonalWindowStatusAt,
 	type SeasonalWindowV1,
 } from '../economy/seasonal-window';
@@ -45,6 +47,17 @@ export type InventoryContainerEconomyActivation =
 	| { status: 'enabled'; activatedAt: string }
 	| { status: 'revoked'; activatedAt: string };
 
+/** Curated parameters of the H13.2 sell and hold signals. */
+export interface InventoryContainerSellSignalPolicy {
+	version: 1;
+	/** Fraction of the annual maximum bid at which selling is worth saying, in basis points. */
+	minimumOfMaxBps: number;
+	/** Length of the reference window in days back from today. */
+	referenceDays: number;
+	/** Fewest days the window must hold to decide. Never a consecutiveness requirement. */
+	minimumReferenceDays: number;
+}
+
 export interface InventoryContainerEconomyPackV1 {
 	version: typeof INVENTORY_CONTAINER_ECONOMY_VERSION;
 	packId: string;
@@ -57,6 +70,16 @@ export interface InventoryContainerEconomyPackV1 {
 	 * stayed armed in March: the bag quotes all year, so no price ever said so.
 	 */
 	season: SeasonalWindowV1;
+	/**
+	 * The sell rule's only tunable, published rather than compiled.
+	 *
+	 * The bag's annual amplitude drifts year on year (5,8 gold in 2024, 4,7 in
+	 * 2025, 4,0 in 2026), so the fraction of the annual maximum worth selling at
+	 * is a judgement that will be revised. Keeping it here means revising it is
+	 * a data publication that is hashed with the pack and reviewed, instead of
+	 * an edit to a rule nobody re-reads.
+	 */
+	sellSignal: InventoryContainerSellSignalPolicy;
 	activation: InventoryContainerEconomyActivation;
 	rulePack: { id: string; version: number; sha256: string; ruleId: string };
 	knowledgePackSha256: string;
@@ -109,6 +132,15 @@ export interface InventoryContainerEconomyInputV1 {
 	marketDepth: InventoryMarketDepthEvidenceV1 | null;
 	/** User-owned overlay. It is never included in the economy pack or model fingerprint. */
 	personalValuation?: ContainerPersonalValuationV1;
+	/**
+	 * Today's reading of the annual series, when there is one.
+	 *
+	 * Optional because the advisor must keep working on a vault with no price
+	 * history at all: absent, the recommendation is exactly what it was before
+	 * H13.2. It is an input rather than a computation because the series lives
+	 * in IndexedDB and this function is pure.
+	 */
+	sellSignal?: SellSignalProjection;
 }
 
 export type InventoryContainerEconomyReviewReason =
@@ -136,7 +168,8 @@ export type InventoryContainerEconomyReviewReason =
 	| 'arithmetic_overflow';
 
 export interface InventoryContainerEconomyDecisionV1 {
-	action: 'open' | 'sell' | 'vendor';
+	/** `hold` is H13.2's third outcome: keep the stack, the annual series says today is the floor. */
+	action: 'open' | 'sell' | 'vendor' | 'hold';
 	quantity: number;
 	ruleId: string | null;
 }
@@ -191,10 +224,16 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 		if (Date.parse(input.asOf) < Date.parse(pack.activation.activatedAt)
 			|| Date.parse(input.asOf) < Date.parse(pack.publishedAt)
 			|| Date.parse(input.asOf) >= Date.parse(pack.validUntil)) return review('activation_expired');
-		// Out of the declared window there is nothing to advise about and nothing
-		// to poll for. An unreadable window is treated as out of season too: an
-		// advisor that cannot read its own calendar must not claim to be watching.
-		if (seasonalWindowStatusAt(pack.season, input.asOf) !== 'in_season') return review('out_of_season');
+		// H13.2 inverted this. Out of the window the advisor now DOES advise: the
+		// bag is worth money all year and is worth most of it out of season, so
+		// refusing to answer in March was refusing exactly when selling is the
+		// right answer. What the window still governs is the hold signal below.
+		//
+		// An unreadable calendar is a different case and stays fail-closed: an
+		// advisor that cannot read its own calendar must not claim to know
+		// whether the festival is on.
+		const seasonal = seasonalWindowStatusAt(pack.season, input.asOf);
+		if (seasonal === 'undecidable') return review('out_of_season');
 		if (!ruleBinding(input)) return review('rule_incoherent');
 		if (!modelBinding(pack)) return review('model_incoherent');
 		if (!priceBinding(input)) return review(input.prices.status === 'complete'
@@ -257,7 +296,16 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 			pack.rulePack.ruleId,
 		);
 		if (personal.status === 'invalid') return review(personal.reason);
-		const primary = personal.value.decision ?? liquidDecision;
+		// The third outcome. `open`, `sell` and `vendor` all dispose of the bag
+		// now; `hold` is the one that says not to, and only the annual series can
+		// justify it, so it arrives as an input rather than being derived from
+		// today's quote. The liquid recommendation underneath is preserved: the
+		// player is told what holding is instead of, not just that it is advised.
+		const holding = seasonal === 'in_season' && input.sellSignal?.status === 'decided'
+			&& input.sellSignal.signal === 'hold';
+		const primary: InventoryContainerEconomyDecisionV1 = holding
+			? { action: 'hold', quantity: allocation.freeQuantity, ruleId: null }
+			: personal.value.decision ?? liquidDecision;
 		return {
 			status: 'ready',
 			decision: primary,
@@ -274,12 +322,12 @@ export function evaluateInventoryContainerEconomy(value: unknown): InventoryCont
 export function isInventoryContainerEconomyPack(value: unknown): value is InventoryContainerEconomyPackV1 {
 	try {
 		if (!record(value) || !exactKeys(value, [
-			'version', 'packId', 'publishedAt', 'validUntil', 'season', 'activation', 'rulePack', 'knowledgePackSha256',
-			'modelFingerprint', 'model', 'expectedPriceItemIds', 'policy', 'sources', 'sha256',
+			'version', 'packId', 'publishedAt', 'validUntil', 'season', 'sellSignal', 'activation', 'rulePack',
+			'knowledgePackSha256', 'modelFingerprint', 'model', 'expectedPriceItemIds', 'policy', 'sources', 'sha256',
 		]) || value.version !== INVENTORY_CONTAINER_ECONOMY_VERSION || !identifier(value.packId)
 			|| !iso(value.publishedAt) || !iso(value.validUntil)
 			|| Date.parse(value.publishedAt) >= Date.parse(value.validUntil)
-			|| !isSeasonalWindow(value.season)
+			|| !isSeasonalWindow(value.season) || !sellSignalPolicy(value.sellSignal)
 			|| !activation(value.activation, value.publishedAt, value.validUntil)
 			|| !record(value.rulePack) || !exactKeys(value.rulePack, ['id', 'version', 'sha256', 'ruleId'])
 			|| !identifier(value.rulePack.id) || !positive(value.rulePack.version)
@@ -292,6 +340,13 @@ export function isInventoryContainerEconomyPack(value: unknown): value is Invent
 		const pack = value as unknown as InventoryContainerEconomyPackV1;
 		const sourceIds = new Set(pack.sources.map((entry) => entry.id));
 		const expected = economicPriceIds(pack.model);
+		// H13.7. A pack that stops being trustworthy before the festival it
+		// describes has finished leaves the advisor mute for the last days of the
+		// season, which is when the bag is actually being liquidated. The two
+		// dates are different facts, so the invariant that ties them is stated
+		// here rather than trusted to whoever edits the constant next.
+		const closes = seasonalWindowClosesAfterMs(pack.season, Date.parse(pack.publishedAt));
+		if (closes === null || Date.parse(pack.validUntil) < closes) return false;
 		return strictSources(pack.sources) && sourceIds.size === pack.sources.length
 			&& sameNumbers(pack.expectedPriceItemIds, expected)
 			&& pack.modelFingerprint === sha256StandardCanonicalValue(pack.model)
@@ -356,8 +411,17 @@ function halloweenContainerEconomyPack(
 		version: 1,
 		packId: 'tc.inventory-container-economy.halloween-v1',
 		publishedAt: '2026-08-14T20:30:00.000Z',
-		validUntil: '2026-11-12T18:04:33.000Z',
+		// H13.7: past the close of the window above (15 November, inclusive), not
+		// before it. The previous value expired on 12 November and would have
+		// killed the pack with three days of festival still to run.
+		validUntil: '2026-12-01T00:00:00.000Z',
 		season: structuredClone(HALLOWEEN_SEASONAL_WINDOW),
+		// 90 % of the annual maximum, over a year of days of which at least
+		// thirty must exist. Measured on the published series of 2026-09-03: the
+		// year's maximum bid was 451 copper and its minimum 310, so the sell
+		// threshold is 406 and today's 355 fires neither signal. The reference is
+		// sampled, not enumerated: that series is missing five days.
+		sellSignal: { version: 1, minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 },
 		activation: structuredClone(activation),
 		rulePack: structuredClone(binding.rulePack),
 		knowledgePackSha256: binding.knowledgePackSha256,
@@ -387,13 +451,26 @@ function isInput(value: unknown): value is InventoryContainerEconomyInputV1 {
 	return record(value) && exactOptionalKeys(value, [
 		'version', 'asOf', 'accountId', 'snapshotId', 'schemaVersion', 'allocation', 'container', 'rulePack',
 		'knowledgePackSha256', 'economyPack', 'prices', 'marketDepth',
-	], ['personalValuation']) && value.version === 1 && iso(value.asOf) && text(value.accountId, 256) && text(value.snapshotId, 256)
+	], ['personalValuation', 'sellSignal']) && value.version === 1 && iso(value.asOf) && text(value.accountId, 256) && text(value.snapshotId, 256)
 		&& text(value.schemaVersion, 256)
 		&& allocation(value.allocation) && container(value.container) && isInventoryAdvisorRulePackV2(value.rulePack)
 		&& sha(value.knowledgePackSha256) && isInventoryContainerEconomyPack(value.economyPack)
 		&& isInventoryContainerPriceEvidence(value.prices)
 		&& (value.marketDepth === null || isInventoryMarketDepthEvidence(value.marketDepth))
-		&& (value.personalValuation === undefined || isContainerPersonalValuation(value.personalValuation));
+		&& (value.personalValuation === undefined || isContainerPersonalValuation(value.personalValuation))
+		&& (value.sellSignal === undefined || sellSignalProjection(value.sellSignal));
+}
+
+/**
+ * Shape check only. The rule that produced the projection lives in the economy
+ * layer and is not re-run here: this function is the advisor's guard against a
+ * malformed input, not a second opinion on the series.
+ */
+function sellSignalProjection(value: unknown): value is SellSignalProjection {
+	if (!record(value)) return false;
+	if (value.status === 'undecidable') return typeof value.reason === 'string';
+	return value.status === 'decided' &&
+		(value.signal === 'sell' || value.signal === 'hold' || value.signal === 'none');
 }
 
 function personalEconomy(
@@ -535,6 +612,23 @@ function kernelPolicy(value: unknown): value is ContainerDispositionKernelPolicy
 		&& value.version === 1 && value.openAdvantageBps === 1_000 && value.maxPriceAgeMs === 15 * 60_000
 		&& value.maxFutureSkewMs === 60_000
 		&& (value.saleBasis === 'immediate' || value.saleBasis === 'immediate_and_listing');
+}
+
+/**
+ * The published sell parameters.
+ *
+ * The bounds are wide because this is a judgement that will be revised, but
+ * they are not absent: a percentage above 100 % of the maximum could never
+ * fire, and a minimum sample of one day would let a single observation declare
+ * an annual high.
+ */
+function sellSignalPolicy(value: unknown): value is InventoryContainerSellSignalPolicy {
+	return record(value) && exactKeys(value, ['version', 'minimumOfMaxBps', 'referenceDays', 'minimumReferenceDays'])
+		&& value.version === 1
+		&& positive(value.minimumOfMaxBps) && value.minimumOfMaxBps <= 10_000
+		&& positive(value.referenceDays) && value.referenceDays <= 3_650
+		&& positive(value.minimumReferenceDays) && value.minimumReferenceDays >= 7
+		&& value.minimumReferenceDays <= value.referenceDays;
 }
 
 function source(value: unknown): boolean {

@@ -44,6 +44,8 @@ export type InventoryAdvisorReasonCode =
 	| 'unlock_coverage_unknown'
 	| 'collection_coverage_unknown'
 	| 'already_unlocked'
+	/** H13.2: today's bid is the floor of the annual series, so the stack is kept rather than sold. */
+	| 'seasonal_hold'
 	| 'no_sell'
 	| 'no_salvage'
 	| 'salvage_value_unknown'
