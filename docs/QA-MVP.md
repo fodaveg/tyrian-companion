@@ -155,15 +155,44 @@ versión anterior que estaba en memoria al instalar el build.
 
 ### Matriz de validación
 
+Ejecutada el 2026-09-03 sobre la `0.1.21`, en Linux y en la bóveda **real**, no en la desechable que
+pide el protocolo. Personaje Rinopopo, Guardian, build Power Willbender, Magic Find 333. De
+`2026-09-03T05:30:49Z` a `2026-09-03T06:24:40Z`, 53 minutos y 51 segundos. Precios capturados a las
+`2026-09-03T06:35:16Z`, fuente `gw2-commerce-prices`. Nota generada bajo
+`42 Guild Wars 2/42.31 Wiki/sessions/2026/`, 11.712 bytes, SHA-256
+`c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`.
+
 | Paso | Criterio PASS | Resultado (PASS/FAIL) |
 | --- | --- | --- |
-| Check connection | `connected` o `warning` | PENDIENTE |
-| Iniciar sesión | Modal de personaje y Magic Find aceptado; estado → `active` | PENDIENTE |
-| Farmeo en vivo | Sin errores en la bitácora durante al menos 15 minutos de actividad | PENDIENTE |
-| Finalizar sesión | Captura sin error; estado → `provisional` | PENDIENTE |
-| Revisar sesión | Confirmación sin error; estado → `complete` | PENDIENTE |
-| Nota generada | Existe la nota; contiene valores económicos (no `valuation: null`) | PENDIENTE |
+| Check connection | `connected` o `warning` | PASS |
+| Iniciar sesión | Modal de personaje y Magic Find aceptado; estado → `active` | PASS |
+| Farmeo en vivo | Sin errores en la bitácora durante al menos 15 minutos de actividad | PASS, 53 min 51 s |
+| Finalizar sesión | Captura sin error; estado → `provisional` | PASS |
+| Revisar sesión | Confirmación sin error; estado → `complete` | PASS |
+| Nota generada | Existe la nota; contiene valores económicos (no `valuation: null`) | **FAIL** |
 | Aviso (si aplica) | No aplicable: la `0.1.21` no incluye el aviso nuevo (H13.3/H13.4). Si la detección asistida está armada, verificar que no hay errores en el histórico de propuestas. | NO APLICABLE |
+
+El resto del protocolo de arriba (bóveda desechable, `Sessions.base`, Preview y Apply de assets,
+cierre forzado, recovery, dos ventanas, matriz por plataforma) **no se ejecutó** en esta sesión.
+
+### Por qué falla la fila de la nota
+
+La nota existe y está completa de forma, pero no trae ni una cifra económica.
+`tc_observed_immediate_copper`, `tc_observed_listing_copper`, `tc_immediate_copper_per_hour`,
+`tc_listing_copper_per_hour`, `tc_sacks` y `tc_sacks_per_hour_milli` salieron `null`,
+`tc_recommendation_status` quedó en `not_evaluated` y las 40 filas de botín dicen «Oculto por
+fiabilidad», con `tc_classification: "contaminated"` y `tc_confidence: "high"`.
+
+La causa medida, contra `/v2/currencies` y `/v2/items`:
+
+- **Monedero**: bajaron la moneda `37` (Exalted Key) y la `42` (Vial of Chak Acid), una unidad cada
+  una, que es lo que cuesta abrir un cofre con su llave. La moneda `1` (Coin) **subió 46.083 cobre**.
+- **Almacenamiento**: el objeto `84731` (Piece of Unidentified Gear) bajó 239, por abrir contenedores.
+- **Precios**: parte del botín sin cotización y sin profundidad de bazar suficiente.
+
+Lo que sí quedó verificado: la tubería entera responde y las junturas de la `0.1.21` funcionan
+(`tc_reservation_status: "complete:met"`, `tc_hold_status: "released"`). El arreglo del veredicto
+suprimido es el ticket H13.6.
 
 ## Matriz de resultados
 
@@ -182,36 +211,3 @@ versión anterior que estaba en memoria al instalar el build.
 Al cerrar la ejecución, adjuntar el informe al candidato probado con la fecha absoluta de la
 prueba. No incluir tokens, `accountId` crudo, payloads de inventario, snapshots ni capturas que
 los contengan.
-
-## H13.1 — Primera ejecución humana
-
-Ejecución realizada el 2026-09-03 sobre versión `0.1.21` en bóveda real `~/Documentos/fodaveg` (no en desechable como pide el protocolo).
-
-Datos de sesión:
-- Personaje: Rinopopo, Guardian, build Power Willbender, Magic Find 333
-- Duración: 53 minutos y 51 segundos (2026-09-03T05:30:49Z a 2026-09-03T06:24:40Z)
-- Nota: `40-49 Aficiones y creación/42 Guild Wars 2/42.31 Wiki/sessions/2026/2026-09-03 053049Z - ac0f7c65e13abe5a.md`
-- SHA-256: `c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`
-- Precios capturados: 2026-09-03T06:35:16Z, fuente `gw2-commerce-prices`
-
-### Matriz de pasos ejecutados
-
-| Paso | PASS/FAIL | Observaciones |
-| --- | --- | --- |
-| Conexión y start | PASS | Sesión inició correctamente, runtime llegó a `active` |
-| Finish, review y complete | PASS | Sesión finalizó, llegó a `provisional`, revisión completó |
-| Nota antes de clear | PASS | Nota escrita en ruta correcta: `40-49 Aficiones.../42 Guild Wars 2/.../sessions/2026/...` |
-| `Sessions.base` | PASS | Base abierta y filtrada por `tc_schema` y `tc_kind` correctamente |
-| Preview/Apply | PASS | Assets gestionados aplicados sin conflictos |
-| Recovery | PENDIENTE | No se ejecutó cierre forzado ni recovery en esta sesión |
-| Dos ventanas | PENDIENTE | No se ejecutó prueba de dos ventanas simultáneas |
-
-### Observaciones sobre contaminación detectada
-
-La tabla de botín muestra 40 filas ocultas por fiabilidad. El veredicto económico se suprimió (`tc_recommendation_status: "not_evaluated"`). Las causas detectadas:
-
-- **Monedero**: disminuyó con moneda 37 (Exalted Key) -1 y moneda 42 (Vial of Chak Acid) -1 (aperturas de cofre). Moneda 1 (Coin) subió 46.083 cobre.
-- **Almacenamiento**: cambió con objeto 84731 (Piece of Unidentified Gear) -239 (contenedores abiertos).
-- **Precios**: incompletos, parte del botín sin cotización.
-
-Sin embargo, **ningún aviso saltó**, que es el comportamiento esperado: los interruptores `halloweenEnabled`, `priceHistoryEnabled` y `halloweenPriceAlertEnabled` existen en `0.1.21` y vienen en `false` por defecto. Las junturas de sesión (`tc_reservation_status: "complete:met"`, `tc_hold_status: "released"`) funcionaron correctamente.
