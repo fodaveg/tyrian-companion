@@ -32,10 +32,14 @@ describe('official commerce listings depth', () => {
 		});
 	});
 
-	it('values probabilistic outcome units conservatively against finite depth', () => {
+	it('values probabilistic outcome units against finite depth, per level, at the real unit price', () => {
+		// unitCopper 10 owes calculateTradingPostFees(10) = 1 + 1 = 2 copper per whole
+		// unit sold alone; scaled by the 1.5 units drawn, that is 3 copper of fee on a
+		// gross of 15, for a net of 12, not the 12.5 an aggregate-then-round formula
+		// would give.
 		const complete = valueExpectedInstantSellDepth([{ unitCopper: 10, quantity: 2 }], 1_500_000n);
 		expect(complete).toMatchObject({
-			status: 'complete', grossMicroCopper: 15_000_000n, netMicroCopper: 12_500_000n,
+			status: 'complete', grossMicroCopper: 15_000_000n, netMicroCopper: 12_000_000n,
 		});
 		expect(valueExpectedInstantSellDepth([{ unitCopper: 10, quantity: 1 }], 1_500_000n)).toMatchObject({
 			status: 'partial', coveredUnitsMillionths: 1_000_000n, uncoveredUnitsMillionths: 500_000n,
