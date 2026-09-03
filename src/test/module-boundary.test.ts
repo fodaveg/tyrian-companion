@@ -1,6 +1,69 @@
 import { describe, expect, it } from 'vitest';
 
-import { moduleSpecifiers } from './module-boundary';
+import {
+	forbiddenBoundaryUses,
+	moduleBoundaryViolations,
+	moduleSpecifiers,
+	referencedNames,
+	type ModuleBoundary,
+} from './module-boundary';
+
+/**
+ * The one place negative frontiers live.
+ *
+ * A module that must not reach for a capability cannot prove it by running: the
+ * import it never takes and the global it never calls leave no trace. Those
+ * frontiers used to be re-grepped as characters inside each feature suite,
+ * which made them fragile against renames and blind to anything spelled
+ * differently. They are decided here, against the AST, once.
+ */
+const NEGATIVE_FRONTIERS: readonly ModuleBoundary[] = [
+	// The note pipeline receives evidence and returns text. It has no filesystem, no
+	// Obsidian handle, no credential and no way to place an order.
+	...['model', 'renderer', 'writer'].map((part): ModuleBoundary => ({
+		path: `src/sessions/session-note-${part}.ts`,
+		forbiddenImports: ['node:fs', 'obsidian'],
+		forbiddenNames: [
+			'requestUrl', 'fetch', 'SecretStorage', 'Authorization',
+			'placeOrder', 'buyOrder', 'sellOrder', 'executeOrder',
+		],
+	})),
+];
+
+describe('negative module frontiers', () => {
+	it('keeps every reviewed module off the capabilities its layer may not have', () => {
+		expect(moduleBoundaryViolations(NEGATIVE_FRONTIERS)).toEqual([]);
+	});
+
+	it('turns red for a forbidden import, a forbidden call and a forbidden literal', () => {
+		const boundary = NEGATIVE_FRONTIERS[0]!;
+		const sabotaged = `
+			import { TFile } from 'obsidian';
+			import { readFileSync } from 'node:fs/promises';
+			export async function write(): Promise<void> {
+				await fetch('https://example.invalid', { headers: { Authorization: 'x' } });
+				void TFile; void readFileSync;
+			}
+		`;
+		expect(forbiddenBoundaryUses(sabotaged, boundary)).toEqual([
+			{ path: boundary.path, kind: 'import', value: 'node:fs/promises' },
+			{ path: boundary.path, kind: 'import', value: 'obsidian' },
+			{ path: boundary.path, kind: 'name', value: 'Authorization' },
+			{ path: boundary.path, kind: 'name', value: 'fetch' },
+		]);
+	});
+
+	it('reads names from the syntax, so a commented capability is not a violation', () => {
+		const names = referencedNames(`
+			// fetch('https://example.invalid');
+			/* Authorization */
+			const kept = 1;
+		`);
+		expect(names.has('kept')).toBe(true);
+		expect(names.has('fetch')).toBe(false);
+		expect(names.has('Authorization')).toBe(false);
+	});
+});
 
 describe('module boundary specifier parser', () => {
 	it('keeps side-effect imports before and after imports with from', () => {

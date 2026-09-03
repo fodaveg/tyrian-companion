@@ -1,5 +1,5 @@
 {
-	"frozenCount": 37,
+	"frozenCount": 35,
 	"frozen": [
 		"src/advisor/inventory-advisor-architecture.test.ts",
 		"src/advisor/inventory-advisor-builtin-bundle-architecture.test.ts",
@@ -13,7 +13,6 @@
 		"src/assets/halloween-base.test.ts",
 		"src/assets/managed-assets-architecture.test.ts",
 		"src/assets/wallet-base.test.ts",
-		"src/core/settings-wiring.test.ts",
 		"src/economy/price-history-architecture.test.ts",
 		"src/economy/recommendation-envelope-architecture.test.ts",
 		"src/halloween/halloween-architecture.test.ts",
@@ -31,7 +30,6 @@
 		"src/sessions/pending-proposal-architecture.test.ts",
 		"src/sessions/pilot-metrics-architecture.test.ts",
 		"src/sessions/session-debug-semantics-architecture.test.ts",
-		"src/sessions/session-note-architecture.test.ts",
 		"src/ui/companion-status-model.test.ts",
 		"src/ui/inventory-advisor-integration-architecture.test.ts",
 		"src/ui/product-action-architecture.test.ts",
