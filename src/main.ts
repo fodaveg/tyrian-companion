@@ -65,15 +65,13 @@ import { SessionPriceSnapshotService } from './economy/session-price-snapshot';
 import { PriceHistoryRuntime, type PriceHistoryRuntimeState } from './economy/price-history-runtime';
 import { halloweenObservationActive } from './halloween/halloween-activation';
 import type { HalloweenAlertItem } from './halloween/halloween-model';
-import { HalloweenEvidenceService } from './halloween/halloween-evidence-service';
 import { IndexedDbHalloweenStore } from './halloween/halloween-store';
-import { scanHalloweenSessionNotes } from './halloween/halloween-note-backfill';
-import { HalloweenRuntime, type HalloweenRuntimeState } from './halloween/halloween-runtime';
-import { HalloweenUnlockService } from './halloween/halloween-unlocks';
-import {
+import type { HalloweenRuntime, HalloweenRuntimeState } from './halloween/halloween-runtime';
+import type {
 	HalloweenPriceAlertRuntime,
-	type HalloweenPriceAlertRuntimeState,
+	HalloweenPriceAlertRuntimeState,
 } from './halloween/halloween-price-alert-runtime';
+import { assembleHalloween } from './runtime/assemble-halloween';
 import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
 import type {
 	PriceHistoryDailyV1,
@@ -591,20 +589,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionCatalogFactory = async () => new PublicCatalogService(
 			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
 		);
-		this.halloweenPriceAlert = new HalloweenPriceAlertRuntime({
+		const halloweenServices = assembleHalloween({
 			factory: window.indexedDB, vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
-			persistenceDiagnostics: this.persistenceDiagnostics('halloween', 'halloween_alert'),
+			priceAlertPersistence: this.persistenceDiagnostics('halloween', 'halloween_alert'),
+			refreshPersistence: this.persistenceDiagnostics('halloween', 'halloween_refresh'),
 			accountRef: () => this.halloweenAccountRef,
-			// H13.4 routes the price surface through the one exit point. The evaluation behind
-			// it is still the local p90 crossing; H13.2 replaces the detector, not the kind.
-			onNotice: (notice) => { this.dispatchAlert({
-				kind: 'sell_signal', itemId: notice.itemId, quantity: 1,
-				name: translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
-				totalCopper: notice.bidCopper, reason: 'bid_above_reference',
-			}); },
+			locale: () => this.settings.language,
+			valueThresholdCopper: () => this.settings.halloweenValueThresholdCopper,
+			priceHistoryEnabled: () => this.settings.priceHistoryEnabled,
+			client,
+			publicGateway: publicClient,
+			rateLimit: rateLimitCoordinator,
+			connectionScopes: () => connectionScopes(this.connection.getState()),
+			notes: {
+				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
+				read: async (file) => {
+					const target = this.app.vault.getAbstractFileByPath(file.path);
+					if (!(target instanceof TFile)) throw new Error('Halloween backfill note is not a file.');
+					return await this.app.vault.read(target);
+				},
+			},
+			observePriceHistoryItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
+			emitAlert: (alert) => { this.dispatchAlert(alert); },
+			emitPolicyAlert: (item) => { this.dispatchPolicyAlert(item); },
 			onStateChange: () => this.renderViews(),
+			onPriceAlertStateChange: () => this.renderViews(),
 		});
+		this.halloweenPriceAlert = halloweenServices.priceAlert;
+		this.halloween = halloweenServices.runtime;
 		this.sellSignal = this.buildSellSignalRuntime(transport);
 		this.priceHistory = new PriceHistoryRuntime({
 			factory: window.indexedDB,
@@ -620,38 +633,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				}, port.nowMs, port.actionContext);
 				await this.evaluateSellSignal(port);
 			},
-		});
-		const halloweenEvidence = new HalloweenEvidenceService(
-			publicClient,
-			new HalloweenUnlockService({ client, rateLimit: rateLimitCoordinator }),
-			rateLimitCoordinator,
-		);
-		this.halloween = new HalloweenRuntime({
-			factory: window.indexedDB, vaultId,
-			diagnostics: this.localDebugActions ?? undefined,
-			persistenceDiagnostics: this.persistenceDiagnostics('halloween', 'halloween_refresh'),
-			accountRef: () => this.halloweenAccountRef,
-			resolveEvidence: async ({ gains, firstSeenItemIds, learning }) => await halloweenEvidence.resolve({
-				gains, firstSeenItemIds, learning, locale: this.settings.language,
-				scopes: connectionScopes(this.connection.getState()),
-			}),
-			policy: () => ({ valueThresholdCopper: this.settings.halloweenValueThresholdCopper }),
-			loadBackfill: async (accountRef) => await scanHalloweenSessionNotes({
-				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
-				read: async (file) => {
-					const target = this.app.vault.getAbstractFileByPath(file.path);
-					if (!(target instanceof TFile)) throw new Error('Halloween backfill note is not a file.');
-					return await this.app.vault.read(target);
-				},
-			}, accountRef),
-			priceHistory: {
-				active: () => this.settings.priceHistoryEnabled,
-				observeItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
-			},
-			// The policy verdict is the "always alert" half of the H13.3 OR: one alert per item
-			// that earned a value-free reason, instead of one toast counting them.
-			onNotice: (notice) => { for (const item of notice.items) this.dispatchPolicyAlert(item); },
-			onStateChange: () => this.renderViews(),
 		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;

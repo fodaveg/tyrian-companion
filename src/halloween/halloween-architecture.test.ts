@@ -15,10 +15,13 @@ describe('H11-A architecture and UI contract', () => {
 
 	it('keeps Notice in the foreground adapter and provisional wording explicit', () => {
 		const runtime = readFileSync('src/halloween/halloween-runtime.ts', 'utf8');
+		const composition = readFileSync('src/runtime/assemble-halloween.ts', 'utf8');
 		const main = readFileSync('src/main.ts', 'utf8');
 		expect(runtime).toContain("wording: 'observed_change'");
 		expect(runtime).not.toContain('new Notice');
-		expect(main).toMatch(/onNotice:[\s\S]*new Notice/u);
+		expect(composition).not.toContain('new Notice');
+		expect(composition).toMatch(/onNotice:[\s\S]*emitPolicyAlert/u);
+		expect(main).toContain('new Notice');
 	});
 
 	it('covers the 7-axis UI checklist without hardcoded assets or colors', () => {
@@ -47,7 +50,8 @@ describe('H11-A architecture and UI contract', () => {
 
 	it('wires opt-in note backfill and accepted-session gating into production composition', () => {
 		const main = readFileSync('src/main.ts', 'utf8');
-		expect(main).toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
+		expect(readFileSync('src/runtime/assemble-halloween.ts', 'utf8'))
+			.toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
 		expect(main).toContain("`session:${session.sessionId}`");
 		expect(main).toContain("`session:${result.state.sessionId}`");
