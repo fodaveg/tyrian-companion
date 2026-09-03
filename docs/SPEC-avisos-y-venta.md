@@ -51,7 +51,8 @@ el aviso tiene que saltar por encima de la ventana.» «Yo pondría todos los av
 8. **H13.6** Des-mezclar aperturas: sesión `estimada` con banda en vez de `contaminada`.
 9. **H13.14** Sacos/h como banda y contador en vivo.
 
-Después, la deuda (H13.10 a H13.13) y el addon de Nexus (H13.9).
+Después, la deuda (H13.10 a H13.13) y el puente dentro del juego (H13.9 Nexus, H13.15 Blish HUD),
+que tiene especificación propia en [`SPEC-puente-ingame.md`](SPEC-puente-ingame.md).
 
 ## Contrato del aviso
 
