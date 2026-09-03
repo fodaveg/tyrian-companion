@@ -1,5 +1,68 @@
 # Changelog
 
+## Release beta 0.1.24 - la comisión del bazar deja de calcularse de dos formas, y una de las dos estaba mal
+
+### La aritmética de la comisión se unifica sobre la que usa el juego
+
+- **El plugin calculaba la comisión del bazar de dos maneras y no daban lo mismo.** La divergencia
+  llevaba fijada desde la `0.1.23` en un test que la documentaba sin resolverla: 14.927 de 15.706
+  brutos muestreados diferían, con una brecha de −0,75 a +0,60 cobre. Lo que faltaba no era una
+  preferencia, era una medición contra el juego.
+- **Medido contra seis parejas precio→neto verificadas dentro del juego**, la ruta que usa
+  `calculateTradingPostFees` acertó **6 de 6** y la que aplicaba techo en micro-cobre, **2 de 6**:
+
+  | Bruto | Neto real | Ruta de sesión | Ruta del advisor (antes) |
+  |---|---|---|---|
+  | 2 | 0 | 0 | 0 |
+  | 6 | 4 | 4 | 4 |
+  | 12 | 10 | 10 | 9,8 |
+  | 18 | 15 | 15 | 15,2 |
+  | 51 | 43 | 43 | 43,35 |
+  | 68 | 58 | 58 | 57,8 |
+  | 11 | 9 | 9 | 8,9 |
+
+- **La fórmula real del bazar** es `max(round(precio × tasa), 1)` aplicada **por separado** a la
+  comisión de publicación (5 %) y a la de transacción (10 %), cada una con **su propio suelo de un
+  cobre**. El techo que aplicaba la otra ruta no es lo que hace el juego en ningún punto documentado
+  ni verificado, y el suelo tampoco: `floor` falla en el caso de 18 cobre.
+- **`valueExpectedInstantSellDepth` deja de calcular su propio techo.** Ahora llama a
+  `calculateTradingPostFees` una vez por nivel de profundidad, sobre el precio unitario **entero** de
+  ese nivel, y escala por las unidades fraccionarias con una multiplicación exacta, sin introducir un
+  redondeo propio en el escalado.
+- **Un bruto de un cobre dejaba un neto de −1.** Ese −1 es la pérdida de bolsillo (la comisión de
+  publicación se paga por adelantado y no se devuelve), no lo que entrega la venta, que es 0. El
+  campo dice neto recibido, así que queda acotado a 0. La cotización de 1 cobre pasa de `invalid` a
+  un neto de 0.
+- **Ninguna recomendación cambia de lado.** Sobre el order book real capturado el 1 de septiembre, el
+  kernel de disposición sigue diciendo vender; solo se mueven los valores esperados, muy por debajo
+  del umbral de decisión.
+- El test de paridad deja de documentar la brecha y **asevera las ocho parejas verificadas en juego
+  sobre las dos rutas**. Comprobado que muerde: reponiendo el techo se pone rojo citando
+  `expected netMicroCopper 10000000n, received 9800000n`.
+
+### Una sola huella canónica
+
+- **Había dos funciones que calculaban la huella canónica de un objeto y diferían solo en cómo
+  trataban una fecha**: una la convertía en `{}`, con lo que todas las fechas compartían huella, y la
+  otra devolvía su ISO. Se colapsan sobre la de ISO.
+- **La decisión se tomó midiendo, no razonando.** Con la función instrumentada y la suite completa
+  corrida, la variante que colapsaba fechas **no recibe una sola fecha en ningún camino de
+  producción**: los únicos impactos son las aserciones del propio test que documentaba la
+  divergencia. Una auditoría estática lo corrobora: cero campos tipados `Date` en todo `src/`, porque
+  el dominio representa el tiempo siempre como cadena ISO validada. Y las huellas que sí se
+  persisten ya usaban la variante de ISO, así que **no se reescribe ningún valor en disco**.
+- Se elimina `canonicalBlockFingerprint`, que no tenía ni una llamada. Y se actualiza la copia
+  deliberada de la función que vive en `inventory-advisor-builtin-bundle.ts` (el censo de fronteras
+  le prohíbe importarla), que replicaba el comportamiento viejo y habría quedado divergente.
+
+### Los dos addons del aviso dentro del juego existen
+
+- **No forman parte de esta release ni de este repositorio**, pero ya hay código: el addon de Nexus
+  en Rust (`tyrian-companion-nexus`), que compila a un DLL de Windows que exporta `GetAddonDef`, y el
+  módulo de Blish HUD en C# (`tyrian-companion-blish`), escrito pero sin compilar por falta de
+  toolchain .NET. Ninguno de los dos manda nada al plugin salvo su línea de presentación, ni lee
+  Mumble Link, ni llama a la API del juego, ni automatiza ninguna acción.
+
 ## Release beta 0.1.23 - el webhook deja de contar lo que no le toca, y el aviso puede salir dentro del juego
 
 ### Arreglo de privacidad en un canal ya publicado

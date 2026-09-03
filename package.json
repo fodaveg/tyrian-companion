@@ -1,6 +1,6 @@
 {
 	"name": "tyrian-companion",
-	"version": "0.1.23",
+	"version": "0.1.24",
 	"private": true,
 	"description": "An Obsidian desktop companion for Guild Wars 2 account context and planning.",
 	"main": "main.js",
