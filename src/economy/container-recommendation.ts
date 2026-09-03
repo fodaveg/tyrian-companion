@@ -674,7 +674,7 @@ function isSellNow(
 		!nonNegative(value.totalFeesCopper) || !nonNegative(value.netCopper)) return false;
 	const fees = safeSum([value.listingFeeCopper, value.exchangeFeeCopper]);
 	if (fees === null || value.totalFeesCopper !== fees ||
-		value.netCopper !== value.grossCopper - fees) return false;
+		value.netCopper !== Math.max(0, value.grossCopper - fees)) return false;
 	const maximumGross = safeProduct(value.unitCopper, quantity);
 	if (maximumGross === null) return false;
 	if (value.route === 'vendor') return fees === 0 && value.grossCopper === maximumGross;

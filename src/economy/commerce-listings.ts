@@ -1,8 +1,4 @@
-import {
-	calculateTradingPostFees,
-	createTradingPostValueWithPolicy,
-	GW2_TRADING_POST_FEE_POLICY,
-} from './gw2-fees';
+import { calculateTradingPostFees, createTradingPostValueWithPolicy } from './gw2-fees';
 
 export interface CommerceListingLevelV1 {
 	unitCopper: number;
@@ -72,8 +68,11 @@ export function valueInstantSellDepth(
 	if (covered === 0) return unavailableValue(quantity);
 	const fees = calculateTradingPostFees(gross);
 	if (fees.status !== 'ok') return invalidValue(quantity);
-	const net = gross - fees.fees.totalFeesCopper;
-	if (!Number.isSafeInteger(net) || net < 0) return invalidValue(quantity);
+	// The game never pays out less than nothing: on a gross this small both
+	// fees hit their one-copper floor and consume the whole sale, and the sale
+	// still completes with nothing received, it is not refused. See
+	// `calculateTradingPostFees` in `gw2-fees.ts` for the shared formula.
+	const net = Math.max(0, gross - fees.fees.totalFeesCopper);
 	return {
 		status: remaining === 0 ? 'complete' : 'partial', requestedQuantity: quantity,
 		coveredQuantity: covered, uncoveredQuantity: remaining, grossCopper: gross,
@@ -82,9 +81,21 @@ export function valueInstantSellDepth(
 }
 
 /**
- * Values probabilistic outcome units against real buy depth. Fees are rounded
- * up in micro-copper, including each route's one-copper minimum, so the result
- * is a conservative realizable bound rather than a top-quote extrapolation.
+ * Values probabilistic outcome units against real buy depth.
+ *
+ * The game only ever sells a whole number of units at a whole-copper price;
+ * `requestedUnitsMillionths` is a fractional expectation over container
+ * openings, not a real transaction, so there is no real gross to round. Each
+ * depth level's fee is instead computed once, in whole copper, on that
+ * level's real integer unit price via `calculateTradingPostFees` (the same
+ * formula the session route uses), and the result is scaled by the
+ * fractional micro-units actually drawn from that level. That scaling is an
+ * exact bigint multiplication, so it introduces no rounding of its own: all
+ * rounding happens once, inside the shared per-unit formula.
+ *
+ * This also means a rare drop is priced as if each unit sold on its own,
+ * never as if it conveniently joined an existing large stack to dilute the
+ * one-copper floor: nothing here knows whether that stack exists.
  */
 export function valueExpectedInstantSellDepth(
 	levels: readonly CommerceListingLevelV1[],
@@ -97,18 +108,20 @@ export function valueExpectedInstantSellDepth(
 	let remaining = requestedUnitsMillionths;
 	let covered = 0n;
 	let gross = 0n;
+	let totalFees = 0n;
 	for (const level of levels) {
 		const capacity = BigInt(level.quantity) * scale;
 		const take = remaining < capacity ? remaining : capacity;
 		if (take === 0n) break;
+		const fees = calculateTradingPostFees(level.unitCopper);
+		if (fees.status !== 'ok') return invalidExpectedValue(requestedUnitsMillionths);
 		gross += take * BigInt(level.unitCopper);
+		totalFees += take * BigInt(fees.fees.totalFeesCopper);
 		covered += take;
 		remaining -= take;
 	}
 	if (covered === 0n) return unavailableExpectedValue(requestedUnitsMillionths);
-	const listingFee = expectedFeeMicroCopper(gross, GW2_TRADING_POST_FEE_POLICY.listingFeeBasisPoints);
-	const exchangeFee = expectedFeeMicroCopper(gross, GW2_TRADING_POST_FEE_POLICY.exchangeFeeBasisPoints);
-	const net = gross > listingFee + exchangeFee ? gross - listingFee - exchangeFee : 0n;
+	const net = gross > totalFees ? gross - totalFees : 0n;
 	return {
 		status: remaining === 0n ? 'complete' : 'partial',
 		requestedUnitsMillionths,
@@ -150,7 +163,7 @@ export function isDemonstratedMarketValue(value: unknown): value is Demonstrated
 	}
 	if (!positive(value.coveredQuantity) || !positive(value.grossCopper) || !nonNegative(value.netCopper)) return false;
 	const fees = calculateTradingPostFees(value.grossCopper);
-	return fees.status === 'ok' && value.netCopper === value.grossCopper - fees.fees.totalFeesCopper
+	return fees.status === 'ok' && value.netCopper === Math.max(0, value.grossCopper - fees.fees.totalFeesCopper)
 		&& (value.status === 'complete' ? value.uncoveredQuantity === 0 : value.uncoveredQuantity > 0);
 }
 
@@ -187,12 +200,6 @@ function unavailableValue(quantity: number): DemonstratedMarketValueV1 { return 
 function invalidValue(quantity: number): DemonstratedMarketValueV1 { return { status: 'invalid', requestedQuantity: validQuantity(quantity) ? quantity : 0, coveredQuantity: 0, uncoveredQuantity: validQuantity(quantity) ? quantity : 0, grossCopper: null, netCopper: null, unitCopper: null }; }
 function unavailableExpectedValue(quantity: bigint): DemonstratedExpectedMarketValueV1 { return { status: 'no_market', requestedUnitsMillionths: quantity, coveredUnitsMillionths: 0n, uncoveredUnitsMillionths: quantity, grossMicroCopper: null, netMicroCopper: null }; }
 function invalidExpectedValue(quantity: bigint): DemonstratedExpectedMarketValueV1 { return { status: 'invalid', requestedUnitsMillionths: quantity > 0n ? quantity : 0n, coveredUnitsMillionths: 0n, uncoveredUnitsMillionths: quantity > 0n ? quantity : 0n, grossMicroCopper: null, netMicroCopper: null }; }
-function expectedFeeMicroCopper(gross: bigint, basisPoints: number): bigint {
-	const numerator = gross * BigInt(basisPoints);
-	const denominator = 10_000n;
-	const roundedUp = (numerator + denominator - 1n) / denominator;
-	return roundedUp > 1_000_000n ? roundedUp : 1_000_000n;
-}
 function strictIds(values: unknown[]): boolean { return values.every(positive) && values.every((value, index) => index === 0 || (values[index - 1] as number) < value); }
 function strictItems(values: unknown[]): boolean { return values.every((value, index) => index === 0 || (values[index - 1] as InventoryItemMarketDepthV1).itemId < (value as InventoryItemMarketDepthV1).itemId); }
 function sameIds(left: number[], right: number[]): boolean { return left.length === right.length && left.every((value, index) => value === right[index]); }

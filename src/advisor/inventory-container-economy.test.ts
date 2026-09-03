@@ -208,7 +208,7 @@ describe('H4.19 inventory container economy', () => {
 		expect(immediate.open.coverage).toBe('declared_zero');
 		expect(immediate.open.noCounterpartyItemIds).toEqual([36_059, 36_060, 36_061, 79_673, 79_677, 79_679, 89_002]);
 		expect(immediate.sellNow).toMatchObject({ route: 'instant_sell', unitCopper: 358, netCopper: 304 });
-		expect(immediate.open.evPerContainerMicroCopper).toBe(207_369_813);
+		expect(immediate.open.evPerContainerMicroCopper).toBe(207_551_877);
 		expect(immediate.threshold.requiredOpenMicroCopper).toBe('334400000');
 		expect(immediate.decision).toEqual({ action: 'sell', sellRoute: 'instant_sell' });
 
@@ -253,9 +253,9 @@ describe('H4.19 inventory container economy', () => {
 		const immediate = explanation.routes[0]!;
 		// The tail is worth more than a third of the conservative figure and is
 		// still not enough to open: both facts are visible, neither is inferred.
-		expect(immediate.openIncludingTail?.evPerContainerMicroCopper).toBe(285_944_382);
+		expect(immediate.openIncludingTail?.evPerContainerMicroCopper).toBe(286_126_446);
 		expect(immediate.openIncludingTail?.meetsThreshold).toBe(false);
-		expect(immediate.open.evPerContainerMicroCopper).toBe(207_369_813);
+		expect(immediate.open.evPerContainerMicroCopper).toBe(207_551_877);
 		expect(immediate.decision.action).toBe('sell');
 		expect(explanation.tail!.immediate.deviationPerContainerMicroCopper)
 			.toBeGreaterThan(immediate.openIncludingTail!.evPerContainerMicroCopper * 30);
