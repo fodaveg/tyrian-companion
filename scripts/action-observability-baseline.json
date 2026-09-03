@@ -2129,9 +2129,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 156,
+					"line": 166,
 					"column": 5,
-					"endLine": 172,
+					"endLine": 182,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -2142,9 +2142,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 195,
+					"line": 205,
 					"column": 5,
-					"endLine": 197,
+					"endLine": 207,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2157,9 +2157,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 208,
+					"line": 218,
 					"column": 5,
-					"endLine": 210,
+					"endLine": 220,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2172,9 +2172,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 235,
+					"line": 245,
 					"column": 5,
-					"endLine": 237,
+					"endLine": 247,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2187,9 +2187,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 258,
+					"line": 268,
 					"column": 5,
-					"endLine": 263,
+					"endLine": 273,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3529,9 +3529,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 54,
+					"line": 77,
 					"column": 4,
-					"endLine": 59,
+					"endLine": 82,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3544,9 +3544,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 68,
+					"line": 91,
 					"column": 4,
-					"endLine": 68,
+					"endLine": 91,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {

@@ -25,6 +25,16 @@ export interface HttpRequest {
 	body?: string;
 	/** Closed diagnostic identifier. The raw URL is never inferred or recorded. */
 	endpoint?: HttpLogicalEndpoint;
+	/**
+	 * Bytes of response body this caller is willing to have decoded.
+	 *
+	 * Absent means no cap, which is what every ArenaNet route uses: those answer
+	 * a paginated size the plugin already controls. It is declared per request
+	 * rather than per transport because the only endpoint that needs it is the
+	 * one served by a third party, and the number that bounds it belongs next to
+	 * the module that knows how big the real answer is.
+	 */
+	maxResponseBytes?: number;
 }
 
 export interface HttpResponse {

@@ -15,6 +15,7 @@ import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
+import { PRICE_SEED_MAX_RESPONSE_BYTES } from './economy/price-seed-source';
 import type { SellSignalRuntimeState } from './economy/sell-signal-runtime';
 import { trickOrTreatBagHistoryRecords } from './economy/__fixtures__/trick-or-treat-bag-history';
 
@@ -80,6 +81,7 @@ describe('H13.2 sell signal cabling', () => {
 			url: 'https://api.datawars2.ie/gw2/v1/history?itemID=36038',
 			method: 'GET',
 			endpoint: 'price_history_seed',
+			maxResponseBytes: PRICE_SEED_MAX_RESPONSE_BYTES,
 		});
 		expect(plugin.sellSignal?.getState()).toMatchObject({ seedStatus: 'seeded', seedDayCount: 399 });
 	});

@@ -44,8 +44,37 @@ export class SecretComponent {}
 export class Setting {}
 export class TFile {}
 
-export async function requestUrl(): Promise<{ status: number; headers: Record<string, string>; json: unknown }> {
-	return { status: 200, headers: {}, json: {} };
+/**
+ * The shape `requestUrl` resolves to, `json` included as a PROPERTY.
+ *
+ * The real one exposes it as a getter that parses `arrayBuffer` on first read.
+ * A responder that wants to prove nobody parsed the body defines it as a getter
+ * too; the type is the same either way, which is the point.
+ */
+export interface MockRequestUrlResponse {
+	status: number;
+	headers: Record<string, string>;
+	arrayBuffer: ArrayBuffer;
+	json: unknown;
+}
+
+export type MockRequestUrlResponder = (request: unknown) => MockRequestUrlResponse;
+
+let requestUrlResponder: MockRequestUrlResponder | null = null;
+
+export async function requestUrl(request?: unknown): Promise<MockRequestUrlResponse> {
+	if (requestUrlResponder !== null) return requestUrlResponder(request);
+	return { status: 200, headers: {}, arrayBuffer: new ArrayBuffer(0), json: {} };
+}
+
+/**
+ * Test-only companion to `requestUrl`; the real Obsidian API exposes no setter.
+ *
+ * Passing `null` restores the empty 200 above, and every test that sets one must
+ * restore it: the responder is module state shared by the whole run.
+ */
+export function setMockRequestUrl(responder: MockRequestUrlResponder | null): void {
+	requestUrlResponder = responder;
 }
 
 let appLanguage = 'en';
