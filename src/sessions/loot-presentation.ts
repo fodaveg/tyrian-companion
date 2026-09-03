@@ -1,5 +1,6 @@
 import { declaresConsumedInputs } from '../account/contamination';
 import type { ContainerDispositionRecommendation } from '../economy/container-recommendation';
+import { observedRateBand, unavailableRateBand, type ObservedRateBand } from './observed-rate-band';
 import type { PreparedSessionNote, SessionNoteLocale } from './session-note-model';
 
 export const LOOT_PRESENTATION_VERSION = 1 as const;
@@ -65,6 +66,18 @@ export interface LootEconomyPresentation {
 	coverage: 'complete' | 'partial' | null;
 	immediateCopperPerHour: number | null;
 	listingCopperPerHour: number | null;
+	/**
+	 * The same three rates as intervals, and the only form an `estimated` session may publish.
+	 *
+	 * The exact figures above answer «how much per hour», which needs a window measured to the
+	 * second; `grossPerHour` only grants that to an `exact` session and rightly so. A band answers
+	 * the weaker question «between which two rates», which the cache-blurred window does support,
+	 * so it rides the `valueNet` permission instead and an estimated session stops reporting
+	 * nothing at all. Sacks are scaled by a thousand, matching `rates.sacksPerHourMilli`.
+	 */
+	sacksPerHourMilliBand: ObservedRateBand;
+	immediateCopperPerHourBand: ObservedRateBand;
+	listingCopperPerHourBand: ObservedRateBand;
 	attribution: LootAttributionBand;
 	label: string;
 }
@@ -261,6 +274,9 @@ function buildEconomy(note: PreparedSessionNote, rows: LootPresentationRow[]): L
 		coverage: value.coverage,
 		immediateCopperPerHour: classification.permissions.grossPerHour ? value.rates.immediateCopperPerHour : null,
 		listingCopperPerHour: classification.permissions.grossPerHour ? value.rates.listingCopperPerHour : null,
+		sacksPerHourMilliBand: observedRateBand(value.rates.sacks * 1_000, value.durationMs),
+		immediateCopperPerHourBand: observedRateBand(value.totals.observedImmediateCopper, value.durationMs),
+		listingCopperPerHourBand: observedRateBand(value.totals.observedListingCopper, value.durationMs),
 		label: localized(note.locale, value.coverage === 'complete' ? 'observed_total' : 'known_subtotal'),
 	};
 }
@@ -358,7 +374,11 @@ function emptyEconomy(status: LootEconomyPresentation['status'], label: string):
 		status, immediateCopper: null, listingCopper: null, coinNetCopper: null,
 		nonLiquidQuantity: null, valuedItemKinds: null, totalItemKinds: null, unvaluedItemKinds: null, priceSource: null,
 		priceCapturedAt: null, coverage: null, immediateCopperPerHour: null,
-		listingCopperPerHour: null, attribution: unavailableAttribution(), label,
+		listingCopperPerHour: null,
+		sacksPerHourMilliBand: unavailableRateBand(),
+		immediateCopperPerHourBand: unavailableRateBand(),
+		listingCopperPerHourBand: unavailableRateBand(),
+		attribution: unavailableAttribution(), label,
 	};
 }
 

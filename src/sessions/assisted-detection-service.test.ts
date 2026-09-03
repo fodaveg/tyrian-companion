@@ -104,7 +104,7 @@ describe('AssistedDetectionService', () => {
 			pollingIntervalMs: 900_000,
 			lastSnapshotAt: '2026-08-13T10:30:02.000Z',
 			proposal: {
-				ruleSet: { id: 'halloween.labyrinth-drops', version: 2 },
+				ruleSet: { id: 'halloween.labyrinth-drops', version: 3 },
 				firstSignal: { gains: [{ itemId: 36_038, quantity: 1 }] },
 				confirmationSignal: { gains: [{ itemId: 36_038, quantity: 1 }] },
 			},
@@ -319,19 +319,20 @@ describe('AssistedDetectionService', () => {
 		expect(second.status === 'start_proposed' && second.proposal.firstSignal.gains[0]?.quantity).toBe(1);
 	});
 
-	it('watches every verified Labyrinth drop id under a rule named after them', () => {
+	it('watches every verified Labyrinth drop id under a rule named after them, anchored on the bag', () => {
 		// Verified against https://api.guildwars2.com/v2/items?ids=36038,36041,36059,36060,36061:
 		// Trick-or-Treat Bag, Piece of Candy Corn, Plastic Fangs, Chattering Skull, Nougat Center.
 		expect(HALLOWEEN_RELEVANT_ITEM_RULE_SET).toEqual({
 			id: 'halloween.labyrinth-drops',
-			version: 2,
+			version: 3,
 			itemIds: [36_038, 36_041, 36_059, 36_060, 36_061],
+			anchorItemId: 36_038,
 		});
 		// The identifier must not name one item while the rule watches five.
 		expect(HALLOWEEN_RELEVANT_ITEM_RULE_SET.id).not.toBe('halloween.trick-or-treat-bag');
 	});
 
-	it('proposes a start from two drops that are not the bag', async () => {
+	it('does not propose a start from two drops that are not the bag', async () => {
 		const harness = createHarness([
 			snapshot('a', 0, 0),
 			snapshot('b', 15, 0, 36_059),
@@ -341,14 +342,44 @@ describe('AssistedDetectionService', () => {
 		await harness.scheduler.trigger();
 		await harness.scheduler.trigger();
 
+		expect(harness.service.getState().status).toBe('armed');
+	});
+
+	it('proposes a start once the bag itself rises alongside the accessories', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0),
+			snapshot('b', 15, 0, 36_059),
+			snapshot('c', 30, 1, 36_059, 36_061),
+		]);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
 		expect(harness.service.getState()).toMatchObject({
 			status: 'start_proposed',
 			proposal: {
-				ruleSet: { id: 'halloween.labyrinth-drops', version: 2 },
+				ruleSet: { id: 'halloween.labyrinth-drops', version: 3 },
 				firstSignal: { gains: [{ itemId: 36_059, quantity: 1 }] },
-				confirmationSignal: { gains: [{ itemId: 36_061, quantity: 1 }] },
+				confirmationSignal: { gains: [{ itemId: 36_038, quantity: 1 }, { itemId: 36_061, quantity: 1 }] },
 			},
 		});
+	});
+
+	/**
+	 * The bag rises first, so the anchor the rule demands is already in the evidence: the only
+	 * thing standing between this run and a proposal is the fall in the confirming poll.
+	 */
+	it('never confirms a start with a poll where the bag count fell', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0),
+			snapshot('b', 15, 1),
+			snapshot('c', 30, 0, 36_059),
+		]);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState().status).toBe('armed');
 	});
 
 	it('keeps the quiet-threshold default above the account API cache ceiling', () => {

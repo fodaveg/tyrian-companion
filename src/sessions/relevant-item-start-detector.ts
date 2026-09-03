@@ -32,6 +32,21 @@ export interface RelevantItemRuleSet {
 	id: string;
 	version: number;
 	itemIds: readonly number[];
+	/**
+	 * Item whose rise the rule set demands before it will back a start, and whose fall inside one
+	 * delta disqualifies that sample.
+	 *
+	 * Watching several ids keeps the two-gain criterion reachable under the account cache, but on
+	 * its own it lets the accessories alone claim a farming run they do not prove. The anchor is
+	 * the one gain that does: it must appear somewhere in the evidence the proposal cites. Its
+	 * fall is the opposite evidence in the same reading — stock being spent, not earned — so that
+	 * sample backs nothing even when the accessories rose alongside it.
+	 *
+	 * Optional, and absent means the historical behaviour: every watched id is equally sufficient.
+	 * When present it must be one of `itemIds`; an anchor outside the watched set could never be
+	 * observed and would silence the rule for good.
+	 */
+	anchorItemId?: number;
 }
 
 export interface RelevantItemGain {
@@ -65,7 +80,7 @@ export interface RelevantStartProposal {
 }
 
 export type RelevantStartObservation =
-	| { status: 'no_signal'; reason: 'invalid_delta' | 'no_relevant_gain'; proposal: null }
+	| { status: 'no_signal'; reason: 'invalid_delta' | 'no_relevant_gain' | 'anchor_decreased'; proposal: null }
 	| { status: 'first_signal'; signal: RelevantDeltaSignal; proposal: null }
 	| { status: 'duplicate'; proposal: RelevantStartProposal | null }
 	| { status: 'proposed'; proposal: RelevantStartProposal };
@@ -78,9 +93,17 @@ export type RelevantStartObservation =
  * minute cache, so at a fast cadence the gains land on every other poll at best and a
  * consecutiveness rule never fires. Quiet samples no longer discard the evidence, they only age
  * it out.
+ *
+ * A rule set that declares an anchor adds one necessary condition on top: the anchor has to have
+ * risen inside the cited evidence, and a sample where it fell is not evidence of a start at all.
  */
 export class RelevantItemStartDetector {
-	private readonly ruleSet: { id: string; version: number; itemIds: Set<number> };
+	private readonly ruleSet: {
+		id: string;
+		version: number;
+		itemIds: Set<number>;
+		anchorItemId: number | null;
+	};
 	private readonly samples: EvidenceSample[] = [];
 	private proposal: RelevantStartProposal | null = null;
 	private lastDeltaIdentity: string | null = null;
@@ -107,13 +130,17 @@ export class RelevantItemStartDetector {
 		}
 		this.lastDeltaIdentity = identity;
 
+		// The anchor going down in the very reading that shows the accessories going up is the
+		// signature of stock being consumed, not earned. The sample is retained so the snapshot
+		// chain stays contiguous, but it backs nothing.
+		const anchorFell = anchorDelta(delta, this.ruleSet.anchorItemId) < 0;
 		const sample: EvidenceSample = {
 			accountId: delta.accountId,
 			beforeSnapshotId: delta.beforeSnapshotId,
 			afterSnapshotId: delta.afterSnapshotId,
 			window: { ...delta.window },
 			deltaStatus: delta.status,
-			signal: relevantSignal(delta, this.ruleSet.itemIds),
+			signal: anchorFell ? null : relevantSignal(delta, this.ruleSet.itemIds),
 		};
 
 		// A break in the snapshot chain means the retained samples no longer describe one
@@ -123,15 +150,18 @@ export class RelevantItemStartDetector {
 		this.samples.push(sample);
 		this.pruneEvidence();
 
-		if (!sample.signal) return { status: 'no_signal', reason: 'no_relevant_gain', proposal: null };
+		if (!sample.signal) {
+			return { status: 'no_signal', reason: anchorFell ? 'anchor_decreased' : 'no_relevant_gain', proposal: null };
+		}
 
 		const firstGainIndex = this.samples.findIndex((entry) => entry.signal !== null);
 		const gains = this.samples.reduce((total, entry) => total + (entry.signal ? 1 : 0), 0);
-		if (gains < RELEVANT_EVIDENCE_REQUIRED_GAINS) {
+		const span = this.samples.slice(firstGainIndex);
+		if (gains < RELEVANT_EVIDENCE_REQUIRED_GAINS || !spanShowsAnchor(span, this.ruleSet.anchorItemId)) {
 			return { status: 'first_signal', signal: structuredClone(sample.signal), proposal: null };
 		}
 
-		const proposal = buildProposal(this.ruleSet, this.samples.slice(firstGainIndex));
+		const proposal = buildProposal(this.ruleSet, span);
 		this.proposal = proposal;
 		return { status: 'proposed', proposal: structuredClone(proposal) };
 	}
@@ -178,6 +208,7 @@ function normalizeRuleSet(ruleSet: RelevantItemRuleSet): {
 	id: string;
 	version: number;
 	itemIds: Set<number>;
+	anchorItemId: number | null;
 } {
 	const rawItemIds: unknown = ruleSet.itemIds;
 	if (
@@ -194,7 +225,16 @@ function normalizeRuleSet(ruleSet: RelevantItemRuleSet): {
 	if (ids.some((id, index) => index > 0 && id <= (ids[index - 1] ?? 0))) {
 		throw new TypeError('Relevant item ids must be sorted, unique positive integers.');
 	}
-	return { id: ruleSet.id, version: ruleSet.version, itemIds: new Set(ids) };
+	const anchor: unknown = ruleSet.anchorItemId;
+	if (anchor !== undefined && !(isPositiveId(anchor) && ids.includes(anchor))) {
+		throw new TypeError('Relevant item anchor must be one of the watched item ids.');
+	}
+	return {
+		id: ruleSet.id,
+		version: ruleSet.version,
+		itemIds: new Set(ids),
+		anchorItemId: anchor === undefined ? null : anchor,
+	};
 }
 
 function parseDelta(value: unknown): ParsedDelta | null {
@@ -255,6 +295,21 @@ function relevantSignal(delta: ParsedDelta, relevantIds: ReadonlySet<number>): R
 		deltaStatus: delta.status,
 		gains,
 	};
+}
+
+/**
+ * Net movement of the anchor in one reading. Zero when the rule set declares no anchor or the
+ * anchor did not move, so «did not appear» never reads as «went down».
+ */
+function anchorDelta(delta: ParsedDelta, anchorItemId: number | null): number {
+	if (anchorItemId === null) return 0;
+	return delta.itemChanges.find((change) => change.id === anchorItemId)?.delta ?? 0;
+}
+
+/** Whether the evidence a proposal would cite contains the rise the rule set demands. */
+function spanShowsAnchor(span: readonly EvidenceSample[], anchorItemId: number | null): boolean {
+	if (anchorItemId === null) return true;
+	return span.some((entry) => entry.signal?.gains.some((gain) => gain.itemId === anchorItemId) === true);
 }
 
 function areContiguous(first: EvidenceSample, second: EvidenceSample): boolean {

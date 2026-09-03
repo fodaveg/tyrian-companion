@@ -38,6 +38,12 @@ import { proposalIntent, type PendingProposalIntent } from '../sessions/pending-
 import type { LootPresentationRow, LootPresentationV1 } from '../sessions/loot-presentation';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import type { LiveSessionLootState } from '../sessions/live-session-loot';
+import {
+	formatBandMinutes,
+	formatMilliUnits,
+	observedRateBand,
+	unavailableRateBand,
+} from '../sessions/observed-rate-band';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import {
@@ -115,6 +121,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
 	private headerElapsed: HTMLElement | null = null;
+	private liveSackCount: HTMLElement | null = null;
+	private liveSackRate: HTMLElement | null = null;
 	private settlementCountdown: HTMLElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
 	private incident: HTMLElement | null = null;
@@ -173,6 +181,8 @@ export class TyrianCompanionView extends ItemView {
 		const projection = this.projectStatus(now);
 
 		this.headerElapsed = null;
+		this.liveSackCount = null;
+		this.liveSackRate = null;
 		this.settlementCountdown = null;
 		this.checkButton = null;
 		this.incident = null;
@@ -514,6 +524,7 @@ export class TyrianCompanionView extends ItemView {
 		summary.createSpan({ text: copy.observedValue });
 		const total = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
 		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
+		this.renderLiveSackCounter(region, loot, copy);
 		if (loot.status === 'idle' || loot.rows.length === 0) {
 			region.createEl('p', { text: loot.status !== 'idle' && loot.restored ? copy.restoredEmpty : copy.empty });
 			return;
@@ -530,6 +541,51 @@ export class TyrianCompanionView extends ItemView {
 			const status = region.createEl('p', { text: copy.enrichmentPending, cls: 'tyrian-companion-session__context' });
 			status.setAttr('role', 'status');
 		}
+	}
+
+	/**
+	 * The running sack count and the pace it implies, repainted every second by the same tick that
+	 * moves the elapsed clock.
+	 *
+	 * The count is a plain observed total, so it is always exact. The pace beside it is not, and it
+	 * says so by being a band: the account cache blurs both ends of the window it is divided by,
+	 * and a single figure would keep changing under the player for reasons that are not the play.
+	 */
+	private renderLiveSackCounter(
+		region: HTMLElement,
+		loot: LiveSessionLootState,
+		copy: ReturnType<typeof simpleSessionCopy>,
+	): void {
+		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const counter = region.createDiv({ cls: 'tyrian-companion-session__sacks' });
+		counter.createSpan({ text: copy.sacks });
+		this.liveSackCount = counter.createEl('strong', { text: String(sacks) });
+		this.liveSackCount.setAttr('aria-live', 'polite');
+		this.liveSackRate = counter.createSpan({
+			text: liveSackRateText(sacks, this.liveSessionWindowMs(Date.now()), copy),
+			cls: 'tyrian-companion-session__context',
+		});
+	}
+
+	private refreshLiveSackCounter(now: number): void {
+		if (!this.liveSackCount || !this.liveSackRate) return;
+		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
+		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const copy = simpleSessionCopy(this.actions.getLocale());
+		this.liveSackCount.setText(String(sacks));
+		this.liveSackRate.setText(liveSackRateText(sacks, this.liveSessionWindowMs(now), copy));
+	}
+
+	/**
+	 * Window the live pace is divided by: from the baseline the session actually captured to now.
+	 * A session without a baseline has no window at all, and null is what says so.
+	 */
+	private liveSessionWindowMs(now: number): number | null {
+		const session = this.actions.getSessionState();
+		const observed = session.status === 'error' ? session.failedState : session;
+		if (!('baseline' in observed)) return null;
+		const elapsed = now - Date.parse(observed.baseline.completedAt);
+		return Number.isSafeInteger(elapsed) && elapsed > 0 ? elapsed : null;
 	}
 
 	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
@@ -657,6 +713,7 @@ export class TyrianCompanionView extends ItemView {
 		if (this.refreshPendingConfirmation(now)) this.pendingConfirmationFocusTarget?.focus();
 		const session = projection.items.find((status) => status.id === 'session');
 		if (session) this.headerElapsed?.setText(session.detail);
+		this.refreshLiveSackCounter(now);
 		this.refreshSettlementCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {
@@ -998,7 +1055,8 @@ export class TyrianCompanionView extends ItemView {
 	}
 }
 
-function simpleSessionCopy(locale: Locale) {
+/** Session-card copy. Exported so the tests read the shipped strings instead of a copy of them. */
+export function simpleSessionCopy(locale: Locale) {
 	return locale === 'es' ? {
 		session: 'Sesión de farmeo', ready: 'Listo para empezar', start: 'Iniciar sesión',
 		missingKey: 'Vincula la clave API en Ajustes para empezar.', preparing: 'Preparando la sesión',
@@ -1011,6 +1069,8 @@ function simpleSessionCopy(locale: Locale) {
 		openNote: 'Abrir la nota',
 		newSession: 'Nueva sesión', loot: 'Botín observado', durableValue: 'Valor neto guardado', durableEmpty: 'El resumen guardado no contiene ganancias.',
 		observedValue: 'Valor observado', empty: 'Aún no hay ganancias visibles en la API.',
+		sacks: 'Sacos observados', sacksPerHour: 'sacos/h', sacksRatePending: 'Ritmo aún sin ventana que medir',
+		sacksRateWindow: 'ventana', sacksRateCache: 'de caché de la API', sacksRateAtLeast: 'al menos',
 		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
 		valuePending: 'Valor pendiente', enrichmentPending: 'Algunos nombres o precios siguen pendientes de la API pública.',
 		accountReady: 'Cuenta conectada', accountUnchecked: 'La conexión se comprobará al iniciar', accountUnavailable: 'Cuenta no disponible',
@@ -1026,10 +1086,35 @@ function simpleSessionCopy(locale: Locale) {
 		openNote: 'Open the note',
 		newSession: 'New session', loot: 'Observed loot', durableValue: 'Saved net value', durableEmpty: 'The saved summary contains no gains.',
 		observedValue: 'Observed value', empty: 'No gains are visible in the API yet.',
+		sacks: 'Observed sacks', sacksPerHour: 'sacks/h', sacksRatePending: 'No window to measure the pace yet',
+		sacksRateWindow: 'window', sacksRateCache: 'of API cache', sacksRateAtLeast: 'at least',
 		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',
 		valuePending: 'Value pending', enrichmentPending: 'Some names or prices are still pending from the public API.',
 		accountReady: 'Account connected', accountUnchecked: 'Connection will be checked when starting', accountUnavailable: 'Account unavailable',
 	} as const;
+}
+
+/**
+ * The live pace line: the band, then the arithmetic it came out of.
+ *
+ * Stating the window and the cache margin beside the two extremes is the whole point of showing a
+ * band instead of a number. Without them the interval is just a vaguer figure; with them the
+ * player can see that the width is the API's uncertainty and not the plugin hedging.
+ */
+export function liveSackRateText(
+	sackQuantity: number,
+	windowMs: number | null,
+	copy: ReturnType<typeof simpleSessionCopy>,
+): string {
+	const band = windowMs === null ? unavailableRateBand() : observedRateBand(sackQuantity * 1_000, windowMs);
+	if (band.status === 'unavailable' || band.low === null || band.marginMs === null || band.windowMs === null) {
+		return copy.sacksRatePending;
+	}
+	const range = band.high === null
+		? `${copy.sacksRateAtLeast} ${formatMilliUnits(band.low)}`
+		: `${formatMilliUnits(band.low)}–${formatMilliUnits(band.high)}`;
+	const provenance = `${copy.sacksRateWindow} ${formatBandMinutes(band.windowMs)} min ± ${formatBandMinutes(band.marginMs)} min ${copy.sacksRateCache}`;
+	return `${range} ${copy.sacksPerHour} · ${provenance}`;
 }
 
 /** Names the phase of the saved-session decision with the same copy the projection already uses. */

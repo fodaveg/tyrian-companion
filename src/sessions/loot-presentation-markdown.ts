@@ -7,6 +7,7 @@ import {
 } from './loot-presentation';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import { formatBandMinutes, formatMilliUnits, type ObservedRateBand } from './observed-rate-band';
 import type { SessionNoteLocale } from './session-note-model';
 
 export interface LootMarkdownBlocks { results: string; economy: string; decision: string }
@@ -83,8 +84,57 @@ function renderEconomy(presentation: LootPresentationV1): string {
 		`- ${markdownText(locale, 'markdown.price')}: ${priceSource === '—' ? '—' : `${priceSource} · ${priceCapturedAt}`}`,
 		...(economy.immediateCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.immediatePerHour')}: ${money(economy.immediateCopperPerHour, presentation)}`]),
 		...(economy.listingCopperPerHour === null ? [] : [`- ${markdownText(locale, 'markdown.listingPerHour')}: ${money(economy.listingCopperPerHour, presentation)}`]),
+		...rateBandLines(presentation),
 	].join('\n');
 }
+
+/**
+ * Publishes the per-hour rates as intervals and, right underneath, the window arithmetic that
+ * produced them.
+ *
+ * Without the source line a reader has no way to tell a measured interval from a guessed one, and
+ * an interval nobody can audit is worse than the exact figure it replaced. The three bands share
+ * one window and one margin, so the provenance is stated once.
+ */
+function rateBandLines(presentation: LootPresentationV1): string[] {
+	const economy = presentation.economy;
+	const locale = presentation.locale;
+	const source = economy.sacksPerHourMilliBand;
+	if (source.status === 'unavailable' || source.windowMs === null || source.marginMs === null ||
+		source.widestWindowMs === null) return [];
+	const detail = source.narrowestWindowMs === null
+		? markdownText(locale, 'markdown.bandSourceDetailOpen', {
+			window: minutes(source.windowMs), margin: minutes(source.marginMs), widest: minutes(source.widestWindowMs),
+		})
+		: markdownText(locale, 'markdown.bandSourceDetail', {
+			window: minutes(source.windowMs), margin: minutes(source.marginMs),
+			narrowest: minutes(source.narrowestWindowMs), widest: minutes(source.widestWindowMs),
+		});
+	return [
+		...bandLine(presentation, 'markdown.sacksPerHourBand', economy.sacksPerHourMilliBand, formatMilliUnits),
+		...bandLine(presentation, 'markdown.immediatePerHourBand', economy.immediateCopperPerHourBand,
+			(value) => money(value, presentation)),
+		...bandLine(presentation, 'markdown.listingPerHourBand', economy.listingCopperPerHourBand,
+			(value) => money(value, presentation)),
+		`- ${markdownText(locale, 'markdown.bandSource')}: ${detail}`,
+	];
+}
+
+function bandLine(
+	presentation: LootPresentationV1,
+	key: RuntimeTranslationKey,
+	band: ObservedRateBand,
+	format: (value: number) => string,
+): string[] {
+	if (band.status === 'unavailable' || band.low === null) return [];
+	const locale = presentation.locale;
+	const range = band.high === null
+		? markdownText(locale, 'markdown.bandAtLeast', { low: format(band.low) })
+		: markdownText(locale, 'markdown.bandRange', { low: format(band.low), high: format(band.high) });
+	return [`- ${markdownText(locale, key)}: ${range}`];
+}
+
+function minutes(durationMs: number): string { return formatBandMinutes(durationMs); }
 
 /**
  * Publishes the yield as an interval with its causes. A session whose value could not be measured

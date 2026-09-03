@@ -268,6 +268,85 @@ describe('RelevantItemStartDetector', () => {
 });
 
 /**
+ * H13.5. The accessories of the Labyrinth also drop from chests, containers and gifts, so on
+ * their own they never proved a run was happening. The anchor is the gain that does, and the
+ * anchor going down is the opposite evidence read at the same instant.
+ */
+describe('RelevantItemStartDetector with an anchor item', () => {
+	const ANCHORED = { ...RULE_SET, anchorItemId: 36_001 } as const;
+
+	it('does not propose while only the accessories rise', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_002, delta: 4 }]));
+		const second = detector.observe(delta('b', 'c', 1, [{ id: 36_002, delta: 7 }]));
+
+		expect(second.status).toBe('first_signal');
+		expect(detector.getProposal()).toBeNull();
+	});
+
+	it('proposes as soon as the anchor rises inside the same evidence', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_002, delta: 4 }]));
+		const anchored = detector.observe(delta('b', 'c', 1, [{ id: 36_001, delta: 2 }]));
+
+		expect(anchored).toMatchObject({
+			status: 'proposed',
+			proposal: {
+				firstSignal: { gains: [{ itemId: 36_002, quantity: 4 }] },
+				confirmationSignal: { gains: [{ itemId: 36_001, quantity: 2 }] },
+			},
+		});
+	});
+
+	it('invalidates the sample whose delta shows the anchor going down', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 3 }]));
+		const opening = detector.observe(delta('b', 'c', 1, [
+			{ id: 36_001, delta: -3 },
+			{ id: 36_002, delta: 12 },
+		]));
+
+		expect(opening).toEqual({ status: 'no_signal', reason: 'anchor_decreased', proposal: null });
+		expect(detector.getProposal()).toBeNull();
+	});
+
+	it('does not let an invalidated sample count towards the two required gains', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 3 }]));
+		detector.observe(delta('b', 'c', 1, [{ id: 36_001, delta: -1 }, { id: 36_002, delta: 9 }]));
+
+		expect(detector.getProposal()).toBeNull();
+	});
+
+	it('keeps observing after an invalidated sample instead of dropping the evidence', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		detector.observe(delta('a', 'b', 0, [{ id: 36_001, delta: 3 }]));
+		detector.observe(delta('b', 'c', 1, [{ id: 36_001, delta: -1 }, { id: 36_002, delta: 9 }]));
+		const resumed = detector.observe(delta('c', 'd', 2, [{ id: 36_001, delta: 2 }]));
+
+		expect(resumed).toMatchObject({
+			status: 'proposed',
+			proposal: {
+				firstSignal: { beforeSnapshotId: 'a', afterSnapshotId: 'b' },
+				confirmationSignal: { beforeSnapshotId: 'c', afterSnapshotId: 'd' },
+			},
+		});
+	});
+
+	it('treats an anchor that never moves as absent rather than as a fall', () => {
+		const detector = new RelevantItemStartDetector(ANCHORED);
+		const quiet = detector.observe(delta('a', 'b', 0, [{ id: 36_002, delta: 1 }]));
+
+		expect(quiet).toMatchObject({ status: 'first_signal' });
+	});
+
+	it('rejects an anchor the rule set does not watch', () => {
+		expect(() => new RelevantItemStartDetector({ ...RULE_SET, anchorItemId: 36_003 })).toThrow(TypeError);
+		expect(() => new RelevantItemStartDetector({ ...RULE_SET, anchorItemId: 0 })).toThrow(TypeError);
+	});
+});
+
+/**
  * The account API answers from a 5-10 minute cache chain, so a poll faster than that reads the
  * same bytes twice while the player farms without pause. A criterion of «two consecutive polls
  * with a gain» is unreachable there: the gains land on every second, third or fifth poll.

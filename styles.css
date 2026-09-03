@@ -52,6 +52,19 @@
 	font-size: 1.35em;
 }
 
+/* The live sack counter: count and pace share one row, the pace wrapping under it when narrow. */
+.tyrian-companion-session__sacks {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.75rem;
+}
+
+.tyrian-companion-session__sacks strong {
+	color: var(--text-accent);
+	font-variant-numeric: tabular-nums;
+}
+
 .tyrian-companion-session__loot-list {
 	display: grid;
 	gap: 0;

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedSessionNote } from './session-note-model';
 import { buildLootPresentation, formatLootMoney } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
+import { unavailableRateBand } from './observed-rate-band';
+import { API_SETTLEMENT_WINDOW_MS } from './session-api-settlement';
 import {
 	lootPresentationLayout,
 	lootPresentationRegionAttributes,
@@ -56,6 +58,53 @@ describe('buildLootPresentation', () => {
 		const result = buildLootPresentation(note);
 		expect(result.rows[0]).toMatchObject({ evidence: 'estimated_net', valuation: { status: 'complete' }, recommendation: { status: 'withheld' } });
 		expect(result.economy).toMatchObject({ immediateCopper: 12_445, immediateCopperPerHour: null });
+	});
+
+	/**
+	 * H13.14. `grossPerHour` guards the exact figure and keeps guarding it; the band answers a
+	 * weaker question the blurred window does support, so an estimated session stops publishing
+	 * nothing at all where the pace goes.
+	 */
+	it('still gives an estimated session its per-hour pace, as a band', () => {
+		const note = prepared();
+		note.runtime.review.classification.status = 'estimated';
+		note.runtime.review.classification.permissions = {
+			finalize: false, showNet: true, valueNet: true, grossPerHour: false, recommend: false,
+		};
+		const economy = buildLootPresentation(note).economy;
+
+		expect(economy.immediateCopperPerHour).toBeNull();
+		expect(economy.listingCopperPerHour).toBeNull();
+		expect(economy.sacksPerHourMilliBand).toMatchObject({ status: 'measured', low: 102_857, high: 144_000 });
+		expect(economy.immediateCopperPerHourBand).toMatchObject({ status: 'measured', low: 10_667, high: 14_934 });
+		expect(economy.listingCopperPerHourBand).toMatchObject({ status: 'measured', low: 11_524, high: 16_134 });
+	});
+
+	it('publishes the window arithmetic each band came out of', () => {
+		const economy = buildLootPresentation(prepared()).economy;
+
+		expect(economy.sacksPerHourMilliBand).toEqual({
+			version: 1, status: 'measured', low: 102_857, high: 144_000,
+			windowMs: 3_600_000, marginMs: API_SETTLEMENT_WINDOW_MS,
+			widestWindowMs: 3_600_000 + API_SETTLEMENT_WINDOW_MS,
+			narrowestWindowMs: 3_600_000 - API_SETTLEMENT_WINDOW_MS,
+		});
+		// The exact figure stays beside the band for a session allowed to publish it.
+		expect(economy.sacksPerHourMilliBand.low).toBeLessThan(120_000);
+		expect(economy.sacksPerHourMilliBand.high).toBeGreaterThan(120_000);
+	});
+
+	it('leaves every band unavailable when the economy is withheld', () => {
+		const note = prepared();
+		note.runtime.review.classification.status = 'contaminated';
+		note.runtime.review.classification.permissions = {
+			finalize: true, showNet: true, valueNet: false, grossPerHour: false, recommend: false,
+		};
+		const economy = buildLootPresentation(note).economy;
+
+		for (const band of [economy.sacksPerHourMilliBand, economy.immediateCopperPerHourBand, economy.listingCopperPerHourBand]) {
+			expect(band).toEqual(unavailableRateBand());
+		}
 	});
 
 	it('keeps physical rows but fails allocation and recommendation closed on cross-layer mismatch', () => {
@@ -161,6 +210,40 @@ describe('shared loot renderers', () => {
 		expect(en.decision).toContain('Tyrian Companion does not open items');
 	});
 
+	it('writes each pace as a band and names the window and cache margin it came from', () => {
+		const es = renderLootMarkdown(buildLootPresentation(prepared()));
+
+		expect(es.economy).toContain('- Sacos por hora (banda): de 102.9 a 144.0');
+		expect(es.economy).toContain('- Neto inmediato por hora (banda): de 1g 6s 67c a 1g 49s 34c');
+		expect(es.economy).toContain('- Neto listado por hora (banda): de 1g 15s 24c a 1g 61s 34c');
+		expect(es.economy).toContain('- Origen de la banda: ventana de 60 min ± 10 min de caché de la API (de 50 a 70 min)');
+
+		const enNote = prepared(); enNote.locale = 'en';
+		const en = renderLootMarkdown(buildLootPresentation(enNote));
+		expect(en.economy).toContain('- Sacks per hour (band): from 102.9 to 144.0');
+		expect(en.economy).toContain('- Band source: 60 min window ± 10 min of API cache (from 50 to 70 min)');
+	});
+
+	it('declares the upper end unbounded when the cache margin swallows the session', () => {
+		const note = prepared();
+		note.valuation.status === 'valid' && (note.valuation.value.durationMs = 300_000);
+		const economy = renderLootMarkdown(buildLootPresentation(note)).economy;
+
+		// 120 sacks over the widest possible 15 minutes; the narrowest window is not a window at all.
+		expect(economy).toContain('- Sacos por hora (banda): al menos 480.0');
+		expect(economy).toContain('ventana de 5 min ± 10 min de caché de la API (hasta 15 min; el extremo alto queda sin acotar)');
+		expect(economy).not.toContain('de 50 a 70 min');
+	});
+
+	it('prints no band block at all when there is no window to divide by', () => {
+		const note = prepared();
+		note.valuation.status === 'valid' && (note.valuation.value.durationMs = 0);
+		const economy = renderLootMarkdown(buildLootPresentation(note)).economy;
+
+		expect(economy).not.toContain('Origen de la banda');
+		expect(economy).not.toContain('(banda)');
+	});
+
 	it.each([[240, 'ledger'], [480, 'compact'], [800, 'wide']] as const)(
 		'projects the semantic responsive layout at %ipx',
 		(width, expected) => expect(lootPresentationLayout(width)).toBe(expected),
@@ -225,9 +308,11 @@ function prepared(): PreparedSessionNote {
 		},
 		valuation: { status: 'valid', value: {
 			coverage: 'complete', priceSource: 'gw2-commerce-prices', priceCapturedAt: '2026-08-13T10:00:00.000Z',
+			durationMs: 3_600_000,
 			lines: [{ itemId: 100, quantity: 10, immediateBestCopper: 12_345, listingBestCopper: 13_345, nonLiquid: false }],
 			totals: { observedImmediateCopper: 12_445, observedListingCopper: 13_445, coinNetCopper: 100, nonLiquidQuantity: 0 },
-			rates: { immediateCopperPerHour: 12_445, listingCopperPerHour: 13_445 }, warnings: [],
+			rates: { sacks: 120, sacksPerHourMilli: 120_000, immediateCopperPerHour: 12_445, listingCopperPerHour: 13_445 },
+			warnings: [],
 		} },
 		reservation: { status: 'valid', value: { overlay: { lines: [{
 			itemId: 100, gainedQuantity: 10, protectedFromLiquidation: 2, liquidationEligible: 8,

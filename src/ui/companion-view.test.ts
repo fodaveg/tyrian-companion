@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./halloween-alert-panel', () => ({ renderHalloweenAlertPanel: vi.fn() }));
 
-import { TyrianCompanionView } from './companion-view';
+import { TyrianCompanionView, liveSackRateText, simpleSessionCopy } from './companion-view';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
@@ -564,6 +564,100 @@ function walkRetained(root: RetainedFakeElement): RetainedFakeElement[] {
 }
 
 interface RetainedFakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }
+
+/**
+ * H13.14. The counter is only useful if it moves, so this exercises the wiring and not the
+ * formatter: the region is rendered from a real tracker state, and then the tick the view itself
+ * schedules is the thing that repaints the pace.
+ */
+describe('Companion live sack counter', () => {
+	const BASELINE_AT = '2026-08-31T10:00:00.000Z';
+
+	function harnessAt(sackQuantity: number) {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const contentEl = new RetainedFakeElement('div', document);
+		const actions = {
+			getLocale: () => 'es' as const,
+			getLiveSessionLoot: () => ({
+				status: 'observing' as const, sessionId: 'session', restored: false, rows: [],
+				knownTotalCopper: 0, sackQuantity, hasUnknownValue: false, updatedAt: null, error: null,
+			}),
+			getSessionState: () => ({
+				version: 1 as const, status: 'active' as const, sessionId: 'session',
+				baseline: { completedAt: BASELINE_AT },
+				startContext: { characterName: 'Rinopopo' },
+			}),
+			getConnectionState: () => ({ status: 'connected' as const, accountId: 'account', accountName: 'Account' }),
+		};
+		return Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions, contentEl, refreshInterval: null,
+			headerElapsed: null, liveSackCount: null, liveSackRate: null,
+			checkButton: null, incident: null, incidentMessage: null, incidentMore: null,
+			projectStatus: () => ({ refreshEveryMs: 1_000, items: [], errors: [] }),
+			refreshDetectionTimeline: vi.fn(),
+			refreshPendingConfirmation: () => false,
+			refreshSettlementCountdown: vi.fn(),
+			scheduleRefresh: vi.fn(),
+			t: (key: string) => key,
+		});
+	}
+
+	it('shows the observed sack count and a pace band that names its window and cache margin', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.parse(BASELINE_AT) + 1_800_000);
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const region = new RetainedFakeElement('div', document);
+		const harness = harnessAt(12);
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
+		}).renderLiveLoot;
+		render.call(
+			harness, region as unknown as HTMLElement,
+			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
+		);
+
+		const texts = walkRetained(region).map((element) => element.textContent);
+		expect(texts).toContain('Sacos observados');
+		expect(texts).toContain('12');
+		expect(texts).toContain('18.0–36.0 sacos/h · ventana 30 min ± 10 min de caché de la API');
+	});
+
+	it('repaints the pace in place on the tick the view already runs every second', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.parse(BASELINE_AT) + 1_800_000);
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const region = new RetainedFakeElement('div', document);
+		const harness = harnessAt(12);
+		const methods = TyrianCompanionView.prototype as unknown as {
+			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
+			refreshBackgroundStatus(this: typeof harness): void;
+		};
+		methods.renderLiveLoot.call(
+			harness, region as unknown as HTMLElement,
+			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
+		);
+		const rate = walkRetained(region).find((element) =>
+			element.textContent.endsWith('de caché de la API'));
+		expect(rate?.textContent).toBe('18.0–36.0 sacos/h · ventana 30 min ± 10 min de caché de la API');
+
+		vi.setSystemTime(Date.parse(BASELINE_AT) + 3_600_000);
+		methods.refreshBackgroundStatus.call(harness);
+
+		// The same node, not a rebuilt one: a repaint that stole focus would be the bug here.
+		expect(rate?.textContent).toBe('10.3–14.4 sacos/h · ventana 60 min ± 10 min de caché de la API');
+	});
+
+	it('says there is no window to measure instead of inventing a pace before the baseline', () => {
+		const copy = simpleSessionCopy('es');
+		expect(liveSackRateText(12, null, copy)).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateText(12, 0, copy)).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateText(12, 300_000, copy)).toBe('al menos 48.0 sacos/h · ventana 5 min ± 10 min de caché de la API');
+	});
+});
 
 describe('Companion stop proposal staleness', () => {
 	function renderLag(possibleTo: string, detectedAt: string): RetainedFakeElement {

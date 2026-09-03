@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
 import { LiveSessionLootTracker } from './live-session-loot';
+import { SESSION_SACK_ITEM_IDS } from './session-economy-evidence';
 
 describe('LiveSessionLootTracker', () => {
 	it('accumulates positive poll gains, resolves readable names, and alerts independently from Halloween', async () => {
@@ -114,6 +115,49 @@ describe('LiveSessionLootTracker', () => {
 		if (state.status === 'idle') throw new Error('Expected an observing tracker.');
 		expect(state.rows.find(({ itemId }) => itemId === 1)).toMatchObject({ name: 'Item 1' });
 		expect(state.rows.find(({ itemId }) => itemId === 201)).toMatchObject({ name: 'Item 201' });
+	});
+
+	/**
+	 * H13.14. The counter has to move on the sacks alone, and it has to keep moving while the
+	 * public catalog is down: the sack count is read off the account delta, not off a price.
+	 */
+	it('counts only the sack ids and keeps counting while enrichment fails', async () => {
+		const tracker = new LiveSessionLootTracker({
+			gateway: { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) },
+			locale: () => 'es', thresholdCopper: () => 10_000, sackItemIds: [36_038],
+		});
+		tracker.begin('session');
+		await tracker.observe('session', delta(36_038, 7));
+		await tracker.observe('session', delta(36_041, 40));
+		const observing = tracker.getState();
+		await tracker.observe('session', delta(36_038, 5));
+		const later = tracker.getState();
+
+		expect(observing).toMatchObject({ status: 'observing', sackQuantity: 7, error: 'catalog_unavailable' });
+		expect(later).toMatchObject({ status: 'observing', sackQuantity: 12 });
+	});
+
+	it('counts the same sacks the durable note counts when no list is injected', async () => {
+		const tracker = new LiveSessionLootTracker({
+			gateway: { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) },
+			locale: () => 'es', thresholdCopper: () => 10_000,
+		});
+		tracker.begin('session');
+		await tracker.observe('session', delta(SESSION_SACK_ITEM_IDS[0]!, 3));
+
+		expect(tracker.getState()).toMatchObject({ sackQuantity: 3 });
+	});
+
+	it('restates the sack count from the reconciled session net rather than adding to it', async () => {
+		const tracker = new LiveSessionLootTracker({
+			gateway: { requestDetailed: vi.fn(async () => { throw new Error('offline'); }) },
+			locale: () => 'es', thresholdCopper: () => 10_000, sackItemIds: [36_038],
+		});
+		tracker.begin('session');
+		await tracker.observe('session', delta(36_038, 7));
+		await tracker.reconcile('session', delta(36_038, 9));
+
+		expect(tracker.getState()).toMatchObject({ status: 'complete', sackQuantity: 9 });
 	});
 });
 

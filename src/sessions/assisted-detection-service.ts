@@ -31,13 +31,18 @@ import type { SessionState } from './session';
  * request and makes a poll far less likely to read zero relevant gain while the player farms.
  *
  * v2 renamed the rule: v1 was `halloween.trick-or-treat-bag` and watched 36038 alone, so its
- * identifier stopped describing what the rule looks at. Proposals recorded under the old pair
- * keep their own provenance and are never rewritten.
+ * identifier stopped describing what the rule looks at. v3 keeps the five ids but makes 36038 the
+ * anchor: candy corn, fangs, skulls and nougat also fall out of chests, containers and other
+ * players' gifts, so on their own they never showed the Labyrinth was being run. The bag rising is
+ * what does, and the bag *falling* in the same reading is the tell that they are being opened
+ * rather than farmed. Proposals recorded under an older pair keep their own provenance and are
+ * never rewritten.
  */
 export const HALLOWEEN_RELEVANT_ITEM_RULE_SET = Object.freeze({
 	id: 'halloween.labyrinth-drops',
-	version: 2,
+	version: 3,
 	itemIds: Object.freeze([36_038, 36_041, 36_059, 36_060, 36_061]),
+	anchorItemId: 36_038,
 }) satisfies RelevantItemRuleSet;
 
 /**

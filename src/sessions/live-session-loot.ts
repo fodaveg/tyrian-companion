@@ -4,6 +4,7 @@ import type { AlertV1 } from '../alerts/alert-contract';
 import { decideLootAlert } from '../alerts/loot-alert-criteria';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
+import { SESSION_SACK_ITEM_IDS } from './session-economy-evidence';
 
 export interface LiveSessionLootRow {
 	readonly itemId: number;
@@ -23,6 +24,12 @@ export type LiveSessionLootState =
 		readonly restored: boolean;
 		readonly rows: readonly LiveSessionLootRow[];
 		readonly knownTotalCopper: number;
+		/**
+		 * Sacks the API has already shown for this session. It is a running count of observed
+		 * gains, never an estimate: it only moves when a poll reports one, so it lags the game by
+		 * the account cache exactly like every other number here.
+		 */
+		readonly sackQuantity: number;
 		readonly hasUnknownValue: boolean;
 		readonly updatedAt: string | null;
 		readonly error: LiveSessionLootError;
@@ -35,6 +42,8 @@ interface LiveSessionLootOptions {
 	readonly onStateChange?: () => void;
 	/** Receives one alert per resolved gain that meets the H13.3 criteria. */
 	readonly onAlert?: (alert: AlertV1) => void;
+	/** Ids counted by the live sack counter; the durable note counts the same list. */
+	readonly sackItemIds?: readonly number[];
 	readonly now?: () => Date;
 }
 
@@ -70,7 +79,7 @@ export class LiveSessionLootTracker {
 		this.rows.clear();
 		this.pendingValuableGains.length = 0;
 		this.state = {
-			status: 'observing', sessionId, restored, rows: [], knownTotalCopper: 0,
+			status: 'observing', sessionId, restored, rows: [], knownTotalCopper: 0, sackQuantity: 0,
 			hasUnknownValue: false, updatedAt: null, error: null,
 		};
 		this.options.onStateChange?.();
@@ -230,9 +239,11 @@ export class LiveSessionLootTracker {
 			...row,
 			totalCopper: safeProduct(row.unitCopper, row.quantity),
 		})).sort((left, right) => (right.totalCopper ?? -1) - (left.totalCopper ?? -1) || left.name.localeCompare(right.name));
+		const sackItemIds = this.options.sackItemIds ?? SESSION_SACK_ITEM_IDS;
 		this.state = {
 			status, sessionId, restored, rows,
 			knownTotalCopper: rows.reduce((total, row) => total + (row.totalCopper ?? 0), 0),
+			sackQuantity: rows.reduce((total, row) => total + (sackItemIds.includes(row.itemId) ? row.quantity : 0), 0),
 			hasUnknownValue: rows.some(({ totalCopper }) => totalCopper === null),
 			updatedAt, error,
 		};
