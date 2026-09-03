@@ -2013,7 +2013,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				id: 'webhook',
 				deliver: async (alert) => {
 					const outcome = await postAlertWebhook(
-						this.settings.alertWebhookUrl, alert, this.alertBodyText(alert),
+						this.settings.alertWebhookUrl, alert,
 						{ post: async (request) => await webhookTransport.send(request) },
 						{
 							schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),

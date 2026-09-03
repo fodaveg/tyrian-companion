@@ -51,20 +51,20 @@ describe('H13.4 alert webhook', () => {
 
 	it('reports the empty destination as disabled without building a request', async () => {
 		const post = vi.fn(async () => undefined);
-		await expect(postAlertWebhook('', ALERT, 'x', { post }, timer())).resolves.toBe('disabled');
+		await expect(postAlertWebhook('', ALERT, { post }, timer())).resolves.toBe('disabled');
 		expect(post).not.toHaveBeenCalled();
 	});
 
 	it('reports a rejected post as failed instead of propagating it', async () => {
 		const post = vi.fn(async () => { throw new Error('host unreachable'); });
-		await expect(postAlertWebhook('https://h.example/x', ALERT, 'x', { post }, timer())).resolves.toBe('failed');
+		await expect(postAlertWebhook('https://h.example/x', ALERT, { post }, timer())).resolves.toBe('failed');
 	});
 
 	it('gives up on the declared deadline when the host accepts and then stalls', async () => {
 		let fire: () => void = () => undefined;
 		const scheduledFor: number[] = [];
 		const stalled = { post: async () => await new Promise<never>(() => undefined) };
-		const outcome = postAlertWebhook('https://h.example/x', ALERT, 'x', stalled, {
+		const outcome = postAlertWebhook('https://h.example/x', ALERT, stalled, {
 			schedule: (callback, milliseconds) => { scheduledFor.push(milliseconds); fire = callback; return 1; },
 			cancel: () => undefined,
 		});
@@ -77,10 +77,12 @@ describe('H13.4 alert webhook', () => {
 /**
  * The unlock collection is what the emitter knows and the channel must not.
  *
- * These run the path the plugin runs: the emitter composes the toast copy with
- * the runtime catalogue and hands it to `postAlertWebhook`, so the sentence
- * under suspicion is the real one, taken from the same catalogue the emitter
- * reads, and it travels the same argument. A hand-written summary was what let
+ * The sentence under suspicion is the real one: `emitterBodyText` composes it
+ * with the same runtime catalogue the emitter reads, so a reworded catalogue
+ * entry moves the probe with it. It is no longer HANDED to `postAlertWebhook`,
+ * because that function no longer takes prose from any caller; what is asserted
+ * is that the body it composes out of the alert alone never restates that
+ * sentence. A hand-written summary was what let
  * the previous version of this file stay green while every `always_alert`
  * without a price shipped "puede desbloquear una skin no obtenida" to a Discord
  * channel, which is `/v2/account/skins` answered for whoever reads it.
@@ -105,8 +107,9 @@ describe('H13.4 alert webhook reason containment', () => {
 	 * A property of FORM, not the absence of one string: the body has to be the
 	 * SAME bytes for every reason and kind of the contract, so a reason added
 	 * tomorrow is covered without anybody remembering to list its wording here.
-	 * The emitter copy travels along, because a body that only holds while the
-	 * caller says nothing is the guarantee this file failed to give before.
+	 * Nothing a caller says can move those bytes: the emitter copy has no
+	 * parameter left to travel in, so the body depends on the alert and nothing
+	 * else.
 	 */
 	it.each(ALERT_REASONS)('serializes a body that does not vary with the reason (%s)', async (reason) => {
 		for (const kind of ALERT_KINDS) {
@@ -136,14 +139,14 @@ function timer() {
 }
 
 /**
- * The body the transport really receives, with the emitter copy handed over the
- * way the plugin hands it. Nothing is asserted on a payload built by hand here:
- * that shortcut is what kept the leak green.
+ * The body the transport really receives, taken from the request the plugin
+ * builds. Nothing is asserted on a payload built by hand here: that shortcut is
+ * what kept the leak green.
  */
 async function deliveredBody(alert: AlertV1): Promise<string> {
 	const sent: string[] = [];
 	const outcome = await postAlertWebhook(
-		DESTINATION, alert, emitterBodyText(alert, 'es'),
+		DESTINATION, alert,
 		{ post: async (request) => { sent.push(request.body); } },
 		timer(),
 	);

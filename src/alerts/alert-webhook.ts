@@ -112,16 +112,16 @@ export function buildAlertWebhookRequest(url: string, alert: AlertV1): AlertWebh
  * is abandoned, not cancelled: no HTTP client in this plugin exposes an abort
  * handle, and pretending otherwise would be the more dishonest option.
  *
- * The third parameter is accepted and discarded, and it is the only string a
- * caller can still hand this module: the emitter passes its already composed
- * toast copy there, and nothing below takes a sentence at all, so the value
- * dies on this line instead of reaching the body. It survives only to keep the
- * call site compiling and goes away with it.
+ * There is no parameter for prose. A third one used to be accepted and then
+ * discarded so the emitter could keep handing over its already composed toast
+ * copy while the value died on that line; the call site can be changed now, so
+ * the parameter is gone and the guarantee is structural instead of diligent: a
+ * caller holding the sentence that names WHY an alert fired has nowhere to put
+ * it.
  */
 export async function postAlertWebhook(
 	url: string,
 	alert: AlertV1,
-	_ignoredSummary: string,
 	transport: AlertWebhookTransport,
 	timer: AlertWebhookTimer,
 	timeoutMs: number = ALERT_WEBHOOK_TIMEOUT_MS,
