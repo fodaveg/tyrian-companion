@@ -2,22 +2,19 @@
 
 ## Estado actual
 
-La beta pública actual es
-[`0.1.19`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19), tag y commit
-`8dace194cc7a6b3a9eba58971091d18c719a7647`. Los runs de CI de `main` `33483237535` y del tag
-`33483584673` terminaron en verde. La release adjunta exactamente `manifest.json`, `main.js`,
-`styles.css`, `tyrian-companion-0.1.19.zip` y `tyrian-companion-0.1.19.zip.sha256`, por lo que el
-canal BRAT está publicado. El ZIP tiene SHA-256
-`2e816cb9d25a5633645ddfc9c2824677477f9e0aa8f743ab5684a465a9fcbc40`. La instalación, primera
-carga y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
+La última beta **publicada** sigue siendo la `0.1.21`. La `0.1.22` está integrada en `main` y pasa el
+gate completo (22 pasos en verde, 2.589 tests en 193 ficheros, `tsc --noEmit` exit 0), pero **aún no
+está publicada**: su tag, sus runs de CI y sus assets no existen hasta que se publique desde el
+commit de release, y hasta entonces esta sección no puede citarlos.
+
+`0.1.22` añade aviso de drop valioso encendido de serie sin interruptores (cinco canales a la vez:
+toast, notificación del sistema con urgencia critical, sonido embebido, webhook opcional y cola
+durable), señal de venta del saco 36038 sembrada desde datawars2 (tercera salida en el kernel,
+recomendación hold dentro de temporada), y sesiones de farmeo que dejan de invalidarse solo por lo
+que se gasta (ahora dan estimada con banda en lugar de contaminada). La instalación, primera carga
+y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
 siguen pendientes de QA humana. Una release publicada o un artifact verde de CI no demuestran esos
 flujos.
-
-`0.1.19` recupera el acompañamiento en vivo de la sesión de farmeo sobre lo que ya traía `0.1.18`:
-HUD priorizado, historial y comparativas de sesión, métricas del piloto, profundidad real y tasas en
-las valoraciones económicas, el Advisor orientado a decisiones manuales, Ajustes y Halloween
-responsive, y el endurecimiento acumulado de polling, assets y diagnóstico. No incluye el helper H8
-en el paquete productivo.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de

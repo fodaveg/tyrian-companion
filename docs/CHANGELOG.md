@@ -1,5 +1,44 @@
 # Changelog
 
+## Release beta 0.1.22 - aviso de drop valioso y señal de venta del saco
+
+### Aviso de drop valioso sin interruptores
+
+- **Punto de salida único, `emitAlert`, que reparte a cinco canales a la vez.** El aviso vigila en
+  toda sesión activa (manual o asistida) con poll de 5 minutos. Dos criterios en OR disparan el
+  evento: valor total ≥ 50.000 cobre (5 oros, editable) o la política de «siempre avisa». Halloween
+  pasa a activarse solo por calendario (ventana del pack, 1 octubre a 15 noviembre UTC), nunca por
+  interruptor. La interfaz declara que el aviso llega entre 5 y 20 minutos después del drop, por la
+  caché de 5 a 10 minutos de la API de cuenta.
+- **Canales de salida.** Obsidian toast, notificación del sistema con urgencia `critical` en Linux,
+  sonido sintetizado con WebAudio (896 bytes en el bundle, frente a los 43.692 de un WAV base64),
+  webhook opcional solo HTTPS que manda nombre, cantidad y valor sin clave ni account ID, y una cola
+  durable que abre IndexedDB en el primer aviso y nunca al cargar.
+
+### Señal de venta del saco 36038
+
+- **Semilla de serie diaria desde datawars2.** Una descarga sin clave al primer arranque con sesión,
+  y luego la captura propia del plugin extiende la serie. Si datawars2 falla se declara «sin semilla»
+  y se usa lo capturado; nunca se inventa un día. La regla usa 365 días muestreados (no consecutivos),
+  con el porcentaje como dato del pack (`sellSignal`, 9.000 puntos básicos) y no como constante.
+- **Tercera salida en el kernel de 36038.** Recomendación `hold` dentro de la ventana de temporada
+  (puja ≤ mínimo de los 365 días) y `sell_signal` fuera (puja ≥ 90 % del máximo). Enfriamiento de
+  24 horas entre avisos del mismo tipo. `validUntil` del pack y del bundle movido a 2026-12-01,
+  después del cierre de la ventana.
+
+### Sesiones de farmeo no invalidadas por lo que se gasta
+
+- **Antes, cualquier divisa del monedero a la baja marcaba `contaminated` y suprimía el veredicto
+  económico entero.** Ahora solo contaminan el oro y las gemas; gastar llaves o consumibles,
+  declarar actividad `open` y perder objetos netos producen una sesión `estimated` con banda de
+  atribución, con sus causas nombradas. Medido sobre una sesión real: antes daba cero cifras, ahora
+  da 47.851 cobre con banda de 47.851 a 49.176.
+
+### Política y producto reescritos
+
+- H13.8 y H13.1 integran datawars2, el webhook y el addon de Nexus en la política de producto. Primera
+  ejecución humana en 21 releases, con su resultado documentado.
+
 ## Release beta 0.1.21 - la sesión por fin da un número
 
 ### La Bolsa de truco o trato deja de estar muda
