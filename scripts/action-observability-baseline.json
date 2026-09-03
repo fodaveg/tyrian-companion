@@ -1405,9 +1405,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 66,
+					"line": 96,
 					"column": 37,
-					"endLine": 66,
+					"endLine": 96,
 					"endColumn": 59,
 					"classification": "allowlisted",
 					"evidence": {
@@ -1420,9 +1420,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 101,
+					"line": 137,
 					"column": 30,
-					"endLine": 101,
+					"endLine": 137,
 					"endColumn": 86,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -1436,9 +1436,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 102,
+					"line": 138,
 					"column": 4,
-					"endLine": 104,
+					"endLine": 140,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {

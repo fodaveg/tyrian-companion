@@ -9,6 +9,13 @@ import type { AlertV1 } from './alert-contract';
  * collection. `alertWebhookPayload` is the whole surface, so the unit test can
  * assert over the serialized body instead of over an intention.
  *
+ * "Nowhere else" is a signature, not a habit: no function below takes prose
+ * from its caller. The rendered line is composed by `alertWebhookContent` out
+ * of the same three fields, so a caller that already holds a sentence has no
+ * parameter to put it in. The emitter holds one (the toast copy, which for an
+ * `always_alert` ends in the reason the alert fired) and that is exactly the
+ * sentence this module must never forward.
+ *
  * An empty URL means off, and off means no request is ever built.
  */
 export const ALERT_WEBHOOK_TIMEOUT_MS = 4_000;
@@ -41,10 +48,33 @@ export interface AlertWebhookTimer {
 	cancel(handle: unknown): void;
 }
 
-/** Exactly the three declared fields, plus the line a chat client renders. */
-export function alertWebhookPayload(alert: AlertV1, summary: string): AlertWebhookPayload {
+/** What an alert without a quote says. Saying "no value" is the whole message; the reason stays home. */
+const UNPRICED_CONTENT = 'no quoted value';
+
+/**
+ * The line a chat client renders, composed from the three declared fields.
+ *
+ * It takes an `AlertV1` and nothing else on purpose. The `content` used to be
+ * whatever sentence the caller had already built for the toast, and that
+ * sentence names the REASON for every `always_alert` without a price: "puede
+ * desbloquear una skin no obtenida" tells the receiver of the webhook whether
+ * the player owns that skin, which is `/v2/account/skins` restated in prose and
+ * is what the header above promises never leaves. Composing it here makes the
+ * leak impossible to reintroduce from a caller rather than merely absent today.
+ *
+ * The wording is fixed rather than translated for the same reason: a locale
+ * would be a fourth input to a body whose whole guarantee is that it has three,
+ * and the destination is a channel the player chose, not the plugin's own UI.
+ */
+export function alertWebhookContent(alert: AlertV1): string {
+	const value = alert.totalCopper === null ? UNPRICED_CONTENT : `${String(alert.totalCopper)} copper`;
+	return `${alert.name} ×${String(alert.quantity)} · ${value}`;
+}
+
+/** Exactly the three declared fields, plus the line composed from those same three. */
+export function alertWebhookPayload(alert: AlertV1): AlertWebhookPayload {
 	return {
-		content: summary,
+		content: alertWebhookContent(alert),
 		version: ALERT_WEBHOOK_PAYLOAD_VERSION,
 		name: alert.name,
 		quantity: alert.quantity,
@@ -59,7 +89,7 @@ export function alertWebhookPayload(alert: AlertV1, summary: string): AlertWebho
  * bearer capability in itself, and sending one in the clear is a worse outcome
  * than not sending the alert.
  */
-export function buildAlertWebhookRequest(url: string, alert: AlertV1, summary: string): AlertWebhookRequest | null {
+export function buildAlertWebhookRequest(url: string, alert: AlertV1): AlertWebhookRequest | null {
 	const trimmed = url.trim();
 	if (trimmed.length === 0) return null;
 	let parsed: URL;
@@ -69,7 +99,7 @@ export function buildAlertWebhookRequest(url: string, alert: AlertV1, summary: s
 		url: parsed.toString(),
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(alertWebhookPayload(alert, summary)),
+		body: JSON.stringify(alertWebhookPayload(alert)),
 	};
 }
 
@@ -81,17 +111,23 @@ export function buildAlertWebhookRequest(url: string, alert: AlertV1, summary: s
  * the emitter's fan-out open for the whole session. The losing side of the race
  * is abandoned, not cancelled: no HTTP client in this plugin exposes an abort
  * handle, and pretending otherwise would be the more dishonest option.
+ *
+ * The third parameter is accepted and discarded, and it is the only string a
+ * caller can still hand this module: the emitter passes its already composed
+ * toast copy there, and nothing below takes a sentence at all, so the value
+ * dies on this line instead of reaching the body. It survives only to keep the
+ * call site compiling and goes away with it.
  */
 export async function postAlertWebhook(
 	url: string,
 	alert: AlertV1,
-	summary: string,
+	_ignoredSummary: string,
 	transport: AlertWebhookTransport,
 	timer: AlertWebhookTimer,
 	timeoutMs: number = ALERT_WEBHOOK_TIMEOUT_MS,
 ): Promise<AlertWebhookOutcome> {
 	if (url.trim().length === 0) return 'disabled';
-	const request = buildAlertWebhookRequest(url, alert, summary);
+	const request = buildAlertWebhookRequest(url, alert);
 	if (request === null) return 'invalid_url';
 	let handle: unknown;
 	const deadline = new Promise<'failed'>((resolve) => {
