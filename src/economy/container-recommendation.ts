@@ -5,7 +5,7 @@ import { isStorageDelta } from '../account/contamination';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { compareStorageSnapshots } from '../account/storage-delta';
-import { canonicalStructuralJson as canonical, sha256CanonicalValue } from '../core/canonical-sha256';
+import { canonicalJson as canonical, sha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { isNormalizedCatalogItem } from '../catalog/public-catalog-validators';
 import {

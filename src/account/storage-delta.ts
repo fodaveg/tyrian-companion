@@ -17,7 +17,7 @@ import {
 	type StorageDeltaReason,
 	type StorageDeltaWarning,
 } from './storage-delta-model';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 const CORE_SOURCES = ['characters', 'shared_inventory', 'bank', 'materials'] as const;
 const INVENTORY_ADVISOR_SOURCES = ['characters', 'shared_inventory'] as const;

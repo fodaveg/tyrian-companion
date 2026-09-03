@@ -1,72 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
 import { canonicalSnapshotValue } from '../account/storage-snapshot-pure';
-import { canonicalJson, canonicalStructuralJson } from './canonical-sha256';
+import { canonicalJson } from './canonical-sha256';
 
 /**
- * Three canonicalisers survive in the tree and this pins what separates them.
+ * `canonicalStructuralJson` used to be a second canonicaliser in
+ * `canonical-sha256.ts`, kept apart from `canonicalJson` because it rendered a
+ * `Date` as `{}` instead of its ISO string, so every instant would collide
+ * onto the same fingerprint. Measured across the full suite (200 files, 2708
+ * tests, instrumented) it had zero production consumers that ever passed it a
+ * `Date`; only this file's own assertions exercised the divergence. It was
+ * collapsed into `canonicalJson` on 2026-09-03, and this suite now pins the
+ * property that collapse buys: a `Date` changes the fingerprint.
  *
- * Fifteen copies of the same six-line function were spread across production
- * before this suite existed, and measuring them found four distinct behaviours
- * rather than one. Two of those are now the shared pair in `canonical-sha256.ts`;
- * the third lives in `storage-snapshot-pure.ts` and the fourth, which throws
- * instead of serialising, is private to `inventory-preferences-contract.ts`.
- *
- * None of them is unified away here. Each fingerprint is already written into
- * stored notes, snapshots or preference hashes, so picking a winner is a product
- * decision. What this suite guarantees is that nobody makes that decision by
- * accident: the divergences are asserted, so removing one turns a test red.
+ * `canonicalSnapshotValue` in `storage-snapshot-pure.ts` is a genuinely
+ * separate canonicaliser, kept apart on purpose: it sorts array elements to
+ * compare multisets rather than evidence order, and its fingerprints are
+ * already written into stored snapshots.
  */
-describe('canonical JSON: the three surviving canonicalisers', () => {
-	/** The whole of the shared pair's disagreement, and the reason it stayed invisible. */
-	it('separates the plain-record canonicaliser from the structural one on Date alone', () => {
+describe('canonical JSON: a Date changes the fingerprint', () => {
+	it('renders a Date as its ISO string', () => {
 		const instant = new Date('2020-01-02T03:04:05.000Z');
 		expect(canonicalJson(instant)).toBe('"2020-01-02T03:04:05.000Z"');
-		expect(canonicalStructuralJson(instant)).toBe('{}');
-		expect(canonicalStructuralJson(new Date('1999-12-31T00:00:00.000Z'))).toBe('{}');
 	});
 
-	/**
-	 * Everything else agrees, which is exactly why nine call sites drifted onto one
-	 * variant and five onto the other with the whole suite staying green.
-	 */
-	it('keeps the shared pair agreeing on every other shape', () => {
-		const shapes: unknown[] = [
-			{ b: 1, a: 2 },
-			{ a: 1, B: 2 },
-			{ ['á']: 1, b: 2 },
-			['b', 'a'],
-			[2, 1, 10],
-			[{ z: 1 }, { a: 1 }],
-			{ outer: { inner: [1, 2] } },
-			new Map([['a', 1]]),
-			new Set([1, 2]),
-			Object.assign(Object.create(null), { a: 1 }),
-			{ toJSON: () => 'X', a: 1 },
-			null,
-			undefined,
-			Number.NaN,
-			'text',
-			{},
-			[],
-		];
-		for (const shape of shapes) {
-			expect([shape, canonicalStructuralJson(shape)])
-				.toEqual([shape, canonicalJson(shape)]);
-		}
+	it('gives two objects that differ only in a Date field different fingerprints', () => {
+		const early = { at: new Date('2020-01-02T03:04:05.000Z'), id: 'x' };
+		const late = { at: new Date('2020-01-02T03:04:06.000Z'), id: 'x' };
+		// Control positive first: the two objects are genuinely different, so a
+		// false pass below can't hide behind two inputs that were equal all along.
+		expect(early).not.toEqual(late);
+		expect(canonicalJson(early)).not.toBe(canonicalJson(late));
 	});
 
-	/** Both keep array order; only the snapshot canonicaliser below does not. */
-	it('keeps array order in the shared pair, as evidence order', () => {
+	it('keeps array order in canonicalJson, as evidence order', () => {
 		expect(canonicalJson(['b', 'a'])).toBe('["b","a"]');
-		expect(canonicalStructuralJson(['b', 'a'])).toBe('["b","a"]');
 	});
 
 	/**
 	 * The snapshot canonicaliser SORTS array elements, so it answers a different
 	 * question: whether two snapshots hold the same multiset, not the same list.
-	 * Replacing it with either of the shared pair would rewrite every stored
-	 * storage fingerprint, so it stays where it is.
+	 * Replacing it with `canonicalJson` would rewrite every stored storage
+	 * fingerprint, so it stays where it is.
 	 */
 	it('pins the snapshot canonicaliser sorting arrays instead of keeping their order', () => {
 		expect(canonicalSnapshotValue(['b', 'a'])).toBe('["a","b"]');
@@ -75,9 +50,9 @@ describe('canonical JSON: the three surviving canonicalisers', () => {
 		expect(canonicalJson(['b', 'a'])).not.toBe(canonicalSnapshotValue(['b', 'a']));
 	});
 
-	/** On a shape with no arrays to reorder it agrees with the structural variant. */
-	it('keeps the snapshot canonicaliser agreeing on records', () => {
+	/** On a shape with no arrays to reorder, and no Date, it agrees with canonicalJson. */
+	it('keeps the snapshot canonicaliser agreeing on records with no Date', () => {
 		const record = { b: 1, a: { d: 2, c: 3 } };
-		expect(canonicalSnapshotValue(record)).toBe(canonicalStructuralJson(record));
+		expect(canonicalSnapshotValue(record)).toBe(canonicalJson(record));
 	});
 });

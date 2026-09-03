@@ -1,5 +1,5 @@
 import type { ContainerMarketQuote } from './container-expected-value';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
 
 export const HOLD_INTENT_VERSION = 1 as const;

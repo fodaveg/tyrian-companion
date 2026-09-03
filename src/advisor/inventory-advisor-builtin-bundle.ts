@@ -227,17 +227,27 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 }
 
 /**
- * Deliberately a copy of `canonicalStructuralJson`, not an import of it.
+ * Deliberately a copy of `canonicalJson`, not an import of it.
  *
  * The H4.17 boundary suite pins this module to an exact reviewed allowlist of
  * five neighbours, and `../core/canonical-sha256` is not one of them. Importing
  * the shared helper is what turns that suite red, so these six duplicated lines
  * are the price of the boundary and must stay. Keep them identical in behaviour
- * to the shared one; `canonical-json-parity.test.ts` says what that behaviour is.
+ * to the shared one; `canonical-json-parity.test.ts` says what that behaviour
+ * is. Only a PLAIN record is expanded key by key here, matching `canonicalJson`
+ * (not the broader `record()` helper above, which also accepts class
+ * instances for validation): anything else, including a `Date`, goes through
+ * `JSON.stringify`, which honours `toJSON`.
  */
 function canonical(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (record(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+	if (plainRecord(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
 		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
 	return JSON.stringify(value) ?? 'undefined';
+}
+
+function plainRecord(value: unknown): value is Record<string, unknown> {
+	if (!record(value)) return false;
+	const prototype = Object.getPrototypeOf(value) as unknown;
+	return prototype === Object.prototype || prototype === null;
 }

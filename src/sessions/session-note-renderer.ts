@@ -13,7 +13,6 @@ import type { SessionActivityKey } from './session-contamination-review';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
-	canonical,
 	type PreparedSessionNote,
 	type SessionNoteBlockId,
 } from './session-note-model';
@@ -652,5 +651,3 @@ export async function sha256Text(value: string): Promise<string> {
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
 	return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-
-export function canonicalBlockFingerprint(value: unknown): string { return canonical(value); }

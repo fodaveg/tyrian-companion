@@ -23,7 +23,7 @@ import {
 	parseCatalogMaterial,
 	readCatalogEntryId,
 } from './public-catalog-parsers';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const NEGATIVE_TTL_MS = 60 * 60 * 1_000;

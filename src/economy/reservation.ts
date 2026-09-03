@@ -19,7 +19,7 @@ import {
 	type ReservationWarning,
 	type SessionValuationReservationOverlay,
 } from './reservation-model';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 export type ReservationPlanResult = { status: 'ok'; plan: ReservationPlan } | { status: 'invalid'; reason: string };
 export type ReservationBalanceResult = { status: 'ok'; balance: ReservationBalance } | { status: 'invalid'; reason: string };

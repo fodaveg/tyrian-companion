@@ -20,7 +20,7 @@ import {
 	type SessionItemPrice,
 	type SessionPriceSnapshot,
 } from './session-price-snapshot';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 export const SESSION_VALUATION_VERSION = 1 as const;
 export const HALLOWEEN_TOT_BAG_ITEM_ID = 36038;

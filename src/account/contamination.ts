@@ -15,7 +15,7 @@ import {
 	type SessionReviewRequest,
 	type TradingPostEvent,
 } from './contamination-model';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 const DECLARED_ACTIVITIES: ReadonlySet<DeclaredActivity> = new Set([
 	'open',

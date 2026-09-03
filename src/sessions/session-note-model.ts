@@ -23,7 +23,7 @@ import {
 	type DetectionQualityEvent,
 	type SessionDetectionQualitySummary,
 } from './session-detection-quality';
-import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 
 /** Re-exported under its historical name; `session-note-renderer` fingerprints blocks with it. */
 export { canonical };

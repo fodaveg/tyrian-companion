@@ -8512,9 +8512,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 73,
+					"line": 72,
 					"column": 4,
-					"endLine": 75,
+					"endLine": 74,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8527,9 +8527,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 478,
+					"line": 477,
 					"column": 4,
-					"endLine": 478,
+					"endLine": 477,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8542,9 +8542,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 632,
+					"line": 631,
 					"column": 107,
-					"endLine": 632,
+					"endLine": 631,
 					"endColumn": 159,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8557,9 +8557,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 642,
+					"line": 641,
 					"column": 4,
-					"endLine": 647,
+					"endLine": 646,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
