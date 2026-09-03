@@ -1,3 +1,4 @@
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { createInventoryRecommendationEnvelope, isInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
 import { isApprovedApplicableCapability, isEnabledApplicableRule, isInventoryAdvisorReport, sha256CanonicalValue, sha256InventoryAdvisorReport } from './inventory-advisor-contract';
@@ -261,4 +262,3 @@ function positive(value: unknown): value is number { return Number.isSafeInteger
 function sortedNonEmpty(value: unknown): value is string[] { return Array.isArray(value) && value.length > 0 && value.every(identifier) && value.every((entry, index) => index === 0 || value[index - 1]! < entry); }
 function json(value: unknown): boolean { try { return canonical(JSON.parse(JSON.stringify(value))) === canonical(value); } catch { return false; } }
 function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
-function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (record(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`; return JSON.stringify(value) ?? 'undefined'; }

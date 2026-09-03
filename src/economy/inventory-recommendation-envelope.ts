@@ -1,6 +1,7 @@
 import type {
 	InventoryRecommendationDecisionV1,
 } from '../advisor/inventory-advisor-model';
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 import {
 	isInventoryAdvisorReport,
 	sha256InventoryAdvisorReport,
@@ -228,9 +229,3 @@ function clone<T>(value: T): T {
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (record(value)) return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}

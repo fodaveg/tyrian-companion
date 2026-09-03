@@ -1,3 +1,5 @@
+import { canonicalJson as canonical } from '../core/canonical-sha256';
+
 export const RECOMMENDATION_ENVELOPE_VERSION = 1 as const;
 
 export type RecommendationDecisionAction = 'open' | 'sell' | 'reserve' | 'hold' | 'review' | 'none';
@@ -95,13 +97,6 @@ function jsonClone<T>(value: T): T {
 	return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (isPlainRecord(value)) return `{${Object.entries(value)
-		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {
 	const actual = Object.keys(value).sort();

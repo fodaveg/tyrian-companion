@@ -1,4 +1,5 @@
 import type { ContainerMarketQuote } from './container-expected-value';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 import { createTradingPostValueWithPolicy } from './gw2-fees';
 
 export const HOLD_INTENT_VERSION = 1 as const;
@@ -336,12 +337,6 @@ function safeSubtract(left: number, right: number): number {
 	return result;
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (isRecord(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {
 	const actual = Object.keys(value).sort();

@@ -20,6 +20,7 @@ import {
 	type SessionItemPrice,
 	type SessionPriceSnapshot,
 } from './session-price-snapshot';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 
 export const SESSION_VALUATION_VERSION = 1 as const;
 export const HALLOWEEN_TOT_BAG_ITEM_ID = 36038;
@@ -474,14 +475,6 @@ function unique<T>(values: T[]): boolean {
 	return new Set(values).size === values.length;
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (isRecord(value)) {
-		return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 	return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());

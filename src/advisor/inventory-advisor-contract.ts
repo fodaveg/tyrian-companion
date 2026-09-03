@@ -1,6 +1,6 @@
 import { isInventoryAdvisorStorageSnapshot } from '../account/storage-delta';
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
-import { canonicalJson, sha256CanonicalValue as standardSha256CanonicalValue } from '../core/canonical-sha256';
+import { canonicalJson as canonical, sha256CanonicalValue as standardSha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import {
 	isNormalizedCatalogCurrency,
@@ -787,9 +787,6 @@ function jsonRoundTrip(value: unknown): boolean {
 }
 function safeGuard(check: () => boolean): boolean {
 	try { return check(); } catch { return false; }
-}
-function canonical(value: unknown): string {
-	return canonicalJson(value);
 }
 
 /**

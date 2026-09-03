@@ -23,6 +23,7 @@ import {
 	parseCatalogMaterial,
 	readCatalogEntryId,
 } from './public-catalog-parsers';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const NEGATIVE_TTL_MS = 60 * 60 * 1_000;
@@ -489,16 +490,6 @@ function sortWarnings(warnings: CatalogWarning[]): CatalogWarning[] {
 	);
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (value !== null && typeof value === 'object') {
-		return `{${Object.entries(value)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
-			.join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function isTransient(error: unknown): boolean {
 	return (

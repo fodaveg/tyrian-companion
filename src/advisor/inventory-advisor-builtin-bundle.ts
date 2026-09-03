@@ -226,6 +226,15 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 	return actual.length === expected.length && expected.slice().sort().every((key, index) => actual[index] === key);
 }
 
+/**
+ * Deliberately a copy of `canonicalStructuralJson`, not an import of it.
+ *
+ * The H4.17 boundary suite pins this module to an exact reviewed allowlist of
+ * five neighbours, and `../core/canonical-sha256` is not one of them. Importing
+ * the shared helper is what turns that suite red, so these six duplicated lines
+ * are the price of the boundary and must stay. Keep them identical in behaviour
+ * to the shared one; `canonical-json-parity.test.ts` says what that behaviour is.
+ */
 function canonical(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
 	if (record(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))

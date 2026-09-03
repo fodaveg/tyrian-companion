@@ -5,7 +5,7 @@ import { isStorageDelta } from '../account/contamination';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { compareStorageSnapshots } from '../account/storage-delta';
-import { sha256CanonicalValue } from '../core/canonical-sha256';
+import { canonicalStructuralJson as canonical, sha256CanonicalValue } from '../core/canonical-sha256';
 import type { CatalogItem } from '../catalog/public-catalog-model';
 import { isNormalizedCatalogItem } from '../catalog/public-catalog-validators';
 import {
@@ -778,13 +778,6 @@ function isSha256(value: unknown): value is string {
 	return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value);
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (isRecord(value)) return `{${Object.entries(value)
-		.sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function invalid(reason: ContainerRecommendationReasonCode): ContainerRecommendationResult {
 	return { status: 'invalid', reasons: canonicalReasons([{ code: reason }]), recommendation: null,

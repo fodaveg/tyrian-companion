@@ -1,11 +1,47 @@
 /**
  * Canonical JSON plus a browser-safe SHA-256 implementation for identity-bound
  * payloads. Array order is intentionally retained as evidence order.
+ *
+ * Only a PLAIN record is expanded key by key. Anything else with a prototype of
+ * its own goes through `JSON.stringify`, which honours `toJSON`, so a `Date`
+ * canonicalises to its ISO string rather than to an empty object.
+ *
+ * This is one of the two canonicalisers in the tree and they are NOT
+ * interchangeable; see `canonicalStructuralJson` below for the other and for the
+ * single input that separates them.
  */
 export function canonicalJson(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
 	if (isPlainRecord(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
 		.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(',')}}`;
+	return JSON.stringify(value) ?? 'undefined';
+}
+
+/**
+ * The same canonical form, except that EVERY object is expanded by its own
+ * enumerable entries rather than only plain records.
+ *
+ * The two differ on exactly one kind of input: an object that carries both a
+ * prototype of its own and a `toJSON`. In practice that means `Date`, which
+ * `canonicalJson` renders as `"2020-01-02T03:04:05.000Z"` and this one renders
+ * as `{}` — so every instant would share a fingerprint here. On plain records,
+ * arrays, primitives, `Map`, `Set`, class instances and null-prototype objects
+ * the two agree character for character, which is why nine call sites drifted
+ * onto this variant and five onto the other without anything going red.
+ *
+ * They are kept apart deliberately. Collapsing them one way or the other moves
+ * fingerprints that are already written into stored notes and snapshots, so it
+ * is a product decision rather than a cleanup; `canonical-json-parity.test.ts`
+ * pins the difference in the meantime.
+ */
+export function canonicalStructuralJson(value: unknown): string {
+	if (Array.isArray(value)) return `[${value.map(canonicalStructuralJson).join(',')}]`;
+	if (value !== null && typeof value === 'object') {
+		return `{${Object.entries(value)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([key, child]) => `${JSON.stringify(key)}:${canonicalStructuralJson(child)}`)
+			.join(',')}}`;
+	}
 	return JSON.stringify(value) ?? 'undefined';
 }
 

@@ -19,6 +19,7 @@ import {
 	type ReservationWarning,
 	type SessionValuationReservationOverlay,
 } from './reservation-model';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 
 export type ReservationPlanResult = { status: 'ok'; plan: ReservationPlan } | { status: 'invalid'; reason: string };
 export type ReservationBalanceResult = { status: 'ok'; balance: ReservationBalance } | { status: 'invalid'; reason: string };
@@ -407,5 +408,4 @@ function sortedAssets(values: ReservationAssetBalance[] | ReservationPlanAsset[]
 function unique<T>(values: T[]): boolean { return new Set(values).size === values.length; }
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean { return canonical(Object.keys(value).sort()) === canonical([...keys].sort()); }
 function compareCanonical(left: unknown, right: unknown): number { return canonical(left).localeCompare(canonical(right)); }
-function canonical(value: unknown): string { if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`; if (value !== null && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`; return JSON.stringify(value) ?? 'undefined'; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }

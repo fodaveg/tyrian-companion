@@ -17,6 +17,7 @@ import {
 	type StorageDeltaReason,
 	type StorageDeltaWarning,
 } from './storage-delta-model';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 
 const CORE_SOURCES = ['characters', 'shared_inventory', 'bank', 'materials'] as const;
 const INVENTORY_ADVISOR_SOURCES = ['characters', 'shared_inventory'] as const;
@@ -718,16 +719,6 @@ function compareCanonical(left: unknown, right: unknown): number {
 	return canonical(left).localeCompare(canonical(right));
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (value !== null && typeof value === 'object') {
-		return `{${Object.entries(value)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
-			.join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function isItemState(value: unknown): boolean {
 	return ['loose', 'equipped_container', 'embedded_upgrade', 'embedded_infusion', 'pending_claim'].includes(String(value));

@@ -1,3 +1,4 @@
+import { canonicalJson as canonical } from '../core/canonical-sha256';
 import {
 	isInventoryRecommendationEnvelope,
 	type InventoryRecommendationEnvelopeV1,
@@ -535,9 +536,3 @@ function keys(value: Record<string, unknown>, expected: string[]): boolean {
 	return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (record(value)) return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}

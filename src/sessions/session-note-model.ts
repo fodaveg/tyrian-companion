@@ -23,6 +23,10 @@ import {
 	type DetectionQualityEvent,
 	type SessionDetectionQualitySummary,
 } from './session-detection-quality';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
+
+/** Re-exported under its historical name; `session-note-renderer` fingerprints blocks with it. */
+export { canonical };
 
 export const SESSION_NOTE_SCHEMA_VERSION = 3 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
@@ -267,12 +271,6 @@ function validDisplayNames(value: unknown): value is Record<string, string> {
 		/^(?:item|currency):[1-9]\d*$/u.test(key) && typeof name === 'string' && name.length <= 256);
 }
 
-export function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (isRecord(value)) return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
-		.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`).join(',')}}`;
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
 	return canonical(Object.keys(value).sort()) === canonical([...keys].sort());

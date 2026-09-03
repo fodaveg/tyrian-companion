@@ -15,6 +15,7 @@ import {
 	type SessionReviewRequest,
 	type TradingPostEvent,
 } from './contamination-model';
+import { canonicalStructuralJson as canonical } from '../core/canonical-sha256';
 
 const DECLARED_ACTIVITIES: ReadonlySet<DeclaredActivity> = new Set([
 	'open',
@@ -1006,16 +1007,6 @@ function canonicalUnique<T>(values: T[]): T[] {
 	return [...unique.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, value]) => value);
 }
 
-function canonical(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-	if (value !== null && typeof value === 'object') {
-		return `{${Object.entries(value)
-			.sort(([left], [right]) => left.localeCompare(right))
-			.map(([key, child]) => `${JSON.stringify(key)}:${canonical(child)}`)
-			.join(',')}}`;
-	}
-	return JSON.stringify(value) ?? 'undefined';
-}
 
 function stringField(value: unknown, field: string): string | null {
 	return isRecord(value) && typeof value[field] === 'string' ? value[field] : null;
