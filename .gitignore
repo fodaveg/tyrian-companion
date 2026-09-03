@@ -1,4 +1,7 @@
-node_modules/
+# No trailing slash: an agent worktree gets `node_modules` as a SYMLINK to the
+# main checkout, and `node_modules/` only matches directories, so the link showed
+# up as untracked in every status and `git add -A` would have committed it.
+node_modules
 main.js
 *.map
 .DS_Store
