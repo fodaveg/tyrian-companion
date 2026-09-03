@@ -2,6 +2,7 @@
 // and without it the durable queue silently reports every write as failed.
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
+import { Socket } from 'node:net';
 import { TFile, type App, type PluginManifest } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,9 +10,10 @@ vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import { compareStorageSnapshots } from './account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
-import TyrianCompanionPlugin from './main';
+import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS, type AlertV1 } from './alerts/alert-contract';
 import type { AlertDeliveryReport } from './alerts/alert-emitter';
+import type { AlertIngameServerHandle } from './alerts/alert-ingame-server';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
@@ -38,6 +40,7 @@ interface AlertWiringHarness {
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	getLiveSessionLoot(): LiveSessionLootState;
 	getAssistedDetectionState(): { status: string };
+	updateSettings(settings: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
 }
 
 const VALUABLE: AlertV1 = {
@@ -163,6 +166,41 @@ describe('H13.4 alert channel cabling', () => {
 		await (plugin as unknown as { alertIngameServer: { close(): Promise<void> } | null }).alertIngameServer?.close();
 	});
 
+	it('opens the in-game server the moment the setting turns on, with no alert in between', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const plugin = alertWiringPlugin(new IDBFactory());
+		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+
+		// Ships off by default: loading the plugin with the channel disabled must not
+		// open a socket at all.
+		await plugin.initializeRuntime();
+		expect(server()).toBeNull();
+
+		try {
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: 0 });
+			// No `emitAlert` call anywhere above: this is the whole point of the fix. The old
+			// behaviour only opened the listener from inside `deliver`, so the addon had nothing
+			// to connect to until the first alert, and that alert then found `clientCount() === 0`
+			// and was reported `failed`.
+			await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+			const handle = server();
+			if (handle === null) throw new Error('unreachable: waited for a non-null handle above');
+
+			// The listener is real and reachable from outside the process, exactly the way the
+			// Nexus addon reaches it; this is not just a truthy internal field.
+			const client = await connectLoopback(handle.port);
+			await vi.waitFor(() => { expect(handle.clientCount()).toBe(1); });
+			client.destroy();
+
+			await plugin.updateSettings({ alertIngameEnabled: false });
+			await vi.waitFor(() => { expect(server()).toBeNull(); });
+		} finally {
+			await server()?.close();
+		}
+	});
+
 	it('refuses to build an alert that is not the signed contract', async () => {
 		const plugin = alertWiringPlugin(new IDBFactory());
 		await plugin.initializeRuntime();
@@ -208,6 +246,7 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 		localDebugActions: null;
 		lootPresentation: LootPresentationCache;
 		registerEvent(event: unknown): void;
+		saveData(data: unknown): Promise<void>;
 	};
 	target.app = app;
 	target.manifest = manifest;
@@ -216,6 +255,10 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 	target.localDebugActions = null;
 	target.lootPresentation = new LootPresentationCache();
 	target.registerEvent = vi.fn();
+	// Only the settings-toggle test below calls `updateSettings`; every other test never
+	// touches persistence, so a no-op here is enough to keep the real save-then-publish
+	// order in `updateSettings` from throwing on the base `Plugin` class's absent stub.
+	target.saveData = vi.fn(async () => undefined);
 
 	vi.stubGlobal('window', {
 		indexedDB: factory,
@@ -228,6 +271,16 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 	vi.stubGlobal('navigator', { onLine: true });
 
 	return target;
+}
+
+/** A real loopback client, the same way the Nexus addon connects: proves the port actually listens. */
+function connectLoopback(port: number): Promise<Socket> {
+	return new Promise((resolve, reject) => {
+		const socket = new Socket();
+		socket.once('connect', () => { resolve(socket); });
+		socket.once('error', reject);
+		socket.connect(port, '127.0.0.1');
+	});
 }
 
 function fakeAudioContext() {

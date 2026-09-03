@@ -34,14 +34,16 @@ llamada.
 
 ## Puente de avisos dentro del juego (H13.9/H13.15)
 
-El sexto canal de aviso, `ingame`, es opcional y viene apagado por defecto en ajustes. Cuando se
-activa, el plugin abre un servidor TCP que escucha exclusivamente en `127.0.0.1`, en el puerto
-que el usuario elige (1024-65535). Adiciones de Nexus y de Blish HUD instaladas aparte por el
-usuario —cada una en su propio repositorio, ninguna se distribuye desde este— se conectan a ese
-puerto para pintar el aviso encima de la ventana del juego. El canal envía exactamente los mismos
-campos que el webhook (nombre, cantidad, valor en cobre) más un identificador de tipo de aviso y
-un contador de secuencia; nunca la clave de API, el `accountId`, `accountRef`, `alertId`, el
-`itemId` ni el motivo (`reason`) que describe el progreso de desbloqueo del jugador.
+El sexto canal de aviso, `ingame`, es opcional y viene apagado por defecto en ajustes. En cuanto se
+activa el interruptor, el plugin abre un servidor TCP que escucha exclusivamente en `127.0.0.1`, en
+el puerto que el usuario elige (1024-65535), sin esperar a que salte un aviso; si el interruptor ya
+estaba activado al cargar el plugin (una sesión previa), el servidor se abre en la carga por el mismo
+motivo. Apagar el interruptor cierra el servidor de inmediato. Adiciones de Nexus y de Blish HUD
+instaladas aparte por el usuario —cada una en su propio repositorio, ninguna se distribuye desde
+este— se conectan a ese puerto para pintar el aviso encima de la ventana del juego. El canal envía
+exactamente los mismos campos que el webhook (nombre, cantidad, valor en cobre) más un identificador
+de tipo de aviso y un contador de secuencia; nunca la clave de API, el `accountId`, `accountRef`,
+`alertId`, el `itemId` ni el motivo (`reason`) que describe el progreso de desbloqueo del jugador.
 
 **El canal es de una sola dirección.** Tras la línea `hello` inicial del addon, el plugin deja de
 leer esa conexión; cualquier byte posterior la cierra. El addon no puede mandar nada de vuelta que
@@ -57,7 +59,10 @@ El MVP puede consultar exclusivamente endpoints oficiales de Guild Wars 2. La ca
 la apertura de la vista permanecen sin red; una conexión, una captura manual o el armado explícito
 de la detección asistida y la activación explícita del histórico público de precios son las únicas
 puertas de entrada a las consultas ya descritas en
-[Arquitectura](ARCHITECTURE.md).
+[Arquitectura](ARCHITECTURE.md). «Sin red» aquí es sin petición saliente a un servicio, propio o de
+terceros: el `bind` loopback en `127.0.0.1` que H13.9/H13.15 abre en la carga cuando `ingame` ya
+estaba activado no contacta nada fuera de la máquina, no es una consulta y no es una excepción a
+esta regla.
 
 El MVP no integra Mumble Link ni depende de Steam, Proton o CrossOver para obtener evidencia.
 El plugin de Obsidian obtiene toda su evidencia únicamente por API; un aviso dentro del juego se ve

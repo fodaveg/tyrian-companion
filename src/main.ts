@@ -561,6 +561,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			accountRef: () => this.resolveAlertAccountRef(),
 		});
 		this.alertEmitter = this.buildAlertEmitter(this.alertQueue);
+		// A player who left `ingame` enabled last session must not have to trigger an alert to
+		// find out the addon can connect: open the listener now, the same way it would open on
+		// the settings toggle below, instead of waiting for `deliver` to reach for it.
+		this.syncAlertIngameServer();
 		this.liveSessionLoot = new LiveSessionLootTracker({
 			gateway: publicClient,
 			locale: () => this.settings.language,
@@ -2067,6 +2071,34 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * have to reload the plugin for the next alert to reach the game. Concurrent alerts share one
 	 * in-flight start instead of racing two servers onto the same port.
 	 */
+	/**
+	 * Opens or closes the loopback listener to match `alertIngameEnabled`, instead of leaving it
+	 * to the next `deliver` call. Read at plugin load and at every settings save (see
+	 * `updateSettings`), the same two moments `ensureAlertIngameServer` itself would otherwise be
+	 * reached from only at delivery time. Without this, a player who just flipped the setting had
+	 * no listener for the addon to connect to until the first alert fired, and that first alert
+	 * opened the server and found `clientCount() === 0` in the same breath: it was declared
+	 * `failed`, and the first hallazgo of a session, the one that matters most, never reached the
+	 * game. A port failure here (occupied, permission) is caught by `ensureAlertIngameServer`
+	 * itself and never reaches this method as a rejection, so it cannot stop the plugin load.
+	 */
+	private syncAlertIngameServer(): void {
+		if (!this.settings.alertIngameEnabled) {
+			if (this.alertIngameServer === null) return;
+			const stale = this.alertIngameServer;
+			this.alertIngameServer = null;
+			this.alertIngameServerPort = null;
+			void stale.close();
+			return;
+		}
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'notification', action: 'notification_emit', state: 'ingame_server_sync' },
+			async () => {
+				const server = await this.ensureAlertIngameServer();
+				if (server === null) throw new Error('The in-game alert server could not be started.');
+			});
+	}
+
 	private async ensureAlertIngameServer(): Promise<AlertIngameServerHandle | null> {
 		const port = this.settings.alertIngamePort;
 		if (this.alertIngameServer !== null && this.alertIngameServerPort === port) return this.alertIngameServer;
@@ -2743,12 +2775,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
 		const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
 		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
+		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
+		const previousAlertIngamePort = this.settings.alertIngamePort;
 		const nextSettings = mergeSettingsUpdate(this.settings, settings, this.app.vault.configDir);
 		const secretChanged = nextSettings.apiKeySecret !== previousSecret;
 		// Publish the new runtime view only after its durable write succeeds. A rejected
 		// save therefore leaves every subsequent Refresh on the last persisted overlay.
 		await this.saveData(nextSettings);
 		this.settings = nextSettings;
+		// Flips the loopback listener the instant the toggle (or the port, while it stays on)
+		// changes, rather than waiting for the next alert to reach for `ensureAlertIngameServer`.
+		if (previousAlertIngameEnabled !== this.settings.alertIngameEnabled ||
+			previousAlertIngamePort !== this.settings.alertIngamePort) {
+			this.syncAlertIngameServer();
+		}
 		if (previousLanguage !== nextSettings.language) {
 			// Catalog names and deterministic ordering are locale-specific. A locale change
 			// invalidates local advisor memory but never captures again implicitly.
