@@ -182,3 +182,36 @@ versión anterior que estaba en memoria al instalar el build.
 Al cerrar la ejecución, adjuntar el informe al candidato probado con la fecha absoluta de la
 prueba. No incluir tokens, `accountId` crudo, payloads de inventario, snapshots ni capturas que
 los contengan.
+
+## H13.1 — Primera ejecución humana
+
+Ejecución realizada el 2026-09-03 sobre versión `0.1.21` en bóveda real `~/Documentos/fodaveg` (no en desechable como pide el protocolo).
+
+Datos de sesión:
+- Personaje: Rinopopo, Guardian, build Power Willbender, Magic Find 333
+- Duración: 53 minutos y 51 segundos (2026-09-03T05:30:49Z a 2026-09-03T06:24:40Z)
+- Nota: `40-49 Aficiones y creación/42 Guild Wars 2/42.31 Wiki/sessions/2026/2026-09-03 053049Z - ac0f7c65e13abe5a.md`
+- SHA-256: `c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`
+- Precios capturados: 2026-09-03T06:35:16Z, fuente `gw2-commerce-prices`
+
+### Matriz de pasos ejecutados
+
+| Paso | PASS/FAIL | Observaciones |
+| --- | --- | --- |
+| Conexión y start | PASS | Sesión inició correctamente, runtime llegó a `active` |
+| Finish, review y complete | PASS | Sesión finalizó, llegó a `provisional`, revisión completó |
+| Nota antes de clear | PASS | Nota escrita en ruta correcta: `40-49 Aficiones.../42 Guild Wars 2/.../sessions/2026/...` |
+| `Sessions.base` | PASS | Base abierta y filtrada por `tc_schema` y `tc_kind` correctamente |
+| Preview/Apply | PASS | Assets gestionados aplicados sin conflictos |
+| Recovery | PENDIENTE | No se ejecutó cierre forzado ni recovery en esta sesión |
+| Dos ventanas | PENDIENTE | No se ejecutó prueba de dos ventanas simultáneas |
+
+### Observaciones sobre contaminación detectada
+
+La tabla de botín muestra 40 filas ocultas por fiabilidad. El veredicto económico se suprimió (`tc_recommendation_status: "not_evaluated"`). Las causas detectadas:
+
+- **Monedero**: disminuyó con moneda 37 (Exalted Key) -1 y moneda 42 (Vial of Chak Acid) -1 (aperturas de cofre). Moneda 1 (Coin) subió 46.083 cobre.
+- **Almacenamiento**: cambió con objeto 84731 (Piece of Unidentified Gear) -239 (contenedores abiertos).
+- **Precios**: incompletos, parte del botín sin cotización.
+
+Sin embargo, **ningún aviso saltó**, que es el comportamiento esperado: los interruptores `halloweenEnabled`, `priceHistoryEnabled` y `halloweenPriceAlertEnabled` existen en `0.1.21` y vienen en `false` por defecto. Las junturas de sesión (`tc_reservation_status: "complete:met"`, `tc_hold_status: "released"`) funcionaron correctamente.

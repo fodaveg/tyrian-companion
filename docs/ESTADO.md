@@ -789,18 +789,33 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
 
 ## Deuda conocida
 
-### H13.1 — Primera ejecución humana preparada (2026-09-03)
+### H13.1 — Primera ejecución humana (2026-09-03)
 
-La bóveda desechable `~/tyrian-qa-h13-1` existe con el build `0.1.21` instalado y verificado por
-SHA-256. El protocolo de ejecución vive en `docs/QA-MVP.md`, sección H13.1. La ejecución humana
-está pendiente; una bóveda preparada no acredita una prueba superada.
+**La primera ejecución humana en 21 releases ocurrió el 2026-09-03**, sobre la `0.1.21`, en Linux y
+en la bóveda real, no en la desechable `~/tyrian-qa-h13-1` que el protocolo pedía. La sesión duró 53
+minutos y 51 segundos y completó el ciclo entero: inicio, captura, fin, revisión y nota escrita en su
+carpeta y su año, con SHA-256
+`c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`. La tubería cableada en la
+`0.1.21` respondió, incluidas las junturas de reserva y hold (`tc_reservation_status: "complete:met"`,
+`tc_hold_status: "released"`).
 
-### QA manual: ninguna ejecución, en ninguna plataforma
+**El veredicto económico salió suprimido, y ese es el defecto que compra esta ejecución.** Todos los
+campos `tc_*_copper` y `tc_*_per_hour` salieron `null`, la recomendación quedó en `not_evaluated` y
+las 40 filas de botín dicen «Oculto por fiabilidad», en una sesión que había ganado 46.083 cobre. El
+disparador fueron dos monedas del monedero bajando una unidad cada una, la `37` (Exalted Key) y la
+`42` (Vial of Chak Acid), que es lo que cuesta abrir un cofre con su llave. El arreglo es H13.6.
+Hasta que aterrice, el producto no da su número en una sesión de farmeo normal.
 
-Los once pendientes de abajo son la misma deuda repetida: **QA manual que nunca se ha ejecutado en
-ninguna plataforma**, ni en Linux/Steam/Proton, ni en macOS/CrossOver, ni en Windows. La beta va por
-la `0.1.19` y no existe ni una sola sesión de QA registrada. Los contratos ejecutables en verde, las
-guías escritas (`docs/QA-MVP.md`) y las releases publicadas no acreditan ninguna de estas líneas;
+Que no saltara ningún aviso sí es lo esperado: `halloweenEnabled`, `priceHistoryEnabled` y
+`halloweenPriceAlertEnabled` existen en la `0.1.21` y vienen en `false` por defecto. El aviso sin
+interruptores llegó después, en `6706d47`, y no está en ningún build instalado.
+
+### QA manual: una sola sesión ejecutada, en una sola plataforma
+
+Salvo esa sesión, los once pendientes de abajo son la misma deuda repetida: **QA manual que no se ha
+ejecutado en ninguna plataforma**, ni en el resto de Linux, ni en macOS/CrossOver, ni en Windows. Los
+contratos ejecutables en verde, las guías escritas (`docs/QA-MVP.md`) y las releases publicadas no
+acreditan ninguna de estas líneas;
 por eso los lotes anteriores repiten que su publicación no acredita la QA. La única excepción de la
 lista es el punto 5, cuya parte abierta es una decisión de producto de David y no una prueba; los
 puntos 6 y 8 están cerrados en implementación y solo conservan QA residual.
@@ -822,7 +837,7 @@ puntos 6 y 8 están cerrados en implementación y solo conservan QA residual.
 10. Instalar/actualizar `0.1.18` desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
-11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada.
+11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada. El 2026-09-03 se ejecutó por primera vez una sesión real, pero en la bóveda real y en una sola plataforma: cubre la sesión y nada más, así que siguen sin ejecutarse la bóveda desechable, la matriz por plataforma, las dos ventanas simultáneas, el cierre forzado y el recovery.
 
 ### Deuda de implementación medida
 
