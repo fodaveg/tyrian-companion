@@ -1,5 +1,54 @@
 # Changelog
 
+## Release beta 0.1.28 - la gráfica de precio se puede leer y se puede acercar
+
+### Antes se veía una forma y no un dato
+
+- **No había ejes.** La gráfica del histórico dibujaba una nube de puntos sin ninguna escala: se veía
+  la silueta del precio y no se podía decir ni cuánto valía ni cuándo. Ahora lleva **eje de precios**
+  formateado en oro, plata y cobre con el mismo formateador que usa el resto del plugin, y **eje de
+  fechas** con la densidad de marcas ajustada a la ventana visible.
+- **Y el número que importa está a la vista**: máximo, mínimo y valor más reciente de la ventana que
+  se esté mirando, en texto, no solo en el dibujo.
+- **Toda la serie salía punteada.** El punteado existe para distinguir el tramo que publica un
+  tercero del que mide el propio plugin, pero en la nota de un objeto no hay medición local, así que
+  se punteaba el cien por cien y el resultado se leía como ruido. Ahora, sin serie local con la que
+  confundirla, la línea es continua.
+
+### Se puede acercar
+
+- **Cuatro ventanas**: un mes, un año, cinco años y todo. Se anclan al día más reciente de la propia
+  serie, no al reloj, así que un objeto que dejó de cotizar no muestra una ventana vacía.
+- **Y se puede arrastrar sobre la gráfica** para acotar un rango, con vuelta atrás. Quien no use
+  ratón tiene dos deslizadores que hacen lo mismo.
+- **El zoom no se guarda en ningún sitio**: ni en la nota, ni en el vault, ni en disco. Vive mientras
+  la vista está abierta.
+
+### Ya no se recorta a 400 días
+
+- **La gráfica pedía 400 días y ahora pide la serie entera.** Para la Barra de caramelo eso son 4.564
+  días diarios desde 2013 en vez de 400: se estaba enseñando el 8,8 % de lo que hay.
+- **El recorte de 400 sigue en pie donde tenía sentido.** Lo usaba también la regla de venta, que
+  razona sobre un año; ese consumidor no ha cambiado y su decisión es la misma. Los dos límites son
+  ahora dos cosas distintas y el código lo dice.
+- **Cuando hay más días que píxeles, se agrega.** Cuatro mil puntos en mil píxeles no muestran más
+  información, muestran más ruido: por encima del ancho del dibujo la serie se agrupa por semana, y
+  por encima de eso por mes. **La gráfica declara qué está agrupando**, para que nadie lea un punto
+  mensual como si fuera un día.
+
+### Lo que no cambia
+
+- Sigue sin haber ninguna llamada de red al cargar el plugin. La descarga es diferida y cacheada 24
+  horas, igual que en la 0.1.27.
+- No se guarda ninguna serie en el vault.
+- El motor de dibujo se extrajo a su propio módulo para poder compartirlo entre el panel de ajustes y
+  la nota sin un import circular. Quien importaba el anterior sigue funcionando igual.
+
+### Conocido y sin resolver
+
+- La tabla accesible del panel ya no se recorta, así que un objeto con historial largo puede llevar
+  miles de filas al DOM. Está dentro de un desplegable cerrado, pero no está virtualizada.
+
 ## Release beta 0.1.27 - el precio deja de darse por perdido, y la nota de un objeto puede enseñar su historia
 
 ### El aviso decía «sin cotización» sobre objetos que sí se venden
