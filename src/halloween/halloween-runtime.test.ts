@@ -479,6 +479,95 @@ describe('HalloweenRuntime', () => {
 			runtime.dispose();
 		},
 	);
+
+	it('does not emit first_seen for an item the owned-items seed already reported as held', async () => {
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [1], resolveEvidence }));
+		await runtime.activate();
+		const notice = await runtime.observeDelta({
+			delta: delta('seed-owned-a', 'seed-owned-b', [1]), source: 'assisted_poll', episodeId: 'session:seed-owned',
+		});
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [] }));
+		expect(notice).toBeNull(); // nothing else made this gain alertable, so no reasons at all
+		runtime.dispose();
+	});
+
+	it('still emits first_seen for a gain absent from the owned-items seed', async () => {
+		const resolveEvidence = async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null }));
+		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [], resolveEvidence }));
+		await runtime.activate();
+		const notice = await runtime.observeDelta({
+			delta: delta('seed-novel-a', 'seed-novel-b', [2]), source: 'assisted_poll', episodeId: 'session:seed-novel',
+		});
+		expect(notice?.items).toMatchObject([{ itemId: 2, reasons: [{ code: 'first_seen' }] }]);
+		runtime.dispose();
+	});
+
+	it('suppresses first_seen while the owned-items seed cannot be captured, even once backfill coverage is complete', async () => {
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+		const runtime = new HalloweenRuntime(options({
+			loadOwnedItemIds: async () => { throw new Error('missing API key'); },
+			resolveEvidence,
+		}));
+		await runtime.activate();
+		// Backfill coverage is complete (the default empty candidate list), yet the seed
+		// never ran: the runtime still reports "learning" and stays silent, same as it
+		// would while note backfill itself was incomplete.
+		expect(runtime.getState().status).toBe('learning');
+		const notice = await runtime.observeDelta({
+			delta: delta('seed-blocked-a', 'seed-blocked-b', [3]), source: 'assisted_poll', episodeId: 'session:seed-blocked',
+		});
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ learning: true }));
+		expect(notice).toBeNull();
+		runtime.dispose();
+	});
+
+	it('seeds the owned-items baseline once per vault+account and does not repeat the capture on a later restart', async () => {
+		const factory = new IDBFactory();
+		const loadOwnedItemIds = vi.fn(async () => [10]);
+		const first = new HalloweenRuntime(options({ factory, loadOwnedItemIds }));
+		await first.activate();
+		expect(loadOwnedItemIds).toHaveBeenCalledTimes(1);
+		first.dispose();
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+		const second = new HalloweenRuntime(options({ factory, loadOwnedItemIds, resolveEvidence }));
+		await second.activate();
+		expect(loadOwnedItemIds).toHaveBeenCalledTimes(1); // still one: the second start found the durable seed record
+		await second.observeDelta({
+			delta: delta('seed-restart-a', 'seed-restart-b', [10]), source: 'assisted_poll', episodeId: 'session:seed-restart',
+		});
+		expect(resolveEvidence).toHaveBeenLastCalledWith(expect.objectContaining({ firstSeenItemIds: [] }));
+		second.dispose();
+	});
+
+	it('keeps the per-episode first-seen mark independent of the global owned-items seed', async () => {
+		// Item 4 is new to the account (absent from the seed), so the first episode that
+		// gains it is first_seen. A later, unrelated episode gaining the same item again
+		// must not repeat that reason: first-seen is a global-once fact, and seeding the
+		// global seen store does not disturb that per-episode bookkeeping.
+		const resolveEvidence = vi.fn(async ({ gains, firstSeenItemIds, learning }:
+			Parameters<ConstructorParameters<typeof HalloweenRuntime>[0]['resolveEvidence']>[0]) =>
+			gains.map(({ itemId, quantity }) => ({ ...evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning), netUnitCopper: null })));
+		const runtime = new HalloweenRuntime(options({ loadOwnedItemIds: async () => [], resolveEvidence }));
+		await runtime.activate();
+		const firstEpisode = await runtime.observeDelta({
+			delta: delta('episode-mark-a', 'episode-mark-b', [4]), source: 'assisted_poll', episodeId: 'session:episode-one',
+		});
+		expect(firstEpisode?.items).toMatchObject([{ itemId: 4, reasons: [{ code: 'first_seen' }] }]);
+		const secondEpisode = await runtime.observeDelta({
+			delta: delta('episode-mark-c', 'episode-mark-d', [4]), source: 'assisted_poll', episodeId: 'session:episode-two',
+		});
+		expect(secondEpisode).toBeNull();
+		runtime.dispose();
+	});
 });
 
 function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0]> = {}): ConstructorParameters<typeof HalloweenRuntime>[0] {
@@ -487,6 +576,10 @@ function options(patch: Partial<ConstructorParameters<typeof HalloweenRuntime>[0
 		resolveEvidence: async ({ gains, firstSeenItemIds, learning }) => gains.map(({ itemId, quantity }) =>
 			evidence(itemId, quantity, firstSeenItemIds.includes(itemId), learning)),
 		policy: () => ({ valueThresholdCopper: 10_000 }), now: () => Date.parse('2026-08-29T12:00:00.000Z'),
+		// Every pre-existing test in this file predates the owned-items seed and expects
+		// `learning` to gate `first_seen` on its own once backfill completes; an instant, empty
+		// seed keeps that contract. The seed-specific tests below override this explicitly.
+		loadOwnedItemIds: async () => [],
 		...patch,
 	};
 }

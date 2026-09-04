@@ -19,7 +19,7 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		expect(main).toContain("result.status === 'finalized'");
 		expect(main).toContain("'session_final'");
 		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
-		expect(store).toContain('HALLOWEEN_DB_VERSION = 6');
+		expect(store).toContain('HALLOWEEN_DB_VERSION = 7');
 		expect(store).toContain('HALLOWEEN_COMPARISON_STORE');
 		const replacement = store.slice(store.indexOf('\treplaceEpisodeNotice('), store.indexOf('\n\treadLatestComparison'));
 		expect(replacement).toContain('HALLOWEEN_COMPARISON_STORE');
