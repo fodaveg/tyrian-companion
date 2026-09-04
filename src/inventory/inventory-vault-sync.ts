@@ -17,6 +17,7 @@ import {
 } from '../economy/commerce-listings';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
+import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
 export const INVENTORY_NOTE_KIND = 'gw2_inventory_position' as const;
@@ -546,7 +547,12 @@ async function renderInventoryNote(
 	const fields = fieldsFor(position, capturedAt, locale, active);
 	const frontmatter = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
 	const heading = cleanText(position.name).replace(/^[#]/u, '\\$&');
-	const body = `# ${heading}\n\n${fields.descripcion}\n`;
+	// Piloto H9.2: a fixed, tiny allowlist of items also gets a managed price-history
+	// code block. Every other position keeps the exact body it always had.
+	const priceHistoryBlock = priceHistoryNoteBlockMarkdown(position.itemId, fields.tc_item_name);
+	const body = priceHistoryBlock === null
+		? `# ${heading}\n\n${fields.descripcion}\n`
+		: `# ${heading}\n\n${fields.descripcion}\n\n${priceHistoryBlock}\n`;
 	const markerBase = markerLine(position.positionId, null);
 	const unsigned = `---\n${frontmatter}\n---\n${markerBase}\n${body}`;
 	const hash = await sha256Text(unsigned);

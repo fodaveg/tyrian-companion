@@ -5,14 +5,16 @@
  * sell rule needs a year of them. datawars2 publishes that year, so it is read
  * ONCE as a starting point and the plugin's own capture extends it from there.
  *
- * Three properties of the real response, measured on
- * `https://api.datawars2.ie/gw2/v1/history?itemID=36038`, are what this module
- * exists to absorb:
+ * Three properties of the real response are what this module exists to absorb:
  *
- * - It is 2.2 MB and 4.961 daily records reaching back to 2012. None of that is
- *   kept: the response is trimmed while it is parsed, down to the newest
- *   `PRICE_SEED_MAX_DAYS` days and to the two prices, so what reaches storage
- *   is kilobytes rather than megabytes.
+ * - Migrated 2026-09-04 from `v1/history` to `v2/history/json` with an explicit
+ *   `fields=` query (`PRICE_SEED_FIELDS`, exactly the seven fields this parser
+ *   ever reads). Measured on item 36038 the same day: v1's default answer is
+ *   2,196,838 bytes; v2 restricted to those seven fields is 688,848, a 3.2x
+ *   reduction, for byte-for-byte the same values this parser was already
+ *   computing — nothing downstream of `parseDatawars2History` changed. The two
+ *   are otherwise the same feed: a bare JSON array, the same field names, `date`
+ *   as either a bare UTC day or a full ISO instant.
  * - Its schema is NOT uniform. Old records carry only `buy_price_max` and
  *   `buy_price_min`; recent ones add `buy_price_avg`, quantities and volumes.
  *   A parser that required the average would silently drop the older half of
@@ -26,8 +28,17 @@ export const PRICE_SEED_VERSION = 1 as const;
 /** Newest days kept from the response. A year of reference plus a month of margin. */
 export const PRICE_SEED_MAX_DAYS = 400;
 
-/** The one place the seed endpoint is written down. Item id is appended by the caller. */
-export const PRICE_SEED_BASE_URL = 'https://api.datawars2.ie/gw2/v1/history';
+/** The one place the seed endpoint is written down. Item id and `fields` are appended by the caller. */
+export const PRICE_SEED_BASE_URL = 'https://api.datawars2.ie/gw2/v2/history/json';
+
+/**
+ * Exactly the fields `seedDay` below reads, nothing more. Requesting a narrower
+ * set than this would silently make `bidCopper` (or `askCopper`) null on every
+ * record with the same failure mode as an empty response; requesting more would
+ * pay for bytes this parser throws away. `date` is always required to key a day.
+ */
+export const PRICE_SEED_FIELDS =
+	'date,buy_price_avg,buy_price_max,buy_price_min,sell_price_avg,sell_price_max,sell_price_min';
 
 export interface PriceSeedDayV1 {
 	dayUtc: string;

@@ -5,6 +5,7 @@ import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTransport } from '../core/http';
 import { SellSignalRuntime, type SellSignalRuntimeOptions } from './sell-signal-runtime';
 import { SELL_SIGNAL_MINIMUM_REFERENCE_DAYS, SELL_SIGNAL_REFERENCE_DAYS } from './sell-signal';
+import { PRICE_SEED_BASE_URL, PRICE_SEED_FIELDS } from './price-seed-model';
 import type { PriceHistoryDailyV1 } from './price-history-model';
 import { trickOrTreatBagHistoryRecords, TRICK_OR_TREAT_BAG_ITEM_ID } from './__fixtures__/trick-or-treat-bag-history';
 
@@ -72,7 +73,7 @@ describe('H13.2 seeding', () => {
 
 		expect(requests).toHaveLength(1);
 		expect(requests[0]?.method).toBe('GET');
-		expect(requests[0]?.url).toBe('https://api.datawars2.ie/gw2/v1/history?itemID=36038');
+		expect(requests[0]?.url).toBe(`${PRICE_SEED_BASE_URL}?itemID=36038&fields=${PRICE_SEED_FIELDS}`);
 		expect(requests[0]?.headers).toBeUndefined();
 		expect(requests[0]?.body).toBeUndefined();
 		expect(runtime.getState()).toMatchObject({ seedStatus: 'seeded', seedFailure: null, seedDayCount: 399 });

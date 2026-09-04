@@ -3,6 +3,7 @@ import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action
 import {
 	parseDatawars2History,
 	PRICE_SEED_BASE_URL,
+	PRICE_SEED_FIELDS,
 	PRICE_SEED_MAX_DAYS,
 	type PriceSeedResult,
 } from './price-seed-model';
@@ -33,11 +34,11 @@ export const PRICE_SEED_TIMEOUT_MS = 10_000;
  * before the body is parsed at all.
  *
  * Eight mebibytes is deliberately far above the real answer and far below what
- * hurts. `price-seed-model` records the measurement this is sized against: 2.2
- * MB for 4.961 daily records, which is some 450 bytes per day, so the cap holds
- * about fifty more years of the same series. A body past it is not a series
- * this parser would keep anyway, since only the newest `PRICE_SEED_MAX_DAYS`
- * survive the trim.
+ * hurts. `price-seed-model` records the measurement this is sized against: the
+ * `v2` request with `PRICE_SEED_FIELDS` answered 688,848 bytes for 4.962 daily
+ * records on 2026-09-04, some 139 bytes per day, so the cap holds well over a
+ * century of the same series. A body past it is not a series this parser would
+ * keep anyway, since only the newest `PRICE_SEED_MAX_DAYS` survive the trim.
  */
 export const PRICE_SEED_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
@@ -67,7 +68,7 @@ export async function fetchPriceSeed(itemId: number, options: PriceSeedSourceOpt
 	let body: unknown;
 	try {
 		const response = await options.transport.send({
-			url: `${PRICE_SEED_BASE_URL}?itemID=${String(itemId)}`,
+			url: `${PRICE_SEED_BASE_URL}?itemID=${String(itemId)}&fields=${PRICE_SEED_FIELDS}`,
 			method: 'GET',
 			endpoint: 'price_history_seed',
 			maxResponseBytes: PRICE_SEED_MAX_RESPONSE_BYTES,

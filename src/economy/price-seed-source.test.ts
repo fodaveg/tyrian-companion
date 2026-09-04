@@ -4,14 +4,14 @@ import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTrans
 import { PRICE_SEED_MAX_RESPONSE_BYTES, fetchPriceSeed } from './price-seed-source';
 
 /**
- * The measured size of the real answer, taken from the capture the fixture
- * header records: 2,2 MB for 4.961 daily records of item 36038 on 2026-09-03.
+ * The measured size of the real `v2` answer restricted to `PRICE_SEED_FIELDS`:
+ * 688,848 bytes for 4.962 daily records of item 36038 on 2026-09-04.
  *
- * It is a floor, not a constant: the series gains a record a day, some 450
- * bytes, so it grows about 166 kB a year and never shrinks. That is why the
+ * It is a floor, not a constant: the series gains a record a day, some 139
+ * bytes, so it grows about 51 kB a year and never shrinks. That is why the
  * assertion below is a ratio and not an equality.
  */
-const REAL_RESPONSE_BYTES = 2_200_000;
+const REAL_RESPONSE_BYTES = 688_000;
 
 const NOW_MS = Date.UTC(2026, 8, 3);
 

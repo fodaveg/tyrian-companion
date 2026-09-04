@@ -258,6 +258,27 @@ describe('inventory Vault preview and apply', () => {
 		expect(bytes).not.toContain('payload');
 	});
 
+	it('embeds the price-history piloto block only for the four allow-listed items', async () => {
+		const snapshot = snapshotWith([
+			holding(36_038, 2, { source: 'bank', slot: 0 }),
+			holding(42, 5, { source: 'bank', slot: 1 }),
+		]);
+		const input = await prepareInventoryVaultSyncInput(
+			snapshot, catalogFor(snapshot), pricesFor(snapshot, 36_038, 10), 'full', 'es',
+		);
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, input));
+		const pilotNote = [...vault.contents.entries()].find(([path]) => path.startsWith(`${ROOT}/Inventory/Positions/36038-`))![1];
+		const otherNote = [...vault.contents.entries()].find(([path]) => path.startsWith(`${ROOT}/Inventory/Positions/42-`))![1];
+		expect(pilotNote).toContain('```tyrian-price-history\n# Objeto 36038 (#36038)\nitemId: 36038\n```');
+		expect(otherNote).not.toContain('tyrian-price-history');
+		// A second, unmodified preview must still see the pilot note as unchanged: the block
+		// is part of what the marker hash covers, not a live patch applied outside the plan.
+		const second = await service.preview(ROOT, input);
+		expect(second.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+	});
+
 	it('deactivates stale owned positions with zero quantity and zero total without deleting the note', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);

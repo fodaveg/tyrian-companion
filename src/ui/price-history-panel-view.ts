@@ -348,7 +348,13 @@ export function safePublicRenderIconUrl(value: string | null | undefined): strin
 	}
 }
 
-function priceHistorySvgElement(
+/**
+ * The DOM twin of `priceHistorySvg`: same geometry, built as live `SVGElement`s
+ * instead of a string so it can be mounted straight into a container. Exported so
+ * the note-embedded piloto chart (`price-history-note-block-view.ts`) draws with
+ * this exact engine rather than a second one.
+ */
+export function priceHistorySvgElement(
 	daily: readonly PriceHistoryDailyV1[],
 	side: PriceHistorySide,
 	seedDays: readonly PriceSeedDayV1[],

@@ -20,19 +20,23 @@ plataforma primaria. La compatibilidad móvil sigue fuera de alcance.
 
 El plugin puede opcionalmente descargar una serie histórica de precios diarios del objeto `#36038`
 desde el servicio de terceros datawars2, mediante el endpoint público
-`https://api.datawars2.ie/gw2/v1/history?itemID=36038`. Esta descarga es única, sin clave, ocurre
-únicamente durante una sesión activa a la primera petición de histórico, y siembra la IndexedDB local
-con los datos antecedentes. Si la descarga falla, el plugin declara «sin semilla» y construye su serie
-desde las capturas propias realizadas después; nunca inventa valores ausentes.
+`https://api.datawars2.ie/gw2/v2/history/json?itemID=36038&fields=date,buy_price_avg,buy_price_max,
+buy_price_min,sell_price_avg,sell_price_max,sell_price_min` (migrado desde `v1/history` el 4 de
+septiembre de 2026: mismos campos, mismos valores, 3,2 veces menos bytes). Esta descarga es única,
+sin clave, ocurre únicamente durante una sesión activa a la primera petición de histórico, y siembra
+la IndexedDB local con los datos antecedentes. Si la descarga falla, el plugin declara «sin semilla»
+y construye su serie desde las capturas propias realizadas después; nunca inventa valores ausentes.
 
 ## Histórico de terceros y icono en el panel del histórico local de precios (H9.1)
 
 Aprobado explícitamente por David el 3 de septiembre de 2026: el panel del «Histórico local de
 precios» puede, además de la señal de venta H13.2 anterior, pedir a datawars2 el mismo endpoint
-`https://api.datawars2.ie/gw2/v1/history?itemID=<id>` para el objeto que la persona tenga elegido en
-el desplegable, y puede pedir a la API oficial el icono del objeto (campo `icon` de
+`https://api.datawars2.ie/gw2/v2/history/json?itemID=<id>&fields=…` (los mismos siete campos que
+H13.2 arriba) para el objeto que la persona tenga elegido en el desplegable, y puede pedir a la API
+oficial el icono del objeto (campo `icon` de
 `GET /v2/items?ids=<id>&lang=<locale>`), una URL de `https://render.guildwars2.com`. Son las dos únicas
-ampliaciones a la política de solo-API-oficial de este documento; nada más cambia.
+ampliaciones a la política de solo-API-oficial de este documento en cuanto a HOSTS; el piloto H9.2 más
+abajo añade un tercer punto de entrada al mismo endpoint de datawars2, no un host nuevo.
 
 Ambas peticiones son **diferidas**: no ocurren en la carga del plugin ni en la apertura del panel,
 solo cuando la persona elige un objeto y pulsa cargar (`loadPriceHistorySeries`). Ambas están
@@ -49,6 +53,30 @@ datawars2; nunca se mezclan en una sola serie indistinguible.
 Sigue sin relajarse la regla de «ninguna llamada de red durante la carga del plugin ni la apertura de
 una vista»: las dos peticiones de esta sección viven exclusivamente detrás de la acción explícita de
 cargar un histórico, igual que la semilla H13.2 vive detrás de una sesión activa.
+
+## Piloto de histórico dentro de la nota de inventario (H9.2)
+
+Aprobado por David el 4 de septiembre de 2026, ampliando H9.1: hasta cuatro objetos fijos muestran la
+misma gráfica de datawars2 directamente dentro de su propia nota de inventario
+(`Inventory/Positions/<itemId>-<x>-<cuenta>.md`). No es un tercer host: es el mismo endpoint de H13.2/
+H9.1 (`api.datawars2.ie/gw2/v2/history/json`) desde un tercer punto de entrada. El piloto está acotado
+a exactamente estos cuatro objetos, listados en un único sitio
+(`src/inventory/price-history-note-block.ts`): `#36038` (Saco de Halloween), `#36041` (Trozo de
+caramelo), `#47909` (Barra de caramelo) y `#36059` (Colmillos de plástico). El resto de notas de
+inventario no cambia y no lleva el bloque.
+
+La nota que el plugin escribe embebe únicamente un bloque de código Markdown mínimo con el id del
+objeto (`\`\`\`tyrian-price-history` / `itemId: <id>`), nunca una serie de precios ni ningún dato
+descargado: los días históricos no se persisten en el Vault en ningún formato. Ese bloque lo dibuja
+`registerMarkdownCodeBlockProcessor`, el primero que este plugin registra, exclusivamente cuando
+Obsidian renderiza la nota; la petición a datawars2 ocurre en ese momento, nunca en la carga del
+plugin. Reutiliza la misma caché de 24 horas de la sección H9.1 anterior
+(`price-seed-panel-service.ts`, `tyrian-companion-price-seed-cache`), así que una nota y el panel
+mostrando el mismo objeto dentro de esa ventana comparten la caché y nunca duplican la petición; abrir
+la misma nota dos veces dentro de las 24 horas tampoco la repite. Sin el plugin activo, o para
+cualquier otro id fuera de estos cuatro, Obsidian muestra el bloque tal cual: un comentario legible
+con el nombre y el id del objeto, sin datos de precio. Un fallo de datawars2 deja la nota funcional y
+declara «sin histórico», sin lanzar ni romper el render de la nota.
 
 El webhook de aviso de drop valioso es completamente opcional y se configura mediante una URL
 vacía por defecto en ajustes. Si se proporciona, el plugin envía únicamente nombre del objeto,
@@ -81,13 +109,14 @@ hay cola ni replay al reconectar, la cola durable de Obsidian ya guarda el hist�
 ## Límite del MVP: solo API
 
 El MVP consulta casi exclusivamente endpoints oficiales de Guild Wars 2. Las únicas excepciones,
-ambas revisadas y documentadas en sus propias secciones, son la semilla histórica y el icono del
-panel de precios: el endpoint público de datawars2 (`api.datawars2.ie`, H13.2 y H9.1) y el icono
-servido por `render.guildwars2.com` que la propia API oficial referencia en el campo `icon` de
-`/v2/items`. La carga del plugin y la apertura de una vista permanecen sin red; una conexión, una
-captura manual, el armado explícito de la detección asistida, o la activación explícita del histórico
-público de precios y la carga explícita de una serie en su panel son las únicas puertas de entrada a
-las consultas ya descritas en
+todas revisadas y documentadas en sus propias secciones, son la semilla histórica, el icono del
+panel de precios y el piloto en la nota: el endpoint público de datawars2 (`api.datawars2.ie`, H13.2,
+H9.1 y H9.2) y el icono servido por `render.guildwars2.com` que la propia API oficial referencia en
+el campo `icon` de `/v2/items`. La carga del plugin y la apertura de una vista o de una nota
+permanecen sin red; una conexión, una captura manual, el armado explícito de la detección asistida,
+la activación explícita del histórico público de precios y la carga explícita de una serie en su
+panel, o el render de una nota que contiene el bloque `tyrian-price-history` de uno de los cuatro
+objetos del piloto H9.2, son las únicas puertas de entrada a las consultas ya descritas en
 [Arquitectura](ARCHITECTURE.md). «Sin red» aquí es sin petición saliente a un servicio, propio o de
 terceros: el `bind` loopback en `127.0.0.1` que H13.9/H13.15 abre en la carga cuando `ingame` ya
 estaba activado no contacta nada fuera de la máquina, no es una consulta y no es una excepción a

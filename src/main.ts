@@ -1,4 +1,7 @@
-import { apiVersion, Menu, Notice, Platform, Plugin, TFile, type ViewCreator } from 'obsidian';
+import {
+	apiVersion, Menu, Notice, Platform, Plugin, TFile,
+	type MarkdownPostProcessorContext, type ViewCreator,
+} from 'obsidian';
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
 
@@ -84,6 +87,8 @@ import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
 import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
+import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
+import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import {
 	assembleAdvisor,
@@ -381,6 +386,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}, async () => {
 
 		for (const [type, factory] of Object.entries(viewFactories)) this.registerView(type, factory);
+		// Registration itself is inert: it hands Obsidian a callback, nothing runs until a note
+		// with this block is actually rendered. `docs/PLATFORM_POLICY.md` H9.2 covers the request
+		// that callback may then make.
+		this.registerMarkdownCodeBlockProcessor(
+			PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE,
+			(source, el, ctx) => this.paintPriceHistoryNoteBlockView(source, el, ctx),
+		);
 		this.settingTab = new TyrianCompanionSettingTab(this.app, this);
 		this.addSettingTab(this.settingTab);
 		this.setupSessionCommands();
@@ -1270,6 +1282,28 @@ export default class TyrianCompanionPlugin extends Plugin {
 	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
 		return this.priceHistoryPanelSeed?.getState(itemId)
 			?? { status: 'idle', itemId, days: [], failureReason: null, retrievedAt: null };
+	}
+
+	/**
+	 * H9.2 piloto: the `tyrian-price-history` code-block handler Obsidian invokes for every
+	 * rendered note that carries one, never at load. Shares the exact same 24h-cached seed
+	 * service as the settings panel (`priceHistoryPanelSeed`): a note and the panel showing
+	 * the same item inside that window never cost a second request.
+	 */
+	private async paintPriceHistoryNoteBlockView(
+		source: string,
+		el: HTMLElement,
+		ctx: MarkdownPostProcessorContext,
+	): Promise<void> {
+		const frontmatterItemName = frontmatterTcItemName(ctx.frontmatter);
+		await paintPriceHistoryNoteBlock(el, source, {
+			translator: createTranslator(this.settings.language),
+			ready: () => this.runtimeReady && this.priceHistoryPanelSeed !== null,
+			getState: (itemId) => this.getPriceHistorySeedState(itemId),
+			ensure: async (itemId) => await this.priceHistoryPanelSeed?.ensure(itemId)
+				?? this.getPriceHistorySeedState(itemId),
+			itemName: () => frontmatterItemName,
+		});
 	}
 
 	/**
@@ -3545,6 +3579,13 @@ function managedAssetsFailureCode(status: 'busy' | 'conflict' | 'invalid' | 'una
 		busy: 'operation_busy', conflict: 'operation_conflict', invalid: 'operation_invalid', unavailable: 'operation_unavailable',
 	};
 	return codes[status];
+}
+
+/** `ctx.frontmatter` is `any`; this is the one place that reads `tc_item_name` out of it safely. */
+function frontmatterTcItemName(frontmatter: unknown): string | null {
+	if (typeof frontmatter !== 'object' || frontmatter === null) return null;
+	const value = (frontmatter as Record<string, unknown>).tc_item_name;
+	return typeof value === 'string' ? value : null;
 }
 
 function detectionActionOutcome(

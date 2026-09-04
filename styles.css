@@ -1594,6 +1594,63 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* The piloto chart embedded in an inventory note's own body (H9.2), drawn by the
+   `tyrian-price-history` code-block processor. Only ever the datawars2 seed
+   line: a note is not where local captures are recorded. */
+.tyrian-price-history-note {
+	margin-block: var(--size-4-3);
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-price-history-note__heading,
+.tyrian-price-history-note__state,
+.tyrian-price-history-note figure {
+	margin-block: 0 var(--size-4-2);
+}
+
+.tyrian-price-history-note__heading {
+	font-weight: var(--font-weight-bold, 600);
+}
+
+.tyrian-price-history-note__state[role='alert'] {
+	color: var(--text-error);
+}
+
+.tyrian-price-history-note figcaption {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-price-history-note__chart {
+	width: 100%;
+	min-height: 8rem;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+
+.tyrian-price-history-note__chart svg {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.tyrian-price-history-note__chart .price-seed {
+	fill: none;
+	stroke: var(--text-faint);
+	stroke-width: 2;
+	stroke-dasharray: 1 4;
+}
+
+.tyrian-price-history-note__chart .price-seed-marker {
+	fill: var(--background-primary);
+	stroke: var(--text-faint);
+	stroke-width: 2;
+}
+
 .tyrian-inventory-advisor__scope legend {
 	padding-inline: var(--size-4-1);
 	color: var(--text-muted);

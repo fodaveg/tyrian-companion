@@ -16,6 +16,7 @@ import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
 import { PRICE_SEED_MAX_RESPONSE_BYTES } from './economy/price-seed-source';
+import { PRICE_SEED_BASE_URL, PRICE_SEED_FIELDS } from './economy/price-seed-model';
 import type { SellSignalRuntimeState } from './economy/sell-signal-runtime';
 import { trickOrTreatBagHistoryRecords } from './economy/__fixtures__/trick-or-treat-bag-history';
 
@@ -78,7 +79,7 @@ describe('H13.2 sell signal cabling', () => {
 		const seedCalls = send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed');
 		expect(seedCalls).toHaveLength(1);
 		expect(seedCalls[0]?.[0]).toEqual({
-			url: 'https://api.datawars2.ie/gw2/v1/history?itemID=36038',
+			url: `${PRICE_SEED_BASE_URL}?itemID=36038&fields=${PRICE_SEED_FIELDS}`,
 			method: 'GET',
 			endpoint: 'price_history_seed',
 			maxResponseBytes: PRICE_SEED_MAX_RESPONSE_BYTES,

@@ -1097,6 +1097,8 @@ describe('deferred runtime boot guard', () => {
 		const registerDomEvent = vi.fn();
 		plugin.registerDomEvent = registerDomEvent;
 		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
+		// Registering the H9.2 code-block handler is inert: it only hands Obsidian a callback.
+		plugin.registerMarkdownCodeBlockProcessor = vi.fn();
 		// `registerDomEvent` is stubbed above; these only need to exist as references.
 		vi.stubGlobal('window', {});
 		vi.stubGlobal('document', {});
@@ -1156,6 +1158,7 @@ describe('deferred runtime boot guard', () => {
 		plugin.addCommand = vi.fn((command: unknown) => command) as unknown as typeof plugin.addCommand;
 		plugin.registerDomEvent = vi.fn();
 		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
+		plugin.registerMarkdownCodeBlockProcessor = vi.fn();
 		const run = vi.spyOn(LocalDebugActionRunner.prototype, 'run');
 		vi.stubGlobal('window', {});
 		vi.stubGlobal('document', {});
