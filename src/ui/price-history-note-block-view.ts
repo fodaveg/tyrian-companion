@@ -1,6 +1,6 @@
 import type { Translator } from '../core/i18n';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
-import { priceHistorySvgElement } from './price-history-panel-view';
+import { mountPriceHistoryChart } from './price-history-chart-view';
 
 /**
  * What the note-embedded piloto block draws. It never has a local `daily`
@@ -63,7 +63,7 @@ export function renderPriceHistoryNoteBlock(
 	const figure = createEl('figure');
 	const chart = createDiv();
 	chart.className = 'tyrian-price-history-note__chart';
-	chart.append(priceHistorySvgElement([], 'bid', state.seed.days, chart.ownerDocument));
+	mountPriceHistoryChart(chart, translator, { daily: [], side: 'bid', seedDays: state.seed.days });
 	const legend = createEl('figcaption');
 	legend.textContent = translator.t('priceHistoryNote.legend', { days: state.seed.days.length });
 	figure.append(chart, legend);

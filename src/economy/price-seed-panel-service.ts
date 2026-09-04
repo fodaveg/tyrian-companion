@@ -6,7 +6,7 @@ import {
 } from '../core/local-debug-action-runner';
 import { IndexedDbPriceSeedCacheStore } from './price-seed-cache-store';
 import { fetchPriceSeed } from './price-seed-source';
-import type { PriceSeedDayV1, PriceSeedFailureReason } from './price-seed-model';
+import { PRICE_SEED_CHART_MAX_DAYS, type PriceSeedDayV1, type PriceSeedFailureReason } from './price-seed-model';
 
 /**
  * Fills the panel's chart with datawars2's history, for whichever item it is
@@ -118,7 +118,12 @@ export class PriceHistoryPanelSeedService {
 			status: 'loading', itemId, days: cached?.seed.days ?? [],
 			failureReason: null, retrievedAt: cached?.seed.retrievedAt ?? null,
 		});
-		const result = await fetchPriceSeed(itemId, { transport: this.options.transport, now: this.options.now, actionContext: span.context });
+		// The panel and the note chart both want the whole published history, not the sell rule's
+		// year (H13.2 keeps its own default by never overriding `maxDays` on its own call).
+		const result = await fetchPriceSeed(itemId, {
+			transport: this.options.transport, now: this.options.now, actionContext: span.context,
+			maxDays: PRICE_SEED_CHART_MAX_DAYS,
+		});
 		if (this.disposed) { span.cancel('disposed'); return; }
 		if (result.status === 'no_seed') {
 			if (cached !== null) {

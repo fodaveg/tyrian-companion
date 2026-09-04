@@ -25,8 +25,19 @@
  */
 export const PRICE_SEED_VERSION = 1 as const;
 
-/** Newest days kept from the response. A year of reference plus a month of margin. */
+/**
+ * Newest days kept from the response, for the sell rule (H13.2). A year of
+ * reference plus a month of margin: `sell-signal-runtime.ts` never passes an
+ * override, so this is exactly what it still gets.
+ */
 export const PRICE_SEED_MAX_DAYS = 400;
+
+/**
+ * What the chart wants instead (H9.1 panel, H9.2 note): the whole published
+ * history, not the sell rule's year. Only `price-seed-panel-service.ts`
+ * passes this as `maxDays`; the sell signal's own download is untouched by it.
+ */
+export const PRICE_SEED_CHART_MAX_DAYS = Number.MAX_SAFE_INTEGER;
 
 /** The one place the seed endpoint is written down. Item id and `fields` are appended by the caller. */
 export const PRICE_SEED_BASE_URL = 'https://api.datawars2.ie/gw2/v2/history/json';

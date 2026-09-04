@@ -3732,9 +3732,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 137,
+					"line": 142,
 					"column": 5,
-					"endLine": 145,
+					"endLine": 150,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -3745,9 +3745,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 163,
+					"line": 168,
 					"column": 5,
-					"endLine": 165,
+					"endLine": 170,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3766,9 +3766,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 78,
+					"line": 79,
 					"column": 4,
-					"endLine": 83,
+					"endLine": 84,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -3781,9 +3781,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 92,
+					"line": 93,
 					"column": 4,
-					"endLine": 92,
+					"endLine": 93,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10882,6 +10882,16 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/ui/price-history-chart-model.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/ui/price-history-chart-view.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/ui/price-history-note-block-controller.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -10914,9 +10924,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 104,
+					"line": 53,
 					"column": 3,
-					"endLine": 104,
+					"endLine": 53,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10930,9 +10940,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 104,
+					"line": 53,
 					"column": 44,
-					"endLine": 104,
+					"endLine": 53,
 					"endColumn": 72,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10945,9 +10955,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 143,
+					"line": 92,
 					"column": 51,
-					"endLine": 143,
+					"endLine": 92,
 					"endColumn": 109,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10960,9 +10970,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 346,
+					"line": 265,
 					"column": 4,
-					"endLine": 348,
+					"endLine": 267,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10974,6 +10984,11 @@
 					"reason": "Allowlisted catch_clause: The \"safePublicRenderIconUrl\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"safePublicRenderIconUrl\"."
 				}
 			]
+		},
+		"src/ui/price-history-svg.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/ui/product-action-controller.ts": {
 			"classification": "production_source",

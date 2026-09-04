@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	isPriceSeed,
 	parseDatawars2History,
+	PRICE_SEED_CHART_MAX_DAYS,
 	PRICE_SEED_MAX_DAYS,
 } from './price-seed-model';
 import {
@@ -82,6 +83,20 @@ describe('H13.2 datawars2 parser', () => {
 		expect(parsed.seed.days).toHaveLength(PRICE_SEED_MAX_DAYS);
 		// The newest end is what a reference window needs; the oldest is dropped.
 		expect(parsed.seed.days.at(-1)?.dayUtc).toBe('2026-09-26');
+	});
+
+	it('keeps the whole published history for a chart caller instead of the 400-day default', () => {
+		const records = Array.from({ length: 1_000 }, (_unused, index) => ({
+			date: new Date(Date.parse('2024-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10),
+			buy_price_avg: 100 + index,
+		}));
+
+		const parsed = parseDatawars2History(records, TRICK_OR_TREAT_BAG_ITEM_ID, RETRIEVED_AT, PRICE_SEED_CHART_MAX_DAYS);
+
+		expect(parsed.status).toBe('seeded');
+		if (parsed.status !== 'seeded') return;
+		expect(parsed.seed.days).toHaveLength(1_000);
+		expect(parsed.seed.days[0]?.dayUtc).toBe('2024-01-01');
 	});
 
 	it('collapses a duplicated day to its last record', () => {

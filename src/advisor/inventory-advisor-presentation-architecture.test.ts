@@ -88,7 +88,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 	['src/ui/price-history-panel-view.ts', {
 		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model',
-			'../economy/price-seed-panel-service', '../economy/price-seed-model'],
+			'../economy/price-seed-panel-service', '../economy/price-seed-model',
+			'./price-history-chart-view', './price-history-svg'],
 		portCalls: [],
 	}],
 ]);

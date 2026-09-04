@@ -71,7 +71,7 @@ describe('price history note block view', () => {
 		expect(status?.attributes.get('role')).toBe('alert');
 	});
 
-	it('draws a figure with the seed-only chart when seeded, and no local median/close markers', () => {
+	it('draws a figure with the seed-only chart when seeded, solid (never dashed, nothing local to confuse it with), and no local median/close markers', () => {
 		const mount = createMount();
 		renderPriceHistoryNoteBlock(mount.container as unknown as HTMLElement, createTranslator('en'), block({
 			itemId: 36_038, itemName: 'Trick-or-Treat Bag', piloted: true,
@@ -85,7 +85,9 @@ describe('price history note block view', () => {
 		}));
 		const elements = walk(mount.container);
 		expect(elements.some((element) => element.tag === 'figure')).toBe(true);
-		expect(elements.some((element) => element.className === 'price-seed')).toBe(true);
+		expect(elements.some((element) => element.className === 'price-seed-solo')).toBe(true);
+		// The dashed "shares the chart with a local line" class never appears without one.
+		expect(elements.some((element) => element.className === 'price-seed')).toBe(false);
 		expect(elements.some((element) => element.className === 'price-median')).toBe(false);
 		expect(elements.some((element) => element.className === 'price-close')).toBe(false);
 		const caption = elements.find((element) => element.tag === 'figcaption');
@@ -150,10 +152,13 @@ class FakeDocument {
 class FakeElement {
 	readonly children: FakeElement[] = [];
 	readonly attributes = new Map<string, string>();
-	className = ''; textContent: string | null = null;
+	readonly listeners = new Map<string, Array<() => void>>();
+	className = ''; textContent: string | null = null; type = ''; value = ''; disabled = false;
 	constructor(readonly tag: string, readonly ownerDocument: FakeDocument) {}
 	append(...children: FakeElement[]): void { this.children.push(...children); }
 	replaceChildren(...children: FakeElement[]): void { this.children.splice(0, this.children.length, ...children); }
+	addEventListener(type: string, listener: () => void): void { const entries = this.listeners.get(type) ?? []; entries.push(listener); this.listeners.set(type, entries); }
+	dispatch(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(); }
 	setAttribute(name: string, value: string): void {
 		if (name === 'class') this.className = value; else this.attributes.set(name, value);
 	}

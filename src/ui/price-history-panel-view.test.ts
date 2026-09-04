@@ -181,6 +181,17 @@ describe('price-history panel', () => {
 		expect(svg.match(/points="[^"]*"/gu)).toHaveLength(1);
 	});
 
+	it('draws the seed line solid, never dashed, when there is no local capture to confuse it with (behaviour test 4)', () => {
+		const svg = priceHistorySvg([], 'bid', [
+			{ dayUtc: '2026-08-27', bidCopper: 90, askCopper: 100 },
+			{ dayUtc: '2026-08-28', bidCopper: 95, askCopper: 105 },
+		]);
+		expect(svg).toContain('class="price-seed-solo"');
+		expect(svg).not.toContain('class="price-seed"');
+		expect(svg).not.toContain('class="price-median"');
+		expect(svg).not.toContain('class="price-close"');
+	});
+
 	it('tags each row of the accessible table with its provenance, local capture never overwritten by the seed', () => {
 		const mount = createMount();
 		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {

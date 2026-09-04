@@ -3,6 +3,13 @@ import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-ser
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1, PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 import type { PriceSeedDayV1 } from '../economy/price-seed-model';
+import { mountPriceHistoryChart } from './price-history-chart-view';
+
+export {
+	priceHistorySvg, priceHistorySvgElement, priceHistoryValueRange,
+	PRICE_HISTORY_SVG_WIDTH, PRICE_HISTORY_SVG_HEIGHT, PRICE_HISTORY_SVG_PADDING,
+	type PriceHistoryValueRange,
+} from './price-history-svg';
 
 export interface PriceHistoryPanelInteractions {
 	state: PriceHistoryRuntimeState;
@@ -19,64 +26,6 @@ export interface PriceHistoryPanelInteractions {
 
 export function priceHistoryPanelLayout(width: number): 'stacked' | 'two-column' | 'wide' {
 	return width >= 760 ? 'wide' : width >= 480 ? 'two-column' : 'stacked';
-}
-
-/**
- * Deterministic local SVG. Missing UTC days split every line instead of inventing observations.
- *
- * `seedDays` is optional and additive: when present, every day it carries that the local `daily`
- * series does NOT already cover is drawn first, as its own dashed `price-seed` line, ahead of the
- * range/median/close geometry so a local day always wins the pixel. Passing no `seedDays` (or an
- * empty one) reproduces the exact local-only geometry byte for byte, index for index: the two
- * series share one ordinal x-axis built from the COMBINED point count, and an empty seed leaves
- * that count, and every coordinate on it, unchanged.
- */
-export function priceHistorySvg(
-	daily: readonly PriceHistoryDailyV1[],
-	side: PriceHistorySide,
-	seedDays: readonly PriceSeedDayV1[] = [],
-): string {
-	const width = 760;
-	const height = 240;
-	const padding = 28;
-	const localDayUtcs = new Set(daily.map((entry) => entry.dayUtc));
-	const seedOnly = seedDays
-		.filter((day) => !localDayUtcs.has(day.dayUtc))
-		.map((day) => ({ dayUtc: day.dayUtc, value: side === 'bid' ? day.bidCopper : day.askCopper }))
-		.filter((entry): entry is { dayUtc: string; value: number } => entry.value !== null)
-		.sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
-	const combinedLength = seedOnly.length + daily.length;
-	if (combinedLength === 0) return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-hidden="true"></svg>`;
-	const x = (index: number): number =>
-		round(padding + index * ((width - padding * 2) / Math.max(1, combinedLength - 1)));
-	const localOffset = seedOnly.length;
-	const localPoints = daily.map((entry, index) => ({ entry, index: index + localOffset, value: entry[side] }));
-	const values = [
-		...seedOnly.map(({ value }) => value),
-		...localPoints.flatMap(({ value }) => value === null
-			? [] : [value.minCopper, value.maxCopper, value.medianCopperX2 / 2, value.closeCopper]),
-	];
-	if (values.length === 0) return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-hidden="true"></svg>`;
-	const minimum = Math.min(...values);
-	const maximum = Math.max(...values);
-	const range = Math.max(1, maximum - minimum);
-	const y = (value: number): number => round(height - padding - ((value - minimum) / range) * (height - padding * 2));
-	const ranges = localPoints.filter(({ value }) => value !== null).map(({ index, value }) =>
-		`<line class="price-range" x1="${x(index)}" y1="${y(value!.minCopper)}" x2="${x(index)}" y2="${y(value!.maxCopper)}"/>`,
-	).join('');
-	const seed = segmentedPaths(
-		seedOnly.map((point, index) => ({ dayUtc: point.dayUtc, index, value: point.value })),
-		x, y, 'price-seed', 'circle',
-	);
-	const median = segmentedPaths(
-		localPoints.map(({ entry, index, value }) => ({ dayUtc: entry.dayUtc, index, value: value === null ? null : value.medianCopperX2 / 2 })),
-		x, y, 'price-median', 'circle',
-	);
-	const close = segmentedPaths(
-		localPoints.map(({ entry, index, value }) => ({ dayUtc: entry.dayUtc, index, value: value === null ? null : value.closeCopper })),
-		x, y, 'price-close', 'square',
-	);
-	return `<svg viewBox="0 0 ${width} ${height}" width="100%" role="img" aria-hidden="true"><g>${seed}${ranges}${median}${close}</g></svg>`;
 }
 
 /** Mounts only prepared local state. Network and IndexedDB remain behind explicit callbacks. */
@@ -167,10 +116,10 @@ export function renderPriceHistoryPanel(
 	const seedOnlySorted = (seed?.days ?? [])
 		.filter((day) => !localDayUtcs.has(day.dayUtc))
 		.sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
-	// The chart and the accessible table only ever show `windowDays` worth of days in total: local
-	// capture already stops there on its own, so this budget only trims how far back the seed reaches.
-	const seedBudget = Math.max(0, state.windowDays - state.daily.length);
-	const chartSeedDays = seedOnlySorted.slice(-seedBudget);
+	// H9.1: the chart and its accessible table get the WHOLE datawars2 seed the plugin holds, not a
+	// budget carved out of the local-capture `windowDays` selector; the chart's own zoom (1 month/1
+	// year/5 years/all, `price-history-chart-view.ts`) is what narrows the view from here on.
+	const chartSeedDays = seedOnlySorted;
 	if (seed !== undefined && seed.status !== 'idle') {
 		const seedNote = createEl('p');
 		seedNote.className = 'tyrian-price-history__seed-note';
@@ -184,7 +133,7 @@ export function renderPriceHistoryPanel(
 	caption.textContent = selectedItemId === null ? '' : captionText(selectedItemId, interactions.itemLabels, state, translator);
 	const chart = createDiv();
 	chart.className = 'tyrian-price-history__chart';
-	chart.append(priceHistorySvgElement(state.daily, state.selectedSide, chartSeedDays, chart.ownerDocument));
+	mountPriceHistoryChart(chart, translator, { daily: state.daily, side: state.selectedSide, seedDays: chartSeedDays });
 	const legend = createEl('p');
 	legend.className = 'tyrian-price-history__legend';
 	legend.textContent = translator.t(chartSeedDays.length > 0 ? 'priceHistory.legendWithSeed' : 'priceHistory.legend');
@@ -258,35 +207,6 @@ function provenanceTable(
 	table.append(caption, thead, tbody); overflow.append(table); details.append(summary, overflow); return details;
 }
 
-function segmentedPaths(
-	points: ReadonlyArray<{ dayUtc: string; index: number; value: number | null }>,
-	x: (index: number) => number,
-	y: (value: number) => number,
-	className: string,
-	marker: 'circle' | 'square',
-): string {
-	const segments: string[][] = [];
-	let current: string[] = [];
-	let previousDay: number | null = null;
-	for (const point of points) {
-		const day = Date.parse(`${point.dayUtc}T00:00:00.000Z`);
-		if (point.value === null || (previousDay !== null && day - previousDay !== 86_400_000)) {
-			if (current.length > 0) segments.push(current);
-			current = [];
-		}
-		if (point.value !== null) current.push(`${x(point.index)},${y(point.value)}`);
-		previousDay = point.value === null ? null : day;
-	}
-	if (current.length > 0) segments.push(current);
-	return segments.map((segment) => {
-		if (segment.length > 1) return `<polyline class="${className}" points="${segment.join(' ')}"/>`;
-		const [pointX, pointY] = segment[0]!.split(',');
-		return marker === 'circle'
-			? `<circle class="${className}-marker" cx="${pointX}" cy="${pointY}" r="5"/>`
-			: `<rect class="${className}-marker" x="${round(Number(pointX) - 4)}" y="${round(Number(pointY) - 4)}" width="8" height="8"/>`;
-	}).join('');
-}
-
 function labelledSelect(text: string, options: Array<{ value: string; label: string }>, selected: string): { label: HTMLLabelElement; select: HTMLSelectElement } {
 	const label = createEl('label');
 	const span = createSpan(); span.textContent = text;
@@ -308,7 +228,6 @@ function stateText(state: PriceHistoryRuntimeState, translator: Translator): str
 function errorState(status: PriceHistoryRuntimeState['status']): boolean {
 	return ['offline', 'backoff', 'invalid_payload', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status);
 }
-function round(value: number): number { return Math.round(value * 100) / 100; }
 
 /** `priceHistory.itemNamed` when the catalog resolved a name, `priceHistory.itemFallback` otherwise. */
 function itemDisplayLabel(itemId: number, itemLabels: Readonly<Record<number, string>> | undefined, translator: Translator): string {
@@ -348,60 +267,3 @@ export function safePublicRenderIconUrl(value: string | null | undefined): strin
 	}
 }
 
-/**
- * The DOM twin of `priceHistorySvg`: same geometry, built as live `SVGElement`s
- * instead of a string so it can be mounted straight into a container. Exported so
- * the note-embedded piloto chart (`price-history-note-block-view.ts`) draws with
- * this exact engine rather than a second one.
- */
-export function priceHistorySvgElement(
-	daily: readonly PriceHistoryDailyV1[],
-	side: PriceHistorySide,
-	seedDays: readonly PriceSeedDayV1[],
-	document: Document,
-): SVGSVGElement {
-	const namespace = 'http://www.w3.org/2000/svg';
-	const svg = document.createElementNS(namespace, 'svg');
-	const attributes: ReadonlyArray<readonly [string, string]> = [
-		['viewBox', '0 0 760 240'], ['width', '100%'], ['role', 'img'], ['aria-hidden', 'true'],
-	];
-	for (const [name, value] of attributes) {
-		svg.setAttribute(name, value);
-	}
-	const source = priceHistorySvg(daily, side, seedDays);
-	const group = document.createElementNS(namespace, 'g');
-	for (const match of source.matchAll(/<line class="([^"]+)" x1="([^"]+)" y1="([^"]+)" x2="([^"]+)" y2="([^"]+)"\/>/gu)) {
-		const line = document.createElementNS(namespace, 'line');
-		line.setAttribute('class', match[1]!);
-		line.setAttribute('x1', match[2]!);
-		line.setAttribute('y1', match[3]!);
-		line.setAttribute('x2', match[4]!);
-		line.setAttribute('y2', match[5]!);
-		group.append(line);
-	}
-	for (const match of source.matchAll(/<polyline class="([^"]+)" points="([^"]*)"\/>/gu)) {
-		const polyline = document.createElementNS(namespace, 'polyline');
-		polyline.setAttribute('class', match[1]!);
-		polyline.setAttribute('points', match[2]!);
-		group.append(polyline);
-	}
-	for (const match of source.matchAll(/<circle class="([^"]+)" cx="([^"]+)" cy="([^"]+)" r="([^"]+)"\/>/gu)) {
-		const circle = document.createElementNS(namespace, 'circle');
-		circle.setAttribute('class', match[1]!);
-		circle.setAttribute('cx', match[2]!);
-		circle.setAttribute('cy', match[3]!);
-		circle.setAttribute('r', match[4]!);
-		group.append(circle);
-	}
-	for (const match of source.matchAll(/<rect class="([^"]+)" x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"\/>/gu)) {
-		const rect = document.createElementNS(namespace, 'rect');
-		rect.setAttribute('class', match[1]!);
-		rect.setAttribute('x', match[2]!);
-		rect.setAttribute('y', match[3]!);
-		rect.setAttribute('width', match[4]!);
-		rect.setAttribute('height', match[5]!);
-		group.append(rect);
-	}
-	svg.append(group);
-	return svg;
-}

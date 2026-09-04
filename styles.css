@@ -1514,7 +1514,8 @@
 
 .tyrian-price-history__chart {
 	width: 100%;
-	min-height: 12rem;
+	min-height: 18rem;
+	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
 }
@@ -1627,28 +1628,149 @@
 
 .tyrian-price-history-note__chart {
 	width: 100%;
-	min-height: 8rem;
+	min-height: 16rem;
+	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
 }
 
-.tyrian-price-history-note__chart svg {
+/* The note-embedded chart never has a local series to confuse the seed line with (H9.2), so it
+   only ever draws the solid `price-seed-solo` variant defined below with the shared chart block. */
+
+/* H9.1/H9.2 shared chart widget (`price-history-chart-view.ts`): axes, zoom toolbar, the
+   accessible max/min/last summary and the aggregation note. Both `.tyrian-price-history__chart`
+   and `.tyrian-price-history-note__chart` host one of these; its own classes are namespaced so
+   neither wrapper's border/background styling above is affected by it. */
+.tyrian-price-chart {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.tyrian-price-chart__toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.tyrian-price-chart__window-group {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+}
+
+.tyrian-price-chart__window-group button,
+.tyrian-price-chart__reset {
+	min-height: 44px;
+	padding-inline: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.tyrian-price-chart__window-group button[aria-pressed='true'] {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.tyrian-price-chart__window-group button:focus-visible,
+.tyrian-price-chart__reset:focus-visible,
+.tyrian-price-chart__range input:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.tyrian-price-chart__plot {
+	width: 100%;
+}
+
+.tyrian-price-chart__plot svg {
 	display: block;
 	width: 100%;
 	height: auto;
 }
 
-.tyrian-price-history-note__chart .price-seed {
-	fill: none;
-	stroke: var(--text-faint);
-	stroke-width: 2;
-	stroke-dasharray: 1 4;
+.tyrian-price-chart__gridline {
+	stroke: var(--background-modifier-border);
+	stroke-width: 1;
 }
 
-.tyrian-price-history-note__chart .price-seed-marker {
-	fill: var(--background-primary);
-	stroke: var(--text-faint);
-	stroke-width: 2;
+.tyrian-price-chart__price-label,
+.tyrian-price-chart__date-label {
+	fill: var(--text-muted);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-price-chart__price-label {
+	text-anchor: end;
+	dominant-baseline: middle;
+}
+
+.tyrian-price-chart__date-label {
+	text-anchor: middle;
+}
+
+.tyrian-price-chart__plot .price-seed-solo {
+	fill: none;
+	stroke: var(--interactive-accent);
+	stroke-width: 3;
+}
+
+.tyrian-price-chart__plot .price-seed-solo-marker {
+	fill: var(--interactive-accent);
+	stroke: var(--background-primary);
+	stroke-width: 1;
+}
+
+.tyrian-price-chart__range {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-3);
+}
+
+.tyrian-price-chart__range-field {
+	display: grid;
+	flex: 1 1 12rem;
+	min-width: 0;
+	gap: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-price-chart__summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-3);
+	margin: 0;
+}
+
+.tyrian-price-chart__summary div {
+	display: flex;
+	gap: var(--size-4-1);
+}
+
+.tyrian-price-chart__summary dt {
+	color: var(--text-muted);
+}
+
+.tyrian-price-chart__summary dt::after {
+	content: ':';
+}
+
+.tyrian-price-chart__summary dd {
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-price-chart__aggregation-note {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-style: italic;
 }
 
 .tyrian-inventory-advisor__scope legend {

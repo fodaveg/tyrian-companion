@@ -48,6 +48,24 @@ describe('PriceHistoryPanelSeedService', () => {
 		expect(requests).toHaveLength(1);
 	});
 
+	/**
+	 * H9.1/H9.2 chart: this service feeds the panel's and the note's chart, which
+	 * want the whole published history, not H13.2's 400-day sell-rule window.
+	 * `sell-signal-runtime.test.ts` ('asks datawars2 once...') is the regression
+	 * proof that the sell rule's own fetch is untouched by this: it still trims
+	 * the same fixture to 399 days because it never overrides `maxDays`.
+	 */
+	it('keeps more than 400 days for the chart, unlike the H13.2 sell-rule default', async () => {
+		const longRecords = Array.from({ length: 500 }, (_unused, index) => ({
+			date: new Date(Date.parse('2025-01-01T00:00:00.000Z') + index * 86_400_000).toISOString().slice(0, 10),
+			buy_price_avg: 100 + index,
+		}));
+		const { service } = harness(async () => ({ status: 200, headers: {}, body: longRecords }));
+		const state = await service.ensure(36_038);
+		expect(state.status).toBe('seeded');
+		expect(state.days).toHaveLength(500);
+	});
+
 	it('shares one in-flight download between concurrent callers of the same item', async () => {
 		const { service, requests } = harness();
 		const [first, second] = await Promise.all([service.ensure(36_038), service.ensure(36_038)]);

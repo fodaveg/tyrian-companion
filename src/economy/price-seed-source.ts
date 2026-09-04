@@ -37,8 +37,9 @@ export const PRICE_SEED_TIMEOUT_MS = 10_000;
  * hurts. `price-seed-model` records the measurement this is sized against: the
  * `v2` request with `PRICE_SEED_FIELDS` answered 688,848 bytes for 4.962 daily
  * records on 2026-09-04, some 139 bytes per day, so the cap holds well over a
- * century of the same series. A body past it is not a series this parser would
- * keep anyway, since only the newest `PRICE_SEED_MAX_DAYS` survive the trim.
+ * century of the same series, chart callers included: whichever `maxDays` the
+ * caller passes only trims what `parseDatawars2History` keeps AFTER decoding,
+ * never what this cap allows onto the wire in the first place.
  */
 export const PRICE_SEED_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
