@@ -53,11 +53,17 @@ describe('projectSessionCommands', () => {
 		expect(commands.find((command) => command.id === 'discard-saved-session')?.destructive).toBe(true);
 	});
 
-	it.each(['working', 'error'] as const)('fails closed while recovery is %s', (status) => {
-		const recovery = status === 'working'
-			? { status, action: 'recover', state: state('active') }
-			: { status, message: 'Failed.' };
-		expect(available(context('idle', { recovery: recovery as SessionRecoveryState }))).toEqual([]);
+	it('fails closed while recovery is working', () => {
+		const recovery = { status: 'working', action: 'recover', state: state('active') } as SessionRecoveryState;
+		expect(available(context('idle', { recovery }))).toEqual([]);
+	});
+
+	it('offers only a confirmed discard while the saved recovery evidence could not be read', () => {
+		const recovery = { status: 'error', code: 'corrupt', message: 'Failed.' } as SessionRecoveryState;
+		const commands = projectSessionCommands(context('idle', { recovery }));
+		expect(commands.filter((command) => command.available).map((command) => command.id))
+			.toEqual(['discard-saved-session']);
+		expect(commands.find((command) => command.id === 'discard-saved-session')?.destructive).toBe(true);
 	});
 
 	it('has one stable descriptor for every registered command id', () => {

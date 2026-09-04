@@ -35,6 +35,9 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 	const t = (key: TranslationKey) => translator.t(key);
 	const recovering = context.recovery.status !== 'none';
 	const recoveryRetry = context.recovery.status === 'available' || context.recovery.status === 'busy';
+	// An unreadable saved record cannot be recovered, but it can still be discarded: that path does
+	// not need to understand the record, only to erase it.
+	const recoveryDiscardable = recoveryRetry || context.recovery.status === 'error';
 	const connected = context.connection === 'connected' || context.connection === 'warning';
 	return [
 		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
@@ -42,7 +45,7 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 			!recovering && (context.state.status === 'active' || (context.state.status === 'stopping' && context.stopFailure !== null)), 'square', false, targetKey(context, false)),
 		descriptor('review-session', t('commands.reviewSession'), !recovering && context.state.status === 'provisional', 'clipboard-check', false, targetKey(context, false)),
 		descriptor('recover-saved-session', t('commands.recoverSession'), recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
-		descriptor('discard-saved-session', t('commands.discardSession'), recoveryRetry, 'trash-2', true, targetKey(context, true)),
+		descriptor('discard-saved-session', t('commands.discardSession'), recoveryDiscardable, 'trash-2', true, targetKey(context, true)),
 		descriptor('clear-completed-session', t('commands.clearSession'), !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),
 	];
 }

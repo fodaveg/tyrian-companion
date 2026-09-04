@@ -1,9 +1,17 @@
-import { buildBoundaryEvidence, classifySessionDelta } from '../account/contamination';
-import type {
-	BoundaryEvidence,
-	DeclaredActivity,
-	SessionDeltaClassification,
-	UserDeclaration,
+import {
+	buildBoundaryEvidence,
+	classifySessionDelta,
+	isBoundaryEvidenceShape,
+	isSessionDeltaClassification,
+	isUserDeclarationShape,
+} from '../account/contamination';
+import {
+	LEGACY_SESSION_CLASSIFICATION_VERSION,
+	SESSION_CLASSIFICATION_VERSION,
+	type BoundaryEvidence,
+	type DeclaredActivity,
+	type SessionDeltaClassification,
+	type UserDeclaration,
 } from '../account/contamination-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
@@ -145,6 +153,45 @@ function matchesRecomputedReview(
 		permissions: { ...legacy.classification.permissions, recommend: false },
 	};
 	return JSON.stringify(legacy) === JSON.stringify(value);
+}
+
+/**
+ * Validates that a stored value has the SHAPE of a review, without recomputing it from
+ * `before`/`after`/`delta`. Unlike `isSessionContaminationReview`, this never changes when the
+ * contamination classifier's reason vocabulary or bucketing changes: it only checks that every
+ * field is internally consistent, the same way `isSessionDeltaClassification` checks a
+ * classification against itself instead of against fresh evidence. A caller that only wants to
+ * know whether a persisted review is safe to *display* (not whether it still matches today's
+ * classifier) uses this instead.
+ */
+export function isSessionContaminationReviewShape(value: unknown): value is SessionContaminationReview {
+	if (!isRecord(value) || !hasOnlyKeys(value, [
+		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification',
+	])) return false;
+	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
+		return false;
+	}
+	return isSessionContaminationAnswers(value.answers)
+		&& isUserDeclarationShape(value.declaration)
+		&& isBoundaryEvidenceShape(value.boundary)
+		&& isClassificationEnvelopeShape(value.classification);
+}
+
+/**
+ * Accepts either the current classification envelope or the legacy v1 downgrade produced by
+ * `matchesRecomputedReview` (same fields, `version: 1`, `permissions.recommend` forced `false`).
+ * Both directions of that downgrade are tried, because a shape check cannot know which value the
+ * downgrade started from without recomputing it.
+ */
+function isClassificationEnvelopeShape(
+	value: unknown,
+): value is SessionDeltaClassification | LegacySessionDeltaClassification {
+	if (isSessionDeltaClassification(value)) return true;
+	if (!isRecord(value) || value.version !== LEGACY_SESSION_CLASSIFICATION_VERSION
+		|| !isRecord(value.permissions) || value.permissions.recommend !== false) return false;
+	const upgraded = { ...value, version: SESSION_CLASSIFICATION_VERSION, permissions: { ...value.permissions, recommend: true } };
+	if (isSessionDeltaClassification(upgraded)) return true;
+	return isSessionDeltaClassification({ ...upgraded, permissions: { ...upgraded.permissions, recommend: false } });
 }
 
 export function isSessionContaminationAnswers(value: unknown): value is SessionContaminationAnswers {

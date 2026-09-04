@@ -531,6 +531,7 @@ describe('ManualSessionStartService', () => {
 				? { status: 'error', code: 'unavailable' }
 				: memory.save(record),
 			clear: (authority) => memory.clear(authority),
+			forceClear: () => memory.forceClear(),
 			close: () => memory.close(),
 		};
 		const service = new ManualSessionStartService(
@@ -878,6 +879,29 @@ describe('ManualSessionStartService', () => {
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
 		expect(leases.acquire).not.toHaveBeenCalled();
 		expect(capture.capture).not.toHaveBeenCalled();
+	});
+
+	it('discards unreadable local recovery evidence without a lease and frees the session controls', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore({ version: 1 });
+		const leases = coordinator();
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+
+		await service.initialize();
+		expect(service.getRecoveryState()).toMatchObject({ status: 'error', code: 'corrupt' });
+
+		await expect(service.discardRecovery()).resolves.toEqual({ status: 'discarded' });
+		expect(service.getRecoveryState()).toEqual({ status: 'none' });
+		expect(service.getState()).toMatchObject({ status: 'idle' });
+		// Nothing readable, so nothing to lease: the discard never touches session coordination.
+		expect(leases.acquire).not.toHaveBeenCalled();
+
+		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'started' });
 	});
 
 	it('discards saved evidence only after acquiring a newer fence', async () => {

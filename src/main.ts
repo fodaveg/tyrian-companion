@@ -169,6 +169,7 @@ import {
 	COMPANION_VIEW_TYPE,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
+	ConfirmDiscardUnreadableSessionModal,
 	SessionContaminationReviewModal,
 	TyrianCompanionView,
 } from './ui/companion-view';
@@ -316,7 +317,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private reviewModal: SessionContaminationReviewModal | null = null;
-	private discardModal: ConfirmDiscardSessionModal | null = null;
+	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
 	private clearModal: ConfirmClearCompletedSessionModal | null = null;
 	private sessionCommands!: SessionCommandController;
 	private productActions!: ProductActionController;
@@ -3146,9 +3147,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	private prepareDiscardIntent(): Promise<PreparedSessionCommand | null> {
 		if (this.discardModal) return Promise.resolve(null);
+		// An unreadable saved record gets its own copy: there is nothing to recover from it, only
+		// something to erase, and the generic discard copy implies the opposite.
+		const unreadable = this.sessions.getRecoveryState().status === 'error';
+		const ModalClass = unreadable ? ConfirmDiscardUnreadableSessionModal : ConfirmDiscardSessionModal;
 		return new Promise((resolve) => {
 			let confirmed = false;
-			this.discardModal = new ConfirmDiscardSessionModal(
+			this.discardModal = new ModalClass(
 				this.app,
 				() => { confirmed = true; resolve(() => this.performDiscardRecoveredSession()); return Promise.resolve(); },
 				() => { this.discardModal = null; if (!confirmed) resolve(null); },

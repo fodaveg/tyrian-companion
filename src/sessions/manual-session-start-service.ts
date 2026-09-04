@@ -94,7 +94,12 @@ export type SessionRecoveryState =
 	| { status: 'none' }
 	| { status: 'available' | 'busy'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>; message?: string }
 	| { status: 'working'; action: 'recover' | 'discard'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }> }
-	| { status: 'error'; message: string };
+	/**
+	 * `code` is the machine-readable reason (same vocabulary as `SessionRuntimeLoadResult`); `message`
+	 * is the human copy already built for it. There is no recoverable `state` here: the record could
+	 * not be read at all, so `discard` is the only action, and it does not require one.
+	 */
+	| { status: 'error'; code: 'corrupt' | 'unavailable'; message: string };
 
 export type SessionRecoveryResult =
 	| { status: 'recovered'; state: SessionState }
@@ -394,6 +399,7 @@ export class ManualSessionStartService {
 		} else {
 			this.recoveryState = {
 				status: 'error',
+				code: loaded.code,
 				message: loaded.code === 'corrupt'
 					? 'The saved farming session is corrupt and was left untouched.'
 					: 'Session recovery storage is unavailable.',
@@ -413,6 +419,12 @@ export class ManualSessionStartService {
 
 	private async recoveryInternal(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
 		await this.initialize();
+		// The stored record itself could not be read (`recoveryState.status === 'error'`), so there is
+		// no `recoveryRecord` and no authority to recover into. Discard is still possible: it does not
+		// need to understand the record, only to erase it.
+		if (this.recoveryState.status === 'error' && action === 'discard') {
+			return this.discardUnreadableRecovery();
+		}
 		const record = this.recoveryRecord;
 		if (this.disposed || !record || this.state.status !== 'idle') {
 			return { status: 'failed', message: 'There is no saved session available to recover.' };
@@ -512,6 +524,30 @@ export class ManualSessionStartService {
 		// Obsidian was closed captures now instead of losing the stop the player already requested.
 		if (this.state.status === 'stopping') this.armSettlement();
 		return { status: 'recovered', state: this.getState() };
+	}
+
+	/**
+	 * Escape hatch for a stored record that never loaded at all (`recoveryState.status === 'error'`).
+	 * There is no lease to acquire and no authority to check: the record cannot say who owns it, so
+	 * it forces the key gone the same way any other machine-local user could reach for the file
+	 * system if this were a plain file. It is deliberately not lease-guarded; a record this broken is
+	 * not safely resumable by any window, this one included.
+	 */
+	private async discardUnreadableRecovery(): Promise<SessionRecoveryResult> {
+		if (this.disposed || this.state.status !== 'idle') {
+			return { status: 'failed', message: 'There is no saved session available to recover.' };
+		}
+		const cleared = await this.runtimeStore.forceClear();
+		if (cleared.status !== 'cleared') {
+			const message = 'The saved session could not be discarded safely.';
+			this.recoveryState = { status: 'error', code: 'unavailable', message };
+			this.onStateChange();
+			return { status: 'failed', message };
+		}
+		this.recoveryRecord = null;
+		this.recoveryState = { status: 'none' };
+		this.onStateChange();
+		return { status: 'discarded' };
 	}
 
 	private async startInternal(input: SessionStartInput): Promise<ManualSessionStartResult> {

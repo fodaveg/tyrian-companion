@@ -99,7 +99,7 @@ function recoverySessionStatus(
 		return { item: item('session', t('status.session'), recovery.action === 'recover' ? t('status.recovering') : t('status.discarding'), t('status.recoveryWorking'), 'active'), live: false };
 	}
 	if (recovery.status === 'error') {
-		return { item: item('session', t('status.session'), t('status.recoveryError'), t('status.operationFailed'), 'error'), live: false };
+		return { item: item('session', t('status.session'), t('status.recoveryError'), recoveryFailureLabel(recovery.code, t), 'error'), live: false };
 	}
 	return fallback;
 }
@@ -336,7 +336,9 @@ function statusErrors(input: CompanionStatusInput, t: StatusText): string[] {
 	if (input.recovery.status === 'available') {
 		errors.push(t('status.recoveryIncident', { detail: t('status.recoveryAvailableDetail') }));
 	}
-	if (input.recovery.status === 'error') errors.push(t('status.recoveryIncident', { detail: t('status.operationFailed') }));
+	if (input.recovery.status === 'error') {
+		errors.push(t('status.recoveryIncident', { detail: recoveryFailureLabel(input.recovery.code, t) }));
+	}
 	if (input.recovery.status === 'busy') errors.push(t('status.recoveryIncident', { detail: t('status.recoveryOwner') }));
 	if (input.session.status === 'error') errors.push(t('status.sessionIncident', { detail: sessionFailureLabel(input.session.code, t) }));
 	if (input.startFailure) errors.push(t('status.startIncident', { detail: startFailureLabel(input.startFailure.code, t) }));
@@ -385,6 +387,17 @@ const STOP_FAILURE_LABELS = {
 /** Maps every closed start failure to safe, actionable surface copy. */
 function startFailureLabel(code: SessionStartFailure['code'], t: StatusText): string {
 	return t(START_FAILURE_LABELS[code]);
+}
+
+/** Exhaustive translation-key contract for the saved session that never loaded at all. */
+const RECOVERY_FAILURE_LABELS = {
+	corrupt: 'status.recoveryFailure.corrupt',
+	unavailable: 'status.recoveryFailure.unavailable',
+} satisfies Record<Extract<SessionRecoveryState, { status: 'error' }>['code'], RuntimeTranslationKey>;
+
+/** Distinguishes a saved record that failed validation from storage that could not be reached. */
+function recoveryFailureLabel(code: Extract<SessionRecoveryState, { status: 'error' }>['code'], t: StatusText): string {
+	return t(RECOVERY_FAILURE_LABELS[code]);
 }
 
 /** Maps every closed stop failure to safe, actionable surface copy. */

@@ -13,6 +13,7 @@ import {
 import { isSessionState } from './session-state-machine';
 import {
 	isSessionContaminationReview,
+	isSessionContaminationReviewShape,
 	type SessionContaminationReview,
 } from './session-contamination-review';
 import type {
@@ -48,7 +49,12 @@ export interface SessionRuntimeRecord {
 
 export type SessionRuntimeLoadResult =
 	| { status: 'empty' }
-	| { status: 'loaded'; record: SessionRuntimeRecord }
+	/**
+	 * `reviewVerified` is only ever present, and only ever `false`, when the stored `review` could
+	 * not be recomputed from today's contamination classifier. It is otherwise omitted so every
+	 * existing caller that only checks `status` and `record` keeps working unchanged.
+	 */
+	| { status: 'loaded'; record: SessionRuntimeRecord; reviewVerified?: false }
 	| { status: 'error'; code: 'corrupt' | 'unavailable' };
 
 export type SessionRuntimeMutationResult =
@@ -60,6 +66,12 @@ export interface SessionRuntimeStore {
 	load(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeLoadResult>;
 	save(record: SessionRuntimeRecord, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
 	clear(authority: SessionAuthority, context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
+	/**
+	 * Deletes the stored key without validating or checking authority first. The only way out for a
+	 * record that fails to normalize under every known schema version: nothing else can tell who is
+	 * allowed to clear it, because nothing else can read it.
+	 */
+	forceClear(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
 	close(): void;
 }
 
@@ -73,10 +85,12 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 
 	async load(): Promise<SessionRuntimeLoadResult> {
 		if (this.value === undefined) return { status: 'empty' };
-		const record = normalizeSessionRuntimeRecord(this.value);
-		if (!record) return { status: 'error', code: 'corrupt' };
-		this.value = structuredClone(record);
-		return { status: 'loaded', record };
+		const normalized = normalizeSessionRuntimeRecord(this.value);
+		if (!normalized) return { status: 'error', code: 'corrupt' };
+		this.value = structuredClone(normalized.record);
+		return normalized.reviewVerified
+			? { status: 'loaded', record: normalized.record }
+			: { status: 'loaded', record: normalized.record, reviewVerified: false };
 	}
 
 	async save(record: SessionRuntimeRecord): Promise<SessionRuntimeMutationResult> {
@@ -84,7 +98,7 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 		if (this.value !== undefined) {
 			const current = normalizeSessionRuntimeRecord(this.value);
 			if (!current) return { status: 'error', code: 'corrupt' };
-			if (!canReplace(current, record)) return { status: 'stale' };
+			if (!canReplace(current.record, record)) return { status: 'stale' };
 		}
 		this.value = structuredClone(record);
 		return { status: 'saved' };
@@ -94,7 +108,12 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 		if (this.value === undefined) return { status: 'cleared' };
 		const current = normalizeSessionRuntimeRecord(this.value);
 		if (!current) return { status: 'error', code: 'corrupt' };
-		if (!canWriteAuthority(runtimeAuthority(current.state), authority)) return { status: 'stale' };
+		if (!canWriteAuthority(runtimeAuthority(current.record.state), authority)) return { status: 'stale' };
+		this.value = undefined;
+		return { status: 'cleared' };
+	}
+
+	async forceClear(): Promise<SessionRuntimeMutationResult> {
 		this.value = undefined;
 		return { status: 'cleared' };
 	}
@@ -119,10 +138,17 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		try {
 			const value = await this.read(context);
 			if (value === undefined) { attempt.skip(); return { status: 'empty' }; }
-			const record = normalizeSessionRuntimeRecord(value);
-			if (!record) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
+			const normalized = normalizeSessionRuntimeRecord(value);
+			if (!normalized) { attempt.failure('validation_failed'); return { status: 'error', code: 'corrupt' }; }
+			if (!normalized.reviewVerified) {
+				// The record itself loaded fine; only its contamination review no longer recomputes
+				// against today's classifier. That is not corruption, so it gets its own code instead
+				// of `validation_failed` — the next read should say "review stale", not "invalid".
+				attempt.success('precondition_failed');
+				return { status: 'loaded', record: normalized.record, reviewVerified: false };
+			}
 			attempt.success();
-			return { status: 'loaded', record };
+			return { status: 'loaded', record: normalized.record };
 		} catch {
 			attempt.failure();
 			return { status: 'error', code: 'unavailable' };
@@ -136,7 +162,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			const result = await this.mutate<SessionRuntimeMutationResult>((value) => {
 				const current = value === undefined ? null : normalizeSessionRuntimeRecord(value);
 				if (value !== undefined && !current) return { result: { status: 'error', code: 'corrupt' } as const };
-				if (current && !canReplace(current, record)) {
+				if (current && !canReplace(current.record, record)) {
 					return { result: { status: 'stale' } as const };
 				}
 				return {
@@ -161,7 +187,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 				if (value === undefined) return { result: { status: 'cleared' } as const, remove: true };
 				const current = normalizeSessionRuntimeRecord(value);
 				if (!current) return { result: { status: 'error', code: 'corrupt' } as const };
-				if (!canWriteAuthority(runtimeAuthority(current.state), authority)) {
+				if (!canWriteAuthority(runtimeAuthority(current.record.state), authority)) {
 					return { result: { status: 'stale' } as const };
 				}
 				return { result: { status: 'cleared' } as const, remove: true };
@@ -169,6 +195,22 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			if (result.status === 'cleared') attempt.success();
 			else if (result.status === 'stale') attempt.skip();
 			else attempt.failure('validation_failed');
+			return result;
+		} catch {
+			attempt.failure();
+			return { status: 'error', code: 'unavailable' };
+		}
+	}
+
+	/** Bypasses `normalizeSessionRuntimeRecord` entirely: the escape hatch when even that fails. */
+	async forceClear(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult> {
+		const attempt = this.diagnostics.begin('session_runtime', 'delete', context);
+		try {
+			const result = await this.mutate<SessionRuntimeMutationResult>(
+				() => ({ result: { status: 'cleared' } as const, remove: true }),
+				context,
+			);
+			attempt.success();
 			return result;
 		} catch {
 			attempt.failure();
@@ -296,10 +338,27 @@ export function createSessionRuntimeRecord(
 }
 
 export function isSessionRuntimeRecord(value: unknown): value is SessionRuntimeRecord {
-	return isSessionRuntimeRecordV3(value);
+	return checkSessionRuntimeRecordV3(value, { verifyReview: true }).valid;
 }
 
-function isSessionRuntimeRecordV3(value: unknown): value is SessionRuntimeRecord {
+type SessionRuntimeRecordCheck =
+	| { valid: true; reviewVerified: boolean }
+	| { valid: false };
+
+const INVALID_RUNTIME_RECORD: SessionRuntimeRecordCheck = { valid: false };
+
+/**
+ * The shape check behind every v3 record, in two modes. `verifyReview: true` (writes: `save()`,
+ * `isSessionRuntimeRecord`) requires a present `review` to recompute exactly against today's
+ * contamination classifier, same as always. `verifyReview: false` (reads: `normalizeSessionRuntimeRecord`)
+ * only requires the `review` to have the right SHAPE, and reports whether it also re-verified in
+ * `reviewVerified` — a classifier upgrade must not turn an otherwise-valid saved session into
+ * `corrupt`, only degrade the trust of the one field that changed underneath it.
+ */
+function checkSessionRuntimeRecordV3(
+	value: unknown,
+	options: { verifyReview: boolean },
+): SessionRuntimeRecordCheck {
 	if (!isJsonValue(value) || !isRecord(value) || !exactKeys(value, [
 		'version',
 		'state',
@@ -309,7 +368,7 @@ function isSessionRuntimeRecordV3(value: unknown): value is SessionRuntimeRecord
 		'review',
 		'priceSnapshot',
 		'persistedAt',
-	])) return false;
+	])) return INVALID_RUNTIME_RECORD;
 	if (
 		value.version !== SESSION_RUNTIME_VERSION
 		|| !Number.isSafeInteger(value.persistedAt)
@@ -318,43 +377,51 @@ function isSessionRuntimeRecordV3(value: unknown): value is SessionRuntimeRecord
 		|| !isPersistableState(value.state)
 		|| !isComparableStorageSnapshot(value.baselineSnapshot)
 		|| !hasPassEnvelope(value.baselineSnapshot)
-	) return false;
+	) return INVALID_RUNTIME_RECORD;
 	const state = value.state;
 	const evidenceState = state.status === 'error' ? state.failedState : state;
-	if (!sameSnapshotReference(evidenceState.baseline, value.baselineSnapshot)) return false;
+	if (!sameSnapshotReference(evidenceState.baseline, value.baselineSnapshot)) return INVALID_RUNTIME_RECORD;
 	if (evidenceState.status !== 'provisional' && evidenceState.status !== 'complete') {
 		return value.finalSnapshot === null && value.delta === null
-			&& value.review === null && value.priceSnapshot === null;
+			&& value.review === null && value.priceSnapshot === null
+			? { valid: true, reviewVerified: true }
+			: INVALID_RUNTIME_RECORD;
 	}
 	if (!isComparableStorageSnapshot(value.finalSnapshot)
 		|| !hasPassEnvelope(value.finalSnapshot)
 		|| !sameSnapshotReference(
 			evidenceState.finalSnapshot,
 			value.finalSnapshot,
-	)) return false;
+	)) return INVALID_RUNTIME_RECORD;
 	const calculated = compareStorageSnapshots(value.baselineSnapshot, value.finalSnapshot);
 	if (calculated.status === 'invalid'
 		|| !isRecord(value.delta)
-		|| JSON.stringify(calculated) !== JSON.stringify(value.delta)) return false;
-	if (value.review !== null && !isSessionContaminationReview(
-		value.review,
-		value.baselineSnapshot,
-		value.finalSnapshot,
-		calculated,
-	)) return false;
+		|| JSON.stringify(calculated) !== JSON.stringify(value.delta)) return INVALID_RUNTIME_RECORD;
+	let reviewVerified = true;
+	if (value.review !== null) {
+		if (options.verifyReview) {
+			if (!isSessionContaminationReview(value.review, value.baselineSnapshot, value.finalSnapshot, calculated)) {
+				return INVALID_RUNTIME_RECORD;
+			}
+		} else {
+			if (!isSessionContaminationReviewShape(value.review)) return INVALID_RUNTIME_RECORD;
+			reviewVerified = isSessionContaminationReview(value.review, value.baselineSnapshot, value.finalSnapshot, calculated);
+		}
+	}
 	if (value.priceSnapshot !== null && !isSessionPriceSnapshot(
 		value.priceSnapshot,
 		evidenceState.sessionId,
 		calculated,
-	)) return false;
+	)) return INVALID_RUNTIME_RECORD;
 	if (value.priceSnapshot !== null
-		&& Date.parse(value.priceSnapshot.capturedAt) < Date.parse(value.finalSnapshot.completedAt)) return false;
+		&& Date.parse(value.priceSnapshot.capturedAt) < Date.parse(value.finalSnapshot.completedAt)) return INVALID_RUNTIME_RECORD;
 	if (evidenceState.status === 'complete') {
-		return value.review !== null
+		const finalized = value.review !== null
 			&& value.review.classification.permissions.finalize
 			&& value.review.classification.status === evidenceState.classification;
+		if (!finalized) return INVALID_RUNTIME_RECORD;
 	}
-	return true;
+	return { valid: true, reviewVerified };
 }
 
 export function recoverableState(state: PersistedSessionState): RecoverableSessionState {
@@ -428,13 +495,26 @@ function stateRank(state: RecoverableSessionState | CompleteSessionState): numbe
 	return state.status === 'active' ? 1 : state.status === 'stopping' ? 2 : state.status === 'provisional' ? 3 : 4;
 }
 
-function normalizeSessionRuntimeRecord(value: unknown): SessionRuntimeRecord | null {
-	if (isSessionRuntimeRecordV3(value)) return structuredClone(value);
+interface NormalizedSessionRuntimeRecord {
+	record: SessionRuntimeRecord;
+	/** `false` only when a present `review` no longer recomputes against today's classifier. */
+	reviewVerified: boolean;
+}
+
+/**
+ * Reads a stored value as far as it will go instead of all-or-nothing. It tolerates a `review`
+ * whose shape is fine but whose evidence no longer recomputes (see `checkSessionRuntimeRecordV3`),
+ * because that is a classifier upgrade, not damage to the record the plugin itself wrote.
+ */
+function normalizeSessionRuntimeRecord(value: unknown): NormalizedSessionRuntimeRecord | null {
+	const direct = checkSessionRuntimeRecordV3(value, { verifyReview: false });
+	if (direct.valid) return { record: structuredClone(value as SessionRuntimeRecord), reviewVerified: direct.reviewVerified };
 	if (isRecord(value) && value.version === 2 && exactKeys(value, [
 		'version', 'state', 'baselineSnapshot', 'finalSnapshot', 'delta', 'review', 'persistedAt',
 	])) {
 		const migrated = { ...structuredClone(value), version: SESSION_RUNTIME_VERSION, priceSnapshot: null };
-		return isSessionRuntimeRecordV3(migrated) ? migrated : null;
+		const checked = checkSessionRuntimeRecordV3(migrated, { verifyReview: false });
+		return checked.valid ? { record: migrated as SessionRuntimeRecord, reviewVerified: checked.reviewVerified } : null;
 	}
 	if (!isRecord(value) || value.version !== 1 || !exactKeys(value, [
 		'version', 'state', 'baselineSnapshot', 'finalSnapshot', 'delta', 'persistedAt',
@@ -445,7 +525,8 @@ function normalizeSessionRuntimeRecord(value: unknown): SessionRuntimeRecord | n
 		review: null,
 		priceSnapshot: null,
 	};
-	return isSessionRuntimeRecordV3(migrated) ? migrated : null;
+	const checked = checkSessionRuntimeRecordV3(migrated, { verifyReview: false });
+	return checked.valid ? { record: migrated as SessionRuntimeRecord, reviewVerified: checked.reviewVerified } : null;
 }
 
 function hasPassEnvelope(snapshot: StorageSnapshot): boolean {

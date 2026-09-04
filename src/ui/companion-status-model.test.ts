@@ -148,14 +148,25 @@ describe('buildCompanionStatus', () => {
 
 	it('orders incidents by recovery, session, quality, detector, connection and recorder', () => {
 		const projection = buildCompanionStatus(input({
-			recovery: { status: 'error', message: 'Saved evidence is corrupt.' },
+			recovery: { status: 'error', code: 'corrupt', message: 'Saved evidence is corrupt.' },
 			detection: detection('error'),
 			connection: { status: 'error', code: 'unavailable', message: 'Offline.', retryAt: null },
 			qualityState: { status: 'unavailable', message: 'Recorder unavailable.' },
 		}));
-		expect(projection.errors[0]).toBe('Recovery: The operation could not be completed safely.');
+		expect(projection.errors[0]).toBe('Recovery: The saved farming session could not be read and was left untouched. Discard it to use the session controls again.');
 		expect(projection.incidentTone).toBe('error');
 		expect(projection.errors).toHaveLength(4);
+	});
+
+	it('gives a corrupt record and an unreachable store two different recovery texts', () => {
+		const corrupt = buildCompanionStatus(input({ recovery: { status: 'error', code: 'corrupt', message: 'raw' } }));
+		const unavailable = buildCompanionStatus(input({ recovery: { status: 'error', code: 'unavailable', message: 'raw' } }));
+
+		expect(corrupt.items[1]?.detail).not.toBe(unavailable.items[1]?.detail);
+		expect(corrupt.items[1]?.detail).toBe('The saved farming session could not be read and was left untouched. Discard it to use the session controls again.');
+		expect(unavailable.items[1]?.detail).toBe('The local recovery store is unavailable. Reload Obsidian and try again.');
+
+		expect(corrupt.errors[0]).not.toBe(unavailable.errors[0]);
 	});
 
 	it('drops cooldown metadata at expiry while keeping the underlying connection error', () => {
@@ -190,7 +201,7 @@ describe('buildCompanionStatus', () => {
 		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked'],
 		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering'],
 		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding'],
-		[{ status: 'error', message: 'Store failed.' }, 'Recovery error'],
+		[{ status: 'error', code: 'unavailable', message: 'Store failed.' }, 'Recovery error'],
 	] as const)('gives recovery %s precedence in the header', (recovery, phase) => {
 		const projection = buildCompanionStatus(input({ recovery }));
 		expect(projection.items[1]?.value).toBe(phase);

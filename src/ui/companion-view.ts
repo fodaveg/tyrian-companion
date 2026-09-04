@@ -410,7 +410,12 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		heading.createEl('h2', { text: this.t(recoveryTitleKey(recovery)) });
 		heading.createEl('p', { text: this.t(recoveryDetailKey(recovery)) });
-		if (recovery.status === 'error') return;
+		if (recovery.status === 'error') {
+			// Unreadable evidence cannot be recovered, only discarded: no "recover" button here.
+			const discard = container.createEl('button', { text: this.t('view.discardSaved') });
+			discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
+			return;
+		}
 		const working = recovery.status === 'working';
 		const recover = container.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
 		const discard = container.createEl('button', { text: this.t('view.discardSaved') });
@@ -1172,6 +1177,44 @@ export class ConfirmDiscardSessionModal extends Modal {
 		this.setTitle(runtimeText(this.getLocale(), 'modal.discardTitle'));
 		this.contentEl.createEl('p', {
 			text: runtimeText(this.getLocale(), 'modal.discardDetail'),
+		});
+		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
+		const discard = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.discard'), cls: 'mod-warning' });
+		cancel.addEventListener('click', () => this.close());
+		discard.addEventListener('click', () => {
+			discard.disabled = true;
+			cancel.disabled = true;
+			void this.onConfirm().finally(() => this.close());
+		});
+		cancel.focus();
+	}
+}
+
+/**
+ * The discard confirmation for a saved session whose recovery evidence could not even be read
+ * (`SessionRecoveryState.status === 'error'`). It says plainly that nothing can be recovered from
+ * it and that discarding erases it, instead of reusing `ConfirmDiscardSessionModal`'s copy, which
+ * implies a readable, resumable session is being given up.
+ */
+export class ConfirmDiscardUnreadableSessionModal extends Modal {
+	constructor(
+		app: App,
+		private readonly onConfirm: () => Promise<void>,
+		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
+	) {
+		super(app);
+	}
+
+	onClose(): void {
+		this.onClosed();
+	}
+
+	onOpen(): void {
+		this.setTitle(runtimeText(this.getLocale(), 'modal.discardUnreadableTitle'));
+		this.contentEl.createEl('p', {
+			text: runtimeText(this.getLocale(), 'modal.discardUnreadableDetail'),
 		});
 		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });

@@ -9,8 +9,9 @@ import {
 	type LocalDebugPersistenceEvent,
 } from '../core/local-debug-persistence';
 import { unavailableSessionPriceSnapshot } from '../economy/session-price-snapshot';
+import { SESSION_CLASSIFICATION_VERSION } from '../account/contamination-model';
 import { transitionSession } from './session-state-machine';
-import { createSessionContaminationReview } from './session-contamination-review';
+import { createSessionContaminationReview, isSessionContaminationReview } from './session-contamination-review';
 import type { SessionAuthority, SessionState } from './session';
 import {
 	createSessionRuntimeRecord,
@@ -244,6 +245,63 @@ describe('session runtime persistence', () => {
 			Date.parse(review.reviewedAt), review);
 		expect(isSessionRuntimeRecord(record)).toBe(true);
 		expect(record?.review?.classification).toMatchObject({ version: 1, permissions: { recommend: false } });
+	});
+
+	it('loads a record whose review no longer recomputes instead of turning the whole record corrupt', async () => {
+		const baseline = storageDeltaSnapshot();
+		const final = afterSnapshot();
+		const state = provisionalState(baseline, final);
+		const delta = compareStorageSnapshots(baseline, final);
+		const review = createSessionContaminationReview(baseline, final, delta, {
+			certainty: 'confirmed', activities: {
+				open: true, salvage: false, consume: false, craft: false,
+				tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
+				transfer: false, other: false,
+			},
+		}, '2026-08-13T09:00:03.000Z');
+		if (!review) throw new Error('Review fixture is invalid.');
+		expect(isSessionContaminationReview(review, baseline, final, delta)).toBe(true);
+
+		// Simulates a review written before the classifier changed which reason code an "open"
+		// declaration produces (`activity_declared` bucketed it as external contamination; today's
+		// classifier produces `open_activity_declared`, a consumed input). The envelope below is
+		// still internally self-consistent — same shape a real 0.1.21 record would have — it just no
+		// longer matches what today's classifier recomputes from the same evidence.
+		const stale = structuredClone(review);
+		stale.classification = {
+			version: SESSION_CLASSIFICATION_VERSION,
+			status: 'contaminated',
+			confidence: 'high',
+			scope: 'observed_storage_net',
+			reasons: [{ code: 'activity_declared', detail: 'open' }],
+			reviewRequests: [{ code: 'review_detected_external_activity' }],
+			permissions: { finalize: true, showNet: true, valueNet: false, grossPerHour: false, recommend: false },
+		} as never;
+		expect(isSessionContaminationReview(stale, baseline, final, delta)).toBe(false);
+
+		const record = {
+			version: 3,
+			state,
+			baselineSnapshot: baseline,
+			finalSnapshot: final,
+			delta,
+			review: stale,
+			priceSnapshot: null,
+			persistedAt: Date.parse(stale.reviewedAt),
+		};
+		const store = new MemorySessionRuntimeStore(record);
+		await expect(store.load()).resolves.toMatchObject({
+			status: 'loaded',
+			reviewVerified: false,
+			record: { review: { classification: { status: 'contaminated' } } },
+		});
+	});
+
+	it('force-clears a value that fails to validate under every known runtime schema version', async () => {
+		const store = new MemorySessionRuntimeStore({ version: 1, garbage: true });
+		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'corrupt' });
+		await expect(store.forceClear()).resolves.toEqual({ status: 'cleared' });
+		await expect(store.load()).resolves.toEqual({ status: 'empty' });
 	});
 
 	it('fails closed on a corrupt record and leaves it untouched', async () => {

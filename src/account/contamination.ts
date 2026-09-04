@@ -14,6 +14,7 @@ import {
 	type SessionDeltaClassification,
 	type SessionReviewRequest,
 	type TradingPostEvent,
+	type UserDeclaration,
 } from './contamination-model';
 import { canonicalJson as canonical } from '../core/canonical-sha256';
 
@@ -516,7 +517,12 @@ function isApiSettlement(value: unknown): boolean {
 		|| (typeof value === 'string' && ['settled', 'skipped', 'exceeded'].includes(value));
 }
 
-function isBoundaryEvidenceShape(value: unknown): value is BoundaryEvidence {
+/**
+ * Structural-only counterpart to `buildBoundaryEvidence`: it validates that a stored value could
+ * have been produced by it, without recomputing it from `before`/`after` snapshots. A caller that
+ * only has the persisted evidence (no snapshots at hand) still needs to know it is not garbage.
+ */
+export function isBoundaryEvidenceShape(value: unknown): value is BoundaryEvidence {
 	if (!isRecord(value) || !hasOnlyKeys(value, [
 		'version', 'status', 'accountId', 'beforeSnapshotId', 'afterSnapshotId', 'window',
 		'delivery', 'wallet', 'reasons',
@@ -560,7 +566,7 @@ function isTradingPostEvent(value: unknown): boolean {
 		isNonNegativeSafeInteger(value.coins) && typeof value.occurredAt === 'string';
 }
 
-function isDeclaration(value: unknown): boolean {
+function isDeclaration(value: unknown): value is UserDeclaration {
 	if (!isRecord(value) || typeof value.status !== 'string') return false;
 	if (value.status === 'activities') {
 		return hasOnlyKeys(value, ['status', 'activities']) && Array.isArray(value.activities) &&
@@ -569,6 +575,11 @@ function isDeclaration(value: unknown): boolean {
 			);
 	}
 	return ['confirmed_clean', 'unsure', 'absent'].includes(value.status) && hasOnlyKeys(value, ['status']);
+}
+
+/** Exported alias for callers outside this module: same structural check, without the network. */
+export function isUserDeclarationShape(value: unknown): value is UserDeclaration {
+	return isDeclaration(value);
 }
 
 function isBoundaryItemEvidence(value: unknown): value is BoundaryItemEvidence {
