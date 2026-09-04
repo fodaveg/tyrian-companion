@@ -66,6 +66,9 @@ export interface HalloweenAlertItem {
 	itemId: number;
 	quantity: number;
 	name: string | null;
+	/** Carried straight from the evidence that produced `reasons`, never recomputed downstream. */
+	netUnitCopper: HalloweenItemEvidence['netUnitCopper'];
+	priceStatus: HalloweenItemEvidence['priceStatus'];
 	reasons: HalloweenAlertReason[];
 }
 

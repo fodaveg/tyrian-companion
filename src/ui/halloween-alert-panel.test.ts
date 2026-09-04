@@ -32,6 +32,7 @@ describe('Halloween alert panel DOM', () => {
 		const items = Array.from({ length: 400 }, (_, index) => ({
 			itemId: index + 1, quantity: Number.MAX_SAFE_INTEGER - index,
 			name: index === 0 ? 'A'.repeat(256) : index === 1 ? null : `Item ${String(index + 1)}`,
+			netUnitCopper: index === 0 ? 10_000 : null, priceStatus: index === 0 ? 'quote' as const : 'no_quote' as const,
 			reasons: index === 0 ? [
 				{ code: 'valuable' as const, netUnitCopper: 10_000, thresholdCopper: 10_000 },
 				{ code: 'first_seen' as const },

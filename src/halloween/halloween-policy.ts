@@ -45,6 +45,8 @@ export function evaluateHalloweenItem(
 		itemId: evidence.itemId,
 		quantity: evidence.quantity,
 		name: evidence.catalog?.name ?? null,
+		netUnitCopper: evidence.netUnitCopper,
+		priceStatus: evidence.priceStatus,
 		reasons,
 	};
 }

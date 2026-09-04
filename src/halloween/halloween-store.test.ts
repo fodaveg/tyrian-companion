@@ -43,7 +43,8 @@ describe('IndexedDbHalloweenStore', () => {
 		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('notice'));
 		await expect(store.enqueueNotice({
 			...notice('malformed', [9]),
-			items: [{ itemId: 9, quantity: 1, name: null, reasons: [{ code: 'valuable', netUnitCopper: 10_000 } as never] }],
+			items: [{ itemId: 9, quantity: 1, name: null, netUnitCopper: 10_000, priceStatus: 'quote',
+				reasons: [{ code: 'valuable', netUnitCopper: 10_000 } as never] }],
 		})).rejects.toMatchObject({ failure: 'corrupt' });
 		const created = await store.enqueueNotice(notice('n1', [1, 2]));
 		expect(created?.items.map(({ itemId }) => itemId)).toEqual([1, 2]);
@@ -92,11 +93,33 @@ describe('IndexedDbHalloweenStore', () => {
 		reopened.close();
 	});
 
+	it('reads a pre-H13.x notice with no price evidence as unavailable instead of rejecting it as corrupt', async () => {
+		const factory = new IDBFactory(); const name = dbName('legacy-item-shape');
+		const store = await IndexedDbHalloweenStore.open(factory, name);
+		store.close();
+		const raw = await openRaw(factory, name, HALLOWEEN_DB_VERSION);
+		const tx = raw.transaction(HALLOWEEN_NOTICE_STORE, 'readwrite');
+		tx.objectStore(HALLOWEEN_NOTICE_STORE).put({
+			...notice('legacy-notice', []),
+			// The exact shape this store wrote before H13.x added netUnitCopper/priceStatus to
+			// HalloweenAlertItem: no trace of either key, not even `undefined`.
+			items: [{ itemId: 5, quantity: 3, name: 'Objeto heredado', reasons: [{ code: 'first_seen' as const }] }],
+		});
+		await transactionDone(tx); raw.close();
+
+		const reopened = await IndexedDbHalloweenStore.open(factory, name);
+		const [read] = await reopened.readNotices('vault', 'account');
+		expect(read?.items).toEqual([{ itemId: 5, quantity: 3, name: 'Objeto heredado', netUnitCopper: null,
+			priceStatus: 'unavailable', reasons: [{ code: 'first_seen' }] }]);
+		reopened.close();
+	});
+
 	it('replaces provisional episode evidence atomically at session final without a second notice', async () => {
 		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('replace'));
 		await store.enqueueNotice(notice('poll-1', [1, 2]));
 		const final = { ...notice('final', [2]), source: 'session_final' as const,
-			items: [{ itemId: 2, quantity: 9, name: null, reasons: [{ code: 'first_seen' as const }] }] };
+			items: [{ itemId: 2, quantity: 9, name: null, netUnitCopper: null, priceStatus: 'no_quote' as const,
+				reasons: [{ code: 'first_seen' as const }] }] };
 		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [2]), final)).resolves.toMatchObject({
 			notice: { items: [{ itemId: 2, quantity: 9 }] }, changed: true, shouldNotify: false,
 		});
@@ -148,7 +171,7 @@ describe('IndexedDbHalloweenStore', () => {
 		await store.enqueueNotice(notice('poll-reason-notice', [1]));
 		await store.acknowledge('vault', 'account', 'poll-reason-notice', '2026-08-29T12:02:00.000Z');
 		const final = { ...notice('final-reason', [1]), source: 'session_final' as const,
-			items: [{ itemId: 1, quantity: 2, name: null, reasons: [
+			items: [{ itemId: 1, quantity: 2, name: null, netUnitCopper: null, priceStatus: 'no_quote' as const, reasons: [
 				{ code: 'first_seen' as const }, { code: 'rare_unpriced_or_bound' as const, rarity: 'Rare' },
 			] }] };
 		await expect(store.replaceEpisodeNotice('vault', 'account', 'episode', finalObservation('episode', [1]), final))
@@ -291,7 +314,8 @@ function notice(noticeId: string, ids: number[]): HalloweenNoticeV1 {
 	return { version: 1, vaultId: 'vault', accountRef: 'account', noticeId, episodeId: 'episode',
 		observedAt: noticeId === 'n1' ? '2026-08-29T12:00:00.000Z' : '2026-08-29T12:00:01.000Z',
 		source: 'assisted_poll', wording: 'observed_change', coverage: 'complete', acknowledgedAt: null,
-		items: ids.map((itemId) => ({ itemId, quantity: 1, name: null, reasons: [{ code: 'first_seen' }] })) };
+		items: ids.map((itemId) => ({ itemId, quantity: 1, name: null, netUnitCopper: null, priceStatus: 'no_quote' as const,
+			reasons: [{ code: 'first_seen' }] })) };
 }
 let sequence = 0;
 function dbName(label: string): string { sequence += 1; return `halloween-${label}-${String(sequence)}`; }

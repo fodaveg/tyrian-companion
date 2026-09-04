@@ -20,7 +20,7 @@ import {
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
 import { alertIngamePayload } from './alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from './alerts/alert-ingame-server';
-import { alwaysAlertReasonsOf, decideLootAlert } from './alerts/loot-alert-criteria';
+import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from './alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import {
 	GuildWars2Client,
@@ -2027,7 +2027,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return state.rows.find((row) => row.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.quantity ?? 0;
 	}
 
-	/** Projects one policy verdict onto the value-free half of the H13.3 OR and emits it. */
+	/**
+	 * Projects one policy verdict onto the value-free half of the H13.3 OR and emits it.
+	 *
+	 * The always-alert reasons this detector reads (`rare_unpriced_or_bound`, `first_seen`,
+	 * `skin_not_unlocked`, `mini_not_unlocked`) never need a quote to fire, but that does not mean
+	 * the underlying item has none: a bound rare or a first sighting can still carry a real market
+	 * price in its own evidence. `policyAlertPriceOf` carries that price through instead of
+	 * inventing a blank one, so the alert only ever calls an item unquoted once its evidence has
+	 * actually confirmed that.
+	 */
 	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
 		const alert = decideLootAlert({
 			itemId: item.itemId,
@@ -2035,11 +2044,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				itemId: item.itemId,
 			}),
 			quantity: item.quantity,
-			totalCopper: null,
-			// This detector never looks at a quote for any of its four reasons, so it has
-			// nothing to call a failed lookup: `unquoted` is the honest state, not a stand-in
-			// for `unavailable`.
-			priceStatus: 'unquoted',
+			...policyAlertPriceOf(item),
 			alwaysAlertReasons: alwaysAlertReasonsOf(item),
 		}, this.settings.valuableLootThresholdCopper);
 		if (alert !== null) this.dispatchAlert(alert);
