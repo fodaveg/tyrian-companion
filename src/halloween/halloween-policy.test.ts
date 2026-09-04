@@ -50,6 +50,21 @@ describe('Halloween alert policy', () => {
 		expect(evaluateHalloweenItem(evidence({ quantity: 3, netUnitCopper: 9_999 }))).toBeNull();
 		expect(evaluateHalloweenItem(evidence({ netUnitCopper: Number.MAX_SAFE_INTEGER + 1 }))).toBeNull();
 	});
+
+	it('carries the evidence price straight into the verdict even when the firing reason needs no quote', () => {
+		// A first-seen alert never needs a price to fire, but the item this fires for can still be
+		// quoted on the trading post: the verdict must not throw that number away.
+		const quoted = evaluateHalloweenItem(evidence({
+			itemId: 83_008, netUnitCopper: 1_921, priceStatus: 'quote', firstSeen: true,
+		}));
+		expect(quoted).toMatchObject({ netUnitCopper: 1_921, priceStatus: 'quote' });
+
+		const unpriced = evaluateHalloweenItem(evidence({ firstSeen: true, netUnitCopper: null, priceStatus: 'no_quote' }));
+		expect(unpriced).toMatchObject({ netUnitCopper: null, priceStatus: 'no_quote' });
+
+		const lookupFailed = evaluateHalloweenItem(evidence({ firstSeen: true, netUnitCopper: null, priceStatus: 'unavailable' }));
+		expect(lookupFailed).toMatchObject({ netUnitCopper: null, priceStatus: 'unavailable' });
+	});
 });
 
 function evidence(patch: Partial<HalloweenItemEvidence>): HalloweenItemEvidence {

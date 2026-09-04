@@ -511,7 +511,8 @@ function unreadHalloweenState() {
 		version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
 		observedAt: '2026-08-31T12:00:00.000Z', source: 'assisted_poll', wording: 'observed_change',
 		coverage: 'complete', acknowledgedAt: null,
-		items: [{ itemId: 36_038, quantity: 4, name: 'Saco de truco o trato', reasons: [{ code: 'first_seen' }] }],
+		items: [{ itemId: 36_038, quantity: 4, name: 'Saco de truco o trato', netUnitCopper: null, priceStatus: 'no_quote',
+			reasons: [{ code: 'first_seen' }] }],
 	};
 	return { status: 'unread' as const, notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null };
 }

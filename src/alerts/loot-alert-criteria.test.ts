@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from './alert-contract';
-import { alwaysAlertReasonsOf, decideLootAlert } from './loot-alert-criteria';
+import { alertIngameContent } from './alert-ingame';
+import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from './loot-alert-criteria';
 
 describe('H13.3 loot alert criteria', () => {
 	it('alerts on total value at the threshold and stays quiet one copper below it', () => {
@@ -75,5 +76,42 @@ describe('H13.3 loot alert criteria', () => {
 		expect(alwaysAlertReasonsOf({ reasons: [
 			{ code: 'valuable', netUnitCopper: 20_000, thresholdCopper: 10_000 },
 		] })).toEqual([]);
+	});
+});
+
+describe('policyAlertPriceOf', () => {
+	it('reports a known price with its total, computed from the unit price and quantity', () => {
+		// Item 83008: flagged first-seen (a reason that needs no quote to fire) while its evidence
+		// carries a real bid of 1_921 copper. The verdict must say so, not "no quoted value".
+		expect(policyAlertPriceOf({ netUnitCopper: 1_921, priceStatus: 'quote', quantity: 3 }))
+			.toEqual({ totalCopper: 5_763, priceStatus: 'known' });
+	});
+
+	it('reports unquoted only for a confirmed absence of a quote', () => {
+		expect(policyAlertPriceOf({ netUnitCopper: null, priceStatus: 'no_quote', quantity: 1 }))
+			.toEqual({ totalCopper: null, priceStatus: 'unquoted' });
+	});
+
+	it('reports unavailable, never unquoted, for every flavour of a lookup that never answered', () => {
+		for (const priceStatus of ['unavailable', 'invalid', 'rate_limited'] as const) {
+			expect(policyAlertPriceOf({ netUnitCopper: null, priceStatus, quantity: 1 }))
+				.toEqual({ totalCopper: null, priceStatus: 'unavailable' });
+		}
+	});
+
+	it('falls back to unavailable instead of inventing a total when the multiplication overflows', () => {
+		expect(policyAlertPriceOf({ netUnitCopper: Number.MAX_SAFE_INTEGER, priceStatus: 'quote', quantity: 2 }))
+			.toEqual({ totalCopper: null, priceStatus: 'unavailable' });
+	});
+
+	it('produces player-visible text that tells a known price apart from an unquoted and an unavailable one', () => {
+		const base = { itemId: 83_008, name: 'Objeto de Halloween', quantity: 1, alwaysAlertReasons: ['first_seen'] as const };
+		const knownAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: 1_921, priceStatus: 'quote', quantity: 1 }) }, 0);
+		const unquotedAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: null, priceStatus: 'no_quote', quantity: 1 }) }, 0);
+		const unavailableAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: null, priceStatus: 'unavailable', quantity: 1 }) }, 0);
+		expect(knownAlert && alertIngameContent(knownAlert)).toBe('Objeto de Halloween ×1 · 1921 copper');
+		expect(unquotedAlert && alertIngameContent(unquotedAlert)).toBe('Objeto de Halloween ×1 · no quoted value');
+		expect(unavailableAlert && alertIngameContent(unavailableAlert)).toBe('Objeto de Halloween ×1 · price unavailable');
+		expect(new Set([knownAlert, unquotedAlert, unavailableAlert].map((alert) => alert && alertIngameContent(alert)))).toHaveProperty('size', 3);
 	});
 });

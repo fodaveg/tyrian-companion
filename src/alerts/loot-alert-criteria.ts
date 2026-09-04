@@ -65,6 +65,32 @@ export function alwaysAlertReasonsOf(item: Pick<HalloweenAlertItem, 'reasons'>):
 		.filter((code): code is AlwaysAlertReason => (ALWAYS_ALERT_REASONS as readonly string[]).includes(code));
 }
 
+/**
+ * Translates a policy verdict's own price evidence into the pair `decideLootAlert` needs.
+ *
+ * The always-alert half of the OR never needs a quote to FIRE, but the player still deserves the
+ * real number when the evidence has one: an item flagged bound or first-seen can perfectly well
+ * also have a market price. `no_quote` is the only evidence status that has actually confirmed the
+ * absence of one, so it is the only status this maps to `unquoted`; `unavailable`, `invalid` and
+ * `rate_limited` all mean the lookup never answered and map to `unavailable`. `quote` only becomes
+ * `known` once the unit price survives the multiplication by quantity: an overflow is not a
+ * confirmed absence of a price either, so it falls back to `unavailable` rather than inventing a
+ * number or lying that nothing was found.
+ */
+export function policyAlertPriceOf(
+	item: Pick<HalloweenAlertItem, 'netUnitCopper' | 'priceStatus' | 'quantity'>,
+): { totalCopper: number | null; priceStatus: AlertPriceStatus } {
+	if (item.priceStatus === 'no_quote') return { totalCopper: null, priceStatus: 'unquoted' };
+	if (item.priceStatus !== 'quote' || item.netUnitCopper === null) return { totalCopper: null, priceStatus: 'unavailable' };
+	const totalCopper = safeProduct(item.netUnitCopper, item.quantity);
+	return totalCopper === null ? { totalCopper: null, priceStatus: 'unavailable' } : { totalCopper, priceStatus: 'known' };
+}
+
+function safeProduct(unitCopper: number, quantity: number): number | null {
+	const value = unitCopper * quantity;
+	return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
 function validCandidate(candidate: LootAlertCandidate): boolean {
 	return positiveInteger(candidate.itemId) && positiveInteger(candidate.quantity) &&
 		typeof candidate.name === 'string' && candidate.name.length > 0 &&
