@@ -2,9 +2,9 @@
 	"version": 3,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 408,
+		"catch_clause": 417,
 		"promise_catch": 30,
-		"void_expression": 83,
+		"void_expression": 84,
 		"callback_registration": 175
 	},
 	"files": {
@@ -4868,9 +4868,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 355,
+					"line": 359,
 					"column": 3,
-					"endLine": 358,
+					"endLine": 362,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4883,9 +4883,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 384,
+					"line": 388,
 					"column": 3,
-					"endLine": 394,
+					"endLine": 398,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4897,9 +4897,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 395,
+					"line": 399,
 					"column": 3,
-					"endLine": 404,
+					"endLine": 408,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4911,9 +4911,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 405,
+					"line": 409,
 					"column": 3,
-					"endLine": 417,
+					"endLine": 421,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4925,9 +4925,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 418,
+					"line": 422,
 					"column": 3,
-					"endLine": 430,
+					"endLine": 434,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -4939,9 +4939,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 431,
+					"line": 435,
 					"column": 3,
-					"endLine": 439,
+					"endLine": 443,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -4955,9 +4955,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 833,
+					"line": 845,
 					"column": 21,
-					"endLine": 833,
+					"endLine": 845,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -4970,9 +4970,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 833,
+					"line": 845,
 					"column": 26,
-					"endLine": 833,
+					"endLine": 845,
 					"endColumn": 102,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -4986,9 +4986,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 850,
+					"line": 862,
 					"column": 5,
-					"endLine": 850,
+					"endLine": 862,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5001,9 +5001,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 898,
+					"line": 910,
 					"column": 19,
-					"endLine": 898,
+					"endLine": 910,
 					"endColumn": 100,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5016,9 +5016,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 898,
+					"line": 910,
 					"column": 24,
-					"endLine": 898,
+					"endLine": 910,
 					"endColumn": 100,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5032,9 +5032,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 935,
+					"line": 947,
 					"column": 29,
-					"endLine": 935,
+					"endLine": 947,
 					"endColumn": 74,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5048,9 +5048,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 959,
+					"line": 972,
 					"column": 3,
-					"endLine": 959,
+					"endLine": 972,
 					"endColumn": 39,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5063,9 +5063,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 968,
+					"line": 981,
 					"column": 30,
-					"endLine": 968,
+					"endLine": 981,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5078,9 +5078,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 968,
+					"line": 981,
 					"column": 35,
-					"endLine": 968,
+					"endLine": 981,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5093,10 +5093,23 @@
 					"reason": "Allowlisted callback_registration: The \"dispose\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"dispose\"."
 				},
 				{
+					"kind": "catch_clause",
+					"line": 1292,
+					"column": 5,
+					"endLine": 1295,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				},
+				{
 					"kind": "void_expression",
-					"line": 1551,
+					"line": 1603,
 					"column": 3,
-					"endLine": 1556,
+					"endLine": 1608,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5109,9 +5122,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1573,
+					"line": 1625,
 					"column": 5,
-					"endLine": 1579,
+					"endLine": 1631,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5122,9 +5135,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1600,
+					"line": 1652,
 					"column": 4,
-					"endLine": 1603,
+					"endLine": 1655,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5137,9 +5150,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1625,
+					"line": 1677,
 					"column": 6,
-					"endLine": 1631,
+					"endLine": 1683,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -5150,9 +5163,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1684,
+					"line": 1736,
 					"column": 3,
-					"endLine": 1684,
+					"endLine": 1736,
 					"endColumn": 42,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5165,9 +5178,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1694,
+					"line": 1746,
 					"column": 11,
-					"endLine": 1694,
+					"endLine": 1746,
 					"endColumn": 110,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5181,9 +5194,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1695,
+					"line": 1747,
 					"column": 5,
-					"endLine": 1697,
+					"endLine": 1749,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5196,9 +5209,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1704,
+					"line": 1756,
 					"column": 3,
-					"endLine": 1713,
+					"endLine": 1765,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5211,9 +5224,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1744,
+					"line": 1796,
 					"column": 19,
-					"endLine": 1746,
+					"endLine": 1798,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5226,9 +5239,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1795,
+					"line": 1847,
 					"column": 3,
-					"endLine": 1795,
+					"endLine": 1847,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5241,9 +5254,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1837,
+					"line": 1889,
 					"column": 5,
-					"endLine": 1839,
+					"endLine": 1891,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5256,9 +5269,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1850,
+					"line": 1902,
 					"column": 18,
-					"endLine": 1854,
+					"endLine": 1906,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5272,9 +5285,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1850,
+					"line": 1902,
 					"column": 18,
-					"endLine": 1859,
+					"endLine": 1911,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5288,9 +5301,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1850,
+					"line": 1902,
 					"column": 18,
-					"endLine": 1863,
+					"endLine": 1915,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5304,9 +5317,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1890,
+					"line": 1942,
 					"column": 18,
-					"endLine": 1894,
+					"endLine": 1946,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5320,9 +5333,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1890,
+					"line": 1942,
 					"column": 18,
-					"endLine": 1902,
+					"endLine": 1954,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5336,9 +5349,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1890,
+					"line": 1942,
 					"column": 18,
-					"endLine": 1906,
+					"endLine": 1958,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5352,9 +5365,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1961,
+					"line": 2013,
 					"column": 5,
-					"endLine": 1961,
+					"endLine": 2013,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5367,9 +5380,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2092,
+					"line": 2144,
 					"column": 4,
-					"endLine": 2092,
+					"endLine": 2144,
 					"endColumn": 22,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5382,9 +5395,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2109,
+					"line": 2161,
 					"column": 4,
-					"endLine": 2109,
+					"endLine": 2161,
 					"endColumn": 22,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5397,9 +5410,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2112,
+					"line": 2164,
 					"column": 18,
-					"endLine": 2113,
+					"endLine": 2165,
 					"endColumn": 109,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5413,9 +5426,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2112,
+					"line": 2164,
 					"column": 18,
-					"endLine": 2114,
+					"endLine": 2166,
 					"endColumn": 22,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5429,9 +5442,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2112,
+					"line": 2164,
 					"column": 18,
-					"endLine": 2115,
+					"endLine": 2167,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5445,9 +5458,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2131,
+					"line": 2183,
 					"column": 18,
-					"endLine": 2134,
+					"endLine": 2186,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5461,9 +5474,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2131,
+					"line": 2183,
 					"column": 18,
-					"endLine": 2134,
+					"endLine": 2186,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5477,9 +5490,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2242,
+					"line": 2294,
 					"column": 5,
-					"endLine": 2242,
+					"endLine": 2294,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5492,9 +5505,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2345,
+					"line": 2397,
 					"column": 3,
-					"endLine": 2345,
+					"endLine": 2397,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5507,9 +5520,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2370,
+					"line": 2422,
 					"column": 24,
-					"endLine": 2370,
+					"endLine": 2422,
 					"endColumn": 104,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5523,9 +5536,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2372,
+					"line": 2424,
 					"column": 4,
-					"endLine": 2372,
+					"endLine": 2424,
 					"endColumn": 94,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5538,9 +5551,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2498,
+					"line": 2550,
 					"column": 25,
-					"endLine": 2499,
+					"endLine": 2551,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5554,9 +5567,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2538,
+					"line": 2590,
 					"column": 29,
-					"endLine": 2541,
+					"endLine": 2593,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5569,9 +5582,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2545,
+					"line": 2597,
 					"column": 5,
-					"endLine": 2551,
+					"endLine": 2603,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5584,9 +5597,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2546,
+					"line": 2598,
 					"column": 55,
-					"endLine": 2549,
+					"endLine": 2601,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5599,9 +5612,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2567,
+					"line": 2619,
 					"column": 3,
-					"endLine": 2567,
+					"endLine": 2619,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5614,9 +5627,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2593,
+					"line": 2645,
 					"column": 3,
-					"endLine": 2593,
+					"endLine": 2645,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5629,9 +5642,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2621,
+					"line": 2673,
 					"column": 5,
-					"endLine": 2628,
+					"endLine": 2680,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5642,9 +5655,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2686,
+					"line": 2738,
 					"column": 25,
-					"endLine": 2686,
+					"endLine": 2738,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5658,9 +5671,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2689,
+					"line": 2741,
 					"column": 5,
-					"endLine": 2689,
+					"endLine": 2741,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5673,9 +5686,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2710,
+					"line": 2762,
 					"column": 29,
-					"endLine": 2713,
+					"endLine": 2765,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5688,9 +5701,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2718,
+					"line": 2770,
 					"column": 7,
-					"endLine": 2718,
+					"endLine": 2770,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5703,9 +5716,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2722,
+					"line": 2774,
 					"column": 5,
-					"endLine": 2728,
+					"endLine": 2780,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5718,9 +5731,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2723,
+					"line": 2775,
 					"column": 55,
-					"endLine": 2726,
+					"endLine": 2778,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5733,9 +5746,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2834,
+					"line": 2886,
 					"column": 6,
-					"endLine": 2836,
+					"endLine": 2888,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5748,9 +5761,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3182,
+					"line": 3234,
 					"column": 19,
-					"endLine": 3182,
+					"endLine": 3234,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5763,9 +5776,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3185,
+					"line": 3237,
 					"column": 24,
-					"endLine": 3185,
+					"endLine": 3237,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5779,9 +5792,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3186,
+					"line": 3238,
 					"column": 3,
-					"endLine": 3189,
+					"endLine": 3241,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5794,9 +5807,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3187,
+					"line": 3239,
 					"column": 20,
-					"endLine": 3187,
+					"endLine": 3239,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5809,9 +5822,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3192,
+					"line": 3244,
 					"column": 20,
-					"endLine": 3192,
+					"endLine": 3244,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5824,9 +5837,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3197,
+					"line": 3249,
 					"column": 19,
-					"endLine": 3197,
+					"endLine": 3249,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5839,9 +5852,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3202,
+					"line": 3254,
 					"column": 19,
-					"endLine": 3202,
+					"endLine": 3254,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5854,9 +5867,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3205,
+					"line": 3257,
 					"column": 24,
-					"endLine": 3205,
+					"endLine": 3257,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5870,9 +5883,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3206,
+					"line": 3258,
 					"column": 3,
-					"endLine": 3209,
+					"endLine": 3261,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5885,9 +5898,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3207,
+					"line": 3259,
 					"column": 20,
-					"endLine": 3207,
+					"endLine": 3259,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5900,9 +5913,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3212,
+					"line": 3264,
 					"column": 20,
-					"endLine": 3212,
+					"endLine": 3264,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5915,9 +5928,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3215,
+					"line": 3267,
 					"column": 19,
-					"endLine": 3215,
+					"endLine": 3267,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5930,9 +5943,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3311,
+					"line": 3363,
 					"column": 5,
-					"endLine": 3314,
+					"endLine": 3366,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5943,9 +5956,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3470,
+					"line": 3522,
 					"column": 17,
-					"endLine": 3470,
+					"endLine": 3522,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5959,9 +5972,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3470,
+					"line": 3522,
 					"column": 17,
-					"endLine": 3470,
+					"endLine": 3522,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5975,9 +5988,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3471,
+					"line": 3523,
 					"column": 20,
-					"endLine": 3471,
+					"endLine": 3523,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5991,9 +6004,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3471,
+					"line": 3523,
 					"column": 20,
-					"endLine": 3471,
+					"endLine": 3523,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6007,9 +6020,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3596,
+					"line": 3648,
 					"column": 5,
-					"endLine": 3596,
+					"endLine": 3648,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6022,9 +6035,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3626,
+					"line": 3678,
 					"column": 5,
-					"endLine": 3626,
+					"endLine": 3678,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6037,9 +6050,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3658,
+					"line": 3710,
 					"column": 7,
-					"endLine": 3658,
+					"endLine": 3710,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6053,9 +6066,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3663,
+					"line": 3715,
 					"column": 2,
-					"endLine": 3663,
+					"endLine": 3715,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10196,7 +10209,38 @@
 		"src/ui/inventory-advisor-item-view.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
+			"boundaries": [
+				{
+					"kind": "void_expression",
+					"line": 203,
+					"column": 3,
+					"endLine": 203,
+					"endColumn": 55,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.loadPriceHistoryCatalog",
+						"scope": "refreshPriceHistoryCatalog",
+						"justification": "The \"refreshPriceHistoryCatalog\" owner deliberately detaches \"this.loadPriceHistoryCatalog\"; that method owns its own try/catch and triggers its own re-render, so no rejection is discarded silently."
+					},
+					"reason": "Allowlisted void_expression: The \"refreshPriceHistoryCatalog\" owner deliberately detaches \"this.loadPriceHistoryCatalog\"; that method owns its own try/catch and triggers its own re-render, so no rejection is discarded silently. Verified target: \"this.loadPriceHistoryCatalog\" in \"refreshPriceHistoryCatalog\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 212,
+					"column": 5,
+					"endLine": 214,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "loadPriceHistoryCatalog",
+						"justification": "The \"loadPriceHistoryCatalog\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"loadPriceHistoryCatalog\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"loadPriceHistoryCatalog\"."
+				}
+			]
 		},
 		"src/ui/inventory-advisor-view-model.ts": {
 			"classification": "production_source",
@@ -10666,9 +10710,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 62,
+					"line": 104,
 					"column": 3,
-					"endLine": 62,
+					"endLine": 104,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10682,9 +10726,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 62,
+					"line": 104,
 					"column": 44,
-					"endLine": 62,
+					"endLine": 104,
 					"endColumn": 72,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10697,9 +10741,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 86,
+					"line": 143,
 					"column": 51,
-					"endLine": 86,
+					"endLine": 143,
 					"endColumn": 109,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10709,6 +10753,21 @@
 						"justification": "The \"run\" owner deliberately detaches \"interactions.onLoad\"; that named operation owns rejection and terminal diagnostics."
 					},
 					"reason": "Allowlisted void_expression: The \"run\" owner deliberately detaches \"interactions.onLoad\"; that named operation owns rejection and terminal diagnostics. Verified target: \"interactions.onLoad\" in \"run\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 346,
+					"column": 4,
+					"endLine": 348,
+					"endColumn": 3,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "safePublicRenderIconUrl",
+						"justification": "The \"safePublicRenderIconUrl\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"safePublicRenderIconUrl\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"safePublicRenderIconUrl\"."
 				}
 			]
 		},
@@ -11768,6 +11827,104 @@
 						"justification": "The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
+				}
+			]
+		},
+		"src/economy/price-seed-cache-store.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 64,
+					"column": 5,
+					"endLine": 64,
+					"endColumn": 37,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "get",
+						"justification": "The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"get\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 88,
+					"column": 4,
+					"endLine": 88,
+					"endColumn": 74,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "transaction",
+						"justification": "The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"transaction\"."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 92,
+					"column": 4,
+					"endLine": 92,
+					"endColumn": 107,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "local_recovery",
+						"scope": "transaction",
+						"justification": "The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
+				}
+			]
+		},
+		"src/economy/price-seed-panel-service.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"kind": "catch_clause",
+					"line": 104,
+					"column": 5,
+					"endLine": 108,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 137,
+					"column": 5,
+					"endLine": 145,
+					"endColumn": 4,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "span.failure"
+					},
+					"reason": "Direct observability call \"span.failure\" is present inside this catch_clause boundary."
+				},
+				{
+					"kind": "catch_clause",
+					"line": 163,
+					"column": 5,
+					"endLine": 165,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "openStore",
+						"justification": "The \"openStore\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"openStore\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"openStore\"."
 				}
 			]
 		}

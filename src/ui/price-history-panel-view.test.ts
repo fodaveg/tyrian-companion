@@ -110,6 +110,98 @@ describe('price-history panel', () => {
 			expect(statusElement?.attributes.get('role')).toBe('alert');
 		}
 	});
+
+	it('shows the resolved name in the dropdown and the caption, and the icon for the selected item only', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('collecting'), watchItemIds: [36_038, 105_402], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			itemLabels: { 36_038: 'Trick-or-Treat Bag' },
+			itemIcons: { 36_038: 'https://render.guildwars2.com/x/y.png' },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const elements = walk(mount.container);
+		const itemSelect = elements.find((element) => element.tag === 'select');
+		expect(itemSelect?.children[0]?.textContent).toBe('Trick-or-Treat Bag (#36038)');
+		expect(itemSelect?.children[1]?.textContent).toBe('Item #105402');
+		const caption = elements.find((element) => element.tag === 'figcaption');
+		expect(caption?.textContent).toBe('Trick-or-Treat Bag (#36038) · Sell listing · last 42 UTC days');
+		const icons = elements.filter((element) => element.className === 'tyrian-price-history__item-icon');
+		expect(icons).toHaveLength(1);
+		expect(icons[0]?.attributes.get('src')).toBe('https://render.guildwars2.com/x/y.png');
+		expect(icons[0]?.attributes.get('alt')).toBe('');
+	});
+
+	it('never renders an icon from a host other than render.guildwars2.com', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('collecting'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			itemIcons: { 36_038: 'https://evil.example/x.png' },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		expect(walk(mount.container).some((element) => element.className === 'tyrian-price-history__item-icon')).toBe(false);
+	});
+
+	it('keeps the panel working, fallback label included, when no icon or name resolved yet', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('collecting'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const elements = walk(mount.container);
+		expect(elements.find((element) => element.tag === 'select')?.children[0]?.textContent).toBe('Item #36038');
+		expect(elements.find((element) => element.tag === 'figcaption')?.textContent).toBe('Item #36038 · Sell listing · last 42 UTC days');
+		expect(elements.some((element) => element.className === 'tyrian-price-history__item-icon')).toBe(false);
+	});
+
+	it('says so and keeps rendering the local-only chart when datawars2 has no seed', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('ready'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 100)] },
+			seed: { status: 'no_seed', itemId: 36_038, days: [], failureReason: 'unreachable', retrievedAt: null },
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const body = walk(mount.container).map(({ textContent }) => textContent).join('\n');
+		expect(body).toContain('datawars2 is not available right now. Showing only your local capture.');
+		expect(walk(mount.container).some((element) => element.tag === 'figure')).toBe(true);
+	});
+
+	it('draws the datawars2 gap as its own dashed price-seed line, distinct from the local price-close line', () => {
+		const svg = priceHistorySvg(
+			[daily('2026-08-29', 140)],
+			'ask',
+			[
+				{ dayUtc: '2026-08-27', bidCopper: 90, askCopper: 100 },
+				{ dayUtc: '2026-08-28', bidCopper: 95, askCopper: 105 },
+				// This day is already covered locally: it must NOT also appear on the seed line.
+				{ dayUtc: '2026-08-29', bidCopper: 130, askCopper: 138 },
+			],
+		);
+		expect(svg).toContain('class="price-seed"');
+		expect(svg).toContain('class="price-close-marker"');
+		expect(svg.match(/points="[^"]*"/gu)).toHaveLength(1);
+	});
+
+	it('tags each row of the accessible table with its provenance, local capture never overwritten by the seed', () => {
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: { ...state('ready'), watchItemIds: [36_038], selectedItemId: 36_038, daily: [daily('2026-08-29', 140)] },
+			seed: {
+				status: 'seeded', itemId: 36_038, retrievedAt: '2026-09-01T00:00:00.000Z', failureReason: null,
+				days: [
+					{ dayUtc: '2026-08-27', bidCopper: 90, askCopper: 100 },
+					{ dayUtc: '2026-08-29', bidCopper: 999, askCopper: 999 },
+				],
+			},
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const rows = walk(mount.container).filter((element) => element.tag === 'tr').slice(1);
+		const cellsOf = (row: FakeElement): string[] => row.children.map((cell) => cell.textContent ?? '');
+		expect(rows).toHaveLength(2);
+		expect(cellsOf(rows[0]!)).toEqual(['2026-08-27', 'datawars2 (third party)', '—', '—', '—', '100']);
+		expect(cellsOf(rows[1]!)).toEqual(['2026-08-29', 'Own capture', '140', '140', '140', '140']);
+		const seedNote = walk(mount.container).find((element) => element.className === 'tyrian-price-history__seed-note');
+		expect(seedNote?.textContent).toBe('History extended with datawars2: 1 days before your own capture.');
+	});
 });
 
 function state(status: PriceHistoryRuntimeState['status']): PriceHistoryRuntimeState {
