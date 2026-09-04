@@ -82,6 +82,8 @@ import type {
 import type { SellSignalRuntime } from './economy/sell-signal-runtime';
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
+import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
+import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import {
 	assembleAdvisor,
@@ -296,6 +298,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private walletVaultSync!: WalletVaultSyncController;
 	private inventoryPreferences!: InventoryPreferencesRuntime;
 	private priceHistory: PriceHistoryRuntime | null = null;
+	/** Deferred to the panel's own load action; never touched from `onload`. */
+	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
@@ -655,6 +659,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		this.sellSignal = priceServices.sellSignal;
 		this.priceHistory = priceServices.priceHistory;
+		// Construction opens no I/O; the datawars2 download only ever starts from `loadPriceHistorySeries`.
+		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
+			factory: window.indexedDB,
+			vaultId,
+			transport,
+			now: () => Date.now(),
+			diagnostics: this.localDebugActions ?? undefined,
+		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
 			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
@@ -959,6 +971,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.walletVaultSync?.dispose();
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
+		this.priceHistoryPanelSeed?.dispose();
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
@@ -1247,7 +1260,46 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
 		if (!this.runtimeReady || this.priceHistory === null) { this.notifyRuntimeStarting(); return; }
 		await this.priceHistory.loadSeries(itemId, side, windowDays);
+		// `ensure` never throws: a datawars2 failure is a state on the seed service, not an
+		// exception, so the local series above is never held hostage to a third party.
+		await this.priceHistoryPanelSeed?.ensure(itemId);
 		this.renderInventoryAdvisorViews();
+	}
+
+	/** Last known datawars2 seed for one item; a stale read, it never starts a download itself. */
+	getPriceHistorySeedState(itemId: number): PriceHistoryPanelSeedState {
+		return this.priceHistoryPanelSeed?.getState(itemId)
+			?? { status: 'idle', itemId, days: [], failureReason: null, retrievedAt: null };
+	}
+
+	/**
+	 * Public catalog name + icon for the price-history watch list.
+	 *
+	 * Reuses the same lazily-opened, IndexedDB-cached catalog service the session
+	 * loot panel uses: names and icons ride the one existing 7-day cache instead of
+	 * a bespoke one, and a second panel opening inside that window never repeats
+	 * the network request.
+	 */
+	async resolvePriceHistoryItemCatalog(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>> {
+		if (itemIds.length === 0 || this.sessionCatalogFactory === null) return {};
+		const span = startLocalDebugAction(this.localDebugActions ?? undefined, {
+			component: 'price_history', action: 'price_history_load_series', state: 'price_history_catalog',
+		});
+		try {
+			this.sessionCatalog ??= await this.sessionCatalogFactory();
+			const items = await this.sessionCatalog.resolveItems(itemIds, this.settings.language);
+			const resolved: Record<number, { name: string; icon: string | null }> = {};
+			for (const [key, item] of Object.entries(items)) {
+				const itemId = Number(key);
+				if (!Number.isSafeInteger(itemId)) continue;
+				resolved[itemId] = { name: item.name, icon: safePublicRenderIconUrl(item.icon) };
+			}
+			span.success('resolved', { itemCount: itemIds.length });
+			return resolved;
+		} catch (error) {
+			span.failure(error, 'network_failure', 'price_history_catalog_unavailable');
+			return {};
+		}
 	}
 
 	getInventoryPreferencesEditorState(): InventoryPreferencesEditorState {

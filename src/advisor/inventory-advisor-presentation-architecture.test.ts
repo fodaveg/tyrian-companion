@@ -61,7 +61,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
-			'./inventory-advisor-view-model', './inventory-advisor-view',
+			'../economy/price-seed-panel-service',
+			'./inventory-advisor-view-model', './inventory-advisor-view', './price-history-panel-view',
 			'./inventory-vault-sync-run-controller', './product-action-controller', './product-shell'],
 			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel',
 				'actions.createInventoryPreferencesEditorSession', 'preferenceSession.current', 'preferenceSession.load',
@@ -69,6 +70,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.getInventoryVaultSyncRunState', 'actions.hasManagedAssetsRoot', 'actions.refreshInventoryAdvisor',
 				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync',
 				'actions.getPriceHistoryState', 'actions.enablePriceHistory', 'actions.loadPriceHistorySeries',
+				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
@@ -85,7 +87,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		portCalls: [],
 	}],
 	['src/ui/price-history-panel-view.ts', {
-		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model'],
+		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model',
+			'../economy/price-seed-panel-service', '../economy/price-seed-model'],
 		portCalls: [],
 	}],
 ]);

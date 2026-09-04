@@ -1462,6 +1462,21 @@
 	margin-block: var(--size-4-3);
 }
 
+.tyrian-price-history__item-group {
+	display: flex;
+	align-items: end;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.tyrian-price-history__item-icon {
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+}
+
 .tyrian-price-history__controls label {
 	display: grid;
 	min-width: 0;
@@ -1538,6 +1553,27 @@
 	fill: var(--interactive-accent);
 	stroke: var(--background-primary);
 	stroke-width: 1;
+}
+
+/* The third-party (datawars2) segment: a visibly lighter, dotted line so it is
+   never mistaken for a local capture, which always wins the pixel when both exist. */
+.tyrian-price-history__chart .price-seed {
+	fill: none;
+	stroke: var(--text-faint);
+	stroke-width: 2;
+	stroke-dasharray: 1 4;
+}
+
+.tyrian-price-history__chart .price-seed-marker {
+	fill: var(--background-primary);
+	stroke: var(--text-faint);
+	stroke-width: 2;
+}
+
+.tyrian-price-history__seed-note {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-style: italic;
 }
 
 .tyrian-price-history__table-overflow {
@@ -1964,7 +2000,8 @@
 
 	.tyrian-price-history__controls button,
 	.tyrian-price-history__controls label,
-	.tyrian-price-history__controls select {
+	.tyrian-price-history__controls select,
+	.tyrian-price-history__item-group {
 		width: 100%;
 	}
 

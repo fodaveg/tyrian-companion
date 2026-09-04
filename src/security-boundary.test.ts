@@ -68,6 +68,12 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/core/obsidian-http.ts',
 	'src/economy/commerce-listings-capture.ts',
 	'src/economy/price-history-capture.ts',
+	// H9.1 panel overlay, approved 2026-09-03. Owns `fetchPriceSeed`'s lifecycle for
+	// whichever item the price-history panel is showing (`price-seed-source.ts` is
+	// the actual outbound call, reviewed below). Deferred to the panel's own load
+	// action, cached in `price-seed-cache-store.ts`, and every path is caught: a
+	// datawars2 failure is a state on the service, never a thrown error.
+	'src/economy/price-seed-panel-service.ts',
 	// H13.2. The only outbound call in the plugin that is not to ArenaNet: one
 	// unauthenticated GET for the price history the official API does not
 	// publish. Reviewed: it sends an item id and nothing else, it carries no

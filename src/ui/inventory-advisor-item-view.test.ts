@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InventoryVaultSyncLastRun } from '../core/settings';
+import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
+import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { ambientCapabilityUse } from '../test/ambient-capabilities';
@@ -229,6 +231,54 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(used).toEqual([]);
 		expect(rendered).toEqual(['1', 'rows']);
 	});
+
+	it('resolves price-history catalog names only after opening, and only once per distinct id set', async () => {
+		installDom();
+		const resolveCatalog = vi.fn(async (ids: number[]) =>
+			Object.fromEntries(ids.map((id) => [id, { name: `Named ${String(id)}`, icon: null }])));
+		const viewActions = actions(() => 'en', {
+			priceHistory: {
+				state: priceHistoryState({ watchItemIds: [36_038], selectedItemId: 36_038 }),
+				resolveCatalog,
+			},
+		});
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		expect(resolveCatalog).not.toHaveBeenCalled();
+		await view.onOpen();
+		expect(resolveCatalog).toHaveBeenCalledTimes(1);
+		expect(resolveCatalog).toHaveBeenCalledWith([36_038]);
+		await Promise.resolve();
+		await Promise.resolve();
+		// The catalog resolved a name: the panel shows it instead of the numeric fallback.
+		expect(text(view.contentEl as unknown as FakeElement)).toContain('Named 36038');
+		expect(text(view.contentEl as unknown as FakeElement)).not.toContain('Item #36038');
+
+		view.render();
+		view.render();
+		expect(resolveCatalog).toHaveBeenCalledTimes(1);
+	});
+
+	it('renders the seed state text and keeps working when datawars2 reports no_seed', async () => {
+		installDom();
+		const getSeedState = vi.fn((itemId: number): PriceHistoryPanelSeedState =>
+			({ status: 'no_seed', itemId, days: [], failureReason: 'unreachable', retrievedAt: null }));
+		const viewActions = actions(() => 'en', {
+			priceHistory: {
+				state: priceHistoryState({
+					watchItemIds: [36_038], selectedItemId: 36_038, status: 'ready',
+					daily: [dailySample('2026-08-29', 100)],
+				}),
+				getSeedState,
+			},
+		});
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		expect(getSeedState).toHaveBeenCalledWith(36_038);
+		const body = text(view.contentEl as unknown as FakeElement);
+		expect(body).toContain('datawars2 is not available right now. Showing only your local capture.');
+		// The panel's own state line, proving it kept rendering instead of failing.
+		expect(body).toContain('Local history is ready.');
+	});
 });
 
 function actions(
@@ -241,6 +291,11 @@ function actions(
 		cancel?: () => void;
 		analyze?: () => Promise<void>;
 		productActions?: ProductActionController;
+		priceHistory?: {
+			state: PriceHistoryRuntimeState;
+			resolveCatalog?: (itemIds: number[]) => Promise<Record<number, { name: string; icon: string | null }>>;
+			getSeedState?: (itemId: number) => PriceHistoryPanelSeedState;
+		};
 	},
 ): { value: InventoryAdvisorViewActions } {
 	const base: InventoryAdvisorViewActions = {
@@ -252,8 +307,18 @@ function actions(
 			hasConfiguredApiKey: () => true,
 			openProductSettings: () => undefined,
 		}),
+		...(sync?.priceHistory === undefined ? {} : {
+			getPriceHistoryState: () => sync.priceHistory!.state,
+			enablePriceHistory: async () => undefined,
+			loadPriceHistorySeries: async () => undefined,
+			resolvePriceHistoryItemCatalog: sync.priceHistory.resolveCatalog,
+			getPriceHistorySeedState: sync.priceHistory.getSeedState,
+		}),
 	};
 	if (sync === undefined) return { value: base };
+	if (sync.getState === undefined && sync.state === undefined && sync.run === undefined
+		&& sync.confirm === undefined && sync.cancel === undefined && sync.priceHistory !== undefined
+		&& sync.productActions === undefined) return { value: base };
 	return { value: {
 		...base,
 		getInventoryVaultSyncRunState: sync.getState ?? (() => sync.state ?? { status: 'idle', lastRun: null }),
@@ -266,6 +331,21 @@ function actions(
 
 function readyModel(): InventoryAdvisorViewModel {
 	return { status: 'ready', title: 'advisor', detail: 'ready', groups: [{ key: 'market', rows: [row()] }] };
+}
+
+function priceHistoryState(overrides: Partial<PriceHistoryRuntimeState> = {}): PriceHistoryRuntimeState {
+	return {
+		status: 'collecting', watchItemIds: [], selectedItemId: null, selectedSide: 'ask', windowDays: 42,
+		daily: [], lastSampleAtMs: null, nextCaptureAtMs: null, provisionalDayUtc: null, ...overrides,
+	};
+}
+
+function dailySample(dayUtc: string, close: number) {
+	return {
+		version: 1 as const, vaultId: 'vault', itemId: 36_038, dayUtc, snapshotCount: 1, partialSnapshotCount: 0,
+		bid: null,
+		ask: { count: 1, minCopper: close, maxCopper: close, medianCopperX2: close * 2, closeCopper: close, closeCapturedAtMs: Date.parse(`${dayUtc}T12:00:00.000Z`) },
+	};
 }
 
 function row(): InventoryAdvisorViewRow {
@@ -300,6 +380,7 @@ function text(root: FakeElement): string {
 
 class FakeDocument {
 	activeElement: FakeElement | null = null;
+	createElementNS(_namespace: string, tag: string): FakeElement { return new FakeElement(tag, this); }
 }
 
 interface FakeOptions { readonly text?: string; readonly cls?: string; readonly attr?: Record<string, string> }

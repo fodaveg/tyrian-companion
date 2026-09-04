@@ -6,7 +6,9 @@ import type { InventoryPreferencesEditorSession } from '../advisor/inventory-pre
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
+import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
 import type { ProductActionController } from './product-action-controller';
@@ -36,6 +38,10 @@ export interface InventoryAdvisorViewActions {
 	getPriceHistoryState?(): PriceHistoryRuntimeState;
 	enablePriceHistory?(): Promise<void>;
 	loadPriceHistorySeries?(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void>;
+	/** Public catalog name + icon for watched ids not already covered by the current inventory model. Cached; deferred to the panel opening. */
+	resolvePriceHistoryItemCatalog?(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>>;
+	/** Last known datawars2 seed state for one item; a stale read, never a trigger. */
+	getPriceHistorySeedState?(itemId: number): PriceHistoryPanelSeedState;
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
@@ -51,6 +57,9 @@ export class InventoryAdvisorItemView extends ItemView {
 	private productShell: ProductShellMount | null = null;
 	private productShellKey: string | null = null;
 	private readonly preferenceSession: InventoryPreferencesEditorSession | undefined;
+	/** Public catalog name/icon for the price-history watch list. Resolved once per distinct id set. */
+	private priceHistoryCatalog: Record<number, { name: string; icon: string | null }> = {};
+	private priceHistoryCatalogKey: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private readonly actions: InventoryAdvisorViewActions) {
 		super(leaf);
@@ -89,14 +98,7 @@ export class InventoryAdvisorItemView extends ItemView {
 		const priceHistory = this.actions.getPriceHistoryState === undefined
 			|| this.actions.enablePriceHistory === undefined
 			|| this.actions.loadPriceHistorySeries === undefined
-			? undefined : {
-				state: this.actions.getPriceHistoryState(),
-				itemLabels: Object.fromEntries(model.groups.flatMap(({ rows }) => rows.map(({ itemId, name }) => [itemId, name]))),
-				busy: this.priceHistoryBusy,
-				onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
-				onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) =>
-					this.runPriceHistoryAction(() => this.actions.loadPriceHistorySeries!(itemId, side, windowDays)),
-			};
+			? undefined : this.buildPriceHistoryInteractions(this.actions.getPriceHistoryState(), model);
 		const actionController = this.actions.getProductActionController?.();
 		actionController?.setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
 		const locale = this.actions.getInventoryAdvisorLocale();
@@ -165,6 +167,51 @@ export class InventoryAdvisorItemView extends ItemView {
 		this.render();
 		try { await action(); }
 		finally { this.priceHistoryBusy = false; this.render(); }
+	}
+
+	/** Adds the price-history panel's own catalog names/icons and current seed on top of the runtime state. */
+	private buildPriceHistoryInteractions(state: PriceHistoryRuntimeState, model: InventoryAdvisorViewModel): PriceHistoryPanelInteractions {
+		this.refreshPriceHistoryCatalog(state.watchItemIds);
+		const modelNames = Object.fromEntries(model.groups.flatMap(({ rows }) => rows.map(({ itemId, name }) => [itemId, name])));
+		const itemLabels: Record<number, string> = { ...modelNames };
+		const itemIcons: Record<number, string> = {};
+		for (const [key, entry] of Object.entries(this.priceHistoryCatalog)) {
+			const itemId = Number(key);
+			itemLabels[itemId] = entry.name;
+			if (entry.icon !== null) itemIcons[itemId] = entry.icon;
+		}
+		const selectedItemId = state.selectedItemId ?? state.watchItemIds[0] ?? null;
+		const seed = selectedItemId === null ? undefined : this.actions.getPriceHistorySeedState?.(selectedItemId);
+		return {
+			state,
+			itemLabels,
+			itemIcons,
+			seed,
+			busy: this.priceHistoryBusy,
+			onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
+			onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) =>
+				this.runPriceHistoryAction(() => this.actions.loadPriceHistorySeries!(itemId, side, windowDays)),
+		};
+	}
+
+	/** Resolves catalog names/icons for the watch list at most once per distinct id set; deferred to render. */
+	private refreshPriceHistoryCatalog(watchItemIds: readonly number[]): void {
+		if (this.actions.resolvePriceHistoryItemCatalog === undefined || watchItemIds.length === 0) return;
+		const key = [...watchItemIds].sort((left, right) => left - right).join(',');
+		if (key === this.priceHistoryCatalogKey) return;
+		this.priceHistoryCatalogKey = key;
+		void this.loadPriceHistoryCatalog([...watchItemIds]);
+	}
+
+	private async loadPriceHistoryCatalog(itemIds: number[]): Promise<void> {
+		try {
+			const resolved = await this.actions.resolvePriceHistoryItemCatalog!(itemIds);
+			if (this.closed) return;
+			this.priceHistoryCatalog = { ...this.priceHistoryCatalog, ...resolved };
+			this.render();
+		} catch {
+			// An unreachable catalog leaves every id on its numeric fallback; the panel keeps working.
+		}
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {
