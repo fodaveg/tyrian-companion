@@ -1,5 +1,75 @@
 # Changelog
 
+## Release beta 0.1.27 - el precio deja de darse por perdido, y la nota de un objeto puede enseñar su historia
+
+### El aviso decía «sin cotización» sobre objetos que sí se venden
+
+- **Un aviso llegó al juego diciendo que una pieza de equipo excepcional no tenía cotización.** Ese
+  objeto, el `83008`, cotizaba en ese momento con puja de 1.921 y oferta de 1.980. El plugin no lo
+  había consultado mal: no lo había consultado, y aun así afirmaba el resultado.
+- **La causa era un dato que se tiraba por el camino.** El detector que produce esos avisos ya mira
+  el precio dos veces, para decidir si un objeto es valioso y si es raro y no vendible. Pero el
+  registro que le pasaba al emisor solo llevaba id, cantidad, nombre y motivos: el precio y su
+  estado se perdían ahí, y el emisor los rellenaba con dos constantes escritas a mano. El comentario
+  que defendía esas constantes decía que el detector nunca mira el precio, y era falso.
+- **Ahora el precio viaja hasta el aviso**, y su estado se traduce con honestidad: si la consulta
+  respondió y no había puja, se dice «sin cotización»; si no se pudo consultar, si la respuesta no
+  era válida o si la cuota estaba agotada, se dice «no se pudo consultar». Son cosas distintas y ya
+  no se cuentan igual.
+- **El estado del precio es ahora un dato de tres valores** en el contrato de avisos, no un número
+  que puede faltar. Ningún camino puede declarar que un objeto no cotiza sin haber preguntado.
+- **Y el registro local de diagnóstico guarda qué objetos pidió** en cada fallo de red, con un tope
+  de cincuenta. Antes solo decía que había fallado una consulta de precios, sin decir de qué, y eso
+  hacía imposible identificar la causa desde el log.
+
+### Avisaba de «primera vez que veo este objeto» sobre cosas que ya tenías
+
+- **El almacén de objetos vistos solo aprendía de las ganancias observadas.** Nada lo sembraba con
+  lo que el jugador ya tenía en el inventario, así que cualquier objeto poseído desde antes contaba
+  como nuevo la primera vez que caía. La fase de aprendizaje previa tampoco lo tapaba: se completa
+  leyendo notas ya escritas, no el inventario vivo.
+- **Ahora se siembra desde el mismo snapshot de inventario que el plugin ya captura** para medir las
+  sesiones por diferencia, antes de que pueda emitirse ningún aviso de primera vez. Se hace una vez
+  por bóveda y cuenta, y no vuelve a repetirse.
+- **Si la siembra no se puede hacer** (sin clave, sin red, sin snapshot), no se emite ningún aviso de
+  primera vez. Callar es correcto; avisar en falso no.
+
+### El histórico de precios enseñaba una línea plana y un número por nombre
+
+- **El desplegable decía «Objeto #3526».** Ahora resuelve el nombre por el catálogo público que el
+  plugin ya consulta, con su caché, y lo muestra también en el título de la gráfica. Junto al nombre
+  va el icono del objeto.
+- **La gráfica dibujaba solo las muestras que el propio plugin había capturado**, que eran dos días.
+  Ahora puede añadir la serie diaria que datawars2 publica desde 2012, y **la procedencia se ve**:
+  el tramo de terceros va en línea punteada y dibujado por debajo, para que un día medido en local
+  nunca quede tapado; la tabla accesible lleva una columna de origen; y una nota dice cuántos días
+  aportó la fuente externa.
+- **La petición es diferida y cacheada 24 horas.** Nunca se hace al cargar el plugin.
+
+### Piloto: la historia del precio dentro de la nota del objeto
+
+- **Cuatro objetos llevan ahora un bloque que dibuja su histórico al abrir la nota**: Saco de
+  Halloween (`36038`), Trozo de caramelo (`36041`), Barra de caramelo (`47909`) y Colmillos de
+  plástico (`36059`). Las otras 1.369 notas de posición no cambian.
+- **No se guarda ninguna serie en el vault.** En la nota va un bloque de tres líneas con el id, y los
+  datos se piden al pintarlo y se cachean 24 horas fuera del vault. Sin el plugin activo, ese bloque
+  se lee en claro y dice qué objeto es.
+- Es el primer procesador de bloque de código que registra este plugin. El registro ocurre al cargar
+  y no hace red; la red la hace el pintado.
+
+### Menos bytes por la misma información
+
+- **La consulta del histórico pasa de la ruta v1 de datawars2 a la v2 con campos declarados**: los
+  mismos siete campos que el analizador ya leía, con los mismos valores, bajan de 2.196.838 bytes a
+  688.848 por objeto. Afecta a los tres consumidores a la vez, porque los tres pasan por la misma
+  función.
+
+### Sobre la política de plataforma
+
+- `docs/PLATFORM_POLICY.md` recoge las dos ampliaciones aprobadas: contactar `render.guildwars2.com`
+  para los iconos y datawars2 para el histórico, en el panel y en la nota. Lo que **no** se relaja es
+  la regla de que no hay ninguna llamada de red al cargar el plugin: ambas son diferidas y cacheadas.
+
 ## Release beta 0.1.26 - una sesión guardada que ya no se puede releer deja de bloquear el plugin
 
 ### El plugin se quedaba sin salida al arrancar
