@@ -47,6 +47,8 @@ export interface HalloweenAssemblyInput {
 	connectionScopes: () => readonly string[];
 	/** Durable session notes, the only source the opt-in backfill reads. */
 	notes: HalloweenBackfillVault;
+	/** Owned item ids from the account's current storage snapshot, seeding `first_seen` once. */
+	loadOwnedItemIds?: (accountRef: string) => Promise<readonly number[]>;
 	observePriceHistoryItemIds: (itemIds: readonly number[]) => Promise<void>;
 	/** H13.4 routes every Halloween surface through the plugin's single alert exit point. */
 	emitAlert: (alert: AlertV1) => void;
@@ -100,6 +102,7 @@ export function assembleHalloween(input: HalloweenAssemblyInput): HalloweenAssem
 		}),
 		policy: () => ({ valueThresholdCopper: input.valueThresholdCopper() }),
 		loadBackfill: async (accountRef) => await scanHalloweenSessionNotes(input.notes, accountRef),
+		loadOwnedItemIds: input.loadOwnedItemIds,
 		priceHistory: {
 			active: () => input.priceHistoryEnabled(),
 			observeItemIds: async (itemIds) => { await input.observePriceHistoryItemIds(itemIds); },

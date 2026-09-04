@@ -190,6 +190,22 @@ describe('IndexedDbHalloweenStore', () => {
 		store.close();
 	});
 
+	it('seeds owned items once, keeps a real prior gain intact, and is idempotent on replay', async () => {
+		const store = await IndexedDbHalloweenStore.open(new IDBFactory(), dbName('seed'));
+		expect(await store.readSeeded('vault', 'account')).toBe(false);
+		// Item 2 already has a real gain on record; the seed must not clobber its lastObservedAt.
+		await store.recordObservation({ ...observation('real-gain', [2]), observedAt: '2026-08-29T09:00:00.000Z' });
+		const first = await store.seedOwnedItems('vault', 'account', [2, 3, 3], '2026-08-29T12:00:00.000Z');
+		expect(first).toEqual({ status: 'seeded', seededItemIds: [3] });
+		expect(await store.readSeeded('vault', 'account')).toBe(true);
+		expect(await store.readRecentItemIds('vault', 'account')).toEqual([3, 2]);
+		const second = await store.seedOwnedItems('vault', 'account', [4], '2026-08-29T13:00:00.000Z');
+		expect(second).toEqual({ status: 'already_seeded', seededItemIds: [] });
+		// Item 4 arrived only after the seed had already run, so it is not backfilled by the no-op.
+		expect(await store.readRecentItemIds('vault', 'account')).toEqual([3, 2]);
+		store.close();
+	});
+
 	it('fails closed for a future database, corruption and a closed/versionchanged adapter', async () => {
 		const factory = new IDBFactory();
 		const future = dbName('future');

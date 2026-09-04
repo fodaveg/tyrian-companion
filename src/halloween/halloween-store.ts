@@ -30,14 +30,18 @@ import {
 } from '../alerts/alert-queue-record';
 
 export const HALLOWEEN_DB_NAME = 'tyrian-companion-halloween';
-/** v6 adds the H13.4 emitted-alert queue. Purely additive: no existing store is read or rewritten. */
-export const HALLOWEEN_DB_VERSION = 6;
+/**
+ * v7 adds the already-owned baseline seed (`seed-meta-v1`), keyed the same way as
+ * `meta-v1`. Purely additive: no existing store is read or rewritten.
+ */
+export const HALLOWEEN_DB_VERSION = 7;
 export const HALLOWEEN_OBSERVATION_STORE = 'observations-v1';
 export const HALLOWEEN_SEEN_STORE = 'seen-items-v1';
 export const HALLOWEEN_NOTICE_STORE = 'notices-v1';
 export const HALLOWEEN_EPISODE_STORE = 'notice-episodes-v1';
 export const HALLOWEEN_EPISODE_META_STORE = 'episode-meta-v1';
 export const HALLOWEEN_META_STORE = 'meta-v1';
+export const HALLOWEEN_SEED_META_STORE = 'seed-meta-v1';
 export const HALLOWEEN_COMPARISON_STORE = 'loot-comparisons-v1';
 export const HALLOWEEN_PRICE_ALERT_STORE = 'price-alert-state-v1';
 export const HALLOWEEN_PRICE_NOTICE_STORE = 'price-notices-v1';
@@ -59,6 +63,11 @@ interface StoredObservationV1 extends HalloweenObservationV1 {
 export interface HalloweenObservationReceipt {
 	status: 'recorded' | 'duplicate' | 'terminal';
 	firstSeenItemIds: number[];
+}
+
+export interface HalloweenSeedReceipt {
+	status: 'seeded' | 'already_seeded';
+	seededItemIds: number[];
 }
 
 export interface HalloweenEpisodeReplacement {
@@ -100,6 +109,7 @@ export class IndexedDbHalloweenStore {
 				{ name: HALLOWEEN_EPISODE_STORE, keyPath: ['vaultId', 'accountRef', 'episodeId', 'itemId'] },
 				{ name: HALLOWEEN_EPISODE_META_STORE, keyPath: ['vaultId', 'accountRef', 'episodeId'] },
 				{ name: HALLOWEEN_META_STORE, keyPath: ['vaultId', 'accountRef'] },
+				{ name: HALLOWEEN_SEED_META_STORE, keyPath: ['vaultId', 'accountRef'] },
 				{
 					name: HALLOWEEN_COMPARISON_STORE,
 					keyPath: ['vaultId', 'accountRef', 'episodeId'],
@@ -166,6 +176,72 @@ export class IndexedDbHalloweenStore {
 					const coverage = parseMeta(request.result, vaultId, accountRef);
 					tx.oncomplete = () => resolve(coverage);
 				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	/** Cheap existence check, so a seeded vault does not pay for a snapshot capture again. */
+	readSeeded(vaultId: string, accountRef: string): Promise<boolean> {
+		return this.run([HALLOWEEN_SEED_META_STORE], 'readonly', (tx, resolve, reject) => {
+			const request = tx.objectStore(HALLOWEEN_SEED_META_STORE).get([vaultId, accountRef]);
+			request.onerror = () => reject(storeError(request.error));
+			request.onsuccess = () => {
+				try {
+					if (request.result === undefined) { tx.oncomplete = () => resolve(false); return; }
+					parseSeedMeta(request.result, vaultId, accountRef);
+					tx.oncomplete = () => resolve(true);
+				} catch (error) { reject(error); tx.abort(); }
+			};
+		});
+	}
+
+	/**
+	 * Marks every already-owned item id as seen, once per vault+account, so `first_seen`
+	 * never fires for gear the player brought into the plugin instead of gained under it.
+	 * Idempotent and additive: an item already in `seen-items-v1` (a real prior gain) keeps
+	 * its `lastObservedAt`, and a second call after the meta record exists is a no-op.
+	 */
+	seedOwnedItems(
+		vaultId: string, accountRef: string, itemIds: readonly number[], seededAt: string,
+	): Promise<HalloweenSeedReceipt> {
+		if (!isIso(seededAt) || !itemIds.every((itemId) => positiveInteger(itemId))) {
+			return Promise.reject(new HalloweenStoreError('corrupt'));
+		}
+		return this.run([HALLOWEEN_SEED_META_STORE, HALLOWEEN_SEEN_STORE], 'readwrite', (tx, resolve, reject) => {
+			const meta = tx.objectStore(HALLOWEEN_SEED_META_STORE);
+			const seen = tx.objectStore(HALLOWEEN_SEEN_STORE);
+			const metaRequest = meta.get([vaultId, accountRef]);
+			metaRequest.onerror = () => reject(storeError(metaRequest.error));
+			metaRequest.onsuccess = () => {
+				try {
+					if (metaRequest.result !== undefined) {
+						parseSeedMeta(metaRequest.result, vaultId, accountRef);
+						tx.oncomplete = () => resolve({ status: 'already_seeded', seededItemIds: [] });
+						return;
+					}
+				} catch (error) { reject(error); tx.abort(); return; }
+				const uniqueIds = [...new Set(itemIds)].sort((left, right) => left - right);
+				const seededItemIds: number[] = [];
+				const visit = (index: number): void => {
+					const itemId = uniqueIds[index];
+					if (itemId === undefined) {
+						meta.put({ version: 1, vaultId, accountRef, seededAt });
+						tx.oncomplete = () => resolve({ status: 'seeded', seededItemIds });
+						return;
+					}
+					const existing = seen.get([vaultId, accountRef, itemId]);
+					existing.onerror = () => reject(storeError(existing.error));
+					existing.onsuccess = () => {
+						try {
+							if (existing.result === undefined) {
+								seen.put({ version: 1, vaultId, accountRef, itemId, lastObservedAt: seededAt });
+								seededItemIds.push(itemId);
+							}
+							visit(index + 1);
+						} catch (error) { reject(error); tx.abort(); }
+					};
+				};
+				try { visit(0); } catch (error) { reject(error); tx.abort(); }
 			};
 		});
 	}
@@ -782,6 +858,14 @@ function parseMeta(value: unknown, vaultId: string, accountRef: string): 'comple
 		throw new HalloweenStoreError('corrupt');
 	}
 	return value.coverage;
+}
+
+function parseSeedMeta(value: unknown, vaultId: string, accountRef: string): { seededAt: string } {
+	if (!isRecord(value) || !exactKeys(value, ['version', 'vaultId', 'accountRef', 'seededAt']) ||
+		value.version !== 1 || value.vaultId !== vaultId || value.accountRef !== accountRef || !isIso(value.seededAt)) {
+		throw new HalloweenStoreError('corrupt');
+	}
+	return { seededAt: value.seededAt };
 }
 
 function canonicalObservation(value: HalloweenObservationV1): string {

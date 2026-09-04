@@ -46,6 +46,13 @@ export interface HalloweenRuntimeOptions {
 	}) => Promise<HalloweenItemEvidence[]>;
 	policy: () => HalloweenPolicy;
 	loadBackfill?: (accountRef: string) => Promise<readonly HalloweenBackfillCandidate[]>;
+	/**
+	 * Owned item ids from the account's current storage snapshot, used once per vault+account
+	 * to seed `first_seen` history so it never fires for gear the player already had. Absent,
+	 * or rejecting (no API key, offline, rate limited), leaves the seed pending: `first_seen`
+	 * stays suppressed, the same as during note-backfill learning, until it can run.
+	 */
+	loadOwnedItemIds?: (accountRef: string) => Promise<readonly number[]>;
 	priceHistory?: { active(): boolean; observeItemIds(itemIds: readonly number[]): Promise<void> };
 	onNotice?: (notice: HalloweenNoticeV1) => void;
 	onStateChange?: () => void;
@@ -66,6 +73,7 @@ export class HalloweenRuntime {
 	private enabled = false;
 	private online = true;
 	private learning = true;
+	private seeded = false;
 	private backfillPartial = false;
 	private disposed = false;
 	private state: HalloweenRuntimeState = {
@@ -119,6 +127,7 @@ export class HalloweenRuntime {
 		this.store?.close();
 		this.store = null;
 		this.learning = true;
+		this.seeded = false;
 		this.backfillPartial = false;
 		this.setState({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null });
 		span.success('disabled');
@@ -242,7 +251,7 @@ export class HalloweenRuntime {
 				if (!this.owns(generation, store)) return null;
 			}
 			const evidence = gains.length === 0 ? [] : await this.options.resolveEvidence({
-				gains, firstSeenItemIds: receipt.firstSeenItemIds, learning: this.learning,
+				gains, firstSeenItemIds: receipt.firstSeenItemIds, learning: this.effectiveLearning(),
 			});
 			if (!this.owns(generation, store)) return null;
 			const items = evaluateHalloweenItems(evidence, this.options.policy());
@@ -394,6 +403,8 @@ export class HalloweenRuntime {
 			if (!this.owns(generation, store)) return;
 			await store.applyBackfill(this.options.vaultId, accountRef, candidates, new Date(this.now()).toISOString());
 			if (!this.owns(generation, store)) return;
+			await this.seedOwnedItems(generation, store, accountRef);
+			if (!this.owns(generation, store)) return;
 			const learningCoverage = await store.readLearningCoverage(this.options.vaultId, accountRef);
 			if (!this.owns(generation, store)) return;
 			this.learning = learningCoverage !== 'complete';
@@ -409,6 +420,32 @@ export class HalloweenRuntime {
 		}
 	}
 
+	/**
+	 * Fills the `first_seen` baseline from the account's current holdings, once per
+	 * vault+account. A capture failure (no API key, offline, rate limited) is swallowed
+	 * here: `this.seeded` stays false and `effectiveLearning()` keeps suppressing
+	 * `first_seen` until a later refresh succeeds, instead of alerting on a guess.
+	 * A store failure is not swallowed: it propagates like every other store call in
+	 * this method, so a corrupt or unavailable database still reaches `storeFailure`.
+	 */
+	private async seedOwnedItems(generation: number, store: IndexedDbHalloweenStore, accountRef: string): Promise<void> {
+		if (this.seeded) return;
+		const already = await store.readSeeded(this.options.vaultId, accountRef);
+		if (!this.owns(generation, store)) return;
+		if (already) { this.seeded = true; return; }
+		if (!this.options.loadOwnedItemIds) return;
+		let itemIds: readonly number[];
+		try {
+			itemIds = await this.options.loadOwnedItemIds(accountRef);
+		} catch {
+			return;
+		}
+		if (!this.owns(generation, store)) return;
+		await store.seedOwnedItems(this.options.vaultId, accountRef, itemIds, new Date(this.now()).toISOString());
+		if (!this.owns(generation, store)) return;
+		this.seeded = true;
+	}
+
 	private projectNotices(
 		notices: HalloweenNoticeV1[],
 		lastObservedAt = this.state.lastObservedAt,
@@ -417,7 +454,7 @@ export class HalloweenRuntime {
 	): void {
 		const unreadCount = notices.filter(({ acknowledgedAt }) => acknowledgedAt === null).length;
 		this.setState({ notices, unreadCount, lastObservedAt, comparison,
-			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.learning ? 'learning' :
+			status: evidenceState ?? (unreadCount > 0 ? 'unread' : this.backfillPartial ? 'partial' : this.effectiveLearning() ? 'learning' :
 				notices.length > 0 ? 'ready' : 'empty') });
 	}
 
@@ -452,6 +489,8 @@ export class HalloweenRuntime {
 		}
 	}
 
+	/** True while `first_seen` must stay suppressed: note backfill or the owned-item seed is still pending. */
+	private effectiveLearning(): boolean { return this.learning || !this.seeded; }
 	private current(generation: number): boolean { return this.enabled && !this.disposed && generation === this.generation; }
 	private owns(generation: number, store: IndexedDbHalloweenStore): boolean { return this.current(generation) && this.store === store; }
 	private now(): number { return (this.options.now ?? Date.now)(); }

@@ -593,6 +593,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionCatalogFactory = async () => new PublicCatalogService(
 			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
 		);
+		// Built here, ahead of Halloween assembly below, so the same boundary-capture
+		// snapshot service that measures sessions by difference can also seed the
+		// already-owned baseline: it needs `client` and `rateLimitCoordinator`, both
+		// already constructed, and nothing built between here and `assembleHalloween`.
+		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
 		const halloweenServices = assembleHalloween({
 			factory: window.indexedDB, vaultId,
 			diagnostics: this.localDebugActions ?? undefined,
@@ -614,6 +619,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 					return await this.app.vault.read(target);
 				},
 			},
+			// Same holdings the storage snapshot already captures for session boundaries;
+			// no separate call, no extra assets valued, no gains invented.
+			loadOwnedItemIds: async () => Object.keys((await snapshots.capture()).ownedByItem).map(Number),
 			observePriceHistoryItemIds: async (itemIds) => { await this.priceHistory?.observeSessionItemIds(itemIds); },
 			emitAlert: (alert) => { this.dispatchAlert(alert); },
 			emitPolicyAlert: (item) => { this.dispatchPolicyAlert(item); },
@@ -661,7 +669,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on('modify', refreshHalloweenBackfill));
 		this.registerEvent(this.app.vault.on('delete', refreshHalloweenBackfill));
 		this.registerEvent(this.app.vault.on('rename', refreshHalloweenBackfill));
-		const snapshots = new RateLimitedStorageSnapshotService(new StorageSnapshotService(client), rateLimitCoordinator);
 		const inventorySnapshots = new RateLimitedStorageSnapshotService(
 			new StorageSnapshotService(inventoryClient),
 			rateLimitCoordinator,
