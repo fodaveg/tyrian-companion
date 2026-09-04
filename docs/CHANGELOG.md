@@ -1,5 +1,51 @@
 # Changelog
 
+## Release beta 0.1.26 - una sesión guardada que ya no se puede releer deja de bloquear el plugin
+
+### El plugin se quedaba sin salida al arrancar
+
+- **La pantalla de sesión mostraba «Error de recuperación» y desactivaba iniciar una sesión nueva.**
+  Medido en la bóveda de un jugador: el log del plugin registraba en cada arranque
+  `validation_failed` sobre el almacén `session_runtime`. Había una sesión de farmeo guardada en
+  IndexedDB y el validador de hoy la rechazaba entera.
+- **La causa no era el registro, era cómo se validaba.** `isSessionContaminationReview` no
+  comprobaba la forma del análisis de contaminación guardado: lo **volvía a calcular** desde las
+  evidencias y comparaba los dos con `JSON.stringify`. El clasificador cambió en la `0.1.25` (la
+  declaración «he abierto contenedores» pasó de `activity_declared` con detalle `open` a
+  `open_activity_declared`), así que todo análisis escrito antes dejó de coincidir. Como el análisis
+  vive dentro del registro de sesión, el registro entero salía «corrupto».
+- **Y las tres salidas estaban cerradas a la vez**: la vista no pintaba ningún botón en la rama de
+  error, la ruta de descarte exigía un registro que la carga no había podido producir, y el borrado
+  del almacén también validaba antes de borrar, así que se negaba a borrar justo lo que no se podía
+  leer. Iniciar una sesión nueva estaba desactivado para no sobrescribir evidencia recuperable. El
+  resultado era un plugin sin ninguna acción disponible.
+
+### Qué cambia
+
+- **Un análisis que ya no recalcula igual deja de invalidar el registro.** Al **leer**, el registro
+  solo tiene que tener la forma correcta, y se marca si el análisis pudo re-verificarse. Al
+  **escribir**, la comprobación estricta sigue igual que antes: un registro nuevo solo se guarda si
+  su análisis recompone exacto. Se conserva el análisis guardado en vez de vaciarlo, porque la
+  comprobación de una sesión completada compara dos campos escritos juntos en su cierre, no contra
+  el clasificador de hoy.
+- **El desajuste deja de ser un fallo mudo.** Se registra con código propio (`precondition_failed`)
+  en vez de confundirse con un registro inválido, así que el log dice cuál de las dos cosas pasó.
+- **Hay salida aunque el registro sea de verdad ilegible.** La rama de error pinta un botón para
+  descartar la sesión guardada, detrás de una confirmación que dice que no se puede leer y que
+  descartarla borra esos datos. Por debajo, el almacén gana un borrado forzado que no valida.
+- **El mensaje dice cuál de los dos fallos es**: «la sesión guardada no se pudo leer» frente a «el
+  almacén local de recuperación no está disponible». Antes los dos salían como «La operación no se
+  pudo completar de forma segura», que no dice qué hacer.
+
+### Lo que aprendimos
+
+- **Un validador que re-deriva el dato guardado convierte cualquier cambio del algoritmo en pérdida
+  de datos.** El propio fichero ya había tropezado con esto y lo evitaba para la ventana de
+  liquidación de la API, con un comentario que lo explica; no lo evitaba para el clasificador. La
+  regla que queda: al leer se valida la FORMA, y solo al escribir se exige que el cálculo coincida.
+- El commit que lo introdujo se llamaba «que unos insumos gastados no invaliden una sesión entera»,
+  y acabó invalidando la sesión entera.
+
 ## Release beta 0.1.25 - el canal del aviso dentro del juego abre el puerto al encenderlo
 
 ### El interruptor no abría nada
