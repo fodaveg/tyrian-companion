@@ -45,7 +45,7 @@ interface AlertWiringHarness {
 
 const VALUABLE: AlertV1 = {
 	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa de truco o trato', quantity: 3,
-	totalCopper: 120_000, reason: 'valuable',
+	totalCopper: 120_000, priceStatus: 'known', reason: 'valuable',
 };
 
 describe('H13.3 loot poll cabling', () => {

@@ -151,6 +151,7 @@ describe('H13.2 emission', () => {
 			quantity: 500,
 			// 415 against a floor of 310 is 105 a bag, 52.500 over 500 bags.
 			totalCopper: 52_500,
+			priceStatus: 'known',
 			reason: 'bid_above_reference',
 		}]);
 	});

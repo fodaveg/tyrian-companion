@@ -4,7 +4,12 @@ import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action
 const DEFAULT_API_URL = 'https://api.guildwars2.com/v2';
 
 export interface PublicCatalogGateway {
-	requestDetailed(path: string, actionContext?: ResolvedLocalDebugActionContext): Promise<HttpResponse>;
+	requestDetailed(
+		path: string,
+		actionContext?: ResolvedLocalDebugActionContext,
+		/** Item ids this request covers, carried through to `HttpRequest.diagnosticItemIds`. See there for why. */
+		diagnosticItemIds?: readonly number[],
+	): Promise<HttpResponse>;
 }
 
 /** Public GW2 transport. It deliberately has no API-key provider or Authorization header. */
@@ -14,7 +19,11 @@ export class GuildWars2PublicCatalogClient implements PublicCatalogGateway {
 		private readonly apiUrl = DEFAULT_API_URL,
 	) {}
 
-	requestDetailed(path: string, actionContext?: ResolvedLocalDebugActionContext): Promise<HttpResponse> {
+	requestDetailed(
+		path: string,
+		actionContext?: ResolvedLocalDebugActionContext,
+		diagnosticItemIds?: readonly number[],
+	): Promise<HttpResponse> {
 		if (/^https?:\/\//iu.test(path)) {
 			throw new Error('Guild Wars 2 API paths must be relative.');
 		}
@@ -22,6 +31,7 @@ export class GuildWars2PublicCatalogClient implements PublicCatalogGateway {
 			url: `${this.apiUrl.replace(/\/$/u, '')}/${path.replace(/^\//u, '')}`,
 			method: 'GET' as const,
 			endpoint: publicCatalogLogicalEndpoint(path),
+			...(diagnosticItemIds === undefined ? {} : { diagnosticItemIds }),
 		};
 		return actionContext === undefined
 			? this.transport.send(request)

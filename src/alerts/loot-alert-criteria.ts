@@ -1,4 +1,4 @@
-import type { AlertReason, AlertV1 } from './alert-contract';
+import { ALERT_PRICE_STATUSES, type AlertPriceStatus, type AlertReason, type AlertV1 } from './alert-contract';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 
 /**
@@ -29,6 +29,8 @@ export interface LootAlertCandidate {
 	readonly quantity: number;
 	/** Net total of the observed gain, or null when the item has no usable quote. */
 	readonly totalCopper: number | null;
+	/** Whether `totalCopper` is a real quote, a confirmed absence of one, or a lookup that never completed. */
+	readonly priceStatus: AlertPriceStatus;
 	/** Policy reasons that alert regardless of value, in the policy's own order. */
 	readonly alwaysAlertReasons: readonly AlwaysAlertReason[];
 }
@@ -51,6 +53,7 @@ export function decideLootAlert(candidate: LootAlertCandidate, thresholdCopper: 
 		name: candidate.name,
 		quantity: candidate.quantity,
 		totalCopper: candidate.totalCopper,
+		priceStatus: candidate.priceStatus,
 		reason,
 	};
 }
@@ -66,6 +69,8 @@ function validCandidate(candidate: LootAlertCandidate): boolean {
 	return positiveInteger(candidate.itemId) && positiveInteger(candidate.quantity) &&
 		typeof candidate.name === 'string' && candidate.name.length > 0 &&
 		(candidate.totalCopper === null || (Number.isSafeInteger(candidate.totalCopper) && candidate.totalCopper >= 0)) &&
+		(ALERT_PRICE_STATUSES as readonly string[]).includes(candidate.priceStatus) &&
+		(candidate.priceStatus === 'known' ? candidate.totalCopper !== null : candidate.totalCopper === null) &&
 		Array.isArray(candidate.alwaysAlertReasons) &&
 		candidate.alwaysAlertReasons.every((reason: string) => (ALWAYS_ALERT_REASONS as readonly string[]).includes(reason));
 }

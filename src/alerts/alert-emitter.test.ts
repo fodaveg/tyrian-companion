@@ -4,7 +4,8 @@ import type { AlertV1 } from './alert-contract';
 import { AlertEmitter, type AlertChannel } from './alert-emitter';
 
 const ALERT: AlertV1 = {
-	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000, reason: 'valuable',
+	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000,
+	priceStatus: 'known', reason: 'valuable',
 };
 
 describe('H13.4 alert fan-out', () => {

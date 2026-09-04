@@ -26,7 +26,7 @@ describe('LiveSessionLootTracker', () => {
 		});
 		expect(onAlert).toHaveBeenCalledOnce();
 		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 19722, name: 'Pimpollo de madera ancestral',
-			quantity: 2, totalCopper: 34_000, reason: 'valuable' });
+			quantity: 2, totalCopper: 34_000, priceStatus: 'known', reason: 'valuable' });
 		expect(tracker.displayNames()).toEqual({ 'item:19722': 'Pimpollo de madera ancestral' });
 	});
 
@@ -62,6 +62,45 @@ describe('LiveSessionLootTracker', () => {
 		expect(JSON.stringify(state)).not.toContain('#9349');
 	});
 
+	/**
+	 * H13.16. The whole point of `priceStatus`: `state.error` alone cannot tell these two apart
+	 * (both read `prices_unavailable`), which is exactly what let a failed `commerce/prices`
+	 * batch read the same as a confirmed absence of a market. Only the per-row `priceStatus`
+	 * distinguishes them, and that is what has to reach the alert text.
+	 */
+	it('marks a row unavailable, not unquoted, when the whole commerce/prices batch fails', async () => {
+		const gateway = {
+			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
+				? { status: 200, headers: {}, body: [{ id: 83_008, name: 'Pieza de equipo excepcional sin identificar' }] }
+				: { status: 404, headers: {}, body: null }),
+		};
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 10_000 });
+		tracker.begin('session');
+		await tracker.observe('session', delta(83_008, 1));
+
+		expect(tracker.getState()).toMatchObject({
+			error: 'prices_unavailable',
+			rows: [{ itemId: 83_008, unitCopper: null, totalCopper: null, priceStatus: 'unavailable' }],
+		});
+	});
+
+	it('marks a row unquoted, not unavailable, when the trading post answers with no bid', async () => {
+		const gateway = {
+			requestDetailed: vi.fn(async (path: string) => path.startsWith('items?')
+				? { status: 200, headers: {}, body: [{ id: 5, name: 'Reliquia sin oferta' }] }
+				: { status: 200, headers: {}, body: [{ id: 5, whitelisted: true,
+					buys: { quantity: 0, unit_price: 0 }, sells: { quantity: 0, unit_price: 0 } }] }),
+		};
+		const tracker = new LiveSessionLootTracker({ gateway, locale: () => 'es', thresholdCopper: () => 10_000 });
+		tracker.begin('session');
+		await tracker.observe('session', delta(5, 1));
+
+		expect(tracker.getState()).toMatchObject({
+			error: 'prices_unavailable',
+			rows: [{ itemId: 5, unitCopper: null, totalCopper: null, priceStatus: 'unquoted' }],
+		});
+	});
+
 	it('retries unresolved enrichment on an empty later poll and emits one pending valuable alert', async () => {
 		const onAlert = vi.fn();
 		let available = false;
@@ -88,7 +127,7 @@ describe('LiveSessionLootTracker', () => {
 		});
 		expect(onAlert).toHaveBeenCalledOnce();
 		expect(onAlert).toHaveBeenCalledWith({ kind: 'valuable_loot', itemId: 1, name: 'Infusión valiosa',
-			quantity: 1, totalCopper: 850_000, reason: 'valuable' });
+			quantity: 1, totalCopper: 850_000, priceStatus: 'known', reason: 'valuable' });
 	});
 
 	it('batches public item and price requests in groups of at most 200 ids', async () => {

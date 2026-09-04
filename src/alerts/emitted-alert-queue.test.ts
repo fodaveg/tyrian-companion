@@ -8,7 +8,8 @@ import { EmittedAlertQueue } from './emitted-alert-queue';
 import { IndexedDbHalloweenStore } from '../halloween/halloween-store';
 
 const ALERT: AlertV1 = {
-	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000, reason: 'valuable',
+	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000,
+	priceStatus: 'known', reason: 'valuable',
 };
 
 describe('H13.4 durable alert queue', () => {
@@ -19,7 +20,7 @@ describe('H13.4 durable alert queue', () => {
 
 		await expect(queue.enqueue(ALERT)).resolves.toBe(true);
 		clock += 1_000;
-		await expect(queue.enqueue({ ...ALERT, kind: 'always_alert', reason: 'first_seen', totalCopper: null }))
+		await expect(queue.enqueue({ ...ALERT, kind: 'always_alert', reason: 'first_seen', totalCopper: null, priceStatus: 'unquoted' }))
 			.resolves.toBe(true);
 
 		const stored = await queue.read();

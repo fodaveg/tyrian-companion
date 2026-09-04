@@ -35,6 +35,17 @@ export interface HttpRequest {
 	 * the module that knows how big the real answer is.
 	 */
 	maxResponseBytes?: number;
+	/**
+	 * Item ids this request is fetching, for diagnostics only.
+	 *
+	 * Never used to build the request and never sent anywhere: it exists so a failed
+	 * `commerce_prices` batch can be traced back to which ids never got priced, instead of just a
+	 * status code and the closed `endpoint` name. These are the game's own public catalog item
+	 * ids, not player or account data, so they clear the same bar the endpoint name already does.
+	 * Only attached to the diagnostic on failure, and capped there so a large batch cannot balloon
+	 * the log.
+	 */
+	diagnosticItemIds?: readonly number[];
 }
 
 export interface HttpResponse {
@@ -92,6 +103,8 @@ export interface RawHttpResponse {
 }
 
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+/** Bounds how many `diagnosticItemIds` a single failure diagnostic ever records. */
+const MAX_DIAGNOSTIC_ITEM_IDS = 50;
 
 /** Uses Obsidian's request API with bounded retries and deterministic injectable timing. */
 export class ResilientHttpTransport implements HttpTransport {
@@ -175,6 +188,9 @@ export class ResilientHttpTransport implements HttpTransport {
 					statusCode: transportError?.status ?? null,
 					retryAfterMs: transportError?.retryAfterMs ?? null,
 					responseKind: transportError?.kind ?? 'unknown',
+					...(request.diagnosticItemIds === undefined ? {} : {
+						itemIds: request.diagnosticItemIds.slice(0, MAX_DIAGNOSTIC_ITEM_IDS),
+					}),
 				},
 				error,
 			);

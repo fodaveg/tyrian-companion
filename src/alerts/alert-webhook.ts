@@ -48,8 +48,15 @@ export interface AlertWebhookTimer {
 	cancel(handle: unknown): void;
 }
 
-/** What an alert without a quote says. Saying "no value" is the whole message; the reason stays home. */
-const UNPRICED_CONTENT = 'no quoted value';
+/** What a confirmed-unquoted alert says. Saying "no value" is the whole message; the reason stays home. */
+const UNQUOTED_CONTENT = 'no quoted value';
+
+/**
+ * What an alert says when the price lookup itself failed, as opposed to a confirmed absence of
+ * one. A 404 on the whole `commerce/prices` batch is not the same claim as "this item has no
+ * quote," and `UNQUOTED_CONTENT` used to be the only wording either state ever got.
+ */
+const PRICE_UNAVAILABLE_CONTENT = 'price unavailable';
 
 /**
  * The line a chat client renders, composed from the three declared fields.
@@ -67,7 +74,9 @@ const UNPRICED_CONTENT = 'no quoted value';
  * and the destination is a channel the player chose, not the plugin's own UI.
  */
 export function alertWebhookContent(alert: AlertV1): string {
-	const value = alert.totalCopper === null ? UNPRICED_CONTENT : `${String(alert.totalCopper)} copper`;
+	const value = alert.totalCopper !== null
+		? `${String(alert.totalCopper)} copper`
+		: alert.priceStatus === 'unavailable' ? PRICE_UNAVAILABLE_CONTENT : UNQUOTED_CONTENT;
 	return `${alert.name} ×${String(alert.quantity)} · ${value}`;
 }
 

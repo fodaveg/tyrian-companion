@@ -78,7 +78,7 @@ export function assembleHalloween(input: HalloweenAssemblyInput): HalloweenAssem
 			input.emitAlert({
 				kind: 'sell_signal', itemId: notice.itemId, quantity: 1,
 				name: translateRuntime(createTranslator(input.locale()), 'alerts.bagName'),
-				totalCopper: notice.bidCopper, reason: 'bid_above_reference',
+				totalCopper: notice.bidCopper, priceStatus: 'known', reason: 'bid_above_reference',
 			});
 		},
 		onStateChange: input.onPriceAlertStateChange,

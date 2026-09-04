@@ -1,6 +1,6 @@
 import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { AlertV1 } from '../alerts/alert-contract';
+import type { AlertPriceStatus, AlertV1 } from '../alerts/alert-contract';
 import { decideLootAlert } from '../alerts/loot-alert-criteria';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import { parsePublicTradingPostPriceBatch } from '../economy/session-price-snapshot';
@@ -12,6 +12,8 @@ export interface LiveSessionLootRow {
 	readonly quantity: number;
 	readonly unitCopper: number | null;
 	readonly totalCopper: number | null;
+	/** Whether `unitCopper` is a real quote, a confirmed absence of one, or a lookup that never completed. */
+	readonly priceStatus: AlertPriceStatus;
 }
 
 export type LiveSessionLootError = 'catalog_unavailable' | 'prices_unavailable' | null;
@@ -53,6 +55,7 @@ interface MutableLootRow {
 	nameResolved: boolean;
 	quantity: number;
 	unitCopper: number | null;
+	priceStatus: AlertPriceStatus;
 }
 
 interface PendingValuableGain {
@@ -104,9 +107,10 @@ export class LiveSessionLootTracker {
 				const current = this.rows.get(gain.id);
 				const name = enriched.names.get(gain.id) ?? current?.name ?? this.unknownItemName();
 				const unitCopper = enriched.prices.get(gain.id) ?? current?.unitCopper ?? null;
+				const priceStatus = enriched.priceStatuses.get(gain.id) ?? current?.priceStatus ?? 'unavailable';
 				this.rows.set(gain.id, {
 					itemId: gain.id, name, nameResolved: enriched.names.has(gain.id) || current?.nameResolved === true,
-					unitCopper, quantity: (current?.quantity ?? 0) + gain.delta,
+					unitCopper, priceStatus, quantity: (current?.quantity ?? 0) + gain.delta,
 				});
 				this.pendingValuableGains.push({ itemId: gain.id, quantity: gain.delta });
 			}
@@ -130,6 +134,7 @@ export class LiveSessionLootTracker {
 					nameResolved: enriched.names.has(gain.id),
 					quantity: gain.delta,
 					unitCopper: enriched.prices.get(gain.id) ?? null,
+					priceStatus: enriched.priceStatuses.get(gain.id) ?? 'unavailable',
 				});
 			}
 			this.project('complete', restored, delta.window?.to ?? this.nowIso(), enriched.error);
@@ -149,12 +154,14 @@ export class LiveSessionLootTracker {
 	private async enrich(ids: number[]): Promise<{
 		names: Map<number, string>;
 		prices: Map<number, number>;
+		priceStatuses: Map<number, AlertPriceStatus>;
 		error: LiveSessionLootError;
 	}> {
 		const unique = [...new Set(ids)].sort((left, right) => left - right);
-		if (unique.length === 0) return { names: new Map(), prices: new Map(), error: null };
+		if (unique.length === 0) return { names: new Map(), prices: new Map(), priceStatuses: new Map(), error: null };
 		const names = new Map<number, string>();
 		const netPrices = new Map<number, number>();
+		const priceStatuses = new Map<number, AlertPriceStatus>();
 		for (let offset = 0; offset < unique.length; offset += PUBLIC_BATCH_SIZE) {
 			const batch = unique.slice(offset, offset + PUBLIC_BATCH_SIZE);
 			const encodedIds = batch.join(',');
@@ -164,6 +171,8 @@ export class LiveSessionLootTracker {
 				),
 				this.options.gateway.requestDetailed(
 					`commerce/prices?ids=${encodedIds}&v=${encodeURIComponent(PINNED_SCHEMA)}`,
+					undefined,
+					batch,
 				),
 			]);
 			if (items.status === 'fulfilled' && (items.value.status === 200 || items.value.status === 206) && Array.isArray(items.value.body)) {
@@ -173,10 +182,23 @@ export class LiveSessionLootTracker {
 					names.set(item.id as number, item.name.trim());
 				}
 			}
-			const quotes = prices.status === 'fulfilled' && (prices.value.status === 200 || prices.value.status === 206)
-				? parsePublicTradingPostPriceBatch(prices.value.body, new Set(batch)).items : [];
-			for (const quote of quotes) {
-				if (quote.bid !== null) netPrices.set(quote.itemId, Math.floor(quote.bid.unitCopper * 0.85));
+			// A batch that never comes back (a rejected request, a 404, a timeout) leaves every id
+			// in it UNDETERMINED, not confirmed absent from the market. Only a batch that actually
+			// answered can tell an id apart as `unquoted`; everything else in a failed batch is
+			// `unavailable`, and that distinction is what reaches the alert as `priceStatus`.
+			if (prices.status === 'fulfilled' && (prices.value.status === 200 || prices.value.status === 206)) {
+				const parsed = parsePublicTradingPostPriceBatch(prices.value.body, new Set(batch));
+				for (const quote of parsed.items) {
+					if (quote.bid !== null) {
+						netPrices.set(quote.itemId, Math.floor(quote.bid.unitCopper * 0.85));
+						priceStatuses.set(quote.itemId, 'known');
+					} else {
+						priceStatuses.set(quote.itemId, 'unquoted');
+					}
+				}
+				for (const id of parsed.missing) priceStatuses.set(id, 'unquoted');
+			} else {
+				for (const id of batch) priceStatuses.set(id, 'unavailable');
 			}
 		}
 		const catalogUnavailable = names.size < unique.length;
@@ -184,13 +206,14 @@ export class LiveSessionLootTracker {
 		return {
 			names,
 			prices: netPrices,
+			priceStatuses,
 			error: catalogUnavailable ? 'catalog_unavailable' : pricesUnavailable ? 'prices_unavailable' : null,
 		};
 	}
 
 	private applyEnrichment(
 		row: MutableLootRow,
-		enriched: { names: Map<number, string>; prices: Map<number, number> },
+		enriched: { names: Map<number, string>; prices: Map<number, number>; priceStatuses: Map<number, AlertPriceStatus> },
 	): void {
 		const name = enriched.names.get(row.itemId);
 		if (name !== undefined) {
@@ -199,6 +222,8 @@ export class LiveSessionLootTracker {
 		}
 		const price = enriched.prices.get(row.itemId);
 		if (price !== undefined) row.unitCopper = price;
+		const priceStatus = enriched.priceStatuses.get(row.itemId);
+		if (priceStatus !== undefined) row.priceStatus = priceStatus;
 	}
 
 	/**
@@ -222,6 +247,9 @@ export class LiveSessionLootTracker {
 				name: row?.name ?? this.unknownItemName(),
 				quantity: pending.quantity,
 				totalCopper: observedValue,
+				// `observedValue` is only non-null once `row.unitCopper` is, which only ever
+				// happens through the `known` branch of `enrich`.
+				priceStatus: 'known',
 				alwaysAlertReasons: [],
 			}, this.options.thresholdCopper());
 			if (alert !== null) this.options.onAlert?.(alert);

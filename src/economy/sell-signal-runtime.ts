@@ -172,6 +172,7 @@ export class SellSignalRuntime {
 			name,
 			quantity,
 			totalCopper: gainCopper,
+			priceStatus: 'known',
 			reason: decision.signal === 'sell' ? 'bid_above_reference' : 'bid_below_reference',
 		};
 	}

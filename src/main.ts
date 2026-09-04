@@ -1977,6 +1977,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}),
 			quantity: item.quantity,
 			totalCopper: null,
+			// This detector never looks at a quote for any of its four reasons, so it has
+			// nothing to call a failed lookup: `unquoted` is the honest state, not a stand-in
+			// for `unavailable`.
+			priceStatus: 'unquoted',
 			alwaysAlertReasons: alwaysAlertReasonsOf(item),
 		}, this.settings.valuableLootThresholdCopper);
 		if (alert !== null) this.dispatchAlert(alert);

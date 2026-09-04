@@ -41,7 +41,11 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	plugin: [...COMMON_DETAIL_FIELDS, 'enabled', 'commandCount', 'viewCount'],
 	settings: [...COMMON_DETAIL_FIELDS, 'schemaVersion', 'changedKeys', 'detectionMode', 'language'],
 	connection: [...COMMON_DETAIL_FIELDS, 'permissionCount', 'missingPermissionCount'],
-	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint'],
+	// `itemIds` are GW2's own public catalog item ids (e.g. the batch behind a failed
+	// `commerce/prices` call), not player or account data: they name game objects, not the
+	// account that dropped them. `http.ts` already caps how many a single failure carries
+	// before this allowlist ever runs.
+	http: [...COMMON_DETAIL_FIELDS, 'statusCode', 'responseKind', 'endpoint', 'itemIds'],
 	session: [...COMMON_DETAIL_FIELDS, 'phase', 'evidenceQuality', 'detectionMode', 'itemCount'],
 	detection: [...COMMON_DETAIL_FIELDS, 'armed', 'proposalKind', 'continuity', 'intervalMs'],
 	inventory: [...COMMON_DETAIL_FIELDS, 'itemCount', 'locationCount', 'coverage', 'operationCount'],

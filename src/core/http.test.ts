@@ -103,6 +103,54 @@ describe('ObsidianRequestTransport', () => {
 		expect(diagnosticText).not.toMatch(/must-not-appear|private\.invalid|access_token|authorization|body/iu);
 	});
 
+	/**
+	 * H13.16. A `commerce_prices` 404 used to log a bare `endpoint: 'commerce_prices'`: enough to
+	 * know a price lookup failed, never enough to know which items it failed for. Item ids are the
+	 * game's own public catalog numbers, not player data, so the failure diagnostic is where they
+	 * belong.
+	 */
+	it('carries the requested item ids into a failed commerce_prices diagnostic, capped', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(404, {}, null),
+			maxRetries: 0,
+			diagnostics: diagnostics.port,
+			...inertTimer,
+		});
+		const manyIds = Array.from({ length: 80 }, (_value, index) => index + 1);
+
+		await expect(transport.send({
+			url: 'https://api.guildwars2.com/v2/commerce/prices?ids=83008',
+			method: 'GET',
+			endpoint: 'commerce_prices',
+			diagnosticItemIds: manyIds,
+		})).rejects.toMatchObject({ status: 404 });
+
+		const failure = diagnostics.events.at(-1);
+		expect(failure).toMatchObject({ phase: 'failure', details: { endpoint: 'commerce_prices', statusCode: 404 } });
+		const itemIds = (failure?.details as { itemIds?: number[] } | undefined)?.itemIds;
+		expect(itemIds?.length).toBeLessThan(manyIds.length);
+		expect(itemIds?.slice(0, 5)).toEqual([1, 2, 3, 4, 5]);
+	});
+
+	it('omits itemIds from a successful diagnostic and from a request that never declared any', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(200, {}, { ok: true }),
+			diagnostics: diagnostics.port,
+			...inertTimer,
+		});
+
+		await transport.send({
+			url: 'https://api.guildwars2.com/v2/commerce/prices?ids=1',
+			method: 'GET',
+			endpoint: 'commerce_prices',
+			diagnosticItemIds: [1],
+		});
+
+		for (const event of diagnostics.events) expect(event.details).not.toHaveProperty('itemIds');
+	});
+
 	it('retries 429 without Retry-After using injected backoff and jitter', async () => {
 		const request = vi
 			.fn()

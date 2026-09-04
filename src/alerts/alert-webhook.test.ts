@@ -13,7 +13,7 @@ import {
 
 const ALERT: AlertV1 = {
 	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa de truco o trato', quantity: 3,
-	totalCopper: 120_000, reason: 'valuable',
+	totalCopper: 120_000, priceStatus: 'known', reason: 'valuable',
 };
 
 const DESTINATION = 'https://discord.example/hooks/abc';
@@ -89,7 +89,7 @@ describe('H13.4 alert webhook', () => {
  */
 describe('H13.4 alert webhook reason containment', () => {
 	it.each(ALERT_REASONS)('drops the emitter copy instead of forwarding it (%s)', async (reason) => {
-		const alert: AlertV1 = { ...ALERT, kind: 'always_alert', totalCopper: null, reason };
+		const alert: AlertV1 = { ...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unquoted', reason };
 		// The probe is only worth anything if the sentence it hunts was handed in
 		// to begin with: this is the positive control of the assertions below.
 		expect(emitterBodyText(alert, 'es')).toContain(reasonText(reason, 'es'));
@@ -125,12 +125,31 @@ describe('H13.4 alert webhook reason containment', () => {
 	});
 
 	it('says an alert has no value without naming why it fired', () => {
-		const content = alertWebhookContent({ ...ALERT, kind: 'always_alert', totalCopper: null, reason: 'skin_not_unlocked' });
+		const content = alertWebhookContent({
+			...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unquoted', reason: 'skin_not_unlocked',
+		});
 
 		expect(content).toBe('Bolsa de truco o trato ×3 · no quoted value');
 		for (const reason of ALERT_REASONS) {
 			for (const locale of LOCALES) expect(content).not.toContain(reasonText(reason, locale));
 		}
+	});
+
+	/**
+	 * H13.16. A 404 on the whole `commerce/prices` batch is not the same claim as "this item has
+	 * no quote": conflating them is exactly what read a real 1921-1980c item as valueless.
+	 */
+	it('tells a failed price lookup apart from a confirmed absence of one', () => {
+		const unavailable = alertWebhookContent({
+			...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unavailable', reason: 'rare_unpriced_or_bound',
+		});
+		const unquoted = alertWebhookContent({
+			...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unquoted', reason: 'rare_unpriced_or_bound',
+		});
+
+		expect(unquoted).toBe('Bolsa de truco o trato ×3 · no quoted value');
+		expect(unavailable).not.toBe(unquoted);
+		expect(unavailable).not.toContain('no quoted value');
 	});
 });
 
