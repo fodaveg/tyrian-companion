@@ -1,6 +1,7 @@
 import { compareStorageSnapshots } from '../account/storage-delta';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { HttpTransportError } from '../core/http';
 import {
 	unavailableSessionPriceSnapshot,
@@ -54,6 +55,8 @@ import {
 } from './session-api-settlement';
 
 export interface SessionLeaseCoordinator {
+	/** Stable for the coordinator's whole lifetime; identifies this plugin instance in diagnostics. */
+	readonly instanceId: string;
 	acquire(sessionId: string): Promise<AcquireLeaseResult>;
 	renew(handle: ActiveSessionLeaseHandle): Promise<RenewLeaseResult>;
 	assertOwned(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult>;
@@ -92,7 +95,14 @@ export interface SessionStopFailure {
 
 export type SessionRecoveryState =
 	| { status: 'none' }
-	| { status: 'available' | 'busy'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>; message?: string }
+	| { status: 'available'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>; message?: string }
+	| {
+			status: 'busy';
+			state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }>;
+			message?: string;
+			/** When the current owner's lease naturally clears; drives the UI countdown and re-enable. */
+			ownerExpiresAt: number;
+	  }
 	| { status: 'working'; action: 'recover' | 'discard'; state: Exclude<SessionRuntimeRecord['state'], { status: 'complete' }> }
 	/**
 	 * `code` is the machine-readable reason (same vocabulary as `SessionRuntimeLoadResult`); `message`
@@ -156,6 +166,8 @@ export interface ManualSessionStartServiceOptions {
 	tradingPostHistoryCapture?: {
 		capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1>;
 	};
+	/** Records a `warn` line when recover/discard finds the saved session's lease owned elsewhere. */
+	diagnostics?: LocalDebugActionPort;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -190,6 +202,7 @@ export class ManualSessionStartService {
 	private readonly runtimeStore: SessionRuntimeStore;
 	private readonly priceCapture: SessionPriceCapture | null;
 	private readonly tradingPostHistoryCapture: ManualSessionStartServiceOptions['tradingPostHistoryCapture'];
+	private readonly diagnostics: LocalDebugActionPort | null;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -205,6 +218,7 @@ export class ManualSessionStartService {
 		this.runtimeStore = options.runtimeStore;
 		this.priceCapture = options.priceCapture ?? null;
 		this.tradingPostHistoryCapture = options.tradingPostHistoryCapture;
+		this.diagnostics = options.diagnostics ?? null;
 	}
 
 	getState(): SessionState {
@@ -438,7 +452,10 @@ export class ManualSessionStartService {
 		const acquisition = await this.safeAcquire(persisted.sessionId);
 		if (acquisition.status === 'busy') {
 			const message = 'Another Obsidian window still owns this farming session.';
-			this.recoveryState = { status: 'busy', state: record.state, message };
+			this.logRecoveryBusy(action, acquisition.ownerExpiresAt, acquisition.ownerInstanceId, acquisition.ownerMachineId);
+			this.recoveryState = {
+				status: 'busy', state: record.state, message, ownerExpiresAt: acquisition.ownerExpiresAt,
+			};
 			this.onStateChange();
 			return { status: 'busy', message };
 		}
@@ -452,7 +469,8 @@ export class ManualSessionStartService {
 		if (handle.sessionId !== persisted.sessionId) {
 			await this.safeRelease(handle);
 			const message = 'A different farming session is already owned by this Obsidian window.';
-			this.recoveryState = { status: 'busy', state: record.state, message };
+			this.logRecoveryBusy(action, handle.expiresAt, handle.instanceId, handle.machineId);
+			this.recoveryState = { status: 'busy', state: record.state, message, ownerExpiresAt: handle.expiresAt };
 			this.onStateChange();
 			return { status: 'busy', message };
 		}
@@ -1052,6 +1070,32 @@ export class ManualSessionStartService {
 
 	private async safeAcquire(sessionId: string): Promise<AcquireLeaseResult> {
 		try { return await this.coordinator.acquire(sessionId); } catch { return { status: 'error', code: 'unavailable' }; }
+	}
+
+	/**
+	 * The only local trace of a blocked recover/discard: without it, "Recuperación bloqueada" leaves
+	 * no line in the debug log at all, and the player cannot tell a live contender from a stuck lease.
+	 */
+	private logRecoveryBusy(
+		action: 'recover' | 'discard',
+		ownerExpiresAt: number,
+		ownerInstanceId: string,
+		ownerMachineId: string,
+	): void {
+		this.diagnostics?.event({
+			component: 'session',
+			action: action === 'recover' ? 'session_recover' : 'session_discard',
+			level: 'warn',
+			phase: 'skip',
+			code: 'precondition_failed',
+			details: {
+				reason: 'lease_owned_elsewhere',
+				ownerExpiresAt,
+				ownerInstanceId,
+				ownerMachineId,
+				selfInstanceId: this.coordinator.instanceId,
+			},
+		});
 	}
 
 	private async safeAssert(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult> {

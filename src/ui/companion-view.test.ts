@@ -468,6 +468,67 @@ describe('Companion retained product shell', () => {
 		expect(retrySessionSummarySave).toHaveBeenCalledOnce();
 	});
 
+	it('counts down a busy recovery lease and re-enables its buttons once the lease clears', () => {
+		vi.useFakeTimers();
+		const startedAt = Date.parse('2026-09-05T18:00:00.000Z');
+		vi.setSystemTime(startedAt);
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const activeState = {
+			version: 1 as const, status: 'active' as const, sessionId: 'session-owned-elsewhere',
+			authority: { machineId: 'm', instanceId: 'owner', sessionId: 'session-owned-elsewhere', fence: 1, acquiredAt: startedAt },
+			baseline: {
+				snapshotId: 'snap', accountId: 'acc', schemaVersion: 1, startedAt: '2026-09-05T17:00:00.000Z',
+				completedAt: '2026-09-05T17:00:01.000Z', quality: 'stable' as const,
+			},
+			startContext: { characterName: 'Rinopopo' },
+			requestedAt: '2026-09-05T17:00:00.000Z',
+		};
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'en' as const,
+				getProvisionalDelta: () => null,
+				getContaminationReview: () => null,
+				getSessionRecoveryState: () => ({
+					status: 'busy' as const, state: activeState,
+					message: 'Owned elsewhere.', ownerExpiresAt: startedAt + 12_000,
+				}),
+			},
+		});
+		const session = { version: 1 as const, status: 'idle' as const };
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
+		}).renderSimpleSession;
+		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+
+		const recover = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Recover session');
+		const discard = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Discard saved session');
+		expect(recover?.disabled).toBe(true);
+		expect(discard?.disabled).toBe(true);
+		const detail = walkRetained(container).find((element) => element.tag === 'p' && element.attributes.get('aria-live') === 'polite');
+		expect(detail?.textContent).toBe('Another window owns the saved session. Free in 12s.');
+
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
+		const refresh = (TyrianCompanionView.prototype as unknown as {
+			refreshRecoveryOwnerCountdown(this: typeof harness): void;
+		}).refreshRecoveryOwnerCountdown;
+
+		vi.setSystemTime(startedAt + 5_000);
+		refresh.call(harness);
+		expect(detail?.textContent).toBe('Another window owns the saved session. Free in 7s.');
+		expect(recover?.disabled).toBe(true);
+
+		// The lease has now cleared on its own; nothing else in this window told the recovery state
+		// so, but the buttons must stop lying about it regardless.
+		vi.setSystemTime(startedAt + 12_000);
+		refresh.call(harness);
+		expect(recover?.disabled).toBe(false);
+		expect(discard?.disabled).toBe(false);
+		expect(detail?.textContent).toBe('Another window owns the saved session. Free in 0s.');
+	});
+
 	it('preserves the navigation shell without remounting the removed action panel', async () => {
 		const document = new RetainedFakeDocument();
 		installRetainedDom(document);

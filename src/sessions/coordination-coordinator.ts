@@ -33,7 +33,8 @@ type CommonErrorCode = Exclude<Extract<AcquireLeaseResult, { status: 'error' }>[
 
 /** Cross-window/process active-session lease with durable fencing and fail-closed storage. */
 export class ActiveSessionLeaseCoordinator {
-	private readonly instanceId: string;
+	/** Public so a caller that observes `busy` can log which instance is asking, not only which owns it. */
+	readonly instanceId: string;
 	private readonly leaseTtlMs: number;
 	private readonly expiryConfirmDelayMs: number;
 	private readonly clock: () => number;
@@ -174,7 +175,16 @@ export class ActiveSessionLeaseCoordinator {
 				) {
 					return { result: { status: 'already_owned', handle: structuredClone(state.lease) } };
 				}
-				if (now < state.lease.expiresAt) return { result: { status: 'busy', ownerExpiresAt: state.lease.expiresAt } };
+				if (now < state.lease.expiresAt) {
+					return {
+						result: {
+							status: 'busy',
+							ownerExpiresAt: state.lease.expiresAt,
+							ownerInstanceId: state.lease.instanceId,
+							ownerMachineId: state.lease.machineId,
+						},
+					};
+				}
 				return { result: { status: 'expired', lease: structuredClone(state.lease) } };
 			});
 		} catch { return { status: 'error', code: 'unavailable' }; }
@@ -188,7 +198,14 @@ export class ActiveSessionLeaseCoordinator {
 				if (!state) return { result: { status: 'error', code: 'corrupt' } };
 				const currentLease = state.lease;
 				if (!sameLease(currentLease, first.lease) || currentLease === null || confirmedNow < currentLease.expiresAt) {
-					return { result: { status: 'busy', ownerExpiresAt: currentLease?.expiresAt ?? confirmedNow } };
+					return {
+						result: {
+							status: 'busy',
+							ownerExpiresAt: currentLease?.expiresAt ?? confirmedNow,
+							ownerInstanceId: currentLease?.instanceId ?? 'unknown',
+							ownerMachineId: currentLease?.machineId ?? 'unknown',
+						},
+					};
 				}
 				return this.acquireVacant(state, sessionId, confirmedNow);
 			});

@@ -17,6 +17,7 @@ import {
 	settlementRemainingSeconds,
 	type SessionSettlementWait,
 } from '../sessions/session-api-settlement';
+import { leaseRemainingSeconds } from '../sessions/coordination-model';
 import {
 	SESSION_ACTIVITY_KEYS,
 	type SessionActivityKey,
@@ -124,6 +125,10 @@ export class TyrianCompanionView extends ItemView {
 	private liveSackCount: HTMLElement | null = null;
 	private liveSackRate: HTMLElement | null = null;
 	private settlementCountdown: HTMLElement | null = null;
+	private recoveryOwnerDetail: HTMLElement | null = null;
+	private recoveryOwnerExpiresAt: number | null = null;
+	private recoveryRecoverButton: HTMLButtonElement | null = null;
+	private recoveryDiscardButton: HTMLButtonElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
 	private incident: HTMLElement | null = null;
 	private incidentMessage: HTMLElement | null = null;
@@ -265,6 +270,13 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		const copy = simpleSessionCopy(this.actions.getLocale());
 		const observed = session.status === 'error' ? session.failedState : session;
+		// Reset every render: `renderRecovery` below repopulates these only while the recovery
+		// section is actually busy, and a stale reference from a previous busy render must not keep
+		// disabling buttons that this pass never touched.
+		this.recoveryOwnerDetail = null;
+		this.recoveryOwnerExpiresAt = null;
+		this.recoveryRecoverButton = null;
+		this.recoveryDiscardButton = null;
 		const card = container.createEl('section', { cls: 'tyrian-companion-session' });
 		card.setAttr('aria-label', copy.session);
 		const header = card.createEl('header', { cls: 'tyrian-companion-session__header' });
@@ -409,7 +421,14 @@ export class TyrianCompanionView extends ItemView {
 		recovery: Exclude<SessionRecoveryState, { status: 'none' }>,
 	): void {
 		heading.createEl('h2', { text: this.t(recoveryTitleKey(recovery)) });
-		heading.createEl('p', { text: this.t(recoveryDetailKey(recovery)) });
+		const detail = heading.createEl('p', { text: this.recoveryDetailText(recovery) });
+		if (recovery.status === 'busy') {
+			// The lease keeps expiring on its own; this line has to keep up with it instead of
+			// freezing the second it was first read.
+			detail.setAttr('aria-live', 'polite');
+			this.recoveryOwnerDetail = detail;
+			this.recoveryOwnerExpiresAt = recovery.ownerExpiresAt;
+		}
 		if (recovery.status === 'error') {
 			// Unreadable evidence cannot be recovered, only discarded: no "recover" button here.
 			const discard = container.createEl('button', { text: this.t('view.discardSaved') });
@@ -423,7 +442,37 @@ export class TyrianCompanionView extends ItemView {
 		discard.disabled = working || recovery.status === 'busy';
 		recover.addEventListener('click', () => { void this.runRecovery(); });
 		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
+		if (recovery.status === 'busy') {
+			this.recoveryRecoverButton = recover;
+			this.recoveryDiscardButton = discard;
+		}
 		this.renderPilotRecoveryKind(heading, working);
+	}
+
+	/** The generic key lookup covers every phase except `busy`, whose copy needs the live countdown. */
+	private recoveryDetailText(recovery: Exclude<SessionRecoveryState, { status: 'none' }>): string {
+		if (recovery.status === 'busy') {
+			return this.t('status.recoveryOwner', { seconds: leaseRemainingSeconds(recovery.ownerExpiresAt, Date.now()) });
+		}
+		return this.t(recoveryDetailKey(recovery));
+	}
+
+	/**
+	 * Runs on every 1s tick while a busy recovery is on screen. Once the owner's lease has cleared,
+	 * the buttons must work again on their own: nothing else in this window will otherwise change
+	 * `recovery.status` back from `busy`, since only clicking recover/discard re-asks the coordinator.
+	 */
+	private refreshRecoveryOwnerCountdown(): void {
+		if (this.recoveryOwnerExpiresAt === null) return;
+		const remaining = leaseRemainingSeconds(this.recoveryOwnerExpiresAt, Date.now());
+		if (remaining <= 0) {
+			this.recoveryOwnerExpiresAt = null;
+			if (this.recoveryRecoverButton) this.recoveryRecoverButton.disabled = false;
+			if (this.recoveryDiscardButton) this.recoveryDiscardButton.disabled = false;
+			this.recoveryOwnerDetail?.setText(this.t('status.recoveryOwner', { seconds: 0 }));
+			return;
+		}
+		this.recoveryOwnerDetail?.setText(this.t('status.recoveryOwner', { seconds: remaining }));
 	}
 
 	/** Only route to the human classification the pilot metrics need; absent unless the pilot asks. */
@@ -720,6 +769,7 @@ export class TyrianCompanionView extends ItemView {
 		if (session) this.headerElapsed?.setText(session.detail);
 		this.refreshLiveSackCounter(now);
 		this.refreshSettlementCountdown();
+		this.refreshRecoveryOwnerCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {
 			this.checkButton.disabled = connection.status === 'checking' || isCoolingDown(retryAt);

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest mocks are standalone arrow functions in this suite. */
+import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -8,7 +9,9 @@ import {
 	twoCharacterSnapshot,
 	unobservedCharacterSnapshot,
 } from '../account/__fixtures__/storage-delta';
+import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { SessionContaminationAnswers } from './session-contamination-review';
 import {
 	ManualSessionStartService,
@@ -16,7 +19,11 @@ import {
 	type SessionLeaseCoordinator,
 	type ManualSessionStartServiceOptions,
 } from './manual-session-start-service';
-import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-runtime-store';
+import {
+	IndexedDbSessionRuntimeStore,
+	MemorySessionRuntimeStore,
+	type SessionRuntimeStore,
+} from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
 
 const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
@@ -60,6 +67,7 @@ function coordinator(overrides: Partial<SessionLeaseCoordinator> = {}): SessionL
 	const assertOwned: SessionLeaseCoordinator['assertOwned'] = vi.fn(async () => ({ status: 'owned' as const }));
 	const release: SessionLeaseCoordinator['release'] = vi.fn(async () => ({ status: 'released' as const }));
 	return {
+		instanceId: 'instance-1',
 		acquire,
 		renew,
 		assertOwned,
@@ -194,7 +202,10 @@ describe('ManualSessionStartService', () => {
 
 	it('does not capture when another window owns the session lease', async () => {
 		const leases = coordinator({
-			acquire: vi.fn(async () => ({ status: 'busy' as const, ownerExpiresAt: acquiredAt + 30_000 })),
+			acquire: vi.fn(async () => ({
+				status: 'busy' as const, ownerExpiresAt: acquiredAt + 30_000,
+				ownerInstanceId: 'instance-owner', ownerMachineId: 'machine-owner',
+			})),
 		});
 		const baseline = { capture: vi.fn(async () => captured) };
 		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
@@ -852,7 +863,10 @@ describe('ManualSessionStartService', () => {
 		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
 		const second = new ManualSessionStartService(
 			coordinator({
-				acquire: vi.fn(async () => ({ status: 'busy' as const, ownerExpiresAt: handle.expiresAt })),
+				acquire: vi.fn(async () => ({
+					status: 'busy' as const, ownerExpiresAt: handle.expiresAt,
+					ownerInstanceId: handle.instanceId, ownerMachineId: handle.machineId,
+				})),
 			}),
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ runtimeStore }),
@@ -860,8 +874,55 @@ describe('ManualSessionStartService', () => {
 
 		await second.initialize();
 		await expect(second.recover()).resolves.toMatchObject({ status: 'busy' });
-		expect(second.getRecoveryState()).toMatchObject({ status: 'busy', state: { status: 'active' } });
+		expect(second.getRecoveryState()).toMatchObject({
+			status: 'busy', state: { status: 'active' }, ownerExpiresAt: handle.expiresAt,
+		});
 		expect(second.getState().status).toBe('idle');
+	});
+
+	it('logs a warn event with the owner identity when recover finds the lease held elsewhere', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const first = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ runtimeStore }),
+		);
+		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const second = new ManualSessionStartService(
+			coordinator({
+				instanceId: 'instance-second',
+				acquire: vi.fn(async () => ({
+					status: 'busy' as const, ownerExpiresAt: handle.expiresAt,
+					ownerInstanceId: handle.instanceId, ownerMachineId: handle.machineId,
+				})),
+			}),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({
+				runtimeStore,
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+
+		await second.initialize();
+		await second.recover();
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_recover',
+			level: 'warn',
+			code: 'precondition_failed',
+			details: {
+				reason: 'lease_owned_elsewhere',
+				ownerExpiresAt: handle.expiresAt,
+				ownerInstanceId: handle.instanceId,
+				ownerMachineId: handle.machineId,
+				selfInstanceId: 'instance-second',
+			},
+		}));
 	});
 
 	it('blocks a new session when local recovery evidence is corrupt', async () => {
@@ -935,6 +996,90 @@ describe('ManualSessionStartService', () => {
 		expect(leases.acquire).toHaveBeenCalledWith('session-1');
 		expect(leases.release).toHaveBeenCalledWith(recoveredHandle);
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
+	});
+
+	/**
+	 * Reproduces hypothesis B from the "Recuperación bloqueada" incident: a plugin reload must not
+	 * leave the old instance's heartbeat armed, because a live renewal keeps re-extending a lease
+	 * past its TTL forever, and a second instance (real reload, or another window) would see "busy"
+	 * indefinitely instead of only until the TTL naturally clears. Uses the real coordinator and the
+	 * real IndexedDB-backed runtime store (via fake-indexeddb) shared by both instances, not mocks,
+	 * because the bug (if any) lives in the wiring between the service's heartbeat and the
+	 * coordinator's lease, not in either component's pure logic.
+	 */
+	it('stops the old renewer for good on dispose, so a second instance recovers once the TTL clears', async () => {
+		const factory = new IDBFactory();
+		const coordinationDbName = 'coordination-b-repro';
+		const runtimeDbName = 'runtime-b-repro';
+		const leaseTtlMs = 30_000;
+		let now = acquiredAt;
+		let tickOne: (() => void) | undefined;
+		const clearIntervalOne = vi.fn();
+
+		const coordinatorOne = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory,
+			databaseName: coordinationDbName,
+			clock: () => now,
+			instanceId: 'instance-one',
+			leaseTtlMs,
+		});
+		const renewOneSpy = vi.spyOn(coordinatorOne, 'renew');
+		const serviceOne = new ManualSessionStartService(
+			coordinatorOne,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			{
+				now: () => now,
+				sessionId: () => 'session-1',
+				runtimeStore: new IndexedDbSessionRuntimeStore(factory, runtimeDbName),
+				setInterval: vi.fn((callback: () => void) => { tickOne = callback; return 17; }),
+				clearInterval: clearIntervalOne,
+			},
+		);
+
+		await expect(serviceOne.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'started' });
+
+		// The renewer is genuinely alive before the "reload": a real tick renews the real lease.
+		now += 10_000;
+		tickOne?.();
+		await vi.waitFor(() => expect(renewOneSpy).toHaveBeenCalledTimes(1));
+
+		await serviceOne.dispose();
+		expect(clearIntervalOne).toHaveBeenCalledWith(17);
+
+		// The captured tick still exists (nothing revoked the closure); it must now be inert. If
+		// dispose left the renewer armed, this call would re-extend the lease and the second
+		// instance below would stay "busy" no matter how long it waited.
+		tickOne?.();
+		await Promise.resolve();
+		expect(renewOneSpy).toHaveBeenCalledTimes(1);
+
+		now += leaseTtlMs + 1_000;
+		const coordinatorTwo = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory,
+			databaseName: coordinationDbName,
+			clock: () => now,
+			instanceId: 'instance-two',
+			leaseTtlMs,
+		});
+		const serviceTwo = new ManualSessionStartService(
+			coordinatorTwo,
+			{ capture: vi.fn(async () => { throw new Error('must not recapture after recovery'); }) },
+			{
+				now: () => now,
+				sessionId: () => 'session-2',
+				runtimeStore: new IndexedDbSessionRuntimeStore(factory, runtimeDbName),
+				setInterval: vi.fn(() => 71),
+				clearInterval: vi.fn(),
+			},
+		);
+
+		await serviceTwo.initialize();
+		expect(serviceTwo.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'active' } });
+		await expect(serviceTwo.recover()).resolves.toMatchObject({
+			status: 'recovered',
+			state: { status: 'active', authority: { instanceId: 'instance-two' } },
+		});
 	});
 });
 

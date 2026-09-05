@@ -198,13 +198,31 @@ describe('buildCompanionStatus', () => {
 
 	it.each([
 		[{ status: 'available', state: activeSession() }, 'Recovery available'],
-		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.' }, 'Recovery blocked'],
+		[{ status: 'busy', state: activeSession(), message: 'Owned elsewhere.', ownerExpiresAt: NOW + 30_000 }, 'Recovery blocked'],
 		[{ status: 'working', action: 'recover', state: activeSession() }, 'Recovering'],
 		[{ status: 'working', action: 'discard', state: activeSession() }, 'Discarding'],
 		[{ status: 'error', code: 'unavailable', message: 'Store failed.' }, 'Recovery error'],
 	] as const)('gives recovery %s precedence in the header', (recovery, phase) => {
 		const projection = buildCompanionStatus(input({ recovery }));
 		expect(projection.items[1]?.value).toBe(phase);
+	});
+
+	it('counts down the busy recovery lease and keeps the status live so the count updates', () => {
+		const projection = buildCompanionStatus(input({
+			recovery: { status: 'busy', state: activeSession(), message: 'Owned elsewhere.', ownerExpiresAt: NOW + 17_000 },
+		}));
+		expect(projection.items[1]?.detail).toBe('Another window owns the saved session. Free in 17s.');
+		expect(projection.errors).toContain('Recovery: Another window owns the saved session. Free in 17s.');
+		// A frozen render would leave a stale second on screen the moment `now` moves without a fresh
+		// call: the lease keeps expiring whether or not this projection is asked to refresh.
+		expect(projection.refreshEveryMs).toBe(1_000);
+	});
+
+	it('floors an already-expired owner lease at zero seconds instead of a negative number', () => {
+		const projection = buildCompanionStatus(input({
+			recovery: { status: 'busy', state: activeSession(), message: 'Owned elsewhere.', ownerExpiresAt: NOW - 5_000 },
+		}));
+		expect(projection.items[1]?.detail).toBe('Another window owns the saved session. Free in 0s.');
 	});
 
 	it('shows available recovery as the first incident without losing the phase', () => {

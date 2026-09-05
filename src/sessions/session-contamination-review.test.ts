@@ -425,6 +425,7 @@ async function stopWorkflow(service: ManualSessionStartService): Promise<ManualS
 
 function workflowCoordinator(): SessionLeaseCoordinator {
 	return {
+		instanceId: 'workflow-instance',
 		acquire: async () => ({ status: 'acquired', handle: workflowHandle }),
 		renew: async (handle) => ({ status: 'renewed', handle }),
 		assertOwned: async () => ({ status: 'owned' }),

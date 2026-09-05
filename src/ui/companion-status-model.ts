@@ -2,6 +2,7 @@ import type { ConnectionState } from '../account/connection-service';
 import type { DetectionMode } from '../core/settings';
 import { createTranslator, type Locale } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import { leaseRemainingSeconds } from '../sessions/coordination-model';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
 import type { SessionState } from '../sessions/session';
@@ -67,7 +68,7 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 	const connection = connectionStatus(input.connection, t);
 	const detection = detectionStatus(input.detectionMode, input.detection, t);
 	const baseSession = sessionStatus(input.session, input.now, t);
-	const session = recoverySessionStatus(input.recovery, baseSession, t);
+	const session = recoverySessionStatus(input.recovery, baseSession, input.now, t);
 	const polling = pollingStatus(input.detectionMode, input.detection, input.now, t);
 	const quality = qualityStatus(input.qualityState, input.qualityStats, input.sessionQuality, input.detection, input.delta, input.review, t);
 	const errors = statusErrors(input, t);
@@ -86,6 +87,7 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 function recoverySessionStatus(
 	recovery: SessionRecoveryState,
 	fallback: { item: CompanionStatusItem; live: boolean },
+	now: number,
 	t: StatusText,
 ): { item: CompanionStatusItem; live: boolean } {
 	if (recovery.status === 'none') return fallback;
@@ -93,7 +95,13 @@ function recoverySessionStatus(
 		return { item: item('session', t('status.session'), t('status.recoveryAvailable'), t('status.recoveryAvailableDetail'), 'warning'), live: false };
 	}
 	if (recovery.status === 'busy') {
-		return { item: item('session', t('status.session'), t('status.recoveryBlocked'), t('status.recoveryOwner'), 'error'), live: false };
+		return {
+			item: item('session', t('status.session'), t('status.recoveryBlocked'), recoveryOwnerDetail(recovery, now, t), 'error'),
+			// Live so the 1s ticker recomputes the countdown below instead of freezing it at the
+			// instant the lease was found busy; the lease itself keeps expiring whether or not
+			// anyone is watching.
+			live: true,
+		};
 	}
 	if (recovery.status === 'working') {
 		return { item: item('session', t('status.session'), recovery.action === 'recover' ? t('status.recovering') : t('status.discarding'), t('status.recoveryWorking'), 'active'), live: false };
@@ -102,6 +110,15 @@ function recoverySessionStatus(
 		return { item: item('session', t('status.session'), t('status.recoveryError'), recoveryFailureLabel(recovery.code, t), 'error'), live: false };
 	}
 	return fallback;
+}
+
+/** Says how many seconds remain until the current owner's lease naturally clears. */
+function recoveryOwnerDetail(
+	recovery: Extract<SessionRecoveryState, { status: 'busy' }>,
+	now: number,
+	t: StatusText,
+): string {
+	return t('status.recoveryOwner', { seconds: leaseRemainingSeconds(recovery.ownerExpiresAt, now) });
 }
 
 function connectionStatus(state: ConnectionState, t: StatusText): CompanionStatusProjection['connection'] {
@@ -339,7 +356,9 @@ function statusErrors(input: CompanionStatusInput, t: StatusText): string[] {
 	if (input.recovery.status === 'error') {
 		errors.push(t('status.recoveryIncident', { detail: recoveryFailureLabel(input.recovery.code, t) }));
 	}
-	if (input.recovery.status === 'busy') errors.push(t('status.recoveryIncident', { detail: t('status.recoveryOwner') }));
+	if (input.recovery.status === 'busy') {
+		errors.push(t('status.recoveryIncident', { detail: recoveryOwnerDetail(input.recovery, input.now, t) }));
+	}
 	if (input.session.status === 'error') errors.push(t('status.sessionIncident', { detail: sessionFailureLabel(input.session.code, t) }));
 	if (input.startFailure) errors.push(t('status.startIncident', { detail: startFailureLabel(input.startFailure.code, t) }));
 	if (input.stopFailure) errors.push(t('status.stopIncident', { detail: stopFailureLabel(input.stopFailure.code, t) }));

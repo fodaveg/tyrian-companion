@@ -21,7 +21,7 @@ export type ActiveSessionLeaseHandle = ActiveSessionLease;
 
 export type AcquireLeaseResult =
 	| { status: 'acquired' | 'already_owned'; handle: ActiveSessionLeaseHandle }
-	| { status: 'busy'; ownerExpiresAt: number }
+	| { status: 'busy'; ownerExpiresAt: number; ownerInstanceId: string; ownerMachineId: string }
 	| { status: 'error'; code: 'unavailable' | 'corrupt' | 'clock_anomaly' | 'fence_overflow' | 'disposed' };
 
 export type RenewLeaseResult =
@@ -38,3 +38,8 @@ export type ReleaseLeaseResult =
 	| { status: 'released' }
 	| { status: 'lost' }
 	| { status: 'error'; code: 'unavailable' | 'corrupt' | 'clock_anomaly' | 'disposed' };
+
+/** Whole seconds until the current owner's lease naturally clears, floored at zero. */
+export function leaseRemainingSeconds(ownerExpiresAt: number, now: number): number {
+	return Math.max(0, Math.ceil((ownerExpiresAt - now) / 1_000));
+}

@@ -55,6 +55,7 @@ let nextIntervalHandle = 1;
 
 function coordinator(lease: ActiveSessionLeaseHandle = handle): SessionLeaseCoordinator {
 	return {
+		instanceId: 'settlement-instance',
 		acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: lease })),
 		renew: vi.fn(async (current: ActiveSessionLeaseHandle) => ({ status: 'renewed' as const, handle: current })),
 		assertOwned: vi.fn(async () => ({ status: 'owned' as const })),
