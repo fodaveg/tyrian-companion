@@ -975,6 +975,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private async shutdownRuntime(): Promise<void> {
 		const dispose = async (): Promise<void> => {
 		this.unloaded = true;
+		// The lease renewer must die even when an earlier disposer throws: otherwise the
+		// heartbeat keeps renewing after unload and every later recover/discard in a new
+		// plugin instance answers "another window owns the session" with no log line.
+		try {
 		const pilotProposalClosure = this.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
 		this.inventoryAdvisor?.dispose();
@@ -1004,7 +1008,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.pendingProposals?.dispose();
 		this.sessionHistory?.dispose();
 		this.managedAssetsPointer?.close();
-		if (this.sessions) await this.sessions.dispose();
+		} finally {
+			if (this.sessions) await this.sessions.dispose();
+		}
 		};
 		if (this.localDebugActions) await this.localDebugActions.run(
 			{ component: 'plugin', action: 'plugin_unload' }, dispose,

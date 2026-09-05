@@ -114,6 +114,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			),
 			priceCapture: new SessionPriceSnapshotService(input.priceGateway),
 			tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(input.client),
+			diagnostics: input.diagnostics ?? undefined,
 		},
 	);
 	const sessionNotes = new SessionNoteWriter(input.sessionNoteVault);
