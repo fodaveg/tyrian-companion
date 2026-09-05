@@ -168,7 +168,7 @@ export class ManagedAssetsManager {
 				if (destination.manifest.pendingOperation?.kind !== 'relocate') {
 					return { status: 'busy', message: 'Another managed-assets operation is active.' };
 				}
-				const finalized = await this.finalize(destination.manifest);
+				const finalized = await this.finalize(destination.manifest, destination.manifest.assets);
 				if (!finalized) return { status: 'conflict', message: 'The recovered relocation could not be finalized.' };
 				return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(to), ownership: 'existing' };
 			}
@@ -196,7 +196,7 @@ export class ManagedAssetsManager {
 				}
 				journal = destination.manifest;
 			}
-			const finalized = await this.finalize(journal);
+			const finalized = await this.finalize(journal, adopted.entries);
 			if (!finalized) return { status: 'conflict', message: 'The relocation could not be finalized.' };
 			return { status: finalized.changed ? 'applied' : 'unchanged', inspection: await this.inspect(to), ownership: 'created' };
 		} catch {
@@ -223,16 +223,24 @@ export class ManagedAssetsManager {
 		const steps: ManagedOperationStep[] = [];
 		for (const inspected of destination.assets) {
 			const { asset, currentHash, currentSemanticHash, path } = inspected;
+			// A base's identity survives a plugin upgrade even when its contentVersion does not: the
+			// origin manifest may still carry the version the user last installed, while the packaged
+			// bundle has already moved on. Matching on id/kind/locale alone (and verifying equality by
+			// semantic hash, never by version) is what lets that older origin be recognized as the same
+			// asset; a template has no semantic hash, so it keeps requiring an exact version match.
 			const origin = manifest.assets.find((entry) => entry.id === asset.id && entry.kind === asset.kind &&
-				entry.contentVersion === asset.contentVersion && entry.locale === asset.locale);
+				entry.locale === asset.locale && (asset.kind === 'base' || entry.contentVersion === asset.contentVersion));
 			if (!origin || currentHash === null) return null;
 			if (asset.kind === 'base') {
 				if (origin.installedSemanticHash === undefined || currentSemanticHash !== origin.installedSemanticHash) return null;
 			} else if (inspected.status !== 'recoverable' || currentHash !== origin.installedHash) {
 				return null;
 			}
+			// Registered at the ORIGIN's contentVersion, not the packaged one: `inspect()` will then
+			// report `update` (not `unchanged`) for a stale base, and the ordinary upgrade lifecycle
+			// — not this relocation — is what carries it forward to the current bundle version.
 			const entry: ManagedAssetEntry = {
-				id: asset.id, kind: asset.kind, contentVersion: asset.contentVersion, locale: asset.locale,
+				id: asset.id, kind: asset.kind, contentVersion: origin.contentVersion, locale: asset.locale,
 				path, installedHash: currentHash,
 			};
 			if (asset.kind === 'base') entry.installedSemanticHash = currentSemanticHash!;
@@ -413,7 +421,14 @@ export class ManagedAssetsManager {
 		return await this.casManifest(manifest, next);
 	}
 
-	private async finalize(manifest: ManagedAssetsManifest): Promise<{ manifest: ManagedAssetsManifest; changed: boolean } | null> {
+	/**
+	 * `adopted` carries the exact entries a relocation adoption already verified (possibly
+	 * registered at an older contentVersion than the packaged bundle, per `relocationAdoption`).
+	 * When present for an asset, it replaces the bundle's own version/hash as the expected
+	 * evidence, because that adopted content is deliberately not upgraded here; ordinary
+	 * install/upgrade/repair never pass it, so their finalize behavior is unchanged.
+	 */
+	private async finalize(manifest: ManagedAssetsManifest, adopted: ManagedAssetEntry[] = []): Promise<{ manifest: ManagedAssetsManifest; changed: boolean } | null> {
 		const installed: ManagedAssetEntry[] = [];
 		for (const asset of selectedAssets(this.bundle)) {
 			const path = managedAssetPath(manifest.root, asset);
@@ -421,17 +436,18 @@ export class ManagedAssetsManager {
 			if (!file) return null;
 			const content = normalizeLf(await this.vault.read(file));
 			const installedHash = await sha256Text(content);
+			const override = adopted.find((entry) => entry.id === asset.id);
 			const entry: ManagedAssetEntry = {
-				id: asset.id, kind: asset.kind, contentVersion: asset.contentVersion, locale: asset.locale,
+				id: asset.id, kind: asset.kind, contentVersion: override?.contentVersion ?? asset.contentVersion, locale: asset.locale,
 				path, installedHash,
 			};
 			if (asset.kind === 'base') {
-				const [installedSemanticHash, packagedSemanticHash] = await Promise.all([
-					baseSemanticHash(content), baseSemanticHash(asset.bytes),
+				const [installedSemanticHash, expectedSemanticHash] = await Promise.all([
+					baseSemanticHash(content), override ? Promise.resolve(override.installedSemanticHash ?? null) : baseSemanticHash(asset.bytes),
 				]);
-				if (installedSemanticHash === null || installedSemanticHash !== packagedSemanticHash) return null;
+				if (installedSemanticHash === null || expectedSemanticHash === null || installedSemanticHash !== expectedSemanticHash) return null;
 				entry.installedSemanticHash = installedSemanticHash;
-			} else if (installedHash !== asset.contentHash || !hasCompatibleMarker(content, asset)) return null;
+			} else if (override ? installedHash !== override.installedHash : (installedHash !== asset.contentHash || !hasCompatibleMarker(content, asset))) return null;
 			installed.push(entry);
 		}
 		const next: ManagedAssetsManifest = { ...manifest, schemaVersion: MANAGED_ASSETS_SCHEMA_VERSION,

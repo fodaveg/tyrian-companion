@@ -35,11 +35,12 @@ export class ManagedAssetsLifecycle {
 		if (current.status === 'installing' && current.targetRoot === root) {
 			// Resume the exact durable intent after a crash or from another window.
 		} else if (current.status !== 'ready') return { status: 'busy', message: 'Another managed-assets lifecycle operation is active.' };
-		if (current.root === root) {
-			const upgraded = await this.manager.apply(root, 'upgrade');
-			return successResult(upgraded, 'applied', current);
+		if (current.root === root) return await this.installOverExistingAuthority(root, current);
+		if (current.status === 'ready' && current.root !== null) {
+			const reclaimed = await this.reclaimStalePointer(current, current.root, root);
+			if (!reclaimed) return { status: 'conflict', message: 'Another managed-assets root is active.' };
+			return await this.installOverExistingAuthority(root, reclaimed);
 		}
-		if (current.status === 'ready' && current.root !== null) return { status: 'conflict', message: 'Another managed-assets root is active.' };
 		const claim = current.status === 'installing' ? current : await this.pointer.compareAndSet(current, { status: 'installing', root: null, targetRoot: root });
 		if (!claim) return { status: 'busy', message: 'Another managed-assets lifecycle operation won the race.' };
 		current = claim;
@@ -59,6 +60,50 @@ export class ManagedAssetsLifecycle {
 			return { status: 'conflict', message: 'The managed-assets pointer changed before install completed.' };
 		}
 		return { status: installed.status === 'unchanged' ? 'unchanged' : 'applied', root, generation: ready.generation };
+	}
+
+	/**
+	 * Confirms authority over a root the durable pointer already names (or was just reclaimed
+	 * for). A root whose entire tracked footprint reports `missing` is the exact signature left
+	 * behind when Obsidian moves the folder out from under the plugin: the manifest is still
+	 * `ready`, but every file it names is gone. Calling the ordinary upgrade there would recreate
+	 * fresh, default-content copies at that abandoned root as a side effect of merely confirming
+	 * authority — and a subsequent relocation adopts files by comparing their semantic hash
+	 * against THIS root's manifest, so freshly fabricated content would poison that comparison
+	 * and make the real files at the destination unrecognizable. Authority is confirmed without
+	 * writing anything in that case; an explicit Repair, not an implicit Apply, is what should
+	 * ever recreate wholesale-missing content.
+	 */
+	private async installOverExistingAuthority(root: string, current: ManagedAssetsPointerState): Promise<ManagedAssetsLifecycleResult> {
+		try {
+			const inspection = await this.manager.inspect(root);
+			if (inspection.manifestStatus === 'ready' && inspection.assets.length > 0 &&
+				inspection.assets.every((entry) => entry.status === 'missing')) {
+				return { status: 'unchanged', root, generation: current.generation };
+			}
+		} catch { /* fall through; apply() below performs its own safe inspection */ }
+		const upgraded = await this.manager.apply(root, 'upgrade');
+		return successResult(upgraded, 'applied', current);
+	}
+
+	/**
+	 * A `ready` pointer naming a different root than the one this install targets is reclaimed
+	 * only when that named root has decayed to nothing — no manifest and not a single managed
+	 * file under it, i.e. `inspect()` reports every asset as `create` — while the requested root
+	 * already carries its own `ready` manifest. Anything short of that (a live install, a root
+	 * still mid-operation, a root that still owns files) leaves this returning `null`, and
+	 * `installInternal` still answers `conflict`, so a genuinely active window's root is never
+	 * stepped on. The reclaim itself is a `compareAndSet` keyed on the exact pointer already
+	 * read: a concurrent window that moves the pointer in between always beats this one back to
+	 * `null`, the same optimistic-concurrency guarantee every other transition in this class uses.
+	 */
+	private async reclaimStalePointer(current: ManagedAssetsPointerState, staleRoot: string, root: string): Promise<ManagedAssetsPointerState | null> {
+		try {
+			const [stale, requested] = await Promise.all([this.manager.inspect(staleRoot), this.manager.inspect(root)]);
+			const abandoned = stale.manifestStatus === 'missing' && stale.assets.every((entry) => entry.status === 'create');
+			if (!abandoned || requested.manifestStatus !== 'ready') return null;
+		} catch { return null; }
+		return await this.pointer.compareAndSet(current, { status: 'ready', root, targetRoot: null });
 	}
 
 	async remove(
@@ -207,9 +252,9 @@ function finishLifecycleSpan(span: LocalDebugActionSpan, result: ManagedAssetsLi
 	} else if (result.status === 'unchanged' || result.status === 'busy') {
 		span.skip('skipped', result.status);
 	} else if (result.status === 'unavailable') {
-		span.failure(new Error('managed_assets_unavailable'), 'storage_failure', result.status);
+		span.failure(new Error('managed_assets_unavailable'), 'storage_failure', result.status, { message: result.message });
 	} else {
-		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status);
+		span.failure(new Error('managed_assets_conflict'), 'validation_failed', result.status, { message: 'message' in result ? result.message : undefined });
 	}
 }
 

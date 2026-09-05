@@ -450,6 +450,84 @@ describe('ManagedAssetsManager', () => {
 		for (const [path, bytes] of destinationBytes) expect(vault.contents.get(path)).toBe(bytes);
 	});
 
+	it('adopts a reserialized destination whose origin manifest is an older contentVersion, then a later upgrade completes it', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		// bundleVersion stays fixed (as it does in production, currently a hardcoded manifest-
+		// format constant) while only this Base's own contentVersion advances, exactly as measured:
+		// bundleVersion 6, inventory/materials at contentVersion 4 inside a manifest still at 2.
+		const originManager = await managerAtContentVersion(vault, 6, 2);
+		const originLifecycle = new ManagedAssetsLifecycle(originManager, pointer);
+		expect(await originLifecycle.install('Previous root')).toMatchObject({ status: 'applied', root: 'Previous root' });
+		const sourceManifestPath = `Previous root/${MANAGED_ASSETS_MANIFEST}`;
+		const sourceManifest = JSON.parse(vault.contents.get(sourceManifestPath)!) as MutableJournal;
+		const originEntry = sourceManifest.assets[0];
+		if (!originEntry) throw new Error('missing origin asset fixture');
+		const originalBytes = vault.contents.get(originEntry.path);
+		if (originalBytes === undefined) throw new Error('missing origin file fixture');
+		// Obsidian reserializes the Base and drops the plugin's ownership marker, exactly as
+		// measured in the vault; the destination now holds only bare, markerless YAML.
+		const reserialized = stringifyYaml(parseYaml(originalBytes));
+		const destinationPath = originEntry.path.replace(/^Previous root\//u, 'Configured output/');
+		vault.contents.set(destinationPath, reserialized);
+		vault.contents.delete(originEntry.path);
+
+		// The plugin bundle has since moved this Base to contentVersion 3, while the origin
+		// manifest still records the contentVersion 2 the user actually has installed.
+		const upgradedManager = await managerAtContentVersion(vault, 6, 3);
+		const upgradedLifecycle = new ManagedAssetsLifecycle(upgradedManager, pointer);
+
+		expect(await upgradedLifecycle.move('Configured output')).toMatchObject({ status: 'relocated', root: 'Configured output' });
+
+		const destinationManifest = JSON.parse(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)!) as MutableJournal;
+		const destinationEntry = destinationManifest.assets[0];
+		expect(destinationEntry).toMatchObject({ id: originEntry.id, contentVersion: 2 });
+		expect(vault.contents.get(destinationPath)).toBe(reserialized);
+
+		expect(await upgradedManager.apply('Configured output', 'upgrade')).toMatchObject({ status: 'applied' });
+		const upgradedManifest = JSON.parse(vault.contents.get(`Configured output/${MANAGED_ASSETS_MANIFEST}`)!) as MutableJournal;
+		expect(upgradedManifest.assets[0]?.contentVersion).toBe(3);
+		expect(vault.contents.get(destinationPath)).not.toBe(reserialized);
+	});
+
+	it('confirms authority over a durably owned root whose entire tracked footprint went missing, without recreating any file there', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = await manager(vault, 2);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		expect(await lifecycle.install('Real root')).toMatchObject({ status: 'applied', root: 'Real root' });
+		const manifestPath = `Real root/${MANAGED_ASSETS_MANIFEST}`;
+		const manifest = JSON.parse(vault.contents.get(manifestPath)!) as MutableJournal;
+		const entry = manifest.assets[0];
+		if (!entry) throw new Error('missing asset fixture');
+		// The manifest is left exactly as installed; only the file itself is gone, the same
+		// signature Obsidian leaves behind when it moves the folder that held it.
+		vault.contents.delete(entry.path);
+		const before = new Map(vault.contents);
+
+		// The durable pointer names an unrelated root that never held any manifest or file at
+		// all — the measured "Tyrian Companion" ghost pointer.
+		const emptyPointer = await pointer.read();
+		await pointer.compareAndSet(emptyPointer, { status: 'ready', root: 'Ghost root', targetRoot: null });
+
+		const result = await lifecycle.install('Real root');
+
+		expect(result.status).not.toBe('conflict');
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Real root' });
+		expect(vault.contents).toEqual(before);
+	});
+
+	it('still refuses install when the durable pointer names a root that genuinely still owns files', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const instance = await manager(vault, 2);
+		const lifecycle = new ManagedAssetsLifecycle(instance, pointer);
+		expect(await lifecycle.install('Root A')).toMatchObject({ status: 'applied', root: 'Root A' });
+
+		expect(await lifecycle.install('Root B')).toMatchObject({ status: 'conflict' });
+		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Root A' });
+	});
+
 	it('relocates a retained legacy root only through an explicit lifecycle move', async () => {
 		const vault = new MemoryAssetVault();
 		const instance = await manager(vault, 1);
@@ -574,6 +652,18 @@ async function manager(vault: MemoryAssetVault, version: number): Promise<Manage
 	const hash = [...new Uint8Array(contentHash)].map((part) => part.toString(16).padStart(2, '0')).join('');
 	return new ManagedAssetsManager(vault, CONFIG_DIR, {
 		bundleVersion: version, locale: 'es', assets: [{ ...asset, contentVersion: version, bytes, contentHash: hash }],
+	});
+}
+
+/** Like `manager()`, but holds `bundleVersion` fixed while only the asset's own
+ * contentVersion moves, matching the real shape: a stable manifest-format bundleVersion
+ * with individual assets (inventory-base, materials-base) advancing independently. */
+async function managerAtContentVersion(vault: MemoryAssetVault, bundleVersion: number, contentVersion: number): Promise<ManagedAssetsManager> {
+	const [asset] = await genericManagedAssets();
+	if (!asset) throw new Error('missing fixture');
+	const bytes = asset.bytes.replace(/version=\d+/u, `version=${contentVersion}`);
+	return new ManagedAssetsManager(vault, CONFIG_DIR, {
+		bundleVersion, locale: 'es', assets: [{ ...asset, contentVersion, bytes, contentHash: await sha256Text(bytes) }],
 	});
 }
 

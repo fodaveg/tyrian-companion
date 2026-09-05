@@ -2414,8 +2414,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (this.settings.legacyManagedAssetsRoot !== null) return;
 		if (this.settings.managedAssetsRoot === null || this.settings.managedAssetsRoot === this.settings.outputFolder) return;
 		const result = await this.relocateManagedAssets(parent);
-		if (result === null) return;
 		const translator = createTranslator(this.settings.language);
+		if (result === null) {
+			this.emitNotice(
+				translateRuntime(translator, 'notices.managedAssetsAutoRelocationBlocked'),
+				'managed_assets_blocked',
+			);
+			return;
+		}
 		if (result.status === 'relocated') {
 			this.emitNotice(
 				translateRuntime(translator, 'notices.managedAssetsAutoRelocated', { root: this.settings.outputFolder }),
