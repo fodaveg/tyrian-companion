@@ -184,7 +184,11 @@ function classifyPriceBatch(body: unknown, ids: number[]): Map<number, PriceCove
 		seen.add(id);
 		const parsed = parsePublicTradingPostPriceBatch([entry], new Set([id])).items[0];
 		if (!parsed) { result.set(id, { status: 'invalid', price: null }); continue; }
-		if (!parsed.whitelisted || (parsed.bid === null && parsed.ask === null)) result.set(id, { status: 'no_quote', price: null });
+		// `whitelisted` only says whether a free-to-play account may trade the item; it is not a
+		// quote. Reading it as one turned every non-whitelisted drop (most exotics, and with them
+		// most of the value a Labyrinth run produces) into a "no quoted value" alert on a full
+		// account. A quote exists when either side of the book does.
+		if (parsed.bid === null && parsed.ask === null) result.set(id, { status: 'no_quote', price: null });
 		else result.set(id, { status: 'quote', price: parsed });
 	}
 	if (ambiguousInvalid) {

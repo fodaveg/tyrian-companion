@@ -92,8 +92,9 @@ describe('Halloween evidence service', () => {
 		}), new RateLimitCoordinator());
 		const first = await service.resolve({ gains: [1, 2, 3].map((itemId) => ({ itemId, quantity: 1 })),
 			firstSeenItemIds: [], learning: false, scopes: ['unlocks'], locale: 'en' });
-		expect(first.map(({ priceStatus }) => priceStatus)).toEqual(['no_quote', 'no_quote', 'invalid']);
-		expect(first[1]?.netUnitCopper).toBe(12); // vendor only; whitelisted=false TP bid is ignored
+		expect(first.map(({ priceStatus }) => priceStatus)).toEqual(['no_quote', 'quote', 'invalid']);
+		// `whitelisted=false` is a free-to-play restriction, not an absence of a quote: the bid counts.
+		expect(first[1]?.netUnitCopper).toBe(Math.floor(50_000 * 0.85));
 		const offline = await service.resolve({ gains: [{ itemId: 4, quantity: 1 }], firstSeenItemIds: [],
 			learning: false, scopes: ['unlocks'], locale: 'en' });
 		expect(offline[0]?.priceStatus).toBe('unavailable');

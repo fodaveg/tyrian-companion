@@ -88,13 +88,32 @@ describe('official commerce listings depth', () => {
 		for (const body of [
 			[{ id: 1, buys: [], sells: [] }, { id: 1, buys: [], sells: [] }],
 			[{ id: 999, buys: [], sells: [] }],
-			[{ id: 1, buys: [level(100), level(100)], sells: [] }],
+			[{ id: 1, buys: [level(100), level(110)], sells: [] }],
+			[{ id: 1, buys: [], sells: [level(110), level(100)] }],
 		]) {
 			const evidence = await captureInventoryMarketDepth([1], {
 				requestDetailed: async () => ({ status: 200, headers: {}, body }),
 			}, Date.parse('2026-08-29T12:00:00.000Z'));
 			expect(evidence).toMatchObject({ status: 'unavailable', items: [{ itemId: 1, coverage: 'invalid' }] });
 		}
+	});
+
+	it('merges a price level the API repeats instead of discarding the whole book', async () => {
+		// Measured on the live API (6 sep 2026): equal-price neighbours are common on deep books,
+		// and rejecting them marked 159 crafting-material positions of one vault as invalid.
+		const evidence = await captureInventoryMarketDepth([1], {
+			requestDetailed: async () => ({ status: 200, headers: {}, body: [{
+				id: 1,
+				buys: [level(100), { listings: 2, unit_price: 100, quantity: 5 }, level(90)],
+				sells: [level(120), level(120), level(130)],
+			}] }),
+		}, Date.parse('2026-08-29T12:00:00.000Z'));
+		expect(evidence).toMatchObject({ status: 'complete', items: [{
+			itemId: 1, coverage: 'complete',
+			buys: [{ unitCopper: 100, quantity: 6 }, { unitCopper: 90, quantity: 1 }],
+			sells: [{ unitCopper: 120, quantity: 2 }, { unitCopper: 130, quantity: 1 }],
+		}] });
+		expect(valueInstantSellDepth(evidence.items[0]!.buys, 7)).toMatchObject({ status: 'complete', grossCopper: 690 });
 	});
 });
 

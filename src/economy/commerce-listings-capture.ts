@@ -80,6 +80,16 @@ function parseLevels(value: unknown, side: 'buys' | 'sells'): CommerceListingLev
 	for (const entry of value) {
 		if (!record(entry) || !exactKeys(entry, ['listings', 'unit_price', 'quantity'])
 			|| !nonNegative(entry.listings) || !positive(entry.unit_price) || !positive(entry.quantity)) return null;
+		// The live API repeats a price level (measured 6 sep 2026: 323 equal-price neighbours across
+		// 133 items of one vault). Two entries at one price are one level of the book, so they
+		// merge; only a level that goes the wrong way still makes the whole book invalid.
+		const previous = levels.at(-1);
+		if (previous !== undefined && previous.unitCopper === entry.unit_price) {
+			const quantity = previous.quantity + entry.quantity;
+			if (!Number.isSafeInteger(quantity)) return null;
+			previous.quantity = quantity;
+			continue;
+		}
 		levels.push({ unitCopper: entry.unit_price, quantity: entry.quantity });
 	}
 	return isCommerceListingLevels(levels, side) ? levels : null;
