@@ -1,5 +1,45 @@
 # Changelog
 
+## Release beta 0.1.29 - los paneles enseñan datos y los ajustes caben en seis pestañas
+
+### Ajustes
+
+- **Seis pestañas de primer nivel** (Cuenta · Sesión · Botín · Bolsa de Halloween · Avisos externos ·
+  Datos y soporte) en vez de tres «esenciales» y un desplegable con veintisiete opciones dentro.
+  Filas nativas de Obsidian, sin cabecera del producto ni columna lateral.
+- **Las opciones dependientes solo aparecen con su interruptor activo**: intervalo de consulta,
+  puerto del aviso dentro del juego, margen y enfriamiento del aviso de precio, intervalo y
+  retenciones del histórico, segundos y coste del reciclaje. Ninguna se ha borrado.
+- **La clave API y «Comprobar conexión» comparten fila.** Los registros de diagnóstico y las
+  métricas del piloto se parten en dos filas cada uno en vez de apilar seis controles.
+- **Renombres.** El umbral por unidad de Halloween pasa a «Cazar un objeto suelto caro», para que
+  no se confunda con «Avisarme de un drop desde» (total del hallazgo). El margen sobre p90 se
+  escribe en porcentaje, no en puntos básicos. El coste de oportunidad del reciclaje, en oro por
+  hora, no en cobre.
+
+### Panel de sesión
+
+- **Sin cabecera del producto** (eyebrow, título y subtítulo): la pestaña de Obsidian ya lo nombra.
+  Queda la tira de tres pestañas.
+- **La detección es una fila**: estado y botón. Contadores, cronología de consultas y la explicación
+  del saco #36038 van bajo «Detalle de la detección», plegado. Las propuestas de inicio y fin
+  siguen saliendo con sus dos botones y su evidencia.
+- **La calidad del resumen es un badge** junto al personaje, con la explicación en tooltip, no una
+  línea propia. «Sin ganancias» va en la misma línea que el valor.
+- **El historial durable queda plegado** bajo «Historial de sesiones».
+
+### Panel de inventario
+
+- **Empieza por la barra**: Buscar · Ordenar · Filtros · Sincronizar («hace 2 días» al lado, la hora
+  exacta en tooltip) · Analizar sin escribir. La lista de objetos va justo debajo, en todos los
+  estados.
+- **La última sincronización es una línea al pie** («ÉXITO · Sincronización terminada: …») con el
+  desglose plegado. La barra de progreso solo existe mientras corre. Se acabó el timestamp ISO y el
+  mismo dato tres veces.
+- **Fuera de la vista**: los tres párrafos de introducción, el aviso «abrir esta vista no lee la
+  cuenta», y el histórico local de precios, que queda plegado al final. Esas garantías viven en
+  `docs/PRODUCT.md`.
+
 ## Release beta 0.1.28 - la gráfica de precio se puede leer y se puede acercar
 
 ### Antes se veía una forma y no un dato
