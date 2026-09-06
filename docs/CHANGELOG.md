@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.1.30 - los precios llegan: ni «no quoted value» por whitelisted ni materiales «invalid»
+
+### Aviso dentro del juego (Nexus y Blish HUD)
+
+- **«no quoted value» en objetos que sí cotizan.** La ruta de avisos leía `whitelisted: false` de
+  `/v2/commerce/prices` como «sin cotización». Ese campo solo dice si una cuenta gratuita puede
+  comerciar el objeto; en una cuenta completa convertía casi todos los exóticos en avisos sin
+  valor (61 de los 68 objetos comerciables sin precio medidos en una bóveda real). Ahora hay
+  cotización cuando existe puja o anuncio, sin mirar `whitelisted`.
+
+### Inventario
+
+- **159 posiciones «invalid», casi todas materiales de crafteo.** El parser de
+  `/v2/commerce/listings` exigía niveles de precio estrictamente monótonos y la API repite niveles
+  con el mismo precio (323 vecinos iguales en 133 objetos, medidos el 6 sep 2026). Bastaba uno para
+  invalidar el libro entero del objeto. Ahora los niveles iguales se fusionan sumando cantidades;
+  un nivel que va al revés sigue invalidando el libro.
+- Hace falta **volver a sincronizar el inventario** para que las notas recojan los valores.
+
 ## Release beta 0.1.29 - los paneles enseñan datos y los ajustes caben en seis pestañas
 
 ### Ajustes
