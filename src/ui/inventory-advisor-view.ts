@@ -336,38 +336,29 @@ function mountInventoryAdvisorView(
 	let unversionedRenders = 0;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
-	const heading = createEl('h2');
-	const intro = createEl('p');
-	intro.className = 'tyrian-inventory-advisor__intro';
-	const iconDisclosure = createEl('p');
-	iconDisclosure.className = 'tyrian-inventory-advisor__icon-disclosure';
-	const syncSection = createEl('section');
-	syncSection.className = 'tyrian-inventory-advisor__sync';
-	const syncHeading = createEl('h3');
-	const syncIntro = createEl('p');
-	const syncNotice = createDiv();
-	syncNotice.className = 'tyrian-inventory-advisor__sync-notice';
-	const syncOpenNotice = createEl('p');
-	const syncNoticeLastRun = createEl('p');
-	syncNotice.append(syncOpenNotice, syncNoticeLastRun);
+	// The sync controls sit in the same bar as search and sort: they are the only actions this
+	// view owns, and a heading, an intro and a notice above them were 7 lines the list of items
+	// had to scroll past. Every guarantee they used to state lives in docs/PRODUCT.md now.
 	const syncAssetsHint = createEl('p');
 	syncAssetsHint.className = 'tyrian-inventory-advisor__sync-hint';
 	const syncButton = createEl('button');
 	syncButton.type = 'button';
-	syncButton.className = 'mod-cta tyrian-inventory-advisor__sync-button';
+	syncButton.className = 'tyrian-inventory-advisor__sync-button';
 	const syncButtonIcon = createSpan();
 	syncButtonIcon.className = 'tyrian-inventory-advisor__sync-button-icon';
 	setIcon(syncButtonIcon, 'refresh-cw');
 	const syncButtonText = createSpan();
 	syncButton.append(syncButtonIcon, syncButtonText);
 	syncButton.addEventListener('click', () => { void interactions.inventorySync?.onRun(); });
+	const syncLastRunAgo = createEl('small');
+	syncLastRunAgo.className = 'tyrian-inventory-advisor__sync-ago';
 	const syncAnalyze = createEl('button');
 	syncAnalyze.type = 'button';
 	syncAnalyze.className = 'tyrian-inventory-advisor__analyze-button';
 	syncAnalyze.addEventListener('click', () => { void interactions.inventorySync?.onAnalyze?.(); });
 	const syncPrimaryActions = createDiv();
 	syncPrimaryActions.className = 'tyrian-inventory-advisor__sync-actions tyrian-inventory-advisor__sync-primary-actions';
-	syncPrimaryActions.append(syncButton, syncAnalyze);
+	syncPrimaryActions.append(syncButton, syncLastRunAgo, syncAnalyze);
 	const syncConfirm = createDiv();
 	syncConfirm.className = 'tyrian-inventory-advisor__sync-confirm';
 	const syncConfirmTitle = createEl('strong');
@@ -385,13 +376,17 @@ function mountInventoryAdvisorView(
 	syncConfirmCancel.addEventListener('click', () => { interactions.inventorySync?.onCancel(); });
 	syncConfirmActions.append(syncConfirmApply, syncConfirmCancel);
 	syncConfirm.append(syncConfirmTitle, syncConfirmBody, syncConfirmSummary, syncConfirmActions);
-	const syncStatusHeading = createEl('h4');
-	const syncStatusPanel = createDiv();
+	// The last run is one line at the foot of the list. The progress bar exists only while a run
+	// is in flight; a full bar from two days ago says nothing the line does not.
+	const syncStatusPanel = createEl('footer');
 	syncStatusPanel.className = 'tyrian-inventory-advisor__sync-status';
 	syncStatusPanel.setAttribute('aria-live', 'polite');
+	const syncStatusLine = createEl('p');
+	syncStatusLine.className = 'tyrian-inventory-advisor__sync-status-line';
 	const syncStatusTitle = createEl('strong');
 	syncStatusTitle.className = 'tyrian-inventory-advisor__sync-status-title';
-	const syncStatusMessage = createEl('p');
+	const syncStatusMessage = createSpan();
+	syncStatusLine.append(syncStatusTitle, syncStatusMessage);
 	const syncStatusProgress = createEl('progress');
 	syncStatusProgress.className = 'tyrian-inventory-advisor__progress';
 	const syncStatusSmall = createEl('small');
@@ -400,18 +395,14 @@ function mountInventoryAdvisorView(
 	// in the aria-live="polite" region above; this fast line opts itself out so a
 	// screen reader is not read a fresh announcement on every single request.
 	syncStatusSmall.setAttribute('aria-live', 'off');
+	const syncStatusDetails = createEl('details');
+	syncStatusDetails.className = 'tyrian-inventory-advisor__sync-details';
+	const syncStatusDetailsSummary = createEl('summary');
 	const syncStatusSummary = createEl('p');
 	syncStatusSummary.className = 'tyrian-inventory-advisor__sync-summary';
-	const syncStatusLastRunNote = createEl('p');
 	const syncStatusFinishedAt = createEl('p');
-	syncStatusPanel.append(
-		syncStatusTitle, syncStatusMessage, syncStatusProgress, syncStatusSmall,
-		syncStatusSummary, syncStatusLastRunNote, syncStatusFinishedAt,
-	);
-	syncSection.append(
-		syncHeading, syncIntro, syncNotice, syncAssetsHint, syncPrimaryActions, syncConfirm,
-		syncStatusHeading, syncStatusPanel,
-	);
+	syncStatusDetails.append(syncStatusDetailsSummary, syncStatusSummary, syncStatusFinishedAt);
+	syncStatusPanel.append(syncStatusLine, syncStatusProgress, syncStatusSmall, syncStatusDetails);
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
@@ -491,7 +482,7 @@ function mountInventoryAdvisorView(
 	}
 	advancedFiltersContent.append(actionLabel, groupLabelElement, characterLabel, sourceFieldset);
 	advancedFilters.append(advancedFiltersSummary, advancedFiltersContent);
-	controls.append(searchLabel, sortLabelElement, advancedFilters);
+	controls.append(searchLabel, sortLabelElement, advancedFilters, syncPrimaryActions);
 	const syncFilterControlAvailability = (): boolean => {
 		const loading = model.status === 'loading';
 		const scopedToCharacter = (filters.character ?? ALL_CHARACTERS) !== ALL_CHARACTERS;
@@ -569,23 +560,21 @@ function mountInventoryAdvisorView(
 	sortSelect.addEventListener('change', updateFilters);
 	for (const { input } of sourceControls.values()) input.addEventListener('change', updateFilters);
 	const priceHistory = createDiv();
-	const operations = createEl('section');
-	operations.className = 'tyrian-inventory-advisor__operations';
-	operations.append(syncSection, priceHistory);
-	const analysis = createEl('section');
-	analysis.className = 'tyrian-inventory-advisor__analysis';
-	analysis.append(controls, state, results);
+	const priceHistoryDisclosure = createEl('details');
+	priceHistoryDisclosure.className = 'tyrian-inventory-advisor__price-history';
+	const priceHistorySummary = createEl('summary');
+	priceHistoryDisclosure.append(priceHistorySummary, priceHistory);
 	container.replaceChildren(section);
-	let lastFreshOrder: boolean | null = null;
+	let arranged = false;
 
-	/** Keeps fresh, manual recommendations ahead of maintenance and history surfaces. */
+	/** The list of items first, always; maintenance and history close the page. */
 	function arrangeSections(): void {
-		const fresh = model.status === 'ready' || model.status === 'limited';
-		if (fresh === lastFreshOrder) return;
-		lastFreshOrder = fresh;
-		const ordered = fresh ? [analysis, operations] : [operations, analysis];
-		if (preferencesEditor !== null) ordered.splice(fresh ? 2 : 1, 0, preferencesEditor.element);
-		section.replaceChildren(heading, intro, iconDisclosure, ...ordered);
+		if (arranged) return;
+		arranged = true;
+		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, state, results, syncStatusPanel];
+		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
+		ordered.push(priceHistoryDisclosure);
+		section.replaceChildren(...ordered);
 	}
 
 	/** Rebuilds the roster from the observed rows; an absent character falls back to every bag. */
@@ -608,35 +597,33 @@ function mountInventoryAdvisorView(
 		arrangeSections();
 		section.setAttribute('aria-label', translator.t('advisor.view.title'));
 		section.setAttribute('aria-busy', String(model.status === 'loading'));
-		heading.textContent = translator.t('advisor.view.title');
-		intro.textContent = translator.t('advisor.view.intro');
-		iconDisclosure.textContent = translator.t('advisor.view.iconDisclosure');
 		const sync = interactions.inventorySync;
-		syncSection.hidden = sync === undefined;
+		syncPrimaryActions.hidden = sync === undefined;
+		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;
+		syncConfirm.hidden = sync === undefined || sync.state.status !== 'confirm';
+		syncStatusPanel.hidden = sync === undefined;
 		if (sync !== undefined) {
-			syncHeading.textContent = translator.t('advisor.sync.title');
-			syncIntro.textContent = translator.t('advisor.sync.intro');
-			syncOpenNotice.textContent = translator.t('advisor.sync.openNotice');
-			const historicalSummary = sync.state.status === 'idle' ? sync.state.lastRun?.summary ?? null : null;
-			syncNoticeLastRun.hidden = historicalSummary === null;
-			if (historicalSummary !== null) {
-				syncNoticeLastRun.textContent = translator.t('advisor.sync.noticeLastRun', inventorySyncSummaryParams(historicalSummary));
-			}
+			const lastRun = sync.state.status === 'idle' ? sync.state.lastRun ?? null : null;
 			syncAssetsHint.textContent = translator.t('advisor.sync.assetsHint');
-			syncAssetsHint.hidden = sync.assetsInstalled;
 			const busy = sync.state.status === 'running';
 			syncButtonText.textContent = translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button');
 			syncButton.setAttribute('aria-label', translator.t(busy ? 'advisor.sync.buttonRunning' : 'advisor.sync.button'));
 			syncButton.disabled = busy || sync.analysisBusy === true
 				|| sync.state.status === 'confirm' || sync.state.status === 'disabled';
+			syncLastRunAgo.hidden = lastRun === null;
+			if (lastRun !== null) {
+				syncLastRunAgo.textContent = relativeTimeLabel(lastRun.finishedAt, translator.locale);
+				syncLastRunAgo.setAttribute('title', translator.t('advisor.sync.lastRunFinishedAt', {
+					finishedAt: absoluteTimeLabel(lastRun.finishedAt, translator.locale),
+				}));
+			}
 			syncAnalyze.hidden = sync.onAnalyze === undefined;
 			syncAnalyze.textContent = translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze');
 			syncAnalyze.setAttribute('aria-label', translator.t(sync.analysisBusy === true ? 'advisor.sync.analyzeRunning' : 'advisor.sync.analyze'));
 			syncAnalyze.disabled = busy || sync.analysisBusy === true || sync.state.status === 'confirm'
 				|| (sync.state.status === 'disabled' && sync.state.reason === 'missing_key');
-			syncSection.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
+			syncPrimaryActions.setAttribute('aria-busy', String(busy || sync.analysisBusy === true));
 
-			syncConfirm.hidden = sync.state.status !== 'confirm';
 			if (sync.state.status === 'confirm') {
 				syncConfirmTitle.textContent = translator.t('advisor.sync.confirmTitle');
 				syncConfirmBody.textContent = translator.t('advisor.sync.confirmBody', { deactivate: sync.state.summary.deactivate });
@@ -645,25 +632,30 @@ function mountInventoryAdvisorView(
 			syncConfirmApply.textContent = translator.t('advisor.sync.confirmApply');
 			syncConfirmCancel.textContent = translator.t('common.cancel');
 
-			syncStatusHeading.textContent = translator.t('advisor.sync.statusHeading');
 			const panel = inventorySyncPanel(sync.state, translator);
-			syncStatusTitle.textContent = `${panel.statusWord} · ${translator.t('advisor.sync.button')}`;
+			syncStatusTitle.textContent = panel.statusWord;
 			syncStatusTitle.setAttribute('data-tone', panel.tone);
-			syncStatusMessage.textContent = panel.message;
+			syncStatusMessage.textContent = ` · ${panel.message}`;
+			syncStatusProgress.hidden = !busy;
+			syncStatusSmall.hidden = !busy;
 			syncStatusProgress.max = 100;
 			syncStatusProgress.value = panel.percent;
 			syncStatusSmall.textContent = panel.progressLabel;
-			syncStatusSummary.hidden = panel.summaryLine === null;
+			syncStatusDetails.hidden = panel.summaryLine === null;
+			syncStatusDetailsSummary.textContent = translator.t('advisor.sync.statusHeading');
 			syncStatusSummary.textContent = panel.summaryLine ?? '';
-			syncStatusLastRunNote.hidden = panel.lastRunNote === null;
-			syncStatusLastRunNote.textContent = panel.lastRunNote ?? '';
-			syncStatusFinishedAt.hidden = panel.finishedAtLine === null;
-			syncStatusFinishedAt.textContent = panel.finishedAtLine ?? '';
+			syncStatusFinishedAt.hidden = lastRun === null;
+			if (lastRun !== null) {
+				syncStatusFinishedAt.textContent = translator.t('advisor.sync.lastRunFinishedAt', {
+					finishedAt: absoluteTimeLabel(lastRun.finishedAt, translator.locale),
+				});
+			}
 			if (sync.state.status === 'conflict' || sync.state.status === 'disabled'
 				|| (sync.state.status === 'idle' && sync.state.lastRun?.status === 'error')) {
 				syncStatusPanel.setAttribute('role', 'alert');
 			} else syncStatusPanel.removeAttribute('role');
 		}
+		priceHistorySummary.textContent = translator.t('priceHistory.title');
 		renderPriceHistoryPanel(priceHistory, translator, interactions.priceHistory);
 		searchLabelText.textContent = translator.t('advisor.view.search');
 		search.placeholder = translator.t('advisor.view.searchPlaceholder');
@@ -2000,3 +1992,24 @@ function selectedGoalReason(value: string): ReservationGoal['reason'] { return v
 function selectedExceptionReason(value: string): KeepExceptionV1['reason'] { return value === 'build' || value === 'gift' || value === 'collection' || value === 'custom' ? value : 'user_keep'; }
 function selectedBasis(value: string): 'owned' | 'available' { return value === 'owned' ? 'owned' : 'available'; }
 function selectedIntendedUse(value: string): ReservationGoal['requirements'][number]['intendedUse'] { return value === 'open' || value === 'consume' || value === 'exchange' || value === 'spend' ? value : 'hold'; }
+
+/** «hace 2 días»: the run's age in the player's words; the exact instant stays in the tooltip. */
+export function relativeTimeLabel(iso: string, locale: string, now = Date.now()): string {
+	const at = Date.parse(iso);
+	if (!Number.isFinite(at)) return iso;
+	const seconds = Math.round((at - now) / 1000);
+	const format = new Intl.RelativeTimeFormat(locale, { numeric: 'always' });
+	const steps: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+		['year', 31_536_000], ['month', 2_592_000], ['week', 604_800], ['day', 86_400], ['hour', 3600], ['minute', 60],
+	];
+	for (const [unit, size] of steps) {
+		if (Math.abs(seconds) >= size) return format.format(Math.trunc(seconds / size), unit);
+	}
+	return format.format(seconds, 'second');
+}
+
+export function absoluteTimeLabel(iso: string, locale: string): string {
+	const at = Date.parse(iso);
+	if (!Number.isFinite(at)) return iso;
+	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(at);
+}

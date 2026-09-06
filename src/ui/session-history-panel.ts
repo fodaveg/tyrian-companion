@@ -66,7 +66,7 @@ export function mountSessionHistoryPanel(
 	const heading = section.createEl('header', { cls: 'tyrian-session-history__header' });
 	const title = heading.createDiv();
 	title.createEl('h3', { text: copy.title });
-	title.createEl('p', { text: copy.intro });
+	title.setAttr('title', copy.intro);
 	const stateId = `tyrian-session-history-state-${String(panelSequence += 1)}`;
 	const button = heading.createEl('button', { text: copy.load, cls: 'mod-cta' });
 	button.setAttr('aria-controls', stateId);

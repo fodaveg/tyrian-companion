@@ -43,7 +43,8 @@ describe('Inventory Advisor view', () => {
 			expect(copy).toContain(excluded);
 			expect(copy).toContain('gw2-wiki-ecto-yield');
 			expect(byClass(mount.elements(), 'tyrian-inventory-advisor__advanced-filters')).toHaveLength(1);
-			expect(find(mount.elements(), 'details')).toHaveLength(3);
+			// Advanced filters, the two salvage disclosures, the sync breakdown and the folded price history.
+			expect(find(mount.elements(), 'details')).toHaveLength(5);
 		});
 
 	it('renders the Exotic uncertainty as review without a numeric EV', () => {
@@ -67,9 +68,11 @@ describe('Inventory Advisor view', () => {
 	it.each([
 		['es', 'Compara venta instantánea, publicación y mercader con precios actuales.'],
 		['en', 'Compares instant sell, listing and vendor routes with current prices.'],
-	] as const)('shows the honest liquid-route banner in %s', (locale, expected) => {
+	] as const)('keeps the liquid-route contract off the screen in %s', (locale, expected) => {
+		// The guarantee is documented once, in docs/PRODUCT.md; the panel starts with the controls.
 		const mount = render(readyModel(), locale);
-		expect(text(mount.elements())).toContain(expected);
+		expect(text(mount.elements())).not.toContain(expected);
+		expect(mount.section.children[0]?.className).toBe('tyrian-inventory-advisor__controls');
 	});
 
 	it.each([
@@ -187,19 +190,18 @@ describe('Inventory Advisor view', () => {
 		(locale, disclosure) => {
 			const mount = render(readyModel(), locale);
 			const controls = only(byClass(mount.elements(), 'tyrian-inventory-advisor__controls'));
-			expect(controls.children.map((child) => child.tag)).toEqual(['label', 'label', 'details']);
+			expect(controls.children.map((child) => child.tag)).toEqual(['label', 'label', 'details', 'div']);
 			expect(controlWithLabel(walk(controls), 'input', createTranslator(locale).t('advisor.view.search')).disabled).toBe(false);
 			expect(controlWithLabel(walk(controls), 'select', createTranslator(locale).t('advisor.view.sort')).disabled).toBe(false);
 			const advanced = only(byClass(walk(controls), 'tyrian-inventory-advisor__advanced-filters'));
 			expect(advanced.attributes.has('open')).toBe(false);
 			expect(advanced.children[0]?.textContent).toBe(disclosure);
 			const styles = readFileSync('styles.css', 'utf8');
-			expect(styles).toMatch(/tyrian-inventory-advisor__advanced-filters summary\s*\{[\s\S]*?min-height:\s*44px;/u);
 			expect(styles).toMatch(/@container \(max-width: 479px\)[\s\S]*?advanced-filters-content > label[\s\S]*?width:\s*100%;/u);
 		},
 	);
 
-	it('moves a fresh manual queue before sync, history, and preferences, then restores maintenance-first loading order', () => {
+	it('keeps the list first and the sync line last, in every advisor state', () => {
 		const interactions: InventoryAdvisorViewInteractions = {
 			onLoadPreferences: vi.fn(),
 			inventorySync: {
@@ -207,24 +209,26 @@ describe('Inventory Advisor view', () => {
 				onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		};
-		const mount = render(readyModel(), 'es', interactions);
-		expect(mount.section.children.slice(3).map((child) => child.className)).toEqual([
-			'tyrian-inventory-advisor__analysis',
-			'tyrian-inventory-advisor__operations',
+		const expected = [
+			'tyrian-inventory-advisor__controls',
+			'tyrian-inventory-advisor__sync-hint',
+			'tyrian-inventory-advisor__sync-confirm',
+			'tyrian-inventory-advisor__state',
+			'tyrian-inventory-advisor__results',
+			'tyrian-inventory-advisor__sync-status',
 			'tyrian-inventory-advisor__preferences',
-		]);
-		expect(text(walk(mount.section.children[3]!))).toContain('Qué hacer ahora');
+			'tyrian-inventory-advisor__price-history',
+		];
+		const mount = render(readyModel(), 'es', interactions);
+		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
+		expect(text(walk(mount.section.children[4]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
 			{ ...readyModel(), status: 'loading', groups: [] },
 			createTranslator('es'), undefined, interactions,
 		);
-		expect(mount.section.children.slice(3).map((child) => child.className)).toEqual([
-			'tyrian-inventory-advisor__operations',
-			'tyrian-inventory-advisor__preferences',
-			'tyrian-inventory-advisor__analysis',
-		]);
+		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
 	});
 
 	it('uses native disabled controls and busy semantics while loading, then restores the same controls', () => {
@@ -724,7 +728,7 @@ describe('Inventory Advisor view', () => {
 		expect(images).toHaveLength(2);
 		expect(new Set(images.map((image) => image.attributes.get('src')))).toEqual(new Set(['https://render.guildwars2.com/file/abc.png']));
 		expect(images.every((image) => image.attributes.get('alt') === '')).toBe(true);
-		expect(text(mount.elements())).toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
+		expect(text(mount.elements())).not.toContain('Los iconos visibles se cargan desde el CDN oficial de ArenaNet.');
 	});
 
 	it.each([
@@ -847,12 +851,15 @@ describe('Inventory Advisor view', () => {
 				onRun, onConfirm, onCancel,
 			},
 		});
-		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+		const section = mount.section;
 		const statusPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
 		expect(section.hidden).toBe(false);
 		expect(statusPanel.attributes.get('aria-live')).toBe('polite');
-		expect(text(walk(section))).toContain('Abrir esta vista no lee la cuenta ni escribe notas.');
+		// The open-notice left the screen; the sync button sits in the controls bar with the hint under it.
+		expect(text(walk(section))).not.toContain('Abrir esta vista no lee la cuenta ni escribe notas.');
 		expect(text(walk(section))).toContain('Instala o actualiza los assets gestionados');
+		const controls = only(byClass(mount.elements(), 'tyrian-inventory-advisor__controls'));
+		expect(controls.children.map((child) => child.className)).toContain('tyrian-inventory-advisor__sync-actions tyrian-inventory-advisor__sync-primary-actions');
 		const button = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
 		expect(button.disabled).toBe(false);
 		expect(button.attributes.get('aria-label')).toBe('Sincronizar inventario');
@@ -902,7 +909,7 @@ describe('Inventory Advisor view', () => {
 		const mount = render(readyModel(), 'es', {
 			inventorySync: { state: { status: 'confirm', summary }, assetsInstalled: true, onRun, onConfirm, onCancel },
 		});
-		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+		const section = mount.section;
 		const runButton = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sincronizar inventario')));
 		expect(runButton.disabled).toBe(true);
 		const confirmPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-confirm'));
@@ -932,7 +939,7 @@ describe('Inventory Advisor view', () => {
 			const mount = render(readyModel(), 'en', {
 				inventorySync: { state, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn() },
 			});
-			const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
+			const section = mount.section;
 			const statusPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
 			const statusTitle = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status-title'));
 			const button = only(find(walk(section), 'button').filter((candidate) => walk(candidate).some((element) => element.textContent === 'Sync inventory' || element.textContent === 'Syncing…')));
@@ -987,7 +994,7 @@ describe('Inventory Advisor view', () => {
 		});
 		const statusPanel = only(byClass(running.elements(), 'tyrian-inventory-advisor__sync-status'));
 		expect(statusPanel.attributes.get('aria-live')).toBe('polite');
-		const message = only(withText(walk(statusPanel), 'Leyendo los inventarios de los personajes…'));
+		const message = only(withText(walk(statusPanel), ' · Leyendo los inventarios de los personajes…'));
 		// The fast-changing counter and elapsed time live in a node that opts itself
 		// out of the aria-live region, so a screen reader is not read every tick.
 		const fastLine = only(find(walk(statusPanel), 'small'));
@@ -1042,10 +1049,18 @@ describe('Inventory Advisor view', () => {
 				} }, assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		});
-		const section = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync'));
-		expect(text(walk(section))).toContain('Se muestra la última ejecución guardada.');
-		expect(text(walk(section))).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
-		expect(text(walk(section))).toContain('La última sincronización guardada movió 2909 filas: 1616 nuevas, 1167 actualizadas, 0 inactivas.');
+		const section = mount.section;
+		// One human line at the foot; the exact instant is the tooltip of the «hace…» beside the button.
+		const ago = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-ago'));
+		expect(ago.hidden).toBe(false);
+		expect(ago.attributes.get('title')).toMatch(/^Última ejecución: /u);
+		expect(ago.textContent).toMatch(/hace/u);
+		const statusPanel = only(byClass(mount.elements(), 'tyrian-inventory-advisor__sync-status'));
+		expect(text(walk(statusPanel))).toContain('ÉXITO');
+		expect(text(walk(statusPanel))).toContain('Sincronización terminada: 1616 nuevas, 1167 actualizadas y 0 inactivas.');
+		expect(text(walk(statusPanel))).toContain('2909 filas · 1616 nuevas · 1167 actualizadas · 79 sin cambios · 0 inactivas · 0 conflictos');
+		expect(only(byClass(mount.elements(), 'tyrian-inventory-advisor__progress')).hidden).toBe(true);
+		expect(text(walk(section))).not.toContain('Se muestra la última ejecución guardada.');
 		const running = render(readyModel(), 'es', {
 			inventorySync: {
 				state: {
@@ -1055,8 +1070,8 @@ describe('Inventory Advisor view', () => {
 				assetsInstalled: true, onRun: vi.fn(), onConfirm: vi.fn(), onCancel: vi.fn(),
 			},
 		});
-		const runningSection = only(byClass(running.elements(), 'tyrian-inventory-advisor__sync'));
-		expect(text(walk(runningSection))).not.toContain('Se muestra la última ejecución guardada.');
+		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__sync-ago')).hidden).toBe(true);
+		expect(only(byClass(running.elements(), 'tyrian-inventory-advisor__progress')).hidden).toBe(false);
 	});
 });
 

@@ -27,7 +27,7 @@ export interface ProductActionPanelMount {
 
 const UI = {
 	es: {
-		eyebrow: 'Registro de campo de Tyria', title: 'Tyrian Companion', subtitle: 'Sesiones, inventario y decisiones manuales con evidencia visible.',
+		title: 'Tyrian Companion',
 		companion: 'Sesión', inventory: 'Inventario', settings: 'Ajustes',
 		missingTitle: 'Falta vincular la clave API', missingBody: 'Las acciones de cuenta seguirán bloqueadas hasta seleccionar un secreto de Obsidian.', missingAction: 'Vincular clave',
 		actions: 'Acciones', actionsHint: 'Los mismos 16 comandos de la paleta',
@@ -36,7 +36,7 @@ const UI = {
 		working: 'En curso', failed: 'Falló', cooldown: 'Cooldown', palette: 'Ctrl P conserva estos mismos 16 comandos como atajo experto.',
 	},
 	en: {
-		eyebrow: 'Tyrian field ledger', title: 'Tyrian Companion', subtitle: 'Sessions, inventory, and manual decisions with visible evidence.',
+		title: 'Tyrian Companion',
 		companion: 'Session', inventory: 'Inventory', settings: 'Settings',
 		missingTitle: 'API key not linked', missingBody: 'Account actions remain blocked until an Obsidian secret is selected.', missingAction: 'Link key',
 		actions: 'Actions', actionsHint: 'The same 16 command-palette actions',
@@ -54,13 +54,8 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	container.empty();
 	container.addClass('tyrian-product-surface');
 	const shell = container.createDiv({ cls: 'tyrian-product-shell' });
-	const masthead = shell.createEl('header', { cls: 'tyrian-product-shell__masthead' });
-	masthead.createDiv({ cls: 'tyrian-product-shell__compass', attr: { 'aria-hidden': 'true' } });
-	const heading = masthead.createDiv();
-	heading.createEl('p', { text: copy.eyebrow, cls: 'tyrian-product-shell__eyebrow' });
-	heading.createEl('h1', { text: copy.title });
-	heading.createEl('p', { text: copy.subtitle, cls: 'tyrian-product-shell__subtitle' });
-
+	// One line of tabs and nothing else above the content: the leaf title already names the
+	// product, and every word spent here is a word the panel's own numbers have to scroll past.
 	const nav = shell.createEl('nav', { cls: 'tyrian-product-shell__nav', attr: { 'aria-label': copy.title } });
 	appendNav(nav, copy.companion, options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
 	appendNav(nav, copy.inventory, options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });

@@ -255,8 +255,10 @@ export class TyrianCompanionView extends ItemView {
 			() => this.actions.loadSessionHistory(),
 		);
 		this.sessionHistoryMount?.dispose();
+		const disclosure = container.createEl('details', { cls: 'tyrian-companion-view__history' });
+		disclosure.createEl('summary', { text: this.t('view.sessionHistoryDisclosure') });
 		this.sessionHistoryMount = mountSessionHistoryPanel(
-			container,
+			disclosure,
 			this.actions.getLocale(),
 			this.sessionHistoryController,
 		);
@@ -283,7 +285,6 @@ export class TyrianCompanionView extends ItemView {
 		const heading = header.createDiv();
 		const sessionProjection = projection.items.find(({ id }) => id === 'session');
 		this.renderIncident(card, projection);
-		this.renderMeasuredQuality(card, projection);
 		if (observed.status === 'idle') {
 			const recovery = this.actions.getSessionRecoveryState();
 			if (recovery.status !== 'none') {
@@ -335,7 +336,7 @@ export class TyrianCompanionView extends ItemView {
 
 		if (observed.status === 'provisional') {
 			heading.createEl('h2', { text: copy.reviewNeeded });
-			heading.createEl('p', { text: copy.reviewNeededDetail });
+			this.renderMeasuredQuality(heading.createEl('p', { text: copy.reviewNeededDetail }), projection);
 			const button = header.createEl('button', { text: copy.review });
 			button.addEventListener('click', () => this.actions.openSessionReview());
 			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
@@ -346,7 +347,10 @@ export class TyrianCompanionView extends ItemView {
 		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
 		const saveLabel = saveState === 'saved' ? copy.saved
 			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
-		heading.createEl('p', { text: `${observed.startContext.characterName} · ${saveLabel}` });
+		this.renderMeasuredQuality(
+			heading.createEl('p', { text: `${observed.startContext.characterName} · ${saveLabel}` }),
+			projection,
+		);
 		if (saveState === 'failed' && this.actions.retrySessionSummarySave) {
 			const retry = heading.createEl('button', { text: copy.retrySave });
 			retry.addEventListener('click', () => { void this.actions.retrySessionSummarySave?.(); });
@@ -387,14 +391,15 @@ export class TyrianCompanionView extends ItemView {
 	 * session has nothing honest to claim: the account API answers from a cache of several minutes,
 	 * so the numbers on screen are always the last ones it published, never the current inventory.
 	 */
-	private renderMeasuredQuality(card: HTMLElement, projection: CompanionStatusProjection): void {
+	private renderMeasuredQuality(line: HTMLElement, projection: CompanionStatusProjection): void {
 		if (this.actions.getProvisionalDelta() === null && this.actions.getContaminationReview() === null) return;
 		const quality = projection.items.find(({ id }) => id === 'quality');
 		if (quality === undefined) return;
-		card.createEl('p', {
-			text: `${quality.label}: ${quality.value} · ${quality.detail}`,
-			cls: 'tyrian-companion-session__context',
-		});
+		// A badge beside the number, not a sentence of its own: the word is what the player reads,
+		// the reasoning stays one hover away.
+		const badge = line.createSpan({ text: quality.value, cls: 'tyrian-companion-session__badge' });
+		badge.setAttr('title', `${quality.label}: ${quality.detail}`);
+		badge.setAttr('aria-label', `${quality.label}: ${quality.value}. ${quality.detail}`);
 	}
 
 	/**
@@ -525,7 +530,7 @@ export class TyrianCompanionView extends ItemView {
 			text: loot.immediateCopper === null ? copy.valuePending : simpleMoney(loot.immediateCopper, this.actions.getLocale()),
 		});
 		if (gains.length === 0) {
-			region.createEl('p', { text: copy.durableEmpty });
+			summary.createEl('small', { text: copy.durableEmpty, cls: 'tyrian-companion-session__context' });
 			return;
 		}
 		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
@@ -553,7 +558,7 @@ export class TyrianCompanionView extends ItemView {
 		summary.createSpan({ text: copy.durableValue });
 		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
 		if (gains.length === 0) {
-			region.createEl('p', { text: copy.durableEmpty });
+			summary.createEl('small', { text: copy.durableEmpty, cls: 'tyrian-companion-session__context' });
 			return;
 		}
 		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
@@ -855,6 +860,13 @@ export class TyrianCompanionView extends ItemView {
 		this.render();
 	}
 
+	/**
+	 * One row is the whole surface while nothing is proposed: the state word, the next query,
+	 * and the one button that changes the state. Every explanation, counter and timestamp lives
+	 * in a closed disclosure underneath, because the player opens this panel to farm, not to read
+	 * how the detector works. A proposal is the exception: it needs its evidence and both answers
+	 * visible, since the session boundary is the user's call and nothing here confirms it alone.
+	 */
 	private renderAssistedDetection(
 		container: HTMLElement,
 		connection: ConnectionState,
@@ -865,85 +877,82 @@ export class TyrianCompanionView extends ItemView {
 		const card = container.createDiv({ cls: 'tyrian-companion-view__detection' });
 		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
 		card.setAttr('aria-live', 'polite');
-		card.createEl('h3', { text: this.t('view.assistedDetection') });
-		card.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
-		this.renderDetectionQualityStatus(card);
-		this.renderDetectionTimeline(card, mode, state, session);
+		const row = card.createDiv({ cls: 'tyrian-companion-view__detection-row' });
+		row.createEl('strong', { text: this.t('view.assistedDetection') });
+		const stateText = row.createSpan({ cls: 'tyrian-companion-view__detection-state' });
+		const actions = row.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const timeline = this.projectDetectionTimeline(mode, state, session);
+		const proposal = card.createDiv({ cls: 'tyrian-companion-view__detection-proposal' });
+		proposal.hidden = true;
 
 		if (mode === 'off') {
-			card.createEl('p', { text: this.t('view.disabledInSettings') });
-			addDetectionDetail(card, this.t('view.state'), this.t('status.off'));
-			return;
-		}
-		if (state.status === 'disarmed') {
-			card.createEl('p', { text: this.t('view.disarmedDetail') });
-			addDetectionDetail(card, this.t('view.state'), this.t('status.disarmed'));
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			stateText.setText(this.t('status.off'));
+			stateText.setAttr('title', this.t('view.disabledInSettings'));
+		} else if (state.status === 'disarmed') {
+			stateText.setText(this.t('status.disarmed'));
 			const arm = actions.createEl('button', { text: this.t('view.armDetection') });
 			const connected = connection.status === 'connected' || connection.status === 'warning';
 			const sessionReady = session.status === 'idle' || session.status === 'active';
 			const recoveryReady = session.status !== 'idle' || this.actions.getSessionRecoveryState().status === 'none';
 			arm.disabled = !connected || !sessionReady || !recoveryReady;
 			arm.addEventListener('click', () => { void this.armDetection(); });
-			if (!connected) card.createEl('p', { text: this.t('view.checkBeforeArming') });
-			else if (!sessionReady || !recoveryReady) {
-				card.createEl('p', { text: this.t('view.resolveSessionBeforeArming') });
+			const reason = !connected ? this.t('view.checkBeforeArming')
+				: !sessionReady || !recoveryReady ? this.t('view.resolveSessionBeforeArming') : null;
+			if (reason !== null) {
+				arm.setAttr('title', reason);
+				stateText.createEl('small', { text: ` · ${reason}` });
 			}
-			return;
-		}
-
-		if (state.status === 'arming') {
-			card.createEl('p', { text: this.t('view.capturingBaselineBeforePolling') });
-			addDetectionDetail(card, this.t('view.state'), this.t('status.arming'));
-			this.addDisarmButton(card);
-			return;
-		}
-
-		if (state.status === 'error') {
-			card.createEl('p', { text: this.t('status.detectionStopped'), cls: 'tyrian-companion-view__session-error' });
-			addDetectionDetail(card, this.t('view.state'), this.t('status.error'));
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		} else if (state.status === 'arming') {
+			stateText.setText(`${this.t('status.arming')} · ${this.t('view.capturingBaselineBeforePolling')}`);
+			this.addDisarmButton(actions);
+		} else if (state.status === 'error') {
+			stateText.setText(`${this.t('status.error')} · ${this.t('status.detectionStopped')}`);
+			stateText.addClass('tyrian-companion-view__session-error');
 			const retry = actions.createEl('button', { text: this.t('view.tryArmingAgain') });
 			retry.addEventListener('click', () => { void this.armDetection(); });
 			const disarm = actions.createEl('button', { text: this.t('view.disarm') });
 			disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
-			return;
-		}
-
-		if (state.status === 'start_proposed') {
+		} else if (state.status === 'start_proposed') {
 			try { this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
-			card.createEl('p', { text: this.t('view.startProposalDetail') });
-			this.renderProposalDetails(card, state.proposal.possibleStart, state.proposal.evidenceQuality);
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const start = actions.createEl('button', { text: this.t('view.reviewStart') });
+			stateText.setText(this.t('view.bagSignalFound'));
+			proposal.hidden = false;
+			proposal.createEl('p', { text: this.t('view.startProposalDetail') });
+			this.renderProposalDetails(proposal, state.proposal.possibleStart, state.proposal.evidenceQuality);
+			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const start = answers.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
 			start.disabled = session.status !== 'idle';
 			start.addEventListener('click', () => this.actions.openManualSessionStart(null));
-			this.addDismissAndDisarm(actions, 'start');
-			return;
-		}
-
-		if (state.status === 'stop_proposed') {
+			this.addDismissAndDisarm(answers, 'start');
+		} else if (state.status === 'stop_proposed') {
 			try { this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
-			card.createEl('p', { text: this.t('view.stopProposalDetail') });
-			this.renderProposalDetails(card, state.proposal.possibleStop, state.proposal.evidenceQuality);
-			this.renderStopProposalLag(card, state.proposal.possibleStop.to, state.proposal.detectedAt);
-			const actions = card.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const stop = actions.createEl('button', { text: this.t('view.stopSession') });
+			stateText.setText(this.t('view.quietSignalFound'));
+			proposal.hidden = false;
+			proposal.createEl('p', { text: this.t('view.stopProposalDetail') });
+			this.renderProposalDetails(proposal, state.proposal.possibleStop, state.proposal.evidenceQuality);
+			this.renderStopProposalLag(proposal, state.proposal.possibleStop.to, state.proposal.detectedAt);
+			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+			const stop = answers.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
 			stop.addEventListener('click', () => { void this.actions.stopManualSession(null); });
-			this.addDismissAndDisarm(actions, 'stop');
-			return;
+			this.addDismissAndDisarm(answers, 'stop');
+		} else {
+			stateText.setText(`${this.t('status.armed')} · ${this.t('view.detectionNextQuery')}: ${timeline.next}`);
+			this.addDisarmButton(actions);
 		}
 
-		card.createEl('p', { text: this.t('view.armedDetail') });
-		const details = card.createEl('dl');
-		addDetail(details, this.t('view.state'), this.t('status.armed'));
-		addDetail(details, this.t('view.scheduler'), schedulerStatusLabel(state.scheduler.status, this.actions.getLocale()));
-		addDetail(details, this.t('view.interval'), this.formatInterval(state.scheduler.intervalMs));
-		if (state.lastSnapshotAt) addDetail(details, this.t('view.lastSnapshot'), this.formatTimestamp(state.lastSnapshotAt));
-		this.addDisarmButton(card);
+		const disclosure = card.createEl('details', { cls: 'tyrian-companion-view__detection-details' });
+		disclosure.createEl('summary', { text: this.t('view.detectionDetails') });
+		disclosure.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
+		this.renderDetectionQualityStatus(disclosure);
+		this.renderDetectionTimeline(disclosure, mode, state, session);
+		if (mode !== 'off' && state.status === 'armed') {
+			const details = disclosure.createEl('dl');
+			addDetail(details, this.t('view.scheduler'), schedulerStatusLabel(state.scheduler.status, this.actions.getLocale()));
+			addDetail(details, this.t('view.interval'), this.formatInterval(state.scheduler.intervalMs));
+			if (state.lastSnapshotAt) addDetail(details, this.t('view.lastSnapshot'), this.formatTimestamp(state.lastSnapshotAt));
+		}
 	}
 
 	private renderDetectionTimeline(
@@ -1016,8 +1025,7 @@ export class TyrianCompanionView extends ItemView {
 		this.render();
 	}
 
-	private addDisarmButton(container: HTMLElement): void {
-		const actions = container.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+	private addDisarmButton(actions: HTMLElement): void {
 		const disarm = actions.createEl('button', { text: this.t('view.disarm') });
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
@@ -1556,11 +1564,6 @@ function runtimeText(
 	params?: Record<string, string | number>,
 ): string {
 	return translateRuntime(createTranslator(locale), key, params);
-}
-
-function addDetectionDetail(container: HTMLElement, term: string, detail: string): void {
-	const list = container.createEl('dl');
-	addDetail(list, term, detail);
 }
 
 function addDetectionTimelineItem(container: HTMLElement, label: string, value: string): HTMLElement {

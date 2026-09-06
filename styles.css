@@ -163,57 +163,9 @@
 	color: var(--text-normal);
 }
 
-.tyrian-product-shell__masthead {
-	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	align-items: center;
-	gap: var(--size-4-3);
-	padding: var(--size-4-4) 0 var(--size-4-3);
-}
-
-.tyrian-product-shell__masthead h1,
-.tyrian-product-shell__masthead p,
 .tyrian-action-panel h2,
 .tyrian-action-panel p {
 	margin: 0;
-}
-
-.tyrian-product-shell__compass {
-	position: relative;
-	width: 2.5rem;
-	height: 2.5rem;
-	border: 1px solid var(--background-modifier-border-hover);
-	border-radius: 50%;
-}
-
-.tyrian-product-shell__compass::before,
-.tyrian-product-shell__compass::after {
-	position: absolute;
-	inset: 50% auto auto 50%;
-	width: 1px;
-	height: 1.55rem;
-	background: var(--text-muted);
-	content: "";
-	transform: translate(-50%, -50%) rotate(38deg);
-}
-
-.tyrian-product-shell__compass::after {
-	height: .52rem;
-	background: var(--interactive-accent);
-	transform: translate(-50%, -100%) rotate(38deg);
-	transform-origin: 50% 100%;
-}
-
-.tyrian-product-shell__eyebrow {
-	color: var(--text-muted);
-	font-size: var(--font-smallest);
-	font-weight: var(--font-semibold);
-	letter-spacing: .09em;
-	text-transform: uppercase;
-}
-
-.tyrian-product-shell__subtitle {
-	color: var(--text-muted);
 }
 
 .tyrian-product-shell__nav {
@@ -225,8 +177,7 @@
 }
 
 .tyrian-product-shell__nav button {
-	min-height: 44px;
-	padding-inline: var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3);
 	border: 0;
 	border-block-end: 3px solid transparent;
 	border-radius: 0;
@@ -261,10 +212,8 @@
 
 .tyrian-product-shell__workspace {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) 23rem;
-	grid-template-areas: "content actions";
-	gap: var(--size-4-6);
-	align-items: start;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: "content";
 }
 
 .tyrian-product-shell__content {
@@ -672,6 +621,60 @@
 
 .tyrian-companion-view__detection-scope {
 	color: var(--text-muted);
+}
+
+/* The detector at rest is one row: name, state, and the button that changes it. */
+.tyrian-companion-view__detection-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2) var(--size-4-3);
+}
+
+.tyrian-companion-view__detection-state {
+	flex: 1 1 12rem;
+	min-width: 0;
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-view__detection-row .tyrian-companion-view__session-actions {
+	margin: 0;
+}
+
+.tyrian-companion-view__detection-proposal {
+	margin-block-start: var(--size-4-3);
+	padding: var(--size-4-3);
+	border: 1px solid var(--interactive-accent);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.tyrian-companion-view__detection-details,
+.tyrian-companion-view__history {
+	margin-block-start: var(--size-4-3);
+}
+
+.tyrian-companion-view__detection-details > summary,
+.tyrian-companion-view__history > summary {
+	color: var(--text-muted);
+	font-size: var(--font-small);
+	cursor: pointer;
+}
+
+.tyrian-companion-view__history .tyrian-session-history {
+	margin-block-start: var(--size-4-2);
+}
+
+.tyrian-companion-session__badge {
+	display: inline-block;
+	margin-inline-start: var(--size-4-2);
+	padding: 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-smallest);
+	cursor: help;
 }
 
 .tyrian-companion-view__detection-timeline {
@@ -1231,26 +1234,9 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-inventory-advisor__intro,
 .tyrian-inventory-advisor__state {
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
-}
-
-.tyrian-inventory-advisor__operations,
-.tyrian-inventory-advisor__analysis {
-	margin-block: var(--size-4-4);
-	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-l);
-}
-
-.tyrian-inventory-advisor__operations {
-	background: var(--background-secondary);
-}
-
-.tyrian-inventory-advisor__analysis {
-	background: var(--background-primary);
 }
 
 .tyrian-inventory-advisor__controls {
@@ -1316,53 +1302,29 @@
 	border-radius: var(--radius-s);
 }
 
-.tyrian-inventory-advisor__icon-disclosure {
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
-}
-
-.tyrian-inventory-advisor__sync {
-	margin-block: 0 var(--size-4-4);
-	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background: var(--background-secondary);
-}
-
-.tyrian-inventory-advisor__sync h3,
-.tyrian-inventory-advisor__sync h4,
-.tyrian-inventory-advisor__sync p {
-	margin-block: 0 var(--size-4-2);
-}
-
 .tyrian-inventory-advisor__sync-hint {
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
-}
-
-.tyrian-inventory-advisor__sync-notice {
-	margin-block-end: var(--size-4-3);
-	padding: var(--size-4-2) var(--size-4-3);
-	border-inline-start: 3px solid var(--interactive-accent);
-	border-radius: var(--radius-s);
-	background: var(--background-primary);
-	overflow-wrap: anywhere;
-}
-
-.tyrian-inventory-advisor__sync-notice p {
-	margin-block: 0 var(--size-4-1);
-	color: var(--text-muted);
 }
 
 .tyrian-inventory-advisor__sync-button {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-4-2);
-	min-height: 44px;
 }
 
+/* Sync lives in the same bar as search and sort, pushed to the end of the row. */
 .tyrian-inventory-advisor__sync-primary-actions {
-	margin-block-end: var(--size-4-3);
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin-inline-start: auto;
+}
+
+.tyrian-inventory-advisor__sync-ago {
+	color: var(--text-muted);
+	cursor: help;
 }
 
 .tyrian-inventory-advisor__sync-button:focus-visible {
@@ -1400,11 +1362,27 @@
 .tyrian-inventory-advisor__sync-status {
 	display: grid;
 	gap: var(--size-4-1);
-	padding: var(--size-4-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background: var(--background-primary);
+	margin-block-start: var(--size-4-4);
+	padding-block-start: var(--size-4-3);
+	border-block-start: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-small);
 	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__sync-status-line {
+	margin: 0;
+}
+
+.tyrian-inventory-advisor__sync-details > summary,
+.tyrian-inventory-advisor__price-history > summary {
+	cursor: pointer;
+}
+
+.tyrian-inventory-advisor__price-history {
+	margin-block-start: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-small);
 }
 
 .tyrian-inventory-advisor__sync-status-title {

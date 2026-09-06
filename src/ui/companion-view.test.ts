@@ -126,7 +126,8 @@ describe('Companion game HUD narrative', () => {
 		expect(cells[2]?.children[1]?.textContent).not.toBe(initialNext);
 
 		const translator = createTranslator('es');
-		expect(translateRuntime(translator, 'view.assistedDetection')).toBe('Detección del saco #36038');
+		expect(translateRuntime(translator, 'view.assistedDetection')).toBe('Detección');
+		expect(translateRuntime(translator, 'view.detectionDetails')).toBe('Detalle de la detección');
 		expect(translateRuntime(translator, 'view.detectionScope')).toContain('No detecta farmeo general');
 	});
 
@@ -239,6 +240,7 @@ describe('Companion pilot metrics fail-open actions', () => {
 			t: (key: string) => key,
 			renderDetectionQualityStatus: vi.fn(),
 			renderDetectionTimeline: vi.fn(),
+			projectDetectionTimeline: () => ({ last: '', result: '', next: '' }),
 			renderProposalDetails: vi.fn(),
 			renderStopProposalLag: vi.fn(),
 			addDismissAndDisarm: vi.fn(),

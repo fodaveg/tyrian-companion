@@ -36,11 +36,8 @@ export function renderPriceHistoryPanel(
 ): void {
 	container.replaceChildren();
 	container.className = 'tyrian-price-history';
-	const heading = createEl('h3');
-	heading.textContent = translator.t('priceHistory.title');
-	const intro = createEl('p');
-	intro.textContent = translator.t('priceHistory.intro');
-	container.append(heading, intro);
+	// The disclosure that hosts this panel already carries its title; the intro is a tooltip.
+	container.setAttribute('title', translator.t('priceHistory.intro'));
 	if (interactions === undefined) {
 		appendState(container, translator.t('priceHistory.state.unavailable'), true);
 		return;

@@ -58,8 +58,9 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(updatedGroup).toBe(leftGroup);
 		expect([updatedSearch?.value, updatedAction?.value, updatedGroup?.value]).toEqual(['material', 'sell', 'evidence']);
 		expect(activeDocument.activeElement).toBe(leftSearch);
-		expect(text(left.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
-		expect(text(right.contentEl as unknown as FakeElement)).toContain('Inventory advisor');
+		// The locale reaches the controls; no heading repeats the leaf title above them.
+		expect(text(left.contentEl as unknown as FakeElement)).toContain('Search items');
+		expect(text(right.contentEl as unknown as FakeElement)).toContain('Search items');
 	});
 
 	it('preserves advisor content, filters and focus while an expert palette action runs', async () => {
@@ -194,20 +195,20 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const viewActions = actions(() => 'es', { getState });
 		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await view.onOpen();
-		expect(text(view.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		expect(text(view.contentEl as unknown as FakeElement)).toContain('Sincronización terminada');
 		const queriesWhileOpen = queries;
 		expect(queriesWhileOpen).toBeGreaterThan(0);
 
 		await view.onClose();
 		await view.onOpen();
-		expect(text(view.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		expect(text(view.contentEl as unknown as FakeElement)).toContain('Sincronización terminada');
 		expect(queries).toBeGreaterThan(queriesWhileOpen);
 
 		// A brand-new ItemView instance backed by the same actions shows the same saved run:
 		// the outcome lives behind the action port, never in the closed view's own fields.
 		const remounted = new InventoryAdvisorItemView({} as never, viewActions.value);
 		await remounted.onOpen();
-		expect(text(remounted.contentEl as unknown as FakeElement)).toContain('Última ejecución: 2026-08-25T07:00:13.750Z');
+		expect(text(remounted.contentEl as unknown as FakeElement)).toContain('Sincronización terminada');
 	});
 
 	it('opens, renders and syncs without reaching for a timer, network, storage or plugin global', async () => {

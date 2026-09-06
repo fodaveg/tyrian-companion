@@ -89,7 +89,10 @@ describe('Companion assisted detection surface', () => {
 
 		render();
 
-		expect(texts(contentEl)).toContain('Detección del saco #36038');
+		expect(texts(contentEl)).toContain('Detección');
+		// Everything but the state row folds under one closed disclosure.
+		const disclosure = find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-details'));
+		expect(disclosure?.tag).toBe('details');
 		const timeline = find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-timeline'));
 		expect(timeline?.attributes.get('aria-label')).toContain('Última consulta, resultado y próxima consulta');
 		expect(termsAndDetails(contentEl)).toEqual(expect.arrayContaining([
@@ -260,7 +263,11 @@ describe('Companion measured quality line', () => {
 
 		render();
 
-		expect(texts(contentEl)).toContain('Calidad: Limitada · Comparación de almacenamiento · Limitado');
+		// A badge beside the character line, the reasoning in its tooltip: never a sentence of its own.
+		const badge = find(contentEl, (node) => node.className.includes('tyrian-companion-session__badge'));
+		expect(badge?.textContent).toBe('Limitada');
+		expect(badge?.attributes.get('title')).toBe('Calidad: Comparación de almacenamiento · Limitado');
+		expect(texts(contentEl).some((text) => text.startsWith('Calidad: '))).toBe(false);
 	});
 
 	it('claims nothing while the session is still running', () => {
