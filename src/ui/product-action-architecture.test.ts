@@ -11,10 +11,12 @@ describe('product action architecture', () => {
 		expect(main.match(/registerProductActionPalette\(/gu)).toHaveLength(1);
 		expect(main).toContain('sessionCommands: this.sessionCommands');
 		expect(main).toContain('execute: (id) => this.executeProductAction');
-		for (const surface of [companion, inventory, settings]) {
+		for (const surface of [companion, inventory]) {
 			expect(surface).toContain('renderProductShell(');
 			expect(surface).toContain('getProductActionController');
 		}
+		// The Settings tab renders native Obsidian rows only; the product shell header lives elsewhere.
+		expect(settings).not.toContain('renderProductShell(');
 		expect(panel).toContain("button.addEventListener('click', () => { void controller.run(action.id).catch(() => undefined); });");
 		expect(panel).toContain("createEl('aside', { cls: 'tyrian-action-panel' })");
 		const setup = main.slice(main.indexOf('private setupProductActions()'), main.indexOf('\n\tprivate async executeProductAction'));

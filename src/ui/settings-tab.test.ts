@@ -14,13 +14,16 @@ import {
 } from './settings-i18n';
 import {
 	TyrianCompanionSettingTab,
+	bpsToPercentDisplay,
 	goldThresholdToCopper,
 	isActiveSettingsCategory,
 	nextSettingsCategory,
+	percentDisplayToBps,
 	projectLocalDebugStatus,
 	runConfirmedLocalDebugClear,
 	runConfirmedLocalDebugExport,
 	runSettingWrite,
+	SETTINGS_CATEGORIES,
 	SettingsWriteQueue,
 } from './settings-tab';
 
@@ -36,8 +39,8 @@ describe('essential alert threshold', () => {
 		const plugin = settingsPlugin();
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
-			.find((candidate) => candidate.name === 'Alert me from');
-		if (definition === undefined) throw new Error('Expected alert threshold setting.');
+			.find((candidate) => candidate.name === 'Catch a single expensive item');
+		if (definition === undefined) throw new Error('Expected the per-unit Halloween threshold setting.');
 		const control = renderControl(definition, 'text');
 
 		await control.change('-1');
@@ -46,6 +49,18 @@ describe('essential alert threshold', () => {
 		expect(control.feedbackRole).toBe('alert');
 		expect(control.feedback).toBe('Enter a non-negative gold amount with at most four decimal places.');
 		expect(plugin.settings.halloweenValueThresholdCopper).toBe(DEFAULT_SETTINGS.halloweenValueThresholdCopper);
+	});
+});
+
+describe('percentage-to-basis-points conversion for the price-alert margin', () => {
+	it('round-trips a one-decimal percentage through whole basis points', () => {
+		expect(bpsToPercentDisplay(0)).toBe('0.0');
+		expect(bpsToPercentDisplay(125)).toBe('1.3');
+		expect(percentDisplayToBps('1.25')).toBe(125);
+		expect(percentDisplayToBps('0')).toBe(0);
+		expect(percentDisplayToBps('-1')).toBe('invalid');
+		expect(percentDisplayToBps('1001')).toBe('invalid');
+		expect(percentDisplayToBps('')).toBe('invalid');
 	});
 });
 
@@ -141,7 +156,7 @@ describe('Halloween price-alert settings wiring', () => {
 		expect(renderControl(byName(marginName), 'text').disabled).toBe(false);
 		expect(renderControl(byName(cooldownName), 'dropdown').disabled).toBe(false);
 
-		await renderControl(byName(marginName), 'text').change('125');
+		await renderControl(byName(marginName), 'text').change('1.25');
 		await renderControl(byName(cooldownName), 'dropdown').change('48');
 		expect(plugin.settings).toMatchObject({
 			halloweenPriceAlertMinimumAboveP90Bps: 125, halloweenPriceAlertCooldownHours: 48,
@@ -178,41 +193,47 @@ describe('assisted-detection polling settings', () => {
 });
 
 describe('settings information architecture', () => {
-	it('assigns all 30 existing rows to explicit intent categories', () => {
+	it('assigns all 32 existing rows to explicit intent categories', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(30);
-		expect(assignments.filter(({ category }) => category === 'account')).toHaveLength(7);
-		expect(assignments.filter(({ category }) => category === 'inventory')).toHaveLength(5);
-		expect(assignments.filter(({ category }) => category === 'economy')).toHaveLength(14);
-		expect(assignments.filter(({ category }) => category === 'diagnostics')).toHaveLength(4);
-		expect(assignments.every(({ category }) => ['account', 'inventory', 'economy', 'diagnostics'].includes(category))).toBe(true);
+		expect(assignments).toHaveLength(32);
+		expect(assignments.filter(({ category }) => category === 'account')).toHaveLength(3);
+		expect(assignments.filter(({ category }) => category === 'session')).toHaveLength(3);
+		expect(assignments.filter(({ category }) => category === 'loot')).toHaveLength(8);
+		expect(assignments.filter(({ category }) => category === 'halloween')).toHaveLength(9);
+		expect(assignments.filter(({ category }) => category === 'alerts')).toHaveLength(3);
+		expect(assignments.filter(({ category }) => category === 'diagnostics')).toHaveLength(6);
+		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
 	});
 
 	it('keeps exactly one category mounted and provides a wrapping keyboard tab order', () => {
-		const categories = ['account', 'inventory', 'economy', 'diagnostics'] as const;
-		for (const active of ['account', 'inventory', 'economy', 'diagnostics'] as const) {
-			expect(categories.filter((category) => isActiveSettingsCategory(category, active))).toEqual([active]);
+		for (const active of SETTINGS_CATEGORIES) {
+			expect(SETTINGS_CATEGORIES.filter((category) => isActiveSettingsCategory(category, active))).toEqual([active]);
 		}
 		expect(nextSettingsCategory('account', 'ArrowLeft')).toBe('diagnostics');
 		expect(nextSettingsCategory('diagnostics', 'ArrowRight')).toBe('account');
 		expect(nextSettingsCategory('account', 'ArrowUp')).toBe('diagnostics');
 		expect(nextSettingsCategory('diagnostics', 'ArrowDown')).toBe('account');
-		expect(nextSettingsCategory('economy', 'Home')).toBe('account');
+		expect(nextSettingsCategory('loot', 'Home')).toBe('account');
 		expect(nextSettingsCategory('account', 'End')).toBe('diagnostics');
 		expect(nextSettingsCategory('account', 'Enter')).toBeNull();
 	});
 
-	it('pins the lateral/horizontal layouts, 44 px controls and focus restoration', () => {
+	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {
 		const source = readFileSync('src/ui/settings-tab.ts', 'utf8');
 		const styles = readFileSync('styles.css', 'utf8');
-		expect(settingsLayoutAt(styles, 479)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'full' });
-		expect(settingsLayoutAt(styles, 480)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'intrinsic' });
-		expect(settingsLayoutAt(styles, 759)).toEqual({ navigation: 'horizontal', rows: 'stacked', controls: 'intrinsic' });
-		expect(settingsLayoutAt(styles, 760)).toEqual({ navigation: 'horizontal', rows: 'columns', controls: 'intrinsic' });
-		expect(settingsLayoutAt(styles, 1_049).navigation).toBe('horizontal');
-		expect(settingsLayoutAt(styles, 1_050).navigation).toBe('lateral');
-		expect(styles).toMatch(/\.tyrian-product-settings__section button,[\s\S]*min-block-size: 44px/u);
+		expect(source).not.toContain('renderProductShell(');
+		expect(source).not.toContain('tyrian-companion-settings__essentials');
+		expect(source).not.toContain('tyrian-companion-settings__advanced');
+		expect(styles).not.toContain('tyrian-companion-settings__essentials');
+		expect(styles).not.toContain('tyrian-companion-settings__advanced');
+		expect(styles).not.toContain('tyrian-product-settings__layout');
+		expect(styles).not.toContain('tyrian-product-settings__panels');
+		expect(styles).not.toContain('tyrian-product-settings__section');
+		expect(styles).toMatch(/\.tyrian-product-settings__nav\s*\{[\s\S]*display:\s*flex;/u);
+		expect(styles).toMatch(/\.tyrian-product-settings__nav button\[aria-selected="true"\]\s*\{[\s\S]*border-color:\s*var\(--interactive-accent\);/u);
+		expect(styles).toMatch(/\.tyrian-companion-settings \.setting-item-control\s*\{[\s\S]*flex-wrap:\s*wrap;/u);
+		expect(styles).not.toMatch(/\.tyrian-companion-settings[^{]*\{[^}]*min-(?:block-size|height):\s*44px/su);
 		expect(source).toContain('restoreSettingsFocus(this.containerEl, focus)');
 		expect(source).toContain('control.focus({ preventScroll: true })');
 		expect(source).toContain("state === 'error' ? 'alert' : 'status'");
@@ -344,30 +365,6 @@ interface FakeControl {
 interface RenderableSettingDefinition {
 	name: string;
 	render(setting: never): void;
-}
-
-function settingsLayoutAt(styles: string, width: number): {
-	readonly navigation: 'horizontal' | 'lateral';
-	readonly rows: 'stacked' | 'columns';
-	readonly controls: 'full' | 'intrinsic';
-} {
-	const horizontal = requireCssBreakpoint(styles,
-		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__layout \{/u);
-	const stacked = requireCssBreakpoint(styles,
-		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__section \.setting-item,/u);
-	const full = requireCssBreakpoint(styles,
-		/@container \(max-width: (\d+)px\) \{\n\t\.tyrian-product-settings__section \.setting-item-control > input,/u);
-	return {
-		navigation: width <= horizontal ? 'horizontal' : 'lateral',
-		rows: width <= stacked ? 'stacked' : 'columns',
-		controls: width <= full ? 'full' : 'intrinsic',
-	};
-}
-
-function requireCssBreakpoint(styles: string, pattern: RegExp): number {
-	const match = pattern.exec(styles);
-	if (match?.[1] === undefined) throw new Error(`Missing causal CSS breakpoint: ${String(pattern)}`);
-	return Number(match[1]);
 }
 
 function renderControl(

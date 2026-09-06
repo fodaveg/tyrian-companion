@@ -27,10 +27,7 @@
 	margin-block: 0 0.35rem;
 }
 
-.tyrian-companion-session__header button,
-.tyrian-companion-settings__essentials button,
-.tyrian-companion-settings__essentials input,
-.tyrian-companion-settings__essentials select {
+.tyrian-companion-session__header button {
 	min-height: 44px;
 }
 
@@ -131,20 +128,6 @@
 
 .tyrian-companion-session__settlement > button {
 	min-height: 44px;
-}
-
-.tyrian-companion-settings__essentials {
-	margin-block: 1rem 1.5rem;
-}
-
-.tyrian-companion-settings__advanced {
-	margin-top: 1rem;
-}
-
-.tyrian-companion-settings__advanced > summary {
-	min-height: 44px;
-	padding-block: 0.65rem;
-	font-weight: var(--font-semibold);
 }
 
 @container (max-width: 480px) {
@@ -402,72 +385,19 @@
 	padding: var(--size-4-3);
 }
 
-.tyrian-product-settings__layout {
-	display: grid;
-	grid-template-columns: 12rem minmax(0, 1fr);
-	gap: var(--size-4-5);
-	align-items: start;
-}
-
-.tyrian-product-settings__panels {
-	min-inline-size: 0;
-}
-
-.tyrian-product-settings__section {
-	margin-block-end: var(--size-4-6);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-l);
-	overflow: clip;
-	container-type: inline-size;
-}
-
-.tyrian-product-settings__section > header {
-	padding: var(--size-4-3) var(--size-4-4);
-	border-block-end: 1px solid var(--background-modifier-border);
-	background: var(--background-secondary);
-}
-
-.tyrian-product-settings__section > header h2 {
-	margin: 0;
-	font-size: var(--font-ui-large);
-}
-
-.tyrian-product-settings__section > header p {
-	margin: var(--size-4-1) 0 0;
-	color: var(--text-muted);
-	overflow-wrap: anywhere;
-}
-
-.tyrian-product-settings__section .setting-item {
-	padding-inline: var(--size-4-4);
-}
-
-.tyrian-product-settings__section .setting-item-control {
+/* Settings tab: a horizontal tablist above native `Setting` rows. No lateral nav, no per-row
+   container, and no forced 44px targets — the Obsidian modal already sizes its own controls. */
+.tyrian-product-settings__nav {
+	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-4-2);
-}
-
-.tyrian-product-settings__section button,
-.tyrian-product-settings__section input,
-.tyrian-product-settings__section select,
-.tyrian-product-settings__section .checkbox-container {
-	min-block-size: 44px;
-	min-inline-size: 44px;
-}
-
-.tyrian-product-settings__nav {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	gap: var(--size-4-2);
-	position: sticky;
-	inset-block-start: var(--size-4-4);
+	margin-block-end: var(--size-4-4);
 }
 
 .tyrian-product-settings__nav button {
 	display: inline-flex;
 	justify-content: center;
 	align-items: center;
-	min-height: 44px;
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
@@ -479,6 +409,11 @@
 .tyrian-product-settings__nav button[aria-selected="true"] {
 	border-color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
+}
+
+.tyrian-companion-settings .setting-item-control {
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
 }
 
 .tyrian-companion-settings__save-status {
@@ -493,42 +428,6 @@
 .tyrian-companion-settings__save-status[data-state="error"] {
 	color: var(--text-error);
 	overflow-wrap: anywhere;
-}
-
-@container (max-width: 1049px) {
-	.tyrian-product-settings__layout {
-		grid-template-columns: minmax(0, 1fr);
-		gap: var(--size-4-4);
-	}
-
-	.tyrian-product-settings__nav {
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-		inset-block-start: 0;
-		padding-block: var(--size-4-2);
-		background: var(--background-primary);
-	}
-}
-
-@container (max-width: 759px) {
-	.tyrian-product-settings__section .setting-item,
-	.tyrian-product-settings__section .setting-item-info,
-	.tyrian-product-settings__section .setting-item-control {
-		inline-size: 100%;
-	}
-
-	.tyrian-product-settings__section .setting-item {
-		align-items: stretch;
-		padding-inline: var(--size-4-3);
-	}
-}
-
-@container (max-width: 479px) {
-	.tyrian-product-settings__section .setting-item-control > input,
-	.tyrian-product-settings__section .setting-item-control > select,
-	.tyrian-product-settings__section .setting-item-control > button {
-		flex: 1 1 100%;
-		max-inline-size: 100%;
-	}
 }
 
 .tyrian-product-shell button:focus-visible,
@@ -2356,7 +2255,6 @@
 
 .tyrian-companion-settings__diagnostics {
 	align-items: start;
-	container-type: inline-size;
 }
 
 .tyrian-companion-settings__diagnostic-status {
@@ -2381,20 +2279,6 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-companion-settings__diagnostics .setting-item-control {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--size-4-2);
-}
-
-.tyrian-companion-settings__diagnostics button,
-.tyrian-companion-settings__diagnostics select,
-.tyrian-companion-settings__diagnostics .checkbox-container {
-	min-block-size: 44px;
-	min-inline-size: 44px;
-}
-
-.tyrian-companion-settings__diagnostics :focus-visible,
 .tyrian-companion-view__debug-warning :focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
@@ -2417,17 +2301,4 @@
 	justify-self: start;
 	min-block-size: 44px;
 	min-inline-size: 44px;
-}
-
-@container (max-width: 520px) {
-	.tyrian-companion-settings__diagnostics .setting-item-info,
-	.tyrian-companion-settings__diagnostics .setting-item-control {
-		inline-size: 100%;
-	}
-
-	.tyrian-companion-settings__diagnostics button,
-	.tyrian-companion-settings__diagnostics select {
-		flex: 1 1 100%;
-		inline-size: 100%;
-	}
 }
