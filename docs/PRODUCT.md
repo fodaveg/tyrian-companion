@@ -75,6 +75,15 @@ Regla firmada por David el 2026-09-08 sobre los códigos de clasificación de `s
 
 El único motivo que sigue contaminando por completo (`contaminated`, `recommend: false`) es declarar una actividad externa que el delta no puede atribuir por sí mismo (`salvage`, `consume`, `craft`, `tp`, `vendor`, `transfer`, `other`); la evidencia que el delta o el historial del bazar SÍ pueden medir directamente (venta/compra en el bazar, cambio de plantilla de personajes) solo la degrada a banda. La nota publica siempre la tasa por hora como banda, junto a la cifra exacta cuando la clasificación lo permite, la recomendación con su nivel de confianza y un motivo por viñeta.
 
+### Decisión del 2026-09-09: el plugin se fía de la API; nada pide revisión ni aprobación
+
+Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque la API te lo ha dado. No tengo que aprobar nada.» Nace de la sesión real del 9 sep (10:07 a 10:22), que acabó en «La sesión necesita revisión» y sin guardar: la revisión «automática» respondía `unsure` en su nombre y el validador semántico del clasificador rechazaba el registro al escribirlo.
+
+- Parar una sesión es guardarla: la clasificación se calcula sola con la evidencia de la API (`exact`, `estimated` o `invalid` por motivo técnico) y la nota se escribe. No existe el estado «necesita revisión», ni modal de preguntas, ni `permissions.finalize: false`; `reviewRequests` está siempre vacío. Un registro que quedó en `provisional` se finaliza solo al cargar.
+- La regla del 2026-09-08 sigue diciendo qué degrada a `estimated`; solo cambia que ningún motivo depende de una declaración humana y que `contaminated` deja de ser alcanzable.
+- Los avisos no se marcan como revisados ni tienen estado leído/no leído. Solo son avisos los de la política única (umbral de valor, skin o mini no desbloqueados) y los de precio de la bolsa; `first_seen` y «raro sin cotización» son información de la nota.
+- Los validadores de forma de los registros guardados comprueban forma, nunca semántica: un registro de una versión anterior se lee, no se tira como corrupto.
+
 ### Las cuatro decisiones de H14.21 y la del aviso único (delegadas por David el 8 sep, implementadas el 9 sep)
 
 - **Lease de sesión de 300 s** (antes 30 s): el latido que renueva la sesión activa en IndexedDB pasa
