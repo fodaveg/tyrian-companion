@@ -82,13 +82,7 @@ async function legacyV2SessionRecord(): Promise<Record<string, unknown>> {
 	});
 	const delta = compareStorageSnapshots(baseline, final);
 	if (delta.status === 'invalid') throw new Error('The legacy-record fixture delta must be valid.');
-	const review = createSessionContaminationReview(baseline, final, delta, {
-		certainty: 'confirmed',
-		activities: {
-			open: false, salvage: false, consume: false, craft: false, tpBuy: false,
-			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-		},
-	}, REVIEWED_AT);
+	const review = createSessionContaminationReview(baseline, final, delta, REVIEWED_AT);
 	if (review === null || review.classification.status !== 'exact') {
 		throw new Error('The legacy-record fixture must classify as exact.');
 	}
