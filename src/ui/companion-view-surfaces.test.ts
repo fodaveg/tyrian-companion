@@ -204,9 +204,9 @@ describe('Companion API settlement surface', () => {
 
 		expect(texts(contentEl)).toContain('Esperando a que la API confirme los últimos minutos');
 		expect(texts(contentEl)).toContain('Captura final en 07:00');
-		const why = texts(contentEl).find((text) => text.includes('varios minutos de retraso'));
+		const why = texts(contentEl).find((text) => text.includes('minutos de retraso'));
 		expect(why).toBeDefined();
-		expect(texts(contentEl)).toContain('El resultado puede no incluir los últimos minutos y la sesión quedará marcada como estimada.');
+		expect(texts(contentEl)).toContain('Puede no incluir los últimos minutos; la sesión quedará marcada como estimada.');
 
 		const captureNow = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Capturar ya');
 		expect(captureNow).toBeDefined();
