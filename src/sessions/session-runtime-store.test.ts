@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
@@ -190,7 +191,13 @@ describe('session runtime persistence', () => {
 		expect(createSessionRuntimeRecord(state, baseline, null, null, Date.parse(final.completedAt))).toBeNull();
 	});
 
-	it('validates a derived review and rejects classification tampering', () => {
+	it('carries a provisional review through untouched, tampered or not', () => {
+		// A `provisional` review is not final yet, so a write does not recompute it against the
+		// evidence: it will be genuinely (re)computed once the session actually finalizes. Rejecting
+		// a re-persist here (e.g. recovering the session's authority after a restart) just because an
+		// upgraded classifier no longer reproduces an already-saved review byte-for-byte is exactly
+		// the failure this lote removes ("no me tiene que volver a salir lo de revisar la sesión
+		// anterior porque no se ha guardado bien").
 		const baseline = storageDeltaSnapshot();
 		const final = afterSnapshot();
 		const state = provisionalState(baseline, final);
@@ -199,19 +206,46 @@ describe('session runtime persistence', () => {
 			baseline,
 			final,
 			delta,
-			{
-				certainty: 'confirmed',
-				activities: {
-					open: false, salvage: false, consume: false, craft: false,
-					tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
-					transfer: false, other: false,
-				},
-			},
 			'2026-08-13T09:00:03.000Z',
 		);
 		if (!review) throw new Error('Review fixture is invalid.');
 		const record = createSessionRuntimeRecord(
 			state,
+			baseline,
+			final,
+			delta,
+			Date.parse(review.reviewedAt),
+			review,
+		);
+		expect(isSessionRuntimeRecord(record)).toBe(true);
+		if (!record || !record.review) throw new Error('Reviewed record is invalid.');
+		const tampered = structuredClone(record);
+		if (!tampered.review) throw new Error('Reviewed clone is invalid.');
+		tampered.review.classification.status = 'contaminated';
+		expect(isSessionRuntimeRecord(tampered)).toBe(true);
+	});
+
+	it('still rejects a completed session whose stored review no longer matches its own classification', () => {
+		const baseline = storageDeltaSnapshot();
+		const final = afterSnapshot();
+		const provisional = provisionalState(baseline, final);
+		const delta = compareStorageSnapshots(baseline, final);
+		const review = createSessionContaminationReview(
+			baseline,
+			final,
+			delta,
+			'2026-08-13T09:00:03.000Z',
+		);
+		if (!review) throw new Error('Review fixture is invalid.');
+		const finalized = transitionSession(provisional, {
+			type: 'finalize',
+			authority,
+			finalizedAt: '2026-08-13T09:00:04.000Z',
+			classification: review.classification.status,
+		});
+		if (finalized.status !== 'applied') throw new Error('Finalize fixture transition failed.');
+		const record = createSessionRuntimeRecord(
+			finalized.state,
 			baseline,
 			final,
 			delta,
@@ -231,13 +265,7 @@ describe('session runtime persistence', () => {
 		const final = afterSnapshot();
 		const state = provisionalState(baseline, final);
 		const delta = compareStorageSnapshots(baseline, final);
-		const review = createSessionContaminationReview(baseline, final, delta, {
-			certainty: 'confirmed', activities: {
-				open: false, salvage: false, consume: false, craft: false,
-				tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
-				transfer: false, other: false,
-			},
-		}, '2026-08-13T09:00:03.000Z');
+		const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:03.000Z');
 		if (!review) throw new Error('Review fixture is invalid.');
 		review.classification = { ...review.classification, version: 1,
 			permissions: { ...review.classification.permissions, recommend: false } } as never;
@@ -252,13 +280,7 @@ describe('session runtime persistence', () => {
 		const final = afterSnapshot();
 		const state = provisionalState(baseline, final);
 		const delta = compareStorageSnapshots(baseline, final);
-		const review = createSessionContaminationReview(baseline, final, delta, {
-			certainty: 'confirmed', activities: {
-				open: true, salvage: false, consume: false, craft: false,
-				tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false,
-				transfer: false, other: false,
-			},
-		}, '2026-08-13T09:00:03.000Z');
+		const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:03.000Z');
 		if (!review) throw new Error('Review fixture is invalid.');
 		expect(isSessionContaminationReview(review, baseline, final, delta)).toBe(true);
 
@@ -328,6 +350,20 @@ describe('session runtime persistence', () => {
 		const upgraded = await openRaw(factory, name, 2);
 		await expect(store.load()).resolves.toEqual({ status: 'error', code: 'unavailable' });
 		upgraded.close();
+	});
+
+	// Lote S (2026-09-09), test obligatorio: the real record David hit today (`registro-sesion-9sep.json`,
+	// saved by the version before this lote — non-empty `reviewRequests`, `permissions.finalize: true`
+	// but `status: 'estimated'`) must still normalize and load, never turn `corrupt`, even though its
+	// review no longer recomputes exactly against today's classifier.
+	it('loads the real 9-sep record instead of turning it corrupt', async () => {
+		const fixture: unknown = JSON.parse(readFileSync(
+			new URL('./__fixtures__/registro-sesion-9sep.json', import.meta.url),
+			'utf8',
+		));
+		const store = new MemorySessionRuntimeStore(fixture);
+		const loaded = await store.load();
+		expect(loaded.status).toBe('loaded');
 	});
 });
 

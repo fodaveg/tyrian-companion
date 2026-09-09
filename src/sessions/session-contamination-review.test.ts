@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { compareStorageSnapshots } from '../account/storage-delta';
 import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
@@ -13,10 +13,7 @@ import {
 	createSessionContaminationReview,
 	isSessionContaminationReview,
 	isSessionContaminationReviewShape,
-	proposeTradingPostContamination,
-	type SessionContaminationAnswers,
 } from './session-contamination-review';
-import type { TradingPostHistoryEvidenceV1 } from '../account/trading-post-evidence';
 import type { SessionStartCaptureResult } from './session-start-capture';
 
 const REVIEWED_AT = '2026-08-13T12:00:00.000Z';
@@ -24,85 +21,32 @@ const REVIEWED_AT = '2026-08-13T12:00:00.000Z';
 describe('session contamination review', () => {
 	beforeEach(() => { workflowClock = Date.parse('2026-08-13T07:59:59.500Z'); });
 
-	it('classifies an explicit clean confirmation as exact', () => {
+	// Nobody declares or confirms anything anymore (David, 2026-09-09): `createSessionContaminationReview`
+	// no longer takes answers at all, `declaration` is always `{ status: 'absent' }`, and clean
+	// evidence classifies exact on its own. The declared-activity/contaminated and
+	// certainty/estimated cases this replaces (`maps %s to declared %s activity and contamination`,
+	// `maps open to a declared open activity...`, `deduplicates buy and sell...`,
+	// `keeps an uncertain clean-looking answer estimated`) covered an input that no longer exists;
+	// `contamination.test.ts` covers `declaration: { status: 'absent' }` never contaminating or
+	// degrading a reading on its own.
+	it('creates a review with an absent declaration, classified exact for clean evidence', () => {
 		const { before, after, delta } = fixtures();
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT);
 
 		expect(review).toMatchObject({
-			declaration: { status: 'confirmed_clean' },
-			classification: { status: 'exact', permissions: { finalize: true } },
+			declaration: { status: 'absent' },
+			classification: { status: 'exact', permissions: { finalize: true }, reviewRequests: [] },
 		});
 	});
 
-	it.each([
-		['salvage', 'salvage'],
-		['consume', 'consume'],
-		['craft', 'craft'],
-		['tpBuy', 'tp'],
-		['tpSell', 'tp'],
-		['vendorBuy', 'vendor'],
-		['vendorSell', 'vendor'],
-		['transfer', 'transfer'],
-		['other', 'other'],
-	] as const)('maps %s to declared %s activity and contamination', (key, activity) => {
-		const { before, after, delta } = fixtures();
-		const input = answers();
-		input.activities[key] = true;
-		const review = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
-
-		expect(review).toMatchObject({
-			declaration: { status: 'activities', activities: [activity] },
-			classification: { status: 'contaminated', permissions: { finalize: true } },
-		});
-	});
-
-	// H13.6/H14.1: the review is the caller of the classifier, so the opening rule is asserted on
-	// the review it actually produces, not on the kernel in isolation. Opening containers never
-	// contaminates, and — with no other evidence of external activity — it does not even degrade
-	// the session below exact/high.
-	it('maps open to a declared open activity that keeps the session exact instead of contaminating it', () => {
-		const { before, after, delta } = fixtures();
-		const input = answers();
-		input.activities.open = true;
-		const review = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
-
-		expect(review).toMatchObject({
-			declaration: { status: 'activities', activities: ['open'] },
-			classification: {
-				status: 'exact',
-				permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: true },
-			},
-		});
-		expect(review?.classification.reasons).toContainEqual({ code: 'open_activity_declared' });
-		expect(review?.classification.reviewRequests).toEqual([]);
-	});
-
-	it('deduplicates buy and sell within each declared activity family', () => {
-		const { before, after, delta } = fixtures();
-		const input = answers();
-		input.activities.tpBuy = true;
-		input.activities.tpSell = true;
-		input.activities.vendorBuy = true;
-		input.activities.vendorSell = true;
-
-		expect(createSessionContaminationReview(before, after, delta, input, REVIEWED_AT)?.declaration)
-			.toEqual({ status: 'activities', activities: ['tp', 'vendor'] });
-	});
-
-	it.each([
-		['salvage', 'salvage', 'salvage'],
-		['Trading Post buy', 'tpBuy', 'tp'],
-		['vendor buy', 'vendorBuy', 'vendor'],
-	] as const)(
-		'finalizes and reloads a declared %s workflow with exact contaminated permissions',
-		async (_label, key, activity) => {
+	it(
+		'finalizes and reloads an exact workflow with every permission granted',
+		async () => {
 			const runtimeStore = new MemorySessionRuntimeStore();
 			const first = workflowService(runtimeStore);
-			const input = answers();
-			input.activities[key] = true;
 			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
 			const stopped = await stopWorkflow(first);
-			const reviewed = await first.reviewContamination(input);
+			const reviewed = await first.finalizeStoppedSession();
 
 			const second = workflowService(runtimeStore, false);
 			await second.initialize();
@@ -130,9 +74,7 @@ describe('session contamination review', () => {
 				reloadedReview: reloaded === null ? null : {
 					declaration: reloaded.declaration,
 					reasons: reloaded.classification.reasons,
-					tpObservedReasons: reloaded.classification.reasons.filter(
-						(reason) => reason.code === 'tp_buy_observed' || reason.code === 'tp_sell_observed',
-					),
+					reviewRequests: reloaded.classification.reviewRequests,
 					permissions: reloaded.classification.permissions,
 				},
 				persisted: completed === null ? null : {
@@ -151,67 +93,49 @@ describe('session contamination review', () => {
 				stopped: 'provisional',
 				reviewed: {
 					status: 'finalized',
-					state: { status: 'complete', classification: 'contaminated' },
+					state: { status: 'complete', classification: 'exact' },
 				},
-				reloadedState: { status: 'complete', classification: 'contaminated' },
+				reloadedState: { status: 'complete', classification: 'exact' },
 				reloadedReview: {
-					declaration: { status: 'activities', activities: [activity] },
-					reasons: [{ code: 'activity_declared', detail: activity }],
-					tpObservedReasons: [],
+					declaration: { status: 'absent' },
+					reasons: [],
+					reviewRequests: [],
 					permissions: {
 						finalize: true,
 						showNet: true,
-						valueNet: false,
-						grossPerHour: false,
-						recommend: false,
+						valueNet: true,
+						grossPerHour: true,
+						recommend: true,
 					},
 				},
 				persisted: {
-					state: { status: 'complete', classification: 'contaminated' },
+					state: { status: 'complete', classification: 'exact' },
 					review: {
-						declaration: { status: 'activities', activities: [activity] },
-						reasons: [{ code: 'activity_declared', detail: activity }],
+						declaration: { status: 'absent' },
+						reasons: [],
 					},
 				},
 			});
 		},
 	);
 
-	it('keeps an uncertain clean-looking answer estimated', () => {
+	it('rejects invalid timestamps and invalid deltas', () => {
 		const { before, after, delta } = fixtures();
-		const review = createSessionContaminationReview(
-			before,
-			after,
-			delta,
-			answers('unsure'),
-			REVIEWED_AT,
-		);
-
-		expect(review).toMatchObject({
-			declaration: { status: 'unsure' },
-			classification: { status: 'estimated', permissions: { finalize: true } },
-		});
-	});
-
-	it('rejects incomplete answers, invalid timestamps and invalid deltas', () => {
-		const { before, after, delta } = fixtures();
-		expect(createSessionContaminationReview(before, after, delta, {}, REVIEWED_AT)).toBeNull();
-		expect(createSessionContaminationReview(before, after, delta, answers(), 'not-a-date')).toBeNull();
+		expect(createSessionContaminationReview(before, after, delta, 'not-a-date')).toBeNull();
 		expect(createSessionContaminationReview(
 			before,
 			after,
 			delta,
-			answers(),
 			'2026-08-13T10:59:59.999Z',
 		)).toBeNull();
 		const invalid = structuredClone(delta);
 		invalid.status = 'invalid';
-		expect(createSessionContaminationReview(before, after, invalid, answers(), REVIEWED_AT)).toBeNull();
+		expect(createSessionContaminationReview(before, after, invalid, REVIEWED_AT)).toBeNull();
 	});
 
 	it('validates the complete derived record and rejects tampering', () => {
 		const { before, after, delta } = fixtures();
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT);
 		expect(isSessionContaminationReview(review, before, after, delta)).toBe(true);
 		if (!review) throw new Error('Expected review fixture.');
 		const tampered = structuredClone(review);
@@ -223,7 +147,7 @@ describe('session contamination review', () => {
 		// Measured on a real vault on 9 sep 2026: two `session_recover validation_failed` at load, both
 		// on the review the released 0.1.30 had stored without the key the catalog-type exemption added.
 		const { before, after, delta } = fixtures();
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT);
 		if (!review) throw new Error('Expected review fixture.');
 		const { farmedLossItemIds: _dropped, ...stored } = structuredClone(review) as unknown as Record<string, unknown>;
 		expect(isSessionContaminationReviewShape(stored)).toBe(true);
@@ -233,7 +157,7 @@ describe('session contamination review', () => {
 
 	it('loads an exact legacy v1 classification read-only but never grants recommendation permission', () => {
 		const { before, after, delta } = fixtures();
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT);
 		if (!review) throw new Error('Expected review fixture.');
 		const legacy = structuredClone(review);
 		legacy.classification = {
@@ -252,7 +176,7 @@ describe('session contamination review', () => {
 		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
 		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
 		const delta = compareStorageSnapshots(before, after);
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT, 'settled', [999]);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT, 'settled', [999]);
 
 		expect(review).toMatchObject({
 			farmedLossItemIds: [999],
@@ -265,7 +189,7 @@ describe('session contamination review', () => {
 		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
 		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
 		const delta = compareStorageSnapshots(before, after);
-		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT, 'settled', [999]);
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT, 'settled', [999]);
 		if (!review) throw new Error('Expected review fixture.');
 
 		const tampered = structuredClone(review);
@@ -273,98 +197,16 @@ describe('session contamination review', () => {
 		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
 	});
 
-	it('does not mutate answers or evidence inputs', () => {
+	it('does not mutate evidence inputs', () => {
 		const { before, after, delta } = fixtures();
-		const input = answers();
-		const originals = structuredClone({ before, after, delta, input });
-		const review = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
+		const originals = structuredClone({ before, after, delta });
+		const review = createSessionContaminationReview(before, after, delta, REVIEWED_AT);
 		if (!review) throw new Error('Expected review fixture.');
 		review.answers.activities.open = true;
 
-		expect({ before, after, delta, input }).toEqual(originals);
-	});
-
-	it('proposes complete TP history for human review without accepting or classifying it automatically', () => {
-		const { before, after, delta } = fixtures();
-		const input = answers();
-		const evidence = historyEvidence('complete');
-		const originals = structuredClone({ input, evidence });
-
-		const proposal = proposeTradingPostContamination(evidence, 'account-1', evidence.window);
-		const unchangedReview = createSessionContaminationReview(before, after, delta, input, REVIEWED_AT);
-
-		expect(proposal).toEqual({
-			status: 'ready',
-			requiresHumanReview: true,
-			suggestedActivities: ['tpBuy', 'tpSell'],
-			eventCounts: { buys: 1, sells: 1 },
-		});
-		expect(unchangedReview).toMatchObject({
-			answers: { activities: { tpBuy: false, tpSell: false } },
-			classification: { status: 'exact' },
-		});
-		expect({ input, evidence }).toEqual(originals);
-	});
-
-	it('fails closed and proposes nothing when TP history coverage is incomplete', () => {
-		const partial = historyEvidence('partial');
-		partial.endpointCoverage.sell = { status: 'partial', capturedAt: null, reason: 'page_limit' };
-
-		expect(proposeTradingPostContamination(partial, 'account-1', partial.window)).toEqual({
-			status: 'unavailable',
-			reason: 'coverage_incomplete',
-			requiresHumanReview: true,
-			suggestedActivities: [],
-		});
-		expect(proposeTradingPostContamination(historyEvidence('complete'), 'other-account', partial.window))
-			.toMatchObject({ status: 'unavailable', reason: 'identity_mismatch', suggestedActivities: [] });
-	});
-
-	it('calls history from the real provisional-session service without changing review state', async () => {
-		const runtimeStore = new MemorySessionRuntimeStore();
-		const capture = vi.fn(async (accountId: string, window: { from: string; to: string }) => {
-			const evidence = historyEvidence('complete');
-			return { ...evidence, accountId, window, events: evidence.events.map((event) => ({
-				...event, occurredAt: window.to,
-			})) };
-		});
-		const service = workflowService(runtimeStore, true, { capture });
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await stopWorkflow(service);
-
-		const beforeState = service.getState();
-		const proposal = await service.proposeTradingPostContamination();
-
-		expect(capture).toHaveBeenCalledWith(workflowCapture.snapshot.accountId, {
-			from: workflowCapture.snapshot.completedAt,
-			to: afterSnapshot().startedAt,
-		});
-		expect(proposal).toMatchObject({ status: 'ready', suggestedActivities: ['tpBuy', 'tpSell'] });
-		expect(service.getState()).toEqual(beforeState);
-		expect(service.getContaminationReview()).toBeNull();
-		await expect(service.reviewContamination(answers())).resolves.toMatchObject({
-			status: 'finalized', review: { classification: { status: 'exact' } },
-		});
+		expect({ before, after, delta }).toEqual(originals);
 	});
 });
-
-function answers(certainty: SessionContaminationAnswers['certainty'] = 'confirmed'): SessionContaminationAnswers {
-	return {
-		certainty,
-		activities: {
-			open: false,
-			salvage: false,
-			consume: false,
-			craft: false,
-			tpBuy: false,
-			tpSell: false,
-			vendorBuy: false,
-			vendorSell: false,
-			transfer: false,
-			other: false,
-		},
-	};
-}
 
 function fixtures() {
 	const before = storageDeltaSnapshot({ snapshotId: 'before' });
@@ -375,24 +217,6 @@ function fixtures() {
 	});
 	const delta = compareStorageSnapshots(before, after);
 	return { before, after, delta };
-}
-
-function historyEvidence(status: 'complete' | 'partial'): TradingPostHistoryEvidenceV1 {
-	return {
-		version: 1,
-		accountId: 'account-1',
-		capturedAt: '2026-08-29T12:00:00.000Z',
-		window: { from: '2026-08-29T10:00:00.000Z', to: '2026-08-29T11:00:00.000Z' },
-		status,
-		endpointCoverage: {
-			buy: { status: 'complete', capturedAt: '2026-08-29T12:00:00.000Z', reason: null },
-			sell: { status: 'complete', capturedAt: '2026-08-29T12:00:00.000Z', reason: null },
-		},
-		events: [
-			{ kind: 'buy', itemId: 10, quantity: 1, coins: 100, occurredAt: '2026-08-29T10:30:00.000Z' },
-			{ kind: 'sell', itemId: 11, quantity: 2, coins: 200, occurredAt: '2026-08-29T10:45:00.000Z' },
-		],
-	};
 }
 
 const workflowHandle: ActiveSessionLeaseHandle = {
@@ -429,7 +253,6 @@ const workflowCapture: SessionStartCaptureResult = {
 function workflowService(
 	runtimeStore: SessionRuntimeStore,
 	canCapture = true,
-	tradingPostHistoryCapture?: { capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1> },
 ): ManualSessionStartService {
 	return new ManualSessionStartService(
 		workflowCoordinator(),
@@ -446,7 +269,6 @@ function workflowService(
 			sessionId: () => workflowHandle.sessionId,
 			setInterval: () => 1,
 			clearInterval: () => undefined,
-			tradingPostHistoryCapture,
 		},
 	);
 }

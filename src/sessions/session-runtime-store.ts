@@ -401,13 +401,16 @@ function checkSessionRuntimeRecordV3(
 		|| JSON.stringify(calculated) !== JSON.stringify(value.delta)) return INVALID_RUNTIME_RECORD;
 	let reviewVerified = true;
 	if (value.review !== null) {
-		if (options.verifyReview) {
-			if (!isSessionContaminationReview(value.review, value.baselineSnapshot, value.finalSnapshot, calculated)) {
-				return INVALID_RUNTIME_RECORD;
-			}
-		} else {
-			if (!isSessionContaminationReviewShape(value.review)) return INVALID_RUNTIME_RECORD;
-			reviewVerified = isSessionContaminationReview(value.review, value.baselineSnapshot, value.finalSnapshot, calculated);
+		if (!isSessionContaminationReviewShape(value.review)) return INVALID_RUNTIME_RECORD;
+		reviewVerified = isSessionContaminationReview(value.review, value.baselineSnapshot, value.finalSnapshot, calculated);
+		// The strict recompute only gates a WRITE once the session is `complete`: that is the one
+		// moment a review has to coherently match its evidence, checked again below by `finalized`.
+		// A `provisional` record carries a review that is not yet final — a classifier upgrade must
+		// not turn re-persisting it (e.g. recovering its authority after a restart) into a rejected
+		// save, or a session that was never reviewed by a human ends up stuck asking to be reviewed
+		// by one, which is the exact failure this lote removes.
+		if (options.verifyReview && evidenceState.status === 'complete' && !reviewVerified) {
+			return INVALID_RUNTIME_RECORD;
 		}
 	}
 	if (value.priceSnapshot !== null && !isSessionPriceSnapshot(
