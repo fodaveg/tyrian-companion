@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
@@ -15,6 +14,7 @@ import {
 } from './companion-status-model';
 import { createTranslator } from '../core/i18n';
 import type { RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
+import { readModuleSource } from '../test/module-boundary';
 
 const NOW = Date.parse('2026-08-14T12:00:00.000Z');
 
@@ -288,12 +288,12 @@ describe('formatElapsed', () => {
 
 describe('status projection boundary', () => {
 	it('has no live Obsidian, network, timer, or storage dependency', () => {
-		const source = readFileSync(new URL('./companion-status-model.ts', import.meta.url), 'utf8');
+		const source = readModuleSource('src/ui/companion-status-model.ts');
 		expect(source).not.toMatch(/from ['"]obsidian['"]|requestUrl|\bfetch\s*\(|setInterval|localStorage|indexedDB/);
 	});
 
 	it('prevents timer ticks from rebuilding the view and stealing focus', () => {
-		const source = readFileSync(new URL('./companion-view.ts', import.meta.url), 'utf8');
+		const source = readModuleSource('src/ui/companion-view.ts');
 		expect(source).not.toMatch(/setInterval\s*\(\s*\(\)\s*=>\s*this\.render\s*\(/);
 		expect(source).toContain('setInterval(() => this.refreshDynamicStatus()');
 		expect(source).toContain('this.checkButton.disabled');

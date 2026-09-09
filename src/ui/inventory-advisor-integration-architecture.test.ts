@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
@@ -10,11 +9,12 @@ import {
 	inventoryAdvisorWorkflowFailureReceipt,
 	inventoryAdvisorWorkflowReceipt,
 } from '../runtime/assemble-advisor';
+import { readModuleSource } from '../test/module-boundary';
 
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
-		const actionSource = readFileSync('src/ui/product-action-controller.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
+		const actionSource = readModuleSource('src/ui/product-action-controller.ts');
 		expect(actionSource).toContain("'open-inventory-advisor',");
 		expect(actionSource).toContain("'refresh-inventory-advisor',");
 		expect(source).toContain("id === 'open-companion' || id === 'open-inventory-advisor'");
@@ -29,7 +29,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 	});
 
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 		expect(source).toMatch(/const inventoryTransport = new ObsidianRequestTransport\(\{[\s\S]*?timeoutMs: 30_000,[\s\S]*?diagnostics: this\.localDebugActions \?\? undefined,[\s\S]*?\}\);/u);
 		expect(source.match(/operationPolicies: GW2_CHARACTER_OPERATION_POLICIES/gu)).toHaveLength(2);
 		// The advisor stack gets the inventory-scoped client, catalog and snapshots, never the
@@ -37,7 +37,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		expect(source).toContain('client: inventoryClient,');
 		expect(source).toContain('publicClient: inventoryPublicClient,');
 		expect(source).toContain('snapshots: inventorySnapshots,');
-		const runtime = readFileSync('src/runtime/assemble-advisor.ts', 'utf8');
+		const runtime = readModuleSource('src/runtime/assemble-advisor.ts');
 		expect(runtime).toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(source).toContain('() => this.settings.halloweenPersonalValuation');
 		expect(runtime).toContain('capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) =>');
@@ -54,7 +54,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		'capture.capture("es")',
 		'InventoryAdvisorEvidenceService.capture("es")',
 	])('turns red when onload is sabotaged with %s', (call) => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 		const sabotaged = source.replace('async onload(): Promise<void> {', `async onload(): Promise<void> {\n\t\t${call};`);
 		expect(inventoryAdvisorOnloadSafe(sabotaged)).toBe(false);
 	});
@@ -104,7 +104,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			path: 'test-config-dir/plugins/tyrian-companion/inventory-advisor-capture-receipt.json',
 			data: `${JSON.stringify(receipt, null, '\t')}\n`,
 		}]);
-		const mainSource = readFileSync('src/main.ts', 'utf8');
+		const mainSource = readModuleSource('src/main.ts');
 		const writer = mainSource.slice(
 			mainSource.indexOf('private async writeInventoryAdvisorCaptureReceipt'),
 			mainSource.indexOf('\n\tasync loadInventoryPreferences'),
@@ -162,10 +162,10 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-view.ts',
 		];
-		const source = files.map((path) => readFileSync(path, 'utf8')).join('\n');
+		const source = files.map((path) => readModuleSource(path)).join('\n');
 		expect(source).not.toMatch(/\bdestroy\s*\(|\bexecutor\b|requestUrl|\.requestDetailed\s*\(/u);
 		const uiSource = ['src/ui/inventory-advisor-item-view.ts', 'src/ui/inventory-advisor-view.ts']
-			.map((path) => readFileSync(path, 'utf8')).join('\n');
+			.map((path) => readModuleSource(path)).join('\n');
 		expect(uiSource).not.toMatch(/action\s*===?\s*['"]discard_candidate|value\s*===?\s*['"]discard_candidate/u);
 		expect(source).toContain("presentationAction = decision.action === 'discard_candidate' ? 'discard_review'");
 	});
