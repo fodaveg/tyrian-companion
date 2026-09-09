@@ -60,7 +60,7 @@ describe('the real 9-sep provisional record auto-finalizes and saves on boot', (
 
 		expect(plugin.getSessionState()).toMatchObject({ status: 'complete' });
 		expect(plugin.getSessionSummarySaveState()).toBe('saved');
-	});
+	}, 30_000); // a real IndexedDB boot: 2.6 s here, past the 5 s default on the GitHub runner (release 0.1.31 run 34345598250)
 });
 
 function readFixtureRecord(): Record<string, unknown> {
