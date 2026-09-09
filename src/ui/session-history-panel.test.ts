@@ -68,6 +68,11 @@ describe('mountSessionHistoryPanel', () => {
 		expect(allText(container)).toContain('History validated');
 		expect(descendants(container).some((element) => element.tag === 'caption')).toBe(true);
 		expect(descendants(container).some((element) => element.tag === 'article')).toBe(true);
+		// Lote P (9 sep 2026): no more "Historial durable" header, and the row that names the
+		// gaveto's closed-state suffix repaints to the loaded count once ready.
+		expect(descendants(container).some((element) => element.tag === 'h3')).toBe(false);
+		expect(descendants(container).find((element) => element.tag === 'small')?.textContent).toBe('1 session');
+		expect(allText(container)).toContain('1 session · read at');
 	});
 
 	it.each([

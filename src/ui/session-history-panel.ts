@@ -1,5 +1,5 @@
 import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
-import { formatRelativeDay } from './format-time';
+import { formatClock, formatRelativeDay } from './format-time';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import {
 	buildSessionHistoryAggregate,
@@ -14,7 +14,9 @@ import {
 export type SessionHistoryPanelState =
 	| { readonly status: 'idle' | 'loading' | 'empty' | 'unavailable' }
 	| { readonly status: 'conflict'; readonly invalid: number; readonly duplicates: number }
-	| { readonly status: 'ready'; readonly aggregate: SessionHistoryAggregate };
+	/** `loadedAt` (ISO) feeds the footer "N sesiones · leídas a las HH:MM" (Lote P): when it was
+	 *  read, not when this repaints — a full `render()` remounts the panel on every card refresh. */
+	| { readonly status: 'ready'; readonly aggregate: SessionHistoryAggregate; readonly loadedAt: string };
 
 /** Subscription handle retained by the parent view across rerenders. */
 export interface SessionHistoryPanelMount { dispose(): void }
@@ -41,7 +43,7 @@ export class SessionHistoryPanelController {
 		if (this.flight !== null) return this.flight;
 		this.setState({ status: 'loading' });
 		const flight = this.loadHistory().then(
-			(result) => this.setState(projectLoadResult(result)),
+			(result) => this.setState(projectLoadResult(result, new Date().toISOString())),
 			() => this.setState({ status: 'unavailable' }),
 		).finally(() => { if (this.flight === flight) this.flight = null; });
 		this.flight = flight;
@@ -56,7 +58,11 @@ export class SessionHistoryPanelController {
 
 let panelSequence = 0;
 
-/** Mounts the explicit durable-history action and its accessible responsive result region. */
+/**
+ * Mounts the explicit durable-history action and its accessible responsive result region. No
+ * header and no `mod-cta` (Lote P, 9 sep 2026): the outer "Historial" gaveto already names this
+ * surface, so the first row here is just the short state and the plain "Cargar historial" button.
+ */
 export function mountSessionHistoryPanel(
 	container: HTMLElement,
 	locale: Locale,
@@ -64,12 +70,12 @@ export function mountSessionHistoryPanel(
 ): SessionHistoryPanelMount {
 	const t = createTranslator(locale);
 	const section = container.createEl('section', { cls: 'tyrian-session-history' });
-	const heading = section.createEl('header', { cls: 'tyrian-session-history__header' });
-	const title = heading.createDiv();
-	title.createEl('h3', { text: t.t('sessionHistory.title') });
-	title.setAttr('title', t.t('sessionHistory.intro'));
+	section.setAttr('aria-label', t.t('sessionHistory.title'));
+	const heading = section.createDiv({ cls: 'tyrian-session-history__header' });
+	const stateLabel = heading.createEl('small', { text: t.t('view.drawer.historyIdle') });
 	const stateId = `tyrian-session-history-state-${String(panelSequence += 1)}`;
-	const button = heading.createEl('button', { text: t.t('sessionHistory.load'), cls: 'mod-cta' });
+	const button = heading.createEl('button', { text: t.t('sessionHistory.load') });
+	button.setAttr('title', t.t('sessionHistory.intro'));
 	button.setAttr('aria-controls', stateId);
 	const stateRegion = section.createDiv({ cls: 'tyrian-session-history__state' });
 	stateRegion.setAttr('id', stateId);
@@ -80,6 +86,7 @@ export function mountSessionHistoryPanel(
 		button.disabled = state.status === 'loading';
 		button.setText(state.status === 'idle' ? t.t('sessionHistory.load')
 			: state.status === 'loading' ? t.t('sessionHistory.loadingAction') : t.t('sessionHistory.refresh'));
+		stateLabel.setText(shortStateLabel(state, t));
 		stateRegion.empty();
 		stateRegion.setAttr('aria-busy', state.status === 'loading' ? 'true' : 'false');
 		stateRegion.setAttr('role', state.status === 'conflict' || state.status === 'unavailable' ? 'alert' : 'status');
@@ -92,13 +99,22 @@ export function mountSessionHistoryPanel(
 	return { dispose: unsubscribe };
 }
 
-function projectLoadResult(result: SessionHistoryLoadResult): SessionHistoryPanelState {
+/** Mirrors the drawer `<summary>`'s closed-state suffix (`historyDrawerSuffix` in companion-view.ts). */
+function shortStateLabel(state: SessionHistoryPanelState, t: Translator): string {
+	if (state.status === 'ready') {
+		const count = state.aggregate.sessionCount;
+		return count === 1 ? t.t('view.drawer.historyCount', { count }) : t.t('view.drawer.historyCountPlural', { count });
+	}
+	return t.t('view.drawer.historyIdle');
+}
+
+function projectLoadResult(result: SessionHistoryLoadResult, loadedAt: string): SessionHistoryPanelState {
 	if (result.status === 'unavailable') return { status: 'unavailable' };
 	if (result.status === 'conflict') {
 		return { status: 'conflict', invalid: result.invalid, duplicates: result.duplicates };
 	}
 	if (result.sessions.length === 0) return { status: 'empty' };
-	return { status: 'ready', aggregate: buildSessionHistoryAggregate(result.sessions) };
+	return { status: 'ready', aggregate: buildSessionHistoryAggregate(result.sessions), loadedAt };
 }
 
 function renderState(container: HTMLElement, locale: Locale, state: SessionHistoryPanelState): void {
@@ -128,10 +144,10 @@ function renderState(container: HTMLElement, locale: Locale, state: SessionHisto
 		container.createEl('p', { text: t.t('sessionHistory.unavailableBody') });
 		return;
 	}
-	if (state.status === 'ready') renderReady(container, locale, state.aggregate);
+	if (state.status === 'ready') renderReady(container, locale, state.aggregate, state.loadedAt);
 }
 
-function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {
+function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate, loadedAt: string): void {
 	const t = createTranslator(locale);
 	container.createEl('p', { text: t.t('sessionHistory.ready'), cls: 'tyrian-session-history__ready' });
 	const summary = container.createDiv({ cls: 'tyrian-session-history__summary' });
@@ -164,6 +180,12 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 
 	renderTable(container, locale, aggregate.sessions);
 	renderCards(container, locale, aggregate.sessions);
+
+	const footerKey = aggregate.sessionCount === 1 ? 'sessionHistory.readAt' : 'sessionHistory.readAtPlural';
+	container.createEl('small', {
+		text: t.t(footerKey, { count: aggregate.sessionCount, time: formatClock(Date.parse(loadedAt), locale) }),
+		cls: 'tyrian-session-history__footer',
+	});
 }
 
 function renderPerformance(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {

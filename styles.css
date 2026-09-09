@@ -682,18 +682,31 @@
 	outline-offset: 2px;
 }
 
-.tyrian-companion-view__detection,
 .tyrian-companion-view__pending {
 	margin: 0;
 	padding-block: var(--size-4-2) var(--size-4-4);
 }
 
-.tyrian-companion-view__detection-scope {
-	color: var(--text-muted);
+/* Detalle gaveto's flat rows (Lote P, 9 sep 2026): label left, value + inline action right. */
+.tyrian-companion-session__rows {
+	display: grid;
+	grid-template-columns: minmax(7rem, max-content) 1fr;
+	gap: var(--size-4-2) var(--size-4-3);
+	margin: 0 0 var(--size-4-3);
 }
 
-/* The detector at rest is one row: name, state, and the button that changes it. */
-.tyrian-companion-view__detection-row {
+.tyrian-companion-session__rows dt {
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-session__rows dd {
+	margin-inline-start: 0;
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-session__row-value {
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
@@ -707,7 +720,7 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-companion-view__detection-row .tyrian-companion-view__session-actions {
+.tyrian-companion-session__row-value .tyrian-companion-view__session-actions {
 	margin: 0;
 }
 
@@ -717,16 +730,6 @@
 	border: 1px solid var(--interactive-accent);
 	border-radius: var(--radius-m);
 	background: var(--background-secondary);
-}
-
-.tyrian-companion-view__detection-details {
-	margin-block-start: var(--size-4-3);
-}
-
-.tyrian-companion-view__detection-details > summary {
-	color: var(--text-muted);
-	font-size: var(--font-small);
-	cursor: pointer;
 }
 
 .tyrian-companion-session__badge {
@@ -775,19 +778,16 @@
 	overflow-wrap: anywhere;
 }
 
-.tyrian-companion-view__detection h3,
 .tyrian-companion-view__pending h3 {
 	margin-block-start: 0;
 }
 
-.tyrian-companion-view__detection dl,
 .tyrian-companion-view__pending dl {
 	display: grid;
 	grid-template-columns: minmax(7rem, max-content) 1fr;
 	gap: var(--size-4-1) var(--size-4-3);
 }
 
-.tyrian-companion-view__detection dd,
 .tyrian-companion-view__pending dd {
 	margin-inline-start: 0;
 	min-width: 0;
@@ -839,15 +839,26 @@
 	container-type: inline-size;
 }
 
+/* Lote P (9 sep 2026): no more heading — just the short state and the load button, side by side. */
 .tyrian-session-history__header {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
-	align-items: start;
+	align-items: center;
 	gap: var(--size-4-3);
+}
+
+.tyrian-session-history__header small {
+	color: var(--text-muted);
 }
 
 .tyrian-session-history__header button {
 	min-height: 44px;
+}
+
+.tyrian-session-history__footer {
+	display: block;
+	margin-block-start: var(--size-4-3);
+	color: var(--text-muted);
 }
 
 .tyrian-session-history__header h3,
@@ -2311,6 +2322,15 @@
 	display: grid;
 	gap: var(--size-4-2);
 	min-inline-size: 0;
+}
+
+/* Lote P (9 sep 2026): the section's title + verdict is a `dt`/`dd` row, not an `<h3>`. */
+.tyrian-companion-halloween__comparison > dl,
+.tyrian-companion-halloween__price > dl {
+	display: grid;
+	grid-template-columns: minmax(7rem, max-content) 1fr;
+	gap: var(--size-4-1) var(--size-4-3);
+	margin: 0;
 }
 
 .tyrian-companion-halloween__table-scroll {
