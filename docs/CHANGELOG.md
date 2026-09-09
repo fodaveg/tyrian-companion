@@ -1,11 +1,11 @@
 # Changelog
 
-## Sin publicar (main, 9 sep 2026) - el audit del 8 sep ejecutado en lotes
+## Release beta 0.1.31 - el audit del 8 sep en lotes, y nada pide revisión ni aprobación
 
-Lo que sigue está en `main` sin release, probado en la bóveda real con `npm run dev:install` y
-`npm run smoke:live` (0 errores nuevos en el log), con `check` y `check:guardrails` en verde.
-Tareas H14.1 a H14.22 de la lista «21.15 Tyrian Companion» de Lumbre; audit en la nota de
-Obsidian «Tyrian Companion - Auditoría 2026-09-08».
+Probado en la bóveda real con `npm run dev:install` y `npm run smoke:live` (0 errores nuevos en el
+log), con `check` 7/7 y `check:guardrails` 24/24 en verde. Tareas H14.1 a H14.24 de la lista
+«21.15 Tyrian Companion» de Lumbre; audit en la nota de Obsidian «Tyrian Companion - Auditoría
+2026-09-08». Hace falta volver a sincronizar el inventario: el hash de las notas cambia.
 
 ### Nada pide revisión ni aprobación (decisión de David del 9 sep, H14.24)
 
