@@ -448,9 +448,10 @@ export class TyrianCompanionView extends ItemView {
 		return this.actions.getHalloweenPriceAlertState().notices.length > 0;
 	}
 
-	/** `Detección desactivada` / `Detección activa · próxima HH:MM`: the Detalle gaveto's closed state. */
+	/** `Esperando cuenta` / `Detección detenida` / `Detección activa · próxima HH:MM`: the Detalle gaveto's closed state. */
 	private detectionDrawerSuffix(state: AssistedDetectionState): string {
-		if (state.status === 'disarmed' || state.status === 'error') return this.t('view.drawer.detectionOff');
+		if (state.status === 'disarmed') return this.t('status.waitingAccount');
+		if (state.status === 'error') return this.t('view.drawer.detectionOff');
 		if (state.status === 'armed' && state.scheduler.nextRunAt !== null) {
 			return `${this.t('view.drawer.detectionActive')} · ${this.t('view.drawer.detectionNext', {
 				time: formatClock(state.scheduler.nextRunAt, this.actions.getLocale()),
