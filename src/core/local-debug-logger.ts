@@ -1,6 +1,7 @@
 import {
 	LOCAL_DEBUG_QUEUE_CAPACITY,
 	type LocalDebugCode,
+	type LocalDebugLastError,
 	type LocalDebugLevel,
 	type LocalDebugRecordInput,
 	type LocalDebugStatus,
@@ -33,6 +34,9 @@ export class LocalDebugLogger {
 	private lastEventAt: string | null = null;
 	private errorCode: LocalDebugCode | null = null;
 	private runtimeState: LocalDebugStatus['state'];
+	/** Every `level: 'error'` record accepted since construction, independent of the writer's own health. */
+	private errorsSinceLoad = 0;
+	private lastError: LocalDebugLastError | null = null;
 
 	constructor(options: LocalDebugLoggerOptions) {
 		this.enabled = options.enabled;
@@ -72,6 +76,15 @@ export class LocalDebugLogger {
 					sequence: this.sequence,
 					pluginVersion: this.pluginVersion,
 				});
+				// Counted here, before the append below can throw: the failure the record describes
+				// already happened in the product, whether or not this line ever reaches disk.
+				if (input.level === 'error') {
+					this.errorsSinceLoad += 1;
+					this.lastError = {
+						component: input.component, action: input.action, code: input.code,
+						occurredAt: record.timestampUtc,
+					};
+				}
 				await this.writer.appendRecord(record);
 				this.lastEventAt = record.timestampUtc;
 				this.errorCode = null;
@@ -171,6 +184,8 @@ export class LocalDebugLogger {
 			errorCode: this.errorCode,
 			queuedRecords: this.queuedRecords,
 			recoveredTails: writer.recoveredTails,
+			errorsSinceLoad: this.errorsSinceLoad,
+			lastError: this.lastError,
 		};
 	}
 

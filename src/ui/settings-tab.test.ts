@@ -296,6 +296,7 @@ describe('local diagnostics settings', () => {
 			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, fileCount: 2,
 			lastEventAt: '2026-08-30T04:00:00.000Z', droppedRecords: 3,
 			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 0, lastError: null,
 		};
 		const translator = createTranslator('en');
 		expect(projectLocalDebugStatus(status, translator.t.bind(translator))).toEqual({
@@ -306,8 +307,25 @@ describe('local diagnostics settings', () => {
 				'2048 bytes in 2 files',
 				'Last event: 2026-08-30T04:00:00.000Z',
 				'Dropped entries: 3',
+				'No errors since the plugin loaded.',
 			],
 		});
+	});
+
+	it('surfaces a healthy writer as an alert once errors have been recorded since load, with the last failure named', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'warn', state: 'ready',
+			path: 'test-config-dir/plugins/tyrian-companion/logs/', bytes: 2048, fileCount: 2,
+			lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 20,
+			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
+		};
+		const translator = createTranslator('en');
+		const projection = projectLocalDebugStatus(status, translator.t.bind(translator));
+		expect(projection.role).toBe('alert');
+		expect(projection.lines).toContain('Errors since load: 20');
+		expect(projection.lines).toContain('Last failure: network_failure in connection/connection_check, 2026-09-08T12:22:00.000Z');
 	});
 
 	it.each(['es', 'en'] as const)('uses one diagnostic-log/support vocabulary and asks for review before sharing in %s', (locale) => {

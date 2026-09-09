@@ -82,7 +82,7 @@ import type {
 	PriceHistorySide,
 	PriceHistoryWindowDays,
 } from './economy/price-history-model';
-import type { SellSignalRuntime } from './economy/sell-signal-runtime';
+import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-signal-runtime';
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
@@ -1104,6 +1104,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			errorCode: this.settings.debugLoggingEnabled ? 'logger_failure' : null,
 			queuedRecords: 0,
 			recoveredTails: 0,
+			errorsSinceLoad: 0,
+			lastError: null,
 		};
 	}
 
@@ -1884,6 +1886,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getLiveSessionLoot(): LiveSessionLootState {
 		return this.liveSessionLoot.getState();
+	}
+
+	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
+	getSellSignalState(): SellSignalRuntimeState | null {
+		return this.sellSignal?.getState() ?? null;
+	}
+
+	/** The Companion card's escape hatch for a blocked `operation_conflict`: the same journaled Move. */
+	async retryManagedAssetsReconciliation(): Promise<void> {
+		await this.reconcileManagedAssetsRoot();
 	}
 
 	getSessionSummarySaveState(): 'unknown' | 'saving' | 'saved' | 'failed' {

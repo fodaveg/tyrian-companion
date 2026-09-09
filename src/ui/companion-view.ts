@@ -2,12 +2,16 @@ import { ItemView, Modal, type App, type WorkspaceLeaf } from 'obsidian';
 
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale } from '../core/i18n';
+import { formatClock, formatRelativeDay } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { DetectionMode } from '../core/settings';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
+import type { ManagedAssetsView } from '../assets/managed-assets-ui';
+import { projectManagedAssetsDescription } from './settings-i18n';
+import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type {
 	SessionStartFailure,
 	SessionRecoveryState,
@@ -89,6 +93,10 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getContaminationReview(): SessionContaminationReview | null;
 	getLootPresentation(): LootPresentationV1 | null;
 	getLiveSessionLoot?(): LiveSessionLootState;
+	getSellSignalState?(): SellSignalRuntimeState | null;
+	getManagedAssetsView?(): ManagedAssetsView;
+	/** Relaunches the automatic managed-assets Move blocked by `operation_conflict`. */
+	retryManagedAssetsReconciliation?(): Promise<void>;
 	getSessionSummarySaveState?(): 'unknown' | 'saving' | 'saved' | 'failed';
 	getStoredSessionLootSummary?(): StoredSessionLootSummary | null;
 	retrySessionSummarySave?(): Promise<void>;
@@ -124,6 +132,7 @@ export class TyrianCompanionView extends ItemView {
 	private headerElapsed: HTMLElement | null = null;
 	private liveSackCount: HTMLElement | null = null;
 	private liveSackRate: HTMLElement | null = null;
+	private liveSackRateDetail: HTMLElement | null = null;
 	private settlementCountdown: HTMLElement | null = null;
 	private recoveryOwnerDetail: HTMLElement | null = null;
 	private recoveryOwnerExpiresAt: number | null = null;
@@ -188,6 +197,7 @@ export class TyrianCompanionView extends ItemView {
 		this.headerElapsed = null;
 		this.liveSackCount = null;
 		this.liveSackRate = null;
+		this.liveSackRateDetail = null;
 		this.settlementCountdown = null;
 		this.checkButton = null;
 		this.incident = null;
@@ -223,9 +233,11 @@ export class TyrianCompanionView extends ItemView {
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
 		this.renderSimpleSession(surface, connectionState, sessionState, projection);
+		this.renderSellSignal(surface);
 		this.renderPendingConfirmationSlot(surface, now);
 		this.renderAssistedDetection(surface, connectionState, sessionState);
 		this.renderHalloweenAlerts(surface);
+		this.renderManagedAssetsConflict(surface);
 		this.renderSessionHistory(surface);
 		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
@@ -240,12 +252,58 @@ export class TyrianCompanionView extends ItemView {
 		this.renderPendingConfirmation(slot, now);
 	}
 
+	/**
+	 * The sell/hold verdict for the Halloween bag as a permanent line, not only the transient alert
+	 * that fires once and disappears (H14.6). It is account-level evidence, not session-lifecycle
+	 * state, so it renders whenever a signal is decided regardless of whether a session is running.
+	 */
+	private renderSellSignal(container: HTMLElement): void {
+		const state = this.actions.getSellSignalState?.();
+		const projection = state?.projection ?? null;
+		if (projection === null || projection.status !== 'decided' || projection.signal === 'none') return;
+		const locale = this.actions.getLocale();
+		const verb = projection.signal === 'sell' ? this.t('view.sellSignal.sell') : this.t('view.sellSignal.hold');
+		const reason = projection.signal === 'sell'
+			? this.t('view.sellSignal.reasonSell', { threshold: simpleMoney(projection.sellThresholdCopper, locale) })
+			: this.t('view.sellSignal.reasonHold', { minimum: simpleMoney(projection.referenceMinCopper, locale) });
+		const line = container.createEl('p', { cls: 'tyrian-companion-view__sell-signal' });
+		line.createEl('strong', { text: `${this.t('alerts.bagName')}: ${simpleMoney(projection.bidCopper, locale)}` });
+		line.createSpan({ text: ` · ${verb} · ${reason}` });
+	}
+
+	/**
+	 * `operation_conflict` is the one managed-assets failure that never resolves on its own: Move
+	 * refuses to run over a modified/unowned root, so a blocked auto-reconciliation stays blocked
+	 * until the player acts. Settings already carries the full row; this is the escape hatch that
+	 * does not require opening it.
+	 */
+	private renderManagedAssetsConflict(container: HTMLElement): void {
+		const view = this.actions.getManagedAssetsView?.();
+		if (view === undefined || view.status !== 'error' || view.message !== 'operation_conflict') return;
+		const translator = createTranslator(this.actions.getLocale());
+		const warning = container.createDiv({ cls: 'tyrian-companion-view__debug-warning' });
+		warning.setAttr('role', 'alert');
+		warning.createEl('p', { text: projectManagedAssetsDescription(view, translator) });
+		if (this.actions.retryManagedAssetsReconciliation) {
+			const button = warning.createEl('button', { text: this.t('view.resolve') });
+			button.addEventListener('click', () => { void this.resolveManagedAssetsConflict(); });
+		}
+	}
+
+	private async resolveManagedAssetsConflict(): Promise<void> {
+		const retry = this.actions.retryManagedAssetsReconciliation?.() ?? Promise.resolve();
+		this.render();
+		await retry;
+		this.render();
+	}
+
 	/** Bridges the data-only Halloween panel onto the Companion surface and the runtime catalogue. */
 	private renderHalloweenAlerts(container: HTMLElement): void {
 		renderHalloweenAlertPanel(
 			container,
 			this.actions,
 			(key, params) => this.t(key as RuntimeTranslationKey, params),
+			this.actions.getLocale(),
 		);
 	}
 
@@ -579,6 +637,10 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
 		region.setAttr('aria-label', copy.loot);
+		if (loot.status !== 'idle' && loot.updatedAt === null) {
+			this.renderFirstReadingPending(region, copy);
+			return;
+		}
 		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
 		summary.createSpan({ text: copy.observedValue });
 		const total = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
@@ -603,12 +665,34 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	/**
+	 * Before the account API has answered even once for this session, every number the loot section
+	 * would otherwise show (gold, sacks, pace) is a zero the plugin never measured, not a
+	 * measurement of an empty session. One line names when the first real reading is due instead of
+	 * a breakdown of zeroes that reads like the plugin is broken.
+	 *
+	 * The estimate is the session's own poll scheduler, not a guess: an active session always arms
+	 * it at the fixed five-minute cadence H13.3 declares, the same scheduler the detection timeline
+	 * already reads its "next query" from.
+	 */
+	private renderFirstReadingPending(region: HTMLElement, copy: ReturnType<typeof simpleSessionCopy>): void {
+		const nextRunAt = this.actions.getAssistedDetectionState().scheduler.nextRunAt;
+		region.createEl('p', {
+			text: nextRunAt === null
+				? copy.firstReadingPending
+				: `${copy.firstReadingAt} ${formatClock(nextRunAt, this.actions.getLocale())}`,
+		});
+	}
+
+	/**
 	 * The running sack count and the pace it implies, repainted every second by the same tick that
 	 * moves the elapsed clock.
 	 *
 	 * The count is a plain observed total, so it is always exact. The pace beside it is not, and it
 	 * says so by being a band: the account cache blurs both ends of the window it is divided by,
 	 * and a single figure would keep changing under the player for reasons that are not the play.
+	 * The window and cache-margin arithmetic behind that band moves to a closed "Detalle"
+	 * disclosure: it explains the number for whoever opens it without crowding the one line every
+	 * other render of this card has to read at a glance.
 	 */
 	private renderLiveSackCounter(
 		region: HTMLElement,
@@ -616,23 +700,29 @@ export class TyrianCompanionView extends ItemView {
 		copy: ReturnType<typeof simpleSessionCopy>,
 	): void {
 		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const windowMs = this.liveSessionWindowMs(Date.now());
 		const counter = region.createDiv({ cls: 'tyrian-companion-session__sacks' });
 		counter.createSpan({ text: copy.sacks });
 		this.liveSackCount = counter.createEl('strong', { text: String(sacks) });
 		this.liveSackCount.setAttr('aria-live', 'polite');
 		this.liveSackRate = counter.createSpan({
-			text: liveSackRateText(sacks, this.liveSessionWindowMs(Date.now()), copy),
+			text: liveSackRateHeadline(sacks, windowMs, copy),
 			cls: 'tyrian-companion-session__context',
 		});
+		const disclosure = region.createEl('details', { cls: 'tyrian-companion-session__rate-detail' });
+		disclosure.createEl('summary', { text: copy.detailDisclosure });
+		this.liveSackRateDetail = disclosure.createEl('p', { text: liveSackRateDetail(sacks, windowMs, copy) });
 	}
 
 	private refreshLiveSackCounter(now: number): void {
 		if (!this.liveSackCount || !this.liveSackRate) return;
 		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
 		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const windowMs = this.liveSessionWindowMs(now);
 		const copy = simpleSessionCopy(this.actions.getLocale());
 		this.liveSackCount.setText(String(sacks));
-		this.liveSackRate.setText(liveSackRateText(sacks, this.liveSessionWindowMs(now), copy));
+		this.liveSackRate.setText(liveSackRateHeadline(sacks, windowMs, copy));
+		this.liveSackRateDetail?.setText(liveSackRateDetail(sacks, windowMs, copy));
 	}
 
 	/**
@@ -649,13 +739,27 @@ export class TyrianCompanionView extends ItemView {
 
 	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
 	private renderLocalDebugWarning(container: HTMLElement): void {
-		if (this.actions.getLocalDebugStatus?.().state !== 'degraded') return;
+		const status = this.actions.getLocalDebugStatus?.();
+		const degraded = status?.state === 'degraded';
+		const errorsSinceLoad = status?.errorsSinceLoad ?? 0;
+		if (!degraded && errorsSinceLoad <= 0) return;
 		const translator = createTranslator(this.actions.getLocale());
 		const warning = container.createDiv({ cls: 'tyrian-companion-view__debug-warning' });
 		warning.setAttr('role', 'alert');
 		warning.setAttr('aria-live', 'polite');
-		warning.createEl('strong', { text: translator.t('settings.debug.degraded.title') });
-		warning.createEl('p', { text: translator.t('settings.debug.degraded.desc') });
+		if (degraded) {
+			warning.createEl('strong', { text: translator.t('settings.debug.degraded.title') });
+			warning.createEl('p', { text: translator.t('settings.debug.degraded.desc') });
+		}
+		if (errorsSinceLoad > 0 && status) {
+			warning.createEl('p', { text: translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad }) });
+			if (status.lastError !== null) {
+				warning.createEl('p', { text: translator.t('settings.debug.lastError', {
+					code: status.lastError.code, component: status.lastError.component,
+					action: status.lastError.action, timestamp: status.lastError.occurredAt,
+				}) });
+			}
+		}
 		if (this.actions.openLocalDebugSettings) {
 			const button = warning.createEl('button', { text: translator.t('settings.debug.name') });
 			button.addEventListener('click', () => this.actions.openLocalDebugSettings?.());
@@ -1088,8 +1192,15 @@ export class TyrianCompanionView extends ItemView {
 		addDetail(details, this.t('view.evidence'), localizedCoverageStatus(quality, (key, params) => this.t(key, params)));
 	}
 
+	/** The one shared relative-or-short formatter every timestamp in this view goes through. */
+	private formatMoment(value: string): string {
+		return formatRelativeDay(value, this.actions.getLocale(), Date.now(), {
+			today: this.t('time.today'), yesterday: this.t('time.yesterday'),
+		});
+	}
+
 	private formatTimestamp(value: string): string {
-		return new Date(value).toLocaleString(this.actions.getLocale());
+		return this.formatMoment(value);
 	}
 
 	/**
@@ -1097,7 +1208,7 @@ export class TyrianCompanionView extends ItemView {
 	 * with minutes of delay, so a second in this column would be precision the plugin cannot hold.
 	 */
 	private formatQueryClock(value: string): string {
-		return new Date(value).toLocaleString(this.actions.getLocale(), { dateStyle: 'short', timeStyle: 'short' });
+		return this.formatMoment(value);
 	}
 
 	private formatInterval(intervalMs: number | null): string {
@@ -1137,6 +1248,8 @@ export function simpleSessionCopy(locale: Locale) {
 		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
 		valuePending: 'Valor pendiente', enrichmentPending: 'Algunos nombres o precios siguen pendientes de la API pública.',
 		accountReady: 'Cuenta conectada', accountUnchecked: 'La conexión se comprobará al iniciar', accountUnavailable: 'Cuenta no disponible',
+		firstReadingAt: 'Primera lectura a las', firstReadingPending: 'Primera lectura pendiente',
+		detailDisclosure: 'Detalle',
 	} as const : {
 		session: 'Farming session', ready: 'Ready to start', start: 'Start session',
 		missingKey: 'Link the API key in Settings to start.', preparing: 'Preparing session',
@@ -1154,30 +1267,42 @@ export function simpleSessionCopy(locale: Locale) {
 		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',
 		valuePending: 'Value pending', enrichmentPending: 'Some names or prices are still pending from the public API.',
 		accountReady: 'Account connected', accountUnchecked: 'Connection will be checked when starting', accountUnavailable: 'Account unavailable',
+		firstReadingAt: 'First reading at', firstReadingPending: 'First reading pending',
+		detailDisclosure: 'Detail',
 	} as const;
 }
 
 /**
- * The live pace line: the band, then the arithmetic it came out of.
- *
- * Stating the window and the cache margin beside the two extremes is the whole point of showing a
- * band instead of a number. Without them the interval is just a vaguer figure; with them the
- * player can see that the width is the API's uncertainty and not the plugin hedging.
+ * The live pace headline: one range, one unit, nothing else on the line the card reads at a
+ * glance. `liveSackRateDetail` carries the window and cache-margin arithmetic the band came out
+ * of, moved to the closed "Detalle" disclosure so it explains the number without crowding it.
  */
-export function liveSackRateText(
+export function liveSackRateHeadline(
 	sackQuantity: number,
 	windowMs: number | null,
 	copy: ReturnType<typeof simpleSessionCopy>,
 ): string {
-	const band = windowMs === null ? unavailableRateBand() : observedRateBand(sackQuantity * 1_000, windowMs);
-	if (band.status === 'unavailable' || band.low === null || band.marginMs === null || band.windowMs === null) {
-		return copy.sacksRatePending;
-	}
+	const band = rateBandOf(sackQuantity, windowMs);
+	if (band.status === 'unavailable' || band.low === null) return copy.sacksRatePending;
 	const range = band.high === null
 		? `${copy.sacksRateAtLeast} ${formatMilliUnits(band.low)}`
 		: `${formatMilliUnits(band.low)}–${formatMilliUnits(band.high)}`;
-	const provenance = `${copy.sacksRateWindow} ${formatBandMinutes(band.windowMs)} min ± ${formatBandMinutes(band.marginMs)} min ${copy.sacksRateCache}`;
-	return `${range} ${copy.sacksPerHour} · ${provenance}`;
+	return `${range} ${copy.sacksPerHour}`;
+}
+
+/** The window and cache-margin sentence behind `liveSackRateHeadline`'s band. */
+export function liveSackRateDetail(
+	sackQuantity: number,
+	windowMs: number | null,
+	copy: ReturnType<typeof simpleSessionCopy>,
+): string {
+	const band = rateBandOf(sackQuantity, windowMs);
+	if (band.status === 'unavailable' || band.marginMs === null || band.windowMs === null) return copy.sacksRatePending;
+	return `${copy.sacksRateWindow} ${formatBandMinutes(band.windowMs)} min ± ${formatBandMinutes(band.marginMs)} min ${copy.sacksRateCache}`;
+}
+
+function rateBandOf(sackQuantity: number, windowMs: number | null): ReturnType<typeof observedRateBand> {
+	return windowMs === null ? unavailableRateBand() : observedRateBand(sackQuantity * 1_000, windowMs);
 }
 
 /** Names the phase of the saved-session decision with the same copy the projection already uses. */

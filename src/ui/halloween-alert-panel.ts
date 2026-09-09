@@ -1,7 +1,9 @@
-import { ALERT_LATENCY_MINUTES } from '../alerts/alert-contract';
+import { ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS, ALERT_LATENCY_MINUTES } from '../alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
 import { seasonalWindowStatusAtMs } from '../economy/seasonal-window';
+import type { Locale } from '../core/i18n';
+import { formatRelativeDay } from './format-time';
 import type { HalloweenAlertReason, HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenRuntimeState } from '../halloween/halloween-runtime';
 import type { HalloweenPriceAlertRuntimeState } from '../halloween/halloween-price-alert-runtime';
@@ -21,6 +23,8 @@ export interface HalloweenPanelContext {
 	/** ISO-8601 start of the session on screen, or null with no session running. */
 	sessionStartAt: string | null;
 }
+/** The cadence the copy quotes: the same fixed interval that arms an active session's poll. */
+const POLL_INTERVAL_MINUTES = ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS / 60_000;
 
 export interface HalloweenAlertPanelActions {
 	getHalloweenState(): HalloweenRuntimeState;
@@ -40,6 +44,8 @@ export function renderHalloweenAlertPanel(
 	container: HTMLElement,
 	actions: HalloweenAlertPanelActions,
 	t: Translate,
+	locale: Locale,
+	now: number = Date.now(),
 ): void {
 	const state = actions.getHalloweenState();
 	const priceState = actions.getHalloweenPriceAlertState();
@@ -74,10 +80,10 @@ export function renderHalloweenAlertPanel(
 	if (state.status !== 'ready' && state.status !== 'unread') {
 		status.setText(t(`halloween.state.${state.status}`));
 	}
-	renderEmittedAlerts(body, actions.getEmittedAlerts(), t);
+	renderEmittedAlerts(body, actions.getEmittedAlerts(), t, locale, now);
 	renderComparison(body, state, t);
-	renderPriceAlerts(body, actions, priceState, t);
-	for (const notice of state.notices) renderNotice(body, notice, actions, t);
+	renderPriceAlerts(body, actions, priceState, t, locale, now);
+	for (const notice of state.notices) renderNotice(body, notice, actions, t, locale, now);
 }
 
 /**
@@ -94,11 +100,14 @@ function renderEmittedAlerts(
 	container: HTMLElement,
 	alerts: readonly EmittedAlertRecordV1[],
 	t: Translate,
+	locale: Locale,
+	now: number,
 ): void {
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__alerts' });
 	section.createEl('h3', { text: t('alerts.queue.title') });
 	section.createEl('p', { text: t('alerts.queue.latency', {
 		minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
+		pollIntervalMinutes: POLL_INTERVAL_MINUTES,
 	}) });
 	if (alerts.length === 0) {
 		const empty = section.createEl('p');
@@ -114,9 +123,14 @@ function renderEmittedAlerts(
 			quantity: alert.quantity,
 			reason: t(`alerts.reason.${alert.reason}`),
 		}) });
-		row.createEl('time', { text: new Date(alert.emittedAt).toLocaleString() })
+		row.createEl('time', { text: relativeDayLabel(alert.emittedAt, locale, now, t) })
 			.setAttr('datetime', alert.emittedAt);
 	}
+}
+
+/** The one call site every relative timestamp in this panel goes through. */
+function relativeDayLabel(value: string | number, locale: Locale, now: number, t: Translate): string {
+	return formatRelativeDay(value, locale, now, { today: t('time.today'), yesterday: t('time.yesterday') });
 }
 
 function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, t: Translate): void {
@@ -166,6 +180,8 @@ function renderPriceAlerts(
 	actions: HalloweenAlertPanelActions,
 	state: HalloweenPriceAlertRuntimeState,
 	t: Translate,
+	locale: Locale,
+	now: number,
 ): void {
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__price' });
 	section.createEl('h3', { text: t('halloween.price.title') });
@@ -182,7 +198,7 @@ function renderPriceAlerts(
 			bid: notice.bidCopper, p90: notice.p90Copper, days: notice.referenceDays,
 			margin: notice.minimumAboveP90Bps,
 		}) });
-		card.createEl('time', { text: new Date(notice.capturedAtMs).toLocaleString() })
+		card.createEl('time', { text: relativeDayLabel(notice.capturedAtMs, locale, now, t) })
 			.setAttr('datetime', notice.observedAt);
 		if (notice.acknowledgedAt === null) {
 			const button = card.createEl('button', { text: t('halloween.ack') });
@@ -202,12 +218,14 @@ function renderNotice(
 	notice: HalloweenNoticeV1,
 	actions: HalloweenAlertPanelActions,
 	t: Translate,
+	locale: Locale,
+	now: number,
 ): void {
 	const card = container.createEl('article', { cls: 'tyrian-companion-halloween__notice' });
 	card.toggleClass('is-read', notice.acknowledgedAt !== null);
 	const heading = card.createEl('h3', { text: t('halloween.observed') });
 	heading.tabIndex = -1;
-	card.createEl('time', { text: new Date(notice.observedAt).toLocaleString() }).setAttr('datetime', notice.observedAt);
+	card.createEl('time', { text: relativeDayLabel(notice.observedAt, locale, now, t) }).setAttr('datetime', notice.observedAt);
 	if (notice.coverage === 'partial') card.createEl('p', { text: t('halloween.partial') });
 	// Above the list, not after it: a notice with hundreds of items used to bury the only control
 	// that dismisses it at the bottom of the scroll.
@@ -225,7 +243,7 @@ function renderNotice(
 	for (const item of notice.items) {
 		const row = list.createEl('li');
 		row.createEl('strong', { text: item.name ?? t('halloween.unknownItem', { itemId: item.itemId }) });
-		row.createSpan({ text: t('halloween.quantity', { quantity: item.quantity }) });
+		row.createSpan({ text: ` · ${t('halloween.quantity', { quantity: item.quantity })}` });
 		const reasons = row.createEl('ul');
 		for (const reason of item.reasons) reasons.createEl('li', { text: reasonText(reason, t) });
 	}
@@ -233,7 +251,7 @@ function renderNotice(
 
 function reasonText(reason: HalloweenAlertReason, t: Translate): string {
 	if (reason.code === 'valuable') return t('halloween.reason.valuable', { copper: reason.netUnitCopper });
-	if (reason.code === 'rare_unpriced_or_bound') return t('halloween.reason.rare', { rarity: reason.rarity });
+	if (reason.code === 'rare_unpriced_or_bound') return t('halloween.reason.rare', { rarity: rarityLabel(reason.rarity, t) });
 	if (reason.code === 'first_seen') return t('halloween.reason.first');
 	if (reason.code === 'skin_not_unlocked') return t('halloween.reason.skin');
 	return t('halloween.reason.mini');
@@ -250,4 +268,16 @@ function isFreshNotice(observedAt: string, context: Pick<HalloweenPanelContext, 
 	if (context.sessionStartAt === null) return true;
 	const sessionStartMs = Date.parse(context.sessionStartAt);
 	return !Number.isFinite(sessionStartMs) || observedMs >= sessionStartMs;
+}
+
+/** The eight closed GW2 rarities; an unrecognized future one falls back to its raw API name. */
+const RARITY_KEYS = Object.freeze({
+	Junk: 'halloween.rarity.Junk', Basic: 'halloween.rarity.Basic', Fine: 'halloween.rarity.Fine',
+	Masterwork: 'halloween.rarity.Masterwork', Rare: 'halloween.rarity.Rare', Exotic: 'halloween.rarity.Exotic',
+	Ascended: 'halloween.rarity.Ascended', Legendary: 'halloween.rarity.Legendary',
+} as const);
+
+function rarityLabel(rarity: string, t: Translate): string {
+	const key = (RARITY_KEYS as Record<string, string>)[rarity];
+	return key === undefined ? rarity : t(key);
 }

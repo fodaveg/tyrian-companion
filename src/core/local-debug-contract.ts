@@ -97,6 +97,17 @@ export interface LocalDebugStatus {
 	errorCode: LocalDebugCode | null;
 	queuedRecords: number;
 	recoveredTails: number;
+	/** Every `level: 'error'` record accepted since this logger was constructed, not only writer failures. */
+	errorsSinceLoad: number;
+	/** The most recent accepted error record, kept even once the writer itself recovers. */
+	lastError: LocalDebugLastError | null;
+}
+
+export interface LocalDebugLastError {
+	component: LocalDebugComponent;
+	action: LocalDebugAction;
+	code: LocalDebugCode;
+	occurredAt: string;
 }
 
 export interface LocalDebugWriterStatus {
