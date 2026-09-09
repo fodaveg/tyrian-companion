@@ -174,7 +174,7 @@ describe('Companion game HUD narrative', () => {
 
 		const translator = createTranslator('es');
 		expect(translateRuntime(translator, 'view.assistedDetection')).toBe('Detección');
-		expect(translateRuntime(translator, 'view.detectionDetails')).toBe('Detalle de la detección');
+		// The Detección row's title/aria-description now (Lote P), not a nested `<details>` summary.
 		expect(translateRuntime(translator, 'view.detectionScope')).toContain('saco #36038');
 		expect(translateRuntime(translator, 'view.detectionScope.tooltip')).toContain('No detecta farmeo general');
 	});
@@ -331,12 +331,14 @@ describe('Companion pilot metrics fail-open actions', () => {
 		const harness = {
 			actions,
 			t: (key: string) => key,
+			renderConnectionRow: vi.fn(),
 			renderDetectionQualityStatus: vi.fn(),
 			renderDetectionTimeline: vi.fn(),
 			projectDetectionTimeline: () => ({ last: '', result: '', next: '' }),
 			renderProposalDetails: vi.fn(),
 			renderStopProposalLag: vi.fn(),
 			addDismissAndDisarm: vi.fn(),
+			formatInterval: () => '',
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated fail-open harness.
 		const render = (TyrianCompanionView.prototype as unknown as {
@@ -433,6 +435,17 @@ describe('Companion pilot metrics fail-open actions', () => {
  * `renderSimpleSession` now also mounts the Detalle/Avisos/Historial gaveteros (Lote N, 9 sep
  * 2026), so every isolated call to it needs these even when the test is not about them.
  */
+/** A `connected` `ConnectionState` with the `details` the Detalle gaveto's row now reads (Lote P). */
+function connectedFixture() {
+	return {
+		status: 'connected' as const,
+		details: {
+			account: { id: 'account', name: 'Rinopopo.1234' }, keyName: 'key', scopes: [],
+			missingRecommendedScopes: [], hasFutureUrlRestrictions: false,
+		},
+	};
+}
+
 function minimalDrawerActions() {
 	return {
 		getDetectionMode: () => 'off' as const,
@@ -478,7 +491,7 @@ describe('Companion retained product shell', () => {
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
-		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
 		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Revisar');
 		expect(button).toBeTruthy();
 		button?.listeners.get('click')?.[0]?.();
@@ -512,7 +525,7 @@ describe('Companion retained product shell', () => {
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
-		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
 		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Nueva sesión');
 		expect(button).toBeTruthy();
 		button?.listeners.get('click')?.[0]?.();
@@ -552,7 +565,7 @@ describe('Companion retained product shell', () => {
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
-		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
 		const text = walkRetained(container).map(({ textContent }) => textContent).join(' ');
 		// The per-item loot breakdown is retired from this card (FICHA §4: `__loot-list` orphaned);
 		// the durable summary now reads as the single "Valor neto guardado" figure.
@@ -586,7 +599,7 @@ describe('Companion retained product shell', () => {
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
-		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
 		const retry = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Reintentar guardado');
 		expect(walkRetained(container).some(({ textContent }) => textContent.includes('pendiente de guardar'))).toBe(true);
 		expect(retry).toBeTruthy();
@@ -629,7 +642,7 @@ describe('Companion retained product shell', () => {
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
-		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
+		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
 
 		const recover = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Recover session');
 		const discard = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Discard saved session');

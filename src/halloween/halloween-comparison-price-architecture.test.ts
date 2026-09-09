@@ -65,8 +65,10 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		const locale = readModuleSource('src/core/i18n-runtime-catalog.ts');
 		// Tokens.
 		expect(styles).toMatch(/var\(--(?:size|background|color|radius)-/u);
-		// Components and every state.
-		for (const state of ['notFinalized', 'ignored', 'collecting', 'noDeviation', 'deviation', 'insufficient_history']) {
+		// Components and every VISIBLE state. `comparison === null` (no finalized comparable session
+		// yet) is intentionally silent since Lote P (9 sep 2026): the section only mounts once there
+		// is content, so it carries no copy of its own to assert here.
+		for (const state of ['ignored', 'collecting', 'noDeviation', 'deviation', 'insufficient_history']) {
 			expect(panel + locale).toContain(state);
 		}
 		// Responsive 320/480/760 component behavior.

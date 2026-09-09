@@ -386,7 +386,11 @@ export class TyrianCompanionView extends ItemView {
 		return { tone, title, titleButton, lines };
 	}
 
-	/** Bridges the data-only Halloween panel onto the Avisos gaveto and the runtime catalogue. */
+	/**
+	 * Bridges the data-only Halloween panel onto the Avisos gaveto and the runtime catalogue.
+	 * `chrome: false` (Lote P, 9 sep 2026) drops the panel's own `<details>`/`<h2>` chrome and the
+	 * status line it used to duplicate: the gaveto's `<summary>` already carries that state.
+	 */
 	private renderHalloweenAlerts(container: HTMLElement): void {
 		container.createEl('p', { text: this.t('view.alerts.policy'), cls: 'tyrian-companion-session__context' });
 		renderHalloweenAlertPanel(
@@ -394,6 +398,8 @@ export class TyrianCompanionView extends ItemView {
 			this.actions,
 			(key, params) => this.t(key as RuntimeTranslationKey, params),
 			this.actions.getLocale(),
+			Date.now(),
+			{ chrome: false },
 		);
 	}
 
@@ -514,7 +520,6 @@ export class TyrianCompanionView extends ItemView {
 				this.recoveryRecoverButton = mount.actionButtons[1] ?? null;
 			}
 		} else {
-			this.renderConnectionCheck(mount.detailBody, connection);
 			if (observed.status === 'stopping' && this.settlementWait() !== null) {
 				mount.detailBody.createEl('p', { text: this.t('view.settlementWhy'), cls: 'tyrian-companion-session__context' });
 				const warning = mount.detailBody.createEl('p', { text: this.t('view.captureNowWarning') });
@@ -715,13 +720,17 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	/**
-	 * Settings owns the full connection detail; the card only offers the retry, inside the Detalle
-	 * gaveto next to the detection toggle (FICHA decision 4), and only while the account is not
-	 * answering, because that is where the failure is read.
+	 * Settings owns the full connection detail; the card only offers the retry, as the Detalle
+	 * gaveto's first row (FICHA decision 4, flattened Lote P): label + account status, with the
+	 * button only while the account is not answering, because that is where the failure is read.
 	 */
-	private renderConnectionCheck(container: HTMLElement, connection: ConnectionState): void {
+	private renderConnectionRow(list: HTMLDListElement, connection: ConnectionState): void {
+		const copy = simpleSessionCopy(this.actions.getLocale());
+		list.createEl('dt', { text: this.t('view.checkConnection') });
+		const dd = list.createEl('dd', { cls: 'tyrian-companion-session__row-value' });
+		dd.createSpan({ text: accountSummary(connection, copy) });
 		if (connection.status === 'connected' || connection.status === 'warning') return;
-		const button = container.createEl('button', {
+		const button = dd.createEl('button', {
 			text: connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'),
 		});
 		button.disabled = connection.status === 'checking' || isCoolingDown(getRetryAt(connection));
@@ -1052,11 +1061,13 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	/**
-	 * One row is the whole surface while nothing is proposed: the state word, the next query,
-	 * and the one button that changes the state. Every explanation, counter and timestamp lives
-	 * in a closed disclosure underneath, because the player opens this panel to farm, not to read
-	 * how the detector works. A proposal is the exception: it needs its evidence and both answers
-	 * visible, since the session boundary is the user's call and nothing here confirms it alone.
+	 * The Detalle gaveto's flat rows (Lote P, 9 sep 2026): connection check, detection state,
+	 * cadence and API cache, with no nested `<details>` and no `<p>` — the two paragraphs this used
+	 * to carry (`view.detectionScope`, the API-lag sentence) are now the Detección row's
+	 * `title`/`aria-description` and the Caché de la API row's value. `renderDetectionTimeline`
+	 * keeps its own `<dl>` (its isolated test constructs one directly) instead of nesting inside
+	 * this one. A proposal is the exception FICHA keeps untouched: it still needs its evidence and
+	 * both answers visible, since the session boundary is the user's call.
 	 */
 	private renderAssistedDetection(
 		container: HTMLElement,
@@ -1065,15 +1076,20 @@ export class TyrianCompanionView extends ItemView {
 	): void {
 		const mode = this.actions.getDetectionMode();
 		const state = this.actions.getAssistedDetectionState();
-		const card = container.createDiv({ cls: 'tyrian-companion-view__detection' });
-		card.setAttr('role', state.status === 'error' ? 'alert' : 'status');
-		card.setAttr('aria-live', 'polite');
-		const row = card.createDiv({ cls: 'tyrian-companion-view__detection-row' });
-		row.createEl('strong', { text: this.t('view.assistedDetection') });
-		const stateText = row.createSpan({ cls: 'tyrian-companion-view__detection-state' });
-		const actions = row.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const list = container.createEl('dl', { cls: 'tyrian-companion-session__rows' });
+		list.setAttr('role', state.status === 'error' ? 'alert' : 'status');
+		list.setAttr('aria-live', 'polite');
+
+		this.renderConnectionRow(list, connection);
+
+		const detectionTerm = list.createEl('dt', { text: this.t('view.assistedDetection') });
+		detectionTerm.setAttr('title', this.t('view.detectionScope'));
+		detectionTerm.setAttr('aria-description', this.t('view.detectionScope'));
+		const dd = list.createEl('dd', { cls: 'tyrian-companion-session__row-value' });
+		const stateText = dd.createSpan({ cls: 'tyrian-companion-view__detection-state' });
+		const actions = dd.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 		const timeline = this.projectDetectionTimeline(mode, state, session);
-		const proposal = card.createDiv({ cls: 'tyrian-companion-view__detection-proposal' });
+		const proposal = container.createDiv({ cls: 'tyrian-companion-view__detection-proposal' });
 		proposal.hidden = true;
 
 		if (mode === 'off') {
@@ -1134,18 +1150,13 @@ export class TyrianCompanionView extends ItemView {
 			this.addDisarmButton(actions);
 		}
 
-		const disclosure = card.createEl('details', { cls: 'tyrian-companion-view__detection-details' });
-		disclosure.createEl('summary', { text: this.t('view.detectionDetails') });
-		const detectionScope = disclosure.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
-		detectionScope.setAttr('title', this.t('view.detectionScope.tooltip'));
-		this.renderDetectionQualityStatus(disclosure);
-		this.renderDetectionTimeline(disclosure, mode, state, session);
-		if (mode !== 'off' && state.status === 'armed') {
-			const details = disclosure.createEl('dl');
-			addDetail(details, this.t('view.scheduler'), schedulerStatusLabel(state.scheduler.status, this.actions.getLocale()));
-			addDetail(details, this.t('view.interval'), this.formatInterval(state.scheduler.intervalMs));
-			if (state.lastSnapshotAt) addDetail(details, this.t('view.lastSnapshot'), this.formatTimestamp(state.lastSnapshotAt));
-		}
+		this.renderDetectionTimeline(container, mode, state, session);
+
+		const extra = container.createEl('dl', { cls: 'tyrian-companion-session__rows' });
+		addDetail(extra, this.t('view.figure.cadence'),
+			this.formatInterval(mode !== 'off' && state.status === 'armed' ? state.scheduler.intervalMs : null));
+		addDetail(extra, this.t('view.figure.apiCacheLabel'), this.t('view.figure.apiCache'));
+		if (mode !== 'off' && state.status === 'armed') this.renderDetectionQualityStatus(extra);
 	}
 
 	private renderDetectionTimeline(
@@ -1162,8 +1173,6 @@ export class TyrianCompanionView extends ItemView {
 			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
 			next: addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), values.next),
 		};
-		const detectionApiLag = container.createEl('p', { text: this.t('view.detectionApiLag'), cls: 'tyrian-companion-view__detection-scope' });
-		detectionApiLag.setAttr('title', this.t('view.detectionApiLag.tooltip'));
 	}
 
 	private refreshDetectionTimeline(): void {
@@ -1238,21 +1247,21 @@ export class TyrianCompanionView extends ItemView {
 		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
-	private renderDetectionQualityStatus(container: HTMLElement): void {
+	/** Pilot counters, folded into the caller's row list (Lote P): only reached while detection is armed. */
+	private renderDetectionQualityStatus(list: HTMLDListElement): void {
 		const state = this.actions.getDetectionQualityState();
 		if (state.status === 'unavailable') {
-			container.createEl('p', { text: this.t('status.unavailable'), cls: 'tyrian-companion-view__session-error' });
+			addDetail(list, this.t('view.recordedBoundaries'), this.t('status.unavailable'));
 			return;
 		}
 		if (state.status === 'loading') {
-			container.createEl('p', { text: this.t('view.loadingQuality') });
+			addDetail(list, this.t('view.recordedBoundaries'), this.t('view.loadingQuality'));
 			return;
 		}
 		const stats = this.actions.getDetectionQualityStats();
 		if (!stats) return;
-		const details = container.createEl('dl');
-		addDetail(details, this.t('view.recordedBoundaries'), String(stats.acceptedBoundaries));
-		addDetail(details, this.t('view.correctedProposals'), String(stats.correctedFalsePositives));
+		addDetail(list, this.t('view.recordedBoundaries'), String(stats.acceptedBoundaries));
+		addDetail(list, this.t('view.correctedProposals'), String(stats.correctedFalsePositives));
 	}
 
 	/**
@@ -1811,15 +1820,6 @@ function detectionCauseLabel(cause: DetectionDecisionCause, locale: Locale): str
 		other: 'detection.cause.other',
 	};
 	return runtimeText(locale, labels[cause]);
-}
-
-function schedulerStatusLabel(status: AssistedDetectionState['scheduler']['status'], locale: Locale): string {
-	const labels: Record<AssistedDetectionState['scheduler']['status'], RuntimeTranslationKey> = {
-		idle: 'status.idle', scheduled: 'status.scheduled', polling: 'status.checkingNow',
-		paused_offline: 'status.offline', paused_sleep: 'status.resuming', backoff: 'status.backingOff',
-		fatal: 'status.failed', disposed: 'status.unavailable',
-	};
-	return runtimeText(locale, labels[status]);
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {

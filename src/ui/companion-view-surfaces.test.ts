@@ -28,10 +28,10 @@ describe('Companion Halloween alert surface', () => {
 
 		render();
 
-		const panel = find(contentEl, (node) => node.className.includes('tyrian-companion-halloween'));
-		expect(panel?.attributes.get('aria-label')).toBe('Bandeja de alertas de Halloween');
-		expect(panel?.attributes.get('data-attention')).toBe('true');
-		expect(texts(contentEl)).toContain('Alertas de Halloween');
+		// The "Avisos" gaveto (Lote P) is the panel's chrome now: no more nested `aria-label`/
+		// `data-attention`/heading of its own — see "Companion Avisos gaveto forced open" below.
+		const notice = find(contentEl, (node) => node.className.includes('tyrian-companion-halloween__notice'));
+		expect(notice).toBeDefined();
 		const acknowledge = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Marcar como revisada');
 		expect(acknowledge).toBeDefined();
 
@@ -152,18 +152,17 @@ describe('Companion assisted detection surface', () => {
 		render();
 
 		expect(texts(contentEl)).toContain('Detección');
-		// Everything but the state row folds under one closed disclosure.
-		const disclosure = find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-details'));
-		expect(disclosure?.tag).toBe('details');
+		// Flat rows, no nested `<details>` inside "Detalle" (Lote P, 9 sep 2026).
+		expect(find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-details'))).toBeUndefined();
 		const timeline = find(contentEl, (node) => node.className.includes('tyrian-companion-view__detection-timeline'));
 		expect(timeline?.attributes.get('aria-label')).toContain('Última consulta, resultado y próxima consulta');
 		expect(termsAndDetails(contentEl)).toEqual(expect.arrayContaining([
-			['Última consulta'], ['Resultado'], ['Próxima consulta'],
+			['Última consulta'], ['Resultado'], ['Próxima consulta'], ['Cadencia'], ['Caché de la API'],
 		]));
 		expect(texts(contentEl)).toContain('Límites registrados');
 		expect(texts(contentEl)).toContain('Propuestas corregidas');
-		const lag = texts(contentEl).find((text) => text.includes('minutos de retraso'));
-		expect(lag).toBeDefined();
+		// The API-lag paragraph is gone; the same honesty now lives as the Caché de la API row's value.
+		expect(definitionValue(contentEl, 'Caché de la API')).toBe('5 a 10 min');
 		// The queried clock stops at the minute; a seconds field would promise precision the API lacks.
 		const queried = definitionValue(contentEl, 'Última consulta');
 		expect(queried).toBeDefined();
@@ -459,15 +458,59 @@ describe('Companion account check', () => {
 		expect(check?.disabled).toBe(true);
 	});
 
-	it('omits the check while the account is answering', () => {
+	it('omits the check button while the account is answering, though the row still names it', () => {
 		const { contentEl, render } = mountCompanion();
 
 		render();
 
-		expect(find(contentEl, (node) => node.textContent === 'Comprobar conexión')).toBeUndefined();
+		// The Detalle row's label ("Comprobar conexión") is permanent (Lote P); only the button
+		// that retries the check disappears while the account already answers.
+		expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Comprobar conexión')).toBeUndefined();
 	});
 });
 
+/**
+ * FICHA §2/§4 (Lote P, 9 sep 2026): one `mod-cta` in the whole card and at most two `<p>` per
+ * drawer, across the five compressed states of the anatomy table.
+ */
+describe('Companion card: one mod-cta and flat drawers (Lote P)', () => {
+	function countModCta(root: FakeElement): number {
+		return walk(root).filter((node) => node.tag === 'button' && node.className.split(' ').includes('mod-cta')).length;
+	}
+
+	function maxParagraphsPerDrawer(root: FakeElement): number {
+		const drawers = walk(root).filter((node) => node.className.includes('tyrian-companion-session__drawer-body'));
+		return Math.max(0, ...drawers.map((drawer) => walk(drawer).filter((node) => node.tag === 'p').length));
+	}
+
+	it.each([
+		['Reposo', {}],
+		['Activa 0s', { getSessionState: () => activeSession() }],
+		['Activa 30 min', {
+			getSessionState: () => activeSession(),
+			getLiveSessionLoot: () => ({
+				status: 'observing' as const, sessionId: 'session', restored: false, rows: [],
+				knownTotalCopper: 400_00, sackQuantity: 12, hasUnknownValue: false,
+				updatedAt: '2026-08-31T09:00:00.000Z', error: null,
+			}),
+		}],
+		['Terminada', {
+			getSessionState: () => completedSession(), getSessionSummarySaveState: () => 'saved' as const,
+			getSavedSessionNotePath: () => 'Tyrian Companion/Sessions/2026-08-31.md',
+			openSavedSessionNote: () => undefined,
+		}],
+		['Reposo + callout', {
+			getConnectionState: () => ({ status: 'error' as const, code: 'unavailable', message: 'offline', retryAt: null }),
+		}],
+	] as const)('%s: one mod-cta, at most two <p> in any drawer', (_label, overrides) => {
+		const { contentEl, render } = mountCompanion(overrides);
+
+		render();
+
+		expect(countModCta(contentEl)).toBe(1);
+		expect(maxParagraphsPerDrawer(contentEl)).toBeLessThanOrEqual(2);
+	});
+});
 
 function stoppingSession(): SessionState {
 	return {

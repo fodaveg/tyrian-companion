@@ -39,6 +39,16 @@ export interface HalloweenAlertPanelActions {
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
+export interface HalloweenAlertPanelOptions {
+	/**
+	 * `false` (Lote P, 9 sep 2026) skips this panel's own `<section>`/`<h2>`/`<details>` chrome and
+	 * the status line it used to duplicate, for a caller — the session card's "Avisos" gaveto — that
+	 * already supplies its own disclosure and closed-state suffix. Defaults `true` for every other
+	 * caller (this file's own tests), unchanged.
+	 */
+	chrome?: boolean;
+}
+
 /** Data-only DOM renderer. Obsidian Notice belongs to the plugin adapter, never this panel. */
 export function renderHalloweenAlertPanel(
 	container: HTMLElement,
@@ -46,7 +56,9 @@ export function renderHalloweenAlertPanel(
 	t: Translate,
 	locale: Locale,
 	now: number = Date.now(),
+	options: HalloweenAlertPanelOptions = {},
 ): void {
+	const chrome = options.chrome ?? true;
 	const state = actions.getHalloweenState();
 	const priceState = actions.getHalloweenPriceAlertState();
 	const panelContext = actions.getHalloweenPanelContext?.() ?? { nowMs: Date.now(), inLabyrinth: false, sessionStartAt: null };
@@ -61,24 +73,27 @@ export function renderHalloweenAlertPanel(
 	const requiresAttention = (inHalloweenScope && freshUnreadCount > 0) || priceState.unreadCount > 0 ||
 		state.status.startsWith('store_') || priceState.status.startsWith('store_');
 	const labelScope = inHalloweenScope ? '' : '.generic';
-	const section = container.createEl('section', { cls: 'tyrian-companion-halloween' });
-	section.setAttr('aria-label', t(`halloween.aria${labelScope}`));
-	section.setAttr('data-attention', String(requiresAttention));
-	let body: HTMLElement = section;
-	if (requiresAttention) {
-		section.createEl('h2', { text: t(`halloween.title${labelScope}`) });
-	} else {
-		const disclosure = section.createEl('details', { cls: 'tyrian-companion-halloween__disclosure' });
-		const summary = disclosure.createEl('summary');
-		summary.createEl('strong', { text: t(`halloween.optional${labelScope}`) });
-		summary.createEl('small', { text: t(`halloween.state.${state.status}`) });
-		body = disclosure.createDiv({ cls: 'tyrian-companion-halloween__body' });
-	}
-	const status = body.createEl('p', { cls: 'tyrian-companion-halloween__status' });
-	status.setAttr('role', state.status.startsWith('store_') ? 'alert' : 'status');
-	status.setAttr('aria-live', 'polite');
-	if (state.status !== 'ready' && state.status !== 'unread') {
-		status.setText(t(`halloween.state.${state.status}`));
+	let body: HTMLElement = container;
+	if (chrome) {
+		const section = container.createEl('section', { cls: 'tyrian-companion-halloween' });
+		section.setAttr('aria-label', t(`halloween.aria${labelScope}`));
+		section.setAttr('data-attention', String(requiresAttention));
+		body = section;
+		if (requiresAttention) {
+			section.createEl('h2', { text: t(`halloween.title${labelScope}`) });
+		} else {
+			const disclosure = section.createEl('details', { cls: 'tyrian-companion-halloween__disclosure' });
+			const summary = disclosure.createEl('summary');
+			summary.createEl('strong', { text: t(`halloween.optional${labelScope}`) });
+			summary.createEl('small', { text: t(`halloween.state.${state.status}`) });
+			body = disclosure.createDiv({ cls: 'tyrian-companion-halloween__body' });
+		}
+		const status = body.createEl('p', { cls: 'tyrian-companion-halloween__status' });
+		status.setAttr('role', state.status.startsWith('store_') ? 'alert' : 'status');
+		status.setAttr('aria-live', 'polite');
+		if (state.status !== 'ready' && state.status !== 'unread') {
+			status.setText(t(`halloween.state.${state.status}`));
+		}
 	}
 	renderEmittedAlerts(body, actions.getEmittedAlerts(), t, locale, now);
 	renderComparison(body, state, t);
@@ -105,16 +120,18 @@ function renderEmittedAlerts(
 ): void {
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__alerts' });
 	section.createEl('h3', { text: t('alerts.queue.title') });
-	section.createEl('p', { text: t('alerts.queue.latency', {
-		minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
-		pollIntervalMinutes: POLL_INTERVAL_MINUTES,
-	}) });
+	// "Todavía no se ha emitido…" is the only line when there is nothing (Lote P): the latency
+	// sentence only earns its place once there is an actual queue to explain.
 	if (alerts.length === 0) {
 		const empty = section.createEl('p');
 		empty.setAttr('aria-live', 'polite');
 		empty.setText(t('alerts.queue.empty'));
 		return;
 	}
+	section.createEl('p', { text: t('alerts.queue.latency', {
+		minimum: ALERT_LATENCY_MINUTES.minimum, maximum: ALERT_LATENCY_MINUTES.maximum,
+		pollIntervalMinutes: POLL_INTERVAL_MINUTES,
+	}) });
 	const list = section.createEl('ul');
 	for (const alert of alerts) {
 		const row = list.createEl('li');
@@ -133,13 +150,18 @@ function relativeDayLabel(value: string | number, locale: Locale, now: number, t
 	return formatRelativeDay(value, locale, now, { today: t('time.today'), yesterday: t('time.yesterday') });
 }
 
+/**
+ * Only mounted once there is a comparable session (Lote P: "se queda solo cuando tienen
+ * contenido"); no `<h3>` — the verdict is a `dt`/`dd` row instead of a heading + paragraph.
+ */
 function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, t: Translate): void {
-	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__comparison' });
-	section.createEl('h3', { text: t('halloween.comparison.title') });
-	const status = section.createEl('p');
-	status.setAttr('aria-live', 'polite');
 	const comparison = state.comparison;
-	if (comparison === null) { status.setText(t('halloween.comparison.notFinalized')); return; }
+	if (comparison === null) return;
+	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__comparison' });
+	const summary = section.createEl('dl');
+	summary.createEl('dt', { text: t('halloween.comparison.title') });
+	const status = summary.createEl('dd');
+	status.setAttr('aria-live', 'polite');
 	if (!comparison.eligible) {
 		status.setText(t(`halloween.comparison.ignored.${comparison.reason ?? 'review_not_confirmed'}`));
 		return;
@@ -175,6 +197,10 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
 	}
 }
 
+/**
+ * Only mounted with a notice or a store failure (Lote P: "se queda solo cuando tienen
+ * contenido"); no `<h3>` — the state is a `dt`/`dd` row instead of a heading + paragraph.
+ */
 function renderPriceAlerts(
 	container: HTMLElement,
 	actions: HalloweenAlertPanelActions,
@@ -183,9 +209,11 @@ function renderPriceAlerts(
 	locale: Locale,
 	now: number,
 ): void {
+	if (state.notices.length === 0 && !state.status.startsWith('store_')) return;
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween__price' });
-	section.createEl('h3', { text: t('halloween.price.title') });
-	const status = section.createEl('p');
+	const summary = section.createEl('dl');
+	summary.createEl('dt', { text: t('halloween.price.title') });
+	const status = summary.createEl('dd');
 	status.setAttr('role', state.status.startsWith('store_') ? 'alert' : 'status');
 	status.setAttr('aria-live', 'polite');
 	status.setText(t(`halloween.price.state.${state.status}`));
