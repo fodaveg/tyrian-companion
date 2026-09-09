@@ -8,6 +8,25 @@ import { readFileSync } from 'node:fs';
 
 import ts from 'typescript';
 
+/**
+ * Reads one module's source for a static (import-graph or capability-name) boundary check.
+ *
+ * `scripts/source-text-assertion-contract.mjs` flags a `*.test.ts` file that calls
+ * `readFileSync`/`readFile` on another module's source and matches over its characters: that
+ * pattern stays green while the function it names is dead. An import boundary or a forbidden
+ * bare identifier is not observable any other way though, so the read belongs here instead,
+ * where it is reviewed once next to the rest of this frontier's decision logic, not copied
+ * into every architecture suite that needs it.
+ */
+export function readModuleSource(path: string, root = process.cwd()): string {
+	return readFileSync(path.startsWith('/') ? path : `${root}/${path}`, 'utf8');
+}
+
+/** `readModuleSource` for a whole census, keyed by the same repository-relative path given in. */
+export function readModuleSources(paths: readonly string[], root = process.cwd()): Map<string, string> {
+	return new Map(paths.map((path) => [path, readModuleSource(path, root)]));
+}
+
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
 export function moduleSpecifiers(source: string): string[] {
 	const file = ts.createSourceFile('boundary-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
