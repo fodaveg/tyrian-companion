@@ -7,6 +7,29 @@ Lo que sigue está en `main` sin release, probado en la bóveda real con `npm ru
 Tareas H14.1 a H14.22 de la lista «21.15 Tyrian Companion» de Lumbre; audit en la nota de
 Obsidian «Tyrian Companion - Auditoría 2026-09-08».
 
+### Nada pide revisión ni aprobación (decisión de David del 9 sep, H14.24)
+
+- Parar una sesión es guardarla: la clasificación se calcula sola con la evidencia de la API y la
+  nota se escribe. Desaparecen el estado «La sesión necesita revisión», el modal de preguntas, el
+  comando «Revisar sesión» y `permissions.finalize: false`; `reviewRequests` está siempre vacío.
+  Causa medida: al parar, el plugin respondía «no estoy seguro» en nombre del usuario y eso dejaba
+  la sesión en provisional; además el validador semántico rechazaba el registro al escribirlo
+  (`validation_failed`, sesión real de las 10:22).
+- Un registro que quedó en provisional se finaliza solo al arrancar y escribe su nota. Probado con el
+  registro real del 9 sep (fixture `src/sessions/__fixtures__/registro-sesion-9sep.json`): la sesión
+  de 07:56 a 08:12 UTC quedó guardada al recargar el plugin.
+- Los validadores de forma de los registros guardados comprueban forma, no semántica: un registro de
+  una versión anterior se lee, no se tira como corrupto. El recálculo estricto de la revisión solo se
+  exige al guardar una sesión ya completa.
+- Avisos sin «Marcar como revisada» ni leído/no leído; la cabecera del desplegable dice «N avisos» o
+  «Sin avisos». Un aviso cuyo único motivo sea «primera vez visto» o «raro sin cotización» no se
+  pinta ni se cuenta.
+- La nota deja de listar «Actividad declarada».
+- La detección asistida ya no es una opción: se arma sola en cuanto hay cuenta conectada (fuera el
+  ajuste `detectionMode`, el botón «Activar detección» y la sección de Ajustes). Sus propuestas de
+  inicio y parada se siguen aceptando o descartando con un clic. En el desplegable Detalle, sin
+  cuenta, dice «Esperando cuenta».
+
 ### Sesión y nota
 
 - **Abrir sacos y gastar llaves ya no degrada la sesión.** Regla firmada por David el 8 sep
