@@ -245,7 +245,7 @@ export type SettingsUpdateResult =
 	| { status: 'saved'; inventoryAdvisor: 'unchanged' | 'reclassified' | 'next_refresh' };
 
 export interface LocalDebugExportPreview {
-	readonly included: readonly ['logs', 'version', 'platform', 'settings'];
+	readonly included: readonly ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'];
 	readonly excluded: readonly ['secret_name', 'character', 'paths', 'payloads'];
 }
 
@@ -1188,7 +1188,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Declares the exact closed export contents before any local file is created. */
 	previewLocalDebugExport(): LocalDebugExportPreview {
 		return {
-			included: ['logs', 'version', 'platform', 'settings'],
+			included: ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'],
 			excluded: ['secret_name', 'character', 'paths', 'payloads'],
 		};
 	}
