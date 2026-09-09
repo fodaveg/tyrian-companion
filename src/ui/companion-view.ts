@@ -11,6 +11,7 @@ import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
 import { projectManagedAssetsDescription } from './settings-i18n';
+import { renderSellSignalLine } from './sell-signal-line';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type {
 	SessionStartFailure,
@@ -281,17 +282,7 @@ export class TyrianCompanionView extends ItemView {
 	 * state, so it renders whenever a signal is decided regardless of whether a session is running.
 	 */
 	private renderSellSignal(container: HTMLElement): void {
-		const state = this.actions.getSellSignalState?.();
-		const projection = state?.projection ?? null;
-		if (projection === null || projection.status !== 'decided' || projection.signal === 'none') return;
-		const locale = this.actions.getLocale();
-		const verb = projection.signal === 'sell' ? this.t('view.sellSignal.sell') : this.t('view.sellSignal.hold');
-		const reason = projection.signal === 'sell'
-			? this.t('view.sellSignal.reasonSell', { threshold: simpleMoney(projection.sellThresholdCopper, locale) })
-			: this.t('view.sellSignal.reasonHold', { minimum: simpleMoney(projection.referenceMinCopper, locale) });
-		const line = container.createEl('p', { cls: 'tyrian-companion-view__sell-signal' });
-		line.createEl('strong', { text: `${this.t('alerts.bagName')}: ${simpleMoney(projection.bidCopper, locale)}` });
-		line.createSpan({ text: ` · ${verb} · ${reason}` });
+		renderSellSignalLine(container, this.actions.getSellSignalState?.(), createTranslator(this.actions.getLocale()));
 	}
 
 	/**

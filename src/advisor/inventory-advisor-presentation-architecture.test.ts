@@ -61,7 +61,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
-			'../economy/price-seed-panel-service',
+			'../economy/price-seed-panel-service', '../economy/sell-signal-runtime',
 			'./inventory-advisor-view-model', './inventory-advisor-view', './price-history-panel-view',
 			'./inventory-vault-sync-run-controller', './product-action-controller', './product-shell'],
 			portCalls: ['actions.getInventoryAdvisorLocale', 'actions.getInventoryAdvisorViewModel',
@@ -70,7 +70,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.getInventoryVaultSyncRunState', 'actions.hasManagedAssetsRoot', 'actions.refreshInventoryAdvisor',
 				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync',
 				'actions.getPriceHistoryState', 'actions.enablePriceHistory', 'actions.loadPriceHistorySeries',
-				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState',
+				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {
@@ -78,8 +78,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			// H13.2: type-only, for the decision union the economy layer owns. The
 			// view maps its `hold` onto the existing `keep` label and calls nothing.
 			'../advisor/inventory-container-economy',
-			'../economy/reservation-model', './inventory-advisor-view-model',
-			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view'],
+			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
+			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
+			'./sell-signal-line'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {
@@ -89,7 +90,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/price-history-panel-view.ts', {
 		imports: ['../core/i18n', '../economy/price-history-runtime', '../economy/price-history-model',
 			'../economy/price-seed-panel-service', '../economy/price-seed-model',
-			'./price-history-chart-view', './price-history-svg'],
+			'./format-time', './price-history-chart-view', './price-history-svg'],
 		portCalls: [],
 	}],
 ]);

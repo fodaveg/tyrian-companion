@@ -1,9 +1,11 @@
 import { setIcon } from 'obsidian';
 
-import type { Translator } from '../core/i18n';
+import type { Locale, Translator } from '../core/i18n';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import { inventorySyncPanel, inventorySyncSummaryParams } from './inventory-sync-panel-view';
 import { renderPriceHistoryPanel, type PriceHistoryPanelInteractions } from './price-history-panel-view';
+import { renderSellSignalLine } from './sell-signal-line';
+import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryContainerEconomyDecisionV1 } from '../advisor/inventory-container-economy';
@@ -54,6 +56,11 @@ export interface InventoryAdvisorViewInteractions {
 	};
 	/** Local-only history. Reading storage and enabling polling require an explicit callback. */
 	priceHistory?: PriceHistoryPanelInteractions;
+	/**
+	 * The same account-level sell/hold verdict for the Halloween bag the session panel shows
+	 * (H14.6/H14.12): rendered at the top, above the filters, since it is not scoped to a session.
+	 */
+	sellSignalState?: SellSignalRuntimeState | null;
 }
 
 export interface InventoryAdvisorViewFilters {
@@ -118,7 +125,7 @@ export function filterInventoryAdvisorRows(
 	rows: readonly InventoryAdvisorViewRow[],
 	filters: InventoryAdvisorViewFilters,
 ): InventoryAdvisorViewRow[] {
-	const query = filters.query.trim().toLocaleLowerCase();
+	const query = filters.query.trim().toLowerCase();
 	const scoped = rows.map((row) => scopeRow(row, filters)).filter((row): row is InventoryAdvisorViewRow => row !== null);
 	const ownedByItem = scoped.reduce((totals, row) => {
 		totals.set(row.itemId, (totals.get(row.itemId) ?? 0) + row.quantity);
@@ -137,7 +144,7 @@ export function filterInventoryAdvisorRows(
 	})).filter((row) => (filters.action === 'all' || row.action === filters.action)
 		&& (filters.showKeep === true || row.action !== 'keep')
 		&& (filters.showReview === true || (row.action !== 'review' && row.action !== 'discard_review'))
-		&& (query.length === 0 || row.name.toLocaleLowerCase().includes(query) || String(row.itemId).includes(query)));
+		&& (query.length === 0 || row.name.toLowerCase().includes(query) || String(row.itemId).includes(query)));
 }
 
 /** Lists the exact characters observed in the model, without inventing an empty roster entry. */
@@ -336,6 +343,8 @@ function mountInventoryAdvisorView(
 	let unversionedRenders = 0;
 	const section = createEl('section');
 	section.className = 'tyrian-inventory-advisor';
+	const sellSignal = createDiv();
+	sellSignal.className = 'tyrian-inventory-advisor__sell-signal';
 	// The sync controls sit in the same bar as search and sort: they are the only actions this
 	// view owns, and a heading, an intro and a notice above them were 7 lines the list of items
 	// had to scroll past. Every guarantee they used to state lives in docs/PRODUCT.md now.
@@ -571,7 +580,7 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, state, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, sellSignal, state, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
@@ -597,6 +606,8 @@ function mountInventoryAdvisorView(
 		arrangeSections();
 		section.setAttribute('aria-label', translator.t('advisor.view.title'));
 		section.setAttribute('aria-busy', String(model.status === 'loading'));
+		sellSignal.replaceChildren();
+		renderSellSignalLine(sellSignal, interactions.sellSignalState, translator);
 		const sync = interactions.inventorySync;
 		syncPrimaryActions.hidden = sync === undefined;
 		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;
@@ -1583,9 +1594,14 @@ function formatMicroCopperBigInt(microCopper: bigint, translator: Translator): s
 		.find((part) => part.type === 'decimal')?.value ?? '.';
 	return translator.t('advisor.containerEconomy.microCopper', {
 		value: fraction.length === 0
-			? whole.toLocaleString(translator.locale)
-			: `${whole.toLocaleString(translator.locale)}${decimal}${fraction}`,
+			? formatNumber(whole, translator.locale)
+			: `${formatNumber(whole, translator.locale)}${decimal}${fraction}`,
 	});
+}
+
+/** The one place a plain integer or bigint reaches the screen; keeps every digit-grouping decision in one spot. */
+function formatNumber(value: number | bigint, locale: Locale): string {
+	return new Intl.NumberFormat(locale).format(value);
 }
 
 const COVERAGE_AXES = [

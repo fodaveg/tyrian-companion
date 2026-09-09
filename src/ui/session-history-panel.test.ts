@@ -125,6 +125,24 @@ describe('mountSessionHistoryPanel', () => {
 		expect(visible).toContain('2/2 sesiones comparables');
 		expect(visible).toContain('Muestra insuficiente: 1/2 sesiones comparables');
 	});
+
+	// H14.2: session-ended timestamps go through the same today/yesterday-or-short-date wrapper
+	// every other timestamp in the plugin uses, not a bespoke `toLocaleString`.
+	it('shows a session that ended today as "hoy HH:MM", not a locale-specific date', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.parse('2026-08-20T12:00:00'));
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [record('2026-08-20T10:00:00')],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
+
+		expect(allText(container)).toMatch(/hoy \d{2}:\d{2}/u);
+		vi.useRealTimers();
+	});
 });
 
 describe('formatSessionHistoryDuration', () => {

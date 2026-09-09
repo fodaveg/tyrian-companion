@@ -1,4 +1,5 @@
-import type { Locale } from '../core/i18n';
+import { createTranslator, type Locale } from '../core/i18n';
+import { formatRelativeDay } from './format-time';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import {
 	buildSessionHistoryAggregate,
@@ -222,7 +223,7 @@ function renderTable(container: HTMLElement, locale: Locale, rows: readonly Sess
 		ended.setAttr('scope', 'row');
 		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale));
 		appendCell(tr, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
-		appendCell(tr, row.sacks === null ? copy.unknown : row.sacks.toLocaleString(locale));
+		appendCell(tr, row.sacks === null ? copy.unknown : formatNumber(row.sacks, locale));
 		appendCell(tr, money(row.immediateCopper, locale));
 		appendCell(tr, money(row.listingCopper, locale));
 	}
@@ -238,7 +239,7 @@ function renderCards(container: HTMLElement, locale: Locale, rows: readonly Sess
 		const details = article.createEl('dl');
 		appendDetail(details, copy.duration, formatSessionHistoryDuration(row.durationMs, locale));
 		appendDetail(details, copy.quality, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
-		appendDetail(details, copy.sacks, row.sacks === null ? copy.unknown : row.sacks.toLocaleString(locale));
+		appendDetail(details, copy.sacks, row.sacks === null ? copy.unknown : formatNumber(row.sacks, locale));
 		appendDetail(details, copy.immediateValue, money(row.immediateCopper, locale));
 		appendDetail(details, copy.listingValue, money(row.listingCopper, locale));
 	}
@@ -258,7 +259,7 @@ function appendDetail(container: HTMLElement, label: string, value: string): voi
 function appendCell(row: HTMLElement, text: string): void { row.createEl('td', { text }); }
 
 function completeNumber(value: number | null, known: number, total: number, locale: Locale): string {
-	return value === null ? format(UI[locale].knownCoverage, { known, total }) : value.toLocaleString(locale);
+	return value === null ? format(UI[locale].knownCoverage, { known, total }) : formatNumber(value, locale);
 }
 
 function completeMoney(value: number | null, known: number, total: number, locale: Locale): string {
@@ -284,7 +285,7 @@ function signedRate(value: number | null, locale: Locale): string {
 }
 
 function rate(value: number, locale: Locale): string {
-	return (value / 1_000).toLocaleString(locale, { maximumFractionDigits: 3 });
+	return formatNumber(value / 1_000, locale, { maximumFractionDigits: 3 });
 }
 
 function signedDuration(durationMs: number, locale: Locale): string {
@@ -309,8 +310,15 @@ export function formatSessionHistoryDuration(durationMs: number, locale: Locale)
 	return parts.join(' ');
 }
 
+/** H14.2: the same today/yesterday-or-short-date wrapper every other timestamp in the plugin uses. */
 function formatTimestamp(value: string, locale: Locale): string {
-	return new Date(value).toLocaleString(locale);
+	const t = createTranslator(locale);
+	return formatRelativeDay(value, locale, Date.now(), { today: t.t('time.today'), yesterday: t.t('time.yesterday') });
+}
+
+/** The one place a plain number reaches the screen; keeps every digit-grouping decision in one spot. */
+function formatNumber(value: number, locale: Locale, options?: Intl.NumberFormatOptions): string {
+	return new Intl.NumberFormat(locale, options).format(value);
 }
 
 function qualityLabel(value: string, locale: Locale): string {

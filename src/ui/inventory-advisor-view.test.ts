@@ -213,6 +213,7 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__controls',
 			'tyrian-inventory-advisor__sync-hint',
 			'tyrian-inventory-advisor__sync-confirm',
+			'tyrian-inventory-advisor__sell-signal',
 			'tyrian-inventory-advisor__state',
 			'tyrian-inventory-advisor__results',
 			'tyrian-inventory-advisor__sync-status',
@@ -221,7 +222,7 @@ describe('Inventory Advisor view', () => {
 		];
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
-		expect(text(walk(mount.section.children[4]!))).toContain('Qué hacer ahora');
+		expect(text(walk(mount.section.children[5]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -229,6 +230,43 @@ describe('Inventory Advisor view', () => {
 			createTranslator('es'), undefined, interactions,
 		);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
+	});
+
+	// H14.6/H14.12: the same permanent sell/hold line the session panel shows, reused here above the list.
+	it('shows the Halloween bag sell signal in sell and hold states', () => {
+		const sellState = render(readyModel(), 'es', {
+			sellSignalState: {
+				seedStatus: 'unseeded', seedFailure: null, seedDayCount: 0, lastGainCopper: null,
+				projection: {
+					status: 'decided', signal: 'sell', dayUtc: '2026-10-20', bidCopper: 5_000,
+					referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
+					sellThresholdCopper: 4_500, inSeason: false, origin: 'seeded',
+				},
+			},
+		});
+		const sellLine = only(byClass(sellState.elements(), 'tyrian-inventory-advisor__sell-signal'));
+		const sellTexts = text(walk(sellLine));
+		expect(sellTexts).toContain('Saco de Halloween: 0g 50s 0c');
+		expect(sellTexts).toContain('Vende');
+
+		const holdState = render(readyModel(), 'es', {
+			sellSignalState: {
+				seedStatus: 'unseeded', seedFailure: null, seedDayCount: 0, lastGainCopper: null,
+				projection: {
+					status: 'decided', signal: 'hold', dayUtc: '2026-10-20', bidCopper: 3_000,
+					referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
+					sellThresholdCopper: 4_500, inSeason: true, origin: 'seeded',
+				},
+			},
+		});
+		const holdLine = only(byClass(holdState.elements(), 'tyrian-inventory-advisor__sell-signal'));
+		const holdTexts = text(walk(holdLine));
+		expect(holdTexts).toContain('Saco de Halloween: 0g 30s 0c');
+		expect(holdTexts).toContain('Espera');
+
+		const withoutSignal = render(readyModel(), 'es', {});
+		const emptyLine = only(byClass(withoutSignal.elements(), 'tyrian-inventory-advisor__sell-signal'));
+		expect(walk(emptyLine)).toHaveLength(1);
 	});
 
 	it('uses native disabled controls and busy semantics while loading, then restores the same controls', () => {
