@@ -89,7 +89,14 @@ export function frontmatterSessionRef(content: string): string | null {
 	return parseFrontmatter(content)?.sessionRef ?? null;
 }
 
-/** Durable H5.4/H5.7 note codec for explicit history operations. */
+/**
+ * Durable H5.4/H5.7 note codec for explicit history operations.
+ *
+ * `tc_kind` is checked with the cheap regex parse first: only a note that claims to be
+ * `gw2_farming_session` pays for the strict YAML-Core parse and the managed-block hash
+ * walk. Every caller already rejects a `tc_kind` mismatch on its own (`inspectDurableSessionNote`
+ * below), so skipping that work here changes nothing it can observe.
+ */
 export async function inspectStoredSessionNote(content: string): Promise<{
 	frontmatter: Readonly<Record<string, string | number | null>>;
 	managedBlocksValid: boolean;
@@ -97,6 +104,9 @@ export async function inspectStoredSessionNote(content: string): Promise<{
 } | null> {
 	const parsed = parseFrontmatter(content);
 	if (parsed === null) return null;
+	if (parsed.frontmatter.tc_kind !== 'gw2_farming_session') {
+		return { frontmatter: parsed.frontmatter, managedBlocksValid: false, hasInvalidScalar: true };
+	}
 	const strict = parseStrictTcFrontmatter(content);
 	return {
 		frontmatter: strict?.frontmatter ?? parsed.frontmatter,

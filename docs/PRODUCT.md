@@ -143,7 +143,7 @@ La versión `0.1.0` valida la base técnica:
 - Un comando abre una vista con el estado de conexión.
 - Los ajustes permiten seleccionar una clave de API con `SecretComponent`.
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
-- **Check connection** valida explícitamente la clave y la cuenta; **Start session** y **Stop session** capturan las fronteras manuales. **Arm assisted detection** inicia el muestreo solo tras una acción explícita. Ninguna llamada de red ocurre al cargar o abrir la vista.
+- **Check connection** valida explícitamente la clave y la cuenta; la primera vez que resuelve una cuenta con Halloween activo en temporada, además siembra en segundo plano el inventario ya poseído con una captura completa de cuenta (para que un aviso de «objeto nuevo» no dispare sobre algo que el jugador ya tenía; H14.21). **Start session** y **Stop session** capturan las fronteras manuales. **Arm assisted detection** inicia el muestreo solo tras una acción explícita. Ninguna llamada de red ocurre al cargar o abrir la vista: toda petición, incluida esa siembra, nace de una de estas acciones explícitas, nunca del arranque del plugin.
 - Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección; el modo asistido expone un control de armado que siempre vuelve desarmado al recargar.
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
@@ -278,6 +278,6 @@ La versión `0.1.0` valida la base técnica:
 ## Principios
 
 1. **Privacidad por defecto.** Los secretos no se copian a `data.json`, logs ni vistas.
-2. **Sin actividad implícita.** Cargar o abrir el plugin no inicia peticiones.
+2. **Sin actividad implícita.** Cargar o abrir el plugin no inicia peticiones; toda petición, incluida una que se dispare como efecto secundario de otra acción (la siembra de Halloween dentro de Check connection), nace de una acción explícita del jugador.
 3. **Recomendaciones trazables.** Una vertical futura deberá separar datos observados, reglas y explicación.
 4. **Vault bajo control del usuario.** Toda escritura requiere un contrato y una acción explícita.

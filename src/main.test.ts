@@ -89,6 +89,74 @@ describe('connection diagnostics composition', () => {
 	});
 });
 
+describe('Halloween backfill wiring (H14.11)', () => {
+	it('does not re-activate the Halloween runtime when the account has not changed', async () => {
+		const activate = vi.fn(async () => undefined);
+		const disable = vi.fn();
+		const setOnline = vi.fn();
+		const harness = {
+			alertAccountRef: null as string | null,
+			halloweenAccountRef: null as string | null,
+			halloweenObservationActive: () => true,
+			halloween: { activate, disable, setOnline },
+			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
+			settings: DEFAULT_SETTINGS,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const switchHalloweenAccount = (TyrianCompanionPlugin.prototype as unknown as {
+			switchHalloweenAccount(this: typeof harness, accountId: string): Promise<string>;
+		}).switchHalloweenAccount;
+
+		await switchHalloweenAccount.call(harness, 'account-1');
+		expect(activate).toHaveBeenCalledTimes(1);
+		expect(disable).toHaveBeenCalledTimes(1);
+
+		// A second "Comprobar conexión" for the SAME account used to call `activate` again,
+		// even though nothing about the account changed.
+		await switchHalloweenAccount.call(harness, 'account-1');
+		expect(activate).toHaveBeenCalledTimes(1);
+		expect(disable).toHaveBeenCalledTimes(1);
+
+		// A genuinely different account still goes through the full reactivation path.
+		await switchHalloweenAccount.call(harness, 'account-2');
+		expect(activate).toHaveBeenCalledTimes(2);
+		expect(disable).toHaveBeenCalledTimes(2);
+	});
+
+	it('checkConnection does not reactivate Halloween across repeated calls for the same account', async () => {
+		const activate = vi.fn(async () => undefined);
+		const prototype = TyrianCompanionPlugin.prototype as unknown as {
+			checkConnection(this: unknown): Promise<ConnectionState>;
+			switchHalloweenAccount(this: unknown, accountId: string, parent?: unknown): Promise<string>;
+		};
+		const harness = {
+			runtimeReady: true,
+			connection: { check: async () => ({
+				status: 'connected' as const, details: { account: { id: 'account-1' } },
+			}) },
+			settingTab: { refreshConnectionRow: vi.fn() },
+			renderViews: vi.fn(),
+			localDebugActions: null,
+			reconcilePendingProposals: vi.fn(async () => undefined),
+			alertAccountRef: null as string | null,
+			halloweenAccountRef: null as string | null,
+			halloweenObservationActive: () => true,
+			halloween: { activate, disable: vi.fn(), setOnline: vi.fn() },
+			halloweenPriceAlert: { configure: vi.fn(async () => undefined) },
+			settings: DEFAULT_SETTINGS,
+			// `checkConnection` calls `this.switchHalloweenAccount`; the harness needs the real
+			// implementation, not a mock, since that private method is exactly what H14.11 fixes.
+			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+			switchHalloweenAccount: prototype.switchHalloweenAccount,
+		};
+
+		await prototype.checkConnection.call(harness);
+		expect(activate).toHaveBeenCalledTimes(1);
+		await prototype.checkConnection.call(harness);
+		expect(activate).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe('atomic settings persistence', () => {
 	it('flushes the settings terminal before disabling capture and emits one event when enabling it again', async () => {
 		const events: string[] = [];

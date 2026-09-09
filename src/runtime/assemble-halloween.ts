@@ -22,7 +22,7 @@ import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import { HalloweenEvidenceService } from '../halloween/halloween-evidence-service';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
-import { scanHalloweenSessionNotes, type HalloweenBackfillVault } from '../halloween/halloween-note-backfill';
+import { HalloweenBackfillCache, scanHalloweenSessionNotes, type HalloweenBackfillVault } from '../halloween/halloween-note-backfill';
 import {
 	HalloweenPriceAlertRuntime,
 } from '../halloween/halloween-price-alert-runtime';
@@ -68,6 +68,10 @@ export interface HalloweenAssembly {
 
 /** Builds the Halloween observation runtime and its p90 price alert; neither is activated here. */
 export function assembleHalloween(input: HalloweenAssemblyInput): HalloweenAssembly {
+	// One memo per plugin instance, shared by every backfill scan for its lifetime: a vault
+	// event under the sessions folder and a repeated "Comprobar conexión" both call this, and
+	// neither should re-read a note whose `mtime` has not moved since the last scan.
+	const backfillCache = new HalloweenBackfillCache();
 	const priceAlert = new HalloweenPriceAlertRuntime({
 		factory: input.factory,
 		vaultId: input.vaultId,
@@ -101,7 +105,7 @@ export function assembleHalloween(input: HalloweenAssemblyInput): HalloweenAssem
 			scopes: input.connectionScopes(),
 		}),
 		policy: () => ({ valueThresholdCopper: input.valueThresholdCopper() }),
-		loadBackfill: async (accountRef) => await scanHalloweenSessionNotes(input.notes, accountRef),
+		loadBackfill: async (accountRef) => await scanHalloweenSessionNotes(input.notes, accountRef, backfillCache),
 		loadOwnedItemIds: input.loadOwnedItemIds,
 		priceHistory: {
 			active: () => input.priceHistoryEnabled(),

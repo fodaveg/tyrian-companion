@@ -628,7 +628,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			rateLimit: rateLimitCoordinator,
 			connectionScopes: () => connectionScopes(this.connection.getState()),
 			notes: {
-				markdownFiles: () => this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path })),
+				// Only the session notes the plugin itself writes are a candidate source of
+				// evidence: a vault with thousands of unrelated notes must not pay a `vault.read`
+				// for every one of them just to notice none of them are ours.
+				markdownFiles: () => this.app.vault.getMarkdownFiles()
+					.filter((file) => file.path.startsWith(`${this.settings.outputFolder}/sessions/`))
+					.map((file) => ({ path: file.path, mtime: file.stat?.mtime })),
 				read: async (file) => {
 					const target = this.app.vault.getAbstractFileByPath(file.path);
 					if (!(target instanceof TFile)) throw new Error('Halloween backfill note is not a file.');
@@ -711,6 +716,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 				const target = this.app.vault.getAbstractFileByPath(file.path);
 				if (!(target instanceof TFile)) throw new Error('Inventory note is not a file.');
 				return await this.app.vault.process(target, update);
+			},
+			trashFile: async (file) => {
+				const target = this.app.vault.getAbstractFileByPath(file.path);
+				if (!(target instanceof TFile)) throw new Error('Inventory note is not a file.');
+				await this.app.fileManager.trashFile(target);
 			},
 		}, this.app.vault.configDir);
 		let inventoryVaultCapture: InventoryVaultCaptureService | null = null;
@@ -1256,10 +1266,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 	): Promise<string> {
 		const accountRef = await sha256Text(accountId);
 		this.alertAccountRef = accountRef;
-		if (accountRef === this.halloweenAccountRef) {
-			if (this.halloweenObservationActive() && this.halloween !== null) await this.halloween.activate(parent);
-			return accountRef;
-		}
+		// An unchanged account has nothing to do here: it was already activated the first time
+		// this account was observed, and this used to call `activate` again on every single
+		// "Comprobar conexión", even when nothing changed. Toggling the setting, a secret
+		// change and the season opening reactivate through their own dedicated paths below.
+		if (accountRef === this.halloweenAccountRef) return accountRef;
 		this.halloweenAccountRef = accountRef;
 		await this.halloweenPriceAlert?.configure(
 			halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled, parent,

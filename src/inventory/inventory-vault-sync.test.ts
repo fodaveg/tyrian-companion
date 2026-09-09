@@ -279,7 +279,7 @@ describe('inventory Vault preview and apply', () => {
 		expect(second.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
 	});
 
-	it('deactivates stale owned positions with zero quantity and zero total without deleting the note', async () => {
+	it('deletes stale owned positions instead of leaving a tc_active: false note behind', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const current = await inputWithAllSources();
@@ -287,15 +287,31 @@ describe('inventory Vault preview and apply', () => {
 		const stalePath = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!.path;
 		const reduced = { ...current, capturedAt: '2026-08-25T08:01:00.000Z', positions: current.positions.filter((position) => position.source !== 'bank') };
 		const preview = await service.preview(ROOT, reduced);
-		expect(preview.steps.find((entry) => entry.path === stalePath)?.status).toBe('deactivate');
+		expect(preview.steps.find((entry) => entry.path === stalePath)).toMatchObject({ status: 'deactivate', after: null });
 		expect(await service.apply(preview)).toMatchObject({ status: 'applied', deactivated: 1 });
-		const fields = frontmatter(vault.contents.get(stalePath)!);
-		expect(fields).toMatchObject({
-			tc_active: false,
-			tc_quantity: 0,
-			tc_total_sell_copper: 0,
-		});
-		expect(vault.contents.has(stalePath)).toBe(true);
+		expect(vault.contents.has(stalePath)).toBe(false);
+	});
+
+	it('does not rewrite a position note when only the capture timestamp changed', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const first = await oneBankInput();
+		await service.apply(await service.preview(ROOT, first));
+		const mutationsAfterFirst = vault.mutations;
+		const second = { ...first, capturedAt: '2026-08-25T09:00:00.000Z' };
+		const plan = await service.preview(ROOT, second);
+		expect(plan.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		expect(await service.apply(plan)).toMatchObject({ status: 'unchanged' });
+		expect(vault.mutations).toBe(mutationsAfterFirst);
+	});
+
+	it('keeps position notes free of tc_captured_at so their hash stays stable across captures', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const input = await oneBankInput();
+		await service.apply(await service.preview(ROOT, input));
+		const [path] = vault.markdownFiles().map((file) => file.path);
+		expect(frontmatter(vault.contents.get(path!)!)).not.toHaveProperty('tc_captured_at');
 	});
 
 	it.each([
@@ -411,6 +427,9 @@ describe('inventory Vault preview and apply', () => {
 			tc_unit_sell_copper: 1234, tc_total_sell_copper: null,
 			tc_unit_list_copper: 1300, tc_total_list_copper: null,
 		});
+		// The 0.1.11 fixture carries `tc_captured_at`; H14.21 migrates it away on this same
+		// rewrite instead of blocking the note as an unknown key.
+		expect(fields).not.toHaveProperty('tc_captured_at');
 	});
 
 	it.each([
@@ -634,6 +653,11 @@ class MemoryInventoryVault implements InventoryVaultPort {
 			this.contents.set(file.path, next);
 		}
 		return next;
+	}
+	async trashFile(file: InventoryVaultFile): Promise<void> {
+		if (!this.contents.has(file.path)) throw new Error('not_file');
+		this.mutations += 1;
+		this.contents.delete(file.path);
 	}
 }
 
