@@ -1,9 +1,9 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
-import { moduleSpecifiers } from '../test/module-boundary';
+import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 
 const PRODUCT_MODULES = readdirSync(new URL('.', import.meta.url))
 	.filter((file) => /^inventory-preferences-[a-z-]+\.ts$/.test(file) && !file.endsWith('.test.ts'))
@@ -46,7 +46,7 @@ describe('inventory preferences architecture', () => {
 });
 
 function productSources(): Map<string, string> {
-	return new Map(PRODUCT_MODULES.map((file) => [file, readFileSync(new URL(`./${file}`, import.meta.url), 'utf8')]));
+	return new Map(PRODUCT_MODULES.map((file) => [file, readModuleSource(`src/advisor/${file}`)]));
 }
 
 function assertImportBoundary(sources: Map<string, string>): void {

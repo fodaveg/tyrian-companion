@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
@@ -25,6 +24,7 @@ import {
 } from './inventory-advisor-classifier';
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
+import { readModuleSource } from '../test/module-boundary';
 import {
 	isInventoryContainerEconomyPack,
 	isInventoryContainerPriceEvidence,
@@ -444,7 +444,7 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	});
 
 	it('contains no execution, clock read, or I/O capability', () => {
-		const source = readFileSync('src/advisor/inventory-advisor-builtin-bundle.ts', 'utf8');
+		const source = readModuleSource('src/advisor/inventory-advisor-builtin-bundle.ts');
 		expect(source).not.toContain('free_to_play');
 		expect(source).not.toContain('whitelist');
 		expect(source).not.toContain('Date.now');

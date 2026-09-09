@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { isPlainJsonValue, moduleSpecifiers } from '../test/module-boundary';
+import { isPlainJsonValue, moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 import * as contractApi from './inventory-advisor-contract';
 import * as modelApi from './inventory-advisor-model';
 import * as resultApi from './inventory-advisor-result';
@@ -25,7 +25,7 @@ const FORBIDDEN_RUNTIME_EXPORT = /execut(?:e|or)|order|request|client|operation|
 describe('inventory advisor H4.13 architecture boundary', () => {
 	it('keeps every boundary module free of an I/O dependency', () => {
 		for (const path of BOUNDARY_FILES) {
-			for (const specifier of moduleSpecifiers(readFileSync(path, 'utf8'))) {
+			for (const specifier of moduleSpecifiers(readModuleSource(path))) {
 				expect(forbiddenDependency(specifier),
 					`${path} imports forbidden dependency ${specifier}`).toBe(false);
 			}

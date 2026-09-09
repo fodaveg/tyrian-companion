@@ -1,13 +1,15 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 const BOUNDARY_FILES = [
 	...readdirSync('src/economy').filter((file) => isBoundaryProductionFile('economy', file))
 		.map((file) => `src/economy/${file}`),
 	...readdirSync('src/advisor').filter((file) => isBoundaryProductionFile('advisor', file))
 		.map((file) => `src/advisor/${file}`),
-].sort().map((path) => ({ path, source: readFileSync(path, 'utf8') }));
+].sort().map((path) => ({ path, source: readModuleSource(path) }));
 
 const ALLOWED_DEPENDENCIES = {
 	economy: new Set([
