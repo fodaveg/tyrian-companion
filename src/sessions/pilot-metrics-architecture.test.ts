@@ -46,10 +46,14 @@ describe('pilot metrics architecture', () => {
 		expect(pending).not.toContain('.finally(');
 		expect(pending).not.toContain('PilotBoundaryModal');
 		expect(pending).toContain('openPendingSessionStart(intent, null)');
-		const recovery = view.slice(view.indexOf('private renderRecovery('), view.indexOf('private async runRecovery'));
-		expect(recovery).toContain('recover.disabled = working');
+		// Lote M/N (9 sep 2026): `renderRecovery` became `buildRecoveryModel` (a session-card model
+		// builder, not a DOM renderer) plus the unchanged `renderPilotRecoveryKind`; the two literal
+		// disable conditions this test protects now live in each of those regions separately.
+		const recovery = view.slice(view.indexOf('private buildRecoveryModel('), view.indexOf('private recoveryDetailText'));
+		expect(recovery).toContain('disabled: working || busy');
 		expect(recovery).not.toContain('recoveryKind === null');
-		expect(recovery).toContain('select.disabled = working || recoveryKind !== null');
+		const pilotKind = view.slice(view.indexOf('private renderPilotRecoveryKind('), view.indexOf('private async runRecovery'));
+		expect(pilotKind).toContain('select.disabled = working || recoveryKind !== null');
 		const assisted = view.slice(view.indexOf('private renderAssistedDetection('), view.indexOf('private async armDetection'));
 		expect(assisted).not.toContain('PilotBoundaryModal');
 		expect(assisted).toContain('openManualSessionStart(null)');

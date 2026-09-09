@@ -15,63 +15,53 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-describe('Companion local diagnostics warning', () => {
-	it('renders a live degraded warning with a navigable Settings action', () => {
+/**
+ * The local-diagnostics banner used to be its own block (`renderLocalDebugWarning`); the session
+ * card's redesign (Lote M/N, 9 sep 2026) folds it into the single callout (`buildIncidentCallout`,
+ * ranura 2 of `diseno-sesion/FICHA.md`) instead of stacking a second box under the card.
+ */
+describe('Companion incident callout: local diagnostics', () => {
+	function callHarness(overrides: Record<string, unknown>) {
+		return Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'en' as const,
+				getManagedAssetsView: () => undefined,
+				...overrides,
+			},
+		});
+	}
+
+	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+	const build = (TyrianCompanionView.prototype as unknown as {
+		buildIncidentCallout(this: object, projection: { errors: string[]; incidentTone: string | null }): {
+			tone: string; title: string; titleButton?: { text: string; onClick(): void }; lines: { text: string }[];
+		} | null;
+	}).buildIncidentCallout;
+
+	it('surfaces a degraded writer as a warning callout with a navigable Settings action', () => {
 		const opened = vi.fn();
-		const texts: string[] = [];
-		let role = '';
-		let click: (() => void) | null = null;
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'degraded', path: 'test-config-dir/plugins/tyrian-companion/logs/',
 			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 1,
 			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
 			errorsSinceLoad: 0, lastError: null,
 		};
-		const warning = {
-			setAttr: (name: string, value: string) => { if (name === 'role') role = value; },
-			createEl: (_tag: string, options: { text: string }) => {
-				texts.push(options.text);
-				return { addEventListener: (_name: string, listener: () => void) => { click = listener; } };
-			},
-		};
-		const container = { createDiv: () => warning };
-		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
-			actions: {
-				getLocalDebugStatus: () => status,
-				getLocale: () => 'en' as const,
-				openLocalDebugSettings: opened,
-			},
-		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderLocalDebugWarning(this: typeof harness, container: { createDiv(): typeof warning }): void;
-		}).renderLocalDebugWarning;
+		const harness = callHarness({ getLocalDebugStatus: () => status, openLocalDebugSettings: opened });
 
-		render.call(harness, container);
-		expect(role).toBe('alert');
-		expect(texts).toEqual([
-			'Diagnostic logs are degraded',
-			'Some entries could not be written. Plugin actions continue to work.',
-			'Diagnostic logs',
-		]);
-		if (click === null) throw new Error('Expected a Settings action.');
-		(click as () => void)();
+		const callout = build.call(harness, { errors: [], incidentTone: null });
+		expect(callout?.tone).toBe('warning');
+		expect(callout?.title).toBe('Diagnostic logs are degraded');
+		expect(callout?.lines.map((line) => line.text)).toEqual(['Some entries could not be written. Plugin actions continue to work.']);
+		callout?.titleButton?.onClick();
 		expect(opened).toHaveBeenCalledOnce();
 	});
 
-	it('renders nothing while the writer is healthy', () => {
-		const createDiv = vi.fn();
-		const harness = { actions: { getLocalDebugStatus: () => ({ state: 'ready' }) } };
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderLocalDebugWarning(this: typeof harness, container: { createDiv(): unknown }): void;
-		}).renderLocalDebugWarning;
-		render.call(harness, { createDiv });
-		expect(createDiv).not.toHaveBeenCalled();
+	it('is null while nothing needs attention', () => {
+		const harness = callHarness({ getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }) });
+		expect(build.call(harness, { errors: [], incidentTone: null })).toBeNull();
 	});
 
-	it('surfaces errors since load and the last failure even while the writer itself is healthy (H14.5)', () => {
-		const texts: string[] = [];
+	it('surfaces errors since load and the last failure, with the timestamp formatted (H14.5)', () => {
 		const status: LocalDebugStatus = {
 			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
 			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
@@ -79,22 +69,14 @@ describe('Companion local diagnostics warning', () => {
 			errorsSinceLoad: 20,
 			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
 		};
-		const warning = {
-			setAttr: () => undefined,
-			createEl: (_tag: string, options: { text: string }) => { texts.push(options.text); return { addEventListener: () => undefined }; },
-		};
-		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
-			actions: { getLocalDebugStatus: () => status, getLocale: () => 'en' as const },
-		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderLocalDebugWarning(this: typeof harness, container: { createDiv(): typeof warning }): void;
-		}).renderLocalDebugWarning;
-		render.call(harness, { createDiv: () => warning });
-		expect(texts).toEqual([
-			'Errors since load: 20',
-			'Last failure: network_failure in connection/connection_check, 2026-09-08T12:22:00.000Z',
-		]);
+		const harness = callHarness({ getLocalDebugStatus: () => status });
+
+		const callout = build.call(harness, { errors: [], incidentTone: null });
+		expect(callout?.tone).toBe('error');
+		expect(callout?.title).toBe('Errors since load: 20');
+		expect(callout?.lines[0]?.text).toContain('network_failure in connection/connection_check');
+		// The raw ISO timestamp is exactly what `docs/SPEC-paneles-sin-prosa.md` forbids on screen.
+		expect(callout?.lines[0]?.text).not.toContain('2026-09-08T12:22:00.000Z');
 	});
 });
 
@@ -412,6 +394,28 @@ describe('Companion pilot metrics fail-open actions', () => {
 	});
 });
 
+/**
+ * `renderSimpleSession` now also mounts the Detalle/Avisos/Historial gaveteros (Lote N, 9 sep
+ * 2026), so every isolated call to it needs these even when the test is not about them.
+ */
+function minimalDrawerActions() {
+	return {
+		getDetectionMode: () => 'off' as const,
+		getAssistedDetectionState: () => ({
+			status: 'disarmed' as const, reason: 'initial' as const, lastSnapshotAt: null,
+			scheduler: { status: 'idle' as const, intervalMs: null, nextRunAt: null, lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0 },
+		}),
+		getDetectionQualityState: () => ({ status: 'ready' as const }),
+		getDetectionQualityStats: () => null,
+		getHalloweenState: () => ({ status: 'ready' as const, notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
+		acknowledgeHalloweenNotice: async () => false,
+		getHalloweenPriceAlertState: () => ({ status: 'ready' as const, projection: null, notices: [], unreadCount: 0 }),
+		acknowledgeHalloweenPriceNotice: async () => false,
+		getEmittedAlerts: () => [],
+		loadSessionHistory: async () => ({ status: 'ok' as const, sessions: [], ignored: 0 }),
+	};
+}
+
 describe('Companion retained product shell', () => {
 	it('offers human review only when automatic finalization leaves a provisional session', () => {
 		const document = new RetainedFakeDocument();
@@ -426,11 +430,13 @@ describe('Companion retained product shell', () => {
 				openSessionReview,
 				getLiveSessionLoot: () => ({ status: 'complete' as const, sessionId: 'session', restored: false,
 					rows: [], knownTotalCopper: 0, hasUnknownValue: false, updatedAt: null, error: null }),
+				...minimalDrawerActions(),
 			},
-			renderLiveLoot: vi.fn(),
+			drawerOpen: { detail: false, alerts: false, history: false },
 		});
 		const session = {
 			version: 1 as const, status: 'provisional' as const, sessionId: 'session',
+			baseline: { completedAt: '2026-09-01T09:00:00.000Z' }, stoppedAt: '2026-09-01T09:30:00.000Z',
 			startContext: { characterName: 'Rinopopo' },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
@@ -458,11 +464,13 @@ describe('Companion retained product shell', () => {
 				getLootPresentation: () => null,
 				getLiveSessionLoot: () => ({ status: 'complete' as const, sessionId: 'session', restored: false,
 					rows: [], knownTotalCopper: 0, hasUnknownValue: false, updatedAt: null, error: null }),
+				...minimalDrawerActions(),
 			},
-			renderLiveLoot: vi.fn(),
+			drawerOpen: { detail: false, alerts: false, history: false },
 		});
 		const session = {
 			version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			baseline: { completedAt: '2026-09-01T09:00:00.000Z' }, stoppedAt: '2026-09-01T09:30:00.000Z',
 			startContext: { characterName: 'Rinopopo' },
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
@@ -498,10 +506,12 @@ describe('Companion retained product shell', () => {
 						allocation: { status: 'not_evaluated' }, recommendation: { status: 'not_evaluated' } }],
 					economy: { immediateCopper: 40_000 }, decision: {},
 				}) as never,
+				...minimalDrawerActions(),
 			},
-			renderLiveLoot: vi.fn(),
+			drawerOpen: { detail: false, alerts: false, history: false },
 		});
 		const session = { version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			baseline: { completedAt: '2026-09-01T09:00:00.000Z' }, stoppedAt: '2026-09-01T09:30:00.000Z',
 			startContext: { characterName: 'Rinopopo' } };
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
 		const render = (TyrianCompanionView.prototype as unknown as {
@@ -509,10 +519,11 @@ describe('Companion retained product shell', () => {
 		}).renderSimpleSession;
 		render.call(harness, container as unknown as HTMLElement, { status: 'connected' }, session, { items: [], errors: [] });
 		const text = walkRetained(container).map(({ textContent }) => textContent).join(' ');
+		// The per-item loot breakdown is retired from this card (FICHA §4: `__loot-list` orphaned);
+		// the durable summary now reads as the single "Valor neto guardado" figure.
 		expect(text).toContain('Resumen guardado');
-		expect(text).toContain('Pimpollo de flor de cerezo');
-		expect(text).toContain('×4');
-		expect(text).not.toContain('Objeto guardado');
+		expect(text).toContain('Valor neto guardado');
+		expect(text).toContain('4g 0s 0c');
 	});
 
 	it('shows the real failed save state with one contextual retry action', () => {
@@ -529,10 +540,12 @@ describe('Companion retained product shell', () => {
 				retrySessionSummarySave,
 				getLiveSessionLoot: () => ({ status: 'idle' as const }),
 				getLootPresentation: () => null,
+				...minimalDrawerActions(),
 			},
-			renderLiveLoot: vi.fn(),
+			drawerOpen: { detail: false, alerts: false, history: false },
 		});
 		const session = { version: 1 as const, status: 'complete' as const, sessionId: 'session',
+			baseline: { completedAt: '2026-09-01T09:00:00.000Z' }, stoppedAt: '2026-09-01T09:30:00.000Z',
 			startContext: { characterName: 'Rinopopo' } };
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
 		const render = (TyrianCompanionView.prototype as unknown as {
@@ -572,7 +585,9 @@ describe('Companion retained product shell', () => {
 					status: 'busy' as const, state: activeState,
 					message: 'Owned elsewhere.', ownerExpiresAt: startedAt + 12_000,
 				}),
+				...minimalDrawerActions(),
 			},
+			drawerOpen: { detail: false, alerts: false, history: false },
 		});
 		const session = { version: 1 as const, status: 'idle' as const };
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated view harness.
@@ -729,87 +744,71 @@ describe('Companion live sack counter', () => {
 				baseline: { completedAt: BASELINE_AT },
 				startContext: { characterName: 'Rinopopo' },
 			}),
+			getAssistedDetectionState: () => ({
+				status: 'disarmed' as const, reason: 'initial' as const, lastSnapshotAt: null,
+				scheduler: { status: 'idle' as const, intervalMs: null, nextRunAt: null, lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0 },
+			}),
 			getConnectionState: () => ({ status: 'connected' as const, accountId: 'account', accountName: 'Account' }),
 		};
 		return Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions, contentEl, refreshInterval: null,
-			headerElapsed: null, liveSackCount: null, liveSackRate: null,
-			checkButton: null, incident: null, incidentMessage: null, incidentMore: null,
+			headerElapsed: null, liveFigures: [], liveFiguresKind: null,
+			checkButton: null, calloutSlot: null,
 			projectStatus: () => ({ refreshEveryMs: 1_000, items: [], errors: [] }),
 			refreshDetectionTimeline: vi.fn(),
 			refreshPendingConfirmation: () => false,
-			refreshSettlementCountdown: vi.fn(),
+			refreshRecoveryOwnerCountdown: vi.fn(),
 			scheduleRefresh: vi.fn(),
 			t: (key: string) => key,
 		});
 	}
 
-	it('shows the observed sack count and a pace band that names its window and cache margin', () => {
+	it('builds the observed sack count and a pace band with locale-aware decimals', () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(Date.parse(BASELINE_AT) + 1_800_000);
-		const document = new RetainedFakeDocument();
-		installRetainedDom(document);
-		const region = new RetainedFakeElement('div', document);
 		const harness = harnessAt(12);
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
-		}).renderLiveLoot;
-		render.call(
-			harness, region as unknown as HTMLElement,
-			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
-		);
+		const build = (TyrianCompanionView.prototype as unknown as {
+			buildActiveFigures(this: typeof harness, now: number, copy: unknown, locale: string): { label: string; value: string; band?: string }[];
+		}).buildActiveFigures;
+		const figures = build.call(harness, Date.now(), simpleSessionCopy('es'), 'es');
 
-		const texts = walkRetained(region).map((element) => element.textContent);
-		expect(texts).toContain('Sacos observados');
-		expect(texts).toContain('12');
-		expect(texts).toContain('18.0–36.0 sacos/h');
-		expect(texts).toContain('ventana 30 min ± 10 min de caché de la API');
-		// The window/margin arithmetic sits behind the closed "Detalle" disclosure, not inline.
-		const disclosure = walkRetained(region).find((element) => element.tag === 'details');
-		expect(disclosure?.open).toBe(false);
+		expect(figures[1]).toEqual(expect.objectContaining({ label: 'Sacos observados', value: '12', band: '18,0–36,0 sacos/h' }));
 	});
 
-	it('repaints the pace in place on the tick the view already runs every second', () => {
+	it('repaints the live figures in place on the tick the view already runs every second', () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(Date.parse(BASELINE_AT) + 1_800_000);
 		const document = new RetainedFakeDocument();
 		installRetainedDom(document);
-		const region = new RetainedFakeElement('div', document);
+		const valueDd = new RetainedFakeElement('dd', document);
+		const dd = new RetainedFakeElement('dd', document);
+		const band = new RetainedFakeElement('small', document);
 		const harness = harnessAt(12);
+		// `buildActiveFigures` orders [observed value, sacks, …]; the sacks figure is index 1.
+		(harness as { liveFigures: unknown[] }).liveFigures = [{ dd: valueDd, band: null }, { dd, band }];
+		(harness as { liveFiguresKind: string }).liveFiguresKind = 'active';
 		const methods = TyrianCompanionView.prototype as unknown as {
-			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
 			refreshBackgroundStatus(this: typeof harness): void;
 		};
-		methods.renderLiveLoot.call(
-			harness, region as unknown as HTMLElement,
-			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
-		);
-		const rate = walkRetained(region).find((element) => element.textContent.endsWith('sacos/h'));
-		const detail = walkRetained(region).find((element) => element.textContent.endsWith('de caché de la API'));
-		expect(rate?.textContent).toBe('18.0–36.0 sacos/h');
-		expect(detail?.textContent).toBe('ventana 30 min ± 10 min de caché de la API');
 
 		vi.setSystemTime(Date.parse(BASELINE_AT) + 3_600_000);
 		methods.refreshBackgroundStatus.call(harness);
 
 		// The same nodes, not rebuilt ones: a repaint that stole focus would be the bug here.
-		expect(rate?.textContent).toBe('10.3–14.4 sacos/h');
-		expect(detail?.textContent).toBe('ventana 60 min ± 10 min de caché de la API');
+		expect(dd.textContent).toBe('12');
+		expect(band.textContent).toBe('10,3–14,4 sacos/h');
 	});
 
 	it('says there is no window to measure instead of inventing a pace before the baseline', () => {
 		const copy = simpleSessionCopy('es');
-		expect(liveSackRateHeadline(12, null, copy)).toBe('Ritmo aún sin ventana que medir');
-		expect(liveSackRateHeadline(12, 0, copy)).toBe('Ritmo aún sin ventana que medir');
-		expect(liveSackRateHeadline(12, 300_000, copy)).toBe('al menos 48.0 sacos/h');
+		expect(liveSackRateHeadline(12, null, copy, 'es')).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateHeadline(12, 0, copy, 'es')).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateHeadline(12, 300_000, copy, 'es')).toBe('al menos 48,0 sacos/h');
 		expect(liveSackRateDetail(12, 300_000, copy)).toBe('ventana 5 min ± 10 min de caché de la API');
 	});
 
-	it('shows a single "first reading at HH:MM" line instead of a zero breakdown before any poll has answered', () => {
-		const document = new RetainedFakeDocument();
-		installRetainedDom(document);
-		const region = new RetainedFakeElement('div', document);
+	it('shows a single pending "first reading" figure instead of a zero breakdown before any poll has answered', () => {
 		const nextRunAt = Date.parse('2026-08-31T12:18:00.000Z');
 		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
@@ -828,16 +827,14 @@ describe('Companion live sack counter', () => {
 			},
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
-		}).renderLiveLoot;
-		render.call(
-			harness, region as unknown as HTMLElement,
-			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
-		);
-		const texts = walkRetained(region).map((element) => element.textContent);
-		expect(texts.some((text) => text.includes('0g') || text === '0')).toBe(false);
-		expect(texts).toContain(`Primera lectura a las ${formatClock(nextRunAt, 'es')}`);
+		const build = (TyrianCompanionView.prototype as unknown as {
+			buildActiveFigures(this: typeof harness, now: number, copy: unknown, locale: string): { label: string; value: string; pending?: boolean }[];
+		}).buildActiveFigures;
+		const figures = build.call(harness, Date.now(), simpleSessionCopy('es'), 'es');
+
+		expect(figures).toHaveLength(1);
+		expect(figures[0]).toEqual(expect.objectContaining({ label: 'Primera lectura', value: formatClock(nextRunAt, 'es'), pending: true }));
+		expect(figures.some((figure) => figure.value.includes('0g') || figure.value === '0')).toBe(false);
 	});
 });
 
@@ -894,11 +891,19 @@ describe('Companion sell signal line', () => {
 });
 
 /** H14.5: the escape hatch for a managed-assets `operation_conflict` that never resolves itself. */
-describe('Companion managed-assets conflict banner', () => {
-	it('shows a Resolve button that relaunches reconciliation and re-renders on completion', async () => {
-		const document = new RetainedFakeDocument();
-		installRetainedDom(document);
-		const container = new RetainedFakeElement('div', document);
+/**
+ * H14.5's escape hatch for an `operation_conflict` that never resolves on its own now lives inside
+ * the card's single callout (`buildIncidentCallout`) instead of a banner of its own.
+ */
+describe('Companion incident callout: managed-assets conflict', () => {
+	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+	const build = (TyrianCompanionView.prototype as unknown as {
+		buildIncidentCallout(this: object, projection: { errors: string[]; incidentTone: string | null }): {
+			tone: string; title: string; titleButton?: { text: string; onClick(): void }; lines: { text: string }[];
+		} | null;
+	}).buildIncidentCallout;
+
+	it('shows a Resolve action that relaunches reconciliation and re-renders on completion', async () => {
 		const retry = vi.fn(async () => undefined);
 		let renders = 0;
 		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
@@ -909,16 +914,11 @@ describe('Companion managed-assets conflict banner', () => {
 			},
 			render: () => { renders += 1; },
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderManagedAssetsConflict(this: typeof harness, container: HTMLElement): void;
-		}).renderManagedAssetsConflict;
-		render.call(harness, container as unknown as HTMLElement);
 
-		const all = walkRetained(container);
-		expect(all.find((element) => element.attributes.get('role') === 'alert')).toBeDefined();
-		const button = all.find((element) => element.tag === 'button');
-		button?.listeners.get('click')?.[0]?.();
+		const callout = build.call(harness, { errors: [], incidentTone: null });
+		expect(callout?.tone).toBe('warning');
+		expect(callout?.titleButton?.text).toBe('Resolver');
+		callout?.titleButton?.onClick();
 		await Promise.resolve();
 		await Promise.resolve();
 
@@ -926,22 +926,14 @@ describe('Companion managed-assets conflict banner', () => {
 		expect(renders).toBe(2);
 	});
 
-	it('renders nothing for a healthy or a different managed-assets state', () => {
-		const document = new RetainedFakeDocument();
-		installRetainedDom(document);
+	it('is null for a healthy or a different managed-assets state and no other incident', () => {
 		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
 				getLocale: () => 'es' as const,
 				getManagedAssetsView: () => ({ status: 'ready' as const, message: 'assets_ready' as const, plan: null }),
 			},
 		});
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
-		const render = (TyrianCompanionView.prototype as unknown as {
-			renderManagedAssetsConflict(this: typeof harness, container: HTMLElement): void;
-		}).renderManagedAssetsConflict;
-		const container = new RetainedFakeElement('div', document);
-		render.call(harness, container as unknown as HTMLElement);
-		expect(container.children).toHaveLength(0);
+		expect(build.call(harness, { errors: [], incidentTone: null })).toBeNull();
 	});
 });
 
