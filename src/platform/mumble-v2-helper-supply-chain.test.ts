@@ -111,9 +111,10 @@ describe('H8.5 helper supply chain and test-only staging', () => {
 				writeFileSync(join(directory, 'helper-manifest.json'), sabotage(manifest(executable)));
 				expect(stageFindings(directory), name).toContain('manifest-schema');
 			}
-			expect(readFileSync('scripts/release-package.mjs', 'utf8')).toContain(
-				"'manifest.json',\n\t'main.js',\n\t'styles.css',",
-			);
+			// `RELEASE_FILES`'s exact three-entry shape is exercised behaviourally, not as text, by
+			// `scripts/tests/probar-release-package.mjs` (`npm run test:release-package`, part of the
+			// gate); it also matches `security-scan.mjs`'s own `RELEASE_ARTIFACT_FILES`. Re-reading
+			// `release-package.mjs`'s characters here would be the same violation this lot removes.
 		} finally {
 			rmSync(directory, { recursive: true, force: true });
 		}

@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
 import { TextDecoder } from 'node:util';
 import { describe, expect, it } from 'vitest';
@@ -678,22 +677,19 @@ describe('H8.4 authority and negative capability boundary', () => {
 		});
 	});
 
-	it('keeps identity, character, PID, position, movement, combat and loot absent', () => {
-		const source = readFileSync('src/platform/mumble-v2-contract.ts', 'utf8');
-		for (const forbidden of [
-			'identity', 'characterName', 'personaje', 'processId', 'pid', 'position', 'movement',
-			'combat', 'loot',
-		]) {
-			expect(source).not.toMatch(new RegExp(`\\b${forbidden}\\b`, 'iu'));
-		}
-	});
-
+	// The two properties below ("no identity/PID/position/movement/combat/loot field" and "no
+	// persistence/external-network/fallback field") used to re-read `mumble-v2-contract.ts` and
+	// regex its characters. `mumble-v2-contract-architecture.test.ts` already applies the same
+	// `contractViolations` AST scanner to this exact file's real source
+	// (`expect(contractViolations(CONTRACT_SOURCE)).toEqual([])`, H8.1/H8.4 boundary, "turns red for
+	// personal, spatial or process identity fields") and pins every interface's field list exactly
+	// (`interfacePropertyNames(CONTRACT_SOURCE, name)).toEqual(fields)`), so a field named `pid` or
+	// `fallback` would already fail there. Re-reading the same file's text here would be the same
+	// violation this lot removes; only the executable half stays.
 	it('declares no persistence, external network or alternate source fallback', () => {
-		const source = readFileSync('src/platform/mumble-v2-contract.ts', 'utf8');
 		expect(MUMBLE_V2_TRANSPORT_CONTRACT.host).toBe('127.0.0.1');
 		expect(MUMBLE_V2_TRANSPORT_CONTRACT.protocol).toBe('tcp_ipv4');
 		expect(MUMBLE_V2_RECOMMENDED_DEFAULTS.retention).toBe('none');
-		expect(source).not.toMatch(/\b(?:fallback|alternateSource|externalHost)\b/iu);
 	});
 });
 
