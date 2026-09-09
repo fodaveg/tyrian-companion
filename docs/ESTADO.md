@@ -2,33 +2,13 @@
 
 ## Vertical activa
 
-**Release beta `0.1.21` publicada el 2026-09-01 desde el tag y commit `1514bf3c52e4f71158a7a724b6c227c5930c4bc0`.**
-`manifest.json` y `package.json` declaran `0.1.21`. Runs de CI de `main`, del tag y del workflow
-`Release`: `33525623408` (CI de `main`), `33525647496` (CI del tag) y `33525647471` (workflow `Release`), los tres en verde.
-
-La release adjunta los cinco assets exactos. El ZIP tiene SHA-256
-`8f8ab5f5f48d12584bef417b3e74aa31113b431411c6107cedb96f8ddcdb263d`, que coincide con el fichero
-`.sha256` que la propia release adjunta. El `main.js` publicado se descargó y se comparó con el
-construido localmente: idénticos byte a byte, SHA-256
-`d95d8312e838407c3363ebef9ca22a591d22a279fb4755556631c2c04477349f`. El contrato BRAT, ejecutado
-contra la salida real de `gh release view`, da `PASS (version=0.1.21; assets=5)`.
-
-**Canal publicado; runtime pendiente.** Los tres ficheros (`main.js`, `manifest.json`, `styles.css`)
-se copiaron a la bóveda real de David y se verificaron por `sha256sum`, no por la salida del `cp`;
-`manifest.json` instalado declara `0.1.21` y `data.json` no se tocó. Pero **Obsidian estaba ABIERTO
-durante la copia**, así que el plugin cargado en memoria sigue siendo la build anterior hasta que se
-recargue. No hay evidencia de carga del plugin, de QA visual ni de una sola llamada real a la API de
-Guild Wars 2 desde el cliente con esta versión.
-
-El contenido de esta release y su motivación están en el [changelog](CHANGELOG.md), entrada
-`0.1.21`. Absorbe tres lotes integrados en `main` después de `0.1.20`: la Bolsa de truco o trato
-deja de estar muda, la nota de sesión da un número económico por primera vez (antes escribía
-`valuation: null` a mano en todas las sesiones), y el detector asistido pasa a proponer de verdad
-(antes exigía dos consultas consecutivas con ganancia, algo que la caché de 5 a 10 minutos de la
-API de cuenta nunca permitía).
-
-El relato de las releases `0.1.13` a `0.1.20` (H5–H12, cada lote con sus commits, gate y QA
-pendiente) se movió íntegro a [`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md).
+**La versión vigente es la que declara `manifest.json` (y `package.json`), que es también la última
+release publicada en GitHub.** No se repite esa cifra aquí porque queda obsoleta con cada release y
+nadie la actualiza en tres ficheros a la vez: se lee de `manifest.json` o de
+`gh release view --json tagName`. El detalle y la motivación de cada entrega están en el
+[changelog](CHANGELOG.md); el relato completo, release a release, de todo lo ya cerrado e integrado
+antes de la más reciente se movió íntegro a
+[`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md).
 
 **Foundation, conexión GW2, H1.4 coordinación, H3.1–H3.10 lifecycle/detección/revisión/calidad local, `storage_snapshot`, H2.4 `PublicCatalog`, H2.6 `storage_delta`, H2.7 contaminación, economía H4.1–H4.19, UI/assets H5.1–H5.12 y contratos H8.1/H8.4: implementados. H8.2 aporta el spike, con su QA humana ya ejecutada y completa en Linux/Steam/Proton, H8.3 la decisión, H8.5 el helper/servidor Rust aislado, H8.6 el cliente core TS, H8.7 una frontera safe-launch sin executor y H8.8 una política shadow pura de presencia/ausencia; launcher real, composición del plugin, firma, publicación y QA real siguen pendientes. H8.8 queda `@done` dentro de su alcance aislado; H8.7 permanece `@wip`.**
 
@@ -62,7 +42,7 @@ verificado que el contrato sigue mordiendo con una copia no revisada real. `tsco
 pasa `moduleResolution` de `node` (modo node10 retirado) a `bundler`, el modo que corresponde
 al build vía esbuild.
 
-**H7.4 está implementado técnicamente y H7.5 distribuye `0.1.18` mediante GitHub Release y BRAT.** El
+**H7.4 está implementado técnicamente y H7.5 distribuye la release vigente mediante GitHub Release y BRAT.** El
 release package parte de un build nuevo, contiene únicamente `manifest.json`, `main.js` y
 `styles.css`, valida versiones y tag, escanea los bytes staged y genera ZIP reproducible + SHA-256
 con prueba causal. CI conserva permisos de solo lectura, recrea un staging enumerado y sube
@@ -72,7 +52,7 @@ estado antes de operar, escribe solo los tres ficheros gestionados y revierte fa
 autoridad desde los bytes originales capturados; backups alterados y fallos de cierre del lock quedan
 en rojo sin dejar aplicada la versión nueva. El staging relee y compara los tres bytes antes del upload
 y el censo impide otra acción de artifact. Una sustitución de directorio se bloquea sin tocar el destino
-ajeno. El tag y la GitHub Release `0.1.18` publican los tres assets individuales requeridos por BRAT;
+ajeno. El tag y la GitHub Release de cada versión publican los tres assets individuales requeridos por BRAT;
 la instalación/actualización real en Obsidian sigue pendiente de QA humana en las plataformas
 soportadas.
 
@@ -89,8 +69,8 @@ sabotajes impiden relajar esos campos o habilitar issues en blanco en silencio.
 **Tyrian Companion**, el autor público **David**, el repositorio `fodaveg/tyrian-companion` y la
 licencia MIT quedan ligados por un contrato ejecutable. La comprobación oficial fijada del
 2026-08-16 no encontró colisiones de ID o nombre en registros activos ni retirados de Obsidian.
-El repositorio es público desde el 2026-08-29. La release actual es `0.1.19`, la versión que declaran
-`manifest.json` y `package.json`; su fecha de publicación no está registrada aquí.
+El repositorio es público desde el 2026-08-29. La release actual es la que declaran `manifest.json`
+y `package.json`; su fecha de publicación no está registrada aquí.
 
 H5.10 añade exportación manual y fail-closed del historial durable: solo consume notas H5.4/H5.7 íntegras, ordena resultados de forma determinista y crea JSON/CSV sin contenido humano ni identificadores crudos. Ajustes ofrece además un scrub warning explícito con preview y confirmación ES/EN: un token efímero ligado a bytes/path/ref, consumido o revocado en toda salida, usa `Vault.process` CAS para quitar solo `tc_*` y los seis bloques intactos, sin papelera ni borrado físico. Una autoridad compartida excluye transiciones de sesión, recovery y detector durante el scrub y relee el runtime antes de cada escritura.
 
@@ -346,47 +326,20 @@ Incluye scaffold oficial, selección segura y estable por operación, ajustes ve
   `npm run check`, benchmark, sabotaje de heap y `git diff --check` pasan en este worktree. No existe
   todavía evidencia de instalación, primera sesión o soporte real en dispositivo.
 
-## Publicación de la 0.1.22 (2026-09-03)
-
-Publicada desde el tag y commit `5ab35766e6db01dde84cad9607a3a99fb2dfe42c`, que es también
-`origin/main`. La creó el workflow `Release` al empujar el tag, con los cinco assets y contrato BRAT
-`PASS (version=0.1.22; assets=5)` contra la salida real de `gh release view`. Los tres ficheros
-publicados se descargaron y coinciden byte a byte con los construidos aquí (`main.js`
-`c1404e00…4e7561`). Tres runs de CI en verde sobre ese SHA: `33732841358`, `33732841344` y
-`33732840955`. Gate local antes de etiquetar: `check` 22/22, `test` 18/18, 2.632 tests en 194
-ficheros, `tsc --noEmit` exit 0.
-
-Instalada en la bóveda real y verificada por `sha256sum` contra los ficheros publicados, sin tocar
-`data.json`. **La copia se hizo con Obsidian abierto**, así que hasta que se recargue el plugin en
-memoria sigue corriendo la `0.1.21`: canal publicado, runtime pendiente.
-
-Lo que esto **no** acredita, y sigue siendo lo único que bloquea: que el banner del sistema con
-`urgency: critical` cruce por encima de Guild Wars 2 en ventana sin bordes y en pantalla completa
-exclusiva bajo GNOME, y que una sesión de farmeo repetida salga ahora `estimated` con banda en vez
-de con el veredicto económico suprimido. Las dos son pruebas humanas y no se han ejecutado.
-
 ## Deuda conocida
 
-### H13.1 — Primera ejecución humana (2026-09-03)
+### H13.1 — Primera ejecución humana, y el veredicto económico que salió suprimido
 
-**La primera ejecución humana en 21 releases ocurrió el 2026-09-03**, sobre la `0.1.21`, en Linux y
-en la bóveda real, no en la desechable `~/tyrian-qa-h13-1` que el protocolo pedía. La sesión duró 53
-minutos y 51 segundos y completó el ciclo entero: inicio, captura, fin, revisión y nota escrita en su
-carpeta y su año, con SHA-256
-`c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`. La tubería cableada en la
-`0.1.21` respondió, incluidas las junturas de reserva y hold (`tc_reservation_status: "complete:met"`,
-`tc_hold_status: "released"`).
+**La primera ejecución humana ocurrió el 2026-09-03**, en Linux y en la bóveda real (no en la
+desechable que pedía el protocolo), y completó el ciclo entero: inicio, captura, fin, revisión y
+nota escrita. Detalle completo, con SHAs y el estado exacto de cada campo, movido a
+[`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md) § H13.1.
 
-**El veredicto económico salió suprimido, y ese es el defecto que compra esta ejecución.** Todos los
-campos `tc_*_copper` y `tc_*_per_hour` salieron `null`, la recomendación quedó en `not_evaluated` y
-las 40 filas de botín dicen «Oculto por fiabilidad», en una sesión que había ganado 46.083 cobre. El
-disparador fueron dos monedas del monedero bajando una unidad cada una, la `37` (Exalted Key) y la
-`42` (Vial of Chak Acid), que es lo que cuesta abrir un cofre con su llave. El arreglo es H13.6.
-Hasta que aterrice, el producto no da su número en una sesión de farmeo normal.
-
-Que no saltara ningún aviso sí es lo esperado: `halloweenEnabled`, `priceHistoryEnabled` y
-`halloweenPriceAlertEnabled` existen en la `0.1.21` y vienen en `false` por defecto. El aviso sin
-interruptores llegó después, en `6706d47`, y no está en ningún build instalado.
+**El defecto que compró aquella ejecución sigue sin cerrar aquí: el veredicto económico puede salir
+suprimido en una sesión de farmeo normal** cuando dos monedas del monedero bajan una unidad cada
+una (el coste de abrir un cofre con su llave), porque eso se leía como actividad contaminante. El
+arreglo previsto es H13.6; hasta que aterrice y se confirme en el changelog, el producto puede no
+dar su número en una sesión limpia.
 
 ### QA manual: una sola sesión ejecutada, en una sola plataforma
 
@@ -400,19 +353,19 @@ puntos 6 y 8 están cerrados en implementación y solo conservan QA residual.
 
 1. Repetir el spike H8.2 en macOS/CrossOver, Windows nativo y Proton estable de Valve, donde todavía no se ha ejecutado ningún PE; después implementar executor con trust anchor y composición de H8.5/H8.6/H8.7/H8.8, ejecutar QA separada —incluidos los latches 5 s/60 s, gaps, stalled, heartbeat y recovery— en Linux/Steam/Proton, macOS/CrossOver y Windows x64 antes de salir de shadow, y resolver firma/licencias antes de release.
 2. Ejecutar la matriz H0.4 por plataforma y reunir la muestra del piloto H0.6. H7.13 ya agrega y
-   exporta localmente la evidencia en `0.1.18`; todavía faltan el dry run instrumentado en
+   exporta localmente la evidencia desde hace varias releases; todavía faltan el dry run instrumentado en
    Linux/Steam/Proton, macOS/CrossOver y Windows beta y la ejecución real de H7.7.
 3. Ejecutar QA visual de H9.7 en Obsidian con temas claro/oscuro, anchos 1280/900/600/420/280,
-   textos largos y listas grandes; la implementación automatizada ya está publicada en `0.1.18`.
+   textos largos y listas grandes; la implementación automatizada ya está publicada.
 4. Ejecutar QA manual ES/EN de la recomendación activada para 36038 con evidencia real completa y parcial.
 5. Cerrado por H6.13 (`abea4e1`): un personaje que devuelve `404` (`missing_character`) entre pasada base y de cierre se excluye de las dos proyecciones y el delta pasa a `limited` con el aviso `character_unobserved`, en vez de invalidar el delta entero de la cuenta. Un `500` (`unavailable`) sigue invalidando el delta entero. Decisión de producto pendiente de ratificar por David: si ese criterio del 404 excusable entra en el gate de v1 (H7.8) o se aparta a post-MVP; hoy queda etiquetado `#v1` sin que él lo haya decidido.
-6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. H6.21 añade en `0.1.18` el copy específico para cada fallo de inicio y fin; quedan pendientes su QA visual ES/EN y un `429` real en Obsidian.
+6. ~~Coordinar un cooldown `429` global del snapshot además de los reintentos acotados del transporte.~~ Cerrado por H6.12 (`7f97d44` y `61a20dc`): `RateLimitCoordinator` comparte un único enfriamiento entre captura de sesión, detección asistida e Inventory Advisor, y lo arma también con el 429 de una fuente opcional que `captureSource()` convierte en cobertura parcial de una captura que resuelve. Los reintentos por petición siguen siendo del transporte. H6.21 añade el copy específico para cada fallo de inicio y fin; quedan pendientes su QA visual ES/EN y un `429` real en Obsidian.
 7. Probar la carga, conexión e IndexedDB manualmente en una bóveda de desarrollo; no forma parte de este worktree.
 8. ~~Consultar el historial TP para complementar la declaración manual H3.9.~~ Cerrado por H9.8
    (`3e84514`, `ed7f8b8` y `f825621`): el modal puede proponer compras y ventas desde un historial
    completo de hasta 90 días, pero solo la confirmación humana modifica la revisión.
 9. Hacer QA manual de H3.2–H3.4 en dos ventanas y, si Obsidian comparte el origin, dos procesos reales: doble clic, stop/retry, reload, cierre forzado, recuperación/descarte y pérdida del lease.
-10. Instalar/actualizar `0.1.18` desde BRAT en una bóveda desechable por plataforma, verificar que los
+10. Instalar/actualizar la release publicada desde BRAT en una bóveda desechable por plataforma, verificar que los
     tres assets corresponden a la release publicada y registrar el resultado; la publicación y el canal
     BRAT ya están activos, pero no acreditan esta QA.
 11. Ejecutar el protocolo de QA manual que piden H6.8 y H6.9: instalación en una bóveda desechable, sesión real y matriz de plataforma documentadas en `docs/QA-MVP.md`; una guía preparada no acredita una prueba superada. El 2026-09-03 se ejecutó por primera vez una sesión real, pero en la bóveda real y en una sola plataforma: cubre la sesión y nada más, así que siguen sin ejecutarse la bóveda desechable, la matriz por plataforma, las dos ventanas simultáneas, el cierre forzado y el recovery.

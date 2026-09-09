@@ -2,29 +2,24 @@
 
 ## Estado actual
 
-La beta pública es la
-[`0.1.22`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.22), tag y commit
-`5ab35766e6db01dde84cad9607a3a99fb2dfe42c`. El tag remoto y `origin/main` apuntan al mismo SHA. La
-release la creó el workflow `Release` al empujar el tag y adjunta exactamente los cinco assets
-(`manifest.json`, `main.js`, `styles.css`, `tyrian-companion-0.1.22.zip` y su `.sha256`), con
-contrato BRAT `PASS (version=0.1.22; assets=5)` verificado contra la salida real de
-`gh release view`. El ZIP tiene SHA-256
-`3d8e00333f511712a0f33e312e122911295775d95a666b64f67799041f75e060`. Los tres ficheros publicados se
-descargaron y coinciden byte a byte con los construidos localmente: `main.js`
-`c1404e0022ed3becd0cdb3d13b90d05b29fdeb8914d20434df38cf39744e7561`, `manifest.json`
-`4a575ad35401748cecdb238eead41e42498ca4699885836121c2f105b4df9511` y `styles.css`
-`34b240370a57420412cd9d40da3d7f3d96c4243f902c12e715a25cd7ccfc8a67`. Runs de CI en verde sobre ese
-SHA: `33732841358` (Release), `33732841344` y `33732840955`. El gate local antes de etiquetar dio
-`check` 22/22, `test` 18/18, 2.632 tests en 194 ficheros y `tsc --noEmit` exit 0.
+**La beta pública es la que declara `manifest.json`, publicada como GitHub Release con ese mismo
+tag.** No se repite el número aquí: caduca en cada release y este documento no es quien lo gobierna.
+Para verificar la release vigente:
 
-`0.1.22` añade aviso de drop valioso encendido de serie sin interruptores (cinco canales a la vez:
-toast, notificación del sistema con urgencia critical, sonido embebido, webhook opcional y cola
-durable), señal de venta del saco 36038 sembrada desde datawars2 (tercera salida en el kernel,
-recomendación hold dentro de temporada), y sesiones de farmeo que dejan de invalidarse solo por lo
-que se gasta (ahora dan estimada con banda en lugar de contaminada). La instalación, primera carga
-y actualización dentro de Obsidian, así como la comprobación con datos reales de Guild Wars 2,
-siguen pendientes de QA humana. Una release publicada o un artifact verde de CI no demuestran esos
-flujos.
+```sh
+version="$(node -p "require('./manifest.json').version")"
+gh release view "$version" --json tagName,name,isDraft,assets
+```
+
+El contrato BRAT (`npm run release:brat-verify`, ver más abajo) debe dar `PASS` con los cinco assets
+exactos contra esa salida. El detalle línea a línea de cada release ya cerrada —tag, commit, SHAs de
+los tres ficheros, runs de CI y gate local— vive en el [changelog](CHANGELOG.md) y, para las más
+antiguas, en [`docs/historico/ESTADO-lotes-cerrados.md`](historico/ESTADO-lotes-cerrados.md).
+
+La instalación, primera carga y actualización dentro de Obsidian, así como la comprobación con datos
+reales de Guild Wars 2, siguen pendientes de QA humana salvo que `docs/ESTADO.md` registre lo
+contrario para la release vigente. Una release publicada o un artifact verde de CI no demuestran esos
+flujos por sí solos.
 
 Antes de probar, sigue el onboarding del [README](../README.md), crea una clave con la
 [guía de permisos](API-KEY.md) y conserva a mano el contrato de
@@ -129,8 +124,8 @@ instalación, modo de detección, fase y resultado. No se adjuntan claves, ident
 personaje, rutas absolutas, inventario/snapshots crudos, IndexedDB, notas completas ni logs o capturas
 sin redactar. Usa el [formato de soporte seguro](SUPPORT.md) también para una prueba satisfactoria.
 
-La release `0.1.19` incorpora el journal local H7.13 para preparar esa evidencia, pero publicarlo no
-acredita el piloto. Antes de H7.7 todavía hay que ejecutar el dry run instrumentado en
+El journal local H7.13, ya publicado desde hace varias releases, prepara esa evidencia, pero
+publicarlo no acredita el piloto. Antes de H7.7 todavía hay que ejecutar el dry run instrumentado en
 Linux/Steam/Proton, macOS/CrossOver y Windows beta, revisar la muestra de cada plataforma y confirmar
 que limpiar/desactivar funciona dentro de Obsidian real. El dry run debe incluir además una revisión
 que quede `stale` tras mutación concurrente y tras desactivar/reactivar el mismo perfil, un fallo de
@@ -147,13 +142,13 @@ una confirmación humana: el script no intenta inspeccionar ni abrir Obsidian.
 
 ## Canal BRAT publicado
 
-La release pública `0.1.19` cumple el contrato de BRAT: el tag coincide con `manifest.version` y
+La release pública vigente cumple el contrato de BRAT: el tag coincide con `manifest.version` y
 adjunta `manifest.json`, `main.js` y `styles.css` como assets individuales. El ZIP reproducible puede
-usarse para instalación manual y su SHA-256 es
-`2e816cb9d25a5633645ddfc9c2824677477f9e0aa8f743ab5684a465a9fcbc40`; no sustituye los tres assets
-que descarga BRAT.
+usarse para instalación manual; su SHA-256 exacto es el que reporta `npm run release:package` para
+esa versión y no sustituye los tres assets que descarga BRAT.
 
-Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión `0.1.19`. Antes de
+Para instalarla con BRAT, añade `fodaveg/tyrian-companion` y selecciona la versión publicada más
+reciente (la que declara `manifest.json`). Antes de
 dar por validada una plataforma se debe descargar de nuevo la release publicada, verificar su SHA y
 sus tres assets, instalarla con BRAT en una bóveda desechable y probar una actualización real desde
 una versión anterior. Hasta completar esa evidencia, la formulación correcta es «canal BRAT
