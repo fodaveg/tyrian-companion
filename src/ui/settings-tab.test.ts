@@ -355,6 +355,40 @@ describe('local diagnostics settings', () => {
 	});
 });
 
+// H14.12(c): the plugin never touches `app.json`; it only recommends the exclusion, with the
+// real configured folder interpolated.
+describe('output folder exclusion hint', () => {
+	it('recommends excluding the real Inventory/Positions folder under the configured output folder', () => {
+		const plugin = settingsPlugin();
+		plugin.settings.outputFolder = '02 - Áreas/Guild Wars 2/Tyrian Companion';
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Output folder');
+		if (definition === undefined) throw new Error('Expected the output folder setting.');
+
+		const divs: Array<{ text: string }> = [];
+		const component = {
+			inputEl: { setAttr: () => undefined, removeAttribute: () => undefined },
+			setPlaceholder: () => component,
+			setValue: () => component,
+			onChange: () => component,
+		};
+		const setting = {
+			descEl: {
+				createDiv: () => {
+					const div = { text: '', setAttr: () => undefined, setText: (value: string) => { div.text = value; } };
+					divs.push(div);
+					return div;
+				},
+			},
+			addText: (render: (control: typeof component) => unknown) => { render(component); return setting; },
+		};
+		definition.render(setting as never);
+
+		expect(divs.some((div) => div.text === 'Recommended: add "02 - Áreas/Guild Wars 2/Tyrian Companion/Inventory/Positions" to Obsidian\'s Excluded files.')).toBe(true);
+	});
+});
+
 function settingsPlugin() {
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, language: 'en' as const } as TyrianSettings,

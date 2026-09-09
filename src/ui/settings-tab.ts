@@ -323,6 +323,16 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					const error = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__error' });
 					error.setAttr('role', 'alert');
 					error.setAttr('aria-live', 'polite');
+					// H14.12(c): the plugin never touches Obsidian's own exclusion list (`app.json`);
+					// this is a recommendation the player applies themselves, not a setting the
+					// plugin writes for them.
+					const excludeHint = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__hint' });
+					const refreshExcludeHint = (): void => {
+						excludeHint.setText(this.t('settings.output.excludeHint', {
+							folder: `${this.plugin.settings.outputFolder}/Inventory/Positions`,
+						}));
+					};
+					refreshExcludeHint();
 					// A rejected value is never silently swapped for the default: the field keeps
 					// what the user typed and the previously saved folder stays in effect.
 					const applyOutputFolder = async (outputFolder: string) => {
@@ -333,6 +343,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						}
 						error.setText('');
 						await save({ outputFolder: resolved.value });
+						refreshExcludeHint();
 					};
 					setting.addText((text) => {
 						text
