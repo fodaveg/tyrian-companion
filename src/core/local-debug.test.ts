@@ -268,6 +268,40 @@ describe('LocalDebugLogger and action runner', () => {
 		expect(diagnostics.status()).toMatchObject({ queuedRecords: 0, droppedRecords: 1 });
 	});
 
+	it('counts every accepted error record since load and names the most recent one (H14.5)', async () => {
+		const storage = new MemoryStorage();
+		const diagnostics = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.14', writer: createWriter(storage), now: () => 100 });
+		expect(diagnostics.status()).toMatchObject({ errorsSinceLoad: 0, lastError: null });
+		diagnostics.record({ ...input('warn-only'), level: 'warn' });
+		await diagnostics.flush();
+		expect(diagnostics.status()).toMatchObject({ errorsSinceLoad: 0, lastError: null });
+
+		diagnostics.record({
+			...input('first-error'), level: 'error', component: 'connection', action: 'connection_check', code: 'network_failure',
+		});
+		await diagnostics.flush();
+		expect(diagnostics.status()).toMatchObject({
+			errorsSinceLoad: 1,
+			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure' },
+		});
+
+		diagnostics.record({ ...input('second-error'), level: 'error', component: 'session', action: 'session_start', code: 'timeout' });
+		await diagnostics.flush();
+		expect(diagnostics.status()).toMatchObject({
+			errorsSinceLoad: 2,
+			lastError: { component: 'session', action: 'session_start', code: 'timeout' },
+		});
+	});
+
+	it('counts a record as an error even when the write behind it fails (H14.5)', async () => {
+		const storage = new MemoryStorage();
+		storage.failure = new Error('disk unavailable');
+		const diagnostics = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.14', writer: createWriter(storage) });
+		diagnostics.record({ ...input('write-fails'), level: 'error', component: 'vault', action: 'vault_write', code: 'storage_failure' });
+		await diagnostics.flush();
+		expect(diagnostics.status().errorsSinceLoad).toBe(1);
+	});
+
 	it('preserves action results/errors and records explicit reusable parent correlation', async () => {
 		const storage = new MemoryStorage();
 		const diagnostics = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.14', writer: createWriter(storage), now: () => 100 });
