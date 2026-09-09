@@ -213,6 +213,51 @@ describe('Companion game HUD narrative', () => {
 	);
 });
 
+describe('Companion background refresh visibility (H14.13)', () => {
+	it('pauses the ticking interval the moment the window hides, and repaints once immediately on return', () => {
+		const document = new RetainedFakeDocument();
+		const contentEl = new RetainedFakeElement('div', document);
+		const projection = { refreshEveryMs: 1_000, items: [], errors: [] };
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getConnectionState: () => ({ status: 'connected' as const, accountId: 'account', accountName: 'Account' }),
+			},
+			contentEl, refreshInterval: null, visibilityCleanup: null,
+			headerElapsed: null, checkButton: null, incident: null, incidentMessage: null, incidentMore: null,
+			pendingConfirmationFocusTarget: null,
+			projectStatus: () => projection,
+			refreshDetectionTimeline: () => undefined,
+			refreshPendingConfirmation: () => false,
+			refreshLiveSackCounter: () => undefined,
+			refreshSettlementCountdown: () => undefined,
+			refreshRecoveryOwnerCountdown: () => undefined,
+		});
+		const methods = TyrianCompanionView.prototype as unknown as {
+			scheduleRefresh(this: typeof harness, projection: unknown, retryAt: number | null, at: number): void;
+			registerVisibilityPause(this: typeof harness): void;
+			refreshDynamicStatus(): void;
+		};
+
+		methods.scheduleRefresh.call(harness, projection, null, Date.now());
+		expect(contentEl.scheduledInterval).not.toBeNull();
+		expect(contentEl.intervalSetCount).toBe(1);
+
+		methods.registerVisibilityPause.call(harness);
+		document.setHidden(true);
+		// The tick is torn down the instant the window hides, not on whichever second it was
+		// already due: a background window keeps no timer armed at all.
+		expect(contentEl.scheduledInterval).toBeNull();
+
+		const refreshSpy = vi.spyOn(methods, 'refreshDynamicStatus');
+		document.setHidden(false);
+		expect(refreshSpy).toHaveBeenCalledOnce();
+		// Coming back rearms it immediately, with a fresh paint rather than waiting up to a
+		// second for the next tick.
+		expect(contentEl.scheduledInterval).not.toBeNull();
+		expect(contentEl.intervalSetCount).toBe(2);
+	});
+});
+
 describe('Companion pilot metrics fail-open actions', () => {
 	it.each([
 		['start_proposed', 'idle', 'reviewStart'],
@@ -759,7 +804,24 @@ function pilotWindow() {
 	return { from: '2026-08-20T09:59:00.000Z', to: '2026-08-20T10:00:00.000Z', uncertaintyMs: 60_000 };
 }
 
-class RetainedFakeDocument { activeElement: RetainedFakeElement | null = null }
+class RetainedFakeDocument {
+	activeElement: RetainedFakeElement | null = null;
+	hidden = false;
+	private readonly visibilityListeners: Array<() => void> = [];
+	addEventListener(type: string, listener: () => void): void {
+		if (type === 'visibilitychange') this.visibilityListeners.push(listener);
+	}
+	removeEventListener(type: string, listener: () => void): void {
+		if (type !== 'visibilitychange') return;
+		const index = this.visibilityListeners.indexOf(listener);
+		if (index !== -1) this.visibilityListeners.splice(index, 1);
+	}
+	/** Flips `hidden` and fires every registered listener, the way a real `visibilitychange` would. */
+	setHidden(value: boolean): void {
+		this.hidden = value;
+		for (const listener of [...this.visibilityListeners]) listener();
+	}
+}
 
 class RetainedFakeElement {
 	readonly children: RetainedFakeElement[] = [];
@@ -775,6 +837,7 @@ class RetainedFakeElement {
 		},
 		clearInterval: (_handle: number) => { this.scheduledInterval = null; },
 	};
+	get doc(): RetainedFakeDocument { return this.ownerDocument; }
 	className = '';
 	textContent = '';
 	disabled = false;

@@ -3019,7 +3019,31 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	/** Set the instant a caller marks a repaint due; cleared once `flushRenderViews` has run. */
+	private renderViewsDirty = false;
+	/** True between the first `renderViews()` of a batch and the microtask that flushes it. */
+	private renderViewsFlushScheduled = false;
+
+	/**
+	 * Marks the Companion surface dirty and coalesces every call in the same microtask tick into
+	 * one repaint. A single detection poll chains up to four of these (loot tracker, both
+	 * Halloween callbacks, session state), and `TyrianCompanionView.render()` empties and rebuilds
+	 * the whole panel (`companion-view.ts`'s `surface.empty()`): four synchronous calls used to
+	 * mean four full rebuilds of a screen that only needed to change once.
+	 */
 	private renderViews(): void {
+		this.renderViewsDirty = true;
+		if (this.renderViewsFlushScheduled) return;
+		this.renderViewsFlushScheduled = true;
+		queueMicrotask(() => {
+			this.renderViewsFlushScheduled = false;
+			if (!this.renderViewsDirty) return;
+			this.renderViewsDirty = false;
+			this.flushRenderViews();
+		});
+	}
+
+	private flushRenderViews(): void {
 		this.productActions?.refresh();
 		this.refreshSessionRibbon();
 		for (const leaf of this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)) {

@@ -121,6 +121,8 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 
 export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
+	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
+	private visibilityCleanup: (() => void) | null = null;
 	private headerElapsed: HTMLElement | null = null;
 	private liveSackCount: HTMLElement | null = null;
 	private liveSackRate: HTMLElement | null = null;
@@ -164,6 +166,7 @@ export class TyrianCompanionView extends ItemView {
 
 	async onOpen(): Promise<void> {
 		this.actions.localDebugViewEvent?.('open');
+		this.registerVisibilityPause();
 		this.render();
 	}
 
@@ -175,6 +178,26 @@ export class TyrianCompanionView extends ItemView {
 		this.productShell = null;
 		this.productShellKey = null;
 		this.clearRefresh();
+		this.visibilityCleanup?.();
+		this.visibilityCleanup = null;
+	}
+
+	/**
+	 * Pauses the 1-second background refresh while the window is hidden and repaints once
+	 * immediately on return, instead of ticking a panel nobody can see. `document.hidden`, read
+	 * through `contentEl.doc` for popout-window compatibility, is what `scheduleRefresh` also
+	 * consults on every arm; this listener only reacts to the transition instead of waiting for
+	 * the in-flight tick to notice.
+	 */
+	private registerVisibilityPause(): void {
+		if (this.visibilityCleanup !== null) return;
+		const doc = this.contentEl.doc;
+		const onVisibilityChange = (): void => {
+			if (doc.hidden) { this.clearRefresh(); return; }
+			this.refreshDynamicStatus();
+		};
+		doc.addEventListener('visibilitychange', onVisibilityChange);
+		this.visibilityCleanup = () => { doc.removeEventListener('visibilitychange', onVisibilityChange); };
 	}
 
 	render(): void {
@@ -839,7 +862,10 @@ export class TyrianCompanionView extends ItemView {
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
 		const shouldRefresh = projection.refreshEveryMs !== null || isCoolingDown(retryAt) || this.hasFreshPendingProposal(now);
-		if (!shouldRefresh) {
+		// A hidden window (backgrounded, or a popout tucked behind another) gets no ticking
+		// interval at all: `registerVisibilityPause` rearms it, with an immediate repaint, the
+		// moment `contentEl.doc` reports visible again.
+		if (!shouldRefresh || this.contentEl.doc.hidden) {
 			this.clearRefresh();
 			return;
 		}
