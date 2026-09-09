@@ -51,6 +51,15 @@ export interface SessionNoteInput {
 	/** Closed provenance; callers must never infer an event from loot, text, date, or an id prefix. */
 	eventDeclaration: SessionNoteEventDeclaration | null;
 	displayNames: Record<string, string>;
+	/**
+	 * H14.3: item ids the Halloween evidence pipeline marked first-seen or rare/unpriced/bound.
+	 * Neither reason alerts anymore (`ALWAYS_ALERT_REASONS` in `src/alerts/loot-alert-criteria.ts`);
+	 * the note shows them as information instead, purely descriptive and never gating a permission
+	 * or a classification. Absent ids are simply not shown; an id here that the session did not gain
+	 * is never rendered either, since the renderer only reads names it already has.
+	 */
+	firstSeenItemIds: number[];
+	rareUnpricedOrBoundItemIds: number[];
 	locale: SessionNoteLocale;
 	outputFolder: string;
 }
@@ -75,6 +84,8 @@ export interface PreparedSessionNote {
 	envelope: OptionalEvidence<RecommendationEnvelopeV1>;
 	eventDeclaration: SessionNoteEventDeclaration | null;
 	displayNames: Record<string, string>;
+	firstSeenItemIds: number[];
+	rareUnpricedOrBoundItemIds: number[];
 	locale: SessionNoteLocale;
 	outputFolder: string;
 }
@@ -106,7 +117,8 @@ export function sessionNoteEventDeclarationFromDetectionSummary(
 function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	if (!isRecord(value) || !exactKeys(value, [
 		'runtime', 'valuation', 'reservation', 'hold', 'recommendation', 'envelope',
-		'eventDeclaration', 'displayNames', 'locale', 'outputFolder',
+		'eventDeclaration', 'displayNames', 'firstSeenItemIds', 'rareUnpricedOrBoundItemIds',
+		'locale', 'outputFolder',
 	])) return { status: 'invalid', reason: 'invalid_input' };
 	if (!isSessionRuntimeRecord(value.runtime) || value.runtime.state.status !== 'complete' ||
 		value.runtime.finalSnapshot === null || value.runtime.delta === null || value.runtime.review === null) {
@@ -121,7 +133,8 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	// dividing loot by the longer one understates every rate the note publishes.
 	const playedMs = sessionPlayedDurationMs(runtime.delta, runtime.state.stoppedAt);
 	if (playedMs === null) return { status: 'invalid', reason: 'invalid_runtime' };
-	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames)) {
+	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames) ||
+		!validItemIds(value.firstSeenItemIds) || !validItemIds(value.rareUnpricedOrBoundItemIds)) {
 		return { status: 'invalid', reason: 'invalid_input' };
 	}
 	const eventDeclaration = normalizeEventDeclaration(value.eventDeclaration, runtime);
@@ -148,6 +161,7 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 		note: {
 			runtime: structuredClone(runtime), durationMs, valuation, reservation, hold,
 			recommendation, envelope, eventDeclaration, displayNames: structuredClone(value.displayNames),
+			firstSeenItemIds: [...value.firstSeenItemIds], rareUnpricedOrBoundItemIds: [...value.rareUnpricedOrBoundItemIds],
 			locale: value.locale, outputFolder,
 		},
 	};
@@ -269,6 +283,10 @@ function optional<T>(value: unknown, validator: (candidate: unknown) => candidat
 function validDisplayNames(value: unknown): value is Record<string, string> {
 	return isRecord(value) && Object.entries(value).every(([key, name]) =>
 		/^(?:item|currency):[1-9]\d*$/u.test(key) && typeof name === 'string' && name.length <= 256);
+}
+
+function validItemIds(value: unknown): value is number[] {
+	return Array.isArray(value) && value.every((id) => Number.isSafeInteger(id) && id > 0);
 }
 
 

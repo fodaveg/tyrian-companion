@@ -2121,12 +2121,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/**
 	 * Projects one policy verdict onto the value-free half of the H13.3 OR and emits it.
 	 *
-	 * The always-alert reasons this detector reads (`rare_unpriced_or_bound`, `first_seen`,
-	 * `skin_not_unlocked`, `mini_not_unlocked`) never need a quote to fire, but that does not mean
-	 * the underlying item has none: a bound rare or a first sighting can still carry a real market
-	 * price in its own evidence. `policyAlertPriceOf` carries that price through instead of
-	 * inventing a blank one, so the alert only ever calls an item unquoted once its evidence has
-	 * actually confirmed that.
+	 * The always-alert reasons this detector reads (`skin_not_unlocked`, `mini_not_unlocked`) never
+	 * need a quote to fire, but that does not mean the underlying item has none: an unlockable skin
+	 * or mini can still carry a real market price in its own evidence. `policyAlertPriceOf` carries
+	 * that price through instead of inventing a blank one, so the alert only ever calls an item
+	 * unquoted once its evidence has actually confirmed that.
+	 *
+	 * H14.3 narrowed `ALWAYS_ALERT_REASONS`: `rare_unpriced_or_bound` and `first_seen` no longer
+	 * page the player regardless of value (David, 3 sep: "un solo aviso, sin interruptores"); they
+	 * still travel inside the item's `reasons` and surface as information in the session note
+	 * instead (`firstSeenItemIds`/`rareUnpricedOrBoundItemIds` in `session-note-model.ts`).
 	 */
 	private dispatchPolicyAlert(item: HalloweenAlertItem): void {
 		const alert = decideLootAlert({
@@ -3439,6 +3443,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionNoteInput(runtime: SessionRuntimeRecord): SessionNoteInput {
 		const sessionId = runtime.state.status === 'complete' ? runtime.state.sessionId : '';
 		const economy = this.sessionEconomyFor(runtime);
+		const { firstSeenItemIds, rareUnpricedOrBoundItemIds } = this.sessionHalloweenInfoItemIds(sessionId);
 		return {
 			runtime, valuation: economy.valuation, reservation: economy.reservation, hold: economy.hold,
 			// H4.12 container recommendations have no runtime producer: `recommendContainerDisposition`
@@ -3446,8 +3451,26 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// them measured here would be an invention rather than an omission.
 			recommendation: null, envelope: null,
 			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId)),
-			displayNames: this.liveSessionLoot.displayNames(), locale: this.settings.language, outputFolder: this.settings.outputFolder,
+			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
+			locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
+	}
+
+	/**
+	 * H14.3: `first_seen` and `rare_unpriced_or_bound` no longer alert (`ALWAYS_ALERT_REASONS`);
+	 * the note surfaces them as information instead, read from the Halloween notice this session
+	 * already produced (`episodeId` is `session:<sessionId>`, same key `observeHalloweenDelta`
+	 * writes under). Outside the festival, or without a matching notice, both stay empty.
+	 */
+	private sessionHalloweenInfoItemIds(sessionId: string): { firstSeenItemIds: number[]; rareUnpricedOrBoundItemIds: number[] } {
+		const notice = this.halloween?.getState().notices.find((entry) => entry.episodeId === `session:${sessionId}`);
+		const firstSeenItemIds: number[] = [];
+		const rareUnpricedOrBoundItemIds: number[] = [];
+		for (const item of notice?.items ?? []) {
+			if (item.reasons.some((reason) => reason.code === 'first_seen')) firstSeenItemIds.push(item.itemId);
+			if (item.reasons.some((reason) => reason.code === 'rare_unpriced_or_bound')) rareUnpricedOrBoundItemIds.push(item.itemId);
+		}
+		return { firstSeenItemIds, rareUnpricedOrBoundItemIds };
 	}
 
 	/** Only evidence measured from *this* runtime record may travel with it into the note. */

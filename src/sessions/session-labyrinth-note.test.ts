@@ -210,7 +210,8 @@ function noteInput(session: LabyrinthSession): SessionNoteInput {
 		runtime: session.runtime, valuation: session.economy.valuation,
 		reservation: session.economy.reservation, hold: session.economy.hold,
 		recommendation: null, envelope: null,
-		eventDeclaration: null, displayNames: {}, locale: 'es', outputFolder: 'Tyrian Companion',
+		eventDeclaration: null, displayNames: {}, firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
+		locale: 'es', outputFolder: 'Tyrian Companion',
 	};
 }
 
