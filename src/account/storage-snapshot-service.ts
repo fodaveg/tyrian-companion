@@ -108,8 +108,10 @@ export class StorageSnapshotService {
 		const advisorProgress = scope === 'inventory_advisor' && onProgress !== undefined
 			? createAdvisorProgressReporter(onProgress)
 			: null;
+		const sharedInventoryLastModified: { value: string | null } = { value: null };
 		const first = await this.capturePass(operation, context, scope,
-			advisorProgress?.first ?? onProgress);
+			advisorProgress?.first ?? onProgress,
+			scope === 'complete' ? (value) => { sharedInventoryLastModified.value = value; } : undefined);
 		if (scope === 'inventory_advisor') {
 			if (!advisorPassComplete(first.coverage) || hasIncompleteCoverage(first.coverage)) {
 				if (shouldRetryAdvisorPass(first.coverage)) {
@@ -181,6 +183,28 @@ export class StorageSnapshotService {
 				completedAt: new Date().toISOString(),
 			});
 		}
+		// H14.10: a capture whose only gap sits inside a single character (never an account-wide
+		// source, and never the roster read itself) already gave that character one retry inside
+		// `capturePass`. The GW2 API serves `/v2/account`, `/v2/account/bank` and
+		// `/v2/account/materials` from one shared cached instant, so a matching `last-modified` on
+		// a second, single lightweight request already proves nothing else in the account moved
+		// either: no need to repeat the whole roster and every store just to confirm stability.
+		if (!hasAccountWideCoverageGap(first.coverage)) {
+			const anchorMatched = await this.tryAnchorSkip(operation, sharedInventoryLastModified.value);
+			if (anchorMatched) {
+				return finalizeStorageSnapshot({
+					pass: first,
+					quality: 'stable',
+					coveragePasses: [first],
+					passes: [first],
+				}, {
+					accountId: context.accountId,
+					snapshotId,
+					startedAt,
+					completedAt: new Date().toISOString(),
+				});
+			}
+		}
 		// A transient hole already makes this pass unusable as a session boundary.
 		// Returning it now preserves exact coverage while the single poll scheduler
 		// owns the only retry/backoff; repeating the whole roster here creates bursts.
@@ -235,6 +259,7 @@ export class StorageSnapshotService {
 		context: VerifiedSnapshotContext,
 		scope: StorageSnapshotCaptureScope,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
+		onSharedInventoryLastModified?: (value: string | null) => void,
 	): Promise<StorageSnapshotPass> {
 		const coverage = emptyCoverage(context.permissions, context.urls, scope);
 		const holdings: StorageSnapshotPass['holdings'] = [];
@@ -286,6 +311,7 @@ export class StorageSnapshotService {
 				'account/inventory',
 				(value) => parseSlotArray(value, 'shared_inventory'),
 				true,
+				onSharedInventoryLastModified,
 			).finally(reportAccountStore),
 		];
 		if (coverage.sources.bank.status === 'complete') accountTasks.push(
@@ -331,12 +357,22 @@ export class StorageSnapshotService {
 		const characterTasks = roster.map((character) =>
 			characterLimit(() =>
 				this.globalLimit(async () => {
-					const result = await captureSource(
-						() => operation.requestDetailed(withSchema(`characters/${encodeURIComponent(character)}/inventory`)),
-						(value) => parseCharacterInventory(value, character),
-						true,
-						true,
-					);
+					const path = withSchema(`characters/${encodeURIComponent(character)}/inventory`);
+					const parse = (value: unknown): StorageSnapshotPass['holdings'] =>
+						parseCharacterInventory(value, character);
+					let result = await captureSource(() => operation.requestDetailed(path), parse, true, true);
+					// H14.10: `GW2_CHARACTER_OPERATION_POLICIES` deliberately gives a character
+					// inventory 0 transport-level retries ("capture/scheduler own recovery"). This is
+					// that one patient retry, scoped to the single character that actually timed out
+					// instead of the whole roster — only for the session-boundary capture, never the
+					// Advisor refresh, which already recovers a transient hole with its own second pass.
+					if (
+						scope === 'complete'
+						&& result.coverage.status === 'partial'
+						&& isRetryableCharacterFailure(result.coverage.diagnostic)
+					) {
+						result = await captureSource(() => operation.requestDetailed(path), parse, true, true);
+					}
 					coverage.characters[character] = result.coverage;
 					if (result.value) holdings.push(...result.value);
 				}),
@@ -368,9 +404,15 @@ export class StorageSnapshotService {
 		path: string,
 		parser: (value: unknown) => StorageSnapshotPass['holdings'],
 		forbiddenIsFatal: boolean,
+		/** H14.10: only supplied for `shared_inventory`, the one required store that always
+		 * runs — used as the anchor for the last-modified skip in `captureInternal`. */
+		onLastModified?: (value: string | null) => void,
 	): Promise<void> {
 		const result = await captureSource(
-			() => limit(() => operation.requestDetailed(withSchema(path))),
+			() => limit(() => operation.requestDetailed(withSchema(path))).then((response) => {
+				onLastModified?.(readHeader(response.headers, 'last-modified'));
+				return response;
+			}),
 			parser,
 			false,
 			forbiddenIsFatal,
@@ -414,6 +456,27 @@ export class StorageSnapshotService {
 		if (result.value) {
 			holdings.push(...result.value.holdings);
 			currencies.push(...result.value.currencies);
+		}
+	}
+
+	/**
+	 * H14.10: one lightweight recheck of the shared-inventory endpoint. `null` (no header, or a
+	 * mismatch) always falls back to the existing two/three-pass logic below unchanged; a fixture
+	 * or gateway that never returns `last-modified` behaves exactly as it did before this method
+	 * existed.
+	 */
+	private async tryAnchorSkip(
+		operation: GuildWars2Operation,
+		firstLastModified: string | null,
+	): Promise<boolean> {
+		if (firstLastModified === null) return false;
+		try {
+			const response = await this.globalLimit(() =>
+				operation.requestDetailed(withSchema('account/inventory')));
+			const recheckLastModified = readHeader(response.headers, 'last-modified');
+			return recheckLastModified !== null && recheckLastModified === firstLastModified;
+		} catch {
+			return false;
 		}
 	}
 }
@@ -479,6 +542,35 @@ function hasTransientCoverageFailure(coverage: SnapshotCoverage): boolean {
 			|| entry.diagnostic.status === 429
 			|| (entry.diagnostic.status !== null && entry.diagnostic.status >= 500);
 	});
+}
+
+/**
+ * H14.10: gates the last-modified anchor skip in `captureInternal`. A single character's own
+ * hole (any reason, including a persisted transient one that survived the one retry above) never
+ * counts here: `hasTransientCoverageFailure` below still catches it on the old fallback path when
+ * the anchor is unavailable, exactly as before this method existed. Only a gap in an
+ * account-wide source, or the roster read itself coming back empty, disqualifies the fast path.
+ */
+function hasAccountWideCoverageGap(coverage: SnapshotCoverage): boolean {
+	const rosterFetchFailed = coverage.sources.characters.status === 'partial'
+		&& Object.keys(coverage.characters).length === 0;
+	if (rosterFetchFailed) return true;
+	return (['shared_inventory', 'bank', 'materials', 'wallet', 'commerce_delivery'] as const)
+		.some((source) => coverage.sources[source].status === 'partial');
+}
+
+/** A character-inventory failure worth one immediate retry: never a 429 (shared rate limit,
+ * already the single poll scheduler's job to back off from) or a permanent 403/404. */
+function isRetryableCharacterFailure(diagnostic: SourceCoverage['diagnostic']): boolean {
+	if (diagnostic === undefined) return false;
+	return diagnostic.kind === 'timeout'
+		|| diagnostic.kind === 'network'
+		|| (diagnostic.status !== null && diagnostic.status >= 500);
+}
+
+function readHeader(headers: Readonly<Record<string, string>>, name: string): string | null {
+	const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name);
+	return entry?.[1] ?? null;
 }
 
 function withSchema(path: string): string {

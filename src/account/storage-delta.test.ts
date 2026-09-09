@@ -285,7 +285,13 @@ describe('comparable surfaces', () => {
 		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
 	});
 
-	it('keeps a character hole with any other reason invalidating', () => {
+	/**
+	 * H14.10: `StorageSnapshotService` now gives a transiently-failing character one retry before
+	 * marking it partial, so a hole that survives that retry is as bounded as a 404 — dropping it
+	 * from both projections is exactly what already happened above for `missing_character`. Before
+	 * this fix, any reason other than `missing_character` invalidated the whole delta instead.
+	 */
+	it('keeps the rest of the account when a character is unavailable for a reason other than 404', () => {
 		const unavailable = unobservedCharacterSnapshot({
 			coverage: {
 				...unobservedCharacterSnapshot().coverage,
@@ -302,10 +308,9 @@ describe('comparable surfaces', () => {
 
 		const result = compareStorageSnapshots(twoCharacterSnapshot(), unavailable);
 
-		expect(result.status).toBe('invalid');
-		expect(result.reasons).toEqual(
-			expect.arrayContaining([expect.objectContaining({ code: 'character_coverage_incomplete' })]),
-		);
+		expect(result).toMatchObject({ status: 'limited', itemChanges: [{ id: 100, before: 2, after: 7, delta: 5 }] });
+		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
+		expect(result.itemChanges.map((change) => change.id)).not.toContain(200);
 	});
 
 	it('warns when the roster changes across otherwise complete snapshots', () => {
@@ -345,13 +350,27 @@ describe('runtime invariants', () => {
 		['overlapping window', storageDeltaSnapshot(), afterSnapshot({ startedAt: '2026-08-13T07:00:00.000Z' }), 'overlapping_window'],
 		['partial quality', storageDeltaSnapshot({ quality: 'partial' }), afterSnapshot(), 'unsupported_quality'],
 		['unstable quality', storageDeltaSnapshot(), afterSnapshot({ quality: 'unstable' }), 'unsupported_quality'],
+		// No "character partial" row here anymore (H14.10): a partial character coverage entry is
+		// always an excludable hole now, never an invariant violation — see the
+		// "keeps the rest of the account..." tests above and the one just below. A partial
+		// account-wide `sources` entry (the row above) still invalidates: there is no single
+		// character to drop it onto instead.
 		['core source partial', withSource(storageDeltaSnapshot(), 'bank', { status: 'partial' }), afterSnapshot(), 'core_coverage_incomplete'],
-		['character partial', withCharacter(storageDeltaSnapshot(), { status: 'partial' }), afterSnapshot(), 'character_coverage_incomplete'],
 	])('returns invalid for %s', (_label, before, after, code) => {
 		const result = compareStorageSnapshots(before, after);
 		expect(result.status).toBe('invalid');
 		expect(result.reasons).toEqual(expect.arrayContaining([expect.objectContaining({ code })]));
 		expect(result.itemChanges).toEqual([]);
+	});
+
+	it('H14.10: still compares account-wide holdings when the only roster character is partial', () => {
+		const before = withCharacter(storageDeltaSnapshot(), { status: 'partial', reason: 'unavailable' });
+		const after = afterSnapshot({ holdings: [looseHolding(100, 7, { source: 'bank', slot: 0 })] });
+
+		const result = compareStorageSnapshots(before, after);
+
+		expect(result).toMatchObject({ status: 'limited', itemChanges: [{ id: 100, before: 2, after: 7, delta: 5 }] });
+		expect(result.warnings).toContainEqual({ code: 'character_unobserved' });
 	});
 
 	it('rejects schema mismatch and invalid timestamps', () => {
