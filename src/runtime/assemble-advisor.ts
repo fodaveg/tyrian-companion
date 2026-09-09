@@ -30,6 +30,7 @@ import { IndexedDbInventoryPreferencesStore } from '../advisor/inventory-prefere
 import type { GuildWars2Client } from '../account/guild-wars-2-client';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { createCatalogCacheAdapter } from '../catalog/persistent-catalog-cache';
+import type { CatalogCacheAdapter } from '../catalog/public-catalog-cache';
 import type { GuildWars2PublicCatalogClient } from '../catalog/public-catalog-client';
 import { PublicCatalogService } from '../catalog/public-catalog-service';
 import type { Locale } from '../core/i18n';
@@ -103,6 +104,9 @@ function createInventoryAdvisorRuntime(
 	const { phaseListener, captureProgressListener, writeCaptureReceipt } = input;
 	const { personalValuation, materialStorageCapacity, equipmentSalvagePreferences } = input;
 	let inventoryEvidence: InventoryAdvisorEvidenceService | null = null;
+	/** Set alongside `inventoryEvidence`, the moment its catalog cache opens; the `dispose` port
+	 * below closes it directly, since `inventoryEvidence` only exposes the catalog's `resolve`. */
+	let inventoryCatalogCache: CatalogCacheAdapter | null = null;
 	let latestCaptureReceipt: InventoryAdvisorCaptureReceiptV1 | null = null;
 	let workflowStartedAt = 0;
 	let workflowStage: 'capture' | 'preferences' | 'classification' = 'capture';
@@ -134,6 +138,7 @@ function createInventoryAdvisorRuntime(
 		capture: { capture: async (captureLocale, expectedPriceItemIds, _onProgress, actionContext) => {
 			if (inventoryEvidence === null) {
 				const catalogCache = await createCatalogCacheAdapter({ diagnostics: input.catalogPersistence });
+				inventoryCatalogCache = catalogCache;
 				inventoryEvidence = new InventoryAdvisorEvidenceService(
 					client, snapshots, new PublicCatalogService(publicClient, catalogCache), publicClient,
 					Date.now, async (receipt) => {
@@ -183,6 +188,7 @@ function createInventoryAdvisorRuntime(
 		},
 		reclassify: (parent) => inventoryWorkflow.reclassify(parent),
 		invalidate: () => inventoryWorkflow.invalidate(),
+		dispose: () => { inventoryCatalogCache?.dispose(); inventoryCatalogCache = null; },
 	});
 }
 

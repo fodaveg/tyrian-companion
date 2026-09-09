@@ -16,6 +16,8 @@ export interface LocalDebugLoggerOptions {
 	now?: () => number;
 	queueCapacity?: number;
 	minimumLevel?: LocalDebugLevel;
+	/** H14.21: read fresh per record and per export, since the adapter can answer null early. */
+	vaultBasePath?: () => string | null;
 }
 
 /** Fail-open local diagnostic boundary with a bounded serial queue and visible health status. */
@@ -24,6 +26,7 @@ export class LocalDebugLogger {
 	private readonly writer: LocalDebugJsonlWriter;
 	private readonly now: () => number;
 	private readonly queueCapacity: number;
+	private readonly vaultBasePath: () => string | null;
 	private enabled: boolean;
 	private minimumLevel: LocalDebugLevel;
 	private chain: Promise<void> = Promise.resolve();
@@ -45,6 +48,7 @@ export class LocalDebugLogger {
 		this.now = options.now ?? Date.now;
 		this.queueCapacity = positiveInteger(options.queueCapacity ?? LOCAL_DEBUG_QUEUE_CAPACITY, 'queueCapacity');
 		this.minimumLevel = options.minimumLevel ?? 'debug';
+		this.vaultBasePath = options.vaultBasePath ?? (() => null);
 		this.runtimeState = this.enabled ? 'ready' : 'disabled';
 	}
 
@@ -75,6 +79,7 @@ export class LocalDebugLogger {
 					timestampMs,
 					sequence: this.sequence,
 					pluginVersion: this.pluginVersion,
+					vaultBasePath: this.vaultBasePath(),
 				});
 				// Counted here, before the append below can throw: the failure the record describes
 				// already happened in the product, whether or not this line ever reaches disk.
@@ -118,11 +123,12 @@ export class LocalDebugLogger {
 		await this.flush();
 		try {
 			const output: string[] = [];
+			const vaultBasePath = this.vaultBasePath();
 			for (const content of await this.writer.readAll()) {
 				for (const line of content.split('\n')) {
 					if (line.length === 0) continue;
 					try {
-						const sanitized = resanitizeLocalDebugRecord(JSON.parse(line));
+						const sanitized = resanitizeLocalDebugRecord(JSON.parse(line), vaultBasePath);
 						if (sanitized !== null) output.push(JSON.stringify(sanitized));
 					} catch {
 						this.errorCode = 'corrupt_tail_recovered';

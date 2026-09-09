@@ -171,6 +171,23 @@ describe('ManagedAssetsLifecycle', () => {
 		expect(await pointer.read()).toMatchObject({ status: 'ready', root: 'Other' });
 	});
 
+	// H14.9: `finishLifecycleSpan` names the specific conflict in `details.message`, not just the
+	// bare `managed_assets_conflict` every one of the 11 distinct causes used to share.
+	it('names the specific conflict cause in the failure diagnostic, not a bare generic message', async () => {
+		const diagnostics = diagnosticHarness();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const manager = new ExactLegacyManager('Legacy');
+		await new ManagedAssetsLifecycle(manager, pointer, diagnostics).install('Other');
+		diagnostics.events.length = 0;
+
+		await new ManagedAssetsLifecycle(manager, pointer, diagnostics).remove('Legacy');
+
+		const failure = diagnostics.events.at(-1);
+		expect(failure).toMatchObject({ phase: 'failure', code: 'validation_failed' });
+		expect(typeof (failure?.details as { message?: unknown } | undefined)?.message).toBe('string');
+		expect((failure?.details as { message: string }).message.length).toBeGreaterThan(0);
+	});
+
 	it('rejects a detached legacy Remove retry when its pointer changes during inspection', async () => {
 		const pointer = new MemoryManagedAssetsPointerStore();
 		const manager = new BlockingDetachedLegacyManager('Legacy');

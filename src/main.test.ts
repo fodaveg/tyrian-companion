@@ -1196,9 +1196,12 @@ describe('deferred runtime boot guard', () => {
 			'open-companion', 'open-inventory-advisor', 'refresh-inventory-advisor',
 			'arm-assisted-detection', 'disarm-assisted-detection',
 		]));
+		// H14.9: both states read `unattributed_origin` now, not `window_error`/`unhandled_rejection`;
+		// the sanitized path leaves nothing behind either listener could attribute a failure to,
+		// so `state` says that plainly, and `details.origin` is the only place the two still differ.
 		expect(globalEvent.mock.calls.map(([context]) => context)).toEqual(expect.arrayContaining([
-			expect.objectContaining({ action: 'global_error', state: 'window_error' }),
-			expect.objectContaining({ action: 'global_error', state: 'unhandled_rejection' }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'window_error' } }),
+			expect.objectContaining({ action: 'global_error', state: 'unattributed_origin', details: { origin: 'unhandled_rejection' } }),
 		]));
 
 		// Session start/stop route through `SessionCommandController`, whose context is

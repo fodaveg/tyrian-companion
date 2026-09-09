@@ -571,7 +571,12 @@ interface FakeOptions {
 	readonly attr?: Record<string, string>;
 }
 
-class FakeDocument { activeElement: FakeElement | null = null }
+class FakeDocument {
+	activeElement: FakeElement | null = null;
+	hidden = false;
+	addEventListener(_type: string, _listener: () => void): void { /* no test here exercises visibilitychange */ }
+	removeEventListener(_type: string, _listener: () => void): void { /* symmetric no-op */ }
+}
 
 class FakeElement {
 	readonly children: FakeElement[] = [];
@@ -581,6 +586,7 @@ class FakeElement {
 		setInterval: (callback: () => void, _delay: number) => { this.scheduledInterval = callback; return 1; },
 		clearInterval: (_handle: number) => { this.scheduledInterval = null; },
 	};
+	get doc(): FakeDocument { return this.ownerDocument; }
 	scheduledInterval: (() => void) | null = null;
 	className = '';
 	textContent = '';

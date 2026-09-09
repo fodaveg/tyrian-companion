@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { isCatalogResolution } from '../advisor/inventory-advisor-contract';
@@ -65,6 +65,13 @@ function snapshotWithItems(ids: number[]): StorageSnapshot {
 }
 
 describe('PublicCatalogService', () => {
+	// H14.14: `main.ts` held three of these across the plugin's life and closed none of them.
+	it('forwards dispose() to the underlying cache', () => {
+		const cache = { get: vi.fn(), set: vi.fn(), dispose: vi.fn() };
+		new PublicCatalogService(gateway(() => http(200, [])), cache, () => NOW).dispose();
+		expect(cache.dispose).toHaveBeenCalledOnce();
+	});
+
 	it('keeps a real API item without description inside the strict JSON-safe catalog contract', async () => {
 		const api = gateway((path) => {
 			const payloads = idsFrom(path).map(itemPayload);

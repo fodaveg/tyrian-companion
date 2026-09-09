@@ -291,6 +291,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Deferred so the catalog database is only opened when a session actually has to be valued. */
 	private sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null = null;
 	private sessionCatalog: PublicCatalogService | null = null;
+	/** The catalog `previewInventorySync`'s memoized capture service resolves through; disposed alongside it. */
+	private inventoryVaultCaptureCatalog: PublicCatalogService | null = null;
 	/** Vault path of the note written for the session on screen; the only handle the view can open. */
 	private savedSessionNotePath: string | null = null;
 	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
@@ -397,6 +399,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.addSettingTab(this.settingTab);
 		this.setupSessionCommands();
 		this.setupProductActions();
+		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
+		// `unhandled_rejection`: those names described which browser event fired, which reads
+		// as attribution but is not one. The sanitizer already redacts any absolute path in
+		// `message` (`local-debug-sanitizer.ts`), so by the time either handler runs there is no
+		// path left pointing at which module actually threw; `details.origin` keeps the one fact
+		// that survives, which listener caught it, without implying more than that.
 		this.registerDomEvent(window, 'error', (event) => {
 			let failure: unknown = event;
 			if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
@@ -405,7 +413,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
-				code: 'unknown_failure', state: 'window_error', message: failure,
+				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
+				details: { origin: 'window_error' },
 			});
 		});
 		this.registerDomEvent(window, 'unhandledrejection', (event) => {
@@ -415,7 +424,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
-				code: 'unknown_failure', state: 'unhandled_rejection', message: failure,
+				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
+				details: { origin: 'unhandled_rejection' },
 			});
 		});
 		this.registerDomEvent(window, 'online', () => {
@@ -480,6 +490,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			enabled: this.settings.debugLoggingEnabled,
 			minimumLevel: this.settings.debugLoggingLevel,
 			pluginVersion: this.manifest.version,
+			// H14.21: a desktop-only optional method (mobile's adapter has no filesystem base
+			// path), read lazily so it always reflects the vault actually open, not one cached
+			// at construction.
+			vaultBasePath: () => (adapter as unknown as { getBasePath?: () => string }).getBasePath?.() ?? null,
 			writer: new LocalDebugJsonlWriter({
 				storage,
 				directory: localDebugDirectory(this.app.vault.configDir),
@@ -726,10 +740,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let inventoryVaultCapture: InventoryVaultCaptureService | null = null;
 		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
 			if (inventoryVaultCapture === null) {
+				const catalog = new PublicCatalogService(
+					inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+				);
+				this.inventoryVaultCaptureCatalog = catalog;
 				inventoryVaultCapture = new InventoryVaultCaptureService(
 					inventoryClient,
 					inventorySnapshots,
-					new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics })),
+					catalog,
 					inventoryPublicClient,
 				);
 			}
@@ -991,6 +1009,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		try {
 		const pilotProposalClosure = this.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
+		this.productActions?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
 		this.inventoryVaultSyncRun?.dispose();
@@ -1002,7 +1021,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
 		this.alertQueue?.dispose();
-		void this.alertIngameServer?.close();
+		this.sessionCatalog?.dispose();
+		this.sessionCatalog = null;
+		this.inventoryVaultCaptureCatalog?.dispose();
+		this.inventoryVaultCaptureCatalog = null;
+		// Awaited, not fire-and-forget: `dispose`'s own promise is already what `onunload` hands
+		// `localDebugShutdown` (see below), so this rides that same wait for free. A reload with
+		// the in-game channel enabled builds a fresh plugin instance right after this one's
+		// `onunload`; without waiting here, that instance's first bind could still race the old
+		// socket's actual release and land in the port-occupied retry table.
+		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
 		this.startModal?.close();
 		this.reviewModal?.close();
@@ -3042,7 +3070,31 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	/** Set the instant a caller marks a repaint due; cleared once `flushRenderViews` has run. */
+	private renderViewsDirty = false;
+	/** True between the first `renderViews()` of a batch and the microtask that flushes it. */
+	private renderViewsFlushScheduled = false;
+
+	/**
+	 * Marks the Companion surface dirty and coalesces every call in the same microtask tick into
+	 * one repaint. A single detection poll chains up to four of these (loot tracker, both
+	 * Halloween callbacks, session state), and `TyrianCompanionView.render()` empties and rebuilds
+	 * the whole panel (`companion-view.ts`'s `surface.empty()`): four synchronous calls used to
+	 * mean four full rebuilds of a screen that only needed to change once.
+	 */
 	private renderViews(): void {
+		this.renderViewsDirty = true;
+		if (this.renderViewsFlushScheduled) return;
+		this.renderViewsFlushScheduled = true;
+		queueMicrotask(() => {
+			this.renderViewsFlushScheduled = false;
+			if (!this.renderViewsDirty) return;
+			this.renderViewsDirty = false;
+			this.flushRenderViews();
+		});
+	}
+
+	private flushRenderViews(): void {
 		this.productActions?.refresh();
 		this.refreshSessionRibbon();
 		for (const leaf of this.app.workspace.getLeavesOfType(COMPANION_VIEW_TYPE)) {

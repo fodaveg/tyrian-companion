@@ -273,6 +273,17 @@ describe('H5.11 inventory advisor presentation controller', () => {
 		expect(ports.load).toHaveBeenCalledOnce();
 	});
 
+	// H14.14: the integration's own catalog cache (`assemble-advisor.ts`'s `inventoryCatalogCache`)
+	// had no path to close at all; `dispose()` is where that path now runs.
+	it('forwards dispose() to the ports, once, even across repeated calls', () => {
+		const dispose = vi.fn();
+		const ports = { load: vi.fn(), dispose } satisfies InventoryAdvisorControllerPorts;
+		const controller = new InventoryAdvisorPresentationController(ports);
+		controller.dispose();
+		controller.dispose();
+		expect(dispose).toHaveBeenCalledOnce();
+	});
+
 	it('answers open and current from memory in every state without touching a single port', async () => {
 		const ports = {
 			load: vi.fn(async () => sourceNamed('Cached')),

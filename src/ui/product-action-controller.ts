@@ -216,6 +216,15 @@ export class ProductActionController {
 		};
 	}
 
+	/**
+	 * Defense in depth alongside the last `subscribe()` unsubscribe above: a plugin unload does
+	 * not wait for every view's own teardown to run first, so `shutdownRuntime` calls this
+	 * directly instead of trusting that every listener already left.
+	 */
+	dispose(): void {
+		this.clearCooldownTimer();
+	}
+
 	async run(id: ProductActionId): Promise<ProductActionOutcome> {
 		if (!this.describe(id).available || this.running.has(id)) return 'unavailable';
 		this.running.add(id);

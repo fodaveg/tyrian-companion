@@ -2,7 +2,7 @@
 // and without it the durable queue silently reports every write as failed.
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
-import { Socket } from 'node:net';
+import { createServer, Socket } from 'node:net';
 import { TFile, type App, type PluginManifest } from 'obsidian';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -178,8 +178,15 @@ describe('H13.4 alert channel cabling', () => {
 		await plugin.initializeRuntime();
 		expect(server()).toBeNull();
 
+		// `updateSettings` sends the port through the same sanitizer the plugin loads settings
+		// with (`alertIngamePortValue`), and that sanitizer discards `0` back to the default
+		// port, 47823, rather than treating it as "let the OS pick one" the way `net.createServer`
+		// does. Asking for a real free port here, and passing that concrete number through,
+		// is what a caller outside this test suite (the settings tab) would have to do too:
+		// there is no "ephemeral" spelling this setting accepts.
+		const port = await freeLoopbackPort();
 		try {
-			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: 0 });
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
 			// No `emitAlert` call anywhere above: this is the whole point of the fix. The old
 			// behaviour only opened the listener from inside `deliver`, so the addon had nothing
 			// to connect to until the first alert, and that alert then found `clientCount() === 0`
@@ -271,6 +278,29 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 	vi.stubGlobal('navigator', { onLine: true });
 
 	return target;
+}
+
+/**
+ * Binds an OS-assigned loopback port, reads it back, and closes the probe immediately: the
+ * concrete number is then free to reopen under the plugin's own server. A narrow race (something
+ * else grabs the port between the close and the plugin's `.listen()`) is possible in principle,
+ * the same way it would be for any caller of this setting; it has not been observed in practice.
+ */
+function freeLoopbackPort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const probe = createServer();
+		probe.once('error', reject);
+		probe.listen(0, '127.0.0.1', () => {
+			const address = probe.address();
+			probe.close(() => {
+				if (address === null || typeof address === 'string') {
+					reject(new Error('unreachable: the loopback probe did not bind to an address.'));
+					return;
+				}
+				resolve(address.port);
+			});
+		});
+	});
 }
 
 /** A real loopback client, the same way the Nexus addon connects: proves the port actually listens. */

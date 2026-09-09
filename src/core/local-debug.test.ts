@@ -19,11 +19,15 @@ class MemoryStorage implements LocalDebugStoragePort {
 	readonly files = new Map<string, string>();
 	readonly directories = new Set<string>();
 	readonly writeCalls: string[] = [];
+	existsCalls = 0;
 	appendGate: Promise<void> | null = null;
 	failure: Error | null = null;
 
 	/** Reports whether a test file or directory exists. */
-	async exists(path: string): Promise<boolean> { return this.files.has(path) || this.directories.has(path); }
+	async exists(path: string): Promise<boolean> {
+		this.existsCalls += 1;
+		return this.files.has(path) || this.directories.has(path);
+	}
 
 	/** Reads a test file or raises the injected failure. */
 	async read(path: string): Promise<string> { this.raise(); return this.files.get(path) ?? ''; }
@@ -209,6 +213,21 @@ describe('LocalDebugJsonlWriter', () => {
 		await diagnostics.flush();
 		const lines = storage.files.get(`${directory}/debug.jsonl`)?.trim().split('\n') ?? [];
 		expect(lines.map(parseRecord).map((record) => record.sequence)).toEqual([41, 42]);
+	});
+
+	// H14.9: every append used to round-trip `storage.exists()` to learn whether the active file
+	// already had a first line, a fact the writer already tracks in `fileBytes[0]`.
+	it('never calls exists() again after the first append settles whether the active file has content', async () => {
+		const storage = new MemoryStorage();
+		const writer = createWriter(storage, 10_000);
+		await writer.appendRecord(baseRecord(1));
+		const callsAfterFirst = storage.existsCalls;
+
+		for (let sequence = 2; sequence <= 10; sequence += 1) await writer.appendRecord(baseRecord(sequence));
+
+		expect(storage.existsCalls).toBe(callsAfterFirst);
+		const lines = storage.files.get(`${TEST_LOG_DIRECTORY}/debug.jsonl`)?.trim().split('\n') ?? [];
+		expect(lines).toHaveLength(10);
 	});
 
 	it('clears only after an explicit call', async () => {
