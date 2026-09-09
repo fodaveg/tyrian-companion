@@ -675,9 +675,10 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
-	// H13.6 wiring: the service is the caller that turns the human answers into a classification,
-	// so the opening rule has to hold here and not only inside the kernel.
-	it('persists a declared opening as an estimated completed session that may still be valued', async () => {
+	// H13.6/H14.1 wiring: the service is the caller that turns the human answers into a
+	// classification, so the opening rule has to hold here and not only inside the kernel. A bare
+	// "open" declaration with no other evidence of external activity keeps the session exact/high.
+	it('persists a declared opening as an exact completed session with every permission granted', async () => {
 		const service = new ManualSessionStartService(
 			coordinator(),
 			{
@@ -697,9 +698,9 @@ describe('ManualSessionStartService', () => {
 			status: 'finalized',
 			review: {
 				declaration: { status: 'activities', activities: ['open'] },
-				classification: { status: 'estimated', permissions: { valueNet: true } },
+				classification: { status: 'exact', permissions: { valueNet: true, grossPerHour: true, recommend: true } },
 			},
-			state: { status: 'complete', classification: 'estimated' },
+			state: { status: 'complete', classification: 'exact' },
 		});
 		expect(result.status === 'finalized' ? result.review.classification.reasons : null)
 			.toContainEqual({ code: 'open_activity_declared' });

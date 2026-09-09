@@ -127,22 +127,23 @@ describe('H13.6 · the 2026-09-03 farming session', () => {
 		expect(economy).toContain('Atribución: Parcialmente atribuible');
 	});
 
-	// The distinction the ticket asks to preserve: gold leaving the wallet is a purchase, and a
-	// purchase can inject loot the session never farmed. Same evidence, opposite verdict.
-	it('still contaminates the very same session when the gold went DOWN', () => {
+	// H14.1: gold leaving the wallet is an NPC purchase already netted out of «Moneda neta», so it
+	// never contaminates or even degrades the session on its own — the same fixture stays
+	// `estimated` here only because of the unrelated non-curated item losses, exactly as above.
+	it('keeps the same session estimated, never contaminated, when the gold went DOWN', () => {
 		const { review } = realSession({ coinDelta: -12_000 });
 
-		expect(review.classification.status).toBe('contaminated');
+		expect(review.classification.status).toBe('estimated');
 		expect(review.classification.reasons).toContainEqual({ code: 'wallet_decreased' });
-		expect(review.classification.permissions).toMatchObject({ valueNet: false, grossPerHour: false });
+		expect(review.classification.permissions).toMatchObject({ valueNet: true, grossPerHour: false });
 	});
 
-	it('withholds the note economy again when the gold went down', async () => {
+	it('still publishes the note economy when the gold went down', async () => {
 		const note = await renderedNote(realSession({ coinDelta: -12_000 }));
 
-		expect(note.frontmatter.tc_classification).toBe('contaminated');
-		expect(note.frontmatter.tc_observed_immediate_copper).toBeNull();
-		expect(note.content).toContain('La actividad externa impide atribuir valor');
+		expect(note.frontmatter.tc_classification).toBe('estimated');
+		expect(note.frontmatter.tc_observed_immediate_copper).toBeTypeOf('number');
+		expect(note.content).not.toContain('La actividad externa impide atribuir valor');
 	});
 });
 

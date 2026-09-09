@@ -53,6 +53,28 @@ se empieza, y proponerlo de nuevo exige que David lo reabra.
 eliminarla junto con la instrumentación de piloto que mide su precisión. La vía es cablear y
 verificar, nunca amputar superficie.
 
+## Decisiones de rumbo del 2026-09-08
+
+Regla firmada por David el 2026-09-08 sobre los códigos de clasificación de `src/account/contamination.ts` (H14.1). Nace de una sesión real del Laberinto del Rey Loco (7 sep 2026, 1 h 55 min, 12g 25s) que salía con 101 de 122 filas «Oculto por fiabilidad» y sin tasa por hora, pese a que abrir sacos y gastar llaves es la sesión que el producto mide, no una contaminación de ella.
+
+**NO degradan** (la sesión sigue `exact`/`high` y `recommend: true`):
+
+- `consumable_currency_spent`: gastar llaves, viales, magia o similares.
+- `item_losses_observed` cuando lo perdido son contenedores o consumibles (tipo de catálogo `Container` o `Consumable`, o un id de la lista curada de sacos/llaves de Halloween, `36038` incluido): abrir sacos es la sesión, no una contaminación.
+- `open_activity_declared` / `declaration_not_clean` cuando la actividad declarada es abrir sacos.
+- `wallet_increased_ambiguous` si NO hay `tp_sell_observed` ni `delivery_coins_changed`: el oro que sube durante la sesión es botín.
+- `wallet_decreased` (compras a NPC): no degrada; se resta en «Moneda neta» como ya se hacía.
+
+**SÍ degradan a `estimated`**:
+
+- `tp_sell_observed`, `tp_buy_observed`, `delivery_items_changed`, `delivery_coins_changed`: cualquier movimiento del bazar durante la sesión.
+- `roster_changed`: crear, borrar o cambiar de personaje.
+- `item_losses_observed` de objetos que NO son contenedores ni consumibles (equipo vendido, salvado o destruido).
+
+**Siguen invalidando como antes** (técnicos, no de conducta): `invalid_snapshot`, `invalid_window`, `overlapping_window`, `snapshot_id_reused`, `delta_invalid`, `delta_arithmetic_invalid`, `classification_context_invalid`.
+
+El único motivo que sigue contaminando por completo (`contaminated`, `recommend: false`) es declarar una actividad externa que el delta no puede atribuir por sí mismo (`salvage`, `consume`, `craft`, `tp`, `vendor`, `transfer`, `other`); la evidencia que el delta o el historial del bazar SÍ pueden medir directamente (venta/compra en el bazar, cambio de plantilla de personajes) solo la degrada a banda. La nota publica siempre la tasa por hora como banda, junto a la cifra exacta cuando la clasificación lo permite, la recomendación con su nivel de confianza y un motivo por viñeta.
+
 ## Alcance de v1
 
 La primera versión de producto incluye:

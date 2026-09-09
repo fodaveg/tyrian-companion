@@ -55,9 +55,11 @@ describe('session contamination review', () => {
 		});
 	});
 
-	// H13.6: the review is the caller of the classifier, so the opening rule is asserted on the
-	// review it actually produces, not on the kernel in isolation.
-	it('maps open to a declared open activity that estimates the session instead of contaminating it', () => {
+	// H13.6/H14.1: the review is the caller of the classifier, so the opening rule is asserted on
+	// the review it actually produces, not on the kernel in isolation. Opening containers never
+	// contaminates, and — with no other evidence of external activity — it does not even degrade
+	// the session below exact/high.
+	it('maps open to a declared open activity that keeps the session exact instead of contaminating it', () => {
 		const { before, after, delta } = fixtures();
 		const input = answers();
 		input.activities.open = true;
@@ -66,12 +68,12 @@ describe('session contamination review', () => {
 		expect(review).toMatchObject({
 			declaration: { status: 'activities', activities: ['open'] },
 			classification: {
-				status: 'estimated',
-				permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
+				status: 'exact',
+				permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: true },
 			},
 		});
 		expect(review?.classification.reasons).toContainEqual({ code: 'open_activity_declared' });
-		expect(review?.classification.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		expect(review?.classification.reviewRequests).toEqual([]);
 	});
 
 	it('deduplicates buy and sell within each declared activity family', () => {

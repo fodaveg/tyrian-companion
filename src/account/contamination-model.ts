@@ -116,7 +116,6 @@ export type SessionClassificationReasonCode =
 	| 'activity_declared'
 	| 'open_activity_declared'
 	| 'item_losses_observed'
-	| 'clean_declaration_conflicts_with_evidence'
 	| 'delta_limited'
 	| 'boundary_not_manually_confirmed'
 	| 'api_settlement_window_skipped'
