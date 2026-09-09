@@ -18,7 +18,13 @@ import type { SessionState } from '../sessions/session';
 describe('Companion Halloween alert surface', () => {
 	it('renders the unread notice and acknowledges it from the mounted panel', async () => {
 		const acknowledgeHalloweenNotice = vi.fn(async () => true);
-		const { contentEl, render } = mountCompanion({ acknowledgeHalloweenNotice, getHalloweenState: () => unreadHalloweenState() });
+		const { contentEl, render } = mountCompanion({
+			acknowledgeHalloweenNotice, getHalloweenState: () => unreadHalloweenState(),
+			// The notice is observed 2026-08-31, outside the calendar window: the Labyrinth override
+			// keeps this surface test about acknowledging from the mounted panel, not about H14.3's
+			// season gate (covered on its own in halloween-alert-panel.test.ts).
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-08-31T13:00:00.000Z'), inLabyrinth: true, sessionStartAt: null }),
+		});
 
 		render();
 
@@ -518,7 +524,7 @@ function unreadHalloweenState() {
 		version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
 		observedAt: '2026-08-31T12:00:00.000Z', source: 'assisted_poll', wording: 'observed_change',
 		coverage: 'complete', acknowledgedAt: null,
-		items: [{ itemId: 36_038, quantity: 4, name: 'Saco de truco o trato', netUnitCopper: null, priceStatus: 'no_quote',
+		items: [{ itemId: 36_038, quantity: 4, name: 'Saco de Halloween', netUnitCopper: null, priceStatus: 'no_quote',
 			reasons: [{ code: 'first_seen' }] }],
 	};
 	return { status: 'unread' as const, notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null };

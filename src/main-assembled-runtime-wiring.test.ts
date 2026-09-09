@@ -132,7 +132,7 @@ describe('H13.10 Halloween price alert cabling', () => {
 			kind: 'sell_signal',
 			itemId: HALLOWEEN_PRICE_ALERT_ITEM_ID,
 			quantity: 1,
-			name: 'Bolsa de truco o trato',
+			name: 'Saco de Halloween',
 			reason: 'bid_above_reference',
 		});
 	});
@@ -175,7 +175,7 @@ function readDaily(today: number, capturedAtMs = CROSSING_NOW): { readDaily: () 
 
 function seedCatalog(): void {
 	publicApi.items.set(HALLOWEEN_PRICE_ALERT_ITEM_ID, {
-		id: HALLOWEEN_PRICE_ALERT_ITEM_ID, name: 'Bolsa de truco o trato',
+		id: HALLOWEEN_PRICE_ALERT_ITEM_ID, name: 'Saco de Halloween',
 	});
 	publicApi.prices.set(HALLOWEEN_PRICE_ALERT_ITEM_ID, {
 		id: HALLOWEEN_PRICE_ALERT_ITEM_ID,

@@ -10,14 +10,16 @@ import type { HalloweenAlertItem } from '../halloween/halloween-model';
  * per UNIT and stays where it is. Folding them into one number would have made
  * the alert fire on quantity alone for cheap stacks.
  *
- * The "always alert" half never looks at money at all: a bound rare, an item
- * seen for the first time and an unclaimed skin or mini are worth interrupting
- * a run for whatever the trading post says, and two of them have no quote by
- * construction.
+ * H14.3 narrows the "always alert" half on purpose: `rare_unpriced_or_bound` and
+ * `first_seen` used to fire regardless of value, which meant every first sighting
+ * and every bound rare interrupted a run no matter how cheap it was. David's call
+ * (3 sep: "un solo aviso, sin interruptores") leaves only the two unlock reasons
+ * here; a bound rare or a first-seen item now alerts exactly when its value
+ * clears `valuableLootThresholdCopper`, same as anything else. The two dropped
+ * reasons are not lost, they still travel inside `HalloweenAlertItem.reasons` and
+ * surface as information the session note can show without paging the player.
  */
 export const ALWAYS_ALERT_REASONS = [
-	'rare_unpriced_or_bound',
-	'first_seen',
 	'skin_not_unlocked',
 	'mini_not_unlocked',
 ] as const;

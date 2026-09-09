@@ -44,7 +44,7 @@ interface AlertWiringHarness {
 }
 
 const VALUABLE: AlertV1 = {
-	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa de truco o trato', quantity: 3,
+	kind: 'valuable_loot', itemId: 36_038, name: 'Saco de Halloween', quantity: 3,
 	totalCopper: 120_000, priceStatus: 'known', reason: 'valuable',
 };
 
@@ -114,7 +114,7 @@ describe('H13.4 alert channel cabling', () => {
 			.toEqual(['ingame', 'queue', 'sound', 'system_notification', 'toast', 'webhook']);
 		expect(banners).toHaveLength(1);
 		expect(banners[0]?.title).toBe('Hallazgo valioso');
-		expect(banners[0]?.options.body).toContain('Bolsa de truco o trato');
+		expect(banners[0]?.options.body).toContain('Saco de Halloween');
 		expect(audioContexts).toHaveLength(1);
 		await vi.waitFor(() => {
 			expect(plugin.getEmittedAlerts()).toHaveLength(1);

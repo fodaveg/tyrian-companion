@@ -1,8 +1,26 @@
 import { ALERT_LATENCY_MINUTES } from '../alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
+import { HALLOWEEN_SEASONAL_WINDOW } from '../economy/models/halloween-season';
+import { seasonalWindowStatusAtMs } from '../economy/seasonal-window';
 import type { HalloweenAlertReason, HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenRuntimeState } from '../halloween/halloween-runtime';
 import type { HalloweenPriceAlertRuntimeState } from '../halloween/halloween-price-alert-runtime';
+
+/** A notice older than this, or observed before the session on screen began, no longer forces the panel open. */
+const NOTICE_STALE_AFTER_MS = 24 * 60 * 60_000;
+
+/**
+ * Whether the panel may call itself "Halloween" right now: the festival calendar (H13.7's shared
+ * window, not a second copy of its dates) or an active Labyrinth (map 866) run, where the festival
+ * is plainly live even outside the widened window. Absent both, the panel is a generic loot/aviso
+ * surface and must not borrow a name that is not currently true.
+ */
+export interface HalloweenPanelContext {
+	nowMs: number;
+	inLabyrinth: boolean;
+	/** ISO-8601 start of the session on screen, or null with no session running. */
+	sessionStartAt: string | null;
+}
 
 export interface HalloweenAlertPanelActions {
 	getHalloweenState(): HalloweenRuntimeState;
@@ -11,6 +29,8 @@ export interface HalloweenAlertPanelActions {
 	acknowledgeHalloweenPriceNotice(noticeId: string): Promise<boolean>;
 	/** Durable copy of every alert emitted for this account, newest first. */
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
+	/** Absent defaults to the wall clock, no Labyrinth and no running session. */
+	getHalloweenPanelContext?(): HalloweenPanelContext;
 }
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
@@ -23,18 +43,28 @@ export function renderHalloweenAlertPanel(
 ): void {
 	const state = actions.getHalloweenState();
 	const priceState = actions.getHalloweenPriceAlertState();
-	const requiresAttention = state.unreadCount > 0 || priceState.unreadCount > 0 ||
+	const panelContext = actions.getHalloweenPanelContext?.() ?? { nowMs: Date.now(), inLabyrinth: false, sessionStartAt: null };
+	const inHalloweenScope = panelContext.inLabyrinth ||
+		seasonalWindowStatusAtMs(HALLOWEEN_SEASONAL_WINDOW, panelContext.nowMs) === 'in_season';
+	const freshUnreadCount = state.notices
+		.filter((notice) => notice.acknowledgedAt === null && isFreshNotice(notice.observedAt, panelContext)).length;
+	// Outside the festival, a stale or pre-session notice no longer earns the forced-open banner: H14.3
+	// exists because a Halloween-only surface used to expand for good outside the window and for a
+	// notice from a session that already ended. Store failures stay forced regardless of season: they
+	// are a data problem, not a festival one.
+	const requiresAttention = (inHalloweenScope && freshUnreadCount > 0) || priceState.unreadCount > 0 ||
 		state.status.startsWith('store_') || priceState.status.startsWith('store_');
+	const labelScope = inHalloweenScope ? '' : '.generic';
 	const section = container.createEl('section', { cls: 'tyrian-companion-halloween' });
-	section.setAttr('aria-label', t('halloween.aria'));
+	section.setAttr('aria-label', t(`halloween.aria${labelScope}`));
 	section.setAttr('data-attention', String(requiresAttention));
 	let body: HTMLElement = section;
 	if (requiresAttention) {
-		section.createEl('h2', { text: t('halloween.title') });
+		section.createEl('h2', { text: t(`halloween.title${labelScope}`) });
 	} else {
 		const disclosure = section.createEl('details', { cls: 'tyrian-companion-halloween__disclosure' });
 		const summary = disclosure.createEl('summary');
-		summary.createEl('strong', { text: t('halloween.optional') });
+		summary.createEl('strong', { text: t(`halloween.optional${labelScope}`) });
 		summary.createEl('small', { text: t(`halloween.state.${state.status}`) });
 		body = disclosure.createDiv({ cls: 'tyrian-companion-halloween__body' });
 	}
@@ -179,14 +209,8 @@ function renderNotice(
 	heading.tabIndex = -1;
 	card.createEl('time', { text: new Date(notice.observedAt).toLocaleString() }).setAttr('datetime', notice.observedAt);
 	if (notice.coverage === 'partial') card.createEl('p', { text: t('halloween.partial') });
-	const list = card.createEl('ul');
-	for (const item of notice.items) {
-		const row = list.createEl('li');
-		row.createEl('strong', { text: item.name ?? t('halloween.unknownItem', { itemId: item.itemId }) });
-		row.createSpan({ text: t('halloween.quantity', { quantity: item.quantity }) });
-		const reasons = row.createEl('ul');
-		for (const reason of item.reasons) reasons.createEl('li', { text: reasonText(reason, t) });
-	}
+	// Above the list, not after it: a notice with hundreds of items used to bury the only control
+	// that dismisses it at the bottom of the scroll.
 	if (notice.acknowledgedAt === null) {
 		const button = card.createEl('button', { text: t('halloween.ack') });
 		button.addEventListener('click', () => {
@@ -197,6 +221,14 @@ function renderNotice(
 			});
 		});
 	}
+	const list = card.createEl('ul');
+	for (const item of notice.items) {
+		const row = list.createEl('li');
+		row.createEl('strong', { text: item.name ?? t('halloween.unknownItem', { itemId: item.itemId }) });
+		row.createSpan({ text: t('halloween.quantity', { quantity: item.quantity }) });
+		const reasons = row.createEl('ul');
+		for (const reason of item.reasons) reasons.createEl('li', { text: reasonText(reason, t) });
+	}
 }
 
 function reasonText(reason: HalloweenAlertReason, t: Translate): string {
@@ -205,4 +237,17 @@ function reasonText(reason: HalloweenAlertReason, t: Translate): string {
 	if (reason.code === 'first_seen') return t('halloween.reason.first');
 	if (reason.code === 'skin_not_unlocked') return t('halloween.reason.skin');
 	return t('halloween.reason.mini');
+}
+
+/**
+ * Whether an unread notice still earns the forced-open banner: within 24h of `nowMs`, and not from
+ * a session that ended before the one on screen started. An unparseable timestamp reads as stale
+ * rather than as a guessed "yes", the same choice `seasonalWindowStatusAtMs` makes for its clock.
+ */
+function isFreshNotice(observedAt: string, context: Pick<HalloweenPanelContext, 'nowMs' | 'sessionStartAt'>): boolean {
+	const observedMs = Date.parse(observedAt);
+	if (!Number.isFinite(observedMs) || context.nowMs - observedMs > NOTICE_STALE_AFTER_MS) return false;
+	if (context.sessionStartAt === null) return true;
+	const sessionStartMs = Date.parse(context.sessionStartAt);
+	return !Number.isFinite(sessionStartMs) || observedMs >= sessionStartMs;
 }
