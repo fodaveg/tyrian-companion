@@ -16,6 +16,7 @@ describe('Halloween alert panel DOM', () => {
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
+			getHalloweenPanelContext: () => inSeasonContext(),
 		}, translator('en'));
 		expect(acknowledge).not.toHaveBeenCalled();
 		const all = walk(mount);
@@ -50,6 +51,9 @@ describe('Halloween alert panel DOM', () => {
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
+			// Aug 29 is out of the calendar window; the Labyrinth override keeps this stress test about
+			// item cardinality, not about H14.3's season gate (covered by its own tests below).
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-08-29T13:00:00.000Z'), inLabyrinth: true, sessionStartAt: null }),
 		}, translator('en'));
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
@@ -63,6 +67,81 @@ describe('Halloween alert panel DOM', () => {
 		await Promise.resolve();
 		expect(acknowledge).toHaveBeenCalledWith('notice');
 		expect(button?.disabled).toBe(true);
+	});
+
+	it('drops the Halloween label and stays folded outside the season and off map 866, even with a fresh unread notice', () => {
+		const mount = new FakeElement('div');
+		const notice = valuableNotice('2026-09-08T10:00:00.000Z');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-08T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		}, translator('en'));
+		const all = walk(mount);
+		const section = all.find(({ tag }) => tag === 'section');
+		const summaryLabel = all.find(({ tag }) => tag === 'strong')?.text;
+		expect(all.some(({ tag }) => tag === 'details')).toBe(true);
+		expect(section?.attributes.get('data-attention')).toBe('false');
+		// Only the panel's own label (aria-label and disclosure summary) drops "Halloween"; the
+		// comparison and price subsections keep their own copy, which is not this test's concern.
+		expect(section?.attributes.get('aria-label')).toBe('Alert inbox');
+		expect(summaryLabel).toBe('Alerts · optional');
+	});
+
+	it('expands and keeps the Halloween label for a fresh unread notice inside the season', () => {
+		const mount = new FakeElement('div');
+		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-10-15T09:30:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		}, translator('en'));
+		const all = walk(mount);
+		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
+		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
+		expect(all.map(({ text }) => text).join(' ')).toContain('Halloween alerts');
+	});
+
+	it('does not expand for a notice observed more than 24h ago, even inside the season', () => {
+		const mount = new FakeElement('div');
+		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
+			// 25h after observedAt: one hour past the 24h staleness window.
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-10-16T10:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		}, translator('en'));
+		const all = walk(mount);
+		expect(all.some(({ tag }) => tag === 'details')).toBe(true);
+		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('false');
+	});
+
+	it('does not expand for a notice observed before the session on screen started, even fresh and in season', () => {
+		const mount = new FakeElement('div');
+		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
+			getHalloweenPanelContext: () => ({
+				nowMs: Date.parse('2026-10-15T09:30:00.000Z'), inLabyrinth: false,
+				sessionStartAt: '2026-10-15T09:15:00.000Z', // the current session started after the notice
+			}),
+		}, translator('en'));
+		const all = walk(mount);
+		expect(all.some(({ tag }) => tag === 'details')).toBe(true);
+		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('false');
 	});
 
 	it.each(['event', 'price'] as const)('keeps a %s store failure visible without an unread notice', (source) => {
@@ -159,6 +238,16 @@ function translator(locale: 'es' | 'en'): (key: string, params?: Record<string, 
 	return (key, params) => t.t(key as TranslationKey, params);
 }
 function disabledPriceState() { return { status: 'disabled' as const, projection: null, notices: [], unreadCount: 0 }; }
+/** Comfortably inside the 1 Oct - 15 Nov UTC window, for tests that need "in season" but do not exercise it. */
+function inSeasonContext() { return { nowMs: Date.parse('2026-10-15T12:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }; }
+function valuableNotice(observedAt: string): HalloweenNoticeV1 {
+	return {
+		version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
+		observedAt, source: 'assisted_poll', wording: 'observed_change', coverage: 'complete', acknowledgedAt: null,
+		items: [{ itemId: 1, quantity: 1, name: 'Objeto', netUnitCopper: 60_000, priceStatus: 'quote',
+			reasons: [{ code: 'valuable', netUnitCopper: 60_000, thresholdCopper: 50_000 }] }],
+	};
+}
 function walk(root: FakeElement): FakeElement[] { return [root, ...root.children.flatMap(walk)]; }
 class FakeElement {
 	readonly children: FakeElement[] = [];
