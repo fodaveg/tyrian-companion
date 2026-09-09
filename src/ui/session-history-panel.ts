@@ -1,4 +1,4 @@
-import { createTranslator, type Locale } from '../core/i18n';
+import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
 import { formatRelativeDay } from './format-time';
 import { formatLootMoney } from '../sessions/loot-presentation';
 import {
@@ -62,14 +62,14 @@ export function mountSessionHistoryPanel(
 	locale: Locale,
 	controller: SessionHistoryPanelController,
 ): SessionHistoryPanelMount {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	const section = container.createEl('section', { cls: 'tyrian-session-history' });
 	const heading = section.createEl('header', { cls: 'tyrian-session-history__header' });
 	const title = heading.createDiv();
-	title.createEl('h3', { text: copy.title });
-	title.setAttr('title', copy.intro);
+	title.createEl('h3', { text: t.t('sessionHistory.title') });
+	title.setAttr('title', t.t('sessionHistory.intro'));
 	const stateId = `tyrian-session-history-state-${String(panelSequence += 1)}`;
-	const button = heading.createEl('button', { text: copy.load, cls: 'mod-cta' });
+	const button = heading.createEl('button', { text: t.t('sessionHistory.load'), cls: 'mod-cta' });
 	button.setAttr('aria-controls', stateId);
 	const stateRegion = section.createDiv({ cls: 'tyrian-session-history__state' });
 	stateRegion.setAttr('id', stateId);
@@ -78,7 +78,8 @@ export function mountSessionHistoryPanel(
 
 	const render = (state: SessionHistoryPanelState): void => {
 		button.disabled = state.status === 'loading';
-		button.setText(state.status === 'idle' ? copy.load : state.status === 'loading' ? copy.loadingAction : copy.refresh);
+		button.setText(state.status === 'idle' ? t.t('sessionHistory.load')
+			: state.status === 'loading' ? t.t('sessionHistory.loadingAction') : t.t('sessionHistory.refresh'));
 		stateRegion.empty();
 		stateRegion.setAttr('aria-busy', state.status === 'loading' ? 'true' : 'false');
 		stateRegion.setAttr('role', state.status === 'conflict' || state.status === 'unavailable' ? 'alert' : 'status');
@@ -101,62 +102,63 @@ function projectLoadResult(result: SessionHistoryLoadResult): SessionHistoryPane
 }
 
 function renderState(container: HTMLElement, locale: Locale, state: SessionHistoryPanelState): void {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	if (state.status === 'idle') {
-		container.createEl('p', { text: copy.idle });
+		container.createEl('p', { text: t.t('sessionHistory.idle') });
 		return;
 	}
 	if (state.status === 'loading') {
-		container.createEl('strong', { text: copy.loadingTitle });
-		container.createEl('p', { text: copy.loadingBody });
+		container.createEl('strong', { text: t.t('sessionHistory.loadingTitle') });
+		container.createEl('p', { text: t.t('sessionHistory.loadingBody') });
 		return;
 	}
 	if (state.status === 'empty') {
-		container.createEl('strong', { text: copy.emptyTitle });
-		container.createEl('p', { text: copy.emptyBody });
+		container.createEl('strong', { text: t.t('sessionHistory.emptyTitle') });
+		container.createEl('p', { text: t.t('sessionHistory.emptyBody') });
 		return;
 	}
 	if (state.status === 'conflict') {
-		container.createEl('strong', { text: copy.conflictTitle });
-		container.createEl('p', { text: format(copy.conflictBody, { invalid: state.invalid, duplicates: state.duplicates }) });
-		container.createEl('p', { text: copy.conflictPreserved });
+		container.createEl('strong', { text: t.t('sessionHistory.conflictTitle') });
+		container.createEl('p', { text: t.t('sessionHistory.conflictBody', { invalid: state.invalid, duplicates: state.duplicates }) });
+		container.createEl('p', { text: t.t('sessionHistory.conflictPreserved') });
 		return;
 	}
 	if (state.status === 'unavailable') {
-		container.createEl('strong', { text: copy.unavailableTitle });
-		container.createEl('p', { text: copy.unavailableBody });
+		container.createEl('strong', { text: t.t('sessionHistory.unavailableTitle') });
+		container.createEl('p', { text: t.t('sessionHistory.unavailableBody') });
 		return;
 	}
 	if (state.status === 'ready') renderReady(container, locale, state.aggregate);
 }
 
 function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {
-	const copy = UI[locale];
-	container.createEl('p', { text: copy.ready, cls: 'tyrian-session-history__ready' });
+	const t = createTranslator(locale);
+	container.createEl('p', { text: t.t('sessionHistory.ready'), cls: 'tyrian-session-history__ready' });
 	const summary = container.createDiv({ cls: 'tyrian-session-history__summary' });
-	appendMetric(summary, copy.sessions, String(aggregate.sessionCount));
-	appendMetric(summary, copy.duration, aggregate.totalDurationMs === null ? copy.unknown : formatSessionHistoryDuration(aggregate.totalDurationMs, locale));
-	appendMetric(summary, copy.sacks, completeNumber(aggregate.totalSacks, aggregate.sacksKnown, aggregate.sessionCount, locale));
-	appendMetric(summary, copy.immediateValue, completeMoney(
+	appendMetric(summary, t.t('sessionHistory.sessions'), String(aggregate.sessionCount));
+	appendMetric(summary, t.t('sessionHistory.duration'), aggregate.totalDurationMs === null
+		? t.t('sessionHistory.unknown') : formatSessionHistoryDuration(aggregate.totalDurationMs, locale));
+	appendMetric(summary, t.t('sessionHistory.sacks'), completeNumber(aggregate.totalSacks, aggregate.sacksKnown, aggregate.sessionCount, locale));
+	appendMetric(summary, t.t('sessionHistory.immediateValue'), completeMoney(
 		aggregate.totalImmediateCopper, aggregate.immediateValueKnown, aggregate.sessionCount, locale,
 	));
 
 	const comparison = container.createEl('section', { cls: 'tyrian-session-history__comparison' });
-	comparison.createEl('h4', { text: copy.comparison });
+	comparison.createEl('h4', { text: t.t('sessionHistory.comparison') });
 	if (aggregate.comparison === null) {
-		comparison.createEl('p', { text: copy.comparisonBaseline });
+		comparison.createEl('p', { text: t.t('sessionHistory.comparisonBaseline') });
 	} else {
 		comparison.createEl('p', {
-			text: format(copy.comparisonWindow, {
+			text: t.t('sessionHistory.comparisonWindow', {
 				latest: formatTimestamp(aggregate.comparison.latestEndedAt, locale),
 				previous: formatTimestamp(aggregate.comparison.previousEndedAt, locale),
 			}),
 		});
 		const details = comparison.createEl('dl');
-		appendDetail(details, copy.duration, signedDuration(aggregate.comparison.durationDeltaMs, locale));
-		appendDetail(details, copy.sacksPerHour, signedRate(aggregate.comparison.sacksPerHourMilliDelta, locale));
-		appendDetail(details, copy.immediatePerHour, signedMoney(aggregate.comparison.immediateCopperPerHourDelta, locale));
-		appendDetail(details, copy.listingPerHour, signedMoney(aggregate.comparison.listingCopperPerHourDelta, locale));
+		appendDetail(details, t.t('sessionHistory.duration'), signedDuration(aggregate.comparison.durationDeltaMs, locale));
+		appendDetail(details, t.t('sessionHistory.sacksPerHour'), signedRate(aggregate.comparison.sacksPerHourMilliDelta, locale));
+		appendDetail(details, t.t('sessionHistory.immediatePerHour'), signedMoney(aggregate.comparison.immediateCopperPerHourDelta, locale));
+		appendDetail(details, t.t('sessionHistory.listingPerHour'), signedMoney(aggregate.comparison.listingCopperPerHourDelta, locale));
 	}
 	renderPerformance(container, locale, aggregate);
 
@@ -165,54 +167,68 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 }
 
 function renderPerformance(container: HTMLElement, locale: Locale, aggregate: SessionHistoryAggregate): void {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	const section = container.createEl('section', { cls: 'tyrian-session-history__performance' });
-	section.createEl('h4', { text: copy.performance });
-	section.createEl('p', { text: format(copy.performanceIntro, { minimum: aggregate.performance.minimumSessions }) });
+	section.createEl('h4', { text: t.t('sessionHistory.performance') });
+	section.createEl('p', { text: t.t('sessionHistory.performanceIntro', { minimum: aggregate.performance.minimumSessions }) });
 	if (aggregate.performance.missingContextSessions > 0) {
 		section.createEl('p', {
-			text: format(copy.performanceMissingContext, { count: aggregate.performance.missingContextSessions }),
+			text: t.t('sessionHistory.performanceMissingContext', { count: aggregate.performance.missingContextSessions }),
 			cls: 'tyrian-session-history__warning',
 		});
 	}
 	if (aggregate.performance.groups.length === 0) {
-		section.createEl('p', { text: copy.performanceEmpty });
+		section.createEl('p', { text: t.t('sessionHistory.performanceEmpty') });
 		return;
 	}
 	const groups = section.createDiv({ cls: 'tyrian-session-history__performance-groups' });
 	for (const group of aggregate.performance.groups) renderPerformanceGroup(groups, locale, group);
 }
 
+const PERFORMANCE_STATUS_KEY = {
+	ready: 'sessionHistory.performanceReady',
+	insufficient_sample: 'sessionHistory.performanceInsufficient',
+	unavailable: 'sessionHistory.performanceUnavailable',
+} as const;
+
+const PERFORMANCE_EXCLUSION_KEY = {
+	quality: 'sessionHistory.performanceExclusion.quality',
+	valuation: 'sessionHistory.performanceExclusion.valuation',
+	metrics: 'sessionHistory.performanceExclusion.metrics',
+} as const;
+
 function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	const article = container.createEl('article', { cls: 'tyrian-session-history__performance-group' });
-	article.createEl('h5', { text: `${copy.halloween} · ${group.build}` });
+	article.createEl('h5', { text: `${t.t('sessionHistory.halloween')} · ${group.build}` });
 	article.createEl('p', {
-		text: format(group.status === 'ready' ? copy.performanceReady : group.status === 'insufficient_sample'
-			? copy.performanceInsufficient : copy.performanceUnavailable, {
+		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
 			eligible: group.eligibleSessions,
 			total: group.sessionCount,
 			minimum: SESSION_HISTORY_PERFORMANCE_MINIMUM,
 		}),
 	});
 	const details = article.createEl('dl');
-	appendDetail(details, copy.sacksPerHour, group.sacksPerHourMilli === null ? copy.unknown : rate(group.sacksPerHourMilli, locale));
-	appendDetail(details, copy.immediatePerHour, money(group.immediateCopperPerHour, locale));
+	appendDetail(details, t.t('sessionHistory.sacksPerHour'), group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale));
+	appendDetail(details, t.t('sessionHistory.immediatePerHour'), money(group.immediateCopperPerHour, locale));
 	if (group.exclusions.length > 0) {
 		article.createEl('p', {
-			text: `${copy.performanceExcluded}: ${group.exclusions.map((reason) => copy.performanceExclusion[reason]).join(' · ')}`,
+			text: `${t.t('sessionHistory.performanceExcluded')}: ${group.exclusions.map((reason) => t.t(PERFORMANCE_EXCLUSION_KEY[reason])).join(' · ')}`,
 			cls: 'tyrian-session-history__warning',
 		});
 	}
 }
 
 function renderTable(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	const overflow = container.createDiv({ cls: 'tyrian-session-history__table-overflow' });
 	const table = overflow.createEl('table');
-	table.createEl('caption', { text: copy.tableCaption });
+	table.createEl('caption', { text: t.t('sessionHistory.tableCaption') });
 	const head = table.createEl('thead').createEl('tr');
-	for (const label of [copy.ended, copy.duration, copy.quality, copy.sacks, copy.immediateValue, copy.listingValue]) {
+	for (const label of [
+		t.t('sessionHistory.ended'), t.t('sessionHistory.duration'), t.t('sessionHistory.quality'),
+		t.t('sessionHistory.sacks'), t.t('sessionHistory.immediateValue'), t.t('sessionHistory.listingValue'),
+	]) {
 		const header = head.createEl('th', { text: label });
 		header.setAttr('scope', 'col');
 	}
@@ -222,26 +238,26 @@ function renderTable(container: HTMLElement, locale: Locale, rows: readonly Sess
 		const ended = tr.createEl('th', { text: formatTimestamp(row.endedAt, locale) });
 		ended.setAttr('scope', 'row');
 		appendCell(tr, formatSessionHistoryDuration(row.durationMs, locale));
-		appendCell(tr, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
-		appendCell(tr, row.sacks === null ? copy.unknown : formatNumber(row.sacks, locale));
+		appendCell(tr, `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
+		appendCell(tr, row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale));
 		appendCell(tr, money(row.immediateCopper, locale));
 		appendCell(tr, money(row.listingCopper, locale));
 	}
 }
 
 function renderCards(container: HTMLElement, locale: Locale, rows: readonly SessionHistorySummaryRow[]): void {
-	const copy = UI[locale];
+	const t = createTranslator(locale);
 	const cards = container.createDiv({ cls: 'tyrian-session-history__cards' });
-	cards.setAttr('aria-label', copy.tableCaption);
+	cards.setAttr('aria-label', t.t('sessionHistory.tableCaption'));
 	for (const row of rows) {
 		const article = cards.createEl('article', { cls: 'tyrian-session-history__card' });
 		article.createEl('h4', { text: formatTimestamp(row.endedAt, locale) });
 		const details = article.createEl('dl');
-		appendDetail(details, copy.duration, formatSessionHistoryDuration(row.durationMs, locale));
-		appendDetail(details, copy.quality, `${qualityLabel(row.classification, locale)} · ${confidenceLabel(row.confidence, locale)}`);
-		appendDetail(details, copy.sacks, row.sacks === null ? copy.unknown : formatNumber(row.sacks, locale));
-		appendDetail(details, copy.immediateValue, money(row.immediateCopper, locale));
-		appendDetail(details, copy.listingValue, money(row.listingCopper, locale));
+		appendDetail(details, t.t('sessionHistory.duration'), formatSessionHistoryDuration(row.durationMs, locale));
+		appendDetail(details, t.t('sessionHistory.quality'), `${qualityLabel(row.classification, t)} · ${confidenceLabel(row.confidence, t)}`);
+		appendDetail(details, t.t('sessionHistory.sacks'), row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale));
+		appendDetail(details, t.t('sessionHistory.immediateValue'), money(row.immediateCopper, locale));
+		appendDetail(details, t.t('sessionHistory.listingValue'), money(row.listingCopper, locale));
 	}
 }
 
@@ -259,27 +275,27 @@ function appendDetail(container: HTMLElement, label: string, value: string): voi
 function appendCell(row: HTMLElement, text: string): void { row.createEl('td', { text }); }
 
 function completeNumber(value: number | null, known: number, total: number, locale: Locale): string {
-	return value === null ? format(UI[locale].knownCoverage, { known, total }) : formatNumber(value, locale);
+	return value === null ? createTranslator(locale).t('sessionHistory.knownCoverage', { known, total }) : formatNumber(value, locale);
 }
 
 function completeMoney(value: number | null, known: number, total: number, locale: Locale): string {
-	return value === null ? format(UI[locale].knownCoverage, { known, total }) : money(value, locale);
+	return value === null ? createTranslator(locale).t('sessionHistory.knownCoverage', { known, total }) : money(value, locale);
 }
 
 function money(copper: number | null, locale: Locale): string {
-	if (copper === null) return UI[locale].unknown;
+	if (copper === null) return createTranslator(locale).t('sessionHistory.unknown');
 	const value = formatLootMoney(copper, locale);
 	return `${value.visual} (${value.accessible})`;
 }
 
 function signedMoney(copper: number | null, locale: Locale): string {
-	if (copper === null) return UI[locale].unknown;
+	if (copper === null) return createTranslator(locale).t('sessionHistory.unknown');
 	const sign = copper > 0 ? '+' : copper < 0 ? '−' : '±';
 	return `${sign}${money(Math.abs(copper), locale)}`;
 }
 
 function signedRate(value: number | null, locale: Locale): string {
-	if (value === null) return UI[locale].unknown;
+	if (value === null) return createTranslator(locale).t('sessionHistory.unknown');
 	const sign = value > 0 ? '+' : value < 0 ? '−' : '±';
 	return `${sign}${rate(Math.abs(value), locale)}`;
 }
@@ -295,8 +311,8 @@ function signedDuration(durationMs: number, locale: Locale): string {
 
 /** Formats a non-negative duration without dropping whole seconds or presenting a positive subsecond as zero. */
 export function formatSessionHistoryDuration(durationMs: number, locale: Locale): string {
-	const copy = UI[locale];
-	if (durationMs > 0 && durationMs < 1_000) return copy.lessThanSecond;
+	const t = createTranslator(locale);
+	if (durationMs > 0 && durationMs < 1_000) return t.t('sessionHistory.lessThanSecond');
 	const totalSeconds = Math.floor(durationMs / 1_000);
 	const hours = Math.floor(totalSeconds / 3_600);
 	const minutes = Math.floor(totalSeconds / 60) % 60;
@@ -321,75 +337,22 @@ function formatNumber(value: number, locale: Locale, options?: Intl.NumberFormat
 	return new Intl.NumberFormat(locale, options).format(value);
 }
 
-function qualityLabel(value: string, locale: Locale): string {
-	const labels: Record<string, readonly [string, string]> = {
-		exact: ['Exacta', 'Exact'], estimated: ['Estimada', 'Estimated'], contaminated: ['Contaminada', 'Contaminated'],
-	};
-	return labels[value]?.[locale === 'es' ? 0 : 1] ?? UI[locale].unknown;
+const QUALITY_LABEL_KEY: Readonly<Record<string, TranslationKey>> = {
+	exact: 'sessionHistory.qualityLabel.exact', estimated: 'sessionHistory.qualityLabel.estimated',
+	contaminated: 'sessionHistory.qualityLabel.contaminated',
+};
+
+function qualityLabel(value: string, t: Translator): string {
+	const key = QUALITY_LABEL_KEY[value];
+	return key === undefined ? t.t('sessionHistory.unknown') : t.t(key);
 }
 
-function confidenceLabel(value: string, locale: Locale): string {
-	const labels: Record<string, readonly [string, string]> = {
-		high: ['Confianza alta', 'High confidence'], medium: ['Confianza media', 'Medium confidence'], low: ['Confianza baja', 'Low confidence'],
-	};
-	return labels[value]?.[locale === 'es' ? 0 : 1] ?? UI[locale].unknown;
-}
+const CONFIDENCE_LABEL_KEY: Readonly<Record<string, TranslationKey>> = {
+	high: 'sessionHistory.confidenceLabel.high', medium: 'sessionHistory.confidenceLabel.medium',
+	low: 'sessionHistory.confidenceLabel.low',
+};
 
-function format(template: string, values: Readonly<Record<string, string | number>>): string {
-	return template.replace(/\{(\w+)\}/gu, (_, key: string) => String(values[key] ?? ''));
+function confidenceLabel(value: string, t: Translator): string {
+	const key = CONFIDENCE_LABEL_KEY[value];
+	return key === undefined ? t.t('sessionHistory.unknown') : t.t(key);
 }
-
-const UI = {
-	es: {
-		title: 'Historial durable', intro: 'Compara las sesiones finalizadas guardadas en notas. El vault solo se lee al activar esta acción.',
-		load: 'Cargar historial', refresh: 'Actualizar historial', loadingAction: 'Cargando…',
-		idle: 'Aún no se ha leído el historial. Cargar no consulta la cuenta ni cambia ninguna nota.',
-		loadingTitle: 'Leyendo notas de sesión…', loadingBody: 'Se valida todo el historial antes de mostrar resultados; no se escribe en el vault.',
-		emptyTitle: 'No hay sesiones finalizadas', emptyBody: 'La lectura terminó correctamente, pero no encontró notas de sesión gestionadas.',
-		conflictTitle: 'El historial necesita revisión', conflictBody: 'Se encontraron {invalid} notas no válidas y {duplicates} referencias duplicadas.',
-		conflictPreserved: 'No se muestra un historial parcial. Las notas permanecen intactas.',
-		unavailableTitle: 'No se pudo cargar el historial', unavailableBody: 'El historial no está disponible ahora. No se cambió ninguna nota; puedes reintentarlo.',
-		ready: 'Historial validado. Los totales solo aparecen cuando todas las sesiones aportan ese dato.',
-		sessions: 'Sesiones', duration: 'Duración total', sacks: 'Sacos', immediateValue: 'Valor inmediato', listingValue: 'Valor listado',
-		comparison: 'Última sesión frente a la anterior', comparisonBaseline: 'Hace falta una segunda sesión para mostrar evolución.',
-		comparisonWindow: 'Última: {latest}. Anterior: {previous}.', sacksPerHour: 'Sacos por hora', immediatePerHour: 'Valor inmediato por hora', listingPerHour: 'Valor listado por hora',
-		performance: 'Rendimiento por actividad y build',
-		performanceIntro: 'Solo se comparan grupos con al menos {minimum} sesiones exactas, de confianza alta y valoración completa. Las tasas se ponderan por duración.',
-		performanceMissingContext: '{count} sesiones no entran en grupos porque no declaran actividad o build.',
-		performanceEmpty: 'Aún no hay sesiones con actividad y build declarados para comparar.',
-		performanceReady: '{eligible}/{total} sesiones comparables.',
-		performanceInsufficient: 'Muestra insuficiente: {eligible}/{minimum} sesiones comparables ({total} en el grupo).',
-		performanceUnavailable: 'Las tasas de este grupo no se pueden calcular de forma segura.',
-		performanceExcluded: 'Sesiones excluidas',
-		performanceExclusion: { quality: 'calidad no comparable', valuation: 'valoración incompleta', metrics: 'tasas sin evidencia' },
-		halloween: 'Halloween',
-		ended: 'Finalizada', quality: 'Calidad', tableCaption: 'Sesiones finalizadas, de más reciente a más antigua',
-		unknown: 'Desconocido', knownCoverage: 'Desconocido · {known}/{total} con dato', lessThanSecond: '<1 segundo',
-	},
-	en: {
-		title: 'Durable history', intro: 'Compare completed sessions saved in notes. The Vault is read only when you activate this action.',
-		load: 'Load history', refresh: 'Refresh history', loadingAction: 'Loading…',
-		idle: 'History has not been read yet. Loading does not query the account or change any note.',
-		loadingTitle: 'Reading session notes…', loadingBody: 'The complete history is validated before results appear; nothing is written to the Vault.',
-		emptyTitle: 'No completed sessions', emptyBody: 'The read completed successfully but found no managed session notes.',
-		conflictTitle: 'History needs review', conflictBody: 'Found {invalid} invalid notes and {duplicates} duplicate references.',
-		conflictPreserved: 'A partial history is not shown. All notes remain unchanged.',
-		unavailableTitle: 'History could not be loaded', unavailableBody: 'History is unavailable right now. No note was changed; you can retry.',
-		ready: 'History validated. Totals appear only when every session provides that value.',
-		sessions: 'Sessions', duration: 'Total duration', sacks: 'Sacks', immediateValue: 'Immediate value', listingValue: 'Listing value',
-		comparison: 'Latest session versus previous', comparisonBaseline: 'A second session is needed to show a trend.',
-		comparisonWindow: 'Latest: {latest}. Previous: {previous}.', sacksPerHour: 'Sacks per hour', immediatePerHour: 'Immediate value per hour', listingPerHour: 'Listing value per hour',
-		performance: 'Performance by activity and build',
-		performanceIntro: 'Only groups with at least {minimum} exact, high-confidence, fully valued sessions are compared. Rates are weighted by duration.',
-		performanceMissingContext: '{count} sessions are outside groups because activity or build is not declared.',
-		performanceEmpty: 'There are no sessions with both activity and build declared to compare yet.',
-		performanceReady: '{eligible}/{total} comparable sessions.',
-		performanceInsufficient: 'Insufficient sample: {eligible}/{minimum} comparable sessions ({total} in the group).',
-		performanceUnavailable: 'This group’s rates cannot be calculated safely.',
-		performanceExcluded: 'Excluded sessions',
-		performanceExclusion: { quality: 'non-comparable quality', valuation: 'incomplete valuation', metrics: 'rates lack evidence' },
-		halloween: 'Halloween',
-		ended: 'Completed', quality: 'Quality', tableCaption: 'Completed sessions, newest to oldest',
-		unknown: 'Unknown', knownCoverage: 'Unknown · {known}/{total} with data', lessThanSecond: '<1 second',
-	},
-} as const;
