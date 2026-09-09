@@ -30,7 +30,11 @@ export const SOURCE_MODULE_EXTENSIONS = Object.freeze([
 	'.tsx',
 ]);
 
-const READ_FUNCTION_NAMES = Object.freeze(['readFile', 'readFileSync']);
+// `readModuleSource(s)` (src/test/module-boundary.ts) is a thin wrapper over readFileSync: a
+// test that calls it still asserts on source text, so the ratchet counts it the same way.
+// Otherwise moving the read one file away would satisfy the letter of this contract while
+// leaving the assertion exactly as static as before (measured 9 sep 2026: 25 files did that).
+const READ_FUNCTION_NAMES = Object.freeze(['readFile', 'readFileSync', 'readModuleSource', 'readModuleSources']);
 const TEST_SUFFIX = '.test.ts';
 const ALLOWLIST_PATH = 'scripts/source-text-assertion-allowlist.json';
 const SCAN_ROOT = 'src';

@@ -9706,6 +9706,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/test/runtime-harness.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/ui/background-status-refresh.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
