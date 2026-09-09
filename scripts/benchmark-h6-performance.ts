@@ -57,6 +57,12 @@ const GAINED_ITEM_COUNT =
 const NORMALIZED_HOLDING_COUNT =
 	GAINED_ITEM_COUNT + CHARACTER_COUNT * BAGS_PER_CHARACTER + DELIVERY_ITEMS;
 const MEBIBYTE = 1024 * 1024;
+/**
+ * What actually runs every 5-10 minutes while a session is live (H14.19): one poll's delta
+ * against the same full account, not the worst-case "every holding changed" scenario above.
+ * "Decenas de objetos" per the lote; 40 sits in the middle of that range.
+ */
+const ONE_QUERY_GAINED_COUNT = 40;
 
 interface LargeAccountPayload {
 	roster: unknown;
@@ -69,11 +75,35 @@ interface LargeAccountPayload {
 }
 
 const fixture = createFixture();
+const oneQueryAfter = increaseFirstNRootQuantities(
+	fixture.before,
+	ONE_QUERY_GAINED_COUNT,
+);
+const oneQueryAfterDivergentFirstPass =
+	increaseFirstSharedQuantity(oneQueryAfter);
 const forceGc = requireGc();
 const budget = readBudget();
 const retainedHeapSabotageBytes = readRetainedHeapSabotageBytes();
 
 for (let run = 0; run < H6_WARMUP_RUNS; run += 1) runPipeline();
+for (let run = 0; run < H6_WARMUP_RUNS; run += 1) runOneQueryPipeline();
+
+const oneQueryDurationsMs: number[] = [];
+for (let run = 0; run < H6_MEASURED_RUNS; run += 1) {
+	const startedAt = performance.now();
+	runOneQueryPipeline();
+	oneQueryDurationsMs.push(performance.now() - startedAt);
+}
+const oneQueryMetrics = summarizeH6Performance(
+	oneQueryDurationsMs,
+	oneQueryDurationsMs.map(() => 0),
+);
+process.stdout.write(
+	`oneQuery scenario: ${String(ONE_QUERY_GAINED_COUNT)} gained items of ` +
+		`${String(NORMALIZED_HOLDING_COUNT)} holdings, median ` +
+		`${oneQueryMetrics.medianMs.toFixed(2)}ms, p95 ` +
+		`${oneQueryMetrics.p95Ms.toFixed(2)}ms (${String(H6_MEASURED_RUNS)} runs)\n`,
+);
 
 const durationsMs: number[] = [];
 const cumulativeRetainedHeapBytes: number[] = [];
@@ -128,6 +158,15 @@ process.stdout.write(
 			},
 			metrics,
 			samples: { durationsMs, cumulativeRetainedHeapBytes },
+			scenarios: {
+				oneQuery: {
+					gainedItems: ONE_QUERY_GAINED_COUNT,
+					normalizedHoldings: NORMALIZED_HOLDING_COUNT,
+					medianMs: oneQueryMetrics.medianMs,
+					p95Ms: oneQueryMetrics.p95Ms,
+					sampleCount: oneQueryMetrics.sampleCount,
+				},
+			},
 		},
 		null,
 		2,
@@ -182,6 +221,57 @@ function runPipeline(): void {
 	) {
 		throw new Error(
 			"Large-account fixture did not produce a complete valuation.",
+		);
+	}
+}
+
+/** Same pipeline, same full account, but only `ONE_QUERY_GAINED_COUNT` holdings actually changed. */
+function runOneQueryPipeline(): void {
+	const before = normalizeSnapshot(
+		fixture.before,
+		fixture.beforeDivergentFirstPass,
+		"before",
+		"2026-08-14T08:00:00.000Z",
+		"2026-08-14T08:00:01.000Z",
+	);
+	const after = normalizeSnapshot(
+		oneQueryAfter,
+		oneQueryAfterDivergentFirstPass,
+		"after",
+		"2026-08-14T08:05:00.000Z",
+		"2026-08-14T08:05:01.000Z",
+	);
+	if (
+		before.holdings.length !== NORMALIZED_HOLDING_COUNT ||
+		after.holdings.length !== NORMALIZED_HOLDING_COUNT
+	) {
+		throw new Error(
+			"One-query fixture did not produce the documented normalized holding count.",
+		);
+	}
+	const delta = compareStorageSnapshots(before, after);
+	if (
+		delta.status !== "comparable" ||
+		delta.itemChanges.length !== ONE_QUERY_GAINED_COUNT
+	) {
+		throw new Error(
+			`One-query fixture did not produce the expected ${String(ONE_QUERY_GAINED_COUNT)}-item delta.`,
+		);
+	}
+	const boundary = buildBoundaryEvidence(before, after);
+	const classification = classifySessionDelta(delta, cleanContext(boundary));
+	if (classification.status !== "exact") {
+		throw new Error(
+			`One-query fixture classification was ${classification.status}, not exact.`,
+		);
+	}
+	const valuation = calculateSessionValuation(valuationInput(delta));
+	if (
+		valuation.status !== "ok" ||
+		valuation.valuation.lines.length !== ONE_QUERY_GAINED_COUNT
+	) {
+		throw new Error(
+			"One-query fixture did not produce a complete valuation.",
 		);
 	}
 }
@@ -342,6 +432,45 @@ function increaseEveryRootQuantity(
 		materials: increase(payload.materials),
 		wallet: increase(payload.wallet),
 		// Delivery remains unchanged so the explicit clean declaration is consistent with H2.7.
+		delivery: payload.delivery,
+		characters: new Map(
+			[...payload.characters].map(([name, value]) => [
+				name,
+				increase(value),
+			]),
+		),
+	};
+}
+
+/** Same shape as `increaseEveryRootQuantity`, bounded to the first `count` stacks instead of all of them. */
+function increaseFirstNRootQuantities(
+	payload: LargeAccountPayload,
+	count: number,
+): LargeAccountPayload {
+	let remaining = count;
+	const increase = (value: unknown): unknown => {
+		if (remaining <= 0) return value;
+		if (Array.isArray(value)) return value.map(increase);
+		if (isRecord(value)) {
+			if (typeof value.count === "number") {
+				remaining -= 1;
+				return { ...value, count: value.count + 1 };
+			}
+			return Object.fromEntries(
+				Object.entries(value).map(([key, child]) => [
+					key,
+					increase(child),
+				]),
+			);
+		}
+		return value;
+	};
+	return {
+		roster: payload.roster,
+		sharedInventory: increase(payload.sharedInventory),
+		bank: increase(payload.bank),
+		materials: increase(payload.materials),
+		wallet: payload.wallet,
 		delivery: payload.delivery,
 		characters: new Map(
 			[...payload.characters].map(([name, value]) => [
