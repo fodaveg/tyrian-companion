@@ -897,7 +897,10 @@ export class ManualSessionStartService {
 		this.currentHandle = handle;
 		this.stopHeartbeat();
 		const ttl = handle.expiresAt - handle.renewedAt;
-		const interval = Math.max(1_000, Math.min(10_000, Math.floor(ttl / 3)));
+		// No upper cap here: a 10 s ceiling on a 300 s lease (H14.22) would still renew every
+		// 10 s and lose the whole point of the longer TTL. `ttl / 3` alone still guarantees at
+		// least two renewal attempts before the lease could expire.
+		const interval = Math.max(1_000, Math.floor(ttl / 3));
 		this.heartbeatHandle = this.scheduleInterval(() => { void this.runHeartbeat(); }, interval);
 	}
 

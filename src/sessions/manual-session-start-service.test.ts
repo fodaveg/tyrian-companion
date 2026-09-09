@@ -1082,6 +1082,88 @@ describe('ManualSessionStartService', () => {
 			state: { status: 'active', authority: { instanceId: 'instance-two' } },
 		});
 	});
+
+	/**
+	 * H14.22 (8 sep 2026): a 30 s lease armed the heartbeat at `min(10 s, ttl/3)`, which floors to
+	 * 10 s regardless of the TTL. Raising the TTL to 300 s only cuts write volume if the `10 s`
+	 * ceiling is gone too, so this pins both halves of the fix: the interval `setInterval` receives,
+	 * and the renewal count over a realistic session length.
+	 */
+	it('renews a 300 s lease every 100 s with no 10 s ceiling, 144 times over 4 simulated hours', async () => {
+		const leaseTtlMs = 300_000;
+		const factory = new IDBFactory();
+		const realCoordinator = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory,
+			databaseName: 'h14-22-heartbeat-count',
+			clock: () => clock,
+			instanceId: 'instance-h14-22',
+			leaseTtlMs,
+		});
+		let tick: (() => void) | undefined;
+		let capturedDelayMs: number | undefined;
+		const service = new ManualSessionStartService(
+			realCoordinator,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({
+				setInterval: vi.fn((callback: () => void, delayMs: number) => {
+					tick = callback;
+					capturedDelayMs = delayMs;
+					return 17;
+				}),
+			}),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'started' });
+		expect(capturedDelayMs).toBe(leaseTtlMs / 3);
+
+		const renewSpy = vi.spyOn(realCoordinator, 'renew');
+		for (let renewalIndex = 1; renewalIndex <= 144; renewalIndex += 1) {
+			clock += capturedDelayMs as number;
+			tick?.();
+			await vi.waitFor(() => expect(renewSpy).toHaveBeenCalledTimes(renewalIndex));
+			// The heartbeat's own dedup guard only clears in its `.finally`, after the renewal
+			// promise settles: without this, the next tick would find it still armed and skip.
+			await renewSpy.mock.results[renewalIndex - 1]?.value;
+			await Promise.resolve();
+		}
+
+		expect(renewSpy).toHaveBeenCalledTimes(144);
+		await service.dispose();
+	});
+
+	/** H14.22: the other half of the accepted cost — recovering a dead window's session now
+	 * takes up to 300 s instead of 30 s. Never renews (the heartbeat interval is a no-op here),
+	 * so the lease expires naturally at its original TTL. */
+	it('makes a second window wait the full 300 s lease TTL before it can take the session over', async () => {
+		const leaseTtlMs = 300_000;
+		const factory = new IDBFactory();
+		const databaseName = 'h14-22-second-window-wait';
+		const primaryCoordinator = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory, databaseName, clock: () => clock, instanceId: 'instance-primary', leaseTtlMs,
+		});
+		const primaryService = new ManualSessionStartService(
+			primaryCoordinator,
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({ setInterval: vi.fn(() => 17) }),
+		);
+		await expect(primaryService.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'started' });
+
+		const secondaryCoordinator = new ActiveSessionLeaseCoordinator({
+			indexedDb: factory, databaseName, clock: () => clock, instanceId: 'instance-secondary', leaseTtlMs,
+			sleep: async () => undefined,
+		});
+
+		clock += leaseTtlMs - 1;
+		await expect(secondaryCoordinator.acquire('session-1')).resolves.toMatchObject({ status: 'busy' });
+
+		clock += 2;
+		await expect(secondaryCoordinator.acquire('session-1')).resolves.toMatchObject({ status: 'acquired' });
+
+		primaryCoordinator.dispose();
+		secondaryCoordinator.dispose();
+	});
 });
 
 function reviewAnswers(

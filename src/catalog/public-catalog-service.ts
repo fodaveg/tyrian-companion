@@ -154,46 +154,52 @@ export class PublicCatalogService {
 		const stale = new Map<number, CatalogCacheRecord<CatalogEntityByKind[K]>>();
 		const unresolved: number[] = [];
 
-		await Promise.all(
-			ids.map(async (id) => {
-				const cached = await this.cache.get(cacheKey(kind, locale, id));
-				if (!cached) {
-					unresolved.push(id);
-					return;
-				}
-				if (
-					cached.schemaVersion !== PINNED_SCHEMA ||
-					cached.normalizerVersion !== CATALOG_NORMALIZER_VERSION
-				) {
-					unresolved.push(id);
-					return;
-				}
-				const age = Math.max(0, now - cached.storedAt);
-				if (cached.value === null) {
-					if (age <= NEGATIVE_TTL_MS) {
-						result.coverage.set(id, {
-							status: 'missing',
-							source: 'cache_negative',
-							reason: cached.negativeReason ?? 'not_found',
-						});
-					} else {
-						unresolved.push(id);
-					}
-					return;
-				}
-				if (cached.value.id !== id || !hasExpectedKind(kind, cached.value.kind)) {
-					unresolved.push(id);
-					return;
-				}
-				if (age <= POSITIVE_TTL_MS[kind]) {
-					result.entities.set(id, cached.value);
-					result.coverage.set(id, { status: 'resolved', source: 'cache_fresh' });
-					return;
-				}
-				if (age <= STALE_MAX_AGE_MS) stale.set(id, cached);
+		// H14.15: a plain `Promise.all(ids.map(get))` opened one IndexedDB transaction per id with
+		// no limiter — 4,840 concurrent transactions for a large won-items bench. `getMany` (when
+		// the adapter has it) opens exactly one; `getManyFallback` keeps the old per-id behavior
+		// for adapters (like `MemoryCatalogCache`) that do not need batching.
+		const keys = ids.map((id) => cacheKey(kind, locale, id));
+		const cachedById = this.cache.getMany
+			? await this.cache.getMany(keys)
+			: await getManyFallback(this.cache, keys);
+		for (const id of ids) {
+			const cached = cachedById.get(id);
+			if (!cached) {
 				unresolved.push(id);
-			}),
-		);
+				continue;
+			}
+			if (
+				cached.schemaVersion !== PINNED_SCHEMA ||
+				cached.normalizerVersion !== CATALOG_NORMALIZER_VERSION
+			) {
+				unresolved.push(id);
+				continue;
+			}
+			const age = Math.max(0, now - cached.storedAt);
+			if (cached.value === null) {
+				if (age <= NEGATIVE_TTL_MS) {
+					result.coverage.set(id, {
+						status: 'missing',
+						source: 'cache_negative',
+						reason: cached.negativeReason ?? 'not_found',
+					});
+				} else {
+					unresolved.push(id);
+				}
+				continue;
+			}
+			if (cached.value.id !== id || !hasExpectedKind(kind, cached.value.kind)) {
+				unresolved.push(id);
+				continue;
+			}
+			if (age <= POSITIVE_TTL_MS[kind]) {
+				result.entities.set(id, cached.value);
+				result.coverage.set(id, { status: 'resolved', source: 'cache_fresh' });
+				continue;
+			}
+			if (age <= STALE_MAX_AGE_MS) stale.set(id, cached);
+			unresolved.push(id);
+		}
 
 		const batches = chunk(uniqueSorted(unresolved), BATCH_SIZE);
 		await Promise.all(
@@ -500,6 +506,19 @@ function isTransient(error: unknown): boolean {
 
 function isTransientStatus(status: number | null): boolean {
 	return status !== null && [429, 500, 502, 503, 504].includes(status);
+}
+
+/** Parallel-`get` fallback for an adapter without `getMany` (for example `MemoryCatalogCache`). */
+async function getManyFallback<K extends CatalogKind>(
+	cache: Pick<CatalogCacheAdapter, 'get'>,
+	keys: readonly CatalogCacheKey<K>[],
+): Promise<Map<number, CatalogCacheRecord<CatalogEntityByKind[K]>>> {
+	const results = new Map<number, CatalogCacheRecord<CatalogEntityByKind[K]>>();
+	await Promise.all(keys.map(async (key) => {
+		const record = await cache.get(key);
+		if (record) results.set(key.id, record);
+	}));
+	return results;
 }
 
 function hasExpectedKind(kind: CatalogKind, entityKind: string): boolean {

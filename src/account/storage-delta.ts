@@ -90,8 +90,11 @@ export function compareStorageSnapshots(before: unknown, after: unknown): Storag
 	if (canonical([...before.roster].sort()) !== canonical([...after.roster].sort())) {
 		warnings.push({ code: 'roster_changed' });
 	}
-	// A character that answered 404 on one side is dropped from both projections: the
-	// account keeps its own delta and only the confidence degrades.
+	// H14.10: a character with ANY unread hole on one side — a permanent 404, or a transient
+	// timeout/network/5xx that survived the capture's own single retry (`unobserved` below) — is
+	// dropped from both projections instead of invalidating the whole delta: the account keeps
+	// its own delta and only the confidence degrades. A transient hole is bounded by that one
+	// retry already having failed, so it costs no more request budget than the 404 case did.
 	const excludedCharacters = new Set([
 		...unobservedCharacters(before),
 		...unobservedCharacters(after),
@@ -297,9 +300,15 @@ function validateCoverage(
 	return valid;
 }
 
-/** A 404 on one character is a bounded hole, not an unusable snapshot. */
+/**
+ * H14.10: any per-character hole is a bounded one, not an unusable snapshot — a permanent 404
+ * (`missing_character`) exactly as before, and now also a transient failure
+ * (`unavailable`/`partial_response`) once `StorageSnapshotService` already gave that character its
+ * one retry. This never applies to an account-wide `sources` entry: those keep invalidating the
+ * whole pass, because there is no single character to exclude instead.
+ */
 function unobserved(coverage: SourceCoverage | undefined): boolean {
-	return coverage?.status === 'partial' && coverage.reason === 'missing_character';
+	return coverage?.status === 'partial';
 }
 
 function unobservedCharacters(snapshot: StorageSnapshot): string[] {

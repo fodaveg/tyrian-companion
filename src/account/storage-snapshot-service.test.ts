@@ -34,8 +34,8 @@ const requiredRestrictedUrls = [
 	'/v2/account/materials',
 ];
 
-function response(status: number, body: unknown): HttpResponse {
-	return { status, headers: {}, body };
+function response(status: number, body: unknown, headers: Record<string, string> = {}): HttpResponse {
+	return { status, headers, body };
 }
 
 function clientFor(
@@ -837,7 +837,11 @@ describe('StorageSnapshotService', () => {
 		['timeout', new HttpTransportError('timeout', null, null, 'Timed out.')],
 		['network', new HttpTransportError('network', null, null, 'Network failed.')],
 		['server failure', new HttpTransportError('http', 503, null, 'Unavailable.')],
-	] as const)('stops after the first pass when one character has a transient %s', async (_label, failure) => {
+	] as const)('retries a single transient character %s once and never degrades the pass over it', async (_label, failure) => {
+		// H14.10: `capturePass` now gives one character a single patient retry (never the whole
+		// roster) before recording it partial. This fixture's second slot is a clean success, so
+		// the retry recovers pass 1 outright and the capture never needed the old "return partial
+		// after one pass" fallback below at all.
 		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
 		const seen: string[] = [];
 		const first = passWith({ [inventoryPath]: failure });
@@ -850,6 +854,33 @@ describe('StorageSnapshotService', () => {
 		const snapshot = await service.capture();
 
 		expect(snapshot).toMatchObject({
+			quality: 'stable',
+			passes: 2,
+			coverage: {
+				sources: { characters: { status: 'complete' } },
+				characters: { [characterName]: { status: 'complete' } },
+			},
+		});
+		expect(snapshot.passCoverages).toHaveLength(2);
+		// Attempt 1 (fails), the in-pass retry (recovers), then pass 2's own fetch: 3, never 2N.
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(3);
+	});
+
+	it.each([
+		['timeout', new HttpTransportError('timeout', null, null, 'Timed out.')],
+		['network', new HttpTransportError('network', null, null, 'Network failed.')],
+		['server failure', new HttpTransportError('http', 503, null, 'Unavailable.')],
+	] as const)('still stops after one pass, fine-grained by character, when the retry also fails (%s)', async (
+		_label, failure,
+	) => {
+		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+		const seen: string[] = [];
+		const first = passWith({ [inventoryPath]: failure });
+		const service = new StorageSnapshotService(clientFor([first], { seen }).client);
+
+		const snapshot = await service.capture();
+
+		expect(snapshot).toMatchObject({
 			quality: 'partial',
 			passes: 1,
 			coverage: {
@@ -858,10 +889,11 @@ describe('StorageSnapshotService', () => {
 			},
 		});
 		expect(snapshot.passCoverages).toHaveLength(1);
-		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(1);
+		// The one retry still only ever touches this character, never the whole roster.
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(2);
 	});
 
-	it('does not launch a third account-wide pass when the transient hole appears in the second', async () => {
+	it('does not launch a third account-wide pass when the retried hole persists in the second', async () => {
 		const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
 		const seen: string[] = [];
 		const second = passWith({
@@ -870,7 +902,6 @@ describe('StorageSnapshotService', () => {
 		const service = new StorageSnapshotService(clientFor([
 			passWith(),
 			second,
-			passWith(),
 		], { seen }).client);
 
 		const snapshot = await service.capture();
@@ -881,7 +912,89 @@ describe('StorageSnapshotService', () => {
 		expect(snapshot.passCoverages[1]?.characters[characterName]).toMatchObject({
 			status: 'partial', reason: 'unavailable', diagnostic: { kind: 'timeout' },
 		});
-		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(2);
+		// Pass 1's fetch, pass 2's own fetch (fails), and its one in-pass retry (fails again): 3.
+		expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(3);
+	});
+
+	describe('H14.10 last-modified anchor skip', () => {
+		const lastModified = 'Mon, 01 Sep 2026 00:00:00 GMT';
+
+		it('skips the second full pass and stays stable when the account last-modified is unchanged', async () => {
+			const seen: string[] = [];
+			const fixture = clientFor([
+				passWith({
+					'account/inventory': response(200, completePassFixture['account/inventory'], { 'last-modified': lastModified }),
+				}),
+			], { seen, permissions: allPermissions });
+
+			const snapshot = await new StorageSnapshotService(fixture.client).capture();
+
+			expect(snapshot).toMatchObject({ quality: 'stable', passes: 1 });
+			expect(snapshot.passCoverages).toHaveLength(1);
+			// roster + 5 stores + 1 character = 7, plus the one anchor recheck = 8. Never the old
+			// 14 (7 fixed x 2 passes) that a full, unconditional second pass would cost.
+			expect(seen).toHaveLength(8);
+			expect(seen.filter((path) => path.startsWith('account/inventory?'))).toHaveLength(2);
+		});
+
+		it('falls back to a real second pass when the account last-modified has moved on', async () => {
+			const seen: string[] = [];
+			const fixture = clientFor([
+				passWith({
+					'account/inventory': response(200, completePassFixture['account/inventory'], { 'last-modified': lastModified }),
+				}),
+				passWith({
+					'account/inventory': response(200, completePassFixture['account/inventory'], { 'last-modified': 'Tue, 02 Sep 2026 00:00:00 GMT' }),
+				}),
+			], { seen });
+
+			const snapshot = await new StorageSnapshotService(fixture.client).capture();
+
+			expect(snapshot).toMatchObject({ quality: 'stable', passes: 2 });
+			expect(snapshot.passCoverages).toHaveLength(2);
+		});
+
+		it('keeps a persisted single-character hole usable as stable via the anchor, in one pass', async () => {
+			const inventoryPath = `characters/${encodeURIComponent(characterName)}/inventory`;
+			const seen: string[] = [];
+			const fixture = clientFor([
+				passWith({
+					[inventoryPath]: new HttpTransportError('timeout', null, null, 'Timed out.'),
+					'account/inventory': response(200, completePassFixture['account/inventory'], { 'last-modified': lastModified }),
+				}),
+			], { seen });
+
+			const snapshot = await new StorageSnapshotService(fixture.client).capture();
+
+			expect(snapshot).toMatchObject({
+				quality: 'stable',
+				passes: 1,
+				coverage: {
+					characters: {
+						[characterName]: { status: 'partial', reason: 'unavailable', diagnostic: { kind: 'timeout' } },
+					},
+				},
+			});
+			expect(snapshot.passCoverages).toHaveLength(1);
+			// The original attempt, its one in-pass retry (both fail), then the anchor recheck:
+			// never a full second pass of every store and the whole roster.
+			expect(seen.filter((path) => path.startsWith(`${inventoryPath}?`))).toHaveLength(2);
+		});
+
+		it('never attempts the anchor when an account-wide store already failed transiently', async () => {
+			const seen: string[] = [];
+			const fixture = clientFor([
+				passWith({
+					'account/bank': new HttpTransportError('timeout', null, null, 'Timed out.'),
+					'account/inventory': response(200, completePassFixture['account/inventory'], { 'last-modified': lastModified }),
+				}),
+			], { seen });
+
+			const snapshot = await new StorageSnapshotService(fixture.client).capture();
+
+			expect(snapshot).toMatchObject({ quality: 'partial', passes: 1 });
+			expect(seen.filter((path) => path.startsWith('account/inventory?'))).toHaveLength(1);
+		});
 	});
 
 	describe('capture progress', () => {

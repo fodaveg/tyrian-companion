@@ -287,6 +287,45 @@ describe('AssistedDetectionService', () => {
 		expect(clock.pendingTimers()).toBe(1);
 	});
 
+	/**
+	 * H14.10: a single character timing out used to degrade the whole capture to `partial`,
+	 * which failed `stableSnapshot` and made `poll` back off as if the account itself were
+	 * unreadable. `StorageSnapshotService` now keeps such a capture `stable` with that one
+	 * character excluded (see its own test suite), and the delta already knows how to drop an
+	 * excluded character (`storage-delta.test.ts`) — this pins the two together at the point that
+	 * actually mattered: `poll` returns success instead of arming a cooldown over it.
+	 */
+	it('returns success and drops an unreadable character instead of backing off', async () => {
+		const degradedAfter: StorageSnapshot = {
+			...snapshot('degraded', 2, 0),
+			coverage: {
+				...snapshot('degraded', 2, 0).coverage,
+				characters: {
+					'Astra Uno': {
+						status: 'partial',
+						reason: 'unavailable',
+						diagnostic: { kind: 'timeout', status: null, retryAfterMs: null },
+					},
+				},
+			},
+		};
+		const observedAfterIds: Array<string | null> = [];
+		const harness = createHarness(
+			[snapshot('baseline', 0, 0), degradedAfter],
+			idleSession,
+			undefined,
+			undefined,
+			(delta) => observedAfterIds.push(delta.afterSnapshotId),
+		);
+
+		await harness.service.arm(10_000);
+		const outcome = await harness.scheduler.trigger();
+
+		expect(outcome.kind).toBe('success');
+		expect(harness.service.getState()).toMatchObject({ status: 'armed' });
+		expect(observedAfterIds).toEqual(['degraded']);
+	});
+
 	it('updates a running interval and disarms without retaining account evidence', async () => {
 		const harness = createHarness([snapshot('a', 0, 0)]);
 		await harness.service.arm(900_000);

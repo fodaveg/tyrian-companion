@@ -19,6 +19,9 @@ export const CATALOG_CACHE_STORE_NAME = 'catalog-records-v1';
 
 export interface CatalogRecordStore {
 	get(key: string): Promise<unknown>;
+	/** Optional: a single-transaction batched read. `PersistentCatalogCache.getMany` falls back
+	 * to parallel `get` calls when a store (such as a test double) does not implement it. */
+	getMany?(keys: readonly string[]): Promise<Map<string, unknown>>;
 	set(key: string, value: string): Promise<void>;
 	delete(key: string): Promise<void>;
 	close(): void;
@@ -58,6 +61,51 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 		}
 		attempt.success();
 		return structuredClone(envelope.record) as CatalogCacheRecord<CatalogEntityByKind[K]>;
+	}
+
+	/**
+	 * H14.15: `PublicCatalogService.resolveKind` used to open one `get` (one IndexedDB
+	 * transaction) per requested id, unbounded — 4,840 concurrent transactions for a large
+	 * won-items bench. This opens exactly one transaction for the whole batch (via the store's
+	 * own `getMany`) and records a single diagnostic for it instead of one per id.
+	 */
+	async getMany<K extends CatalogKind>(
+		cacheKeys: readonly CatalogCacheKey<K>[],
+	): Promise<Map<number, CatalogCacheRecord<CatalogEntityByKind[K]>>> {
+		const results = new Map<number, CatalogCacheRecord<CatalogEntityByKind[K]>>();
+		if (cacheKeys.length === 0) return results;
+		const attempt = this.diagnostics.begin('catalog', 'read');
+		const storageKeys = cacheKeys.map((cacheKey) => catalogCacheStorageKey(cacheKey));
+		let raws: Map<string, unknown>;
+		try {
+			raws = this.store.getMany
+				? await this.store.getMany(storageKeys)
+				: await this.getManyByGet(storageKeys);
+		} catch {
+			attempt.failure();
+			return results;
+		}
+		const corrupt: string[] = [];
+		for (const cacheKey of cacheKeys) {
+			const storageKey = catalogCacheStorageKey(cacheKey);
+			const raw = raws.get(storageKey);
+			if (raw === undefined) continue;
+			const envelope = parseEnvelope(raw, cacheKey);
+			if (!envelope) { corrupt.push(storageKey); continue; }
+			results.set(cacheKey.id, structuredClone(envelope.record) as CatalogCacheRecord<CatalogEntityByKind[K]>);
+		}
+		attempt.success();
+		for (const storageKey of corrupt) await this.deleteQuietly(storageKey);
+		return results;
+	}
+
+	private async getManyByGet(keys: readonly string[]): Promise<Map<string, unknown>> {
+		const results = new Map<string, unknown>();
+		await Promise.all(keys.map(async (key) => {
+			const raw = await this.store.get(key);
+			if (raw !== undefined) results.set(key, raw);
+		}));
+		return results;
 	}
 
 	async set<K extends CatalogKind>(
@@ -191,6 +239,33 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 				result = request.result as unknown;
 			};
 			transaction.oncomplete = () => { attempt.success(); resolve(result); };
+			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not read the public catalog cache.')); };
+			transaction.onabort = () => { attempt.failure(); reject(new Error('Public catalog cache read was aborted.')); };
+		});
+	}
+
+	/** Opens exactly one readonly transaction for the whole batch, regardless of key count. */
+	getMany(keys: readonly string[]): Promise<Map<string, unknown>> {
+		const attempt = this.diagnostics.begin('catalog', 'read');
+		return new Promise((resolve, reject) => {
+			if (keys.length === 0) { attempt.skip(); resolve(new Map()); return; }
+			let transaction: IDBTransaction;
+			try {
+				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readonly');
+			} catch (error) {
+				attempt.failure();
+				reject(error instanceof Error ? error : new Error('Could not read the public catalog cache.'));
+				return;
+			}
+			const store = transaction.objectStore(CATALOG_CACHE_STORE_NAME);
+			const results = new Map<string, unknown>();
+			for (const key of keys) {
+				const request = store.get(key);
+				request.onsuccess = () => {
+					if (request.result !== undefined) results.set(key, request.result as unknown);
+				};
+			}
+			transaction.oncomplete = () => { attempt.success(); resolve(results); };
 			transaction.onerror = () => { attempt.failure(); reject(new Error('Could not read the public catalog cache.')); };
 			transaction.onabort = () => { attempt.failure(); reject(new Error('Public catalog cache read was aborted.')); };
 		});

@@ -94,6 +94,61 @@ describe('PersistentCatalogCache', () => {
 		expect(catalogCacheStorageKey(current)).not.toBe(catalogCacheStorageKey(legacy));
 	});
 
+	it('H14.15: getMany resolves hits, skips misses, and evicts a corrupt entry, keyed by id', async () => {
+		const store = new SharedRecordStore();
+		const cache = new PersistentCatalogCache(store);
+		const item10 = parseCatalogItems([itemPayload(10)])[0];
+		const item11 = parseCatalogItems([itemPayload(11)])[0];
+		if (!item10 || !item11) throw new Error('Missing item fixture.');
+		await cache.set(itemKey('es', 10), record(item10));
+		await cache.set(itemKey('es', 11), record(item11));
+		store.records.set(catalogCacheStorageKey(itemKey('es', 12)), '{not-json');
+
+		const results = await cache.getMany([itemKey('es', 10), itemKey('es', 11), itemKey('es', 12), itemKey('es', 13)]);
+
+		expect(results.get(10)).toEqual(record(item10));
+		expect(results.get(11)).toEqual(record(item11));
+		expect(results.has(12)).toBe(false);
+		expect(results.has(13)).toBe(false);
+		expect(store.records.has(catalogCacheStorageKey(itemKey('es', 12)))).toBe(false);
+	});
+
+	it('H14.15: getMany uses the store batch read when it is available', async () => {
+		const store = new SharedRecordStore();
+		let getManyCalls = 0;
+		const batchedStore: CatalogRecordStore = {
+			...store,
+			get: store.get.bind(store),
+			set: store.set.bind(store),
+			delete: store.delete.bind(store),
+			close: store.close.bind(store),
+			getMany: async (keys) => {
+				getManyCalls += 1;
+				const results = new Map<string, unknown>();
+				for (const key of keys) {
+					const value = store.records.get(key);
+					if (value !== undefined) results.set(key, value);
+				}
+				return results;
+			},
+		};
+		const cache = new PersistentCatalogCache(batchedStore);
+		const item10 = parseCatalogItems([itemPayload(10)])[0];
+		if (!item10) throw new Error('Missing item fixture.');
+		await cache.set(itemKey('es', 10), record(item10));
+
+		const results = await cache.getMany([itemKey('es', 10), itemKey('es', 11)]);
+
+		expect(getManyCalls).toBe(1);
+		expect(results.get(10)).toEqual(record(item10));
+		expect(results.has(11)).toBe(false);
+	});
+
+	it('resolves an empty map for an empty getMany batch', async () => {
+		const cache = new PersistentCatalogCache(new SharedRecordStore());
+		await expect(cache.getMany([])).resolves.toEqual(new Map());
+	});
+
 	it('round-trips null negative records with their reason', async () => {
 		const cache = new PersistentCatalogCache(new SharedRecordStore());
 		const key = itemKey('en', 404);

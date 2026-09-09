@@ -49,7 +49,11 @@ export class ActiveSessionLeaseCoordinator {
 
 	constructor(options: ActiveSessionLeaseCoordinatorOptions = {}) {
 		this.instanceId = options.instanceId ?? crypto.randomUUID();
-		this.leaseTtlMs = options.leaseTtlMs ?? 30_000;
+		// H14.22 (8 sep 2026): a 10 s heartbeat wrote to IndexedDB every 10 s for the whole
+		// session (1,440 writes in 4 h). 300 s trades a 5 min recovery window for a 30x drop
+		// in write volume; see `ManualSessionStartService.startHeartbeat`, whose own interval
+		// formula derives from this TTL.
+		this.leaseTtlMs = options.leaseTtlMs ?? 300_000;
 		this.expiryConfirmDelayMs = options.expiryConfirmDelayMs ?? 250;
 		this.clock = options.clock ?? Date.now;
 		this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)));
