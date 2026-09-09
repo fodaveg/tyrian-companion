@@ -1,10 +1,9 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { inventoryAdvisorBuiltinBundleProvider } from '../advisor/inventory-advisor-builtin-bundle';
 import { sha256StandardCanonicalValue } from '../advisor/inventory-advisor-contract';
 import { halloweenTrickOrTreatBagModel } from '../economy/models/halloween-trick-or-treat-bag';
-import { moduleSpecifiers } from '../test/module-boundary';
+import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 
 describe('H11.6 personal Halloween valuation architecture', () => {
 	it('keeps the manual overlay outside the curated model, economy pack and fingerprints', () => {
@@ -23,7 +22,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 	});
 
 	it('keeps resolution pure and free of storage, network, Vault and plugin capabilities', () => {
-		const source = readFileSync('src/economy/container-personal-valuation.ts', 'utf8');
+		const source = readModuleSource('src/economy/container-personal-valuation.ts');
 		expect(moduleSpecifiers(source)).toEqual(['./container-model']);
 		expect(source).not.toMatch(/obsidian|vault\.|indexedDB|localStorage|fetch\(|requestDetailed|setTimeout|setInterval/u);
 		expect(source).toContain('BigInt(outcome.expectedUnitsMillionths) * BigInt(entry.unitCopper)');
@@ -31,25 +30,25 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 	});
 
 	it('wires a dynamic settings overlay into memory-only reclassification without coupling it to Halloween opt-in', () => {
-		const settings = readFileSync('src/core/settings.ts', 'utf8');
-		const settingsTab = readFileSync('src/ui/settings-tab.ts', 'utf8');
-		const main = readFileSync('src/main.ts', 'utf8');
+		const settings = readModuleSource('src/core/settings.ts');
+		const settingsTab = readModuleSource('src/ui/settings-tab.ts');
+		const main = readModuleSource('src/main.ts');
 		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 12');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
 		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(
 			settingsTab.indexOf("settings.halloween.enabled.name"),
 		);
-		expect(readFileSync('src/runtime/assemble-advisor.ts', 'utf8'))
+		expect(readModuleSource('src/runtime/assemble-advisor.ts'))
 			.toContain('inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,');
 		expect(main).toContain('personalValuation: () => this.settings.halloweenPersonalValuation');
 		expect(main).toMatch(/previousPersonalValuation[\s\S]*saveData\(nextSettings\)[\s\S]*this\.settings = nextSettings[\s\S]*inventoryAdvisor\.reclassify\([^)]*\)/u);
 	});
 
 	it('covers the seven UI axes and makes no asset or contrast claim', () => {
-		const component = readFileSync('src/ui/halloween-personal-valuation-settings.ts', 'utf8');
-		const tests = readFileSync('src/ui/halloween-personal-valuation-settings.test.ts', 'utf8');
-		const styles = readFileSync('styles.css', 'utf8');
-		const locale = readFileSync('src/core/i18n-runtime-catalog.ts', 'utf8');
+		const component = readModuleSource('src/ui/halloween-personal-valuation-settings.ts');
+		const tests = readModuleSource('src/ui/halloween-personal-valuation-settings.test.ts');
+		const styles = readModuleSource('styles.css');
+		const locale = readModuleSource('src/core/i18n-runtime-catalog.ts');
 		const start = styles.indexOf('.tyrian-personal-valuation-setting');
 		const end = styles.indexOf('.tyrian-companion-review fieldset', start);
 		const personalStyles = styles.slice(start, end);
@@ -77,7 +76,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 
 	it('documents the product, architecture and residual-risk contracts', () => {
 		for (const file of ['docs/ARCHITECTURE.md', 'docs/PRODUCT.md', 'docs/THREAT-MODEL.md']) {
-			expect(readFileSync(file, 'utf8')).toContain('H11.6');
+			expect(readModuleSource(file)).toContain('H11.6');
 		}
 	});
 });

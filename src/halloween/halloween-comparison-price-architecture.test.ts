@@ -1,9 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 describe('H11.3 and H11.5 architecture contract', () => {
 	it('keeps comparison pure, exact, model-pinned, and independent from notes or Vault APIs', () => {
-		const source = readFileSync('src/halloween/halloween-loot-comparison.ts', 'utf8');
+		const source = readModuleSource('src/halloween/halloween-loot-comparison.ts');
 		expect(source).toContain('halloweenTrickOrTreatBagModel()');
 		expect(source).toContain('halloweenTrickOrTreatBagModelAt');
 		expect(source).toContain('modelId: model.modelId');
@@ -15,10 +16,10 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	});
 
 	it('seals only finalized review output and writes comparison in the same IndexedDB transaction', () => {
-		const main = readFileSync('src/main.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
 		expect(main).toContain("result.status === 'finalized'");
 		expect(main).toContain("'session_final'");
-		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
+		const store = readModuleSource('src/halloween/halloween-store.ts');
 		expect(store).toContain('HALLOWEEN_DB_VERSION = 7');
 		expect(store).toContain('HALLOWEEN_COMPARISON_STORE');
 		const replacement = store.slice(store.indexOf('\treplaceEpisodeNotice('), store.indexOf('\n\treadLatestComparison'));
@@ -28,8 +29,8 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	});
 
 	it('feeds price evaluation only through the post-compaction H9.1 local read port', () => {
-		const history = readFileSync('src/economy/price-history-runtime.ts', 'utf8');
-		const halloween = readFileSync('src/halloween/halloween-price-alert-runtime.ts', 'utf8');
+		const history = readModuleSource('src/economy/price-history-runtime.ts');
+		const halloween = readModuleSource('src/halloween/halloween-price-alert-runtime.ts');
 		expect(history.indexOf('await store.compactAndPrune')).toBeLessThan(history.indexOf('await this.options.afterCompaction'));
 		expect(history).toContain('readDaily: async');
 		expect(halloween).not.toMatch(/ApiPollScheduler|setInterval|setTimeout|requestDetailed|fetch\(/u);
@@ -37,31 +38,31 @@ describe('H11.3 and H11.5 architecture contract', () => {
 	});
 
 	it('keeps the p90 alert opt-in, local, durable, crossing-based, and quantity-free', () => {
-		const settings = readFileSync('src/core/settings.ts', 'utf8');
+		const settings = readModuleSource('src/core/settings.ts');
 		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 12');
 		expect(settings).toContain('halloweenPriceAlertEnabled: false');
 		expect(settings).toContain('halloweenPriceAlertMinimumAboveP90Bps: 0');
 		expect(settings).toContain('halloweenPriceAlertCooldownHours: 24');
-		const store = readFileSync('src/halloween/halloween-store.ts', 'utf8');
+		const store = readModuleSource('src/halloween/halloween-store.ts');
 		expect(store).toContain("const crossed = projection.status === 'high' && prior?.armed === true");
 		expect(store).toContain('lastNotifiedDayUtc');
 		expect(store).toContain('cooldownUntilMs');
 		expect(store).toContain('lastValidCapturedAtMs');
 		expect(store).toContain('projection.capturedAtMs <= prior.lastValidCapturedAtMs');
-		const runtime = readFileSync('src/halloween/halloween-price-alert-runtime.ts', 'utf8');
+		const runtime = readModuleSource('src/halloween/halloween-price-alert-runtime.ts');
 		expect(runtime).toContain('this.project(notices, result.projection)');
 		expect(runtime).toContain('projection: null, notices: [], unreadCount: 0');
 		expect(runtime).toContain('private priceHistoryActive = false');
 		expect(runtime).toContain('this.evaluationContextCurrent(generation, accountRef, priceHistoryActive)');
 		expect(runtime).not.toContain('this.configure(this.settings, true)');
-		const notice = readFileSync('src/halloween/halloween-price-alert.ts', 'utf8');
+		const notice = readModuleSource('src/halloween/halloween-price-alert.ts');
 		expect(notice).not.toMatch(/quantity/u);
 	});
 
 	it('covers the seven UI axes and does not claim unverified contrast', () => {
-		const panel = readFileSync('src/ui/halloween-alert-panel.ts', 'utf8');
-		const styles = readFileSync('styles.css', 'utf8');
-		const locale = readFileSync('src/core/i18n-runtime-catalog.ts', 'utf8');
+		const panel = readModuleSource('src/ui/halloween-alert-panel.ts');
+		const styles = readModuleSource('styles.css');
+		const locale = readModuleSource('src/core/i18n-runtime-catalog.ts');
 		// Tokens.
 		expect(styles).toMatch(/var\(--(?:size|background|color|radius)-/u);
 		// Components and every state.
@@ -83,7 +84,7 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		expect(panel).toContain('halloween.unknownItem');
 		expect(panel).toContain("state.status.startsWith('store_') ? 'alert' : 'status'");
 		expect(panel + styles).not.toMatch(/contrast (?:passes|verified)|<img|background-image/iu);
-		const settingsTab = readFileSync('src/ui/settings-tab.ts', 'utf8');
+		const settingsTab = readModuleSource('src/ui/settings-tab.ts');
 		expect(settingsTab.match(/this\.refreshForSettingsChange\(\)/gu)?.length).toBeGreaterThanOrEqual(4);
 	});
 });

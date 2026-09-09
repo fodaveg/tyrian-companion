@@ -1,12 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { moduleSpecifiers } from '../test/module-boundary';
+import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 
 const PRICE_HISTORY_FILES = readdirSync('src/economy')
 	.filter((file) => file.startsWith('price-history-') && file.endsWith('.ts') && !file.endsWith('.test.ts'))
 	.sort()
-	.map((file) => ({ path: `src/economy/${file}`, source: readFileSync(`src/economy/${file}`, 'utf8') }));
+	.map((file) => ({ path: `src/economy/${file}`, source: readModuleSource(`src/economy/${file}`) }));
 
 const IMPORTS = new Map<string, string[]>([
 	['src/economy/price-history-capture.ts', [

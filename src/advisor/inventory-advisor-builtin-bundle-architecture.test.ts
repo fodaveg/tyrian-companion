@@ -1,11 +1,13 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 const BUILTIN_FILES = readdirSync('src/advisor')
 	.filter(isBuiltinProductionFile)
 	.sort()
-	.map((file) => ({ file, source: readFileSync(`src/advisor/${file}`, 'utf8') }));
+	.map((file) => ({ file, source: readModuleSource(`src/advisor/${file}`) }));
 
 const ALLOWED_DEPENDENCIES = new Set([
 	'./inventory-advisor-classifier',

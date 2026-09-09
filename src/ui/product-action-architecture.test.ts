@@ -1,13 +1,14 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 describe('product action architecture', () => {
 	it('registers the palette once from the same controller rendered by all three surfaces', () => {
-		const main = readFileSync('src/main.ts', 'utf8');
-		const companion = readFileSync('src/ui/companion-view.ts', 'utf8');
-		const inventory = readFileSync('src/ui/inventory-advisor-item-view.ts', 'utf8');
-		const settings = readFileSync('src/ui/settings-tab.ts', 'utf8');
-		const panel = readFileSync('src/ui/product-shell.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
+		const companion = readModuleSource('src/ui/companion-view.ts');
+		const inventory = readModuleSource('src/ui/inventory-advisor-item-view.ts');
+		const settings = readModuleSource('src/ui/settings-tab.ts');
+		const panel = readModuleSource('src/ui/product-shell.ts');
 		expect(main.match(/registerProductActionPalette\(/gu)).toHaveLength(1);
 		expect(main).toContain('sessionCommands: this.sessionCommands');
 		expect(main).toContain('execute: (id) => this.executeProductAction');
@@ -30,7 +31,7 @@ describe('product action architecture', () => {
 	});
 
 	it('keeps responsive, focus, reduced-motion, and 44px contracts in the product stylesheet', () => {
-		const styles = readFileSync('styles.css', 'utf8');
+		const styles = readModuleSource('styles.css');
 		expect(styles).toContain('@container (max-width: 1049px)');
 		expect(styles).toContain('@container (max-width: 599px)');
 		expect(styles).toContain('@media (prefers-reduced-motion: reduce)');

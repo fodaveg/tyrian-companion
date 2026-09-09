@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +5,7 @@ import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic
 import { halloweenManagedAssets } from './halloween-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
+import { readModuleSource } from '../test/module-boundary';
 
 const NOTE_PROPERTIES = new Set([
 	'tc_started_at', 'tc_duration_ms', 'tc_build', 'tc_classification', 'tc_confidence',
@@ -104,8 +104,8 @@ describe('Halloween Base assets', () => {
 		expect((await v2.inspect('Tyrian Companion')).assets.every((asset) => asset.status === 'newer_than_plugin')).toBe(true);
 	});
 
-	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', async () => {
-		const source = await readFile(new URL('./halloween-base.ts', import.meta.url), 'utf8');
+	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', () => {
+		const source = readModuleSource('src/assets/halloween-base.ts');
 		expect(source).not.toMatch(/\b(?:Vault|fetch|requestUrl|XMLHttpRequest|node:fs|session-note-writer)\b/u);
 		expect(source).not.toMatch(/https?:\/\//u);
 	});

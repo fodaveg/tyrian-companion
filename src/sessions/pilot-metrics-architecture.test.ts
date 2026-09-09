@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { TRANSLATIONS } from '../core/i18n';
+import { readModuleSource } from '../test/module-boundary';
 
 const CORE = [
 	'src/sessions/pilot-metrics-model.ts',
@@ -13,24 +13,24 @@ const CORE = [
 describe('pilot metrics architecture', () => {
 	it('keeps the journal and aggregation island free of network, secrets, uploaders and Vault writes', () => {
 		for (const file of CORE) {
-			const source = readFileSync(file, 'utf8');
+			const source = readModuleSource(file);
 			expect(source).not.toMatch(/\bfetch\b|requestUrl|XMLHttpRequest|WebSocket|secret-provider|SecretStorage|uploader|telemetry/iu);
 			expect(source).not.toMatch(/app\.vault|\.createFolder\(|\.create\(/u);
 		}
 	});
 
 	it('keeps all Vault writes inside the explicit exporter', () => {
-		const source = readFileSync('src/sessions/pilot-metrics-export.ts', 'utf8');
+		const source = readModuleSource('src/sessions/pilot-metrics-export.ts');
 		expect(source).toContain('class PilotMetricsExporter');
 		expect(source).toContain('async export(');
 		expect(source).not.toMatch(/\bfetch\b|requestUrl|SecretStorage|uploader|telemetry/iu);
 	});
 
 	it('keeps H5.3 receipts unchanged and wires every H0.6 lifecycle source fail-open', () => {
-		const receipts = readFileSync('src/sessions/pending-proposal-model.ts', 'utf8');
+		const receipts = readModuleSource('src/sessions/pending-proposal-model.ts');
 		expect(receipts).toContain("PROPOSAL_RECEIPT_VERSION = 1");
 		expect(receipts).not.toContain('accepted_workflow_failed');
-		const main = readFileSync('src/main.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
 		for (const hook of [
 			'proposalPresented', "workflow: 'succeeded'", "workflow: 'failed'", 'sessionStarted',
 			'sessionCompleted', 'recoveryPresented', 'recoveryFinished', 'proposalExcluded',
@@ -38,7 +38,7 @@ describe('pilot metrics architecture', () => {
 	});
 
 	it('attempts review-presented when a card materializes without delaying any product action', () => {
-		const view = readFileSync('src/ui/companion-view.ts', 'utf8');
+		const view = readModuleSource('src/ui/companion-view.ts');
 		const pending = view.slice(view.indexOf('private renderPendingConfirmation'), view.indexOf('private refreshDynamicStatus'));
 		expect(pending).toContain('recordPendingProposalPresented');
 		expect(pending).not.toContain('review.disabled');
@@ -54,18 +54,18 @@ describe('pilot metrics architecture', () => {
 		expect(assisted).not.toContain('PilotBoundaryModal');
 		expect(assisted).toContain('openManualSessionStart(null)');
 		expect(assisted).toContain('stopManualSession(null)');
-		const main = readFileSync('src/main.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
 		const review = main.slice(main.indexOf('private async reviewPendingProposalOutcome'), main.indexOf('async dismissPendingProposal'));
 		expect(review).not.toContain('proposalPresented');
 		expect(main).not.toContain('if (recoveryId) await this.ensurePilotRecoveryPresented(recoveryId)');
 	});
 
 	it('scopes the journal by the already-derived vault id and exposes atomic opt-out', () => {
-		const main = readFileSync('src/main.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
 		expect(main).toMatch(/assembleSessions\(\{\s*\n\s*factory: window\.indexedDB,\s*\n\s*vaultId,/u);
-		expect(readFileSync('src/runtime/assemble-sessions.ts', 'utf8'))
+		expect(readModuleSource('src/runtime/assemble-sessions.ts'))
 			.toContain('new IndexedDbPilotMetricsStore(input.factory, input.vaultId)');
-		const store = readFileSync('src/sessions/pilot-metrics-store.ts', 'utf8');
+		const store = readModuleSource('src/sessions/pilot-metrics-store.ts');
 		expect(store).toContain('async disable()');
 		expect(store).toContain('PILOT_METRICS_PROFILE_STORE, PILOT_METRICS_OBSERVATION_STORE, PILOT_METRICS_VERIFICATION_STORE');
 	});
@@ -79,7 +79,7 @@ describe('pilot metrics architecture', () => {
 	});
 
 	it('closes every product invalidation of a live assisted proposal without changing successful workflow closure', () => {
-		const main = readFileSync('src/main.ts', 'utf8');
+		const main = readModuleSource('src/main.ts');
 		const disarm = main.slice(main.indexOf('disarmAssistedDetection(): void'), main.indexOf('recordAssistedProposalPresented(): void'));
 		expect(disarm).toContain("invalidateAndDisarmAssistedDetection('user')");
 		const settings = main.slice(main.indexOf('async updateSettings('), main.indexOf('\n\tprivate async loadSettings('));

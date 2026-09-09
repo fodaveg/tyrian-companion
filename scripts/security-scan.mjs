@@ -107,6 +107,25 @@ const NATIVE_MUMBLE_PROHIBITED_PATTERNS = [
 	/\b(?:identity|characterName|fAvatarPosition|fCameraPosition|playerX|playerY|processId|pid)\b/iu,
 	/\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
 ];
+// H14.17 (lote L). H6.7's exact network/credential capability census used to live entirely
+// inside `src/security-boundary.test.ts`, reading every production `.ts` file with
+// `readFileSync` and matching its own patterns. Moving the patterns and the walk here keeps the
+// same exact-allowlist shape (a file gains the capability, the reviewed list in the test grows or
+// the finding turns red) while letting the test call executable functions instead of reading
+// source text itself.
+const REQUEST_URL_CAPABILITY_PATTERN = /\brequestUrl\b/u;
+const FETCH_CAPABILITY_PATTERN = /\bfetch\b/u;
+const WEB_SOCKET_CAPABILITY_PATTERN = /\bWebSocket\b/u;
+const HTTP_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:(?:node:)?https?|axios|undici|[^'"]*\/(?:http|obsidian-http))['"]/mu;
+// H13.9/H13.15. `node:net` opens a loopback socket, an outbound capability `HTTP_IMPORT_PATTERN`
+// never covered: it only casts a net as wide as https(s), axios and undici.
+const NET_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:node:)?net['"]/mu;
+const SECRET_PROVIDER_IMPORT_PATTERN = /from\s+['"][^'"]*(?:^|\/)secret-provider['"]/u;
+const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|ObsidianApiKeyProvider|readSelectedApiKey|secretStorage)\b/u;
+const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
+const FUTURE_OUTBOUND_TOKEN_PATTERN = /(?:^|[-_.])(?:analytics|backup|diagnostic|export|mumble|report|share|support|sync|telemetry|uploader)[a-z]*(?=[-_.]|$)/iu;
+const FUTURE_OUTBOUND_CAMEL_PATTERN = /(?:Analytics|Backup|Diagnostic|Export|Mumble|Report|Share|Support|Sync|Telemetry|Uploader)/u;
+
 const MUMBLE_CORE_PROHIBITED_PATTERNS = [
 	/\b(?:inject|injection|dllInject|hookProcess|ReadProcessMemory|ptrace|processMemory)\b/iu,
 	/\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|indexedDB|localStorage|sessionStorage)\b/u,
@@ -154,6 +173,59 @@ export function scanSecurityBoundaries(root = process.cwd()) {
 	}
 
 	return uniqueFindings(findings);
+}
+
+/** Every production `.ts` module under `src/`, repository-relative, sorted; no tests or fixtures. */
+export function productionSourceFiles(root = process.cwd()) {
+	const absoluteRoot = resolve(root);
+	return repositoryFiles(absoluteRoot)
+		.map((file) => file.relative)
+		.filter((path) => path.endsWith('.ts') && isProductionSource(path))
+		.sort();
+}
+
+/**
+ * The H6.7 exact network/credential capability census: every production file that reaches for
+ * each capability, independently, sorted. A caller compares each list against its own reviewed
+ * allowlist; a file appearing that is not reviewed is the finding.
+ */
+export function censusNetworkAndCredentialCapabilities(root = process.cwd()) {
+	const absoluteRoot = resolve(root);
+	const files = productionSourceFiles(absoluteRoot);
+	const matching = (pattern) => files.filter((path) => {
+		const source = readRepositoryText(resolve(absoluteRoot, path));
+		return source !== null && pattern.test(source);
+	});
+	return {
+		requestUrl: matching(REQUEST_URL_CAPABILITY_PATTERN),
+		fetch: matching(FETCH_CAPABILITY_PATTERN),
+		webSocket: matching(WEB_SOCKET_CAPABILITY_PATTERN),
+		httpImport: matching(HTTP_IMPORT_PATTERN),
+		netImport: matching(NET_IMPORT_PATTERN),
+		secretProviderImport: matching(SECRET_PROVIDER_IMPORT_PATTERN),
+		secretCapability: matching(SECRET_CAPABILITY_PATTERN),
+	};
+}
+
+/** True when a persistence/runtime/note boundary's name or body implies it, structurally. */
+export function isSensitivePersistenceBoundary(path, root = process.cwd()) {
+	const name = path.split('/').pop() ?? path;
+	if (/(?:session-note|session-runtime)/u.test(name)) return true;
+	if (/(?:store|writer|cache|pointer)(?:[-_.]|$)/iu.test(name)) return true;
+	const source = readRepositoryText(resolve(root, path));
+	return source !== null && (/\b(?:IDBDatabase|IDBFactory|SessionNoteVault)\b|\.objectStore\s*\(/u.test(source));
+}
+
+/** True when a credential capability pattern reaches a reviewed persistence boundary's source. */
+export function persistenceBoundaryHasCredentialCapability(path, root = process.cwd()) {
+	const source = readRepositoryText(resolve(root, path));
+	return source !== null && CREDENTIAL_CAPABILITY_PATTERN.test(source);
+}
+
+/** True when a future outbound/analytics/telemetry/Mumble module name needs explicit review. */
+export function isFutureOutboundFile(path) {
+	const name = path.split('/').pop() ?? path;
+	return FUTURE_OUTBOUND_TOKEN_PATTERN.test(name) || FUTURE_OUTBOUND_CAMEL_PATTERN.test(name);
 }
 
 /** Scans the exact distributable files, including the otherwise ignored bundle. */

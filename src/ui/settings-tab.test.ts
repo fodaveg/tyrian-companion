@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../core/i18n';
@@ -26,6 +25,7 @@ import {
 	SETTINGS_CATEGORIES,
 	SettingsWriteQueue,
 } from './settings-tab';
+import { readModuleSource } from '../test/module-boundary';
 
 describe('essential alert threshold', () => {
 	it('accepts a user-facing gold amount while preserving whole copper internally', () => {
@@ -222,8 +222,8 @@ describe('settings information architecture', () => {
 	});
 
 	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {
-		const source = readFileSync('src/ui/settings-tab.ts', 'utf8');
-		const styles = readFileSync('styles.css', 'utf8');
+		const source = readModuleSource('src/ui/settings-tab.ts');
+		const styles = readModuleSource('styles.css');
 		expect(source).not.toContain('renderProductShell(');
 		expect(source).not.toContain('tyrian-companion-settings__essentials');
 		expect(source).not.toContain('tyrian-companion-settings__advanced');

@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
@@ -7,6 +6,7 @@ import { walletManagedAssets } from './wallet-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
 import { WalletVaultSyncService, type WalletVaultFile, type WalletVaultPort } from '../wallet/wallet-vault-sync';
+import { readModuleSource } from '../test/module-boundary';
 
 const CONFIG_DIR = 'vault-config';
 
@@ -98,8 +98,8 @@ describe('wallet Base assets', () => {
 		}
 	});
 
-	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', async () => {
-		const source = await readFile(new URL('./wallet-base.ts', import.meta.url), 'utf8');
+	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', () => {
+		const source = readModuleSource('src/assets/wallet-base.ts');
 		expect(source).not.toMatch(/\b(?:Vault|fetch|requestUrl|XMLHttpRequest|node:fs|session-note-writer)\b/u);
 		expect(source).not.toMatch(/https?:\/\//u);
 	});

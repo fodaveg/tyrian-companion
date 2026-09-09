@@ -69,14 +69,17 @@ describe('session debug semantics', () => {
 	});
 
 	/**
-	 * H14.x. NOT converted in this pass: doing so behaviourally needs a real `initializeRuntime` +
-	 * manual-session-start + manual-session-stop harness of the kind built in
-	 * `src/main-alert-wiring.test.ts`, to observe that the human gestures (`session_start`,
-	 * `detection_disarm`) go through one-shot `.event()`/`fireAndForget()` calls while the passive
-	 * lease and projection machinery go through `persistenceDiagnostics(...)` probes instead. That
-	 * is a disproportionate harness for this lot and is left as follow-up; no lint rule or other
-	 * guardrail inspects diagnostic call sites, so the property is not covered anywhere else and the
-	 * text match stays.
+	 * H14.x. NOT converted in this pass. H14.17 lote L built the reusable composition harness this
+	 * needs, `src/test/runtime-harness.ts` (fake Vault, `requestUrl`, `fake-indexeddb`, clock and a
+	 * real `LocalDebugActionPort` that records every event) and confirmed a real, observable signal
+	 * exists: a `persistenceDiagnostics(...)` probe's events always carry `details: { store,
+	 * operation }` (see `createLocalDebugPersistenceSink` in `src/core/local-debug-persistence.ts`),
+	 * while `startLocalDebugAction`/`fireAndForgetLocal`'s one-shot events never do. Driving a real
+	 * manual-session start and stop through the harness to observe `session_lease`/`session_projection`
+	 * probe events against a gesture-shaped `session_start`/`detection_disarm` event, the way
+	 * `src/main-alert-wiring.test.ts` drives an alert, is still its own scoped follow-up: no lint
+	 * rule or other guardrail inspects diagnostic call sites, so the property is not covered
+	 * anywhere else and the text match stays here in the meantime.
 	 */
 	it('reserves human session actions for gestures and labels internal maintenance explicitly', () => {
 		const source = readFileSync('src/main.ts', 'utf8');

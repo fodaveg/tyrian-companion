@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
-
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 const RUNTIME_UI_FILES = [
 	'src/main.ts',
@@ -23,7 +23,7 @@ const MARKDOWN_RENDERERS = [
 
 describe('runtime UI i18n boundary', () => {
 	it.each(RUNTIME_UI_FILES)('%s does not introduce direct visible copy', (path) => {
-		const source = readFileSync(path, 'utf8');
+		const source = readModuleSource(path);
 		expect(hasDirectVisibleCopy(source)).toBe(false);
 	});
 
@@ -52,12 +52,12 @@ describe('runtime UI i18n boundary', () => {
 		expect(hasUnsafeRuntimeText('const render = (value) => error.setText(localize(value)); render(result.message)')).toBe(false);
 		expect(hasUnsafeRuntimeText('show(result.message)')).toBe(false);
 		for (const path of ['src/ui/companion-view.ts', 'src/ui/manual-session-start-modal.ts'] as const) {
-			expect(hasUnsafeRuntimeText(readFileSync(path, 'utf8'))).toBe(false);
+			expect(hasUnsafeRuntimeText(readModuleSource(path))).toBe(false);
 		}
 	});
 
 	it.each(MARKDOWN_RENDERERS)('%s does not interpolate presentation enums or raw API fields into Markdown', (path) => {
-		expect(hasRawMarkdownPresentation(readFileSync(path, 'utf8'))).toBe(false);
+		expect(hasRawMarkdownPresentation(readModuleSource(path))).toBe(false);
 	});
 
 	it.each([

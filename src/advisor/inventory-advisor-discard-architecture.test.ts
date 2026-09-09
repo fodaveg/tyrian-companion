@@ -1,10 +1,12 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 const DISCARD_FILES = readdirSync('src/advisor')
 	.filter((file) => /^inventory-advisor-discard.*\.ts$/u.test(file) && !file.endsWith('.test.ts'))
 	.sort()
-	.map((file) => ({ file, source: readFileSync(`src/advisor/${file}`, 'utf8') }));
+	.map((file) => ({ file, source: readModuleSource(`src/advisor/${file}`) }));
 
 const FORBIDDEN = [
 	/\bonload\b/u, /from ['"]obsidian['"]/u,

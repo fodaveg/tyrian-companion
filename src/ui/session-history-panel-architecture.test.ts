@@ -1,18 +1,19 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 describe('H9.7 durable session history boundary', () => {
 	it('keeps aggregation pure, identity-free, and unable to persist or operate on the account', () => {
-		const source = readFileSync(new URL('../sessions/session-history-summary.ts', import.meta.url), 'utf8');
+		const source = readModuleSource('src/sessions/session-history-summary.ts');
 		expect(source).not.toMatch(/from\s+['"]obsidian['"]|\bfetch\s*\(|requestUrl|localStorage|indexedDB|GuildWars2Client/u);
 		expect(source).not.toMatch(/recommendationAction|recommendationQuantity|recommendationRoute/u);
 		expect(source).not.toMatch(/sessionRef\s*:|accountRef\s*:/u);
 	});
 
 	it('keeps history off the core surface, with global scans explicit and archival checks exact', () => {
-		const panel = readFileSync(new URL('session-history-panel.ts', import.meta.url), 'utf8');
-		const companion = readFileSync(new URL('companion-view.ts', import.meta.url), 'utf8');
-		const main = readFileSync(new URL('../main.ts', import.meta.url), 'utf8');
+		const panel = readModuleSource('src/ui/session-history-panel.ts');
+		const companion = readModuleSource('src/ui/companion-view.ts');
+		const main = readModuleSource('src/main.ts');
 		expect(panel).toContain("button.addEventListener('click', () => { void controller.load(); })");
 		// The panel is mounted by the Companion surface, but only the button may reach the Vault.
 		expect(companion).toContain('mountSessionHistoryPanel(');
@@ -24,8 +25,8 @@ describe('H9.7 durable session history boundary', () => {
 	});
 
 	it('uses local typed ES/EN copy and the required accessible responsive contracts', () => {
-		const panel = readFileSync(new URL('session-history-panel.ts', import.meta.url), 'utf8');
-		const styles = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+		const panel = readModuleSource('src/ui/session-history-panel.ts');
+		const styles = readModuleSource('styles.css');
 		expect(panel).toContain('} as const;');
 		expect(panel).toContain("stateRegion.setAttr('aria-live', 'polite')");
 		expect(panel).toContain("header.setAttr('scope', 'col')");

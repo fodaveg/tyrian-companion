@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { moduleSpecifiers } from '../test/module-boundary';
+import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 
 const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
 	.filter((file) => file.startsWith('inventory-advisor-')
@@ -15,7 +15,7 @@ const INVENTORY_ADVISOR_FILES = [
 	{ file: 'inventory-sync-panel-view.ts', path: 'src/ui/inventory-sync-panel-view.ts' },
 	{ file: 'price-history-panel-view.ts', path: 'src/ui/price-history-panel-view.ts' },
 ].sort((left, right) => left.path.localeCompare(right.path))
-	.map((entry) => ({ ...entry, source: readFileSync(entry.path, 'utf8') }));
+	.map((entry) => ({ ...entry, source: readModuleSource(entry.path) }));
 
 const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/advisor/inventory-advisor-classifier-model.ts',
@@ -144,7 +144,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 
 	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {
 		for (const [path, policy] of BOUNDARY_POLICIES) {
-			const source = readFileSync(path, 'utf8');
+			const source = readModuleSource(path);
 			expect([...new Set(moduleSpecifiers(source))].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
 			expect(source, `${path} performs an irreversible item operation`).not.toMatch(FORBIDDEN_ITEM_OPERATION);
 			expect(boundaryPortCalls(source).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
@@ -158,7 +158,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/ui/inventory-sync-panel-view.ts',
 			'src/ui/price-history-panel-view.ts',
 		]) {
-			const source = readFileSync(path, 'utf8');
+			const source = readModuleSource(path);
 			expect(boundarySourceAllowed(path, source)).toBe(true);
 			const poisoned = `import { GuildWars2Client } from '../account/guild-wars-2-client';\n${source}`;
 			expect(boundarySourceAllowed(path, poisoned)).toBe(false);
@@ -171,7 +171,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 	});
 
 	it('turns red when an ItemView session capability is added without an allowlist entry', () => {
-		const source = readFileSync('src/ui/inventory-advisor-item-view.ts', 'utf8');
+		const source = readModuleSource('src/ui/inventory-advisor-item-view.ts');
 		const poisoned = `${source}\nthis.preferenceSession.exportEverything?.();`;
 		expect(boundaryPortCalls(poisoned)).toContain('preferenceSession.exportEverything');
 		expect(boundaryPortCalls(poisoned).sort()).not.toEqual(BOUNDARY_POLICIES.get('src/ui/inventory-advisor-item-view.ts')!.portCalls.slice().sort());
