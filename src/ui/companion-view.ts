@@ -57,7 +57,7 @@ import {
 	localizedCoverageStatus,
 	type CompanionStatusProjection,
 } from './companion-status-model';
-import { renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
+import { isFreshNotice, renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 import {
@@ -308,10 +308,10 @@ export class TyrianCompanionView extends ItemView {
 	/**
 	 * Builds the card's one callout (ranura 2) from every source of "something needs attention"
 	 * this view used to show as separate blocks: the projected session/detection incident, local
-	 * diagnostics (degraded writer or errors since load) and a blocked managed-assets
-	 * reconciliation. `null` when nothing needs attention, so the slot stays empty.
+	 * diagnostics (degraded writer or errors since load), a blocked managed-assets reconciliation
+	 * and a failed connection check. `null` when nothing needs attention, so the slot stays empty.
 	 */
-	private buildIncidentCallout(projection: CompanionStatusProjection): SessionCardCallout | null {
+	private buildIncidentCallout(projection: CompanionStatusProjection, connection: ConnectionState): SessionCardCallout | null {
 		const translator = createTranslator(this.actions.getLocale());
 		const debug = this.actions.getLocalDebugStatus?.();
 		const errorsSinceLoad = debug?.errorsSinceLoad ?? 0;
@@ -361,6 +361,25 @@ export class TyrianCompanionView extends ItemView {
 			} else {
 				lines.push({ text: assetsMessage, button: resolveAssetsButton });
 			}
+		}
+
+		// Settings owns the full connection detail; here it only earns a line (FICHA decision 4's
+		// retry lives in the Detalle gaveto too) with its own "Comprobar conexión" button, added
+		// after every graver source above so the worst problem always stays on top.
+		if (connection.status === 'error') {
+			const connectionLine: SessionCardCalloutLine = {
+				text: connection.message,
+				button: {
+					text: this.t('view.checkConnection'),
+					disabled: isCoolingDown(getRetryAt(connection)),
+					onClick: () => { void this.checkConnection(); },
+				},
+			};
+			if (title === null) {
+				title = translator.t('sessionCard.accountUnavailable');
+				tone = 'warning';
+			}
+			lines.push(connectionLine);
 		}
 
 		if (title === null) return null;
@@ -413,6 +432,22 @@ export class TyrianCompanionView extends ItemView {
 		return unread === 1 ? this.t('view.alerts.unreadCount', { count: unread }) : this.t('view.alerts.unreadCountPlural', { count: unread });
 	}
 
+	/**
+	 * Whether the "Avisos" gaveto must force itself open regardless of `drawerOpen.alerts`, the same
+	 * way `halloween-alert-panel.ts` used to force its whole panel open: an unread notice (loot or
+	 * price) still fresh under `isFreshNotice` (H14.3, under 24h and not from a session that ended
+	 * before the one on screen). A stale or pre-session notice does not reopen it.
+	 */
+	private hasFreshUnreadAlert(now: number): boolean {
+		const halloweenState = this.actions.getHalloweenState();
+		const priceState = this.actions.getHalloweenPriceAlertState();
+		if (halloweenState.unreadCount === 0 && priceState.unreadCount === 0) return false;
+		const context = this.actions.getHalloweenPanelContext?.() ?? { nowMs: now, inLabyrinth: false, sessionStartAt: null };
+		const fresh = (notice: { acknowledgedAt: string | null; observedAt: string }): boolean =>
+			notice.acknowledgedAt === null && isFreshNotice(notice.observedAt, context);
+		return halloweenState.notices.some(fresh) || priceState.notices.some(fresh);
+	}
+
 	/** `Detección desactivada` / `Detección activa · próxima HH:MM`: the Detalle gaveto's closed state. */
 	private detectionDrawerSuffix(mode: DetectionMode, state: AssistedDetectionState): string {
 		if (mode === 'off' || state.status === 'disarmed' || state.status === 'error') return this.t('view.drawer.detectionOff');
@@ -453,10 +488,13 @@ export class TyrianCompanionView extends ItemView {
 				suffix: this.detectionDrawerSuffix(this.actions.getDetectionMode(), this.actions.getAssistedDetectionState()),
 				open: this.drawerOpen.detail,
 			},
-			alerts: { summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(), open: this.drawerOpen.alerts },
+			alerts: {
+				summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(),
+				open: this.drawerOpen.alerts || this.hasFreshUnreadAlert(now),
+			},
 			history: { summary: this.t('view.drawer.history'), suffix: this.historyDrawerSuffix(), open: this.drawerOpen.history },
 		};
-		const callout = this.buildIncidentCallout(projection);
+		const callout = this.buildIncidentCallout(projection, connection);
 		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
 		const mount = renderSessionCard(container, model);
 		this.headerElapsed = mount.clock;
@@ -977,7 +1015,7 @@ export class TyrianCompanionView extends ItemView {
 			this.checkButton.disabled = connection.status === 'checking' || isCoolingDown(retryAt);
 			this.checkButton.setText(connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'));
 		}
-		if (this.calloutSlot) renderSessionCardCallout(this.calloutSlot, this.buildIncidentCallout(projection));
+		if (this.calloutSlot) renderSessionCardCallout(this.calloutSlot, this.buildIncidentCallout(projection, connection));
 		this.scheduleRefresh(projection, retryAt, now);
 	}
 

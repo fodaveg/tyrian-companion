@@ -32,7 +32,7 @@ export interface SessionCardAction {
 
 export interface SessionCardCalloutLine {
 	readonly text: string;
-	readonly button?: { readonly text: string; readonly onClick: () => void };
+	readonly button?: { readonly text: string; readonly disabled?: boolean; readonly onClick: () => void };
 }
 
 export interface SessionCardCallout {
@@ -211,6 +211,7 @@ function renderCallout(container: HTMLElement, callout: SessionCardCallout): voi
 		if (line.button) {
 			const lineButton = line.button;
 			const button = p.createEl('button', { text: lineButton.text });
+			button.disabled = lineButton.disabled ?? false;
 			button.addEventListener('click', () => lineButton.onClick());
 		}
 	}
