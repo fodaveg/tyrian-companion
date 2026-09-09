@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SESSION_NOTE_BLOCK_IDS } from '../sessions/session-note-model';
 import { sha256Text } from '../sessions/session-note-renderer';
-import { scanHalloweenSessionNotes } from './halloween-note-backfill';
+import { HalloweenBackfillCache, scanHalloweenSessionNotes } from './halloween-note-backfill';
 
 describe('Halloween session-note backfill', () => {
 	it('selects only canonical same-account Halloween notes and keeps v2 coverage partial', async () => {
@@ -49,10 +49,80 @@ describe('Halloween session-note backfill', () => {
 	});
 });
 
+describe('Halloween session-note backfill cache', () => {
+	it('re-reads a note only the first time, and again only once its mtime moves', async () => {
+		const account = 'b'.repeat(64);
+		const files = new Map([
+			['a.md', await note({ tc_event: 'halloween', tc_event_source: 'manual_explicit', tc_account_ref: account, tc_session_ref: 'a'.repeat(64) })],
+			['b.md', 'not a Tyrian Companion note'],
+		]);
+		const mtimes = new Map([['a.md', 1], ['b.md', 1]]);
+		const reads: string[] = [];
+		const trackedVault = trackingVault(files, mtimes, reads);
+		const cache = new HalloweenBackfillCache();
+
+		await scanHalloweenSessionNotes(trackedVault, account, cache);
+		expect(reads).toEqual(['a.md', 'b.md']);
+
+		reads.length = 0;
+		const result = await scanHalloweenSessionNotes(trackedVault, account, cache);
+		expect(reads).toEqual([]);
+		expect(result).toHaveLength(1);
+
+		reads.length = 0;
+		mtimes.set('b.md', 2);
+		await scanHalloweenSessionNotes(trackedVault, account, cache);
+		expect(reads).toEqual(['b.md']);
+	});
+
+	it('drops a deleted note from the cache instead of resurrecting its candidate', async () => {
+		const account = 'b'.repeat(64);
+		const files = new Map([
+			['a.md', await note({ tc_event: 'halloween', tc_event_source: 'manual_explicit', tc_account_ref: account, tc_session_ref: 'a'.repeat(64) })],
+		]);
+		const mtimes = new Map([['a.md', 1]]);
+		const reads: string[] = [];
+		const trackedVault = trackingVault(files, mtimes, reads);
+		const cache = new HalloweenBackfillCache();
+
+		expect(await scanHalloweenSessionNotes(trackedVault, account, cache)).toHaveLength(1);
+		files.delete('a.md');
+		mtimes.delete('a.md');
+		expect(await scanHalloweenSessionNotes(trackedVault, account, cache)).toHaveLength(0);
+	});
+
+	it('never caches a file whose vault does not report an mtime', async () => {
+		const account = 'b'.repeat(64);
+		const files = new Map([
+			['a.md', await note({ tc_event: 'halloween', tc_event_source: 'manual_explicit', tc_account_ref: account, tc_session_ref: 'a'.repeat(64) })],
+		]);
+		const reads: string[] = [];
+		const noMtimeVault = {
+			markdownFiles: () => [...files.keys()].map((path) => ({ path })),
+			read: async ({ path }: { path: string }) => { reads.push(path); return files.get(path)!; },
+		};
+		const cache = new HalloweenBackfillCache();
+
+		await scanHalloweenSessionNotes(noMtimeVault, account, cache);
+		await scanHalloweenSessionNotes(noMtimeVault, account, cache);
+		expect(reads).toEqual(['a.md', 'a.md']);
+	});
+});
+
 function vault(files: Map<string, string>) {
 	return {
 		markdownFiles: () => [...files.keys()].map((path) => ({ path })),
 		read: async ({ path }: { path: string }) => files.get(path)!,
+	};
+}
+
+function trackingVault(files: Map<string, string>, mtimes: Map<string, number>, reads: string[]) {
+	return {
+		markdownFiles: () => [...files.keys()].map((path) => ({ path, mtime: mtimes.get(path) })),
+		read: async ({ path }: { path: string }) => {
+			reads.push(path);
+			return files.get(path)!;
+		},
 	};
 }
 

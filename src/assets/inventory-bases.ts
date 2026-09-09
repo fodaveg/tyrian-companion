@@ -48,7 +48,7 @@ properties:
     displayName: "${copy.type}"
   note.tc_item_rarity:
     displayName: "${copy.rarity}"
-  note.tc_captured_at:
+  file.mtime:
     displayName: "${copy.captured}"
   note.tc_unit_sell_copper:
     displayName: "${copy.unitValue}"
@@ -71,7 +71,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]';
+	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -133,7 +133,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, tc_captured_at]
+    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
     sort:
       - property: tc_total_sell_copper
         direction: DESC

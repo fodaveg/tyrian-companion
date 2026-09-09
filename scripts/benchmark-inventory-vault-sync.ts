@@ -185,6 +185,11 @@ class BenchInventoryVault implements InventoryVaultPort {
 		this.timings.process += performance.now() - startedAt;
 		return next;
 	}
+	async trashFile(file: InventoryVaultFile): Promise<void> {
+		this.writesStarted = true;
+		if (!this.contents.has(file.path)) throw new Error("not_file");
+		this.contents.delete(file.path);
+	}
 }
 
 function buildAdvisorController(n: number): InventoryAdvisorPresentationController {

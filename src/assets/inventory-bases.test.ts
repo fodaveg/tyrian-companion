@@ -83,7 +83,7 @@ describe('inventory Base assets', () => {
 			if (asset.id === 'inventory-base' || asset.id === 'materials-base') {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
 					'note.tc_item_name', 'note.tc_source', 'note.tc_character', 'note.tc_quantity',
-					'note.tc_item_type', 'note.tc_item_rarity', 'note.tc_captured_at',
+					'note.tc_item_type', 'note.tc_item_rarity',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
@@ -91,6 +91,10 @@ describe('inventory Base assets', () => {
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
 					'formula.item_icon', 'formula.source_label',
 				]);
+				// H14.21: the "last updated" column now reads the note's own mtime instead of a
+				// `tc_captured_at` field, which used to make every position's marker hash change
+				// on every capture regardless of whether the holding itself moved.
+				expect(keys.filter((key) => key.startsWith('file.'))).toEqual(['file.mtime']);
 			}
 		}
 	});
@@ -235,6 +239,7 @@ class EmptyInventoryVault implements InventoryVaultPort {
 	async createFolder(_path: string): Promise<void> { throw new Error('write_not_expected'); }
 	async create(_path: string, _content: string): Promise<InventoryVaultFile> { throw new Error('write_not_expected'); }
 	async process(_file: InventoryVaultFile, _update: (content: string) => string): Promise<string> { throw new Error('write_not_expected'); }
+	async trashFile(_file: InventoryVaultFile): Promise<void> { throw new Error('write_not_expected'); }
 }
 
 class MemoryBaseVault implements ManagedAssetsVault {

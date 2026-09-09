@@ -36,6 +36,7 @@ export interface InventoryVaultPort {
 	createFolder(path: string): Promise<void>;
 	create(path: string, content: string): Promise<InventoryVaultFile>;
 	process(file: InventoryVaultFile, update: (content: string) => string): Promise<string>;
+	trashFile(file: InventoryVaultFile): Promise<void>;
 }
 
 export interface InventoryVaultPosition {
@@ -116,7 +117,6 @@ interface InventoryNoteFields {
 	tc_unit_list_copper: number | null;
 	tc_total_list_copper: number | null;
 	tc_active: boolean;
-	tc_captured_at: string;
 	tc_item_name: string;
 	tc_item_type: string | null;
 	tc_item_rarity: string | null;
@@ -129,7 +129,7 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
 	'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_sell_depth_status', 'tc_sell_covered_quantity',
 	'tc_sell_uncovered_quantity', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
-	'tc_captured_at', 'tc_item_name', 'tc_item_type',
+	'tc_item_name', 'tc_item_type',
 	'tc_item_rarity', 'tc_icon', 'descripcion',
 ] as const;
 
@@ -305,7 +305,7 @@ export class InventoryVaultSyncService {
 				throw new Error('invalid_inventory_sync_input');
 			}
 			const path = `${folder}/${position.positionId}.md`;
-			const content = await renderInventoryNote(position, input.capturedAt, input.locale, true);
+			const content = await renderInventoryNote(position, input.locale);
 			desired.set(position.positionId, { position, path, content });
 		}
 
@@ -335,12 +335,11 @@ export class InventoryVaultSyncService {
 					content === target.content ? 'unchanged' : 'update', content, target.content));
 				continue;
 			}
-			if (!owned.fields.tc_active && owned.fields.tc_quantity === 0) {
-				steps.push(step(owned.fields.tc_position_id, file.path, 'unchanged', content, content));
-				continue;
-			}
-			const inactive = await renderInventoryNote(positionFromFields(owned.fields), input.capturedAt, input.locale, false);
-			steps.push(step(owned.fields.tc_position_id, file.path, 'deactivate', content, inactive));
+			// The position no longer appears on the account: the note is removed rather than
+			// rewritten with `tc_active: false`, including one already left in that stale state
+			// by an earlier build, so the Vault converges to zero deactivated notes instead of
+			// accumulating them.
+			steps.push(step(owned.fields.tc_position_id, file.path, 'deactivate', content, null));
 		}
 
 		for (const target of desired.values()) {
@@ -415,8 +414,8 @@ export class InventoryVaultSyncService {
 			let updated = 0;
 			let deactivated = 0;
 			for (const entry of writes) {
-				if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
 				if (entry.status === 'create') {
+					if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
 					try { await this.vault.create(entry.path, entry.after); }
 					catch {
 						const raced = this.vault.file(entry.path);
@@ -429,6 +428,16 @@ export class InventoryVaultSyncService {
 					onStep?.(completed, total);
 					continue;
 				}
+				if (entry.status === 'deactivate') {
+					const file = this.vault.file(entry.path);
+					if (!file || entry.before === null) return { status: 'conflict', message: 'An inventory note disappeared during apply.' };
+					await this.vault.trashFile(file);
+					deactivated += 1;
+					completed += 1;
+					onStep?.(completed, total);
+					continue;
+				}
+				if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
 				const file = this.vault.file(entry.path);
 				if (!file || entry.before === null) return { status: 'conflict', message: 'An inventory note disappeared during apply.' };
 				let applied = false;
@@ -441,8 +450,7 @@ export class InventoryVaultSyncService {
 				if (!applied || !verified || normalizeLf(await this.vault.read(verified)) !== entry.after) {
 					return { status: 'conflict', message: 'An inventory note changed during apply.' };
 				}
-				if (entry.status === 'deactivate') deactivated += 1;
-				else updated += 1;
+				updated += 1;
 				completed += 1;
 				onStep?.(completed, total);
 			}
@@ -504,13 +512,12 @@ function comparePositions(left: InventoryVaultPosition, right: InventoryVaultPos
 		(left.character ?? '').localeCompare(right.character ?? '') || left.positionId.localeCompare(right.positionId);
 }
 
-function fieldsFor(
-	position: InventoryVaultPosition,
-	capturedAt: string,
-	locale: CatalogLocale,
-	active: boolean,
-): InventoryNoteFields {
-	const quantity = active ? position.quantity : 0;
+/**
+ * A stale position is deleted rather than rewritten as inactive (H14.21), so every note
+ * this builds describes a position that is still on the account: `tc_active` stays in the
+ * schema for the Base filter's sake, but it is always `true` here.
+ */
+function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): InventoryNoteFields {
 	return {
 		tc_schema: INVENTORY_NOTE_SCHEMA_VERSION,
 		tc_kind: INVENTORY_NOTE_KIND,
@@ -519,17 +526,15 @@ function fieldsFor(
 		tc_item_id: position.itemId,
 		tc_source: position.source,
 		tc_character: position.character,
-		tc_quantity: quantity,
+		tc_quantity: position.quantity,
 		tc_unit_sell_copper: position.unitSellCopper,
-		tc_total_sell_copper: active ? position.totalSellCopper : position.unitSellCopper === null ? null : 0,
-		tc_sell_depth_status: active ? position.sellDepthStatus
-			: position.unitSellCopper === null ? 'unavailable' : 'complete',
-		tc_sell_covered_quantity: active ? position.sellCoveredQuantity : 0,
-		tc_sell_uncovered_quantity: active ? position.sellUncoveredQuantity : 0,
+		tc_total_sell_copper: position.totalSellCopper,
+		tc_sell_depth_status: position.sellDepthStatus,
+		tc_sell_covered_quantity: position.sellCoveredQuantity,
+		tc_sell_uncovered_quantity: position.sellUncoveredQuantity,
 		tc_unit_list_copper: position.unitListCopper,
-		tc_total_list_copper: active ? position.totalListCopper : position.unitListCopper === null ? null : 0,
-		tc_active: active,
-		tc_captured_at: capturedAt,
+		tc_total_list_copper: position.totalListCopper,
+		tc_active: true,
 		tc_item_name: position.name,
 		tc_item_type: position.type,
 		tc_item_rarity: position.rarity,
@@ -538,13 +543,13 @@ function fieldsFor(
 	};
 }
 
-async function renderInventoryNote(
-	position: InventoryVaultPosition,
-	capturedAt: string,
-	locale: CatalogLocale,
-	active: boolean,
-): Promise<string> {
-	const fields = fieldsFor(position, capturedAt, locale, active);
+/**
+ * `tc_captured_at` deliberately never lands here (H14.21): it used to make every position's
+ * marker hash change on every capture, rewriting all of them even when nothing about the
+ * holding itself moved. The Base column that showed it now reads `file.mtime` instead.
+ */
+async function renderInventoryNote(position: InventoryVaultPosition, locale: CatalogLocale): Promise<string> {
+	const fields = fieldsFor(position, locale);
 	const frontmatter = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
 	const heading = cleanText(position.name).replace(/^[#]/u, '\\$&');
 	// Piloto H9.2: a fixed, tiny allowlist of items also gets a managed price-history
@@ -588,27 +593,6 @@ async function classifyInventoryNote(content: string): Promise<
 	return { status: 'owned', note: { fields, content } };
 }
 
-function positionFromFields(fields: InventoryNoteFields): InventoryVaultPosition {
-	return {
-		positionId: fields.tc_position_id,
-		itemId: fields.tc_item_id,
-		source: fields.tc_source,
-		character: fields.tc_character,
-		quantity: fields.tc_quantity,
-		unitSellCopper: fields.tc_unit_sell_copper,
-		totalSellCopper: fields.tc_total_sell_copper,
-		sellDepthStatus: fields.tc_sell_depth_status,
-		sellCoveredQuantity: fields.tc_sell_covered_quantity,
-		sellUncoveredQuantity: fields.tc_sell_uncovered_quantity,
-		unitListCopper: fields.tc_unit_list_copper,
-		totalListCopper: fields.tc_total_list_copper,
-		name: fields.tc_item_name,
-		type: fields.tc_item_type,
-		rarity: fields.tc_item_rarity,
-		icon: fields.tc_icon,
-	};
-}
-
 function step(
 	positionId: string,
 	path: string,
@@ -648,10 +632,16 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
  * plan rewrites it with the missing columns. It only ever ADDS known keys: a key we
  * never wrote is left in place so that `isInventoryNoteFields` still rejects it, which
  * is what keeps a hand-edited note a conflict.
+ *
+ * `tc_captured_at` is the one key this REMOVES (H14.21): every note written before that
+ * migration carries it, and dropping it here is what lets `isInventoryNoteFields` accept
+ * the note again instead of treating the field it no longer expects as a conflict. The
+ * note gets rewritten once, without it, and its hash is stable from then on.
  */
 function migrateInventoryNoteFields(value: unknown): unknown {
 	if (!record(value)) return value;
 	const migrated: Record<string, unknown> = { ...value };
+	delete migrated.tc_captured_at;
 	if (!('tc_sell_depth_status' in migrated)) {
 		// A legacy total came from one top-of-book quote, not demonstrated depth.
 		migrated.tc_total_sell_copper = null;
@@ -679,7 +669,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		(value.tc_sell_depth_status === 'complete' ? value.tc_sell_uncovered_quantity === 0
 			: value.tc_total_sell_copper === null) && nullableNonNegative(value.tc_unit_list_copper) &&
 		nullableNonNegative(value.tc_total_list_copper) && typeof value.tc_active === 'boolean' &&
-		value.tc_active === (value.tc_quantity > 0) && iso(value.tc_captured_at) &&
+		value.tc_active === (value.tc_quantity > 0) &&
 		nonEmptyText(value.tc_item_name) && (value.tc_item_type === null || nonEmptyText(value.tc_item_type)) &&
 		(value.tc_item_rarity === null || nonEmptyText(value.tc_item_rarity)) &&
 		(value.tc_icon === null || nonEmptyText(value.tc_icon)) && nonEmptyText(value.descripcion);
