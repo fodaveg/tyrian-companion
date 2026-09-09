@@ -76,9 +76,15 @@ jobs:
             echo "expected 5 assets, planned ${#assets[@]}" >&2
             exit 1
           fi
+          # H14.18: the release body used to be a fixed sentence that repeated
+          # the tag and named nothing that changed. `changelog-entry.mjs` fails
+          # closed (nonzero exit) when `docs/CHANGELOG.md` has no entry for
+          # this exact version, which stops a tag from publishing with an
+          # undocumented release rather than an empty/wrong body.
+          node scripts/changelog-entry.mjs "$TAG" > .release/notes.md
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes "Tyrian Companion ${TAG}. Assets: manifest.json, main.js, styles.css and the reproducible ZIP with its SHA-256." \
+            --notes-file .release/notes.md \
             "${assets[@]}"
 
       # The contract runs a second time, now against what GitHub actually holds.

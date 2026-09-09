@@ -1,15 +1,269 @@
-# Histórico de `docs/CHANGELOG.md` — `0.1.17` y anteriores
+# Histórico de `docs/CHANGELOG.md` — `0.1.20` y anteriores
 
 Movido desde `docs/CHANGELOG.md` el 2026-09-03, en H13.13 (recorte de `docs/` sin perder
-trazabilidad). `docs/CHANGELOG.md` conserva íntegras las versiones recientes (`0.1.18` en adelante,
-con sus seis lotes incluidos); este fichero es la copia literal, sin corregir ni actualizar ningún
-dato, de todo lo anterior a `0.1.18`: desde `0.1.17` hacia atrás hasta `[0.1.0] - Unreleased`.
+trazabilidad), y extendido el 2026-09-09 con las entradas `0.1.18` a `0.1.20` (H13.13/H14.18: las
+diez últimas releases se quedan en `docs/CHANGELOG.md`, el resto viene aquí; el fichero pasó de
+llamarse `CHANGELOG-hasta-0.1.17.md`, y este renombre es el único cambio no literal de esta extensión).
+Este fichero es la copia literal, sin corregir ni actualizar ningún dato salvo el renombre, de todo
+lo anterior a `0.1.21`: desde `0.1.20` hacia atrás hasta `[0.1.0] - Unreleased`.
 
 Incluye, entre otras cosas, la primera introducción de H8.5, el helper Mumble en Rust cuyo artefacto
 de CI conserva solo el marker `UNSIGNED-NOT-FOR-RELEASE`, y para el que firma y QA real siguen
 pendientes; ese estado sigue siendo el actual y `docs/CHANGELOG.md` lo repite en una línea puntero.
 
 ---
+
+## Release beta 0.1.20 - superficies cableadas y cierre honesto
+
+- Publicada el 2026-09-01 la
+  [GitHub Release `0.1.20`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.20) desde el
+  tag y commit `be5434b4cfc283198bd0054053bb7092b80decc6`. Los runs de CI terminaron en verde para
+  `main` ([`33509432201`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509432201)) y
+  para el tag ([`33509449053`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509449053)).
+- **Primera publicación por el workflow automático** ([`33509449093`](https://github.com/fodaveg/tyrian-companion/actions/runs/33509449093)),
+  que ejecuta el contrato BRAT como puerta ANTES de publicar en vez de auditar después. Los cinco
+  assets exactos están adjuntos; el ZIP tiene SHA-256
+  `cca1d1f3e6af81cae98258375067782bc660e7a53e1b06ae9cf776d605110c93` y el `main.js` publicado
+  coincide byte a byte con el construido localmente (SHA-256
+  `905c31240f1f54513f4366d810156b1d8bd43b78565ed9a1d89d851e70707618`).
+
+### Superficies que existían y no se mostraban
+
+Cuatro paneles estaban escritos, probados y sin montar, mientras sus comandos, contadores y avisos
+seguían anunciándolos. Ahora se montan: alertas de Halloween (el plugin lanzaba el aviso y no había
+ninguna pantalla donde marcarlo leído, así que el contador de no leídos no podía bajar nunca),
+confirmaciones pendientes (el ribbon mostraba el contador y el comando existía sin vista que pudiera
+mostrar una propuesta), la superficie completa de la detección asistida, y el historial de sesiones.
+Se retiró el test de arquitectura que certificaba que el historial NO estaba conectado.
+
+Añadido el botón **Abrir la nota** tras guardar una sesión, primer `openLinkText` en código de
+producción: hasta ahora el plugin escribía su único entregable y no ofrecía forma de abrirlo.
+Corregido `viewCount` del journal de arranque, que declaraba 3 vistas cuando se registran 2. La
+línea de tiempo de detección pasa a resolución de minutos, porque la API de cuenta no da precisión
+al segundo y presentarla lo aparentaba.
+
+El resto de la bitácora de campo antigua se retiró tras comprobar dato a dato cuáles llegaban ya al
+usuario por otra vía. Los que no llegaban por ninguna se integraron en la tarjeta de sesión: calidad
+de la observación, incidentes, comprobación de conexión cuando la cuenta no responde, y la decisión
+de sesión guardada, que antes ofrecía «Iniciar sesión» con el arranque bloqueado por la recuperación.
+
+### Cierre de sesión: se espera a que la API confirme
+
+El snapshot final se capturaba en el instante en que el usuario pulsaba «Terminar sesión». Como la
+API de cuenta sirve desde caché de 5 a 10 minutos, lo ganado en los últimos minutos no había cruzado
+todavía: **todas las sesiones subcontaban su botín, siempre y a la baja**, por un camino que devolvía
+éxito y clasificaba el resultado como exacto.
+
+Ahora la sesión entra en espera declarada, con cuenta atrás visible y un control para capturar ya
+advirtiendo de lo que se pierde. La espera sobrevive a reiniciar Obsidian. Una captura forzada o
+fuera de plazo deja la sesión en `estimada`, nunca en `exacta`.
+
+En la misma medida se corrigió el efecto contrario: la duración facturada pasó a ser tiempo jugado
+(`stoppedAt`) y no la ventana observada, que habría sumado los diez minutos de espera a cada sesión.
+Al unificarla aparecieron **tres** definiciones distintas de «duración» en el código, y un fallo real:
+con la hora de parada ilegible el detalle mostraba un guion y no levantaba incidente.
+
+### Primera ejecución
+
+El idioma se resuelve con `getLanguage()` de Obsidian con reserva `en`, en vez de forzar español a
+todos los usuarios; la elección manual sigue ganando. El registro de diagnóstico nace apagado y en
+nivel `warn`, y la cadencia de consulta por defecto pasa de 2 a 10 minutos. **Los tres solo alcanzan
+instalaciones nuevas**: en disco un valor heredado es indistinguible de uno elegido, así que quien ya
+tenga el registro encendido debe apagarlo en Ajustes.
+
+### Infraestructura
+
+El gate dejó de encadenar sus pasos con `&&`, que ocultaba en silencio los que nunca llegaban a
+correr: ahora son 22 pasos que se ejecutan siempre, cada uno con su veredicto, y un paso no ejecutado
+se imprime por su nombre. Añadidos un contrato que rechaza tests nuevos que aseveran sobre el texto
+fuente de otro módulo (37 congelados, el número solo puede bajar), `noUnusedLocals` en el typecheck,
+y el workflow de publicación por etiqueta. Unificada la máquina de sincronización con el vault, que
+estaba duplicada con diferencia cero entre cartera e inventario.
+
+Se auditaron las 24 reimplementaciones de `canonical()` y **no se unificaron**: 29 cuerpos distintos,
+varios alimentando huellas ya escritas en el vault del usuario. Unificarlas habría cambiado hashes
+persistidos en silencio.
+
+Reindexados 31 localizadores de `src/ui/settings-tab.ts` en
+`scripts/action-observability-baseline.json` tras el desplazamiento de una línea que introdujo la
+fusión. Solo cambian `line` y `endLine`; ninguna decisión revisada del censo se alteró.
+
+## Release beta 0.1.19 - companion de farmeo en vivo
+
+- Publicada la [GitHub Release `0.1.19`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19)
+  desde el tag y commit `8dace194cc7a6b3a9eba58971091d18c719a7647`. `manifest.json` y `package.json`
+  declaran `0.1.19`.
+- El lote de producto es `a24c364`, cuyo asunto es
+  `feat(session): restore the live farming companion`.
+- Hueco declarado: esta entrada no registra la fecha de publicación, los runs de CI, los digests
+  remotos de los assets ni el SHA-256 del ZIP de `0.1.19`. No se han medido y no se inventan.
+
+## Release beta 0.1.18 - HUD, historial, Advisor y endurecimiento
+
+- Publicada el 2026-08-31 la
+  [GitHub Release `0.1.18`](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.18) desde el
+  tag y commit `6090defe5fd4b485e4f49efdbfd10f395197a716`.
+- Los runs de CI de `main` `33422321993` y del tag `33422707286` terminaron en verde con las tres
+  matrices Node, Rust portable/Windows, benchmark y paquete reproducible.
+- La release contiene exactamente `manifest.json`, `main.js`, `styles.css`,
+  `tyrian-companion-0.1.18.zip` y `tyrian-companion-0.1.18.zip.sha256`. Los digests remotos coinciden
+  con los bytes sellados y el ZIP tiene SHA-256
+  `fb7aa0ff08b101ae00d7786d273c0d68a02db5971cd95f13f56f7c62b57ebf99`.
+- El canal BRAT está publicado. La instalación/actualización por plataforma, la QA visual en
+  Obsidian y el contraste live de profundidad del Bazar siguen pendientes y no se consideran
+  acreditados por la publicación.
+
+## Incluido en beta 0.1.18 - H9.5, H9.19, H9.20, H12.5 y H12.6
+
+- H9.5 permite comparar el historial por actividad Halloween y build declarado. Los campos viven
+  solo en el record local, no atraviesan JSON ni CSV, y un grupo exige al menos dos sesiones
+  `exact/high` con valoración completa. Sacos/h y oro/h se agregan ponderando por duración, sin
+  promediar tasas ya redondeadas.
+- H9.19 toma la duración económica de `delta.window`, no de timestamps auxiliares. Un filtro por
+  personaje o almacén conserva cantidades y decisiones, pero retiene el total realizable porque la
+  profundidad y el redondeo de tasas pertenecen al conjunto account-wide. El mejor ask se rotula
+  como referencia bruta de publicación, nunca como venta total realizable.
+- H9.20 reutiliza la profundidad consumible y las tasas del bazar en sesión, inventario durable y el
+  kernel curado del saco `#36038`. Los niveles se consumen una vez por objeto, la cobertura parcial o
+  agotada queda explícita y las rutas curadas fallan cerradas ante profundidad ausente, stale,
+  futura o incompleta.
+- H12.5 abre el análisis del Inventory Advisor con **Qué hacer ahora**, mantiene búsqueda y orden
+  visibles y pliega el resto bajo **Filtros avanzados**. Los resúmenes se nombran como filtros de la
+  lista, no como ejecución, y los controles de una carga quedan deshabilitados de forma nativa.
+- H12.6 muestra una sola de las cuatro categorías de Ajustes mediante navegación accesible, conserva
+  las 26 definiciones y serializa los guardados visibles para que una respuesta antigua no pise una
+  nueva. La navegación pasa de lateral a horizontal bajo 1050 px; filas, tablas Halloween y controles
+  cambian causalmente en 760/480 px. Logging y soporte usan el mismo vocabulario ES/EN y recuerdan
+  revisar el extracto saneado antes de compartirlo.
+- Commits incluidos: `e247d35`, `77745ca`, `46d1e1f`, `ed8d3d8`, `6d9cfb0`, `35dd853`,
+  `85949ae`, `80898b0`, `1747443` y `22b4a17`. La revisión del gate separó la captura HTTP de listings del
+  modelo/valoradores puros y añadió sabotajes que impiden importarla desde H4.19. Pasan 431 pruebas
+  dirigidas. La revisión final cerró además un hueco del validator: profundidad `complete` exige una
+  venta demostrada y el warning `market_depth_incomplete` equivale exactamente a una línea parcial,
+  inválida o sin cobertura. El gate completo posterior pasa lint, 167 ficheros/2.318 tests, spike
+  nativo, scanner, 644 fronteras de observabilidad, empaquetado reproducible, contratos
+  beta/release/soporte y build. La rerevisión independiente no encuentra más hallazgos y da el
+  árbol por listo para release. Siguen pendientes la QA visual/teclado en Obsidian real y el
+  contraste live de listings, Refresh durable y sesión manual; la publicación no acredita esas
+  comprobaciones.
+
+## Incluido en beta 0.1.18 - H6.26 y H12.4
+
+- H6.26 limita cada Refresh del Inventory Advisor a dos observaciones dentro de la misma operación y
+  credencial. Solo dos capturas completas con ownership y placement equivalentes producen `stable`;
+  relocation, divergencia o recuperación transitoria siguen limitadas y bloquean rutas curadas. Un
+  primer `429` termina sin segunda pasada para que el cooldown compartido gobierne el reintento.
+- Banco y materiales siguen siendo fuentes opcionales: su parcialidad se conserva sin descartar un
+  núcleo personaje+compartido completo. El progreso cuenta lecturas reales y no inventa un total
+  estable cuando el roster cambia entre observaciones. Un fallo opcional no reintentable ya no veta
+  la segunda observación necesaria para recuperar un fallo transitorio del núcleo.
+- H12.4 convierte Companion en un HUD priorizado. Las 16 acciones se pliegan bajo un disclosure único
+  por debajo de 1050 px, conservan feedback y devuelven el foco al toggle si un resize oculta la acción
+  enfocada. La página ordena sesión, detección del saco `#36038`, confirmaciones, historial,
+  botín/Halloween y cuenta.
+- La detección presenta última consulta, resultado y próxima como datos semánticos. La única CTA
+  primaria se recalcula con el estado vivo y no promueve propuestas obsoletas; Halloween permanece
+  compacto salvo alerta no leída o error de store. El timer único también cubre propuestas que llegan
+  tras el render y, al caducar, elimina CTA y acciones inline sin dejar controles muertos.
+- Commits incluidos: `71c562a`, `3bf3250`, `cd1a0d0`, `742e245`, `95e9381`, `bca8a9d`, `e449df5`,
+  `c837acf` y `5d1641f`; `ee1f923`, `a19d5e1` y `e04414e` realinean sus fronteras de observabilidad.
+  El gate combinado queda verde con lint, 167 ficheros/2.288 tests, spike nativo, scanner,
+  643 fronteras de observabilidad sin pendientes,
+  empaquetado reproducible, contratos de release/beta/soporte y build. La revisión combinada es el
+  último control externo; la QA con cuenta grande y la QA visual/teclado en Obsidian real siguen
+  pendientes aunque el lote ya está publicado.
+
+## Incluido en beta 0.1.18 - H6.23, H6.24 y H6.25
+
+- H6.23 corrige la divergencia live entre manifiesto v2 en la raíz anterior y cinco Bases ya
+  reserializadas en la nueva carpeta de salida. La relocation exige origen owned/ready/current,
+  destino completo y semánticamente exacto, sin extras, y escribe un journal durable antes del
+  cambio de puntero y del cleanup; install ordinario no adopta ficheros markerless. QA con filesystem
+  y vault desechable: positivo `relocated` con bytes preservados y negativo con `Human.base` ajena
+  `conflict` sin una sola escritura.
+- H6.24 evita que un timeout parcial de personaje dispare hasta tres fan-outs account-wide. El primer
+  `timeout|network|429|5xx` parcial corta las pasadas restantes, conserva cobertura incompleta y no
+  publica snapshot; el scheduler mantiene el único timer/backoff y recupera sin duplicar polling.
+  `character_inventory|character_build` usan una política explícita de un intento y 30 segundos;
+  el calendario ya corregido por H6.19 no cambia.
+- H6.25 separa lectura, proyección y publicación del cache de loot. El TypeError histórico queda en
+  un único terminal `session_projection/precondition_failed`; lectura real conserva
+  `storage_failure`, otro bug de proyección usa `internal_failure` y `runtime_initialize` continúa
+  con terminal success. El paquete de soporte excluye texto libre, stack, errorName, state y details.
+- Commits incluidos: `446ae51` (assets), `cf0f7c0` (polling), `7732485` (atribución) y `463d367`
+  (baseline combinada). El gate queda verde con lint, 167 ficheros/2.269 tests, scanner,
+  observabilidad (644 fronteras, 0 pendientes), contratos y build. El lote forma parte de `0.1.18`.
+
+## Incluido en beta 0.1.18 - H8.8 y H7.13
+
+- H8.8 queda reconciliada como política shadow pura y aislada: presencia de 5 s o ausencia de 60 s
+  en el mapa 866 producen como máximo un DTO efímero sujeto a revisión humana. No hay composición,
+  cola, persistencia, UI ni cambio del lifecycle; H8.9–H8.15 y la congelación por H8.2 permanecen.
+- H7.13 incorpora un journal local opt-in, lazy y separado por vault. Toda propuesta presentada se
+  reconcilia con una decisión o con `expired|superseded|invalidated`; desarmar una propuesta viva
+  inicia el cierre fail-open sin retrasar producto, mientras una propuesta nunca mostrada no crea
+  fila. Recoveries sin clasificación permanecen visibles y hacen el resultado inconcluso.
+- La agregación publica por plataforma y estratos recuentos, cobertura, Wilson 95 %, precisión,
+  recoveries, sesiones y `pass|fail|inconclusive`. La revisión de pérdidas silenciosas queda ligada
+  al entorno y a `sampleRevision`: cada mutación real la incrementa e invalida la revisión en la
+  misma transacción; una carrera devuelve `stale` y no certifica evidencia no vista.
+- La revisión final detectó y `82c0b94` cerró cuatro fallos: el modal instrumental ya no puede
+  cancelar aceptar/iniciar/parar; un primer `accepted_workflow_failed` queda sellado ante reintentos
+  o exclusiones posteriores; la clasificación de recovery se rehidrata y bloquea contradicciones
+  tras recargar; estadísticas y export rechazan revisiones legacy o de otra revisión de muestra.
+- La revisión de seguridad detectó un ABA al desactivar y reactivar el mismo perfil. `686194b`
+  conserva únicamente un contador generacional no personal, lo avanza durante el borrado y prueba
+  que una revisión anterior nunca vuelva a ser válida sobre evidencia nueva.
+- La rerevisión detectó que un cambio concurrente de perfil comparaba antes el entorno y degradaba
+  un store sano. `4902bf5` prioriza la revisión transaccional: una muestra anterior devuelve `stale`;
+  solo una discrepancia de entorno dentro de la revisión vigente es `inconsistent`.
+- El último control de seguridad encontró que perfil corrupto y revisión cambiada podían ocultar
+  temporalmente la corrupción como `stale`. `f64a06c` valida primero la forma presente, falla
+  cerrado y mantiene la carrera legítima de perfil como `stale`.
+- Ajustes añade perfil ES/EN, preview, revisión, cuatro exports JSON/CSV deterministas create-only,
+  clear de muestra+revisión y disable del journal completo. No hay Sync propio ni telemetría remota;
+  los exports del Vault sobreviven a clear/disable y pueden entrar en Obsidian Sync. Los hashes de
+  propuestas son seudónimos, no anonimización.
+- Los commits incluidos son `25a1057` para la reconciliación H8.8 y `e267ae4`, `ab321a9`,
+  `c2981ba`, `388dc86`, `8c7f343`, `221862a`, `82c0b94`, `ba77b95`, `686194b`, `e765b5c`,
+  `4902bf5`, `f64a06c` y `e70fb66` para H7.13. Los hallazgos contractuales, de seguridad y de
+  revisión independiente quedan cubiertos; 108 tests focales y el gate completo quedan verdes con
+  lint, 167 ficheros/2.250 tests, scanner, observabilidad, contratos y build. El dry run real en
+  las tres plataformas, QA visual/IndexedDB y la muestra H7.7 siguen pendientes; publicar el journal
+  no acredita el piloto.
+
+## Incluido en beta 0.1.18 - reconciliación H6.19 y H6.20
+
+- Ambos hallazgos de QA real estaban corregidos en producción desde `6c6e2cd`, incluido ya en las
+  releases `0.1.16` y `0.1.17`; este lote documenta la causa y añade cobertura, sin cambiar de nuevo
+  el comportamiento productivo.
+- H6.19 no era un doble calendario de detección. Los deadlines observados pertenecían al histórico
+  de precios y a detección, pero el primero heredaba erróneamente la identidad `detection_poll`.
+  Ahora se distinguen como `price_history_poll` y `detection_poll`; `40d1678` añade una regresión con
+  reloj falso que cruza ambos deadlines y exige una ejecución y un timer por consumidor.
+- H6.20 reserva `session_start` al gesto humano y etiqueta la persistencia periódica de autoridad
+  como `session_lease`, con el saneado positivo habitual y sin datos del lease o de la sesión. La
+  sesión live de veinte minutos continúa como aceptación manual no ejecutada desde el repositorio.
+- El gate combinado previo a la release queda verde con lint, 162 ficheros y 2.178 tests, seguridad,
+  observabilidad, contratos de release/beta/soporte y build.
+
+## Incluido en beta 0.1.18 - H9.7 y H6.21
+
+- H9.7 añade a Companion un panel ES/EN de historial durable. Abrir o repintar la vista no lee el
+  vault: el escaneo completo solo parte de **Cargar historial**, coalesce dobles activaciones y
+  conserva en memoria los estados `idle`, `loading`, `empty`, `ready`, `conflict` y `unavailable`.
+- La agregación elimina referencias de cuenta y sesión, ordena las sesiones finalizadas, compara las
+  dos más recientes y presenta tabla o tarjetas responsive. Totales y diferencias desconocidos
+  permanecen `null`; una nota inválida o duplicada bloquea toda la presentación sin modificar notas.
+- H6.21 incorpora copy accionable ES/EN para los ocho motivos de fallo de inicio y los seis de
+  cierre. Los mapas tipados son exhaustivos y el mensaje/cooldown de conexión conserva su circuito
+  independiente.
+- Los dos commits están integrados y publicados en `0.1.18`. La revisión independiente hizo corregir
+  el orden por cierre y
+  la pérdida de segundos en duraciones/deltas subminuto. El gate combinado final queda verde con
+  lint, 162 ficheros y 2.178 tests, seguridad, observabilidad, contratos de release/beta/soporte y
+  build. La QA visual de H9.7 y H6.21 y la comprobación de un `429` real dentro de Obsidian siguen
+  pendientes.
 
 ## Release beta 0.1.17 - Hotfix de inicialización
 

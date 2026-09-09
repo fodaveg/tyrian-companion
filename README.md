@@ -21,9 +21,9 @@ proposal queue or session lifecycle. Neither side
 is wired from `main`, the helper is not included in the plugin ZIP, and firma y QA real siguen pendientes.
 
 > [!WARNING]
-> `0.1.19` is a public beta distributed through its GitHub Release and the active BRAT channel.
-> Installation, update, and runtime QA in Obsidian are still pending across the platform matrix, so
-> use a disposable vault while validating it.
+> The version declared by `manifest.json` is a public beta distributed through its GitHub Release
+> and the active BRAT channel. Installation, update, and runtime QA in Obsidian are still pending
+> across the platform matrix, so use a disposable vault while validating it.
 
 ## Current candidate
 
@@ -41,8 +41,8 @@ still required before publication.
 
 The fixed plugin name, ID, author, repository and MIT license are recorded in the
 [Release identity](docs/IDENTITY.md). The repository and the
-[`0.1.19` beta release](https://github.com/fodaveg/tyrian-companion/releases/tag/0.1.19) are public,
-and its three plugin assets are available to BRAT.
+[latest beta release](https://github.com/fodaveg/tyrian-companion/releases/latest) are public, and
+its three plugin assets are available to BRAT.
 
 ## Install the beta
 
@@ -51,8 +51,9 @@ to install and update this beta; nothing else is needed.
 
 1. From **Settings → Community plugins → Browse**, install and enable
    [BRAT](https://github.com/TfTHacker/obsidian42-brat).
-2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select version
-   `0.1.19`. BRAT downloads `manifest.json`, `main.js`, and `styles.css` from that GitHub Release.
+2. In BRAT, choose **Add beta plugin**, enter `fodaveg/tyrian-companion`, and select the latest
+   published version (the one declared by `manifest.json`). BRAT downloads `manifest.json`,
+   `main.js`, and `styles.css` from that GitHub Release.
 3. Back in **Settings → Community plugins**, enable **Tyrian Companion** and open its settings page.
 4. [Create a Guild Wars 2 API key](docs/API-KEY.md) and select or create an Obsidian secret in the
    **API key** setting. Paste the value only into Obsidian Secret Storage; the plugin setting keeps
@@ -189,7 +190,7 @@ For a problem, follow the [safe support and bug-reporting guide](docs/SUPPORT.md
 key, account or character identity, an absolute vault path, raw inventory/snapshot data, IndexedDB
 contents, or unredacted screenshots/logs in a report.
 
-The current `0.1.19` vertical provides:
+The current published vertical provides:
 
 - A loadable, note-independent Obsidian view and the **Open companion** command. One session card keeps the phase and the elapsed time first, then the highest-priority incident and, once a measurement exists, how trustworthy it is; detector and polling detail stay in the detection panel, and the account detail lives in Settings.
 - H5.2 session controls in the command palette plus one context-sensitive compass ribbon menu: start, finish/retry, review, recover, confirmed discard and confirmed clear reuse the same lifecycle actions as the view.
@@ -202,7 +203,7 @@ The current `0.1.19` vertical provides:
 - H5.10 manually scans durable H5.4/H5.7 session notes and creates deterministic, create-only JSON/CSV history exports below `exports/`; malformed, future, or duplicate notes fail closed and no vault read occurs on plugin load.
 - H5.10 also exposes a warning-style Settings scrub with preview and explicit confirmation; it preserves files and human content, removes only validated `tc_*` metadata and managed blocks, and blocks around live session, recovery, or detector state.
 - A secure API-key selector backed by Obsidian `SecretStorage`.
-- Module boundaries for account access, advisor readiness, play sessions, and objectives.
+- Module boundaries for account access and play sessions.
 - An explicit connection check against Guild Wars 2 `/v2/tokeninfo` and `/v2/account`.
 - Validated account and permission summaries without displaying or persisting the token.
 - Versioned settings for language, safe output folder, preferred character, polling interval, and detection mode.

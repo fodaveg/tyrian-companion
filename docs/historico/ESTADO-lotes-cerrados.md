@@ -43,8 +43,8 @@ verde. La evidencia local detallada no sale del entorno de soporte.
 
 H12.1 incorpora en la release el panel visible con paridad 16/16 frente a la paleta. H12.2 deja
 censadas Sesión, Inventario, Ajustes, el panel compartido y nueve modales/confirmaciones; sus
-entregables durables viven en `docs/design/H12.2-ui-ux-audit.md` y
-`docs/design/H12.2-mockup.html`.
+entregables durables viven en `docs/historico/design/H12.2-ui-ux-audit.md` y
+`docs/historico/design/H12.2-mockup.html` (movidos ahí el 2026-09-09, H13.13).
 
 **Lote H9.5/H9.19/H9.20/H12.5/H12.6 integrado en `main` y publicado en `0.1.18`.** H9.5 añade al
 historial local actividad Halloween y build
@@ -450,4 +450,76 @@ La revisión independiente no encontró bloqueos y el gate base del repo quedó 
 44 px y los cortes responsive 479/480/759/760 están cubiertos por código y tests, pero el contraste
 AA no se ha medido en temas reales. H10.4 y H10.7 conservan QA manual pendiente antes de su aceptación
 humana.
+
+---
+
+Movido desde `docs/ESTADO.md` el 2026-09-09, en H13.13/H14.18 (recorte adicional de `docs/` y
+retirada de números de versión literales de `README.md`/`ESTADO.md`/`BETA.md`; el vigente ya se lee
+de `manifest.json`, no de una cifra copiada aquí). Es el relato, sin corregir, de las releases
+`0.1.21` y `0.1.22` ya cerradas y de la primera ejecución humana registrada sobre la `0.1.21`.
+
+**Release beta `0.1.21` publicada el 2026-09-01 desde el tag y commit `1514bf3c52e4f71158a7a724b6c227c5930c4bc0`.**
+`manifest.json` y `package.json` declaran `0.1.21`. Runs de CI de `main`, del tag y del workflow
+`Release`: `33525623408` (CI de `main`), `33525647496` (CI del tag) y `33525647471` (workflow `Release`), los tres en verde.
+
+La release adjunta los cinco assets exactos. El ZIP tiene SHA-256
+`8f8ab5f5f48d12584bef417b3e74aa31113b431411c6107cedb96f8ddcdb263d`, que coincide con el fichero
+`.sha256` que la propia release adjunta. El `main.js` publicado se descargó y se comparó con el
+construido localmente: idénticos byte a byte, SHA-256
+`d95d8312e838407c3363ebef9ca22a591d22a279fb4755556631c2c04477349f`. El contrato BRAT, ejecutado
+contra la salida real de `gh release view`, da `PASS (version=0.1.21; assets=5)`.
+
+**Canal publicado; runtime pendiente.** Los tres ficheros (`main.js`, `manifest.json`, `styles.css`)
+se copiaron a la bóveda real de David y se verificaron por `sha256sum`, no por la salida del `cp`;
+`manifest.json` instalado declara `0.1.21` y `data.json` no se tocó. Pero **Obsidian estaba ABIERTO
+durante la copia**, así que el plugin cargado en memoria sigue siendo la build anterior hasta que se
+recargue. No hay evidencia de carga del plugin, de QA visual ni de una sola llamada real a la API de
+Guild Wars 2 desde el cliente con esta versión.
+
+El contenido de esta release y su motivación están en el [changelog](../CHANGELOG.md), entrada
+`0.1.21`. Absorbe tres lotes integrados en `main` después de `0.1.20`: la Bolsa de truco o trato
+deja de estar muda, la nota de sesión da un número económico por primera vez (antes escribía
+`valuation: null` a mano en todas las sesiones), y el detector asistido pasa a proponer de verdad
+(antes exigía dos consultas consecutivas con ganancia, algo que la caché de 5 a 10 minutos de la
+API de cuenta nunca permitía).
+
+**Publicación de la `0.1.22` (2026-09-03).** Publicada desde el tag y commit
+`5ab35766e6db01dde84cad9607a3a99fb2dfe42c`, que es también `origin/main` en ese momento. La creó el
+workflow `Release` al empujar el tag, con los cinco assets y contrato BRAT
+`PASS (version=0.1.22; assets=5)` contra la salida real de `gh release view`. Los tres ficheros
+publicados se descargaron y coinciden byte a byte con los construidos aquí (`main.js`
+`c1404e00…4e7561`). Tres runs de CI en verde sobre ese SHA: `33732841358`, `33732841344` y
+`33732840955`. Gate local antes de etiquetar: `check` 22/22, `test` 18/18, 2.632 tests en 194
+ficheros, `tsc --noEmit` exit 0.
+
+Instalada en la bóveda real y verificada por `sha256sum` contra los ficheros publicados, sin tocar
+`data.json`. La copia se hizo con Obsidian abierto, así que hasta que se recargó el plugin en
+memoria siguió corriendo la `0.1.21`: canal publicado, runtime pendiente en ese momento.
+
+Lo que eso no acreditaba entonces: que el banner del sistema con `urgency: critical` cruce por
+encima de Guild Wars 2 en ventana sin bordes y en pantalla completa exclusiva bajo GNOME, y que una
+sesión de farmeo repetida salga `estimated` con banda en vez de con el veredicto económico
+suprimido. Las dos eran pruebas humanas y no se habían ejecutado en esa fecha.
+
+### H13.1 — Primera ejecución humana (2026-09-03)
+
+**La primera ejecución humana en 21 releases ocurrió el 2026-09-03**, sobre la `0.1.21`, en Linux y
+en la bóveda real, no en la desechable `~/tyrian-qa-h13-1` que el protocolo pedía. La sesión duró 53
+minutos y 51 segundos y completó el ciclo entero: inicio, captura, fin, revisión y nota escrita en su
+carpeta y su año, con SHA-256
+`c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`. La tubería cableada en la
+`0.1.21` respondió, incluidas las junturas de reserva y hold (`tc_reservation_status: "complete:met"`,
+`tc_hold_status: "released"`).
+
+**El veredicto económico salió suprimido, y ese fue el defecto que compró esta ejecución.** Todos los
+campos `tc_*_copper` y `tc_*_per_hour` salieron `null`, la recomendación quedó en `not_evaluated` y
+las 40 filas de botín decían «Oculto por fiabilidad», en una sesión que había ganado 46.083 cobre. El
+disparador fueron dos monedas del monedero bajando una unidad cada una, la `37` (Exalted Key) y la
+`42` (Vial of Chak Acid), que es lo que cuesta abrir un cofre con su llave. El arreglo previsto era
+H13.6; su estado hoy se sigue desde `docs/ESTADO.md` § Deuda conocida, sin repetir aquí el número de
+versión en que se detectó.
+
+Que no saltara ningún aviso sí era lo esperado: `halloweenEnabled`, `priceHistoryEnabled` y
+`halloweenPriceAlertEnabled` existían en la `0.1.21` y venían en `false` por defecto. El aviso sin
+interruptores llegó después, en `6706d47`, y no estaba en ningún build instalado en esa fecha.
 
