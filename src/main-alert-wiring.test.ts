@@ -54,7 +54,7 @@ describe('H13.3 loot poll cabling', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('arms the loot poll at five minutes on a manual start with assisted detection off', async () => {
+	it('arms the loot poll at five minutes on a manual start before assisted detection has armed', async () => {
 		const record = activeSessionRecord();
 		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
 		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
@@ -64,8 +64,6 @@ describe('H13.3 loot poll cabling', () => {
 			.mockResolvedValue({ status: 'started', state: record.state } as never);
 		const arm = vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue(armedState());
 		const plugin = alertWiringPlugin(new IDBFactory());
-		// The user has never armed assisted detection: this is the default install.
-		plugin.settings.detectionMode = 'off';
 
 		await plugin.initializeRuntime();
 		expect(arm, 'load must not poll: there is no active session').not.toHaveBeenCalled();

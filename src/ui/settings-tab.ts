@@ -369,25 +369,6 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				category: 'advanced',
-				name: this.t('settings.detection.name'), desc: this.t('settings.detection.desc'),
-				render: (setting, save) => {
-					setting.addDropdown((dropdown) =>
-						dropdown
-							.addOption('off', this.t('settings.off'))
-							.addOption('assisted', this.t('settings.assisted'))
-							.setValue(this.plugin.settings.detectionMode)
-							.onChange(async (detectionMode) => {
-								await save({
-									detectionMode: detectionMode === 'assisted' ? 'assisted' : 'off',
-								});
-								this.refreshForSettingsChange();
-							}),
-					);
-				},
-			},
-			{
-				category: 'advanced',
-				visible: () => this.plugin.settings.detectionMode === 'assisted',
 				name: this.t('settings.polling.name'), desc: this.t('settings.polling.desc'),
 				render: (setting, save) => {
 					setting.addDropdown((dropdown) => {
