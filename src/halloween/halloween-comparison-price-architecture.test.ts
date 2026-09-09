@@ -17,7 +17,11 @@ describe('H11.3 and H11.5 architecture contract', () => {
 
 	it('seals only finalized review output and writes comparison in the same IndexedDB transaction', () => {
 		const main = readModuleSource('src/main.ts');
-		expect(main).toContain("result.status === 'finalized'");
+		// The guard moved into `finalizeAndPersistStoppedSession` (Lote S, 2026-09-09: nobody reviews
+		// a session anymore, so there is only one finalize path left) and reads negated —
+		// `finishFinalizedSession`, the only caller of `observeHalloweenDelta` on this path, never
+		// runs unless this guard already confirmed `'finalized'`.
+		expect(main).toContain("reviewed.status !== 'finalized'");
 		expect(main).toContain("'session_final'");
 		const store = readModuleSource('src/halloween/halloween-store.ts');
 		expect(store).toContain('HALLOWEEN_DB_VERSION = 7');
@@ -79,7 +83,11 @@ describe('H11.3 and H11.5 architecture contract', () => {
 		expect(panel).toContain("createEl('caption'");
 		expect(panel).toContain("setAttr('scope', 'col')");
 		expect(panel).toContain("setAttr('aria-live', 'polite')");
-		expect(panel).toContain('heading.focus()');
+		// The post-acknowledge focus shift (`heading.focus()`) is gone with the "Marcar como
+		// revisada" button itself (Lote S, 2026-09-09): nothing moves focus on interaction anymore,
+		// there is no interaction left to move it after. The aria-live region above still covers
+		// this axis.
+		expect(panel).not.toContain('heading.focus()');
 		expect(styles).toContain('min-block-size: 44px');
 		// Real content and feedback; assets are intentionally N/A.
 		expect(panel).toContain('comparison.outcomes');

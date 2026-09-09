@@ -28,9 +28,7 @@ const POLL_INTERVAL_MINUTES = ACTIVE_SESSION_ALERT_POLL_INTERVAL_MS / 60_000;
 
 export interface HalloweenAlertPanelActions {
 	getHalloweenState(): HalloweenRuntimeState;
-	acknowledgeHalloweenNotice(noticeId: string): Promise<boolean>;
 	getHalloweenPriceAlertState(): HalloweenPriceAlertRuntimeState;
-	acknowledgeHalloweenPriceNotice(noticeId: string): Promise<boolean>;
 	/** Durable copy of every alert emitted for this account, newest first. */
 	getEmittedAlerts(): readonly EmittedAlertRecordV1[];
 	/** Absent defaults to the wall clock, no Labyrinth and no running session. */
@@ -64,13 +62,17 @@ export function renderHalloweenAlertPanel(
 	const panelContext = actions.getHalloweenPanelContext?.() ?? { nowMs: Date.now(), inLabyrinth: false, sessionStartAt: null };
 	const inHalloweenScope = panelContext.inLabyrinth ||
 		seasonalWindowStatusAtMs(HALLOWEEN_SEASONAL_WINDOW, panelContext.nowMs) === 'in_season';
-	const freshUnreadCount = state.notices
-		.filter((notice) => notice.acknowledgedAt === null && isFreshNotice(notice.observedAt, panelContext)).length;
-	// Outside the festival, a stale or pre-session notice no longer earns the forced-open banner: H14.3
+	// Only the two avisos the single policy still pages for: a valuable/unlock loot alert, or a
+	// bazaar price alert (Lote S, 2026-09-09). The "Cambio observado" cards below are information
+	// about the session, never avisos: they never count here and never force the panel open.
+	const visibleAlerts = visibleEmittedAlerts(actions.getEmittedAlerts(), panelContext);
+	const freshCount = visibleAlerts.length + priceState.notices.length;
+	// Outside the festival, a stale or pre-session alert no longer earns the forced-open banner: H14.3
 	// exists because a Halloween-only surface used to expand for good outside the window and for a
 	// notice from a session that already ended. Store failures stay forced regardless of season: they
-	// are a data problem, not a festival one.
-	const requiresAttention = (inHalloweenScope && freshUnreadCount > 0) || priceState.unreadCount > 0 ||
+	// are a data problem, not a festival one. Nothing gets "marked reviewed" anymore (Lote S,
+	// 2026-09-09), so freshness alone decides.
+	const requiresAttention = (inHalloweenScope && freshCount > 0) ||
 		state.status.startsWith('store_') || priceState.status.startsWith('store_');
 	const labelScope = inHalloweenScope ? '' : '.generic';
 	let body: HTMLElement = container;
@@ -85,7 +87,7 @@ export function renderHalloweenAlertPanel(
 			const disclosure = section.createEl('details', { cls: 'tyrian-companion-halloween__disclosure' });
 			const summary = disclosure.createEl('summary');
 			summary.createEl('strong', { text: t(`halloween.optional${labelScope}`) });
-			summary.createEl('small', { text: t(`halloween.state.${state.status}`) });
+			summary.createEl('small', { text: alertCountLabel(freshCount, t) });
 			body = disclosure.createDiv({ cls: 'tyrian-companion-halloween__body' });
 		}
 		const status = body.createEl('p', { cls: 'tyrian-companion-halloween__status' });
@@ -95,10 +97,28 @@ export function renderHalloweenAlertPanel(
 			status.setText(t(`halloween.state.${state.status}`));
 		}
 	}
-	renderEmittedAlerts(body, actions.getEmittedAlerts(), t, locale, now);
+	renderEmittedAlerts(body, visibleAlerts, t, locale, now);
 	renderComparison(body, state, t);
-	renderPriceAlerts(body, actions, priceState, t, locale, now);
-	for (const notice of state.notices) renderNotice(body, notice, actions, t, locale, now);
+	renderPriceAlerts(body, priceState, t, locale, now);
+	for (const notice of state.notices) renderNotice(body, notice, t, locale, now);
+}
+
+/**
+ * The count the header `<small>` quotes, and the same list `renderEmittedAlerts` shows: avisos of
+ * the session on screen, or of the last 24h with no session running. `companion-view.ts` reuses
+ * this so its own "Avisos" gaveto suffix never drifts from what the disclosure actually lists.
+ */
+export function visibleEmittedAlerts(
+	alerts: readonly EmittedAlertRecordV1[],
+	context: Pick<HalloweenPanelContext, 'nowMs' | 'sessionStartAt'>,
+): readonly EmittedAlertRecordV1[] {
+	return alerts.filter((alert) => isFreshNotice(alert.emittedAt, context));
+}
+
+/** `«sin avisos»` / `«N avisos»`: the header count, never a leftover "N nuevos" now nothing is marked. */
+export function alertCountLabel(count: number, t: Translate): string {
+	if (count === 0) return t('halloween.alertCount.empty');
+	return count === 1 ? t('halloween.alertCount', { count }) : t('halloween.alertCountPlural', { count });
 }
 
 /**
@@ -203,7 +223,6 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
  */
 function renderPriceAlerts(
 	container: HTMLElement,
-	actions: HalloweenAlertPanelActions,
 	state: HalloweenPriceAlertRuntimeState,
 	t: Translate,
 	locale: Locale,
@@ -219,54 +238,27 @@ function renderPriceAlerts(
 	status.setText(t(`halloween.price.state.${state.status}`));
 	for (const notice of state.notices) {
 		const card = section.createEl('article', { cls: 'tyrian-companion-halloween__notice' });
-		card.toggleClass('is-read', notice.acknowledgedAt !== null);
-		const heading = card.createEl('h4', { text: t('halloween.price.noticeTitle') });
-		heading.tabIndex = -1;
+		card.createEl('h4', { text: t('halloween.price.noticeTitle') });
 		card.createEl('p', { text: t('halloween.price.noticeBody', {
 			bid: notice.bidCopper, p90: notice.p90Copper, days: notice.referenceDays,
 			margin: notice.minimumAboveP90Bps,
 		}) });
 		card.createEl('time', { text: relativeDayLabel(notice.capturedAtMs, locale, now, t) })
 			.setAttr('datetime', notice.observedAt);
-		if (notice.acknowledgedAt === null) {
-			const button = card.createEl('button', { text: t('halloween.ack') });
-			button.addEventListener('click', () => {
-				button.disabled = true;
-				void actions.acknowledgeHalloweenPriceNotice(notice.noticeId).then((acknowledged) => {
-					if (acknowledged) { card.addClass('is-read'); heading.focus(); }
-					else button.disabled = false;
-				});
-			});
-		}
 	}
 }
 
 function renderNotice(
 	container: HTMLElement,
 	notice: HalloweenNoticeV1,
-	actions: HalloweenAlertPanelActions,
 	t: Translate,
 	locale: Locale,
 	now: number,
 ): void {
 	const card = container.createEl('article', { cls: 'tyrian-companion-halloween__notice' });
-	card.toggleClass('is-read', notice.acknowledgedAt !== null);
-	const heading = card.createEl('h3', { text: t('halloween.observed') });
-	heading.tabIndex = -1;
+	card.createEl('h3', { text: t('halloween.observed') });
 	card.createEl('time', { text: relativeDayLabel(notice.observedAt, locale, now, t) }).setAttr('datetime', notice.observedAt);
 	if (notice.coverage === 'partial') card.createEl('p', { text: t('halloween.partial') });
-	// Above the list, not after it: a notice with hundreds of items used to bury the only control
-	// that dismisses it at the bottom of the scroll.
-	if (notice.acknowledgedAt === null) {
-		const button = card.createEl('button', { text: t('halloween.ack') });
-		button.addEventListener('click', () => {
-			button.disabled = true;
-			void actions.acknowledgeHalloweenNotice(notice.noticeId).then((acknowledged) => {
-				if (acknowledged) { card.addClass('is-read'); heading.focus(); }
-				else button.disabled = false;
-			});
-		});
-	}
 	const list = card.createEl('ul');
 	for (const item of notice.items) {
 		const row = list.createEl('li');

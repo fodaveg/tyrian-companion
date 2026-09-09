@@ -63,7 +63,6 @@ const GROUP_BY_ID: Readonly<Record<ProductActionId, ProductActionGroup>> = {
 	'review-pending-farming-proposal': 'session',
 	'start-farming-session': 'session',
 	'finish-farming-session': 'session',
-	'review-session': 'session',
 	'recover-saved-session': 'session',
 	'discard-saved-session': 'session',
 	'clear-completed-session': 'session',
@@ -82,7 +81,6 @@ const TRANSLATION_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> = {
 	'review-pending-farming-proposal': 'commands.reviewPending',
 	'start-farming-session': 'commands.startSession',
 	'finish-farming-session': 'commands.finishSession',
-	'review-session': 'commands.reviewSession',
 	'recover-saved-session': 'commands.recoverSession',
 	'discard-saved-session': 'commands.discardSession',
 	'clear-completed-session': 'commands.clearSession',
@@ -101,7 +99,6 @@ const DESCRIPTION_KEY_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> =
 	'review-pending-farming-proposal': 'productAction.desc.review-pending-farming-proposal',
 	'start-farming-session': 'productAction.desc.start-farming-session',
 	'finish-farming-session': 'productAction.desc.finish-farming-session',
-	'review-session': 'productAction.desc.review-session',
 	'recover-saved-session': 'productAction.desc.recover-saved-session',
 	'discard-saved-session': 'productAction.desc.discard-saved-session',
 	'clear-completed-session': 'productAction.desc.clear-completed-session',
@@ -295,7 +292,7 @@ function isSessionCommand(id: ProductActionId): id is SessionCommandId {
 
 function buttonLabel(id: ProductActionId, t: Translator): string {
 	if (id.startsWith('open-')) return t.t('productAction.open');
-	if (id === 'review-pending-farming-proposal' || id === 'review-session') return t.t('productAction.review');
+	if (id === 'review-pending-farming-proposal') return t.t('productAction.review');
 	if (id.startsWith('preview-')) return t.t('productAction.preview');
 	if (id.startsWith('apply-')) return t.t('productAction.apply');
 	return t.t('productAction.run');

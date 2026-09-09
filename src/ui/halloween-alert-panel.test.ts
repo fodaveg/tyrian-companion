@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createTranslator, type TranslationKey } from '../core/i18n';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenComparisonRecordV2 } from '../halloween/halloween-loot-comparison';
@@ -9,16 +9,12 @@ import { renderHalloweenAlertPanel } from './halloween-alert-panel';
 describe('Halloween alert panel DOM', () => {
 	it('renders disabled without running effects and uses semantic status/label nodes', () => {
 		const mount = new FakeElement('div');
-		const acknowledge = vi.fn();
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'disabled', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
-			acknowledgeHalloweenNotice: acknowledge,
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
 			getHalloweenPanelContext: () => inSeasonContext(),
 		}, translator('en'), 'en');
-		expect(acknowledge).not.toHaveBeenCalled();
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('aria-label')).toBe('Halloween alert inbox');
 		expect(all.find(({ role }) => role === 'status')?.attributes.get('aria-live')).toBe('polite');
@@ -28,7 +24,7 @@ describe('Halloween alert panel DOM', () => {
 		expect(all.map(({ text }) => text).join(' ')).toContain('Halloween · optional event');
 	});
 
-	it('keeps 400 ids, long/unknown names, large quantities and combined reasons reviewable', async () => {
+	it('keeps 400 ids, long/unknown names, large quantities and combined reasons reviewable', () => {
 		const mount = new FakeElement('div');
 		const items = Array.from({ length: 400 }, (_, index) => ({
 			itemId: index + 1, quantity: Number.MAX_SAFE_INTEGER - index,
@@ -44,29 +40,24 @@ describe('Halloween alert panel DOM', () => {
 			observedAt: '2026-08-29T12:00:00.000Z', source: 'assisted_poll', wording: 'observed_change',
 			coverage: 'partial', items, acknowledgedAt: null,
 		};
-		const acknowledge = vi.fn(async () => true);
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: acknowledge,
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
 			// Aug 29 is out of the calendar window; the Labyrinth override keeps this stress test about
-			// item cardinality, not about H14.3's season gate (covered by its own tests below).
+			// item cardinality, not about H14.3's season gate (covered by its own tests below). No
+			// aviso is emitted here (Lote S, 2026-09-09: "Cambio observado" is information, never an
+			// aviso), so the panel stays folded and no button ever renders.
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-08-29T13:00:00.000Z'), inLabyrinth: true, sessionStartAt: null }),
 		}, translator('en'), 'en');
 		const all = walk(mount);
-		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
-		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
+		expect(all.some(({ tag }) => tag === 'details')).toBe(true);
 		expect(all.filter(({ tag }) => tag === 'article')).toHaveLength(1);
-		expect(all.filter(({ tag }) => tag === 'strong')).toHaveLength(400);
+		// 400 item names plus the folded disclosure's own "optional" label.
+		expect(all.filter(({ tag }) => tag === 'strong')).toHaveLength(401);
 		expect(all.map(({ text }) => text).join('\n')).toContain('Item #2');
 		expect(all.map(({ text }) => text).join('\n')).toContain(String(Number.MAX_SAFE_INTEGER));
-		const button = all.find(({ tag }) => tag === 'button');
-		button?.dispatch('click');
-		await Promise.resolve();
-		expect(acknowledge).toHaveBeenCalledWith('notice');
-		expect(button?.disabled).toBe(true);
+		expect(all.some(({ tag }) => tag === 'button')).toBe(false);
 	});
 
 	it('drops the Halloween label and stays folded outside the season and off map 866, even with a fresh unread notice', () => {
@@ -74,10 +65,8 @@ describe('Halloween alert panel DOM', () => {
 		const notice = valuableNotice('2026-09-08T10:00:00.000Z');
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
-			getEmittedAlerts: () => [],
+			getEmittedAlerts: () => [valuableAlert(notice.observedAt)],
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-08T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
 		}, translator('en'), 'en');
 		const all = walk(mount);
@@ -96,10 +85,8 @@ describe('Halloween alert panel DOM', () => {
 		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
-			getEmittedAlerts: () => [],
+			getEmittedAlerts: () => [valuableAlert(notice.observedAt)],
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-10-15T09:30:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
 		}, translator('en'), 'en');
 		const all = walk(mount);
@@ -113,10 +100,8 @@ describe('Halloween alert panel DOM', () => {
 		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
-			getEmittedAlerts: () => [],
+			getEmittedAlerts: () => [valuableAlert(notice.observedAt)],
 			// 25h after observedAt: one hour past the 24h staleness window.
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-10-16T10:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
 		}, translator('en'), 'en');
@@ -130,10 +115,8 @@ describe('Halloween alert panel DOM', () => {
 		const notice = valuableNotice('2026-10-15T09:00:00.000Z');
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
-			getEmittedAlerts: () => [],
+			getEmittedAlerts: () => [valuableAlert(notice.observedAt)],
 			getHalloweenPanelContext: () => ({
 				nowMs: Date.parse('2026-10-15T09:30:00.000Z'), inLabyrinth: false,
 				sessionStartAt: '2026-10-15T09:15:00.000Z', // the current session started after the notice
@@ -151,11 +134,9 @@ describe('Halloween alert panel DOM', () => {
 				status: source === 'event' ? 'store_unavailable' as const : 'ready' as const,
 				notices: [], unreadCount: 0, lastObservedAt: null, comparison: null,
 			}),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: () => source === 'price'
 				? { status: 'store_corrupt' as const, projection: null, notices: [], unreadCount: 0 }
 				: disabledPriceState(),
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
 		}, translator('en'), 'en');
 		const all = walk(mount);
@@ -188,9 +169,7 @@ describe('Halloween alert panel DOM', () => {
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'ready', notices: [], unreadCount: 0,
 				lastObservedAt: comparison.observedAt, comparison }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: () => ({ status: 'unread', projection: null, notices: [price], unreadCount: 1 }),
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => true),
 			getEmittedAlerts: () => [],
 		}, translator('en'), 'en');
 		const all = walk(mount);
@@ -216,9 +195,7 @@ describe('Halloween alert panel DOM', () => {
 		};
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => true),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
 		}, translator('es'), 'es', Date.parse('2026-08-31T12:00:00.000Z'));
 		const all = walk(mount);
@@ -235,14 +212,16 @@ describe('Halloween alert panel DOM', () => {
 		const now = Date.parse('2026-08-31T12:00:00.000Z');
 		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
 			getHalloweenState: () => ({ status: 'ready', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
-			acknowledgeHalloweenNotice: vi.fn(async () => false),
 			getHalloweenPriceAlertState: disabledPriceState,
-			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [{
 				version: 1 as const, vaultId: 'vault', accountRef: 'account', alertId: 'alert', kind: 'valuable_loot' as const,
 				itemId: 1, name: 'Bolsa de truco o trato', quantity: 1, totalCopper: 100, reason: 'valuable' as const,
 				emittedAt: new Date(now - 60_000).toISOString(),
 			}],
+			// The visible-alerts filter reads `nowMs` from the panel context, not from the `now`
+			// argument below (that one only formats "today/yesterday"): without this, it falls back
+			// to the real wall clock and the alert reads as stale.
+			getHalloweenPanelContext: () => ({ nowMs: now, inLabyrinth: false, sessionStartAt: null }),
 		}, translator('es'), 'es', now);
 		const time = walk(mount).find(({ tag }) => tag === 'time');
 		expect(time?.text).toMatch(/^hoy \d{2}:\d{2}$/u);
@@ -291,6 +270,17 @@ function valuableNotice(observedAt: string): HalloweenNoticeV1 {
 		observedAt, source: 'assisted_poll', wording: 'observed_change', coverage: 'complete', acknowledgedAt: null,
 		items: [{ itemId: 1, quantity: 1, name: 'Objeto', netUnitCopper: 60_000, priceStatus: 'quote',
 			reasons: [{ code: 'valuable', netUnitCopper: 60_000, thresholdCopper: 50_000 }] }],
+	};
+}
+/**
+ * The panel's own avisos are `EmittedAlertRecordV1` entries now (Lote S, 2026-09-09), never the
+ * "Cambio observado" notice — the durable queue's own freshness (`isFreshNotice`) is what drives
+ * `data-attention` and the header count. This stands in for one at a given instant.
+ */
+function valuableAlert(emittedAt: string) {
+	return {
+		version: 1 as const, vaultId: 'vault', accountRef: 'account', alertId: `alert-${emittedAt}`, kind: 'valuable_loot' as const,
+		itemId: 1, name: 'Objeto', quantity: 1, totalCopper: 60_000, reason: 'valuable' as const, emittedAt,
 	};
 }
 function walk(root: FakeElement): FakeElement[] { return [root, ...root.children.flatMap(walk)]; }
