@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as ts from 'typescript';
 
-export const ACTION_OBSERVABILITY_CENSUS_VERSION = 3;
+export const ACTION_OBSERVABILITY_CENSUS_VERSION = 4;
 export const ACTION_BOUNDARY_KINDS = ['catch_clause', 'promise_catch', 'void_expression', 'callback_registration'];
 export const ACTION_BOUNDARY_CLASSIFICATIONS = ['unreviewed', 'observed', 'allowlisted'];
 
@@ -104,6 +105,32 @@ export function verifyActionBoundaryCensus(root = process.cwd(), baselinePath = 
 	return findings;
 }
 
+/**
+ * Rewrites only the locator fields (line/column/endLine/endColumn) of a baseline, matching
+ * boundaries by their AST identity so genuine formatting drift never touches a reviewed decision.
+ * Boundaries whose identity no longer exists in the tree are left as-is; the next verify run
+ * reports them as removed.
+ */
+function refreshBaselineLocations(root, absoluteBaselinePath) {
+	const expected = JSON.parse(readFileSync(absoluteBaselinePath, 'utf8'));
+	const actual = collectActionBoundaryCensus(root);
+	for (const [path, file] of Object.entries(expected.files)) {
+		const actualFile = actual.files[path];
+		if (actualFile === undefined) continue;
+		const actualById = new Map(actualFile.boundaries.map((boundary) => [boundaryIdentity(boundary), boundary]));
+		for (const boundary of file.boundaries) {
+			const match = actualById.get(boundaryIdentity(boundary));
+			if (match === undefined) continue;
+			boundary.line = match.line;
+			boundary.column = match.column;
+			boundary.endLine = match.endLine;
+			boundary.endColumn = match.endColumn;
+		}
+		file.boundaries.sort(compareBoundaries);
+	}
+	return expected;
+}
+
 /** Runs the CLI contract without requiring a child process, returning its intended exit code. */
 export function runActionBoundaryCensusCli(args = [], output = process) {
 	const root = resolve(args.find((argument) => argument.startsWith('--root='))?.slice('--root='.length) ?? '.');
@@ -111,6 +138,12 @@ export function runActionBoundaryCensusCli(args = [], output = process) {
 	if (args.includes('--write-baseline')) {
 		writeFileSync(baseline, `${JSON.stringify(collectActionBoundaryCensus(root), null, '\t')}\n`, { flag: 'w' });
 		output.stdout.write('action observability census: unreviewed candidate written; decide every boundary before accepting it\n');
+		return 0;
+	}
+	if (args.includes('--refresh-locations')) {
+		const refreshed = refreshBaselineLocations(root, baseline);
+		writeFileSync(baseline, `${JSON.stringify(refreshed, null, '\t')}\n`, { flag: 'w' });
+		output.stdout.write('action observability census: locator fields refreshed; reviewed decisions untouched\n');
 		return 0;
 	}
 	const findings = verifyActionBoundaryCensus(root);
@@ -135,11 +168,18 @@ function analyzeActionBoundaryCensus(root) {
 		const path = relative(absoluteRoot, absolute).split(sep).join('/');
 		const ast = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 		const boundaries = [];
+		const occurrencesByAstShape = new Map();
 		const addBoundary = (kind, node, registration) => {
 			const location = ast.getLineAndCharacterOfPosition(node.getStart(ast));
 			const end = ast.getLineAndCharacterOfPosition(node.end);
+			const ancestors = ancestorChain(node);
+			const normalizedText = normalizedNodeText(node, ast);
+			const shapeKey = `${kind} ${registration ?? ''} ${ancestors} ${normalizedText}`;
+			const occurrenceIndex = occurrencesByAstShape.get(shapeKey) ?? 0;
+			occurrencesByAstShape.set(shapeKey, occurrenceIndex + 1);
+			const id = computeBoundaryId({ path, kind, registration, ancestors, normalizedText, occurrenceIndex });
 			const boundary = {
-				kind, line: location.line + 1, column: location.character + 1,
+				id, kind, line: location.line + 1, column: location.character + 1,
 				endLine: end.line + 1, endColumn: end.character + 1,
 				...(registration === undefined ? {} : { registration }),
 				classification: 'unreviewed', evidence: { type: 'pending_review' },
@@ -269,9 +309,10 @@ function validateBoundary(boundary) {
 	if (!isRecord(boundary)) return 'boundary_shape';
 	if (!ACTION_BOUNDARY_KINDS.includes(boundary.kind)) return 'boundary_kind';
 	const expectedKeys = boundary.kind === 'promise_catch' || boundary.kind === 'callback_registration'
-		? ['classification', 'column', 'endColumn', 'endLine', 'evidence', 'kind', 'line', 'reason', 'registration']
-		: ['classification', 'column', 'endColumn', 'endLine', 'evidence', 'kind', 'line', 'reason'];
+		? ['classification', 'column', 'endColumn', 'endLine', 'evidence', 'id', 'kind', 'line', 'reason', 'registration']
+		: ['classification', 'column', 'endColumn', 'endLine', 'evidence', 'id', 'kind', 'line', 'reason'];
 	if (!hasExactKeys(boundary, expectedKeys)) return 'boundary_keys';
+	if (typeof boundary.id !== 'string' || !/^[0-9a-f]{40}$/u.test(boundary.id)) return 'boundary_id';
 	if (!Number.isSafeInteger(boundary.line) || boundary.line < 1
 		|| !Number.isSafeInteger(boundary.column) || boundary.column < 1
 		|| !Number.isSafeInteger(boundary.endLine) || boundary.endLine < boundary.line
@@ -443,7 +484,44 @@ function isFunctionLike(node) {
 		|| ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node);
 }
 function boundaryIdentity(boundary) {
-	return `${boundary.kind}:${String(boundary.line)}:${String(boundary.column)}:${String(boundary.endLine)}:${String(boundary.endColumn)}:${boundary.registration ?? ''}`;
+	return boundary.id;
+}
+/**
+ * Stable identity for a boundary: file path + kind + registration + the full chain of named
+ * enclosing declarations (class.method style) + the node's own normalized text (no leading
+ * trivia, no comments) + an occurrence index for the rare case of identical siblings under the
+ * same ancestor. Deliberately excludes line/column so inserting or removing an unrelated line
+ * anywhere in the file never shifts this identity; those fields stay in the baseline as
+ * informative locators only, refreshed on request via `--refresh-locations`.
+ */
+function computeBoundaryId({ path, kind, registration, ancestors, normalizedText, occurrenceIndex }) {
+	const payload = JSON.stringify([path, kind, registration ?? '', ancestors, normalizedText, occurrenceIndex]);
+	return createHash('sha1').update(payload, 'utf8').digest('hex');
+}
+/** Chain of named enclosing declarations from outermost to innermost, e.g. "ClassName.methodName". */
+function ancestorChain(node) {
+	const names = [];
+	for (let current = node.parent; current !== undefined; current = current.parent) {
+		if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+			names.unshift(current.name === undefined ? '<anonymous class>' : current.name.text);
+		} else if (ts.isMethodDeclaration(current) || ts.isFunctionDeclaration(current)
+			|| ts.isGetAccessor(current) || ts.isSetAccessor(current) || ts.isConstructorDeclaration(current)) {
+			names.unshift(declarationName(current));
+		} else if (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) {
+			const parent = current.parent;
+			if (ts.isVariableDeclaration(parent) || ts.isPropertyDeclaration(parent) || ts.isPropertyAssignment(parent)) {
+				names.unshift(declarationName(parent));
+			}
+		}
+	}
+	return names.length === 0 ? '<module>' : names.join('.');
+}
+/** The node's own source text, without its leading trivia (already excluded by getText) or comments. */
+function normalizedNodeText(node, ast) {
+	return stripComments(node.getText(ast)).trim();
+}
+function stripComments(text) {
+	return text.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/\/\/[^\n]*/gu, '');
 }
 function safeLocator(boundary) {
 	return `${String(boundary.line)}:${String(boundary.column)}-${String(boundary.endLine)}:${String(boundary.endColumn)}`;

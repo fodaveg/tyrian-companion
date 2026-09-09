@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import {
@@ -94,11 +94,36 @@ try {
 
 	const greenCli = runCli(testRoot);
 	assert(greenCli.status === 0, 'CLI rejected the reviewed manifest');
-	write(testRoot, 'src/reviewed.ts', 'export function callback() {\n\tsetTimeout(() => { diagnostics.record(); }, 1);\n}\ndeclare const diagnostics: { record(): void };\n');
+
+	// A pure locator shift (blank lines and reindentation, zero content change) must stay green
+	// without touching the baseline: identity is an AST hash, line/column are informative only.
+	write(testRoot, 'src/reviewed.ts', '\n\nexport function callback() {\n\tsetTimeout(() => { diagnostics.record(); }, 1);\n}\ndeclare const diagnostics: { record(): void };\n');
+	assert(verifyActionBoundaryCensus(testRoot).length === 0, 'blank lines and reformatting before a reviewed boundary re-triggered review');
+	const reformattedCli = runCli(testRoot);
+	assert(reformattedCli.status === 0, 'a pure locator shift without reindexing turned the CLI red');
+
+	// --refresh-locations may update the stale line numbers left by the reformat above, but must
+	// never touch the reviewed classification or evidence it finds along the way.
+	const staleBoundary = JSON.parse(readFileSync(resolve(testRoot, 'scripts/action-observability-baseline.json'), 'utf8'))
+		.files['src/reviewed.ts'].boundaries[0];
+	const actualBoundary = collectActionBoundaryCensus(testRoot).files['src/reviewed.ts'].boundaries[0];
+	assert(staleBoundary.line !== actualBoundary.line, 'reformatting did not actually move the boundary locator');
+	const refreshResult = runCli(testRoot, ['--refresh-locations']);
+	assert(refreshResult.status === 0, 'refreshing locators failed');
+	const refreshedBoundary = JSON.parse(readFileSync(resolve(testRoot, 'scripts/action-observability-baseline.json'), 'utf8'))
+		.files['src/reviewed.ts'].boundaries[0];
+	assert(refreshedBoundary.line === actualBoundary.line, '--refresh-locations did not update the stale locator');
+	assert(refreshedBoundary.classification === staleBoundary.classification
+		&& refreshedBoundary.evidence.callee === staleBoundary.evidence.callee, '--refresh-locations touched a reviewed decision');
+	assert(verifyActionBoundaryCensus(testRoot).length === 0, '--refresh-locations desynchronized the manifest');
+
+	// A genuinely new boundary (different call argument, so a different AST identity) must still
+	// fail closed even though the reviewed one right next to it never moves.
+	write(testRoot, 'src/reviewed.ts', 'export function callback() { setTimeout(() => { diagnostics.record(); }, 1); setTimeout(() => { diagnostics.record(); }, 2); }\ndeclare const diagnostics: { record(): void };\n');
 	const redCli = runCli(testRoot);
 	assert(redCli.status === 1, 'CLI behaved as an always-green scanner');
 	assert(redCli.stderr.includes('callback_registration'), 'CLI omitted the content-free causal boundary kind');
-	assert(redCli.stderr.includes('(removed)') && redCli.stderr.includes('(added)'), 'moved boundary locator bypassed explicit re-review');
+	assert(redCli.stderr.includes('(added)') && !redCli.stderr.includes('(removed)'), 'a genuinely new boundary next to an unchanged one bypassed explicit re-review');
 	assert(!redCli.stderr.includes('diagnostics.record'), 'CLI exposed semantic or source content');
 
 	process.stdout.write('action observability census suite: PASS\n');
@@ -179,7 +204,7 @@ function write(root, path, source) {
 	writeFileSync(absolute, source);
 }
 
-function runCli(root) {
+function runCli(root, extraArgs = []) {
 	let stdout = '';
 	let stderr = '';
 	const maxCapturedCharacters = 256 * 1024;
@@ -188,7 +213,7 @@ function runCli(root) {
 		if (next.length > maxCapturedCharacters) throw new Error('CLI output exceeded the bounded test capture');
 		return next;
 	};
-	const status = runActionBoundaryCensusCli([`--root=${root}`], {
+	const status = runActionBoundaryCensusCli([`--root=${root}`, ...extraArgs], {
 		stdout: { write: (chunk) => { stdout = append(stdout, chunk); } },
 		stderr: { write: (chunk) => { stderr = append(stderr, chunk); } },
 	});

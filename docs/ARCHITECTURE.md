@@ -145,6 +145,16 @@ y `runtime_initialize` continúa: por tanto una causa produce un solo terminal y
 falla el gate hasta recibir revisión explícita; la suite de sabotaje demuestra el rojo de las cuatro
 clases.
 
+La identidad de cada frontera es un hash estable (ruta + tipo + cadena de ancestros con nombre tipo
+`Clase.método` + texto normalizado del nodo, sin trivia inicial ni comentarios + un índice de
+ocurrencia para desambiguar hermanos idénticos), no su `line`/`column`. Insertar o borrar una línea
+en cualquier parte de un fichero censado desplaza esos localizadores pero no la identidad: el censo
+sigue en verde sin tocar `scripts/action-observability-baseline.json`. `line`/`column`/`endLine`/
+`endColumn` quedan en el baseline solo como ayuda para que un humano encuentre la frontera; se
+refrescan bajo demanda con `node scripts/action-observability-census.mjs --refresh-locations`, que
+reescribe únicamente esos cuatro campos y nunca toca clasificación, evidencia ni razón. Nunca se usa
+`--write-baseline` para esto: descarta las decisiones ya revisadas.
+
 ## Benchmark H6.6 de cuenta grande
 
 `npm run bench:h6-performance` ejecuta bajo Node con `--expose-gc` un fixture determinista de 48 personajes, 5.132 holdings normalizados y 4.840 cambios positivos valorables. Recorre parsers reales de payload y la misma ruta pura de producción que construye cada pasada. Cada snapshot fuerza de manera acotada el peor caso de tres pasadas: la primera difiere en una pila y las dos siguientes convergen; después calcula delta, evidencia de frontera, clasificación y valoración. La entrega se mantiene estable para que la declaración limpia sea coherente con H2.7. No simula ni mide HTTP, concurrencia de captura, catálogo/precios remotos, IndexedDB, Vault o UI: no son trabajo productivo determinista y no se inventa su latencia.
