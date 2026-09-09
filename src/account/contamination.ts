@@ -11,8 +11,10 @@ import {
 	type DeclaredActivity,
 	type SessionClassificationContext,
 	type SessionClassificationReason,
+	type SessionClassificationReasonCode,
 	type SessionDeltaClassification,
 	type SessionReviewRequest,
+	type SessionReviewRequestCode,
 	type TradingPostEvent,
 	type UserDeclaration,
 } from './contamination-model';
@@ -41,6 +43,15 @@ const DECLARED_ACTIVITIES: ReadonlySet<DeclaredActivity> = new Set([
  * session over a single Exalted Key (`37`) and a single Vial of Chak Acid (`42`).
  */
 const MONETARY_WALLET_CURRENCY_IDS: ReadonlySet<number> = new Set([1, 4]);
+
+/**
+ * Curated item ids whose loss IS the farming being measured, not contamination: opening a Trick-
+ * or-Treat Bag (`36038`) consumes the bag itself, exactly like a spent key or vial. Extend this
+ * list only with ids proven to be consumed by opening/using them while farming, never inferred
+ * from mutable catalog text. An id absent from here is treated conservatively as a real loss
+ * (equipment sold, salvaged or destroyed), which still degrades the reading.
+ */
+const CURATED_FARMED_LOSS_ITEM_IDS: ReadonlySet<number> = new Set([36_038]);
 
 /** Projects only boundary-sensitive evidence without consulting the network or mutating snapshots. */
 export function buildBoundaryEvidence(before: unknown, after: unknown): BoundaryEvidence {
@@ -156,39 +167,13 @@ function classifyValidatedSessionDelta(
 		return classification('invalid', 'low', invalidReasons, [{ code: 'repair_boundary_evidence' }]);
 	}
 
-	const contamination: SessionClassificationReason[] = [];
-	if (
-		context.boundary.delivery.coverage === 'complete_both' &&
-		context.boundary.delivery.items.some((item) => item.delta !== 0)
-	) {
-		contamination.push({ code: 'delivery_items_changed' });
-	}
-	if (
-		context.boundary.delivery.coverage === 'complete_both' &&
-		context.boundary.delivery.coins.delta !== 0
-	) contamination.push({ code: 'delivery_coins_changed' });
-	if (context.tradingPost.events.some((event) => event.kind === 'buy')) {
-		contamination.push({ code: 'tp_buy_observed' });
-	}
-	if (context.tradingPost.events.some((event) => event.kind === 'sell')) {
-		contamination.push({ code: 'tp_sell_observed' });
-	}
-	const walletCurrencies = context.boundary.wallet.coverage === 'complete_both'
-		? context.boundary.wallet.currencies
-		: [];
-	const walletDeltas = walletCurrencies.map((currency) => currency.delta);
-	if (walletCurrencies.some((currency) =>
-		currency.delta < 0 && MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) {
-		contamination.push({ code: 'wallet_decreased' });
-	}
-	if (delta.warnings.some((warning) => warning.code === 'roster_changed')) {
-		contamination.push({ code: 'roster_changed' });
-	}
-	// Opening containers IS farming, so it degrades the reading to a band below instead of
-	// contaminating it. Every other declared activity still moves value in or out of the account
-	// for reasons the delta cannot attribute.
+	// The only trigger that fully contaminates: a self-reported activity the delta cannot itself
+	// attribute (salvage, craft, tp, vendor, transfer, other). Opening containers is the farming
+	// being measured, so it never lands here — REGLA firmada por David el 2026-09-08 (ver
+	// docs/PRODUCT.md, «Decisiones de rumbo»).
 	const openDeclared = context.declaration.status === 'activities' &&
 		context.declaration.activities.includes('open');
+	const contamination: SessionClassificationReason[] = [];
 	if (context.declaration.status === 'activities') {
 		for (const activity of context.declaration.activities) {
 			if (activity === 'open') continue;
@@ -196,9 +181,6 @@ function classifyValidatedSessionDelta(
 		}
 	}
 	if (contamination.length > 0) {
-		if (context.declaration.status === 'confirmed_clean') {
-			contamination.push({ code: 'clean_declaration_conflicts_with_evidence' });
-		}
 		return classification(
 			'contaminated',
 			'high',
@@ -207,83 +189,111 @@ function classifyValidatedSessionDelta(
 		);
 	}
 
-	const estimates: SessionClassificationReason[] = [];
+	// Evidence-based signals of possible external activity. Every one of them is a fact the delta
+	// or the Trading Post/delivery history can measure directly, so it brackets the yield into a
+	// band instead of discarding it outright; only a self-reported activity above contaminates.
+	const deliveryItemsChanged = context.boundary.delivery.coverage === 'complete_both' &&
+		context.boundary.delivery.items.some((item) => item.delta !== 0);
+	const deliveryCoinsChanged = context.boundary.delivery.coverage === 'complete_both' &&
+		context.boundary.delivery.coins.delta !== 0;
+	const tpBuyObserved = context.tradingPost.events.some((event) => event.kind === 'buy');
+	const tpSellObserved = context.tradingPost.events.some((event) => event.kind === 'sell');
+	const rosterChanged = delta.warnings.some((warning) => warning.code === 'roster_changed');
+	const walletCurrencies = context.boundary.wallet.coverage === 'complete_both'
+		? context.boundary.wallet.currencies
+		: [];
+	const walletDeltas = walletCurrencies.map((currency) => currency.delta);
+	const walletDecreased = walletCurrencies.some((currency) =>
+		currency.delta < 0 && MONETARY_WALLET_CURRENCY_IDS.has(currency.id));
+	const losses = delta.itemChanges.filter((change) => change.delta < 0);
+	// A loss the curated list or the catalog does not recognize is treated conservatively as a
+	// real loss (equipment sold, salvaged or destroyed), which still degrades the reading.
+	const nonFarmingLoss = losses.some((change) => !CURATED_FARMED_LOSS_ITEM_IDS.has(change.id));
+
+	const reasons: SessionClassificationReason[] = [];
 	const reviews: SessionReviewRequest[] = [];
-	const cleanManualConfirmation =
-		context.boundaryCertainty === 'manual_confirmed' &&
-		context.declaration.status === 'confirmed_clean';
-	const walletIncreaseConfirmedClean =
-		walletDeltas.some((change) => change > 0) && cleanManualConfirmation;
-	if (walletDeltas.some((change) => change > 0) && !walletIncreaseConfirmedClean) {
-		estimates.push({ code: 'wallet_increased_ambiguous' });
-		reviews.push({ code: 'review_wallet_increase' });
-	}
-	// The three signals of a session that consumed its own inputs. None of them is external
-	// activity, so none contaminates; together they are why the yield is published as a band.
+	let degraded = false;
+	const push = (code: SessionClassificationReasonCode, reviewCode?: SessionReviewRequestCode): void => {
+		reasons.push({ code });
+		if (reviewCode !== undefined) {
+			reviews.push({ code: reviewCode });
+			degraded = true;
+		}
+	};
+
+	// Consuming farming inputs (keys, vials, magic, containers) IS the farming being measured, so
+	// none of these degrade the reading; they stay visible as information instead.
 	if (walletCurrencies.some((currency) =>
-		currency.delta < 0 && !MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) {
-		estimates.push({ code: 'consumable_currency_spent' });
-		reviews.push({ code: 'review_consumed_inputs' });
-	}
-	if (openDeclared) {
-		estimates.push({ code: 'open_activity_declared' });
-		reviews.push({ code: 'review_consumed_inputs' });
-	}
-	// A net item loss cannot prove an opening — the delta never sees the act — but it does prove
-	// that units left the account, so the observed net is not pure yield.
-	if (delta.itemChanges.some((change) => change.delta < 0)) {
-		estimates.push({ code: 'item_losses_observed' });
-		reviews.push({ code: 'review_consumed_inputs' });
-	}
+		currency.delta < 0 && !MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) push('consumable_currency_spent');
+	if (openDeclared) push('open_activity_declared');
+	if (losses.length > 0) push('item_losses_observed', nonFarmingLoss ? 'review_consumed_inputs' : undefined);
+
+	// Evidence of a bazaar movement or a roster change during the window: real external activity,
+	// but the delta already brackets it, so it degrades to a band instead of contaminating.
+	if (deliveryItemsChanged) push('delivery_items_changed', 'review_detected_external_activity');
+	if (deliveryCoinsChanged) push('delivery_coins_changed', 'review_detected_external_activity');
+	if (tpBuyObserved) push('tp_buy_observed', 'review_detected_external_activity');
+	if (tpSellObserved) push('tp_sell_observed', 'review_detected_external_activity');
+	if (rosterChanged) push('roster_changed', 'review_detected_external_activity');
+	// An NPC purchase spends coin/gems but is already netted out of «Moneda neta»; it never
+	// degrades the reading.
+	if (walletDecreased) push('wallet_decreased');
+
 	if (delta.status !== 'comparable' || delta.surface !== 'core_and_delivery' || delta.currencySurface !== 'wallet_and_delivery') {
-		estimates.push({ code: 'delta_limited' });
-		reviews.push({ code: 'review_limited_surface' });
+		push('delta_limited', 'review_limited_surface');
 	}
 	// An unreadable character is incomplete reading, not evidence of external movement:
 	// it degrades the session to estimated instead of contaminating or invalidating it.
 	if (delta.warnings.some((warning) => warning.code === 'character_unobserved')) {
-		estimates.push({ code: 'character_unobserved' });
-		reviews.push({ code: 'review_limited_surface' });
+		push('character_unobserved', 'review_limited_surface');
 	}
 	if (context.boundaryCertainty !== 'manual_confirmed') {
-		estimates.push({ code: 'boundary_not_manually_confirmed' });
-		reviews.push({ code: 'confirm_session_boundaries' });
+		push('boundary_not_manually_confirmed', 'confirm_session_boundaries');
 	}
 	// The account reaches the public API through nested caches. A capture that did not wait the
 	// documented window cannot have seen the last minutes, and one taken far too late may already
 	// include activity from after the session: neither is exact, both remain usable estimates.
-	if (context.apiSettlement === 'skipped') {
-		estimates.push({ code: 'api_settlement_window_skipped' });
-		reviews.push({ code: 'confirm_session_boundaries' });
-	}
-	if (context.apiSettlement === 'exceeded') {
-		estimates.push({ code: 'api_settlement_window_exceeded' });
-		reviews.push({ code: 'confirm_session_boundaries' });
-	}
+	if (context.apiSettlement === 'skipped') push('api_settlement_window_skipped', 'confirm_session_boundaries');
+	if (context.apiSettlement === 'exceeded') push('api_settlement_window_exceeded', 'confirm_session_boundaries');
+	// A declaration that only says "I opened containers" is the same farming being measured, so it
+	// stays informational; any other non-clean declaration still needs review.
 	if (context.declaration.status !== 'confirmed_clean') {
-		estimates.push({ code: 'declaration_not_clean' });
-		reviews.push({ code: 'confirm_session_cleanliness' });
+		push('declaration_not_clean', openDeclared ? undefined : 'confirm_session_cleanliness');
 	}
-	if (estimates.length > 0) {
+
+	const cleanManualConfirmation =
+		context.boundaryCertainty === 'manual_confirmed' &&
+		context.declaration.status === 'confirmed_clean';
+	const walletIncreaseConfirmedClean = walletDeltas.some((change) => change > 0) && cleanManualConfirmation;
+	if (walletDeltas.some((change) => change > 0)) {
+		if (walletIncreaseConfirmedClean) {
+			push('wallet_increase_clean_confirmation_used');
+		} else if (tpSellObserved || deliveryCoinsChanged) {
+			// The wallet increase is ambiguous only when a bazaar sale or a delivery coin change
+			// could explain it; absent those, gold rising during the session is loot.
+			push('wallet_increased_ambiguous', 'review_wallet_increase');
+		} else {
+			push('wallet_increased_ambiguous');
+		}
+	}
+
+	if (degraded) {
 		return classification(
 			'estimated',
 			context.boundaryCertainty === 'auto_uncertain' || context.declaration.status === 'absent'
 				? 'low'
 				: 'medium',
-			estimates,
+			reasons,
 			reviews,
 			context.boundaryCertainty === 'manual_confirmed' &&
 				context.declaration.status === 'confirmed_clean',
 		);
 	}
 
-	const exactReasons: SessionClassificationReason[] = walletIncreaseConfirmedClean
-		? [{ code: 'wallet_increase_clean_confirmation_used' }]
-		: [];
 	if (context.tradingPost.status !== 'complete') {
-		exactReasons.push({ code: 'trading_post_not_complete_clean_declaration_used' });
+		reasons.push({ code: 'trading_post_not_complete_clean_declaration_used' });
 	}
-	return classification('exact', 'high', exactReasons, []);
+	return classification('exact', 'high', reasons, []);
 }
 
 function classification(
@@ -362,7 +372,7 @@ const CLASSIFICATION_REASONS = new Set<string>([
 	'wallet_decreased', 'consumable_currency_spent', 'wallet_increased_ambiguous',
 	'wallet_increase_clean_confirmation_used',
 	'roster_changed', 'character_unobserved', 'activity_declared', 'open_activity_declared',
-	'item_losses_observed', 'clean_declaration_conflicts_with_evidence', 'delta_limited',
+	'item_losses_observed', 'delta_limited',
 	'boundary_not_manually_confirmed', 'api_settlement_window_skipped',
 	'api_settlement_window_exceeded', 'declaration_not_clean',
 	'trading_post_not_complete_clean_declaration_used',
@@ -376,18 +386,23 @@ const FATAL_REASONS = new Set<string>([
 	'delta_invalid', 'boundary_invalid', 'boundary_delta_mismatch', 'boundary_arithmetic_invalid',
 	'delta_arithmetic_invalid', 'classification_context_invalid', 'trading_post_evidence_invalid',
 ]);
-const CONTAMINATING_REASONS = new Set<string>([
-	'delivery_items_changed', 'delivery_coins_changed', 'tp_buy_observed', 'tp_sell_observed',
-	'wallet_decreased', 'roster_changed', 'activity_declared',
-]);
+/**
+ * The only reason that fully contaminates a session: a self-reported activity the delta cannot
+ * itself attribute. Evidence the delta CAN measure directly (a bazaar movement, a roster change, a
+ * consumed input) only degrades the reading to `estimated` instead — REGLA firmada 2026-09-08.
+ */
+const CONTAMINATING_REASONS = new Set<string>(['activity_declared']);
 const CONSUMED_INPUT_REASONS = new Set<string>([
 	'consumable_currency_spent', 'open_activity_declared', 'item_losses_observed',
 ]);
 const ESTIMATE_REVIEW = new Map<string, string>([
 	['wallet_increased_ambiguous', 'review_wallet_increase'],
-	['consumable_currency_spent', 'review_consumed_inputs'],
-	['open_activity_declared', 'review_consumed_inputs'],
 	['item_losses_observed', 'review_consumed_inputs'],
+	['delivery_items_changed', 'review_detected_external_activity'],
+	['delivery_coins_changed', 'review_detected_external_activity'],
+	['tp_buy_observed', 'review_detected_external_activity'],
+	['tp_sell_observed', 'review_detected_external_activity'],
+	['roster_changed', 'review_detected_external_activity'],
 	['delta_limited', 'review_limited_surface'],
 	['character_unobserved', 'review_limited_surface'],
 	['boundary_not_manually_confirmed', 'confirm_session_boundaries'],
@@ -395,8 +410,16 @@ const ESTIMATE_REVIEW = new Map<string, string>([
 	['api_settlement_window_exceeded', 'confirm_session_boundaries'],
 	['declaration_not_clean', 'confirm_session_cleanliness'],
 ]);
+/**
+ * Reason codes that never degrade a reading on their own: consuming farming inputs, an NPC
+ * purchase already netted out of «Moneda neta», or a non-clean declaration whose only activity is
+ * opening containers. They can appear on an `exact` classification, and — since more than one
+ * reason can be true at once — also alongside a genuinely degrading code on an `estimated` one
+ * (`item_losses_observed` and `wallet_increased_ambiguous` live in both sets for that reason).
+ */
 const EXACT_INFO_REASONS = new Set<string>([
-	'wallet_increase_clean_confirmation_used',
+	'consumable_currency_spent', 'open_activity_declared', 'item_losses_observed', 'wallet_decreased',
+	'wallet_increased_ambiguous', 'declaration_not_clean', 'wallet_increase_clean_confirmation_used',
 	'trading_post_not_complete_clean_declaration_used',
 ]);
 
@@ -412,12 +435,14 @@ function validClassificationSemantics(value: SessionDeltaClassification): boolea
 			reviews.length === 1 && reviews[0] === 'repair_boundary_evidence';
 	}
 	if (value.status === 'contaminated') {
-		return codes.some((code) => CONTAMINATING_REASONS.has(code)) &&
-			codes.every((code) => CONTAMINATING_REASONS.has(code) || code === 'clean_declaration_conflicts_with_evidence') &&
+		return codes.length > 0 && codes.every((code) => CONTAMINATING_REASONS.has(code)) &&
 			reviews.length === 1 && reviews[0] === 'review_detected_external_activity';
 	}
-	if (codes.length === 0 || !codes.every((code) => ESTIMATE_REVIEW.has(code))) return false;
-	const expectedReviews = [...new Set(codes.map((code) => ESTIMATE_REVIEW.get(code)!))]
+	const degrading = codes.filter((code) => ESTIMATE_REVIEW.has(code));
+	if (degrading.length === 0 || !codes.every((code) => ESTIMATE_REVIEW.has(code) || EXACT_INFO_REASONS.has(code))) {
+		return false;
+	}
+	const expectedReviews = [...new Set(degrading.map((code) => ESTIMATE_REVIEW.get(code)!))]
 		.sort((left, right) => canonical({ code: left }).localeCompare(canonical({ code: right })));
 	return canonical(reviews) === canonical(expectedReviews);
 }

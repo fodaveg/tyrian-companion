@@ -246,10 +246,12 @@ describe('classifySessionDelta', () => {
 			expect.objectContaining({ kind: 'currency', id: 1 }),
 			expect.objectContaining({ kind: 'item', id: 400 }),
 		]));
+		// Claiming delivery mail is a bazaar-adjacent movement the boundary measures directly, so it
+		// only brackets the yield into a band; it never contaminates on its own (H14.1).
 		expect(classifySessionDelta(
 			delta,
 			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
-		)).toMatchObject({ status: 'contaminated' });
+		)).toMatchObject({ status: 'estimated' });
 	});
 
 	it('allows a clean confirmation to substitute unavailable TP evidence with an info reason', () => {
@@ -320,6 +322,85 @@ describe('classifySessionDelta', () => {
 		expect(result.reasons).toContainEqual({ code: 'wallet_increase_clean_confirmation_used' });
 	});
 
+	// H14.1: an ambiguous wallet increase only degrades when a bazaar sale or a delivery coin
+	// change could explain it. Absent those, it is loot and the session stays exact/high, even
+	// with a non-clean "open" declaration alongside it (the real Labyrinth scenario).
+	it('does not degrade an ambiguous wallet increase without a bazaar sale', () => {
+		const before = storageDeltaSnapshot({ currencies: [walletCurrency(1, 100)] });
+		const after = afterSnapshot({ currencies: [walletCurrency(1, 120)] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({
+				boundary: buildBoundaryEvidence(before, after),
+				declaration: { status: 'activities', activities: ['open'] },
+			}),
+		);
+		expect(result).toMatchObject({
+			status: 'exact',
+			confidence: 'high',
+			permissions: { grossPerHour: true, recommend: true },
+		});
+		expect(result.reasons).toContainEqual({ code: 'wallet_increased_ambiguous' });
+		expect(result.reviewRequests).toEqual([]);
+	});
+
+	it('degrades an ambiguous wallet increase when a Trading Post sale was observed', () => {
+		const before = storageDeltaSnapshot({ currencies: [walletCurrency(1, 100)] });
+		const after = afterSnapshot({ currencies: [walletCurrency(1, 120)] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({
+				boundary: buildBoundaryEvidence(before, after),
+				declaration: { status: 'activities', activities: ['open'] },
+				tradingPost: {
+					status: 'complete',
+					events: [{ kind: 'sell', itemId: 100, quantity: 1, coins: 10, occurredAt: '2026-08-13T08:30:00.000Z' }],
+				},
+			}),
+		);
+		expect(result.status).toBe('estimated');
+		expect(result.reasons).toContainEqual({ code: 'wallet_increased_ambiguous' });
+		expect(result.reviewRequests).toContainEqual({ code: 'review_wallet_increase' });
+	});
+
+	// H14.1: spending a non-monetary wallet currency (keys, vials, magic) is the farming being
+	// measured, so it never degrades the reading.
+	it('does not degrade a spent non-monetary wallet currency', () => {
+		const before = storageDeltaSnapshot({ currencies: [walletCurrency(1, 100), walletCurrency(37, 5)] });
+		const after = afterSnapshot({ currencies: [walletCurrency(1, 100), walletCurrency(37, 3)] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
+		);
+		expect(result).toMatchObject({ status: 'exact', confidence: 'high', permissions: { recommend: true } });
+		expect(result.reasons).toContainEqual({ code: 'consumable_currency_spent' });
+	});
+
+	// H14.1: losing a curated container/consumable (opening a Halloween bag) is the farming being
+	// measured; losing anything else (equipment sold, salvaged or destroyed) still degrades.
+	it('does not degrade the loss of a curated container', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(36_038, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(36_038, 1, { source: 'bank', slot: 0 })] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
+		);
+		expect(result).toMatchObject({ status: 'exact', confidence: 'high', permissions: { recommend: true } });
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+	});
+
+	it('degrades the loss of an item that is not a curated container or consumable', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
+		);
+		expect(result.status).toBe('estimated');
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+	});
+
 	it.each([
 		['delivery missing on both sides', false, false],
 		['delivery asymmetric', true, false],
@@ -364,17 +445,32 @@ describe('classifySessionDelta', () => {
 		expect(result.reasons).toContainEqual({ code: 'delta_limited' });
 	});
 
+	// H14.1: the boundary measures these directly, so they bracket the yield into a band instead
+	// of discarding it outright. Only a self-reported activity fully contaminates (below).
 	it.each([
 		['delivery item change', deliveryEvidenceFixtures.items, 'delivery_items_changed'],
 		['delivery coin change', deliveryEvidenceFixtures.coins, 'delivery_coins_changed'],
-		['wallet decrease', deliveryEvidenceFixtures.walletDecrease, 'wallet_decreased'],
-	])('classifies %s as contaminated', (_label, boundary, code) => {
+	])('classifies %s as estimated', (_label, boundary, code) => {
 		const result = classifySessionDelta(cleanDelta(), exactContext({ boundary }));
-		expect(result.status).toBe('contaminated');
+		expect(result.status).toBe('estimated');
+		expect(result.reviewRequests).toContainEqual({ code: 'review_detected_external_activity' });
 		expect(result.reasons).toContainEqual({ code });
 	});
 
-	it.each(['buy', 'sell'] as const)('classifies an observed TP %s as contaminated', (kind) => {
+	// H14.1: an NPC purchase is already netted out of «Moneda neta» and never degrades the reading.
+	it('classifies a wallet decrease as exact information, never contaminating', () => {
+		const result = classifySessionDelta(
+			cleanDelta(),
+			exactContext({ boundary: deliveryEvidenceFixtures.walletDecrease }),
+		);
+		expect(result).toMatchObject({
+			status: 'exact',
+			permissions: { valueNet: true, grossPerHour: true, recommend: true },
+		});
+		expect(result.reasons).toContainEqual({ code: 'wallet_decreased' });
+	});
+
+	it.each(['buy', 'sell'] as const)('classifies an observed TP %s as estimated', (kind) => {
 		const context = exactContext({
 			tradingPost: {
 				status: 'complete',
@@ -382,17 +478,19 @@ describe('classifySessionDelta', () => {
 			},
 		});
 		const result = classifySessionDelta(cleanDelta(), context);
-		expect(result.status).toBe('contaminated');
+		expect(result.status).toBe('estimated');
 		expect(result.reasons).toContainEqual({ code: kind === 'buy' ? 'tp_buy_observed' : 'tp_sell_observed' });
 	});
 
-	it('classifies roster churn as contaminated', () => {
+	it('classifies roster churn as estimated', () => {
 		const delta = structuredClone(cleanDelta());
 		delta.warnings.push({ code: 'roster_changed' });
-		expect(classifySessionDelta(delta, exactContext()).status).toBe('contaminated');
+		const result = classifySessionDelta(delta, exactContext());
+		expect(result.status).toBe('estimated');
+		expect(result.reasons).toContainEqual({ code: 'roster_changed' });
 	});
 
-	it('classifies a character leaving the roster as contaminated from the snapshots', () => {
+	it('classifies a character leaving the roster as estimated from the snapshots', () => {
 		const before = twoCharacterSnapshot();
 		const after = afterSnapshot({
 			roster: ['Astra Uno'],
@@ -411,8 +509,8 @@ describe('classifySessionDelta', () => {
 
 		expect(delta.warnings).toContainEqual({ code: 'roster_changed' });
 		expect(result).toMatchObject({
-			status: 'contaminated',
-			permissions: { showNet: true, valueNet: false },
+			status: 'estimated',
+			permissions: { showNet: true, valueNet: true, grossPerHour: false },
 		});
 		expect(result.reasons).toContainEqual({ code: 'roster_changed' });
 	});
@@ -451,18 +549,21 @@ describe('classifySessionDelta', () => {
 		});
 	});
 
-	// H13.6: opening containers is the farming being measured, not activity that pollutes it.
-	it('classifies a declared opening as estimated and keeps the value permission', () => {
+	// H13.6/H14.1: opening containers is the farming being measured, not activity that pollutes or
+	// even degrades it. A declaration of "open" alone keeps the session exact/high.
+	it('classifies a declared opening as exact and keeps every permission', () => {
 		const result = classifySessionDelta(
 			cleanDelta(),
 			exactContext({ declaration: { status: 'activities', activities: ['open'] } }),
 		);
 		expect(result).toMatchObject({
-			status: 'estimated',
-			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
+			status: 'exact',
+			confidence: 'high',
+			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: true, recommend: true },
 		});
 		expect(result.reasons).toContainEqual({ code: 'open_activity_declared' });
-		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		expect(result.reasons).toContainEqual({ code: 'declaration_not_clean' });
+		expect(result.reviewRequests).toEqual([]);
 		expect(isSessionDeltaClassification(result)).toBe(true);
 	});
 
@@ -476,13 +577,15 @@ describe('classifySessionDelta', () => {
 		expect(result.reasons).not.toContainEqual({ code: 'activity_declared', detail: 'open' });
 	});
 
-	it('lets observed evidence dominate a conflicting clean declaration', () => {
+	// H14.1: a clean declaration no longer shields the reading from evidence the boundary can
+	// measure directly — it still degrades to a band, it just never contaminates it.
+	it('lets observed delivery evidence degrade a clean declaration to a band', () => {
 		const result = classifySessionDelta(
 			cleanDelta(),
-			exactContext({ boundary: deliveryEvidenceFixtures.walletDecrease }),
+			exactContext({ boundary: deliveryEvidenceFixtures.coins }),
 		);
-		expect(result.status).toBe('contaminated');
-		expect(result.reasons).toContainEqual({ code: 'clean_declaration_conflicts_with_evidence' });
+		expect(result.status).toBe('estimated');
+		expect(result.reasons).toContainEqual({ code: 'delivery_coins_changed' });
 	});
 
 	it.each([

@@ -292,7 +292,9 @@ function renderEvidence(note: PreparedSessionNote): string {
 		`## ${noteText(note.locale, 'note.evidence')}`,
 		noteText(note.locale, `note.evidence.${evidenceStatus}`),
 		`- ${noteText(note.locale, 'note.confidence')}: ${confidence}`,
-		`- ${noteText(note.locale, 'note.reasons')}: ${classification.reasons.length > 0 ? classification.reasons.map((reason) => reasonText(reason, note.locale)).join(', ') : '—'}`,
+		...(classification.reasons.length > 0
+			? classification.reasons.map((reason) => `- ${noteText(note.locale, 'markdown.reason')}: ${reasonText(reason, note.locale)}`)
+			: [`- ${noteText(note.locale, 'note.reasons')}: ${noteText(note.locale, 'note.none')}`]),
 		`- ${noteText(note.locale, 'note.declaredActivity')}: ${activities.length > 0 ? activities.join(', ') : noteText(note.locale, 'note.none')}`,
 	].join('\n');
 }
@@ -547,7 +549,7 @@ function localizedReason(code: SessionClassificationReasonCode, locale: Prepared
 		roster_changed: 'reason.roster_changed', character_unobserved: 'reason.character_unobserved',
 		activity_declared: 'reason.activity_declared', open_activity_declared: 'reason.open_activity_declared',
 		item_losses_observed: 'reason.item_losses_observed',
-		clean_declaration_conflicts_with_evidence: 'reason.clean_declaration_conflicts_with_evidence', delta_limited: 'reason.delta_limited',
+		delta_limited: 'reason.delta_limited',
 		boundary_not_manually_confirmed: 'reason.boundary_not_manually_confirmed',
 		api_settlement_window_skipped: 'reason.api_settlement_window_skipped',
 		api_settlement_window_exceeded: 'reason.api_settlement_window_exceeded',

@@ -30,7 +30,11 @@ describe('buildLootPresentation', () => {
 			allocation: { status: 'known', reserved: 2, held: 3, free: 5 },
 			recommendation: { status: 'ready', action: 'sell', quantity: 5, route: 'instant_sell' },
 		});
+		// H14.4: a basic wallet currency without a display name resolves to its real name, never
+		// a numbered "Moneda #1" placeholder.
+		expect(first.rows[1]).toMatchObject({ name: 'Oro' });
 		expect(first.rows[1]!.valuation).toEqual({ status: 'complete', immediateCopper: 100, listingCopper: 100 });
+		expect(first.rows[2]).toMatchObject({ name: 'Karma' });
 		expect(first.rows[2]!.valuation).toEqual({ status: 'not_applicable' });
 		expect(first.rows[3]).toMatchObject({ direction: 'loss', valuation: { status: 'not_applicable' } });
 	});
