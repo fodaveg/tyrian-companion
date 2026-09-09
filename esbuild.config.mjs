@@ -36,6 +36,12 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: 'main.js',
 	minify: prod,
+	// H14.18: the production bundle carried one `console.warn` from the
+	// bundled `yaml` package's own deprecation notice. `drop` strips every
+	// `console.*` call from the bundled output, not just that one call site,
+	// so it also catches any future dependency that logs on its own; it stays
+	// off in dev so `npm run dev` keeps normal debugging output.
+	drop: prod ? ['console'] : [],
 });
 
 if (prod) {
