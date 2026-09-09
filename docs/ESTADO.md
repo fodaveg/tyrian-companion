@@ -2,6 +2,17 @@
 
 ## Vertical activa
 
+**Estado a 9 sep 2026.** `main` lleva, sin publicar, los once lotes que ejecutan el audit del 8 sep
+(sección «Sin publicar» del [changelog](CHANGELOG.md)): la regla firmada de qué degrada una sesión,
+la tarjeta de sesión como componente único, un solo aviso por umbral, la captura en una pasada, el
+barrido de Halloween acotado, las notas de inventario con hash estable, el log sin ruido, el bucle
+`dev:install` + `smoke:live`, el gate partido y el censo por hash AST. Verificado: `check` 7/7 y
+`check:guardrails` 24/24 en verde, build instalada en la bóveda real y `smoke:live` a 0 errores
+nuevos. QA humana pendiente: una sesión real de Laberinto con esta build (tiene que salir
+`exact/high` con tasa por hora), la captura de la tarjeta nueva, y la primera sincronización de
+inventario tras el cambio de hash (reescribe las notas una vez y borra las inactivas; la siguiente
+sin cambios debe dejar 0 mtimes nuevos).
+
 **La versión vigente es la que declara `manifest.json` (y `package.json`), que es también la última
 release publicada en GitHub.** No se repite esa cifra aquí porque queda obsoleta con cada release y
 nadie la actualiza en tres ficheros a la vez: se lee de `manifest.json` o de

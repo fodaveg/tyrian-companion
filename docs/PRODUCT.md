@@ -75,6 +75,26 @@ Regla firmada por David el 2026-09-08 sobre los códigos de clasificación de `s
 
 El único motivo que sigue contaminando por completo (`contaminated`, `recommend: false`) es declarar una actividad externa que el delta no puede atribuir por sí mismo (`salvage`, `consume`, `craft`, `tp`, `vendor`, `transfer`, `other`); la evidencia que el delta o el historial del bazar SÍ pueden medir directamente (venta/compra en el bazar, cambio de plantilla de personajes) solo la degrada a banda. La nota publica siempre la tasa por hora como banda, junto a la cifra exacta cuando la clasificación lo permite, la recomendación con su nivel de confianza y un motivo por viñeta.
 
+### Las cuatro decisiones de H14.21 y la del aviso único (delegadas por David el 8 sep, implementadas el 9 sep)
+
+- **Lease de sesión de 300 s** (antes 30 s): el latido que renueva la sesión activa en IndexedDB pasa
+  de cada 10 s a cada 100 s (1.440 escrituras en 4 h pasan a 144). Coste aceptado: si una ventana de
+  Obsidian muere con sesión activa, otra ventana tarda 5 min en recuperarla, no 30 s.
+- **El barrido de notas de Halloween lee solo `${outputFolder}/sessions/`**, no el vault entero
+  (3.808 lecturas por disparo pasan a las notas que haya bajo esa carpeta). Una nota de sesión movida
+  fuera de esa carpeta deja de contar; se acepta.
+- **El saneador del log conserva la ruta relativa al vault** cuando la ruta está dentro del vault, y
+  sigue redactándola fuera. Así un `ENOENT` dice de quién es.
+- **Una nota por posición de inventario se mantiene** (la Base necesita una fila por nota; agrupar por
+  objeto solo ahorraría un 14 %). Cambia lo que entra en el hash: `tc_captured_at` desaparece de la
+  nota (la columna «Actualizado» de las Bases lee la fecha del fichero), las posiciones inactivas se
+  envían a la papelera en vez de quedarse con `tc_active: false`, y Ajustes recomienda excluir
+  `Inventory/Positions` de la búsqueda de Obsidian.
+- **Un solo aviso de drop**: avisa cuando el valor total del drop supera el umbral de Ajustes
+  (`valuableLootThresholdCopper`) o cuando desbloquea una skin o un mini. «Primera vez que veo este
+  objeto» y «raro sin cotización o vinculado» dejan de avisar y pasan a información en la nota de
+  sesión. La etiqueta «Halloween» solo aparece en temporada (1 oct a 15 nov UTC) o en el mapa 866.
+
 ## Alcance de v1
 
 La primera versión de producto incluye:

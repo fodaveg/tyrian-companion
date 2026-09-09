@@ -1,5 +1,97 @@
 # Changelog
 
+## Sin publicar (main, 9 sep 2026) - el audit del 8 sep ejecutado en lotes
+
+Lo que sigue está en `main` sin release, probado en la bóveda real con `npm run dev:install` y
+`npm run smoke:live` (0 errores nuevos en el log), con `check` y `check:guardrails` en verde.
+Tareas H14.1 a H14.22 de la lista «21.15 Tyrian Companion» de Lumbre; audit en la nota de
+Obsidian «Tyrian Companion - Auditoría 2026-09-08».
+
+### Sesión y nota
+
+- **Abrir sacos y gastar llaves ya no degrada la sesión.** Regla firmada por David el 8 sep
+  (`docs/PRODUCT.md`): gastar llaves, viales o magia, perder contenedores o consumibles (por tipo de
+  catálogo o id curado), declarar que abres sacos, que suba el oro sin bazar y comprar a NPC no
+  degradan; bazar, cambio de personaje y pérdidas de otros objetos degradan a `estimated`. La nota
+  da la tasa por hora como banda en la cabecera de Resultados y la recomendación con su confianza;
+  «Oculto por fiabilidad» desaparece. Los motivos van en una viñeta cada uno y la moneda 1 se llama
+  «Oro».
+- **Regresión cazada el mismo día en la bóveda real**: la primera build instalada fallaba dos veces
+  al cargar con `session_recover validation_failed`, porque el campo nuevo `farmedLossItemIds` de
+  la revisión persistida era obligatorio al leer. Una revisión guardada por la 0.1.30 se lee como
+  lista vacía.
+- Lease de sesión de 30 s a 300 s: 1.440 escrituras a IndexedDB en 4 h pasan a 144.
+
+### Tarjeta y avisos
+
+- **La pestaña Sesión es un solo componente** (`src/ui/session-card.ts`): cabecera con estado y un
+  único botón principal, fila de cifras sin ceros (0, 1 o 3 huecos según lo medido), la línea
+  permanente «Saco de Halloween: precio · Vende/Espera · motivo» (también en Inventario), y los
+  desplegables Detalle · Avisos · Historial siempre en el mismo orden. Errores y conflictos en un
+  `callout` nativo con botón «Resolver» y «Registros de diagnóstico».
+- **Un solo aviso de drop**: por umbral de valor de Ajustes, o skin/mini no desbloqueados. «Primera
+  vez» y «raro sin cotización» son información en la nota. «Halloween» solo en temporada o en el
+  mapa 866; fuera, el panel se llama «Avisos», sale plegado y un aviso caduca a las 24 h o al
+  empezar sesión.
+- Copy: separador nombre · cantidad, rareza traducida, fechas cortas o relativas con un solo
+  formateador; «cada 5» desaparece del catálogo; toda cadena de Ajustes y de la vista cabe en 90
+  caracteres (guardarraíl `scripts/i18n-copy-length.mjs`); el nombre oficial «Saco de Halloween».
+- Ajustes: Esenciales (clave, personaje, carpeta, umbral) y Avanzado (las 28 filas restantes).
+- Contador «Errores desde la carga» y último fallo visibles en la tarjeta y en Ajustes.
+
+### Consumo de red, bóveda y render
+
+- Captura de la API: 14+2N peticiones pasan a 7+N cuando `last-modified` no cambia; un personaje en
+  timeout se reintenta una vez y, si sigue fallando, se excluye del delta en vez de descartar la
+  captura entera.
+- Barrido de notas de Halloween solo bajo `sessions/`: 3.808 lecturas por disparo pasan a las notas
+  de esa carpeta, con caché por ruta y mtime; «Comprobar conexión» ya no reactiva si la cuenta no
+  cambió.
+- Notas de inventario con hash estable: `tc_captured_at` desaparece, las inactivas se envían a la
+  papelera, una sincronización sin cambios reescribe 0 notas. `contentVersion` de las Bases sube a
+  5 (bug cazado por el test N a N+1 antes de publicar: sin eso toda bóveda con 0.1.30 habría salido
+  en `managed_assets_conflict`).
+- Caché de catálogo por lote: valorar 4.840 objetos abre 1 transacción en vez de 4.840.
+- `renderViews()` coalescido en un repintado por microtask; el intervalo de 1 s se pausa con la
+  ventana oculta; en la descarga se cierran las 3 cachés, el servidor TCP y el controlador.
+
+### Log de diagnóstico
+
+- Fallo de caché, consulta cancelada por reposo y `skip` a `debug`; 404 esperado de
+  `commerce/prices` a `info`; errores globales marcados como de origen no atribuido; el conflicto de
+  assets nombra su causa; el saneador conserva la ruta relativa al vault dentro del vault.
+
+### Proceso y gate
+
+- `npm run dev:install` (build, copia con sha256, recarga por `obsidian eval`) y `npm run smoke:live`
+  (versión, `runtimeReady`, conexión, puerto, errores nuevos en el log): el bucle local que no
+  existía.
+- Gate partido en `check` (producto, 16 s en caliente) y `check:guardrails`; ESLint con caché; una
+  sola Node 24 en CI; dos workflows por release.
+- Fixtures grabados de la API pública (`src/catalog/__fixtures__/recorded/`) con tests de parser, y
+  tests N a N+1 de `session_recover` y de los assets gestionados sobre lo que dejó la 0.1.30.
+- Censo de observabilidad por hash AST: insertar líneas ya no lo pone en rojo; 714 fronteras pasan
+  a 723 revisadas.
+- Bench H6 con la rama de duración saboteada y un escenario de una sola consulta.
+
+### Documentación y bundle
+
+- Ningún número de versión literal en README, ESTADO ni BETA; el cuerpo de la release sale del
+  CHANGELOG (`scripts/changelog-entry.mjs`); 78 claves i18n y 2 ficheros sin consumidor fuera;
+  `console.*` fuera del bundle; `docs/historico/` recoge el changelog hasta la 0.1.20 y los cierres
+  antiguos.
+
+### Lo que quedó fuera, medido
+
+- `yaml` sigue en 4 ficheros: `stringifyYaml` de Obsidian envuelve las URLs de `tc_icon` y movería
+  el hash de todas las notas de inventario ya escritas.
+- 32 tests siguen leyendo texto fuente: afirman ausencias estáticas; el contrato ve a través del
+  helper `readModuleSource`.
+- `docs/` sin histórico pesa 480 kB: `ARCHITECTURE.md` y `docs/adr/` los lee por cadenas literales
+  `h8-native-decision-contract.mjs`.
+- El interruptor del aviso dentro del juego se queda: inferirlo del puerto abriría un TCP local sin
+  consentimiento.
+
 ## Release beta 0.1.30 - los precios llegan: ni «no quoted value» por whitelisted ni materiales «invalid»
 
 ### Aviso dentro del juego (Nexus y Blish HUD)
