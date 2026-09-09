@@ -62,11 +62,16 @@ export class LocalDebugJsonlWriter {
 			if (bytes > this.maximumFileBytes) throw new RangeError('Sanitized record exceeds the file limit.');
 			if ((this.fileBytes[0] ?? 0) + bytes > this.maximumFileBytes) await this.rotateUnlocked();
 			const active = this.filePath(0);
-			const activeExists = await this.storage.exists(active);
-			if (activeExists) await this.storage.append(active, line);
+			// No `storage.exists()` here: `fileBytes[0]` is already this writer's own tracked
+			// state, kept current by `initializeUnlocked` and `rotateUnlocked`, and every real
+			// record is a positive number of bytes, so ">0" is exactly "the active file already
+			// has a first line". A round trip to the adapter for a fact already in memory used
+			// to cost one `exists()` on every single append.
+			const activeHasContent = (this.fileBytes[0] ?? 0) > 0;
+			if (activeHasContent) await this.storage.append(active, line);
 			else await this.storage.write(active, line);
 			this.fileBytes[0] = (this.fileBytes[0] ?? 0) + bytes;
-			if (!activeExists) this.fileCount = Math.min(this.maximumFiles, this.fileCount + 1);
+			if (!activeHasContent) this.fileCount = Math.min(this.maximumFiles, this.fileCount + 1);
 			this.maxSequence = Math.max(this.maxSequence, record.sequence);
 			return this.statusUnlocked();
 		});

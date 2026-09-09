@@ -142,7 +142,11 @@ export function createLocalDebugPersistenceSink(
 		runner.event({
 			component,
 			action,
-			level: event.phase === 'failure' ? 'error' : event.phase === 'skip' ? 'warn' : 'debug',
+			// H14.9: a `skip` with its default code, `skipped`, is routine degraded operation (a
+			// cold cache, a store not yet open) and stays at `debug`; only a `skip` carrying a more
+			// specific code (`quota_exceeded`, `corrupt_tail_recovered`, …) is unusual enough to warn on.
+			level: event.phase === 'failure' ? 'error'
+				: event.phase === 'skip' && event.code !== 'skipped' ? 'warn' : 'debug',
 			phase: event.phase,
 			code: event.code,
 			actionId: event.context?.actionId,

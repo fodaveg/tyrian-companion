@@ -181,7 +181,7 @@ export class ResilientHttpTransport implements HttpTransport {
 			this.finishDiagnostic(
 				diagnostic,
 				'failure',
-				httpFailureCode(transportError),
+				httpFailureCode(transportError, endpoint),
 				endpoint,
 				lastAttempt,
 				{
@@ -250,7 +250,10 @@ export class ResilientHttpTransport implements HttpTransport {
 		try {
 			this.diagnostics.event({
 				...diagnostic.context,
-				level: phase === 'success' ? 'info' : 'error',
+				// A `missing` failure is an endpoint answering "not found" for a status this
+				// caller already treats as a valid, closed outcome (see `HTTP_EXPECTED_MISSING_STATUS`
+				// below), not a transport problem: it stays at `info`, the same level as `success`.
+				level: phase === 'success' || code === 'missing' ? 'info' : 'error',
 				phase,
 				code,
 				...(attempt === undefined ? {} : { attempt }),
@@ -319,8 +322,21 @@ function closedEndpoint(value: unknown): HttpLogicalEndpoint {
 		: 'unknown';
 }
 
+/**
+ * Statuses a caller already treats as a valid, closed outcome rather than a transport problem.
+ * `commerce_prices` answers 404 for an item genuinely never listed on the Trading Post, and
+ * `PublicCatalogService.fetchBatch` already records that as `missing` coverage, not a failure;
+ * this is the list that keeps the transport's own diagnostic from disagreeing with it.
+ */
+const HTTP_EXPECTED_MISSING_STATUS: Partial<Record<HttpLogicalEndpoint, ReadonlySet<number>>> = {
+	commerce_prices: new Set([404]),
+};
+
 /** Maps a sanitized transport failure to the closed local-debug vocabulary. */
-function httpFailureCode(error: HttpTransportError | null): LocalDebugEventContext['code'] {
+function httpFailureCode(error: HttpTransportError | null, endpoint: HttpLogicalEndpoint): LocalDebugEventContext['code'] {
+	if (error?.status !== undefined && error?.status !== null && HTTP_EXPECTED_MISSING_STATUS[endpoint]?.has(error.status)) {
+		return 'missing';
+	}
 	if (error?.kind === 'timeout') return 'timeout';
 	if (error?.status === 429) return 'rate_limited';
 	if (error?.status === 401 || error?.status === 403) return 'permission_denied';

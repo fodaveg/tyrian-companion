@@ -127,10 +127,56 @@ describe('ObsidianRequestTransport', () => {
 		})).rejects.toMatchObject({ status: 404 });
 
 		const failure = diagnostics.events.at(-1);
-		expect(failure).toMatchObject({ phase: 'failure', details: { endpoint: 'commerce_prices', statusCode: 404 } });
+		// H14.9: `PublicCatalogService.fetchBatch` already treats this exact case, a 404 on
+		// `commerce_prices`, as an expected miss rather than a failure; the transport's own
+		// diagnostic used to disagree with it at `error`, which is the false alarm a real log
+		// carried 6 times over for one legitimately absent item.
+		expect(failure).toMatchObject({
+			phase: 'failure', level: 'info', code: 'missing',
+			details: { endpoint: 'commerce_prices', statusCode: 404 },
+		});
 		const itemIds = (failure?.details as { itemIds?: number[] } | undefined)?.itemIds;
 		expect(itemIds?.length).toBeLessThan(manyIds.length);
 		expect(itemIds?.slice(0, 5)).toEqual([1, 2, 3, 4, 5]);
+	});
+
+	it('keeps a 404 on any other endpoint at error: the closed expected-miss list is commerce_prices only', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(404, {}, null),
+			maxRetries: 0,
+			diagnostics: diagnostics.port,
+			...inertTimer,
+		});
+
+		await expect(transport.send({
+			url: 'https://api.guildwars2.com/v2/items?ids=1',
+			method: 'GET',
+			endpoint: 'items',
+		})).rejects.toMatchObject({ status: 404 });
+
+		expect(diagnostics.events.at(-1)).toMatchObject({ phase: 'failure', level: 'error', code: 'unknown_failure' });
+	});
+
+	// H14.9 negative control: the `missing` demotion is a closed, per-endpoint-and-status list, not
+	// a general "swallow this failure" switch. A real transport error (a persistent 5xx) still logs
+	// as `error`, on `commerce_prices` exactly like anywhere else.
+	it('still logs a persistent 500 on commerce_prices as an error, not a missing', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => response(500, {}, null),
+			maxRetries: 0,
+			diagnostics: diagnostics.port,
+			...inertTimer,
+		});
+
+		await expect(transport.send({
+			url: 'https://api.guildwars2.com/v2/commerce/prices?ids=1',
+			method: 'GET',
+			endpoint: 'commerce_prices',
+		})).rejects.toMatchObject({ status: 500 });
+
+		expect(diagnostics.events.at(-1)).toMatchObject({ phase: 'failure', level: 'error', code: 'network_failure' });
 	});
 
 	it('omits itemIds from a successful diagnostic and from a request that never declared any', async () => {

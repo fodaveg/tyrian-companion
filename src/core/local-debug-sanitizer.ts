@@ -53,7 +53,11 @@ export const LOCAL_DEBUG_DETAIL_ALLOWLIST: Readonly<Record<LocalDebugComponent, 
 	price_history: [...COMMON_DETAIL_FIELDS, 'itemCount', 'sampleCount', 'coverage', 'intervalMs'],
 	halloween: [...COMMON_DETAIL_FIELDS, 'sampleCount', 'outcomeCount', 'coverage', 'alertCount'],
 	advisor: [...COMMON_DETAIL_FIELDS, 'itemCount', 'coverage', 'operationCount'],
-	assets: [...COMMON_DETAIL_FIELDS, 'operationCount', 'managed', 'conflict'],
+	// `message` here: `managed_assets_conflict`'s span already carries the specific conflict
+	// text through `details.message` (11 distinct causes share one generic top-level
+	// `message`), and without this key the allowlist silently dropped it, leaving a record
+	// that only ever named the same fixed string regardless of which of the 11 fired.
+	assets: [...COMMON_DETAIL_FIELDS, 'operationCount', 'managed', 'conflict', 'message'],
 	notification: [...COMMON_DETAIL_FIELDS, 'surface', 'visible'],
 	vault: [...COMMON_DETAIL_FIELDS, 'operation', 'managed', 'conflict'],
 	ui: [...COMMON_DETAIL_FIELDS, 'surface', 'visible', 'rowCount'],
@@ -65,6 +69,12 @@ export interface LocalDebugSanitizeContext {
 	timestampMs: number;
 	sequence: number;
 	pluginVersion: string;
+	/**
+	 * H14.21: an absolute path that starts with this one is redacted to its vault-relative
+	 * remainder instead of the bare `<path-redacted>`, so an ENOENT says whose file it is. A
+	 * path outside the vault (or when this is absent) still redacts in full, as before.
+	 */
+	vaultBasePath?: string | null;
 }
 
 /** Builds one JSON-safe record through the only field and value sanitization boundary. */
@@ -88,17 +98,18 @@ export function sanitizeLocalDebugRecord(
 	const durationMs = safeOptionalNonNegativeInteger(input.durationMs);
 	const attempt = safeOptionalNonNegativeInteger(input.attempt);
 	const state = sanitizeState(input.state);
+	const vaultBasePath = context.vaultBasePath ?? undefined;
 	const message = typeof input.message === 'string' || input.message instanceof Error
-		? sanitizeErrorText(input.message instanceof Error ? input.message.message : input.message, MAX_STRING_LENGTH)
+		? sanitizeErrorText(input.message instanceof Error ? input.message.message : input.message, MAX_STRING_LENGTH, vaultBasePath)
 		: undefined;
 	const errorName = input.message instanceof Error
 		? sanitizeErrorText(input.message.name, 128)
 		: typeof input.errorName === 'string' ? sanitizeErrorText(input.errorName, 128) : undefined;
 	const stack = typeof input.stack === 'string'
-		? sanitizeErrorText(input.stack, MAX_STACK_LENGTH)
+		? sanitizeErrorText(input.stack, MAX_STACK_LENGTH, vaultBasePath)
 		: input.message instanceof Error && typeof input.message.stack === 'string'
-			? sanitizeErrorText(input.message.stack, MAX_STACK_LENGTH) : undefined;
-	const details = sanitizeDetails(record.component, input.details);
+			? sanitizeErrorText(input.message.stack, MAX_STACK_LENGTH, vaultBasePath) : undefined;
+	const details = sanitizeDetails(record.component, input.details, vaultBasePath);
 	if (durationMs !== undefined) record.durationMs = durationMs;
 	if (attempt !== undefined) record.attempt = attempt;
 	if (state !== undefined) record.state = state;
@@ -110,7 +121,7 @@ export function sanitizeLocalDebugRecord(
 }
 
 /** Revalidates and re-sanitizes an unknown persisted value before diagnostic export. */
-export function resanitizeLocalDebugRecord(value: unknown): LocalDebugRecordV1 | null {
+export function resanitizeLocalDebugRecord(value: unknown, vaultBasePath?: string | null): LocalDebugRecordV1 | null {
 	if (!isRecord(value)) return null;
 	if (value.schemaVersion !== LOCAL_DEBUG_SCHEMA_VERSION) return null;
 	if (!isPositiveInteger(value.sequence) || typeof value.timestampUtc !== 'string') return null;
@@ -137,11 +148,11 @@ export function resanitizeLocalDebugRecord(value: unknown): LocalDebugRecordV1 |
 		errorName: value.errorName,
 		stack: value.stack,
 		details: value.details,
-	}, { timestampMs: parsedTime, sequence: value.sequence, pluginVersion: value.pluginVersion });
+	}, { timestampMs: parsedTime, sequence: value.sequence, pluginVersion: value.pluginVersion, vaultBasePath });
 }
 
 /** Sanitizes beta-safe message and stack text without suppressing diagnostic context entirely. */
-export function sanitizeErrorText(value: string, maximumLength = MAX_STRING_LENGTH): string {
+export function sanitizeErrorText(value: string, maximumLength = MAX_STRING_LENGTH, vaultBasePath?: string | null): string {
 	const sanitized = redactFileSystemPaths(value
 		.replace(PRIVATE_KEY_BLOCK, REDACTED)
 		.replace(BEARER_VALUE, REDACTED)
@@ -149,13 +160,22 @@ export function sanitizeErrorText(value: string, maximumLength = MAX_STRING_LENG
 		.replace(AWS_ACCESS_KEY, REDACTED)
 		.replace(GW2_API_KEY, REDACTED)
 		.replace(ASSIGNED_SECRET, REDACTED)
-		.replace(URL_VALUE, '<url-redacted>'))
+		.replace(URL_VALUE, '<url-redacted>'), vaultBasePath)
 		.replace(GW2_ACCOUNT, '<identity-redacted>');
 	return truncate(sanitized, maximumLength);
 }
 
-/** Redacts complete path spans while preserving reviewed diagnostic separators around them. */
-function redactFileSystemPaths(value: string): string {
+/**
+ * Redacts complete path spans while preserving reviewed diagnostic separators around them.
+ *
+ * H14.21: a span whose absolute text starts with `vaultBasePath` keeps its vault-relative
+ * remainder instead of collapsing to the bare `<path-redacted>`, so an ENOENT says whose file it
+ * is. The remainder's separators are swapped for `vaultObscureSeparators`'s lookalike codepoints,
+ * not `/`/`\`: `FILE_SYSTEM_PATH_STARTS` and `_END` key on the real ASCII characters, so a plain
+ * relative path re-entering this function on a later re-sanitization pass (`exportSanitized`) would
+ * otherwise read as a fresh path start and lose the very thing this preserves.
+ */
+function redactFileSystemPaths(value: string, vaultBasePath?: string | null): string {
 	const spans: Array<{ start: number; end: number }> = [];
 	for (const pattern of FILE_SYSTEM_PATH_STARTS) {
 		for (const match of value.matchAll(pattern)) {
@@ -175,17 +195,50 @@ function redactFileSystemPaths(value: string): string {
 			merged.push(span);
 		}
 	}
+	const normalizedVaultBasePath = normalizeVaultBasePath(vaultBasePath);
 	let result = value;
 	for (const span of merged.reverse()) {
-		result = `${result.slice(0, span.start)}<path-redacted>${result.slice(span.end)}`;
+		// An end delimiter sitting immediately at the start (an already-obscured marker has none
+		// of the `/`/`\` this scan looks for, so this only ever fires on genuinely empty matches)
+		// leaves nothing to replace.
+		if (span.start >= span.end) continue;
+		const matched = result.slice(span.start, span.end);
+		const relative = normalizedVaultBasePath === null ? null : vaultRelativeRemainder(matched, normalizedVaultBasePath);
+		const replacement = relative === null ? '<path-redacted>' : `in-vault-${obscureVaultSeparators(relative)}`;
+		result = `${result.slice(0, span.start)}${replacement}${result.slice(span.end)}`;
 	}
 	return result;
+}
+
+/** Strips a trailing separator and normalizes backslashes for a stable prefix comparison. */
+function normalizeVaultBasePath(vaultBasePath?: string | null): string | null {
+	if (typeof vaultBasePath !== 'string' || vaultBasePath.length === 0) return null;
+	const normalized = vaultBasePath.replaceAll('\\', '/').replace(/\/+$/u, '');
+	return normalized.length > 0 ? normalized : null;
+}
+
+/** Returns the vault-relative remainder of a matched path span, or null when it is not inside the vault. */
+function vaultRelativeRemainder(matched: string, normalizedVaultBasePath: string): string | null {
+	const normalizedMatched = matched.replaceAll('\\', '/');
+	if (!normalizedMatched.startsWith(normalizedVaultBasePath)) return null;
+	const remainder = normalizedMatched.slice(normalizedVaultBasePath.length);
+	return remainder.startsWith('/') ? remainder.slice(1) : remainder;
+}
+
+/**
+ * U+2215 and U+2216 read as `/` and `\` to a human without being the ASCII characters this
+ * module's own path-start and path-end patterns match on: the one property that keeps the
+ * vault-relative marker inert under however many further sanitization passes it goes through.
+ */
+function obscureVaultSeparators(relative: string): string {
+	return relative.replaceAll('/', '∕').replaceAll('\\', '∖');
 }
 
 /** Keeps only the reviewed detail keys for a component and sanitizes their values recursively. */
 export function sanitizeDetails(
 	component: LocalDebugComponent,
 	value: unknown,
+	vaultBasePath?: string | null,
 ): Readonly<Record<string, unknown>> | undefined {
 	if (!isRecord(value)) return undefined;
 	const allowed = new Set(LOCAL_DEBUG_DETAIL_ALLOWLIST[component]);
@@ -196,15 +249,15 @@ export function sanitizeDetails(
 		if (!allowed.has(key) || BLOCKED_KEY.test(key)) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor === undefined || !('value' in descriptor)) continue;
-		result[key] = sanitizeUnknown(descriptor.value, seen, 0);
+		result[key] = sanitizeUnknown(descriptor.value, seen, 0, vaultBasePath);
 	}
 	return result;
 }
 
 /** Converts an untrusted nested value to bounded JSON-safe data without invoking getters. */
-function sanitizeUnknown(value: unknown, seen: WeakSet<object>, depth: number): unknown {
+function sanitizeUnknown(value: unknown, seen: WeakSet<object>, depth: number, vaultBasePath?: string | null): unknown {
 	if (value === null || typeof value === 'boolean') return value;
-	if (typeof value === 'string') return sanitizeErrorText(value);
+	if (typeof value === 'string') return sanitizeErrorText(value, MAX_STRING_LENGTH, vaultBasePath);
 	if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
 	if (typeof value === 'bigint') return value.toString(10);
 	if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') return undefined;
@@ -214,17 +267,17 @@ function sanitizeUnknown(value: unknown, seen: WeakSet<object>, depth: number): 
 	if (value instanceof Error) {
 		return {
 			name: sanitizeErrorText(value.name),
-			message: sanitizeErrorText(value.message),
-			...(typeof value.stack === 'string' ? { stack: sanitizeErrorText(value.stack, MAX_STACK_LENGTH) } : {}),
+			message: sanitizeErrorText(value.message, MAX_STRING_LENGTH, vaultBasePath),
+			...(typeof value.stack === 'string' ? { stack: sanitizeErrorText(value.stack, MAX_STACK_LENGTH, vaultBasePath) } : {}),
 		};
 	}
-	if (Array.isArray(value)) return value.slice(0, MAX_COLLECTION_ITEMS).map((entry) => sanitizeUnknown(entry, seen, depth + 1));
+	if (Array.isArray(value)) return value.slice(0, MAX_COLLECTION_ITEMS).map((entry) => sanitizeUnknown(entry, seen, depth + 1, vaultBasePath));
 	const result: Record<string, unknown> = {};
 	for (const key of Object.keys(value).sort().slice(0, MAX_COLLECTION_ITEMS)) {
 		if (BLOCKED_KEY.test(key)) continue;
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
 		if (descriptor === undefined || !('value' in descriptor)) continue;
-		result[key] = sanitizeUnknown(descriptor.value, seen, depth + 1);
+		result[key] = sanitizeUnknown(descriptor.value, seen, depth + 1, vaultBasePath);
 	}
 	return result;
 }

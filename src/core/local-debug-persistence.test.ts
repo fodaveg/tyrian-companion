@@ -47,6 +47,29 @@ describe('local debug persistence port', () => {
 		expect(sanitized.details).toEqual({ operation: 'read', store: 'session_runtime' });
 	});
 
+	// H14.9: a `skip` with the default `skipped` code is routine (a cold cache, a store not yet
+	// open), and used to warn at 113 of 113 real warn-level lines being routine operation.
+	it('logs a default-coded skip at debug, and any other skip code at warn', () => {
+		const records: LocalDebugRecordInput[] = [];
+		const runner = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const probe = new LocalDebugPersistenceProbe({
+			sink: createLocalDebugPersistenceSink(runner, 'inventory', 'inventory_refresh'),
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+
+		probe.begin('catalog', 'read').skip();
+		probe.begin('catalog', 'read').skip('quota_exceeded');
+
+		const terminal = records.filter((record) => record.phase === 'skip');
+		expect(terminal.map(({ code, level }) => ({ code, level }))).toEqual([
+			{ code: 'skipped', level: 'debug' },
+			{ code: 'quota_exceeded', level: 'warn' },
+		]);
+	});
+
 	it('does no work when no sink is configured', () => {
 		const probe = new LocalDebugPersistenceProbe({
 			now: () => { throw new Error('clock must not run'); },

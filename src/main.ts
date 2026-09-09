@@ -399,6 +399,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.addSettingTab(this.settingTab);
 		this.setupSessionCommands();
 		this.setupProductActions();
+		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
+		// `unhandled_rejection`: those names described which browser event fired, which reads
+		// as attribution but is not one. The sanitizer already redacts any absolute path in
+		// `message` (`local-debug-sanitizer.ts`), so by the time either handler runs there is no
+		// path left pointing at which module actually threw; `details.origin` keeps the one fact
+		// that survives, which listener caught it, without implying more than that.
 		this.registerDomEvent(window, 'error', (event) => {
 			let failure: unknown = event;
 			if (typeof ErrorEvent !== 'undefined' && event instanceof ErrorEvent) {
@@ -407,7 +413,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
-				code: 'unknown_failure', state: 'window_error', message: failure,
+				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
+				details: { origin: 'window_error' },
 			});
 		});
 		this.registerDomEvent(window, 'unhandledrejection', (event) => {
@@ -417,7 +424,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			}
 			this.localDebugActions?.event({
 				component: 'plugin', action: 'global_error', level: 'error', phase: 'failure',
-				code: 'unknown_failure', state: 'unhandled_rejection', message: failure,
+				code: 'unknown_failure', state: 'unattributed_origin', message: failure,
+				details: { origin: 'unhandled_rejection' },
 			});
 		});
 		this.registerDomEvent(window, 'online', () => {
@@ -482,6 +490,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 			enabled: this.settings.debugLoggingEnabled,
 			minimumLevel: this.settings.debugLoggingLevel,
 			pluginVersion: this.manifest.version,
+			// H14.21: a desktop-only optional method (mobile's adapter has no filesystem base
+			// path), read lazily so it always reflects the vault actually open, not one cached
+			// at construction.
+			vaultBasePath: () => (adapter as unknown as { getBasePath?: () => string }).getBasePath?.() ?? null,
 			writer: new LocalDebugJsonlWriter({
 				storage,
 				directory: localDebugDirectory(this.app.vault.configDir),
