@@ -197,12 +197,14 @@ describe('settings information architecture', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
 		expect(assignments).toHaveLength(32);
-		expect(assignments.filter(({ category }) => category === 'account')).toHaveLength(3);
-		expect(assignments.filter(({ category }) => category === 'session')).toHaveLength(3);
-		expect(assignments.filter(({ category }) => category === 'loot')).toHaveLength(8);
-		expect(assignments.filter(({ category }) => category === 'halloween')).toHaveLength(9);
-		expect(assignments.filter(({ category }) => category === 'alerts')).toHaveLength(3);
-		expect(assignments.filter(({ category }) => category === 'diagnostics')).toHaveLength(6);
+		// H14.20: the first screen is exactly the four rows a new install needs;
+		// every other row (28) lives under the single "Advanced" tab.
+		const essentials = assignments.filter(({ category }) => category === 'essentials');
+		expect(essentials).toHaveLength(4);
+		expect(essentials.map(({ name }) => name).sort()).toEqual(
+			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
+		);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(28);
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
 	});
 
@@ -210,13 +212,13 @@ describe('settings information architecture', () => {
 		for (const active of SETTINGS_CATEGORIES) {
 			expect(SETTINGS_CATEGORIES.filter((category) => isActiveSettingsCategory(category, active))).toEqual([active]);
 		}
-		expect(nextSettingsCategory('account', 'ArrowLeft')).toBe('diagnostics');
-		expect(nextSettingsCategory('diagnostics', 'ArrowRight')).toBe('account');
-		expect(nextSettingsCategory('account', 'ArrowUp')).toBe('diagnostics');
-		expect(nextSettingsCategory('diagnostics', 'ArrowDown')).toBe('account');
-		expect(nextSettingsCategory('loot', 'Home')).toBe('account');
-		expect(nextSettingsCategory('account', 'End')).toBe('diagnostics');
-		expect(nextSettingsCategory('account', 'Enter')).toBeNull();
+		expect(nextSettingsCategory('essentials', 'ArrowLeft')).toBe('advanced');
+		expect(nextSettingsCategory('advanced', 'ArrowRight')).toBe('essentials');
+		expect(nextSettingsCategory('essentials', 'ArrowUp')).toBe('advanced');
+		expect(nextSettingsCategory('advanced', 'ArrowDown')).toBe('essentials');
+		expect(nextSettingsCategory('advanced', 'Home')).toBe('essentials');
+		expect(nextSettingsCategory('essentials', 'End')).toBe('advanced');
+		expect(nextSettingsCategory('essentials', 'Enter')).toBeNull();
 	});
 
 	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {
