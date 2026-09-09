@@ -671,14 +671,6 @@
 	overflow-x: hidden;
 }
 
-.tyrian-companion-view__elapsed {
-	margin: 0;
-	color: var(--text-muted);
-	font-family: var(--font-monospace);
-	font-variant-numeric: tabular-nums;
-	overflow-wrap: anywhere;
-}
-
 .tyrian-companion-view button,
 .tyrian-companion-view summary {
 	min-height: 44px;
@@ -727,20 +719,14 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-companion-view__detection-details,
-.tyrian-companion-view__history {
+.tyrian-companion-view__detection-details {
 	margin-block-start: var(--size-4-3);
 }
 
-.tyrian-companion-view__detection-details > summary,
-.tyrian-companion-view__history > summary {
+.tyrian-companion-view__detection-details > summary {
 	color: var(--text-muted);
 	font-size: var(--font-small);
 	cursor: pointer;
-}
-
-.tyrian-companion-view__history .tyrian-session-history {
-	margin-block-start: var(--size-4-2);
 }
 
 .tyrian-companion-session__badge {
@@ -2445,38 +2431,12 @@
 	min-inline-size: 0;
 }
 
-.tyrian-companion-settings__diagnostic-status[role="alert"],
-.tyrian-companion-view__debug-warning {
+.tyrian-companion-settings__diagnostic-status[role="alert"] {
 	border-color: var(--color-orange);
 	background: var(--background-modifier-error);
 	color: var(--text-warning);
 }
 
-.tyrian-companion-settings__diagnostic-status span,
-.tyrian-companion-view__debug-warning p {
+.tyrian-companion-settings__diagnostic-status span {
 	overflow-wrap: anywhere;
-}
-
-.tyrian-companion-view__debug-warning :focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: 2px;
-}
-
-.tyrian-companion-view__debug-warning {
-	display: grid;
-	gap: var(--size-4-1);
-	margin-block: var(--size-4-3);
-	padding: var(--size-4-3);
-	border: 1px solid var(--color-orange);
-	border-radius: var(--radius-m);
-}
-
-.tyrian-companion-view__debug-warning p {
-	margin: 0;
-}
-
-.tyrian-companion-view__debug-warning button {
-	justify-self: start;
-	min-block-size: 44px;
-	min-inline-size: 44px;
 }
