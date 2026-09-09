@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
@@ -9,22 +7,16 @@ import { ResilientHttpTransport, type HttpRequest } from './core/http';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { ObsidianApiKeyProvider } from './core/secret-provider';
 import TyrianCompanionPlugin from './main';
+import {
+	censusNetworkAndCredentialCapabilities,
+	isFutureOutboundFile,
+	isSensitivePersistenceBoundary,
+	persistenceBoundaryHasCredentialCapability,
+	productionSourceFiles,
+} from '../scripts/security-scan.mjs';
+import { readModuleSource } from './test/module-boundary';
 
 const TOKEN_SENTINEL = ['tyrian-h6', 'token-sentinel', 'not-a-credential'].join('-');
-const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
-const FUTURE_OUTBOUND_TOKEN_PATTERN = /(?:^|[-_.])(?:analytics|backup|diagnostic|export|mumble|report|share|support|sync|telemetry|uploader)[a-z]*(?=[-_.]|$)/iu;
-const FUTURE_OUTBOUND_CAMEL_PATTERN = /(?:Analytics|Backup|Diagnostic|Export|Mumble|Report|Share|Support|Sync|Telemetry|Uploader)/u;
-const REQUEST_URL_CAPABILITY_PATTERN = /\brequestUrl\b/u;
-const FETCH_CAPABILITY_PATTERN = /\bfetch\b/u;
-const WEB_SOCKET_CAPABILITY_PATTERN = /\bWebSocket\b/u;
-const HTTP_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:(?:node:)?https?|axios|undici|[^'"]*\/(?:http|obsidian-http))['"]/mu;
-// H13.9/H13.15. `node:net` opens a loopback socket, which is an outbound capability
-// `HTTP_IMPORT_PATTERN` above never covered: it only casts a net as wide as https(s),
-// axios and undici. Without a pattern of its own, `alert-ingame-server.ts` could have
-// carried the in-game bridge's TCP listener onto this census's blind spot in silence.
-const NET_IMPORT_PATTERN = /(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s*)['"](?:node:)?net['"]/mu;
-const SECRET_PROVIDER_IMPORT_PATTERN = /from\s+['"][^'"]*(?:^|\/)secret-provider['"]/u;
-const SECRET_CAPABILITY_PATTERN = /\b(?:ApiKeyProvider|ObsidianApiKeyProvider|readSelectedApiKey|secretStorage)\b/u;
 const REVIEWED_FUTURE_OUTBOUND_FILES = [
 	'src/inventory/inventory-vault-sync.ts',
 	'src/platform/mumble-v2-client.ts',
@@ -102,7 +94,7 @@ const REVIEWED_SECRET_CAPABILITY_FILES = [
 	'src/core/secret-provider.ts',
 	'src/main.ts',
 ];
-const PRODUCTION_FILES = sourceFiles('src');
+const PRODUCTION_FILES = productionSourceFiles(process.cwd());
 
 describe('H6.7 credential boundary', () => {
 	it('sends one ephemeral SecretStorage value only to the exact official HTTPS endpoint', async () => {
@@ -181,8 +173,7 @@ describe('H6.7 credential boundary', () => {
 			'src/sessions/session-runtime-store.ts',
 		]));
 		for (const path of boundaries) {
-			const source = readFileSync(path, 'utf8');
-			expect(source, `${path} receives a credential capability`).not.toMatch(CREDENTIAL_CAPABILITY_PATTERN);
+			expect(persistenceBoundaryHasCredentialCapability(path), `${path} receives a credential capability`).toBe(false);
 		}
 	});
 
@@ -191,7 +182,7 @@ describe('H6.7 credential boundary', () => {
 		expect(isSensitivePersistenceBoundary(futureStorePath)).toBe(true);
 		for (const capability of ['accessToken', 'refreshToken', 'bearerToken', 'credential', 'token']) {
 			const source = `export interface FuturePersistentState { ${capability}: string }`;
-			expect(source, `${capability} bypassed the persistent-boundary guard`).toMatch(CREDENTIAL_CAPABILITY_PATTERN);
+			expect(CREDENTIAL_CAPABILITY_PATTERN.test(source), `${capability} bypassed the persistent-boundary guard`).toBe(true);
 		}
 	});
 
@@ -213,77 +204,33 @@ describe('H6.7 credential boundary', () => {
 	});
 
 	it('keeps every network and credential capability on an exact reviewed census', () => {
-		expect(filesMatching(REQUEST_URL_CAPABILITY_PATTERN)).toEqual(REVIEWED_REQUEST_URL_FILES);
-		expect(filesMatching(FETCH_CAPABILITY_PATTERN)).toEqual(REVIEWED_FETCH_FILES);
-		expect(filesMatching(WEB_SOCKET_CAPABILITY_PATTERN)).toEqual(REVIEWED_WEB_SOCKET_FILES);
-		expect(filesMatching(HTTP_IMPORT_PATTERN)).toEqual(REVIEWED_HTTP_IMPORT_FILES);
-		expect(filesMatching(NET_IMPORT_PATTERN)).toEqual(REVIEWED_NET_IMPORT_FILES);
-		expect(filesMatching(SECRET_PROVIDER_IMPORT_PATTERN)).toEqual(REVIEWED_SECRET_PROVIDER_IMPORT_FILES);
-		expect(filesMatching(SECRET_CAPABILITY_PATTERN)).toEqual(REVIEWED_SECRET_CAPABILITY_FILES);
-		for (const source of [
-			"import { request } from 'node:https';",
-			"import axios from 'axios';",
-			"import 'node:http';",
-			"await import(\n  'undici'\n);",
-			"const https = require( 'node:https' );",
-		]) {
-			expect(HTTP_IMPORT_PATTERN.test(source), `${source} bypassed the HTTP import census`).toBe(true);
-		}
-		expect(HTTP_IMPORT_PATTERN.test("const moduleName = 'node:http'; await import(moduleName);")).toBe(false);
-		for (const source of [
-			"import { createServer } from 'node:net';",
-			"const net = require('net');",
-			"await import(\n  'node:net'\n);",
-		]) {
-			expect(NET_IMPORT_PATTERN.test(source), `${source} bypassed the net import census`).toBe(true);
-		}
-		expect(NET_IMPORT_PATTERN.test("const moduleName = 'node:net'; await import(moduleName);")).toBe(false);
+		const census = censusNetworkAndCredentialCapabilities(process.cwd());
+		expect(census.requestUrl).toEqual(REVIEWED_REQUEST_URL_FILES);
+		expect(census.fetch).toEqual(REVIEWED_FETCH_FILES);
+		expect(census.webSocket).toEqual(REVIEWED_WEB_SOCKET_FILES);
+		expect(census.httpImport).toEqual(REVIEWED_HTTP_IMPORT_FILES);
+		expect(census.netImport).toEqual(REVIEWED_NET_IMPORT_FILES);
+		expect(census.secretProviderImport).toEqual(REVIEWED_SECRET_PROVIDER_IMPORT_FILES);
+		expect(census.secretCapability).toEqual(REVIEWED_SECRET_CAPABILITY_FILES);
 	});
 
 	it('keeps the production composition on the fixed authenticated client constructor', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 		expect(source).toContain('new GuildWars2Client(transport, apiKeyProvider)');
 		expect(source).not.toMatch(/new GuildWars2Client\([^)]*,[^)]*,/u);
 	});
 });
+
+// H13.9/H13.15/H6.7: the seven capability patterns and the `CREDENTIAL_CAPABILITY_PATTERN` above
+// stay in sync with `scripts/security-scan.mjs`, which owns the walk and the exact regex source;
+// this suite only carries the reviewed allowlists, which are data, not a text-match on a module.
+const CREDENTIAL_CAPABILITY_PATTERN = /from\s+['"][^'"]*secret-provider['"]|\b(?:Authorization|Bearer|SecretStorage|readSelectedApiKey|ApiKeyProvider|apiKey|accessToken|refreshToken|bearerToken|credential|token)\b/u;
 
 interface SettingsLoadHarness {
 	app: { vault: { configDir: string } };
 	settings: TyrianSettings;
 	loadData(): Promise<unknown>;
 	saveData(value: unknown): Promise<void>;
-}
-
-function sourceFiles(root: string): string[] {
-	return walk(root)
-		.map((path) => relative('.', path).replaceAll('\\', '/'))
-		.filter((path) => path.endsWith('.ts') && !/(?:^|\/)(?:__fixtures__|test)(?:\/|$)/u.test(path))
-		.filter((path) => !/\.(?:spec|test)\.ts$/u.test(path))
-		.sort();
-}
-
-function walk(directory: string): string[] {
-	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		const path = join(directory, entry.name);
-		return entry.isDirectory() ? walk(path) : entry.isFile() ? [path] : [];
-	});
-}
-
-function isSensitivePersistenceBoundary(path: string): boolean {
-	const name = basename(path);
-	if (/(?:session-note|session-runtime)/u.test(name)) return true;
-	if (/(?:store|writer|cache|pointer)(?:[-_.]|$)/iu.test(name)) return true;
-	const source = readFileSync(path, 'utf8');
-	return /\b(?:IDBDatabase|IDBFactory|SessionNoteVault)\b|\.objectStore\s*\(/u.test(source);
-}
-
-function isFutureOutboundFile(path: string): boolean {
-	const name = basename(path);
-	return FUTURE_OUTBOUND_TOKEN_PATTERN.test(name) || FUTURE_OUTBOUND_CAMEL_PATTERN.test(name);
-}
-
-function filesMatching(pattern: RegExp): string[] {
-	return PRODUCTION_FILES.filter((path) => pattern.test(readFileSync(path, 'utf8')));
 }
 
 // These guards exercise the real authenticated client and production load method, then discover
