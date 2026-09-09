@@ -112,7 +112,17 @@ describe('recommendContainerDisposition', () => {
 
 	it('rejects a transplanted classification or overlay even when its standalone shell is valid', () => {
 		const reviewTransplant = input();
-		const donor = input({ reviewKind: 'estimated' }).session.review;
+		// A donor built from GENUINELY DIFFERENT evidence (an unrelated item loss), not from a
+		// different `apiSettlement` flag alone: `api_settlement_window_skipped` never depends on the
+		// boundary content, so `isSessionContaminationReview` — which tries every settlement
+		// candidate for the recipient's OWN evidence — would recompute the identical classification
+		// and coincidentally re-validate the transplant instead of rejecting it.
+		const donorBefore = storageDeltaSnapshot({ holdings: [looseHolding(777, 3, { source: 'bank', slot: 2 })] });
+		const donorAfter = afterSnapshot({ holdings: [looseHolding(777, 1, { source: 'bank', slot: 2 })] });
+		const donorDelta = compareStorageSnapshots(donorBefore, donorAfter);
+		if (donorDelta.status === 'invalid') throw new Error('Invalid donor delta fixture.');
+		const donor = createSessionContaminationReview(donorBefore, donorAfter, donorDelta, '2026-08-13T09:00:02.000Z');
+		if (!donor || donor.classification.status !== 'estimated') throw new Error('Invalid donor review fixture.');
 		reviewTransplant.session.review.classification = donor.classification;
 		expect(recommendContainerDisposition(reviewTransplant)).toMatchObject({
 			status: 'invalid', reasons: [{ code: 'evidence_mismatch' }],
@@ -161,10 +171,11 @@ describe('recommendContainerDisposition', () => {
 		});
 	});
 
+	// `session_contaminated` had its own row here; `contaminated` is no longer reachable at all
+	// (Lote S, 2026-09-09), so there is no authentic review left to build it from.
 	it.each([
 		['legacy' as const, 'session_classification_v1'],
 		['estimated' as const, 'session_estimated'],
-		['contaminated' as const, 'session_contaminated'],
 	] as const)('blocks an authentic %s review', (reviewKind, reason) => {
 		const value = input({ reviewKind });
 		expect(recommendContainerDisposition(value)).toMatchObject({
@@ -597,7 +608,10 @@ function input(options: {
 	marginBps?: number;
 	vendorValue?: number;
 	marketOutcome?: boolean;
-	reviewKind?: 'exact' | 'legacy' | 'estimated' | 'contaminated';
+	// `contaminated` is gone (Lote S, 2026-09-09): nobody's declaration contaminates a session
+	// anymore, and it is the only path that ever produced that status, so it is no longer
+	// reachable at all — `session_contaminated`'s own blocking test goes with it, see below.
+	reviewKind?: 'exact' | 'legacy' | 'estimated';
 } = {}): ContainerRecommendationInput {
 	const gainedQuantity = options.gainedQuantity ?? 1;
 	const finalQuantity = options.finalQuantity ?? gainedQuantity;
@@ -616,16 +630,14 @@ function input(options: {
 	const plan = planFor(after, goals);
 	const overlay = overlayFor(plan, gainedQuantity);
 	const model = modelFor(options.modelEvMicro ?? 1, options.marketOutcome ?? false);
-	const activities = {
-			open: false, salvage: false, consume: false, craft: false, tpBuy: false, tpSell: false,
-			vendorBuy: false, vendorSell: false, transfer: false, other: false,
-	};
-	// Since H13.6 a declared opening only estimates the session; contamination needs an activity
-	// that actually moves value in or out of the account.
-	if (options.reviewKind === 'contaminated') activities.tpBuy = true;
-	const review = createSessionContaminationReview(beforeSnapshot, after, delta, {
-		certainty: options.reviewKind === 'estimated' ? 'unsure' : 'confirmed', activities,
-	}, '2026-08-13T09:00:02.000Z');
+	// A skipped API settlement window genuinely degrades to `estimated` (`api_settlement_window_skipped`)
+	// without touching the snapshots/delta identity checks below, so the review still recomputes
+	// exactly — unlike mutating `.classification` after the fact, which `isSessionContaminationReview`
+	// would then reject as `evidence_mismatch`.
+	const review = createSessionContaminationReview(
+		beforeSnapshot, after, delta, '2026-08-13T09:00:02.000Z',
+		options.reviewKind === 'estimated' ? 'skipped' : 'settled',
+	);
 	if (!review) throw new Error('Invalid review fixture.');
 	if (options.reviewKind === 'legacy') review.classification = {
 		...review.classification, version: 1,

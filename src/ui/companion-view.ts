@@ -5,7 +5,6 @@ import { createTranslator, type Locale } from '../core/i18n';
 import { formatClock, formatRelativeDay } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
-import type { DetectionMode } from '../core/settings';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
@@ -23,13 +22,7 @@ import {
 	type SessionSettlementWait,
 } from '../sessions/session-api-settlement';
 import { leaseRemainingSeconds } from '../sessions/coordination-model';
-import {
-	SESSION_ACTIVITY_KEYS,
-	type SessionActivityKey,
-	type SessionContaminationAnswers,
-	type SessionContaminationReview,
-	type SessionTradingPostContaminationProposal,
-} from '../sessions/session-contamination-review';
+import type { SessionContaminationReview } from '../sessions/session-contamination-review';
 import {
 	DETECTION_CORRECTION_CAUSES,
 	type DetectionCorrectionCause,
@@ -57,7 +50,12 @@ import {
 	localizedCoverageStatus,
 	type CompanionStatusProjection,
 } from './companion-status-model';
-import { isFreshNotice, renderHalloweenAlertPanel, type HalloweenAlertPanelActions } from './halloween-alert-panel';
+import {
+	alertCountLabel,
+	renderHalloweenAlertPanel,
+	visibleEmittedAlerts,
+	type HalloweenAlertPanelActions,
+} from './halloween-alert-panel';
 import type { ProductActionController, ProductActionOutcome } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 import {
@@ -84,7 +82,6 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getConnectionState(): ConnectionState;
 	checkConnection(): Promise<ConnectionState>;
 	getSessionState(): SessionState;
-	getDetectionMode(): DetectionMode;
 	getAssistedDetectionState(): AssistedDetectionState;
 	getDetectionQualityState(): DetectionQualityRecorderState;
 	getSessionDetectionQuality(sessionId: string): SessionDetectionQualitySummary | null;
@@ -112,8 +109,6 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	getSessionSummarySaveState?(): 'unknown' | 'saving' | 'saved' | 'failed';
 	getStoredSessionLootSummary?(): StoredSessionLootSummary | null;
 	retrySessionSummarySave?(): Promise<void>;
-	reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null>;
-	openSessionReview(): void;
 	confirmClearCompletedSession(): void;
 	getSessionRecoveryState(): SessionRecoveryState;
 	isPilotRecoveryClassificationRequired?(): boolean;
@@ -432,31 +427,30 @@ export class TyrianCompanionView extends ItemView {
 		return this.t('view.drawer.historyIdle');
 	}
 
-	/** `0 sin revisar` / `N nuevos`: unread Halloween loot notices plus unread price notices. */
-	private alertsDrawerSuffix(): string {
-		const unread = this.actions.getHalloweenState().unreadCount + this.actions.getHalloweenPriceAlertState().unreadCount;
-		return unread === 1 ? this.t('view.alerts.unreadCount', { count: unread }) : this.t('view.alerts.unreadCountPlural', { count: unread });
+	/** `sin avisos` / `N avisos`: avisos of the session on screen, or of the last 24h with none running. */
+	private alertsDrawerSuffix(now: number): string {
+		const context = this.actions.getHalloweenPanelContext?.() ?? { nowMs: now, inLabyrinth: false, sessionStartAt: null };
+		const visible = visibleEmittedAlerts(this.actions.getEmittedAlerts(), context);
+		const count = visible.length + this.actions.getHalloweenPriceAlertState().notices.length;
+		return alertCountLabel(count, (key, params) => this.t(key as RuntimeTranslationKey, params));
 	}
 
 	/**
 	 * Whether the "Avisos" gaveto must force itself open regardless of `drawerOpen.alerts`, the same
-	 * way `halloween-alert-panel.ts` used to force its whole panel open: an unread notice (loot or
-	 * price) still fresh under `isFreshNotice` (H14.3, under 24h and not from a session that ended
-	 * before the one on screen). A stale or pre-session notice does not reopen it.
+	 * way `halloween-alert-panel.ts` used to force its whole panel open: a loot or price aviso still
+	 * fresh under `isFreshNotice` (H14.3, under 24h and not from a session that ended before the one
+	 * on screen). Nobody marks an aviso reviewed anymore (Lote S, 2026-09-09), so freshness alone
+	 * decides; a stale or pre-session aviso does not reopen it.
 	 */
 	private hasFreshUnreadAlert(now: number): boolean {
-		const halloweenState = this.actions.getHalloweenState();
-		const priceState = this.actions.getHalloweenPriceAlertState();
-		if (halloweenState.unreadCount === 0 && priceState.unreadCount === 0) return false;
 		const context = this.actions.getHalloweenPanelContext?.() ?? { nowMs: now, inLabyrinth: false, sessionStartAt: null };
-		const fresh = (notice: { acknowledgedAt: string | null; observedAt: string }): boolean =>
-			notice.acknowledgedAt === null && isFreshNotice(notice.observedAt, context);
-		return halloweenState.notices.some(fresh) || priceState.notices.some(fresh);
+		if (visibleEmittedAlerts(this.actions.getEmittedAlerts(), context).length > 0) return true;
+		return this.actions.getHalloweenPriceAlertState().notices.length > 0;
 	}
 
 	/** `Detección desactivada` / `Detección activa · próxima HH:MM`: the Detalle gaveto's closed state. */
-	private detectionDrawerSuffix(mode: DetectionMode, state: AssistedDetectionState): string {
-		if (mode === 'off' || state.status === 'disarmed' || state.status === 'error') return this.t('view.drawer.detectionOff');
+	private detectionDrawerSuffix(state: AssistedDetectionState): string {
+		if (state.status === 'disarmed' || state.status === 'error') return this.t('view.drawer.detectionOff');
 		if (state.status === 'armed' && state.scheduler.nextRunAt !== null) {
 			return `${this.t('view.drawer.detectionActive')} · ${this.t('view.drawer.detectionNext', {
 				time: formatClock(state.scheduler.nextRunAt, this.actions.getLocale()),
@@ -491,11 +485,11 @@ export class TyrianCompanionView extends ItemView {
 		const drawers = {
 			detail: {
 				summary: copy.detailDisclosure,
-				suffix: this.detectionDrawerSuffix(this.actions.getDetectionMode(), this.actions.getAssistedDetectionState()),
+				suffix: this.detectionDrawerSuffix(this.actions.getAssistedDetectionState()),
 				open: this.drawerOpen.detail,
 			},
 			alerts: {
-				summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(),
+				summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(now),
 				open: this.drawerOpen.alerts || this.hasFreshUnreadAlert(now),
 			},
 			history: { summary: this.t('view.drawer.history'), suffix: this.historyDrawerSuffix(), open: this.drawerOpen.history },
@@ -601,11 +595,14 @@ export class TyrianCompanionView extends ItemView {
 		}
 
 		if (observed.status === 'provisional') {
+			// Nobody reviews a session anymore (David, 2026-09-09): this branch is only the brief gap
+			// between the final capture and the automatic finalize that follows it, never a state that
+			// waits on a human. No action fits it.
 			const elapsed = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
 			return {
-				ariaLabel: copy.session, state: copy.reviewNeeded, badge: this.buildQualityBadge(projection),
-				meta: { text: copy.reviewNeededDetail },
-				actions: [{ text: copy.review, onClick: () => this.actions.openSessionReview() }],
+				ariaLabel: copy.session, state: copy.saving, badge: this.buildQualityBadge(projection),
+				meta: { clock: formatElapsed(elapsed ?? 0), text: `· ${observed.startContext.characterName}` },
+				actions: [],
 				callout, figures: this.buildTerminalFigures(elapsed, copy, locale), ...drawers,
 			};
 		}
@@ -915,7 +912,6 @@ export class TyrianCompanionView extends ItemView {
 			now,
 			connection: this.actions.getConnectionState(),
 			session,
-			detectionMode: this.actions.getDetectionMode(),
 			detection: this.actions.getAssistedDetectionState(),
 			qualityState: this.actions.getDetectionQualityState(),
 			qualityStats: this.actions.getDetectionQualityStats(),
@@ -1074,7 +1070,6 @@ export class TyrianCompanionView extends ItemView {
 		connection: ConnectionState,
 		session: SessionState,
 	): void {
-		const mode = this.actions.getDetectionMode();
 		const state = this.actions.getAssistedDetectionState();
 		const list = container.createEl('dl', { cls: 'tyrian-companion-session__rows' });
 		list.setAttr('role', state.status === 'error' ? 'alert' : 'status');
@@ -1087,38 +1082,21 @@ export class TyrianCompanionView extends ItemView {
 		detectionTerm.setAttr('aria-description', this.t('view.detectionScope'));
 		const dd = list.createEl('dd', { cls: 'tyrian-companion-session__row-value' });
 		const stateText = dd.createSpan({ cls: 'tyrian-companion-view__detection-state' });
-		const actions = dd.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const timeline = this.projectDetectionTimeline(mode, state, session);
+		const timeline = this.projectDetectionTimeline(state, session);
 		const proposal = container.createDiv({ cls: 'tyrian-companion-view__detection-proposal' });
 		proposal.hidden = true;
 
-		if (mode === 'off') {
-			stateText.setText(this.t('status.off'));
-			stateText.setAttr('title', this.t('view.disabledInSettings'));
-		} else if (state.status === 'disarmed') {
-			stateText.setText(this.t('status.disarmed'));
-			const arm = actions.createEl('button', { text: this.t('view.armDetection') });
-			const connected = connection.status === 'connected' || connection.status === 'warning';
-			const sessionReady = session.status === 'idle' || session.status === 'active';
-			const recoveryReady = session.status !== 'idle' || this.actions.getSessionRecoveryState().status === 'none';
-			arm.disabled = !connected || !sessionReady || !recoveryReady;
-			arm.addEventListener('click', () => { void this.armDetection(); });
-			const reason = !connected ? this.t('view.checkBeforeArming')
-				: !sessionReady || !recoveryReady ? this.t('view.resolveSessionBeforeArming') : null;
-			if (reason !== null) {
-				arm.setAttr('title', reason);
-				stateText.createEl('small', { text: ` · ${reason}` });
-			}
+		// No toggle and no arm/disarm buttons left in this row (David, 2026-09-09): detection arms
+		// itself the moment the account is connected. `disarmed` here only ever means it is still
+		// waiting for one.
+		if (state.status === 'disarmed') {
+			stateText.setText(this.t('status.waitingAccount'));
+			stateText.setAttr('title', this.t('status.waitingAccountDetail'));
 		} else if (state.status === 'arming') {
-			stateText.setText(`${this.t('status.arming')} · ${this.t('view.capturingBaselineBeforePolling')}`);
-			this.addDisarmButton(actions);
+			stateText.setText(`${this.t('status.armed')} · ${this.t('view.capturingBaselineBeforePolling')}`);
 		} else if (state.status === 'error') {
 			stateText.setText(`${this.t('status.error')} · ${this.t('status.detectionStopped')}`);
 			stateText.addClass('tyrian-companion-view__session-error');
-			const retry = actions.createEl('button', { text: this.t('view.tryArmingAgain') });
-			retry.addEventListener('click', () => { void this.armDetection(); });
-			const disarm = actions.createEl('button', { text: this.t('view.disarm') });
-			disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 		} else if (state.status === 'start_proposed') {
 			try { this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
@@ -1147,27 +1125,25 @@ export class TyrianCompanionView extends ItemView {
 			this.addDismissAndDisarm(answers, 'stop');
 		} else {
 			stateText.setText(`${this.t('status.armed')} · ${this.t('view.detectionNextQuery')}: ${timeline.next}`);
-			this.addDisarmButton(actions);
 		}
 
-		this.renderDetectionTimeline(container, mode, state, session);
+		this.renderDetectionTimeline(container, state, session);
 
 		const extra = container.createEl('dl', { cls: 'tyrian-companion-session__rows' });
 		addDetail(extra, this.t('view.figure.cadence'),
-			this.formatInterval(mode !== 'off' && state.status === 'armed' ? state.scheduler.intervalMs : null));
+			this.formatInterval(state.status === 'armed' ? state.scheduler.intervalMs : null));
 		addDetail(extra, this.t('view.figure.apiCacheLabel'), this.t('view.figure.apiCache'));
-		if (mode !== 'off' && state.status === 'armed') this.renderDetectionQualityStatus(extra);
+		if (state.status === 'armed') this.renderDetectionQualityStatus(extra);
 	}
 
 	private renderDetectionTimeline(
 		container: HTMLElement,
-		mode: DetectionMode,
 		state: AssistedDetectionState,
 		session: SessionState,
 	): void {
 		const timeline = container.createEl('dl', { cls: 'tyrian-companion-view__detection-timeline' });
 		timeline.setAttr('aria-label', this.t('view.detectionTimeline'));
-		const values = this.projectDetectionTimeline(mode, state, session);
+		const values = this.projectDetectionTimeline(state, session);
 		this.detectionTimelineNodes = {
 			last: addDetectionTimelineItem(timeline, this.t('view.detectionLastQuery'), values.last),
 			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
@@ -1178,7 +1154,6 @@ export class TyrianCompanionView extends ItemView {
 	private refreshDetectionTimeline(): void {
 		if (this.detectionTimelineNodes === null) return;
 		const values = this.projectDetectionTimeline(
-			this.actions.getDetectionMode(),
 			this.actions.getAssistedDetectionState(),
 			this.actions.getSessionState(),
 		);
@@ -1188,7 +1163,6 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	private projectDetectionTimeline(
-		mode: DetectionMode,
 		state: AssistedDetectionState,
 		session: SessionState,
 	): { last: string; result: string; next: string } {
@@ -1198,7 +1172,7 @@ export class TyrianCompanionView extends ItemView {
 			? this.t('view.notYet')
 			: this.formatQueryClock(new Date(lastAttemptAt).toISOString());
 		let result = this.t('view.noDetectionResult');
-		if (mode === 'off' || state.status === 'disarmed') result = this.t('view.noDetectionResult');
+		if (state.status === 'disarmed') result = this.t('view.noDetectionResult');
 		else if (state.status === 'arming') result = this.t('view.baselineInProgress');
 		else if (state.status === 'start_proposed') result = this.t('view.bagSignalFound');
 		else if (state.status === 'stop_proposed') result = this.t('view.quietSignalFound');
@@ -1211,7 +1185,7 @@ export class TyrianCompanionView extends ItemView {
 			result = session.status === 'active' ? this.t('view.noStopProposal') : this.t('view.noBagSignal');
 		}
 		let next = this.t('view.notScheduled');
-		if (mode === 'off' || state.status === 'disarmed' || state.status === 'error' ||
+		if (state.status === 'disarmed' || state.status === 'error' ||
 			scheduler.status === 'fatal' || scheduler.status === 'disposed') next = this.t('view.notScheduled');
 		else if (state.status === 'arming') next = this.t('view.afterBaseline');
 		else if (state.status === 'start_proposed' || state.status === 'stop_proposed') next = this.t('view.waitingProposalReview');
@@ -1219,18 +1193,6 @@ export class TyrianCompanionView extends ItemView {
 		else if (scheduler.status === 'paused_offline') next = this.t('view.whenOnline');
 		else if (scheduler.nextRunAt !== null) next = this.formatQueryClock(new Date(scheduler.nextRunAt).toISOString());
 		return { last, result, next };
-	}
-
-	private async armDetection(): Promise<void> {
-		const arm = this.actions.armAssistedDetection();
-		this.render();
-		await arm;
-		this.render();
-	}
-
-	private addDisarmButton(actions: HTMLElement): void {
-		const disarm = actions.createEl('button', { text: this.t('view.disarm') });
-		disarm.addEventListener('click', () => this.actions.disarmAssistedDetection());
 	}
 
 	private addDismissAndDisarm(container: HTMLElement, phase: 'start' | 'stop'): void {
@@ -1337,7 +1299,6 @@ export function simpleSessionCopy(locale: Locale) {
 		capturing: t.t('sessionCard.capturing'), active: t.t('sessionCard.active'), observing: t.t('sessionCard.observing'),
 		finish: t.t('sessionCard.finish'), observationFailed: t.t('sessionCard.observationFailed'),
 		finishing: t.t('sessionCard.finishing'), reconciling: t.t('sessionCard.reconciling'),
-		reviewNeeded: t.t('sessionCard.reviewNeeded'), reviewNeededDetail: t.t('sessionCard.reviewNeededDetail'), review: t.t('sessionCard.review'),
 		summary: t.t('sessionCard.summary'), saved: t.t('sessionCard.saved'), saving: t.t('sessionCard.saving'),
 		notSaved: t.t('sessionCard.notSaved'), localSummary: t.t('sessionCard.localSummary'), retrySave: t.t('sessionCard.retrySave'),
 		openNote: t.t('sessionCard.openNote'),
@@ -1606,154 +1567,6 @@ function parsePilotBoundary(value: string): string | null {
 	return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-export class SessionContaminationReviewModal extends Modal {
-	private visible = false;
-
-	constructor(
-		app: App,
-		private readonly current: SessionContaminationAnswers | null,
-		private readonly loadTradingPostProposal: () => Promise<SessionTradingPostContaminationProposal>,
-		private readonly onSubmit: (answers: SessionContaminationAnswers) => Promise<string | null>,
-		private readonly onClosed: () => void = () => undefined,
-		private readonly getLocale: () => Locale = () => 'es',
-	) {
-		super(app);
-	}
-
-	onClose(): void {
-		this.visible = false;
-		this.onClosed();
-	}
-
-	onOpen(): void {
-		this.visible = true;
-		this.setTitle(runtimeText(this.getLocale(), 'modal.reviewTitle'));
-		this.contentEl.createEl('p', {
-			text: runtimeText(this.getLocale(), 'modal.reviewDetail'),
-		});
-		const form = this.contentEl.createEl('form', { cls: 'tyrian-companion-review' });
-		const activityFieldset = form.createEl('fieldset');
-		activityFieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.reviewQuestion') });
-		const activityInputs = new Map<SessionActivityKey, HTMLInputElement>();
-		for (const key of SESSION_ACTIVITY_KEYS) {
-			const label = activityFieldset.createEl('label');
-			const input = label.createEl('input', { type: 'checkbox' });
-			input.checked = this.current?.activities[key] ?? false;
-			label.appendText(activityLabel(key, this.getLocale()));
-			activityInputs.set(key, input);
-		}
-		this.renderTradingPostProposal(form, activityInputs);
-
-		const certaintyFieldset = form.createEl('fieldset');
-		certaintyFieldset.createEl('legend', { text: runtimeText(this.getLocale(), 'modal.noneSelected') });
-		const confirmed = radioOption(
-			certaintyFieldset,
-			'session-review-certainty',
-			'confirmed',
-			runtimeText(this.getLocale(), 'modal.confirmNone'),
-			this.current?.certainty !== 'unsure',
-		);
-		const unsure = radioOption(
-			certaintyFieldset,
-			'session-review-certainty',
-			'unsure',
-			runtimeText(this.getLocale(), 'view.unsure'),
-			this.current?.certainty === 'unsure',
-		);
-		const error = form.createEl('p', { cls: 'tyrian-companion-start-modal__error' });
-		error.setAttr('role', 'alert');
-		const actions = form.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.cancel'), type: 'button' });
-		const submit = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.saveReview'), type: 'submit', cls: 'mod-cta' });
-		cancel.addEventListener('click', () => this.close());
-		form.addEventListener('submit', (event) => {
-			event.preventDefault();
-			const activities = Object.fromEntries(
-				SESSION_ACTIVITY_KEYS.map((key) => [key, activityInputs.get(key)?.checked === true]),
-			) as SessionContaminationAnswers['activities'];
-			const answers: SessionContaminationAnswers = {
-				certainty: unsure.checked ? 'unsure' : 'confirmed',
-				activities,
-			};
-			submit.disabled = true;
-			cancel.disabled = true;
-			error.setText('');
-			void this.onSubmit(answers).then((failure) => {
-				if (failure === null) {
-					this.close();
-					return;
-				}
-				error.setText(runtimeText(this.getLocale(), 'modal.reviewSaveFailed'));
-				submit.disabled = false;
-				cancel.disabled = false;
-			}).catch(() => {
-				error.setText(runtimeText(this.getLocale(), 'modal.reviewSaveFailed'));
-				submit.disabled = false;
-				cancel.disabled = false;
-			});
-		});
-		confirmed.focus();
-	}
-
-	private renderTradingPostProposal(
-		form: HTMLFormElement,
-		activityInputs: ReadonlyMap<SessionActivityKey, HTMLInputElement>,
-	): void {
-		const section = form.createEl('section', { cls: 'tyrian-companion-review__tp-evidence' });
-		section.setAttr('aria-labelledby', 'tyrian-companion-tp-evidence-heading');
-		const heading = section.createEl('h3', {
-			text: runtimeText(this.getLocale(), 'modal.tpEvidenceHeading'),
-		});
-		heading.id = 'tyrian-companion-tp-evidence-heading';
-		const status = section.createEl('p', { text: runtimeText(this.getLocale(), 'modal.tpEvidenceLoading') });
-		status.setAttr('role', 'status');
-		status.setAttr('aria-live', 'polite');
-		void this.loadTradingPostProposal().then((proposal) => {
-			if (!this.visible) return;
-			if (proposal.status === 'unavailable') {
-				status.setText(runtimeText(this.getLocale(), proposal.reason === 'coverage_incomplete'
-					? 'modal.tpEvidencePartial' : 'modal.tpEvidenceError'));
-				return;
-			}
-			if (proposal.suggestedActivities.length === 0) {
-				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceEmpty'));
-				return;
-			}
-			status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceProposal'));
-			const list = section.createEl('ul');
-			if (proposal.suggestedActivities.includes('tpBuy')) list.createEl('li', {
-				text: runtimeText(this.getLocale(), 'modal.tpEvidenceBuy', { count: proposal.eventCounts.buys }),
-			});
-			if (proposal.suggestedActivities.includes('tpSell')) list.createEl('li', {
-				text: runtimeText(this.getLocale(), 'modal.tpEvidenceSell', { count: proposal.eventCounts.sells }),
-			});
-			const actions = section.createDiv({ cls: 'tyrian-companion-view__session-actions' });
-			const apply = actions.createEl('button', {
-				text: runtimeText(this.getLocale(), 'modal.tpEvidenceApply'), type: 'button', cls: 'mod-cta',
-			});
-			const dismiss = actions.createEl('button', {
-				text: runtimeText(this.getLocale(), 'modal.tpEvidenceDismiss'), type: 'button',
-			});
-			apply.addEventListener('click', () => {
-				for (const activity of proposal.suggestedActivities) {
-					const input = activityInputs.get(activity);
-					if (input) input.checked = true;
-				}
-				apply.disabled = true;
-				dismiss.disabled = true;
-				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceAccepted'));
-			});
-			dismiss.addEventListener('click', () => {
-				apply.disabled = true;
-				dismiss.disabled = true;
-				status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceDismissed'));
-			});
-		}).catch(() => {
-			if (this.visible) status.setText(runtimeText(this.getLocale(), 'modal.tpEvidenceError'));
-		});
-	}
-}
-
 /** `mm:ss` for the grace window. Seconds are already rounded up, so it never reads 00:00 too early. */
 function formatCountdown(totalSeconds: number): string {
 	const safeSeconds = Math.max(0, totalSeconds);
@@ -1793,15 +1606,6 @@ function radioOption(
 	input.checked = checked;
 	label.appendText(text);
 	return input;
-}
-
-function activityLabel(key: SessionActivityKey, locale: Locale): string {
-	const labels: Record<SessionActivityKey, RuntimeTranslationKey> = {
-		open: 'activity.open', salvage: 'activity.salvage', consume: 'activity.consume', craft: 'activity.craft',
-		tpBuy: 'activity.tpBuy', tpSell: 'activity.tpSell', vendorBuy: 'activity.vendorBuy', vendorSell: 'activity.vendorSell',
-		transfer: 'activity.transfer', other: 'activity.other',
-	};
-	return runtimeText(locale, labels[key]);
 }
 
 function correctionCauses(phase: 'start' | 'stop'): DetectionCorrectionCause[] {

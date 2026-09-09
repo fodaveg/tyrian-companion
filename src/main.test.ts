@@ -15,7 +15,7 @@ import { LocalDebugActionRunner } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
-import { COMPANION_VIEW_TYPE, SessionContaminationReviewModal } from './ui/companion-view';
+import { COMPANION_VIEW_TYPE } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
@@ -25,7 +25,6 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
 import type { RelevantStartProposal } from './sessions/relevant-item-start-detector';
 import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './sessions/assisted-detection-service';
-import { createAcceptedDetectionEvent, summarizeSessionDetectionQuality } from './sessions/session-detection-quality';
 import { proposalIntent, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
@@ -44,20 +43,6 @@ interface InventoryVaultIntentHarness {
 	};
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
-}
-
-interface ReviewIntentHarness {
-	app: unknown;
-	settings: { language: 'en' };
-	reviewModal: SessionContaminationReviewModal | null;
-	sessions: {
-		getContaminationReview(): null;
-		proposeTradingPostContamination(): Promise<{
-			status: 'ready'; requiresHumanReview: true; suggestedActivities: ['tpBuy'];
-			eventCounts: { buys: number; sells: number };
-		}>;
-	};
-	reviewSessionContamination(answers: unknown): Promise<string | null>;
 }
 
 describe('connection diagnostics composition', () => {
@@ -148,6 +133,9 @@ describe('Halloween backfill wiring (H14.11)', () => {
 			// implementation, not a mock, since that private method is exactly what H14.11 fixes.
 			// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 			switchHalloweenAccount: prototype.switchHalloweenAccount,
+			// Detection is always armed with a connected account now (Lote S, 2026-09-09):
+			// `checkConnection` also calls `this.armAssistedDetection`.
+			armAssistedDetection: vi.fn(async () => 'unavailable'),
 		};
 
 		await prototype.checkConnection.call(harness);
@@ -663,37 +651,6 @@ describe('product navigation diagnostics', () => {
 	});
 });
 
-describe('session review Trading Post evidence', () => {
-	it('starts the real history proposal caller when opening review without accepting any activity', async () => {
-		const proposal = vi.fn(async () => ({
-			status: 'ready' as const,
-			requiresHumanReview: true as const,
-			suggestedActivities: ['tpBuy'] as ['tpBuy'],
-			eventCounts: { buys: 1, sells: 0 },
-		}));
-		const review = vi.fn(async () => null);
-		const plugin: ReviewIntentHarness = {
-			app: {}, settings: { language: 'en' }, reviewModal: null,
-			sessions: { getContaminationReview: () => null, proposeTradingPostContamination: proposal },
-			reviewSessionContamination: review,
-		};
-		// eslint-disable-next-line @typescript-eslint/unbound-method -- Isolated real plugin method harness.
-		const prepare = (TyrianCompanionPlugin.prototype as unknown as {
-			prepareReviewIntent(this: ReviewIntentHarness): Promise<PreparedSessionCommand | null>;
-		}).prepareReviewIntent;
-
-		const pending = prepare.call(plugin);
-		await flush();
-
-		expect(proposal).toHaveBeenCalledOnce();
-		expect(plugin.reviewModal).toBeInstanceOf(SessionContaminationReviewModal);
-		expect(review).not.toHaveBeenCalled();
-		plugin.reviewModal?.close();
-		await expect(pending).resolves.toBeNull();
-		expect(review).not.toHaveBeenCalled();
-	});
-});
-
 describe('durable inventory Vault commands', () => {
 	it('does not capture on construction and previews only through the explicit command', async () => {
 		const pending = deferred<void>();
@@ -831,58 +788,57 @@ describe('configured notes root', () => {
 });
 
 describe('Halloween production gating', () => {
-	it('does not seal a Halloween episode when contamination review is saved but finalization fails', async () => {
+	// Nobody reviews a session anymore (Lote S, 2026-09-09): `reviewSessionContamination` is gone,
+	// `finalizeAndPersistStoppedSession` is the only caller of `sessions.finalizeStoppedSession()`
+	// left, and `finishFinalizedSession` is the shared step that follows a successful finalization —
+	// both a live `stop()` and `initialize()` auto-finalizing a `provisional` record now go through it.
+	it('does not touch Halloween or the note when finalization itself fails', async () => {
 		const observeHalloweenDelta = vi.fn(async () => undefined);
-		const runtimeLease = { release: vi.fn() };
 		const harness = {
-			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => runtimeLease },
+			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
 			sessions: {
-				reviewContamination: vi.fn(async () => ({
-					status: 'reviewed' as const,
-					state: { version: SESSION_STATE_VERSION, status: 'provisional' as const, sessionId: 'session-review-only' },
-					review: {},
-				})),
-				getProvisionalDelta: vi.fn(() => ({ status: 'comparable' } as StorageDelta)),
+				finalizeStoppedSession: vi.fn(async () => ({ status: 'failed' as const, message: 'boom' })),
 			},
-			detectionQuality: { getSessionSummary: () => ({ classification: { event: 'halloween' } }) },
+			sessionSummarySaveState: 'unknown' as TyrianCompanionPlugin['sessionSummarySaveState'],
+			emitNotice: vi.fn(),
+			settings: { language: 'en' as const },
 			observeHalloweenDelta,
-			renderViews: vi.fn(),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const review = (TyrianCompanionPlugin.prototype as unknown as {
-			reviewSessionContamination(this: typeof harness, answers: unknown): Promise<string | null>;
-		}).reviewSessionContamination;
-		await expect(review.call(harness, {})).resolves.toBeNull();
+		const finalize = (TyrianCompanionPlugin.prototype as unknown as {
+			finalizeAndPersistStoppedSession(this: typeof harness, sessionId: string, delta: StorageDelta): Promise<void>;
+		}).finalizeAndPersistStoppedSession;
+		await finalize.call(harness, 'session-review-only', { status: 'comparable' } as StorageDelta);
 		expect(observeHalloweenDelta).not.toHaveBeenCalled();
-		expect(harness.sessions.getProvisionalDelta).not.toHaveBeenCalled();
-		expect(runtimeLease.release).toHaveBeenCalledOnce();
+		expect(harness.sessionSummarySaveState).toBe('failed');
 	});
 
-	it('passes the review and stable delta to session_final only after finalization succeeds', async () => {
-		const proposal = halloweenProposal();
-		const accepted = createAcceptedDetectionEvent('start', 'session-final', '2026-08-13T08:00:03.000Z', proposal);
-		if (!accepted) throw new Error('Invalid accepted Halloween fixture.');
-		const summary = summarizeSessionDetectionQuality([accepted], 'session-final');
+	it('passes the review and stable delta to session_final only once finalization already succeeded', async () => {
 		const stableDelta = { status: 'comparable' } as StorageDelta;
 		const reviewEvidence = { answers: { certainty: 'confirmed' } };
 		const observeHalloweenDelta = vi.fn(async () => undefined);
 		const harness = {
-			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
-			sessions: {
-				reviewContamination: vi.fn(async () => ({ status: 'finalized' as const,
-					state: { version: SESSION_STATE_VERSION, status: 'complete' as const, sessionId: 'session-final' },
-					review: reviewEvidence })),
-				getProvisionalDelta: vi.fn(() => stableDelta),
-			},
-			detectionQuality: { getSessionSummary: () => summary },
+			pilotMetrics: null,
+			sessions: { getCompletedRuntimeRecord: vi.fn(async () => ({ marker: 'runtime' })) },
+			sessionSummarySaveState: 'unknown' as TyrianCompanionPlugin['sessionSummarySaveState'],
+			emitNotice: vi.fn(),
+			settings: { language: 'en' as const },
+			persistCompletedSessionSummary: vi.fn(async () => null),
+			refreshLootPresentation: vi.fn(async () => undefined),
+			localDebugActions: null,
 			observeHalloweenDelta,
-			renderViews: vi.fn(),
 		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with a production-method harness.
-		const review = (TyrianCompanionPlugin.prototype as unknown as {
-			reviewSessionContamination(this: typeof harness, answers: unknown): Promise<string | null>;
-		}).reviewSessionContamination;
-		await review.call(harness, {});
+		const finish = (TyrianCompanionPlugin.prototype as unknown as {
+			finishFinalizedSession(
+				this: typeof harness, sessionId: string, delta: StorageDelta,
+				reviewed: { state: { sessionId: string; finalizedAt: string }; review: unknown },
+			): Promise<void>;
+		}).finishFinalizedSession;
+		await finish.call(harness, 'session-final', stableDelta, {
+			state: { sessionId: 'session-final', finalizedAt: '2026-08-13T08:00:03.000Z' },
+			review: reviewEvidence,
+		});
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(
 			stableDelta, 'session_final', 'session:session-final', reviewEvidence,
 		);
@@ -972,7 +928,7 @@ describe('completed-session summary persistence', () => {
 		const harness = Object.assign(Object.create(proto) as object, {
 			liveSessionLoot: { reconcile: vi.fn(async () => undefined) },
 			sessions: {
-				reviewContamination: vi.fn(async () => ({
+				finalizeStoppedSession: vi.fn(async () => ({
 					status: 'finalized' as const,
 					state: { status: 'complete' as const, sessionId: 'session-final', finalizedAt: '2026-09-01T09:00:00.000Z' },
 					review: { classification: 'estimated' },

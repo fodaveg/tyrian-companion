@@ -111,7 +111,6 @@ function project(session: CompanionStatusInput['session'], now: number) {
 		now,
 		connection: { status: 'idle' },
 		session,
-		detectionMode: 'off',
 		detection: {
 			status: 'disarmed',
 			reason: 'user',

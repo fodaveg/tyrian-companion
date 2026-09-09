@@ -222,21 +222,7 @@ function completedSessionRecord() {
 	});
 	const delta = compareStorageSnapshots(baseline, final);
 	const reviewedAt = '2026-08-13T09:00:03.000Z';
-	const review = createSessionContaminationReview(baseline, final, delta, {
-		certainty: 'confirmed',
-		activities: {
-			open: false,
-			salvage: false,
-			consume: false,
-			craft: false,
-			tpBuy: false,
-			tpSell: false,
-			vendorBuy: false,
-			vendorSell: false,
-			transfer: false,
-			other: false,
-		},
-	}, reviewedAt);
+	const review = createSessionContaminationReview(baseline, final, delta, reviewedAt);
 	if (delta.status === 'invalid' || review === null || review.classification.status === 'invalid') {
 		throw new Error('Completed-session startup fixture is invalid.');
 	}

@@ -9,15 +9,11 @@ import {
 	LEGACY_SESSION_CLASSIFICATION_VERSION,
 	SESSION_CLASSIFICATION_VERSION,
 	type BoundaryEvidence,
-	type DeclaredActivity,
 	type SessionDeltaClassification,
 	type UserDeclaration,
 } from '../account/contamination-model';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
-import {
-	isTradingPostHistoryEvidence,
-} from '../account/trading-post-evidence';
 import {
 	SESSION_API_SETTLEMENTS,
 	type SessionApiSettlement,
@@ -62,46 +58,45 @@ export interface SessionContaminationReview {
 	farmedLossItemIds: number[];
 }
 
-export type SessionTradingPostContaminationProposal =
-	| {
-		status: 'ready';
-		requiresHumanReview: true;
-		suggestedActivities: Array<'tpBuy' | 'tpSell'>;
-		eventCounts: { buys: number; sells: number };
-	}
-	| {
-		status: 'unavailable';
-		reason: 'identity_mismatch' | 'window_mismatch' | 'coverage_incomplete' | 'evidence_invalid'
-			| 'no_provisional_session' | 'capture_unavailable';
-		requiresHumanReview: true;
-		suggestedActivities: [];
-	};
-
 export interface LegacySessionDeltaClassification extends Omit<SessionDeltaClassification, 'version' | 'permissions'> {
 	version: 1;
 	permissions: Omit<SessionDeltaClassification['permissions'], 'recommend'> & { recommend: false };
 }
 
+/**
+ * Fixed stand-in for the human answers this review used to require. Nobody declares or confirms
+ * anything anymore (David, 2026-09-09): the plugin trusts whatever the API delta says. The shape
+ * survives only because `answers` is still read by code outside this lote's scope
+ * (`halloween-loot-comparison.ts`'s eligibility gate for the Trick-or-Treat statistic, which this
+ * lote does not touch — see the final report).
+ */
+const AUTOMATIC_ANSWERS: SessionContaminationAnswers = {
+	certainty: 'unsure',
+	activities: {
+		open: false, salvage: false, consume: false, craft: false, tpBuy: false,
+		tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
+	},
+};
+
 export function createSessionContaminationReview(
 	before: StorageSnapshot,
 	after: StorageSnapshot,
 	delta: StorageDelta,
-	answers: unknown,
 	reviewedAt: string,
 	apiSettlement: SessionApiSettlement = 'settled',
 	farmedLossItemIds: readonly number[] = [],
 ): SessionContaminationReview | null {
-	if (!isSessionContaminationAnswers(answers) || !isIsoTimestamp(reviewedAt)) return null;
+	if (!isIsoTimestamp(reviewedAt)) return null;
 	if (Date.parse(reviewedAt) < Date.parse(after.completedAt)) return null;
 	if (!Array.isArray(farmedLossItemIds) || !farmedLossItemIds.every(isPositiveId)) return null;
 	const canonicalFarmedLossItemIds = [...new Set(farmedLossItemIds)].sort((left, right) => left - right);
 	const boundary = buildBoundaryEvidence(before, after);
-	const declaration = declarationFromAnswers(answers);
+	const declaration: UserDeclaration = { status: 'absent' };
 	const classification = classifySessionDelta(delta, {
 		boundary,
 		tradingPost: { status: 'unavailable', events: [] },
 		declaration,
-		boundaryCertainty: 'manual_confirmed',
+		boundaryCertainty: 'auto_confirmed',
 		apiSettlement,
 		farmedLossItemIds: canonicalFarmedLossItemIds,
 	});
@@ -109,7 +104,7 @@ export function createSessionContaminationReview(
 	return {
 		version: SESSION_CONTAMINATION_REVIEW_VERSION,
 		reviewedAt,
-		answers: structuredClone(answers),
+		answers: structuredClone(AUTOMATIC_ANSWERS),
 		declaration: structuredClone(declaration),
 		boundary: structuredClone(boundary),
 		classification: structuredClone(classification),
@@ -154,7 +149,6 @@ function matchesRecomputedReview(
 		before,
 		after,
 		delta,
-		value.answers,
 		value.reviewedAt as string,
 		apiSettlement,
 		Array.isArray(value.farmedLossItemIds) ? value.farmedLossItemIds as number[] : [],
@@ -239,54 +233,6 @@ export function isSessionContaminationAnswers(value: unknown): value is SessionC
 	const activities = value.activities;
 	if (!isRecord(activities) || !hasOnlyKeys(activities, SESSION_ACTIVITY_KEYS)) return false;
 	return SESSION_ACTIVITY_KEYS.every((key) => typeof activities[key] === 'boolean');
-}
-
-/**
- * Projects complete history into review suggestions only. It never changes the
- * user's answers or feeds events directly into session classification.
- */
-export function proposeTradingPostContamination(
-	evidence: unknown,
-	expectedAccountId: string,
-	expectedWindow: { from: string; to: string },
-): SessionTradingPostContaminationProposal {
-	if (!isTradingPostHistoryEvidence(evidence)) return unavailableProposal('evidence_invalid');
-	if (evidence.accountId !== expectedAccountId) return unavailableProposal('identity_mismatch');
-	if (evidence.window.from !== expectedWindow.from || evidence.window.to !== expectedWindow.to) {
-		return unavailableProposal('window_mismatch');
-	}
-	if (evidence.status !== 'complete') return unavailableProposal('coverage_incomplete');
-	const buys = evidence.events.filter((event) => event.kind === 'buy').length;
-	const sells = evidence.events.filter((event) => event.kind === 'sell').length;
-	return {
-		status: 'ready',
-		requiresHumanReview: true,
-		suggestedActivities: [
-			...(buys > 0 ? ['tpBuy' as const] : []),
-			...(sells > 0 ? ['tpSell' as const] : []),
-		],
-		eventCounts: { buys, sells },
-	};
-}
-
-function unavailableProposal(
-	reason: Extract<SessionTradingPostContaminationProposal, { status: 'unavailable' }>['reason'],
-): SessionTradingPostContaminationProposal {
-	return { status: 'unavailable', reason, requiresHumanReview: true, suggestedActivities: [] };
-}
-
-function declarationFromAnswers(answers: SessionContaminationAnswers): UserDeclaration {
-	const activities: DeclaredActivity[] = [];
-	if (answers.activities.open) activities.push('open');
-	if (answers.activities.salvage) activities.push('salvage');
-	if (answers.activities.consume) activities.push('consume');
-	if (answers.activities.craft) activities.push('craft');
-	if (answers.activities.tpBuy || answers.activities.tpSell) activities.push('tp');
-	if (answers.activities.vendorBuy || answers.activities.vendorSell) activities.push('vendor');
-	if (answers.activities.transfer) activities.push('transfer');
-	if (answers.activities.other) activities.push('other');
-	if (activities.length > 0) return { status: 'activities', activities };
-	return answers.certainty === 'confirmed' ? { status: 'confirmed_clean' } : { status: 'unsure' };
 }
 
 function isIsoTimestamp(value: unknown): value is string {

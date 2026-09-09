@@ -1,5 +1,4 @@
 import type { ConnectionState } from '../account/connection-service';
-import type { DetectionMode } from '../core/settings';
 import { createTranslator, type Locale } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import { leaseRemainingSeconds } from '../sessions/coordination-model';
@@ -47,7 +46,6 @@ export interface CompanionStatusInput {
 	now: number;
 	connection: ConnectionState;
 	session: SessionState;
-	detectionMode: DetectionMode;
 	detection: AssistedDetectionState;
 	qualityState: DetectionQualityRecorderState;
 	qualityStats: DetectionQualityStats | null;
@@ -66,10 +64,10 @@ export function buildCompanionStatus(input: CompanionStatusInput): CompanionStat
 	const t = (key: RuntimeTranslationKey, params?: Record<string, string | number>) =>
 		translateRuntime(createTranslator(locale), key, params);
 	const connection = connectionStatus(input.connection, t);
-	const detection = detectionStatus(input.detectionMode, input.detection, t);
+	const detection = detectionStatus(input.detection, t);
 	const baseSession = sessionStatus(input.session, input.now, t);
 	const session = recoverySessionStatus(input.recovery, baseSession, input.now, t);
-	const polling = pollingStatus(input.detectionMode, input.detection, input.now, t);
+	const polling = pollingStatus(input.detection, input.now, t);
 	const quality = qualityStatus(input.qualityState, input.qualityStats, input.sessionQuality, input.detection, input.delta, input.review, t);
 	const errors = statusErrors(input, t);
 	const refreshEveryMs = session.live || polling.live || hasLiveConnectionCountdown(input.connection, input.now)
@@ -129,22 +127,33 @@ function connectionStatus(state: ConnectionState, t: StatusText): CompanionStatu
 	return { value: t('status.notChecked'), tone: 'quiet' };
 }
 
+/**
+ * The Detección row now reads the detector's own state in one word, never a setting: assisted
+ * detection is always armed as soon as an account is connected (David, 9 sep 2026 — no more
+ * `detectionMode` toggle). `disarmed` only ever means "waiting for an account" here, since nothing
+ * else disarms it on purpose anymore; `arming` shares "armada" with `armed`, it is the detector
+ * already doing its job, just still capturing the baseline it needs.
+ */
 function detectionStatus(
-	mode: DetectionMode,
 	state: AssistedDetectionState,
 	t: StatusText,
 ): { item: CompanionStatusItem } {
-	if (mode === 'off') return { item: item('detection', t('status.detection'), t('status.off'), t('status.enableDetection'), 'quiet') };
-	const values: Record<AssistedDetectionState['status'], Pick<CompanionStatusItem, 'value' | 'detail' | 'tone'>> = {
-		disarmed: { value: t('status.disarmed'), detail: t('status.noPolling'), tone: 'quiet' },
-		arming: { value: t('status.arming'), detail: t('status.capturingBaseline'), tone: 'active' },
-		armed: { value: t('status.armed'), detail: t('status.watchingSignals'), tone: 'good' },
-		start_proposed: { value: t('status.startProposed'), detail: t('status.waitingReview'), tone: 'warning' },
-		stop_proposed: { value: t('status.stopProposed'), detail: t('status.waitingReview'), tone: 'warning' },
-		error: { value: t('status.error'), detail: t('status.detectionStopped'), tone: 'error' },
+	if (state.status === 'disarmed') {
+		return { item: item('detection', t('status.detection'), t('status.waitingAccount'), t('status.waitingAccountDetail'), 'quiet') };
+	}
+	if (state.status === 'start_proposed' || state.status === 'stop_proposed') {
+		return { item: item('detection', t('status.detection'), t('status.proposing'), t('status.waitingReview'), 'warning') };
+	}
+	if (state.status === 'error') {
+		return { item: item('detection', t('status.detection'), t('status.error'), t('status.detectionStopped'), 'error') };
+	}
+	const arming = state.status === 'arming';
+	return {
+		item: item(
+			'detection', t('status.detection'), t('status.armed'),
+			arming ? t('status.capturingBaseline') : t('status.watchingSignals'), arming ? 'active' : 'good',
+		),
 	};
-	const value = values[state.status];
-	return { item: item('detection', t('status.detection'), value.value, value.detail, value.tone) };
 }
 
 type StatusText = (key: RuntimeTranslationKey, params?: Record<string, string | number>) => string;
@@ -238,7 +247,10 @@ function sessionStatus(
 		return { item: item('session', t('status.session'), t('status.stopping'), t('status.stoppingDetail', { duration }), 'active'), live };
 	}
 	if (state.status === 'provisional') {
-		return { item: item('session', t('status.session'), t('status.reviewNeeded'), t('status.reviewDetail', { duration }), 'warning'), live };
+		// Nobody reviews a session anymore (David, 2026-09-09): this is only the brief gap between
+		// the final capture and the automatic finalize that follows it, never a state that waits on
+		// a human.
+		return { item: item('session', t('status.session'), t('status.saving'), t('status.savingDetail', { duration }), 'active'), live };
 	}
 	return {
 		item: item('session', t('status.session'), t('status.complete'), t('status.completeDetail', {
@@ -250,12 +262,10 @@ function sessionStatus(
 }
 
 function pollingStatus(
-	mode: DetectionMode,
 	detection: AssistedDetectionState,
 	now: number,
 	t: StatusText,
 ): { item: CompanionStatusItem; live: boolean } {
-	if (mode === 'off') return { item: item('polling', t('status.polling'), t('status.off'), t('status.enableDetection'), 'quiet'), live: false };
 	if (detection.status === 'disarmed') {
 		return { item: item('polling', t('status.polling'), t('status.stopped'), t('status.armToBegin'), 'quiet'), live: false };
 	}
@@ -364,8 +374,8 @@ function statusErrors(input: CompanionStatusInput, t: StatusText): string[] {
 	if (input.stopFailure) errors.push(t('status.stopIncident', { detail: stopFailureLabel(input.stopFailure.code, t) }));
 	if (sessionHasClockIncident(input.session, input.now)) errors.push(t('status.sessionIncident', { detail: t('status.clockInvalid') }));
 	if (input.review?.classification.status === 'invalid' || input.delta?.status === 'invalid') errors.push(t('status.qualityIncident', { detail: t('status.capturedEvidenceInvalid') }));
-	if (input.detectionMode !== 'off' && input.detection.status === 'error') errors.push(t('status.detectionIncident', { detail: t('status.detectionStopped') }));
-	if (input.detectionMode !== 'off' && input.detection.scheduler.status === 'fatal') errors.push(t('status.pollingFatal'));
+	if (input.detection.status === 'error') errors.push(t('status.detectionIncident', { detail: t('status.detectionStopped') }));
+	if (input.detection.scheduler.status === 'fatal') errors.push(t('status.pollingFatal'));
 	if (input.connection.status === 'error') errors.push(t('status.connectionIncident', { detail: connectionFailureLabel(input.connection.code, t) }));
 	if (input.connection.status === 'warning') errors.push(t('status.connectionIncident', { detail: t('status.attention') }));
 	if ((input.connection.status === 'warning' || input.connection.status === 'error') && hasLiveConnectionCountdown(input.connection, input.now)) errors.push(t('status.connectionIncident', { detail: t('status.cooldownActive') }));
@@ -434,8 +444,8 @@ function hasErrorIncident(input: CompanionStatusInput): boolean {
 		|| sessionHasClockIncident(input.session, input.now)
 		|| input.review?.classification.status === 'invalid'
 		|| input.delta?.status === 'invalid'
-		|| (input.detectionMode !== 'off' && input.detection.status === 'error')
-		|| (input.detectionMode !== 'off' && input.detection.scheduler.status === 'fatal')
+		|| input.detection.status === 'error'
+		|| input.detection.scheduler.status === 'fatal'
 		|| input.connection.status === 'error'
 		|| input.qualityState.status === 'unavailable';
 }

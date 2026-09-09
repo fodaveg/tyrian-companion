@@ -16,13 +16,15 @@ afterEach(() => {
 });
 
 describe('product action surface', () => {
-	it('has exact 16-command parity with the requested 2/7/2/5 groups', () => {
+	// `review-session` is gone (Lote S, 2026-09-09: nobody reviews a session anymore), so the
+	// session group drops from 7 to 6 and the total from 16 to 15.
+	it('has exact 15-command parity with the requested 2/6/2/5 groups', () => {
 		const controller = createController();
-		expect(PRODUCT_ACTION_IDS).toHaveLength(16);
-		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(16);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(15);
+		expect(new Set(PRODUCT_ACTION_IDS).size).toBe(15);
 		expect(controller.all().find((action) => action.id === 'open-companion')?.group).toBe('navigation');
 		expect(controller.all().filter((action) => action.group === 'navigation')).toHaveLength(2);
-		expect(controller.all().filter((action) => action.group === 'session')).toHaveLength(7);
+		expect(controller.all().filter((action) => action.group === 'session')).toHaveLength(6);
 		expect(controller.all().filter((action) => action.group === 'detection')).toHaveLength(2);
 		expect(controller.all().filter((action) => action.group === 'inventory')).toHaveLength(5);
 	});
@@ -49,7 +51,7 @@ describe('product action surface', () => {
 		const panel = panelMount.element as unknown as FakeElement;
 		const elements = walk(panel);
 		const actions = elements.filter((element) => element.className.includes('tyrian-action-panel__action'));
-		expect(actions).toHaveLength(16);
+		expect(actions).toHaveLength(15);
 		const refresh = actions.find((element) => element.attributes.get('data-command-id') === 'refresh-inventory-advisor')!;
 		const refreshButton = walk(refresh).find((element) => element.tag === 'button')!;
 		expect(refreshButton.disabled).toBe(true);
@@ -201,7 +203,7 @@ describe('product action surface', () => {
 		expect(openSettings).toHaveBeenCalledOnce();
 	});
 
-	it('keeps expert commands in the palette without mounting the 16-action panel at any width', () => {
+	it('keeps expert commands in the palette without mounting the 15-action panel at any width', () => {
 		const document = installFakeDocument();
 		const root = new FakeElement('div', document);
 		const mount = renderProductShell(root as unknown as HTMLElement, {
@@ -209,7 +211,7 @@ describe('product action surface', () => {
 		});
 		expect(walk(root).some((element) => element.className.includes('tyrian-action-panel'))).toBe(false);
 		expect((mount.panel as unknown as FakeElement).hidden).toBe(true);
-		expect(PRODUCT_ACTION_IDS).toHaveLength(16);
+		expect(PRODUCT_ACTION_IDS).toHaveLength(15);
 		mount.dispose();
 	});
 });

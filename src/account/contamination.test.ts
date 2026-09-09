@@ -93,50 +93,50 @@ describe('buildBoundaryEvidence', () => {
 });
 
 describe('classifySessionDelta', () => {
-	it('rejects a classification envelope outside the producer status/confidence matrix', () => {
+	// The cross-check against reasons/permissions (`validClassificationSemantics`) is gone (Lote S,
+	// 2026-09-09): two independently maintained vocabularies drifting apart is exactly what
+	// corrupted a real save that day (`ESTIMATE_REVIEW` vs. the classifier). The validator now only
+	// checks FORM: known types, enums, known reason/review codes, canonical ordering, no duplicates —
+	// which is also what lets a record persisted before that date (non-empty `reviewRequests`,
+	// `permissions.finalize: false`, even `status: 'contaminated'`) keep reading back.
+	it('validates the classification envelope by form only, never by cross-checking reasons or permissions', () => {
 		const exact = classifySessionDelta(cleanDelta(), exactContext());
 		expect(isSessionDeltaClassification(exact)).toBe(true);
+
+		// Status/confidence pairing is still a FORM rule (a closed enum pair), not a cross-check.
 		expect(isSessionDeltaClassification({ ...exact, confidence: 'medium', permissions: {
 			...exact.permissions, recommend: false,
 		} })).toBe(false);
+
+		// A reason unrelated to `exact`, or `finalize: false` on any status, or even `contaminated`
+		// with a legacy-shaped envelope: all shape-valid now, exactly what a pre-Lote-S record needs.
 		expect(isSessionDeltaClassification({
 			...exact, reasons: [{ code: 'activity_declared', detail: 'open' }],
+		})).toBe(true);
+		expect(isSessionDeltaClassification({
+			...exact, status: 'contaminated', confidence: 'high',
+			reasons: [{ code: 'activity_declared', detail: 'tp' }],
+			permissions: { finalize: false, showNet: true, valueNet: false, grossPerHour: false, recommend: false },
+		})).toBe(true);
+		expect(isSessionDeltaClassification({
+			...exact, permissions: { ...exact.permissions, finalize: false },
+		})).toBe(true);
+
+		// Genuine shape violations still fail: an unknown reason code, a status/confidence pair
+		// outside the producer matrix, `activity_declared` with an invalid or missing `detail`, and
+		// duplicate reasons.
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'not-a-real-reason' }],
+		})).toBe(false);
+		expect(isSessionDeltaClassification({ ...exact, confidence: 'medium' })).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'activity_declared', detail: 'not-an-activity' }],
 		})).toBe(false);
 		expect(isSessionDeltaClassification({
-			...exact, status: 'contaminated', reasons: [],
-			permissions: { finalize: true, showNet: true, valueNet: false, grossPerHour: false, recommend: false },
+			...exact, reasons: [{ code: 'activity_declared' }],
 		})).toBe(false);
 		expect(isSessionDeltaClassification({
-			...exact, status: 'invalid', confidence: 'low', reasons: [{ code: 'wallet_increase_clean_confirmation_used' }],
-			permissions: { finalize: false, showNet: false, valueNet: false, grossPerHour: false, recommend: false },
-		})).toBe(false);
-		const estimated = classifySessionDelta(cleanDelta(), { ...exactContext(), declaration: { status: 'unsure' } });
-		expect(isSessionDeltaClassification({ ...estimated, reviewRequests: [] })).toBe(false);
-		expect(isSessionDeltaClassification({ ...estimated, permissions: {
-			...estimated.permissions, finalize: false,
-		} })).toBe(false);
-		const low = classifySessionDelta(cleanDelta(), exactContext({ declaration: { status: 'absent' } }));
-		expect(isSessionDeltaClassification({ ...low, permissions: { ...low.permissions, finalize: false } })).toBe(false);
-		const limitedBefore = withoutDelivery(storageDeltaSnapshot());
-		const limitedAfter = withoutDelivery(afterSnapshot());
-		const accepted = classifySessionDelta(compareStorageSnapshots(limitedBefore, limitedAfter), exactContext({
-			boundary: buildBoundaryEvidence(limitedBefore, limitedAfter),
-		}));
-		expect(isSessionDeltaClassification(accepted)).toBe(true);
-		expect(isSessionDeltaClassification({ ...accepted, permissions: {
-			...accepted.permissions, finalize: false,
-		} })).toBe(false);
-		expect(isSessionDeltaClassification({
-			...exact, reasons: [{ code: 'wallet_increase_clean_confirmation_used', detail: 'open' }],
-		})).toBe(false);
-		const contaminated = classifySessionDelta(cleanDelta(), exactContext({
-			declaration: { status: 'activities', activities: ['open'] },
-		}));
-		expect(isSessionDeltaClassification({
-			...contaminated, reasons: [{ code: 'activity_declared', detail: 'not-an-activity' }],
-		})).toBe(false);
-		expect(isSessionDeltaClassification({
-			...contaminated, reasons: [{ code: 'activity_declared' }],
+			...exact, reasons: [{ code: 'wallet_decreased' }, { code: 'wallet_decreased' }],
 		})).toBe(false);
 	});
 	it('classifies full, manually confirmed, clean evidence as exact', () => {
@@ -254,28 +254,31 @@ describe('classifySessionDelta', () => {
 		)).toMatchObject({ status: 'estimated' });
 	});
 
-	it('allows a clean confirmation to substitute unavailable TP evidence with an info reason', () => {
+	// Nobody confirms anything anymore (Lote S, 2026-09-09): an unavailable Trading Post read no
+	// longer leaves an information reason behind on an otherwise clean, exact reading.
+	it('stays exact with no info reason when Trading Post evidence is unavailable', () => {
 		const result = classifySessionDelta(
 			cleanDelta(),
 			exactContext({ tradingPost: { status: 'unavailable', events: [] } }),
 		);
 
-		expect(result.status).toBe('exact');
-		expect(result.reasons).toContainEqual({
-			code: 'trading_post_not_complete_clean_declaration_used',
-		});
+		expect(result).toMatchObject({ status: 'exact', reasons: [] });
 	});
 
-	it.each([
-		['auto-confirmed boundary', exactContext({ boundaryCertainty: 'auto_confirmed' }), 'medium'],
-		['uncertain boundary', exactContext({ boundaryCertainty: 'auto_uncertain' }), 'low'],
-		['unsure declaration', exactContext({ declaration: { status: 'unsure' } }), 'medium'],
-		['absent declaration', exactContext({ declaration: { status: 'absent' } }), 'low'],
-	])('classifies %s as estimated', (_label, context, confidence) => {
-		expect(classifySessionDelta(cleanDelta(), context)).toMatchObject({
-			status: 'estimated',
-			confidence,
-		});
+	// The four cases this it.each replaced ('auto-confirmed boundary', 'uncertain boundary',
+	// 'unsure declaration', 'absent declaration') all degraded a clean reading to `estimated` on
+	// their own before Lote S (2026-09-09). None of them do anymore: `boundaryCertainty` and
+	// `declaration` only ever affect CONFIDENCE now, and only once something else has already
+	// degraded the reading — see the `auto_uncertain` case inside the wallet-increase tests below.
+	it('never degrades a clean reading on boundaryCertainty or declaration alone', () => {
+		for (const context of [
+			exactContext({ boundaryCertainty: 'auto_confirmed' }),
+			exactContext({ boundaryCertainty: 'auto_uncertain' }),
+			exactContext({ declaration: { status: 'unsure' } }),
+			exactContext({ declaration: { status: 'absent' } }),
+		]) {
+			expect(classifySessionDelta(cleanDelta(), context)).toMatchObject({ status: 'exact', confidence: 'high' });
+		}
 	});
 
 	it('classifies a limited delta as estimated and allows finalization only after manual clean acceptance', () => {
@@ -296,7 +299,11 @@ describe('classifySessionDelta', () => {
 		});
 	});
 
-	it('keeps a wallet increase estimated without a clean declaration', () => {
+	// A wallet increase never degrades or contaminates on its own anymore (Lote S, 2026-09-09):
+	// `wallet_increase_clean_confirmation_used` is gone entirely (there is no clean declaration left
+	// to use it), and `wallet_increased_ambiguous` is purely informational — it only rides along an
+	// `estimated` reading when a bazaar signal below explains and degrades it separately.
+	it('keeps a wallet increase exact information regardless of declaration or boundary certainty', () => {
 		const before = storageDeltaSnapshot({ currencies: [walletCurrency(1, 100)] });
 		const after = afterSnapshot({ currencies: [walletCurrency(1, 120)] });
 		const result = classifySessionDelta(
@@ -306,20 +313,8 @@ describe('classifySessionDelta', () => {
 				declaration: { status: 'absent' },
 			}),
 		);
-		expect(result.status).toBe('estimated');
+		expect(result).toMatchObject({ status: 'exact', confidence: 'high' });
 		expect(result.reasons).toContainEqual({ code: 'wallet_increased_ambiguous' });
-	});
-
-	it('resolves a wallet increase with clean declaration and manual boundaries', () => {
-		const before = storageDeltaSnapshot({ currencies: [walletCurrency(1, 100)] });
-		const after = afterSnapshot({ currencies: [walletCurrency(1, 120)] });
-		const result = classifySessionDelta(
-			compareStorageSnapshots(before, after),
-			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
-		);
-
-		expect(result.status).toBe('exact');
-		expect(result.reasons).toContainEqual({ code: 'wallet_increase_clean_confirmation_used' });
 	});
 
 	// H14.1: an ambiguous wallet increase only degrades when a bazaar sale or a delivery coin
@@ -358,9 +353,12 @@ describe('classifySessionDelta', () => {
 				},
 			}),
 		);
+		// The Trading Post sale itself degrades the reading (`tp_sell_observed`); the ambiguous
+		// wallet increase stays purely informational alongside it, and nobody reviews either.
 		expect(result.status).toBe('estimated');
 		expect(result.reasons).toContainEqual({ code: 'wallet_increased_ambiguous' });
-		expect(result.reviewRequests).toContainEqual({ code: 'review_wallet_increase' });
+		expect(result.reasons).toContainEqual({ code: 'tp_sell_observed' });
+		expect(result.reviewRequests).toEqual([]);
 	});
 
 	// H14.1: spending a non-monetary wallet currency (keys, vials, magic) is the farming being
@@ -398,7 +396,7 @@ describe('classifySessionDelta', () => {
 		);
 		expect(result.status).toBe('estimated');
 		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
-		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		expect(result.reviewRequests).toEqual([]);
 	});
 
 	// H14.1: the classifier is synchronous, so a caller who already resolved the public catalog
@@ -425,7 +423,7 @@ describe('classifySessionDelta', () => {
 		);
 		expect(result.status).toBe('estimated');
 		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
-		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		expect(result.reviewRequests).toEqual([]);
 	});
 
 	it.each([
@@ -473,14 +471,15 @@ describe('classifySessionDelta', () => {
 	});
 
 	// H14.1: the boundary measures these directly, so they bracket the yield into a band instead
-	// of discarding it outright. Only a self-reported activity fully contaminates (below).
+	// of discarding it outright. Nothing self-reported can contaminate it anymore (Lote S,
+	// 2026-09-09), and nobody reviews it either.
 	it.each([
 		['delivery item change', deliveryEvidenceFixtures.items, 'delivery_items_changed'],
 		['delivery coin change', deliveryEvidenceFixtures.coins, 'delivery_coins_changed'],
 	])('classifies %s as estimated', (_label, boundary, code) => {
 		const result = classifySessionDelta(cleanDelta(), exactContext({ boundary }));
 		expect(result.status).toBe('estimated');
-		expect(result.reviewRequests).toContainEqual({ code: 'review_detected_external_activity' });
+		expect(result.reviewRequests).toEqual([]);
 		expect(result.reasons).toContainEqual({ code });
 	});
 
@@ -555,7 +554,7 @@ describe('classifySessionDelta', () => {
 		// only the confidence drops.
 		expect(result).toMatchObject({
 			status: 'estimated',
-			reviewRequests: [{ code: 'review_limited_surface' }],
+			reviewRequests: [],
 			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: false },
 		});
 		expect(result.reasons).toContainEqual({ code: 'character_unobserved' });
@@ -563,45 +562,28 @@ describe('classifySessionDelta', () => {
 		expect(isSessionDeltaClassification(result)).toBe(true);
 	});
 
+	// The three cases this replaces ('classifies declared %s activity as contaminated' for the
+	// seven non-open activities, 'classifies a declared opening as exact...', 'still contaminates
+	// when an opening is declared next to real external activity') covered a self-reported
+	// declaration contaminating or informing a reading. Nobody declares anything anymore (Lote S,
+	// 2026-09-09): a `declaration` of `{ status: 'activities', ... }` is now completely inert —
+	// it reads back on an old record, but a live classification never receives one at all
+	// (`createSessionContaminationReview` always passes `{ status: 'absent' }`).
 	it.each<DeclaredActivity>([
-		'salvage', 'consume', 'craft', 'tp', 'vendor', 'transfer', 'other',
-	])('classifies declared %s activity as contaminated', (activity) => {
+		'open', 'salvage', 'consume', 'craft', 'tp', 'vendor', 'transfer', 'other',
+	])('ignores a declared %s activity entirely: the reading stays exact', (activity) => {
 		const result = classifySessionDelta(
 			cleanDelta(),
 			exactContext({ declaration: { status: 'activities', activities: [activity] } }),
-		);
-		expect(result).toMatchObject({
-			status: 'contaminated',
-			permissions: { finalize: true, showNet: true, valueNet: false, grossPerHour: false },
-		});
-	});
-
-	// H13.6/H14.1: opening containers is the farming being measured, not activity that pollutes or
-	// even degrades it. A declaration of "open" alone keeps the session exact/high.
-	it('classifies a declared opening as exact and keeps every permission', () => {
-		const result = classifySessionDelta(
-			cleanDelta(),
-			exactContext({ declaration: { status: 'activities', activities: ['open'] } }),
 		);
 		expect(result).toMatchObject({
 			status: 'exact',
 			confidence: 'high',
 			permissions: { finalize: true, showNet: true, valueNet: true, grossPerHour: true, recommend: true },
 		});
-		expect(result.reasons).toContainEqual({ code: 'open_activity_declared' });
-		expect(result.reasons).toContainEqual({ code: 'declaration_not_clean' });
+		expect(result.reasons).toEqual([]);
 		expect(result.reviewRequests).toEqual([]);
 		expect(isSessionDeltaClassification(result)).toBe(true);
-	});
-
-	it('still contaminates when an opening is declared next to real external activity', () => {
-		const result = classifySessionDelta(
-			cleanDelta(),
-			exactContext({ declaration: { status: 'activities', activities: ['open', 'tp'] } }),
-		);
-		expect(result.status).toBe('contaminated');
-		expect(result.reasons).toContainEqual({ code: 'activity_declared', detail: 'tp' });
-		expect(result.reasons).not.toContainEqual({ code: 'activity_declared', detail: 'open' });
 	});
 
 	// H14.1: a clean declaration no longer shields the reading from evidence the boundary can
@@ -655,13 +637,15 @@ describe('classifySessionDelta', () => {
 			});
 			return [cleanDelta(), context];
 		}],
-	])('gives invalid priority for %s and blocks every permission', (_label, arrange) => {
+	// `finalize` is `true` even here now (Lote S, 2026-09-09): nothing blocks finalization anymore,
+	// not even a technical failure — the plugin trusts the API and saves whatever it read.
+	])('gives invalid priority for %s and blocks every value/recommendation permission', (_label, arrange) => {
 		const [delta, context] = arrange();
 		const result = classifySessionDelta(delta, context);
 		expect(result).toMatchObject({
 			status: 'invalid',
 			permissions: {
-				finalize: false,
+				finalize: true,
 				showNet: false,
 				valueNet: false,
 				grossPerHour: false,
@@ -737,7 +721,7 @@ describe('classifySessionDelta', () => {
 		expect(classifySessionDelta(delta, context)).toMatchObject({
 			status: 'invalid',
 			permissions: {
-				finalize: false,
+				finalize: true,
 				showNet: false,
 				valueNet: false,
 				grossPerHour: false,

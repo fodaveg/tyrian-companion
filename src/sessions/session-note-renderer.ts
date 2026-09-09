@@ -9,7 +9,6 @@ import { createTranslator } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import { buildLootPresentation } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
-import type { SessionActivityKey } from './session-contamination-review';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
@@ -292,9 +291,6 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 
 function renderEvidence(note: PreparedSessionNote): string {
 	const classification = note.runtime.review.classification;
-	const activities = Object.entries(note.runtime.review.answers.activities)
-		.filter(([, active]) => active)
-		.map(([key]) => localizedActivity(key as SessionActivityKey, note.locale));
 	const confidence = localizedConfidence(classification.confidence, note.locale);
 	const evidenceStatus = classification.status === 'exact' || classification.status === 'contaminated'
 		? classification.status : 'estimated';
@@ -305,7 +301,6 @@ function renderEvidence(note: PreparedSessionNote): string {
 		...(classification.reasons.length > 0
 			? classification.reasons.map((reason) => `- ${noteText(note.locale, 'markdown.reason')}: ${reasonText(reason, note.locale)}`)
 			: [`- ${noteText(note.locale, 'note.reasons')}: ${noteText(note.locale, 'note.none')}`]),
-		`- ${noteText(note.locale, 'note.declaredActivity')}: ${activities.length > 0 ? activities.join(', ') : noteText(note.locale, 'note.none')}`,
 		...renderItemIdSection(note, 'note.firstSeenItems', note.firstSeenItemIds),
 		...renderItemIdSection(note, 'note.rareUnpricedOrBoundItems', note.rareUnpricedOrBoundItemIds),
 	].join('\n');
@@ -554,15 +549,6 @@ function localizedConfidence(
 		high: 'enum.confidence.high', medium: 'enum.confidence.medium', low: 'enum.confidence.low',
 	};
 	return noteText(locale, keys[confidence]);
-}
-
-function localizedActivity(key: SessionActivityKey, locale: PreparedSessionNote['locale']): string {
-	const keys: Record<SessionActivityKey, RuntimeTranslationKey> = {
-		open: 'activity.open', salvage: 'activity.salvage', consume: 'activity.consume', craft: 'activity.craft',
-		tpBuy: 'activity.tpBuy', tpSell: 'activity.tpSell', vendorBuy: 'activity.vendorBuy', vendorSell: 'activity.vendorSell',
-		transfer: 'activity.transfer', other: 'activity.other',
-	};
-	return noteText(locale, keys[key]);
 }
 
 function localizedReason(code: SessionClassificationReasonCode, locale: PreparedSessionNote['locale']): string {

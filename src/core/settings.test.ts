@@ -116,20 +116,25 @@ describe('migrateSettings', () => {
 	});
 
 	it('validates enums, optional character, and polling interval', () => {
-		expect(
-			migrateSettings({
-				language: 'fr',
-				preferredCharacter: '  Kasmeer  ',
-				pollingIntervalMinutes: 1,
-				detectionMode: 'automatic',
-			}),
-		).toMatchObject({
+		const migrated = migrateSettings({
+			language: 'fr',
+			preferredCharacter: '  Kasmeer  ',
+			pollingIntervalMinutes: 1,
+		});
+		expect(migrated).toMatchObject({
 			language: 'en',
 			preferredCharacter: 'Kasmeer',
 			pollingIntervalMinutes: 10,
-			detectionMode: 'off',
 		});
 		expect(migrateSettings({ pollingIntervalMinutes: 2 })).toMatchObject({ pollingIntervalMinutes: 10 });
+	});
+
+	// `detectionMode` is gone (Lote S, 2026-09-09: assisted detection is always armed with a
+	// connected account, no more on/off setting). A `data.json` written by an older version still
+	// has the field; migration simply never reads it into the normalized settings.
+	it('ignores a legacy detectionMode field without failing', () => {
+		const migrated = migrateSettings({ apiKeySecret: 'gw2-primary', detectionMode: 'assisted' });
+		expect(migrated).not.toHaveProperty('detectionMode');
 	});
 
 	it('keeps only the SecretStorage name', () => {

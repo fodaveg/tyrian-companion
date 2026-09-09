@@ -31,7 +31,6 @@ export const ALERT_INGAME_MAX_PORT = 65_535;
 export const DEFAULT_ALERT_INGAME_PORT = 47_823;
 
 export type Language = 'es' | 'en';
-export type DetectionMode = 'off' | 'assisted';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
 
 export type InventoryVaultSyncRunStatus = 'success' | 'error';
@@ -64,7 +63,6 @@ export interface TyrianSettings {
 	outputFolder: string;
 	preferredCharacter: string;
 	pollingIntervalMinutes: number;
-	detectionMode: DetectionMode;
 	/** Exhaustive local-only diagnostics. Opt-in: a default install must not write a journal. */
 	debugLoggingEnabled: boolean;
 	/** Minimum severity retained by the local diagnostic writer. */
@@ -128,7 +126,6 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	preferredCharacter: '',
 	// Public cadence: one account poll every ten minutes unless the user picks another one.
 	pollingIntervalMinutes: 10,
-	detectionMode: 'off',
 	debugLoggingEnabled: false,
 	debugLoggingLevel: 'warn',
 	managedAssetsRoot: null,
@@ -201,10 +198,9 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			POLLING_INTERVALS.has(data.pollingIntervalMinutes)
 				? data.pollingIntervalMinutes
 				: DEFAULT_SETTINGS.pollingIntervalMinutes,
-		detectionMode:
-			data.detectionMode === 'assisted' || data.detectionMode === 'off'
-				? data.detectionMode
-				: DEFAULT_SETTINGS.detectionMode,
+		// `detectionMode` is gone (David, 2026-09-09: assisted detection is always armed with a
+		// connected account, no more on/off setting). A `data.json` written by an older version
+		// still has the field; it is simply never read into the normalized settings below.
 		// Logging was introduced in v11. Trust only its closed v11/v12 shapes so
 		// this unrelated bump preserves a valid opt-out without accepting future data.
 		debugLoggingEnabled: hasExplicitDebugSettings(data.schemaVersion)

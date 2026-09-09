@@ -12,7 +12,6 @@ import {
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
-import type { SessionContaminationAnswers } from './session-contamination-review';
 import {
 	ManualSessionStartService,
 	type ManualSessionStopResult,
@@ -401,7 +400,7 @@ describe('ManualSessionStartService', () => {
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await stopAfterSettlement(service);
 
-		const reviewed = await service.reviewContamination(reviewAnswers());
+		const reviewed = await service.finalizeStoppedSession();
 
 		expect(farmedLossItemTypeCapture.capture).toHaveBeenCalledWith([100]);
 		expect(reviewed).toMatchObject({
@@ -429,13 +428,15 @@ describe('ManualSessionStartService', () => {
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await stopAfterSettlement(service);
 
-		const reviewed = await service.reviewContamination(reviewAnswers());
+		const reviewed = await service.finalizeStoppedSession();
 
 		expect(reviewed).toMatchObject({
 			status: 'finalized',
 			review: {
 				farmedLossItemIds: [],
-				classification: { status: 'estimated', reviewRequests: [{ code: 'review_consumed_inputs' }] },
+				// Nobody reviews anything anymore (Lote S, 2026-09-09): a degraded classification
+				// never asks for one.
+				classification: { status: 'estimated', reviewRequests: [] },
 			},
 		});
 	});
@@ -552,7 +553,7 @@ describe('ManualSessionStartService', () => {
 		});
 		expect(service.getProvisionalDelta()?.warnings).toContainEqual({ code: 'character_unobserved' });
 
-		const reviewed = await service.reviewContamination(reviewAnswers());
+		const reviewed = await service.finalizeStoppedSession();
 
 		expect(reviewed).toMatchObject({
 			status: 'finalized',
@@ -699,7 +700,7 @@ describe('ManualSessionStartService', () => {
 		expect(stopped).toMatchObject({ status: 'stopped' });
 		expect(service.getState()).toMatchObject({ status: 'provisional' });
 
-		const reviewed = await service.reviewContamination(reviewAnswers());
+		const reviewed = await service.finalizeStoppedSession();
 		expect(reviewed).toMatchObject({
 			status: 'finalized',
 			review: { classification: { status: 'exact' } },
@@ -713,59 +714,14 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
-	it('persists declared activity as a contaminated completed session', async () => {
-		const service = new ManualSessionStartService(
-			coordinator(),
-			{
-				capture: vi.fn(async () => structuredClone(captured)),
-				captureFinal: vi.fn(async () => afterSnapshot()),
-			},
-			serviceOptions(),
-		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await stopAfterSettlement(service);
-		const answers = reviewAnswers();
-		answers.activities.salvage = true;
+	// The two tests this replaces ("persists declared activity as a contaminated completed
+	// session" and "persists a declared opening as an exact completed session") covered a human
+	// declaration turning a review contaminated/exact through `activities.salvage`/`activities.open`.
+	// `finalizeStoppedSession()` takes no answers at all anymore (Lote S, 2026-09-09: nobody
+	// declares or confirms anything, the plugin trusts the API) so that input no longer exists;
+	// `contamination.test.ts` covers `declaration: { status: 'absent' }` never contaminating.
 
-		await expect(service.reviewContamination(answers)).resolves.toMatchObject({
-			status: 'finalized',
-			review: { declaration: { status: 'activities', activities: ['salvage'] } },
-			state: { status: 'complete', classification: 'contaminated' },
-		});
-	});
-
-	// H13.6/H14.1 wiring: the service is the caller that turns the human answers into a
-	// classification, so the opening rule has to hold here and not only inside the kernel. A bare
-	// "open" declaration with no other evidence of external activity keeps the session exact/high.
-	it('persists a declared opening as an exact completed session with every permission granted', async () => {
-		const service = new ManualSessionStartService(
-			coordinator(),
-			{
-				capture: vi.fn(async () => structuredClone(captured)),
-				captureFinal: vi.fn(async () => afterSnapshot()),
-			},
-			serviceOptions(),
-		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		await stopAfterSettlement(service);
-		const answers = reviewAnswers();
-		answers.activities.open = true;
-
-		const result = await service.reviewContamination(answers);
-
-		expect(result).toMatchObject({
-			status: 'finalized',
-			review: {
-				declaration: { status: 'activities', activities: ['open'] },
-				classification: { status: 'exact', permissions: { valueNet: true, grossPerHour: true, recommend: true } },
-			},
-			state: { status: 'complete', classification: 'exact' },
-		});
-		expect(result.status === 'finalized' ? result.review.classification.reasons : null)
-			.toContainEqual({ code: 'open_activity_declared' });
-	});
-
-	it('finalizes an unsure review as an estimated durable summary', async () => {
+	it('finalizes automatically with no answers, and a second finalize on an already-complete session fails', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const service = new ManualSessionStartService(
 			coordinator(),
@@ -777,18 +733,15 @@ describe('ManualSessionStartService', () => {
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await stopAfterSettlement(service);
-		await expect(service.reviewContamination(reviewAnswers('unsure'))).resolves.toMatchObject({
+		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({
 			status: 'finalized',
-			review: { classification: { status: 'estimated', permissions: { finalize: true } } },
-			state: { status: 'complete', classification: 'estimated' },
+			review: { classification: { status: 'exact', permissions: { finalize: true } } },
+			state: { status: 'complete', classification: 'exact' },
 		});
 		await expect(runtimeStore.load()).resolves.toMatchObject({
-			status: 'loaded', record: {
-				state: { status: 'complete', classification: 'estimated' },
-				review: { answers: { certainty: 'unsure' } },
-			},
+			status: 'loaded', record: { state: { status: 'complete', classification: 'exact' } },
 		});
-		await expect(service.reviewContamination(reviewAnswers())).resolves.toMatchObject({ status: 'failed' });
+		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({ status: 'failed' });
 	});
 
 	it('loads a completed reviewed session without treating it as crash recovery and resets it explicitly', async () => {
@@ -803,7 +756,7 @@ describe('ManualSessionStartService', () => {
 		);
 		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
 		await stopAfterSettlement(first);
-		await first.reviewContamination(reviewAnswers());
+		await first.finalizeStoppedSession();
 
 		const second = new ManualSessionStartService(
 			coordinator(),
@@ -866,15 +819,13 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
-	it.each(['stopping', 'provisional'] as const)(
-		'recovers a %s session after restart without recapturing persisted evidence',
-		async (status) => {
+	it(
+		'recovers a stopping session after restart without recapturing persisted evidence',
+		async () => {
 			const runtimeStore = new MemorySessionRuntimeStore();
 			const firstCapture = {
 				capture: vi.fn(async () => structuredClone(captured)),
-				captureFinal: status === 'stopping'
-					? vi.fn(async () => { throw new Error('offline'); })
-					: vi.fn(async () => afterSnapshot()),
+				captureFinal: vi.fn(async () => { throw new Error('offline'); }),
 			};
 			const first = new ManualSessionStartService(
 				coordinator(),
@@ -883,12 +834,12 @@ describe('ManualSessionStartService', () => {
 			);
 			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
 			await stopAfterSettlement(first);
-			expect(first.getState().status).toBe(status);
+			expect(first.getState().status).toBe('stopping');
 			await first.dispose();
 
 			const recoveredHandle = {
 				...handle,
-				instanceId: `instance-after-${status}`,
+				instanceId: 'instance-after-stopping',
 				fence: 2,
 				acquiredAt: acquiredAt + 60_000,
 				renewedAt: acquiredAt + 60_000,
@@ -906,8 +857,58 @@ describe('ManualSessionStartService', () => {
 
 			await second.initialize();
 			await expect(second.recover()).resolves.toMatchObject({
-				status: 'recovered', state: { status, authority: { fence: 2 } },
+				status: 'recovered', state: { status: 'stopping', authority: { fence: 2 } },
 			});
+			expect(evidence.capture).not.toHaveBeenCalled();
+			expect(evidence.captureFinal).not.toHaveBeenCalled();
+		},
+	);
+
+	// A `provisional` record no longer surfaces as "recovery available" (Lote S, 2026-09-09): David
+	// decided nobody reviews a session again just because it was not saved cleanly. `initialize()`
+	// reclaims the lease and finalizes it on its own, the same path a live `stop()` uses.
+	it(
+		'auto-finalizes a provisional session found already stopped after restart, without recapturing persisted evidence',
+		async () => {
+			const runtimeStore = new MemorySessionRuntimeStore();
+			const firstCapture = {
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			};
+			const first = new ManualSessionStartService(
+				coordinator(),
+				firstCapture,
+				serviceOptions({ runtimeStore }),
+			);
+			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+			await stopAfterSettlement(first);
+			expect(first.getState().status).toBe('provisional');
+			await first.dispose();
+
+			const recoveredHandle = {
+				...handle,
+				instanceId: 'instance-after-provisional',
+				fence: 2,
+				acquiredAt: acquiredAt + 60_000,
+				renewedAt: acquiredAt + 60_000,
+				expiresAt: acquiredAt + 90_000,
+			};
+			const evidence = {
+				capture: vi.fn(async () => { throw new Error('must not recapture baseline'); }),
+				captureFinal: vi.fn(async () => { throw new Error('must not recapture final'); }),
+			};
+			const second = new ManualSessionStartService(
+				coordinator({ acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: recoveredHandle })) }),
+				evidence,
+				serviceOptions({ runtimeStore, now: () => acquiredAt + 60_001 }),
+			);
+
+			await second.initialize();
+			expect(second.getRecoveryState()).toEqual({ status: 'none' });
+			expect(second.getState()).toMatchObject({
+				status: 'complete', classification: 'exact', authority: { fence: 2 },
+			});
+			expect(second.takeStartupFinalization()).not.toBeNull();
 			expect(evidence.capture).not.toHaveBeenCalled();
 			expect(evidence.captureFinal).not.toHaveBeenCalled();
 		},
@@ -1225,23 +1226,4 @@ describe('ManualSessionStartService', () => {
 	});
 });
 
-function reviewAnswers(
-	certainty: SessionContaminationAnswers['certainty'] = 'confirmed',
-): SessionContaminationAnswers {
-	return {
-		certainty,
-		activities: {
-			open: false,
-			salvage: false,
-			consume: false,
-			craft: false,
-			tpBuy: false,
-			tpSell: false,
-			vendorBuy: false,
-			vendorSell: false,
-			transfer: false,
-			other: false,
-		},
-	};
-}
 /* eslint-enable @typescript-eslint/unbound-method -- End Vitest mock assertions. */

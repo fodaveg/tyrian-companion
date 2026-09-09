@@ -20,7 +20,6 @@ import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { SessionPriceSnapshotService } from '../economy/session-price-snapshot';
-import { TradingPostHistoryEvidenceService } from '../account/trading-post-evidence';
 import { AssistedDetectionService } from '../sessions/assisted-detection-service';
 import { ManualSessionStartService, type SessionLeaseCoordinator } from '../sessions/manual-session-start-service';
 import { SessionItemTypeSnapshotService } from '../sessions/session-item-type-capture';
@@ -115,7 +114,6 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			),
 			priceCapture: new SessionPriceSnapshotService(input.priceGateway),
 			farmedLossItemTypeCapture: new SessionItemTypeSnapshotService(input.priceGateway),
-			tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(input.client),
 			diagnostics: input.diagnostics ?? undefined,
 		},
 	);

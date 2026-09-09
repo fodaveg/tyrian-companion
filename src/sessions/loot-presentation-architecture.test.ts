@@ -74,13 +74,7 @@ function completeRuntime(): SessionRuntimeRecord {
 		currencies: [walletCurrency(1, 150)],
 	});
 	const delta = compareStorageSnapshots(baseline, final);
-	const activities = {
-		open: false, salvage: false, consume: false, craft: false, tpBuy: false,
-		tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-	};
-	const review = createSessionContaminationReview(
-		baseline, final, delta, { certainty: 'confirmed', activities }, '2026-08-13T09:00:02.000Z',
-	);
+	const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:02.000Z');
 	if (!review || review.classification.status !== 'exact') throw new Error('Invalid review fixture.');
 	const state: CompleteSessionState = {
 		version: 1, status: 'complete', sessionId: 'session-1', authority,

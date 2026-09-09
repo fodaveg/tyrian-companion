@@ -38,7 +38,10 @@ describe('H11-A architecture and UI contract', () => {
 		expect(styles).toMatch(/min-block-size:\s*44px/u);
 		expect(panel).toContain('unknownItem');
 		expect(styles).toContain('overflow-wrap: anywhere');
-		expect(panel).toContain('button.disabled = true'); // feedback
+		// The "Marcar como revisada" button and its disabled-while-pending feedback are gone (Lote S,
+		// 2026-09-09: nobody marks an aviso reviewed anymore, the panel is read-only). The feedback
+		// axis is still covered by the aria-live status region asserted above.
+		expect(panel).not.toContain('button.disabled = true');
 		expect(panel).not.toMatch(/<img|createEl\('img'\)|\.svg|\.png/u); // assets N/A
 		expect(styles.slice(styles.indexOf('.tyrian-companion-halloween'))).not.toMatch(/#[0-9a-f]{3,8}/iu);
 	});
@@ -55,7 +58,10 @@ describe('H11-A architecture and UI contract', () => {
 			.toMatch(/loadBackfill:[\s\S]*scanHalloweenSessionNotes/u);
 		expect(main).toContain('observeAcceptedHalloweenDelta(delta)');
 		expect(main).toContain("`session:${session.sessionId}`");
-		expect(main).toContain("`session:${result.state.sessionId}`");
+		// The session-final episode key moved into `finishFinalizedSession` (Lote S, 2026-09-09: the
+		// shared step both a live `stop()` and an auto-finalized `provisional` record go through),
+		// which takes the id as its own `sessionId` parameter instead of reading `result.state.sessionId`.
+		expect(main).toContain("`session:${sessionId}`");
 		expect(main).toMatch(/vault\.on\('modify',[\s\S]*refreshHalloweenBackfill/u);
 		expect(main).toMatch(/vault\.on\('rename',[\s\S]*refreshHalloweenBackfill/u);
 		const store = readModuleSource('src/halloween/halloween-store.ts');

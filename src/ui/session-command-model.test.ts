@@ -18,7 +18,9 @@ describe('projectSessionCommands', () => {
 		['starting', []],
 		['active', ['finish-farming-session']],
 		['stopping', []],
-		['provisional', ['review-session']],
+		// Nobody reviews a session anymore (Lote S, 2026-09-09): `provisional` finalizes on its own
+		// and offers no command while it does.
+		['provisional', []],
 		['complete', ['clear-completed-session']],
 		['error', []],
 	] as const)('projects commands for %s', (status, expected) => {
@@ -91,9 +93,11 @@ describe('SessionCommandController', () => {
 		const unavailable = controllerHarness('starting');
 		await expect(unavailable.controller.runWithOutcome('start-farming-session')).resolves.toBe('unavailable');
 
-		const failed = controllerHarness('provisional');
+		// `provisional` no longer offers any command (Lote S, 2026-09-09: it finalizes on its own),
+		// so this generic "prepare throws" case moves to `complete`/`clear-completed-session`.
+		const failed = controllerHarness('complete');
 		failed.ports.prepare.mockResolvedValue(async () => { throw new Error('raw detail'); });
-		await expect(failed.controller.runWithOutcome('review-session')).resolves.toBe('failed');
+		await expect(failed.controller.runWithOutcome('clear-completed-session')).resolves.toBe('failed');
 		await expect(completed.controller.run('finish-farming-session')).resolves.toBeUndefined();
 	});
 
@@ -151,8 +155,13 @@ describe('SessionCommandController', () => {
 		expect(harness.ports.notify).toHaveBeenCalledWith('That session action is no longer available.');
 	});
 
+	// `provisional` no longer offers any command (Lote S, 2026-09-09), so its row moves to `active`/
+	// `finish-farming-session`: still two different session identities under the same status,
+	// still genuinely available from the start, so the mid-flight target-mismatch path this test
+	// means to exercise is the one that actually fires (not an unrelated "unavailable from the
+	// start" that would notify the identical message for the wrong reason).
 	it.each([
-		['review-session', 'provisional'],
+		['finish-farming-session', 'active'],
 		['clear-completed-session', 'complete'],
 	] as const)('rejects same-status session identity replacement for %s', async (command, status) => {
 		const harness = controllerHarness(status);
@@ -199,9 +208,10 @@ describe('SessionCommandController', () => {
 	});
 
 	it('sanitizes failures and never exposes the raw error', async () => {
-		const harness = controllerHarness('provisional');
+		// `provisional` no longer offers any command (Lote S, 2026-09-09: it finalizes on its own).
+		const harness = controllerHarness('complete');
 		harness.ports.prepare.mockResolvedValue(async () => { throw new Error('raw secret-bearing detail'); });
-		await harness.controller.run('review-session');
+		await harness.controller.run('clear-completed-session');
 		expect(harness.ports.notify).toHaveBeenCalledWith('The session action could not be completed.');
 		expect(harness.ports.notify).not.toHaveBeenCalledWith(expect.stringContaining('raw'));
 	});

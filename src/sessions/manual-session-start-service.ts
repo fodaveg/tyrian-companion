@@ -28,16 +28,13 @@ import type {
 } from './session';
 import {
 	createSessionContaminationReview,
-	proposeTradingPostContamination,
-	type SessionContaminationAnswers,
 	type SessionContaminationReview,
-	type SessionTradingPostContaminationProposal,
 } from './session-contamination-review';
 import type { SessionItemTypeCapture } from './session-item-type-capture';
-import type { TradingPostHistoryEvidenceV1 } from '../account/trading-post-evidence';
 import {
 	createSessionRuntimeRecord,
 	recoverableState,
+	type PersistedSessionState,
 	type SessionRuntimeRecord,
 	type SessionRuntimeStore,
 } from './session-runtime-store';
@@ -142,13 +139,25 @@ export type ManualSessionStopResult =
 	  }
 	| { status: 'failed'; failure: SessionStopFailure };
 
+/**
+ * `status` is always `'finalized'` on success: since `permissions.finalize` never comes back
+ * `false` anymore (David, 2026-09-09), a review that computed cleanly always finalizes the session
+ * in the same step, and the old `'reviewed'` (provisional, unfinalized) outcome is unreachable.
+ */
 export type SessionContaminationReviewResult =
 	| {
-			status: 'reviewed' | 'finalized';
+			status: 'finalized';
 			review: SessionContaminationReview;
-			state: Extract<SessionState, { status: 'provisional' | 'complete' }>;
+			state: Extract<SessionState, { status: 'complete' }>;
 	  }
 	| { status: 'failed'; message: string };
+
+/** See `takeStartupFinalization()`. */
+export interface StartupFinalization {
+	sessionId: string;
+	delta: StorageDelta;
+	review: Extract<SessionContaminationReviewResult, { status: 'finalized' }>;
+}
 
 export interface ManualSessionStartServiceOptions {
 	now?: () => number;
@@ -171,9 +180,6 @@ export interface ManualSessionStartServiceOptions {
 	 * loss, exactly as before H14.1.
 	 */
 	farmedLossItemTypeCapture?: SessionItemTypeCapture;
-	tradingPostHistoryCapture?: {
-		capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1>;
-	};
 	/** Records a `warn` line when recover/discard finds the saved session's lease owned elsewhere. */
 	diagnostics?: LocalDebugActionPort;
 }
@@ -198,6 +204,13 @@ export class ManualSessionStartService {
 	private priceSnapshot: SessionPriceSnapshot | null = null;
 	private recoveryState: SessionRecoveryState = { status: 'none' };
 	private recoveryRecord: SessionRuntimeRecord | null = null;
+	/**
+	 * Set once, right after `initialize()` auto-finalizes a `provisional` record it found already
+	 * stopped, and only ever read by `takeStartupFinalization()`, which consumes it: the host needs
+	 * this evidence to write the session's note and run the same post-finalize bookkeeping a live
+	 * `stop()` triggers, since `initialize()` itself only reclaims the lease and classifies.
+	 */
+	private startupFinalization: StartupFinalization | null = null;
 	private initializationFlight: Promise<void> | null = null;
 	private recoveryFlight: Promise<SessionRecoveryResult> | null = null;
 	private disposed = false;
@@ -210,7 +223,6 @@ export class ManualSessionStartService {
 	private readonly runtimeStore: SessionRuntimeStore;
 	private readonly priceCapture: SessionPriceCapture | null;
 	private readonly farmedLossItemTypeCapture: SessionItemTypeCapture | null;
-	private readonly tradingPostHistoryCapture: ManualSessionStartServiceOptions['tradingPostHistoryCapture'];
 	private readonly diagnostics: LocalDebugActionPort | null;
 
 	constructor(
@@ -227,7 +239,6 @@ export class ManualSessionStartService {
 		this.runtimeStore = options.runtimeStore;
 		this.priceCapture = options.priceCapture ?? null;
 		this.farmedLossItemTypeCapture = options.farmedLossItemTypeCapture ?? null;
-		this.tradingPostHistoryCapture = options.tradingPostHistoryCapture;
 		this.diagnostics = options.diagnostics ?? null;
 	}
 
@@ -260,29 +271,6 @@ export class ManualSessionStartService {
 		return this.baselineSnapshot === null ? null : structuredClone(this.baselineSnapshot);
 	}
 
-	/** Explicit, read-only helper for the review modal. It never changes review answers or runtime state. */
-	async proposeTradingPostContamination(): Promise<SessionTradingPostContaminationProposal> {
-		if (this.state.status !== 'provisional' || this.baselineSnapshot === null || this.finalSnapshot === null) {
-			return { status: 'unavailable', reason: 'no_provisional_session', requiresHumanReview: true,
-				suggestedActivities: [] };
-		}
-		if (this.tradingPostHistoryCapture === undefined) {
-			return { status: 'unavailable', reason: 'capture_unavailable', requiresHumanReview: true,
-				suggestedActivities: [] };
-		}
-		const window = {
-			from: this.baselineSnapshot.completedAt,
-			to: this.finalSnapshot.startedAt,
-		};
-		try {
-			const evidence = await this.tradingPostHistoryCapture.capture(this.baselineSnapshot.accountId, window);
-			return proposeTradingPostContamination(evidence, this.baselineSnapshot.accountId, window);
-		} catch {
-			return { status: 'unavailable', reason: 'capture_unavailable', requiresHumanReview: true,
-				suggestedActivities: [] };
-		}
-	}
-
 	async getCompletedRuntimeRecord(): Promise<SessionRuntimeRecord | null> {
 		if (this.state.status !== 'complete') return null;
 		const loaded = await this.runtimeStore.load();
@@ -293,6 +281,20 @@ export class ManualSessionStartService {
 
 	getRecoveryState(): SessionRecoveryState {
 		return structuredClone(this.recoveryState);
+	}
+
+	/**
+	 * Consumes the evidence of an auto-finalization `initialize()` just performed, if any: a
+	 * `provisional` record found already stopped (Obsidian restart, recovery after close) gets
+	 * classified and finalized on its own, but never gets its note written or its pilot metrics/
+	 * Halloween bookkeeping run — that lives in the host, the same as after a live `stop()`. Returns
+	 * `null` on every call after the first for a given finalization, and always after a `complete`
+	 * record loaded as-is (nothing to finish).
+	 */
+	takeStartupFinalization(): StartupFinalization | null {
+		const value = this.startupFinalization;
+		this.startupFinalization = null;
+		return value;
 	}
 
 	initialize(): Promise<void> {
@@ -362,9 +364,16 @@ export class ManualSessionStartService {
 		return flight;
 	}
 
-	reviewContamination(answers: SessionContaminationAnswers): Promise<SessionContaminationReviewResult> {
+	/**
+	 * Computes the automatic contamination review and finalizes the session in the same step
+	 * (`provisional` → `complete`): nobody declares or confirms anything anymore (David,
+	 * 2026-09-09), so there is no answer to wait for. Also the single recovery path for a
+	 * `provisional` record found already stopped (a previous run that stopped before this could
+	 * run, or a plain restart): `initializeInternal` calls this the same way a fresh `stop()` does.
+	 */
+	finalizeStoppedSession(): Promise<SessionContaminationReviewResult> {
 		if (this.reviewFlight) return this.reviewFlight;
-		const flight = this.reviewContaminationInternal(answers).finally(() => {
+		const flight = this.finalizeStoppedSessionInternal().finally(() => {
 			if (this.reviewFlight === flight) this.reviewFlight = null;
 		});
 		this.reviewFlight = flight;
@@ -416,6 +425,17 @@ export class ManualSessionStartService {
 				this.contaminationReview = loaded.record.review;
 				this.priceSnapshot = loaded.record.priceSnapshot;
 				this.recoveryState = { status: 'none' };
+			} else if (loaded.record.state.status === 'provisional') {
+				// A session that already captured its final snapshot never asks a human to review it
+				// (David, 2026-09-09): reclaim the lease and finalize through the exact same path a
+				// live `stop()` uses, whether Obsidian just started, a previous run closed before
+				// finalizing, or today's real incident. Only a failure along the way (lease busy or
+				// lost, store unavailable) still falls back to the ordinary "recovery available" state,
+				// so a human is never stuck without any way to resolve it.
+				await this.autoFinalizeProvisionalRecord(
+					loaded.record as SessionRuntimeRecord & { state: Extract<PersistedSessionState, { status: 'provisional' }> },
+				);
+				return;
 			} else {
 				this.recoveryRecord = loaded.record;
 				this.recoveryState = { status: 'available', state: loaded.record.state };
@@ -430,6 +450,83 @@ export class ManualSessionStartService {
 			};
 		}
 		this.onStateChange();
+	}
+
+	private async autoFinalizeProvisionalRecord(
+		record: SessionRuntimeRecord & { state: Extract<PersistedSessionState, { status: 'provisional' }> },
+	): Promise<void> {
+		const fallbackToRecoverable = (): void => {
+			this.recoveryRecord = record;
+			this.recoveryState = { status: 'available', state: record.state };
+			this.onStateChange();
+		};
+		if (this.disposed || this.state.status !== 'idle') {
+			fallbackToRecoverable();
+			return;
+		}
+		const persisted = recoverableState(record.state);
+		const acquisition = await this.safeAcquire(persisted.sessionId);
+		if (acquisition.status === 'busy' || acquisition.status === 'error') {
+			fallbackToRecoverable();
+			return;
+		}
+		const handle = acquisition.handle;
+		if (handle.sessionId !== persisted.sessionId) {
+			await this.safeRelease(handle);
+			fallbackToRecoverable();
+			return;
+		}
+		const authority = sessionAuthorityFromLease(handle);
+		const owned = await this.safeAssert(handle);
+		if (owned.status !== 'owned') {
+			await this.safeRelease(handle);
+			fallbackToRecoverable();
+			return;
+		}
+		const transition = transitionSession(record.state, {
+			type: 'recover',
+			authority,
+			recoveredAt: this.timestampAtOrAfter(authority.acquiredAt),
+		});
+		if (transition.status === 'rejected') {
+			await this.safeRelease(handle);
+			fallbackToRecoverable();
+			return;
+		}
+		const recoveredRecord = createSessionRuntimeRecord(
+			transition.state,
+			record.baselineSnapshot,
+			record.finalSnapshot,
+			record.delta,
+			this.safeNow(),
+			record.review,
+			record.priceSnapshot,
+		);
+		if (!recoveredRecord || (await this.runtimeStore.save(recoveredRecord)).status !== 'saved') {
+			await this.safeRelease(handle);
+			fallbackToRecoverable();
+			return;
+		}
+		this.state = transition.state;
+		this.baselineSnapshot = structuredClone(record.baselineSnapshot);
+		this.finalSnapshot = record.finalSnapshot === null ? null : structuredClone(record.finalSnapshot);
+		this.provisionalDelta = record.delta === null ? null : structuredClone(record.delta);
+		this.contaminationReview = record.review === null ? null : structuredClone(record.review);
+		this.priceSnapshot = record.priceSnapshot === null ? null : structuredClone(record.priceSnapshot);
+		this.currentHandle = handle;
+		this.authorityFailure = null;
+		this.recoveryRecord = null;
+		this.recoveryState = { status: 'none' };
+		this.startHeartbeat(handle);
+		this.onStateChange();
+		// A failure here (store unavailable) leaves the session `provisional` with its lease held,
+		// exactly as a live `stop()` would: the next `finalizeStoppedSession()` call — the app's own
+		// retry, or the next restart through this same path — tries again from the same evidence.
+		const delta = this.provisionalDelta;
+		const result = await this.finalizeStoppedSession();
+		if (result.status === 'finalized' && delta) {
+			this.startupFinalization = { sessionId: result.state.sessionId, delta, review: result };
+		}
 	}
 
 	private runRecovery(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
@@ -761,9 +858,7 @@ export class ManualSessionStartService {
 		}
 	}
 
-	private async reviewContaminationInternal(
-		answers: SessionContaminationAnswers,
-	): Promise<SessionContaminationReviewResult> {
+	private async finalizeStoppedSessionInternal(): Promise<SessionContaminationReviewResult> {
 		if (
 			this.disposed
 			|| this.state.status !== 'provisional'
@@ -771,7 +866,7 @@ export class ManualSessionStartService {
 			|| !this.finalSnapshot
 			|| !this.provisionalDelta
 			|| !this.currentHandle
-		) return { status: 'failed', message: 'There is no provisional session ready for review.' };
+		) return { status: 'failed', message: 'There is no provisional session ready to finalize.' };
 		const previousReviewFloor = this.contaminationReview
 			? Date.parse(this.contaminationReview.reviewedAt) + 1
 			: 0;
@@ -784,7 +879,6 @@ export class ManualSessionStartService {
 			this.baselineSnapshot,
 			this.finalSnapshot,
 			this.provisionalDelta,
-			answers,
 			reviewedAt,
 			this.stateSettlement(this.state),
 			farmedLossItemIds,
@@ -809,10 +903,9 @@ export class ManualSessionStartService {
 			return { status: 'failed', message: 'The contamination review could not be persisted safely.' };
 		}
 		this.contaminationReview = structuredClone(review);
-		if (!review.classification.permissions.finalize) {
-			this.onStateChange();
-			return { status: 'reviewed', review: structuredClone(review), state: this.getState() as Extract<SessionState, { status: 'provisional' }> };
-		}
+		// `permissions.finalize` is always `true` now (David, 2026-09-09): every review that
+		// computes cleanly finalizes the session in this same call, so there is no `'reviewed'`
+		// (unfinalized) outcome left to return.
 		const finalizedAt = this.safeTimestampAtOrAfter(Date.parse(review.reviewedAt));
 		const transition = transitionSession(this.state, {
 			type: 'finalize',

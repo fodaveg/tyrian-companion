@@ -108,7 +108,6 @@ import {
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	shouldPersistSettingsOnLoad,
-	type DetectionMode,
 	type InventoryVaultSyncLastRun,
 	type TyrianSettings,
 } from './core/settings';
@@ -116,7 +115,6 @@ import {
 	AssistedDetectionService,
 	type AssistedDetectionState,
 } from './sessions/assisted-detection-service';
-import type { SessionContaminationAnswers } from './sessions/session-contamination-review';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
 import type { DetectionQualityRecorder, DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
@@ -177,7 +175,6 @@ import {
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
-	SessionContaminationReviewModal,
 	TyrianCompanionView,
 } from './ui/companion-view';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
@@ -327,7 +324,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngameSeq = 0;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
-	private reviewModal: SessionContaminationReviewModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
 	private clearModal: ConfirmClearCompletedSessionModal | null = null;
 	private sessionCommands!: SessionCommandController;
@@ -964,9 +960,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 			async () => { await this.pendingProposals.initialize(); await this.reconcilePendingProposals(); });
 		this.assistedDetection = sessionServices.assistedDetection;
 		this.assistedDetection.setOnline(navigator.onLine);
+		// `initialize()` above already classified and finalized, on its own, any `provisional` record
+		// it found already stopped (David, 2026-09-09: nobody reviews a session again just because it
+		// was not saved cleanly). It never writes the note or runs pilot metrics/Halloween bookkeeping
+		// itself, so the host finishes that here, the same as after a live `stop()`.
+		const startupFinalization = this.sessions.takeStartupFinalization();
 		const restoredSession = this.sessions.getState();
 		if (restoredSession.status === 'active') this.startLiveObservation(restoredSession.sessionId, true);
-		else if (restoredSession.status === 'complete') await this.inspectCompletedSessionSummary();
+		else if (startupFinalization) {
+			await this.finishFinalizedSession(
+				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
+			);
+		} else if (restoredSession.status === 'complete') await this.inspectCompletedSessionSummary();
 		await this.refreshLootPresentation();
 
 		if (this.unloaded) return;
@@ -1033,7 +1038,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
 		this.startModal?.close();
-		this.reviewModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
 		this.assistedDetection?.dispose();
@@ -1079,6 +1083,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const state = await check;
 		if (state.status === 'connected' || state.status === 'warning') {
 			await this.switchHalloweenAccount(state.details.account.id, context);
+			// Assisted detection is always armed with a connected account now (David, 2026-09-09: no
+			// more `detectionMode` toggle). `armAssistedDetection` already no-ops when a session is
+			// mid-recovery or already armed/arming/proposing, so this is safe to call on every check.
+			void this.armAssistedDetection();
 		}
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'detection', action: 'detection_proposal', state: 'connection_reconcile' },
@@ -1094,10 +1102,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	getSessionState(): SessionState {
 		return this.runtimeReady ? this.sessions.getState() : { version: SESSION_STATE_VERSION, status: 'idle' };
-	}
-
-	getDetectionMode(): DetectionMode {
-		return this.settings.detectionMode;
 	}
 
 	getLocale() {
@@ -1208,7 +1212,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 					schemaVersion: this.settings.schemaVersion,
 					language: this.settings.language,
 					pollingIntervalMinutes: this.settings.pollingIntervalMinutes,
-					detectionMode: this.settings.detectionMode,
 					debugLoggingEnabled: this.settings.debugLoggingEnabled,
 					debugLoggingLevel: this.settings.debugLoggingLevel,
 				},
@@ -1256,17 +1259,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.halloweenPriceAlert?.getState() ?? disabledHalloweenPriceAlertState();
 	}
 
-	async acknowledgeHalloweenNotice(noticeId: string): Promise<boolean> {
-		const acknowledged = await this.halloween?.acknowledge(noticeId) ?? false;
-		this.renderViews();
-		return acknowledged;
-	}
-
-	async acknowledgeHalloweenPriceNotice(noticeId: string): Promise<boolean> {
-		const acknowledged = await this.halloweenPriceAlert?.acknowledge(noticeId) ?? false;
-		this.renderViews();
-		return acknowledged;
-	}
+	// `acknowledgeHalloweenNotice`/`acknowledgeHalloweenPriceNotice` are gone (Lote S, 2026-09-09):
+	// nobody marks an aviso reviewed anymore. `this.halloween`/`this.halloweenPriceAlert` keep their
+	// own `acknowledge()` capability and `acknowledgedAt` bookkeeping — that stays out of scope, see
+	// the final report — this host simply stops calling it.
 
 	private async observeHalloweenDelta(
 		delta: StorageDelta,
@@ -1791,7 +1787,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				const session = this.sessions.getState();
 				const recovery = this.sessions.getRecoveryState();
 				if (
-					this.settings.detectionMode !== 'assisted' ||
 					(connected !== 'connected' && connected !== 'warning') ||
 					(session.status !== 'idle' && session.status !== 'active') ||
 					(session.status === 'idle' && recovery.status !== 'none')
@@ -2532,33 +2527,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return result;
 	}
 
-	async reviewSessionContamination(answers: SessionContaminationAnswers): Promise<string | null> {
-		const perform = async (): Promise<string | null> => {
-		const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
-		if (runtimeLease === null) return 'Session history scrub is active.';
-		const result = await this.sessions.reviewContamination(answers).finally(() => runtimeLease.release());
-		if (result.status === 'finalized' && result.state.status === 'complete') {
-			void this.pilotMetrics?.sessionCompleted(result.state.sessionId, result.state.finalizedAt);
-		}
-		if (result.status === 'finalized' && sessionNoteEventDeclarationFromDetectionSummary(
-			result.state.sessionId, this.detectionQuality.getSessionSummary(result.state.sessionId),
-		)?.event === 'halloween') {
-			const delta = this.sessions.getProvisionalDelta();
-			if (delta) await this.observeHalloweenDelta(delta, 'session_final', `session:${result.state.sessionId}`, result.review);
-		}
-		this.renderViews();
-		return result.status === 'failed' ? result.message : null;
-		};
-		return await (this.localDebugActions?.run(
-			{ component: 'session', action: 'session_review' }, perform,
-		) ?? perform());
-	}
-
-	openSessionReview(): void {
-		fireAndForgetLocal(this.localDebugActions,
-			{ component: 'session', action: 'session_review' }, () => this.sessionCommands.run('review-session'));
-	}
-
 	confirmClearCompletedSession(): void {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'session', action: 'session_clear' }, () => this.sessionCommands.run('clear-completed-session'));
@@ -2722,9 +2690,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
+	/** Stop a live session: hand its final delta to the runtime, then finalize and persist it. */
 	private async finalizeAndPersistStoppedSession(sessionId: string, delta: StorageDelta): Promise<void> {
 		await this.liveSessionLoot.reconcile(sessionId, delta);
-		const reviewed = await this.sessions.reviewContamination(automaticSessionReview());
+		const reviewed = await this.sessions.finalizeStoppedSession();
 		if (reviewed.status !== 'finalized' || reviewed.state.status !== 'complete') {
 			this.sessionSummarySaveState = 'failed';
 			this.emitNotice(
@@ -2733,6 +2702,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 			return;
 		}
+		await this.finishFinalizedSession(sessionId, delta, reviewed);
+	}
+
+	/**
+	 * Writes the note and runs the pilot metrics/Halloween bookkeeping that follow finalization
+	 * (`provisional` → `complete`), regardless of who finalized it: a live `stop()`
+	 * (`finalizeAndPersistStoppedSession`) or `initialize()` auto-finalizing a `provisional` record
+	 * it found already stopped (no human reviews anything anymore, David 2026-09-09).
+	 */
+	private async finishFinalizedSession(
+		sessionId: string,
+		delta: StorageDelta,
+		reviewed: Extract<Awaited<ReturnType<ManualSessionStartService['finalizeStoppedSession']>>, { status: 'finalized' }>,
+	): Promise<void> {
 		void this.pilotMetrics?.sessionCompleted(reviewed.state.sessionId, reviewed.state.finalizedAt);
 		const runtime = await this.sessions.getCompletedRuntimeRecord();
 		if (runtime === null) {
@@ -2933,7 +2916,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 			return { status: 'blocked', reason: 'runtime_starting' };
 		}
 		const previousSecret = this.settings.apiKeySecret;
-		const previousDetectionMode = this.settings.detectionMode;
 		const previousPollingInterval = this.settings.pollingIntervalMinutes;
 		const previousLanguage = this.settings.language;
 		const previousOutputFolder = this.settings.outputFolder;
@@ -2967,13 +2949,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				this.managedAssets.setBundle({ bundleVersion: 6, locale: nextSettings.language, assets: await managedAssetsBundle() });
 			}
 			this.settingTab.refreshForLocaleChange();
-		}
-		// Turning assisted detection off never silences an active session: H13.3 made the loot
-		// poll a property of the session, not of the detection surface, so the disarm only
-		// applies while there is nothing being farmed.
-		if (previousDetectionMode !== 'off' && nextSettings.detectionMode === 'off' &&
-			this.sessions.getState().status !== 'active') {
-			this.runRuntimeMutation(() => this.invalidateAndDisarmAssistedDetection('mode_off'));
 		}
 		// The Settings cadence is the idle detection cadence. An active session polls at the
 		// H13.3 five minutes and must not be slowed down to 60 by an unrelated preference edit.
@@ -3202,7 +3177,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			getPendingProposals: () => this.getPendingProposalState(),
 			getDetectionState: () => this.getAssistedDetectionState(),
 			canArmDetection: () => {
-				if (!this.runtimeReady || this.settings.detectionMode !== 'assisted') return false;
+				if (!this.runtimeReady) return false;
 				const connected = this.connection.getState().status;
 				const session = this.sessions.getState();
 				return (connected === 'connected' || connected === 'warning')
@@ -3292,7 +3267,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private prepareSessionCommand(id: SessionCommandId): Promise<PreparedSessionCommand | null> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) return Promise.resolve(null);
 		if (id === 'start-farming-session') return this.prepareStartIntent();
-		if (id === 'review-session') return this.prepareReviewIntent();
 		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
 		if (id === 'clear-completed-session') return this.prepareClearIntent();
 		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
@@ -3311,30 +3285,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 				() => { this.startModal = null; if (!submitted) resolve(null); },
 			);
 			this.startModal.open();
-		});
-	}
-
-	private prepareReviewIntent(): Promise<PreparedSessionCommand | null> {
-		if (this.reviewModal) return Promise.resolve(null);
-		const tradingPostProposal = this.sessions.proposeTradingPostContamination();
-		return new Promise((resolve) => {
-			let submitted = false;
-			this.reviewModal = new SessionContaminationReviewModal(
-				this.app,
-				this.sessions.getContaminationReview()?.answers ?? null,
-				() => tradingPostProposal,
-				(answers) => {
-					submitted = true;
-					resolve(async () => {
-						const message = await this.reviewSessionContamination(answers);
-						if (message !== null) throw new Error('Review failed.');
-					});
-					return Promise.resolve(null);
-				},
-				() => { this.reviewModal = null; if (!submitted) resolve(null); },
-				() => this.settings.language,
-			);
-			this.reviewModal.open();
 		});
 	}
 
@@ -3706,16 +3656,6 @@ function detectionActionOutcome(
 	if (request === 'disarm') return state.status === 'disarmed' ? 'completed' : 'unavailable';
 	return state.status === 'armed' || state.status === 'start_proposed' || state.status === 'stop_proposed'
 		? 'completed' : 'unavailable';
-}
-
-function automaticSessionReview(): SessionContaminationAnswers {
-	return {
-		certainty: 'unsure',
-		activities: {
-			open: false, salvage: false, consume: false, craft: false, tpBuy: false,
-			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-		},
-	};
 }
 
 /** Closed diagnostic cause per alert kind, so a delivery record never carries the visible text. */

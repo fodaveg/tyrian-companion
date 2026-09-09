@@ -45,7 +45,7 @@ describe('buildCompanionStatus', () => {
 	it('projects status labels in the requested locale without changing domain states', () => {
 		const es = buildCompanionStatus(input({ locale: 'es', detection: detection('armed') }));
 		const en = buildCompanionStatus(input({ locale: 'en', detection: detection('armed') }));
-		expect(es.items[0]).toMatchObject({ label: 'Detección', value: 'Activada' });
+		expect(es.items[0]).toMatchObject({ label: 'Detección', value: 'Armada' });
 		expect(en.items[0]).toMatchObject({ label: 'Detection', value: 'Armed' });
 		expect(es.items[0]?.id).toBe(en.items[0]?.id);
 	});
@@ -80,16 +80,19 @@ describe('buildCompanionStatus', () => {
 	it('projects the closed-note idle state without scheduling refreshes', () => {
 		const projection = buildCompanionStatus(input());
 
-		expect(values(projection)).toEqual(['Disarmed', 'Idle', 'Stopped', 'No sample']);
+		expect(values(projection)).toEqual(['Waiting for account', 'Idle', 'Stopped', 'No sample']);
 		expect(projection.connection.value).toBe('Not checked');
 		expect(projection.refreshEveryMs).toBeNull();
 	});
 
+	// Detection is always armed with a connected account now (Lote S, 2026-09-09): the Detección row
+	// reads only four words. `arming` shares "Armed" with `armed` (the detector is already doing its
+	// job, still capturing its baseline), and both proposal phases share "Proposing".
 	it.each([
-		['arming', 'Arming', 'Waiting'],
+		['arming', 'Armed', 'Waiting'],
 		['armed', 'Armed', 'Scheduled'],
-		['start_proposed', 'Start proposed', 'Paused'],
-		['stop_proposed', 'Stop proposed', 'Paused'],
+		['start_proposed', 'Proposing', 'Paused'],
+		['stop_proposed', 'Proposing', 'Paused'],
 		['error', 'Error', 'Stopped'],
 	] as const)('maps detector %s to the rail', (status, detector, polling) => {
 		const projection = buildCompanionStatus(input({ detection: detection(status) }));
@@ -234,14 +237,6 @@ describe('buildCompanionStatus', () => {
 		expect(projection.items[1]?.value).toBe('Recovery available');
 	});
 
-	it('suppresses stale detector and scheduler failures while assisted detection is off', () => {
-		const stale = detection('error');
-		stale.scheduler.status = 'fatal';
-		const projection = buildCompanionStatus(input({ detectionMode: 'off', detection: stale }));
-		expect(projection.errors).toEqual([]);
-		expect(values(projection).slice(0, 3)).toEqual(['Off', 'Idle', 'Off']);
-	});
-
 	it('places a stale connection warning before recorder and future-scope warnings', () => {
 		const projection = buildCompanionStatus(input({
 			connection: {
@@ -308,7 +303,6 @@ function input(overrides: Partial<CompanionStatusInput> = {}): CompanionStatusIn
 		now: NOW,
 		connection: { status: 'idle' },
 		session: { version: 1, status: 'idle' },
-		detectionMode: 'assisted',
 		detection: detection('disarmed'),
 		qualityState: { status: 'ready' },
 		qualityStats: null,
