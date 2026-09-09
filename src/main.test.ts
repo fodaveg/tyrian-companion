@@ -1379,7 +1379,7 @@ describe('local diagnostics composition', () => {
 		expect(exported).not.toContain('message');
 		expect(exported).not.toContain('details');
 		expect(proto.previewLocalDebugExport.call(harness)).toEqual({
-			included: ['logs', 'version', 'platform', 'settings'],
+			included: ['logs', 'version', 'platform', 'settingsCore', 'settingsFlags'],
 			excluded: ['secret_name', 'character', 'paths', 'payloads'],
 		});
 		await expect(proto.clearLocalDebugLogs.call(harness)).resolves.toBe(true);

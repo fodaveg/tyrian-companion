@@ -1,5 +1,5 @@
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
-import { createTranslator, type Locale, type TranslationKey } from '../core/i18n';
+import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import type { SessionCommandController, SessionCommandOutcome } from './session-command-controller';
@@ -76,7 +76,7 @@ const GROUP_BY_ID: Readonly<Record<ProductActionId, ProductActionGroup>> = {
 	'apply-wallet-vault-sync': 'inventory',
 };
 
-const TRANSLATION_BY_ID: Readonly<Record<ProductActionId, TranslationKey | 'commands.reviewPending'>> = {
+const TRANSLATION_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> = {
 	'open-companion': 'commands.openCompanion',
 	'open-inventory-advisor': 'commands.openInventoryAdvisor',
 	'review-pending-farming-proposal': 'commands.reviewPending',
@@ -95,52 +95,24 @@ const TRANSLATION_BY_ID: Readonly<Record<ProductActionId, TranslationKey | 'comm
 	'apply-wallet-vault-sync': 'commands.applyWalletVault',
 };
 
-const COPY = {
-	es: {
-		open: 'Abrir', run: 'Ejecutar', review: 'Revisar', apply: 'Aplicar', preview: 'Prever',
-		descriptions: {
-			'open-companion': 'Vista de sesión, detección y estado',
-			'open-inventory-advisor': 'Análisis, preferencias e histórico',
-			'review-pending-farming-proposal': 'Abre la siguiente confirmación pendiente',
-			'start-farming-session': 'Captura una línea base antes de empezar',
-			'finish-farming-session': 'Captura la instantánea final',
-			'review-session': 'Declara actividad externa antes de completar',
-			'recover-saved-session': 'Recupera el estado durable de una sesión',
-			'discard-saved-session': 'Elimina una recuperación tras confirmar',
-			'clear-completed-session': 'Escribe la nota durable antes de limpiar',
-			'arm-assisted-detection': 'Solo propone; nunca cambia una sesión en silencio',
-			'disarm-assisted-detection': 'Detiene las consultas futuras',
-			'refresh-inventory-advisor': 'Lee cuenta, catálogo y precios',
-			'preview-inventory-vault-sync': 'Prepara un plan sin escribir en el vault',
-			'apply-inventory-vault-sync': 'Escribe el plan de inventario validado',
-			'preview-wallet-vault-sync': 'Prepara un plan sin escribir en el vault',
-			'apply-wallet-vault-sync': 'Escribe el plan de cartera validado',
-		},
-		reasons: { runtime: 'El plugin todavía se está iniciando.', key: 'Vincula una clave API en Ajustes.', pending: 'No hay propuestas pendientes.', state: 'No está disponible en el estado actual.', armed: 'La detección ya está activada.', disarmed: 'La detección ya está desactivada.', preview: 'Haz una vista previa válida primero.', busy: 'Hay una operación en curso.', cooldown: 'Espera a que termine el cooldown de la API.' },
-	},
-	en: {
-		open: 'Open', run: 'Run', review: 'Review', apply: 'Apply', preview: 'Preview',
-		descriptions: {
-			'open-companion': 'Session, detection, and status view',
-			'open-inventory-advisor': 'Analysis, preferences, and history',
-			'review-pending-farming-proposal': 'Opens the next pending confirmation',
-			'start-farming-session': 'Captures a baseline before starting',
-			'finish-farming-session': 'Captures the final snapshot',
-			'review-session': 'Declares outside activity before completion',
-			'recover-saved-session': 'Recovers durable session state',
-			'discard-saved-session': 'Deletes recovery state after confirmation',
-			'clear-completed-session': 'Writes the durable note before clearing',
-			'arm-assisted-detection': 'Only proposes; never changes a session silently',
-			'disarm-assisted-detection': 'Stops future polls',
-			'refresh-inventory-advisor': 'Reads the account, catalogue, and prices',
-			'preview-inventory-vault-sync': 'Prepares a plan without writing to the Vault',
-			'apply-inventory-vault-sync': 'Writes the validated inventory plan',
-			'preview-wallet-vault-sync': 'Prepares a plan without writing to the Vault',
-			'apply-wallet-vault-sync': 'Writes the validated wallet plan',
-		},
-		reasons: { runtime: 'The plugin is still starting.', key: 'Link an API key in Settings.', pending: 'There are no pending proposals.', state: 'Unavailable in the current state.', armed: 'Detection is already armed.', disarmed: 'Detection is already disarmed.', preview: 'Create a valid preview first.', busy: 'Another operation is running.', cooldown: 'Wait for the API cooldown to finish.' },
-	},
-} as const;
+const DESCRIPTION_KEY_BY_ID: Readonly<Record<ProductActionId, TranslationKey>> = {
+	'open-companion': 'productAction.desc.open-companion',
+	'open-inventory-advisor': 'productAction.desc.open-inventory-advisor',
+	'review-pending-farming-proposal': 'productAction.desc.review-pending-farming-proposal',
+	'start-farming-session': 'productAction.desc.start-farming-session',
+	'finish-farming-session': 'productAction.desc.finish-farming-session',
+	'review-session': 'productAction.desc.review-session',
+	'recover-saved-session': 'productAction.desc.recover-saved-session',
+	'discard-saved-session': 'productAction.desc.discard-saved-session',
+	'clear-completed-session': 'productAction.desc.clear-completed-session',
+	'arm-assisted-detection': 'productAction.desc.arm-assisted-detection',
+	'disarm-assisted-detection': 'productAction.desc.disarm-assisted-detection',
+	'refresh-inventory-advisor': 'productAction.desc.refresh-inventory-advisor',
+	'preview-inventory-vault-sync': 'productAction.desc.preview-inventory-vault-sync',
+	'apply-inventory-vault-sync': 'productAction.desc.apply-inventory-vault-sync',
+	'preview-wallet-vault-sync': 'productAction.desc.preview-wallet-vault-sync',
+	'apply-wallet-vault-sync': 'productAction.desc.apply-wallet-vault-sync',
+};
 
 /** One execution boundary shared by the command palette and every visible action panel. */
 export class ProductActionController {
@@ -155,10 +127,10 @@ export class ProductActionController {
 
 	describe(id: ProductActionId): ProductActionDescriptor {
 		const locale = this.ports.getLocale();
-		const copy = COPY[locale];
+		const translator = createTranslator(locale);
 		const session = isSessionCommand(id) ? this.ports.sessionCommands.describe(id) : null;
 		const availability = isSessionCommand(id)
-			? { available: session!.available, reason: session!.available ? null : copy.reasons.state }
+			? { available: session!.available, reason: session!.available ? null : translator.t('productAction.reason.state') }
 			: this.nonSessionAvailability(id);
 		const retryAt = getRetryAt(this.ports.getConnectionState());
 		const coolingDown = retryAt !== null && retryAt > Date.now();
@@ -174,12 +146,12 @@ export class ProductActionController {
 			id,
 			group: GROUP_BY_ID[id],
 			name: session?.name ?? this.actionName(id as Exclude<ProductActionId, SessionCommandId>),
-			description: copy.descriptions[id],
-			buttonLabel: buttonLabel(id, copy),
+			description: translator.t(DESCRIPTION_KEY_BY_ID[id]),
+			buttonLabel: buttonLabel(id, translator),
 			available: enabled,
 			disabledReason: enabled ? null
-				: state === 'running' ? copy.reasons.busy
-					: state === 'cooldown' ? copy.reasons.cooldown : availability.reason,
+				: state === 'running' ? translator.t('productAction.reason.busy')
+					: state === 'cooldown' ? translator.t('productAction.reason.cooldown') : availability.reason,
 			destructive: session?.destructive ?? false,
 			state,
 		};
@@ -276,31 +248,28 @@ export class ProductActionController {
 
 	private actionName(id: Exclude<ProductActionId, SessionCommandId>): string {
 		const translator = createTranslator(this.ports.getLocale());
-		const key = TRANSLATION_BY_ID[id];
-		return key === 'commands.reviewPending'
-			? this.ports.getLocale() === 'es' ? 'Revisar propuesta de farmeo pendiente' : 'Review pending farming proposal'
-			: translator.t(key);
+		return translator.t(TRANSLATION_BY_ID[id]);
 	}
 
 	private nonSessionAvailability(id: Exclude<ProductActionId, SessionCommandId>): { available: boolean; reason: string | null } {
-		const copy = COPY[this.ports.getLocale()];
+		const t = createTranslator(this.ports.getLocale());
 		if (id === 'open-companion' || id === 'open-inventory-advisor') return { available: true, reason: null };
-		if (!this.ports.isRuntimeReady()) return { available: false, reason: copy.reasons.runtime };
+		if (!this.ports.isRuntimeReady()) return { available: false, reason: t.t('productAction.reason.runtime') };
 		if (id === 'review-pending-farming-proposal') return this.ports.getPendingProposals().pendingCount > 0
-			? { available: true, reason: null } : { available: false, reason: copy.reasons.pending };
+			? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.pending') };
 		if (id === 'arm-assisted-detection') {
-			if (!this.ports.hasApiKey()) return { available: false, reason: copy.reasons.key };
-			if (this.ports.getDetectionState().status !== 'disarmed') return { available: false, reason: copy.reasons.armed };
-			return this.ports.canArmDetection() ? { available: true, reason: null } : { available: false, reason: copy.reasons.state };
+			if (!this.ports.hasApiKey()) return { available: false, reason: t.t('productAction.reason.key') };
+			if (this.ports.getDetectionState().status !== 'disarmed') return { available: false, reason: t.t('productAction.reason.armed') };
+			return this.ports.canArmDetection() ? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.state') };
 		}
 		if (id === 'disarm-assisted-detection') return this.ports.getDetectionState().status === 'disarmed'
-			? { available: false, reason: copy.reasons.disarmed } : { available: true, reason: null };
-		if (!this.ports.hasApiKey()) return { available: false, reason: copy.reasons.key };
-		if (this.ports.isInventoryBusy()) return { available: false, reason: copy.reasons.busy };
+			? { available: false, reason: t.t('productAction.reason.disarmed') } : { available: true, reason: null };
+		if (!this.ports.hasApiKey()) return { available: false, reason: t.t('productAction.reason.key') };
+		if (this.ports.isInventoryBusy()) return { available: false, reason: t.t('productAction.reason.busy') };
 		if (id === 'apply-inventory-vault-sync') return this.ports.canApplyInventory()
-			? { available: true, reason: null } : { available: false, reason: copy.reasons.preview };
+			? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.preview') };
 		if (id === 'apply-wallet-vault-sync') return this.ports.canApplyWallet()
-			? { available: true, reason: null } : { available: false, reason: copy.reasons.preview };
+			? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.preview') };
 		return { available: true, reason: null };
 	}
 }
@@ -324,12 +293,12 @@ function isSessionCommand(id: ProductActionId): id is SessionCommandId {
 	return (SESSION_COMMAND_IDS as readonly string[]).includes(id);
 }
 
-function buttonLabel(id: ProductActionId, copy: typeof COPY.es | typeof COPY.en): string {
-	if (id.startsWith('open-')) return copy.open;
-	if (id === 'review-pending-farming-proposal' || id === 'review-session') return copy.review;
-	if (id.startsWith('preview-')) return copy.preview;
-	if (id.startsWith('apply-')) return copy.apply;
-	return copy.run;
+function buttonLabel(id: ProductActionId, t: Translator): string {
+	if (id.startsWith('open-')) return t.t('productAction.open');
+	if (id === 'review-pending-farming-proposal' || id === 'review-session') return t.t('productAction.review');
+	if (id.startsWith('preview-')) return t.t('productAction.preview');
+	if (id.startsWith('apply-')) return t.t('productAction.apply');
+	return t.t('productAction.run');
 }
 
 function requiresAccountRequest(id: ProductActionId): boolean {
@@ -343,16 +312,10 @@ function feedbackCopy(
 	locale: Locale,
 	kind: ProductActionFeedback['kind'] | Extract<ProductActionOutcome, 'cancelled' | 'unavailable'>,
 ): string {
-	if (locale === 'es') {
-		if (kind === 'running') return 'Acción en curso…';
-		if (kind === 'success') return 'Acción completada.';
-		if (kind === 'cancelled') return 'Acción cancelada; no se aplicaron cambios.';
-		if (kind === 'unavailable') return 'La acción ya no está disponible.';
-		return 'No se pudo completar la acción. El estado anterior se conserva.';
-	}
-	if (kind === 'running') return 'Action running…';
-	if (kind === 'success') return 'Action completed.';
-	if (kind === 'cancelled') return 'Action cancelled; no changes were applied.';
-	if (kind === 'unavailable') return 'The action is no longer available.';
-	return 'The action could not be completed. The previous state is preserved.';
+	const t = createTranslator(locale);
+	if (kind === 'running') return t.t('productAction.feedback.running');
+	if (kind === 'success') return t.t('productAction.feedback.success');
+	if (kind === 'cancelled') return t.t('productAction.feedback.cancelled');
+	if (kind === 'unavailable') return t.t('productAction.feedback.unavailable');
+	return t.t('productAction.feedback.failed');
 }

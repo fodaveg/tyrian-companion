@@ -47,17 +47,20 @@ export const defaultProjectFiles = [
 	'scripts/tests/probar-i18n-unused.mjs',
 	'scripts/changelog-entry.mjs',
 	'scripts/tests/probar-changelog-entry.mjs',
+	'scripts/i18n-copy-length.mjs',
+	'scripts/tests/probar-i18n-copy-length.mjs',
 ] as const;
 
 // Raised from 28 to 37 when the gate runner, the source text assertion contract
 // and the release publication gate added nine scripts, to 38 for H13.2's
 // census reindexer, to 42 for H14.7's dev:install/smoke:live pair and their
 // tests, to 44 for H14.8's record-api-fixtures and its test, to 46 for
-// H14.18's i18n-unused-keys scanner and its test, and to 48 for the same
-// lote's changelog-entry release-notes extractor and its test. The headroom
-// below is unchanged on purpose: the point of this bound is that growing it
-// stays a deliberate edit rather than something that drifts.
-export const defaultProjectCapacity = 48;
+// H14.18's i18n-unused-keys scanner and its test, to 48 for the same lote's
+// changelog-entry release-notes extractor and its test, and to 50 for
+// H14.20's i18n-copy-length scanner and its test. The headroom below is
+// unchanged on purpose: the point of this bound is that growing it stays a
+// deliberate edit rather than something that drifts.
+export const defaultProjectCapacity = 50;
 export const defaultProjectReservedHeadroom = 4;
 
 export function assertDefaultProjectCapacity(

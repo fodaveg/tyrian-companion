@@ -90,12 +90,12 @@ describe('Settings i18n projection', () => {
 		const view: ManagedAssetsView = { status: 'ready', message: 'assets_ready', plan: null };
 		const divergence = { managedAssetsRoot: 'Tyrian Companion', outputFolder: '02 - Áreas/Guild Wars 2/Tyrian Companion' };
 		expect(projectManagedAssetsDescription(view, createTranslator('es'), divergence)).toBe(
-			'Los assets gestionados siguen en «Tyrian Companion», no en la carpeta de salida «02 - Áreas/Guild Wars 2/Tyrian Companion». '
+			'Assets en «Tyrian Companion», no en «02 - Áreas/Guild Wars 2/Tyrian Companion». '
 			+ 'Usa Mover para llevarlos ahí. Los assets gestionados están listos.',
 		);
 		expect(projectManagedAssetsDescription(view, createTranslator('en'), divergence)).toBe(
-			'Managed assets still live in "Tyrian Companion", not in the output folder "02 - Áreas/Guild Wars 2/Tyrian Companion". '
-			+ 'Use Move to relocate them there. Managed assets are ready.',
+			'Assets live in "Tyrian Companion", not "02 - Áreas/Guild Wars 2/Tyrian Companion". '
+			+ 'Use Move to relocate them. Managed assets are ready.',
 		);
 	});
 
@@ -109,11 +109,11 @@ describe('Settings i18n projection', () => {
 		['missing_key', 'Selecciona una clave API de Obsidian antes de comprobar la conexión.', 'Select an Obsidian API key before checking the connection.'],
 		['key_invalid', 'La clave API fue rechazada. Selecciona una clave válida y vuelve a intentarlo.', 'The API key was rejected. Select a valid key and try again.'],
 		['key_expired', 'La clave API ha caducado. Crea o selecciona una clave vigente y vuelve a intentarlo.', 'The API key has expired. Create or select a current key and try again.'],
-		['url_restricted', 'La clave API restringe los endpoints necesarios. Usa una clave que permita tokeninfo y account.', 'The API key restricts required endpoints. Use a key that permits tokeninfo and account.'],
-		['scope_missing', 'La clave API no incluye el permiso account. Crea o selecciona una clave que lo incluya.', 'The API key does not include the account permission. Create or select a key that includes it.'],
+		['url_restricted', 'La clave API restringe endpoints necesarios. Usa una que permita tokeninfo y account.', 'The API key restricts required endpoints. Use a key that permits tokeninfo and account.'],
+		['scope_missing', 'La clave API no incluye el permiso account. Crea o elige una que lo incluya.', 'The API key lacks the account permission. Create or select one that includes it.'],
 		['rate_limited', 'Guild Wars 2 limita temporalmente las comprobaciones. Espera y vuelve a intentarlo.', 'Guild Wars 2 is temporarily limiting connection checks. Wait and try again.'],
 		['unavailable', 'Guild Wars 2 no está disponible para comprobar la conexión. Vuelve a intentarlo más tarde.', 'Guild Wars 2 is unavailable for a connection check. Try again later.'],
-		['invalid_response', 'Guild Wars 2 devolvió una respuesta no válida. Vuelve a intentarlo y revisa la clave si continúa.', 'Guild Wars 2 returned an invalid response. Try again and check the key if it continues.'],
+		['invalid_response', 'Guild Wars 2 devolvió una respuesta no válida. Reintenta y revisa la clave si continúa.', 'Guild Wars 2 returned an invalid response. Retry, and check the key if it continues.'],
 	] as const satisfies ReadonlyArray<readonly [ConnectionErrorCode, string, string]>)('maps %s to actionable Spanish and English guidance without exposing the raw error', (code, es, en) => {
 			const error = { status: 'error', code, message: 'Raw transport failure.', retryAt: null } as const;
 			expect(CONNECTION_ERROR_KEYS[code]).toMatch(/^settings\.connection\.error\./u);

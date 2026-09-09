@@ -59,6 +59,8 @@ export const GATE_STEPS = Object.freeze([
 	step('record-api-fixtures-suite', 'Suite de record-api-fixtures (sin red; fetch inyectado)', ['node', 'scripts/tests/probar-record-api-fixtures.mjs'], ['test', 'check:guardrails']),
 	step('i18n-unused-suite', 'Suite del detector de claves i18n sin consumidor', ['node', 'scripts/tests/probar-i18n-unused.mjs'], ['test', 'check:guardrails']),
 	step('i18n-unused', 'Claves i18n sin consumidor sobre el arbol', ['node', 'scripts/i18n-unused.mjs'], ['test', 'check']),
+	step('i18n-copy-length-suite', 'Suite del limite de longitud de copy settings.*/view.*', ['node', 'scripts/tests/probar-i18n-copy-length.mjs'], ['test', 'check:guardrails']),
+	step('i18n-copy-length', 'Longitud de copy settings.*/view.* sobre el arbol', ['node', 'scripts/i18n-copy-length.mjs'], ['test', 'check:guardrails']),
 	step('changelog-entry-suite', 'Suite del extractor de notas de release desde el changelog', ['node', 'scripts/tests/probar-changelog-entry.mjs'], ['test', 'check:guardrails']),
 	step('bundle', 'Bundle de produccion con esbuild', ['node', 'esbuild.config.mjs', 'production'], ['check']),
 ]);

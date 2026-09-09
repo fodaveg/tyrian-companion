@@ -159,7 +159,8 @@ describe('Companion game HUD narrative', () => {
 		const translator = createTranslator('es');
 		expect(translateRuntime(translator, 'view.assistedDetection')).toBe('Detección');
 		expect(translateRuntime(translator, 'view.detectionDetails')).toBe('Detalle de la detección');
-		expect(translateRuntime(translator, 'view.detectionScope')).toContain('No detecta farmeo general');
+		expect(translateRuntime(translator, 'view.detectionScope')).toContain('saco #36038');
+		expect(translateRuntime(translator, 'view.detectionScope.tooltip')).toContain('No detecta farmeo general');
 	});
 
 	it.each(['start_proposed', 'disarmed'] as const)(

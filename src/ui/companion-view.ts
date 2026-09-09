@@ -1038,7 +1038,8 @@ export class TyrianCompanionView extends ItemView {
 			catch { /* Optional pilot metrics never affect foreground actions. */ }
 			stateText.setText(this.t('view.bagSignalFound'));
 			proposal.hidden = false;
-			proposal.createEl('p', { text: this.t('view.startProposalDetail') });
+			const startDetail = proposal.createEl('p', { text: this.t('view.startProposalDetail') });
+			startDetail.setAttr('title', this.t('view.startProposalDetail.tooltip'));
 			this.renderProposalDetails(proposal, state.proposal.possibleStart, state.proposal.evidenceQuality);
 			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const start = answers.createEl('button', { text: this.t('view.reviewStart'), cls: 'mod-cta' });
@@ -1065,7 +1066,8 @@ export class TyrianCompanionView extends ItemView {
 
 		const disclosure = card.createEl('details', { cls: 'tyrian-companion-view__detection-details' });
 		disclosure.createEl('summary', { text: this.t('view.detectionDetails') });
-		disclosure.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
+		const detectionScope = disclosure.createEl('p', { text: this.t('view.detectionScope'), cls: 'tyrian-companion-view__detection-scope' });
+		detectionScope.setAttr('title', this.t('view.detectionScope.tooltip'));
 		this.renderDetectionQualityStatus(disclosure);
 		this.renderDetectionTimeline(disclosure, mode, state, session);
 		if (mode !== 'off' && state.status === 'armed') {
@@ -1090,7 +1092,8 @@ export class TyrianCompanionView extends ItemView {
 			result: addDetectionTimelineItem(timeline, this.t('view.detectionResult'), values.result),
 			next: addDetectionTimelineItem(timeline, this.t('view.detectionNextQuery'), values.next),
 		};
-		container.createEl('p', { text: this.t('view.detectionApiLag'), cls: 'tyrian-companion-view__detection-scope' });
+		const detectionApiLag = container.createEl('p', { text: this.t('view.detectionApiLag'), cls: 'tyrian-companion-view__detection-scope' });
+		detectionApiLag.setAttr('title', this.t('view.detectionApiLag.tooltip'));
 	}
 
 	private refreshDetectionTimeline(): void {
@@ -1248,45 +1251,28 @@ export class TyrianCompanionView extends ItemView {
 
 /** Session-card copy. Exported so the tests read the shipped strings instead of a copy of them. */
 export function simpleSessionCopy(locale: Locale) {
-	return locale === 'es' ? {
-		session: 'Sesión de farmeo', ready: 'Listo para empezar', start: 'Iniciar sesión',
-		missingKey: 'Vincula la clave API en Ajustes para empezar.', preparing: 'Preparando la sesión',
-		capturing: 'Capturando el inventario inicial…', active: 'Sesión activa', observing: 'Observando botín automáticamente',
-		finish: 'Terminar', observationFailed: 'La sesión está activa, pero la observación en vivo se ha detenido. No habrá avisos hasta que se recupere.',
-		finishing: 'Terminando sesión', reconciling: 'Reconciliando el inventario y guardando el resumen…',
-		reviewNeeded: 'La sesión necesita revisión', reviewNeededDetail: 'No se pudo cerrar el resumen automáticamente. Revisa solo esta excepción para conservarlo.', review: 'Revisar',
-		summary: 'Resumen de la sesión', saved: 'Resumen guardado', saving: 'Guardando resumen…',
-		notSaved: 'Resumen local pendiente de guardar', localSummary: 'Resumen local disponible', retrySave: 'Reintentar guardado',
-		openNote: 'Abrir la nota',
-		newSession: 'Nueva sesión', loot: 'Botín observado', durableValue: 'Valor neto guardado', durableEmpty: 'El resumen guardado no contiene ganancias.',
-		observedValue: 'Valor observado', empty: 'Aún no hay ganancias visibles en la API.',
-		sacks: 'Sacos observados', sacksPerHour: 'sacos/h', sacksRatePending: 'Ritmo aún sin ventana que medir',
-		sacksRateWindow: 'ventana', sacksRateCache: 'de caché de la API', sacksRateAtLeast: 'al menos',
-		restoredEmpty: 'Sesión restaurada. Las nuevas ganancias aparecerán cuando la API las exponga.',
-		valuePending: 'Valor pendiente', enrichmentPending: 'Algunos nombres o precios siguen pendientes de la API pública.',
-		accountReady: 'Cuenta conectada', accountUnchecked: 'La conexión se comprobará al iniciar', accountUnavailable: 'Cuenta no disponible',
-		firstReadingAt: 'Primera lectura a las', firstReadingPending: 'Primera lectura pendiente',
-		detailDisclosure: 'Detalle',
-	} as const : {
-		session: 'Farming session', ready: 'Ready to start', start: 'Start session',
-		missingKey: 'Link the API key in Settings to start.', preparing: 'Preparing session',
-		capturing: 'Capturing the initial inventory…', active: 'Session active', observing: 'Observing loot automatically',
-		finish: 'Finish', observationFailed: 'The session is active, but live observation has stopped. There will be no alerts until it recovers.',
-		finishing: 'Finishing session', reconciling: 'Reconciling inventory and saving the summary…',
-		reviewNeeded: 'The session needs review', reviewNeededDetail: 'The summary could not close automatically. Review this exception only to preserve it.', review: 'Review',
-		summary: 'Session summary', saved: 'Summary saved', saving: 'Saving summary…',
-		notSaved: 'Local summary pending save', localSummary: 'Local summary available', retrySave: 'Retry save',
-		openNote: 'Open the note',
-		newSession: 'New session', loot: 'Observed loot', durableValue: 'Saved net value', durableEmpty: 'The saved summary contains no gains.',
-		observedValue: 'Observed value', empty: 'No gains are visible in the API yet.',
-		sacks: 'Observed sacks', sacksPerHour: 'sacks/h', sacksRatePending: 'No window to measure the pace yet',
-		sacksRateWindow: 'window', sacksRateCache: 'of API cache', sacksRateAtLeast: 'at least',
-		restoredEmpty: 'Session restored. New gains will appear when the API exposes them.',
-		valuePending: 'Value pending', enrichmentPending: 'Some names or prices are still pending from the public API.',
-		accountReady: 'Account connected', accountUnchecked: 'Connection will be checked when starting', accountUnavailable: 'Account unavailable',
-		firstReadingAt: 'First reading at', firstReadingPending: 'First reading pending',
-		detailDisclosure: 'Detail',
-	} as const;
+	const t = createTranslator(locale);
+	return {
+		session: t.t('sessionCard.session'), ready: t.t('sessionCard.ready'), start: t.t('sessionCard.start'),
+		missingKey: t.t('sessionCard.missingKey'), preparing: t.t('sessionCard.preparing'),
+		capturing: t.t('sessionCard.capturing'), active: t.t('sessionCard.active'), observing: t.t('sessionCard.observing'),
+		finish: t.t('sessionCard.finish'), observationFailed: t.t('sessionCard.observationFailed'),
+		finishing: t.t('sessionCard.finishing'), reconciling: t.t('sessionCard.reconciling'),
+		reviewNeeded: t.t('sessionCard.reviewNeeded'), reviewNeededDetail: t.t('sessionCard.reviewNeededDetail'), review: t.t('sessionCard.review'),
+		summary: t.t('sessionCard.summary'), saved: t.t('sessionCard.saved'), saving: t.t('sessionCard.saving'),
+		notSaved: t.t('sessionCard.notSaved'), localSummary: t.t('sessionCard.localSummary'), retrySave: t.t('sessionCard.retrySave'),
+		openNote: t.t('sessionCard.openNote'),
+		newSession: t.t('sessionCard.newSession'), loot: t.t('sessionCard.loot'), durableValue: t.t('sessionCard.durableValue'),
+		durableEmpty: t.t('sessionCard.durableEmpty'),
+		observedValue: t.t('sessionCard.observedValue'), empty: t.t('sessionCard.empty'),
+		sacks: t.t('sessionCard.sacks'), sacksPerHour: t.t('sessionCard.sacksPerHour'), sacksRatePending: t.t('sessionCard.sacksRatePending'),
+		sacksRateWindow: t.t('sessionCard.sacksRateWindow'), sacksRateCache: t.t('sessionCard.sacksRateCache'), sacksRateAtLeast: t.t('sessionCard.sacksRateAtLeast'),
+		restoredEmpty: t.t('sessionCard.restoredEmpty'),
+		valuePending: t.t('sessionCard.valuePending'), enrichmentPending: t.t('sessionCard.enrichmentPending'),
+		accountReady: t.t('sessionCard.accountReady'), accountUnchecked: t.t('sessionCard.accountUnchecked'), accountUnavailable: t.t('sessionCard.accountUnavailable'),
+		firstReadingAt: t.t('sessionCard.firstReadingAt'), firstReadingPending: t.t('sessionCard.firstReadingPending'),
+		detailDisclosure: t.t('sessionCard.detailDisclosure'),
+	};
 }
 
 /**

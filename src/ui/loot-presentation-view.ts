@@ -1,3 +1,4 @@
+import { createTranslator, type Translator } from '../core/i18n';
 import {
 	formatLootMoney,
 	localizedLootState,
@@ -13,6 +14,7 @@ export function lootPresentationLayout(width: number): LootPresentationLayout {
 
 /** DOM-only adapter for the shared data-only H5.5 presentation. */
 export function renderLootPresentationView(container: HTMLElement, presentation: LootPresentationV1): void {
+	const t = createTranslator(presentation.locale);
 	const section = createEl('section');
 	section.className = 'tyrian-companion-loot';
 	const region = lootPresentationRegionAttributes(presentation);
@@ -20,14 +22,14 @@ export function renderLootPresentationView(container: HTMLElement, presentation:
 	const heading = createEl('h3');
 	heading.textContent = lootPresentationRegionLabel(presentation);
 	section.append(heading);
-	section.append(renderTable(presentation));
-	section.append(renderCards(presentation));
-	section.append(renderEconomy(presentation));
+	section.append(renderTable(presentation, t));
+	section.append(renderCards(presentation, t));
+	section.append(renderEconomy(presentation, t));
 	container.append(section);
 }
 
 export function lootPresentationRegionLabel(presentation: Pick<LootPresentationV1, 'locale'>): string {
-	return presentation.locale === 'es' ? 'Botín observado' : 'Observed loot';
+	return createTranslator(presentation.locale).t('loot.regionLabel');
 }
 
 export function lootPresentationRegionAttributes(
@@ -36,17 +38,17 @@ export function lootPresentationRegionAttributes(
 	return { 'aria-label': lootPresentationRegionLabel(presentation) };
 }
 
-function renderTable(presentation: LootPresentationV1): HTMLTableElement {
+function renderTable(presentation: LootPresentationV1, t: Translator): HTMLTableElement {
 	const table = createEl('table');
 	table.className = 'tyrian-companion-loot__table';
 	const caption = createEl('caption');
-	caption.textContent = presentation.locale === 'es'
-		? 'Cambios netos del almacenamiento observado'
-		: 'Net changes in observed storage';
+	caption.textContent = t.t('loot.tableCaption');
 	table.append(caption);
-	const headers = presentation.locale === 'es'
-		? ['Botín', 'Cambio neto', 'Reserva', 'Guardar', 'Libre', 'Neto ahora', 'Neto listado', 'Siguiente paso', 'Destino', 'Valor']
-		: ['Loot', 'Net delta', 'Reserved', 'Hold', 'Free', 'Now net', 'Listing net', 'Next step', 'Destination', 'Value'];
+	const headers = [
+		t.t('loot.header.item'), t.t('loot.header.netDelta'), t.t('loot.header.reserved'), t.t('loot.header.hold'),
+		t.t('loot.header.free'), t.t('loot.header.nowNet'), t.t('loot.header.listingNet'), t.t('loot.header.nextStep'),
+		t.t('loot.header.destination'), t.t('loot.header.value'),
+	];
 	const head = createEl('thead');
 	const headRow = createEl('tr');
 	for (const [index, label] of headers.entries()) {
@@ -56,12 +58,12 @@ function renderTable(presentation: LootPresentationV1): HTMLTableElement {
 	}
 	head.append(headRow); table.append(head);
 	const body = createEl('tbody');
-	for (const row of presentation.rows) body.append(renderTableRow(row, presentation));
+	for (const row of presentation.rows) body.append(renderTableRow(row, presentation, t));
 	table.append(body);
 	return table;
 }
 
-function renderTableRow(row: LootPresentationRow, presentation: LootPresentationV1): HTMLTableRowElement {
+function renderTableRow(row: LootPresentationRow, presentation: LootPresentationV1, t: Translator): HTMLTableRowElement {
 	const tr = createEl('tr');
 	const name = createEl('th'); name.scope = 'row'; name.textContent = row.name; tr.append(name);
 	appendCell(tr, String(row.netQuantity));
@@ -74,7 +76,7 @@ function renderTableRow(row: LootPresentationRow, presentation: LootPresentation
 	}
 	appendCell(tr, valuation(row, 'immediate', presentation));
 	appendCell(tr, valuation(row, 'listing', presentation));
-	appendCell(tr, recommendation(row, presentation));
+	appendCell(tr, recommendation(row, presentation, t));
 	appendCompactCell(tr, row.allocation.status === 'known'
 		? `${String(row.allocation.reserved)} · ${String(row.allocation.held)} · ${String(row.allocation.free)}`
 		: localizedLootState(presentation.locale, row.allocation.status));
@@ -82,41 +84,38 @@ function renderTableRow(row: LootPresentationRow, presentation: LootPresentation
 	return tr;
 }
 
-function renderCards(presentation: LootPresentationV1): HTMLElement {
+function renderCards(presentation: LootPresentationV1, t: Translator): HTMLElement {
 	const list = createDiv(); list.className = 'tyrian-companion-loot__cards';
 	for (const row of presentation.rows) {
 		const article = createEl('article'); article.className = 'tyrian-companion-loot__card';
 		const heading = createEl('h4'); heading.textContent = row.name; article.append(heading);
-		article.append(definitionList(presentation, row));
+		article.append(definitionList(presentation, row, t));
 		list.append(article);
 	}
 	return list;
 }
 
-function definitionList(presentation: LootPresentationV1, row: LootPresentationRow): HTMLDListElement {
+function definitionList(presentation: LootPresentationV1, row: LootPresentationRow, t: Translator): HTMLDListElement {
 	const dl = createEl('dl');
-	addDefinition(dl, presentation.locale === 'es' ? 'Cambio neto' : 'Net delta', String(row.netQuantity));
-	addDefinition(dl, presentation.locale === 'es' ? 'Destino' : 'Destination', row.allocation.status === 'known'
+	addDefinition(dl, t.t('loot.netDelta'), String(row.netQuantity));
+	addDefinition(dl, t.t('loot.destination'), row.allocation.status === 'known'
 		? `${String(row.allocation.reserved)} · ${String(row.allocation.held)} · ${String(row.allocation.free)}`
 		: localizedLootState(presentation.locale, row.allocation.status));
-	addDefinition(dl, presentation.locale === 'es' ? 'Valor' : 'Value',
+	addDefinition(dl, t.t('loot.value'),
 		`${valuation(row, 'immediate', presentation)} · ${valuation(row, 'listing', presentation)}`);
-	addDefinition(dl, presentation.locale === 'es' ? 'Siguiente paso' : 'Next step', recommendation(row, presentation));
+	addDefinition(dl, t.t('loot.nextStep'), recommendation(row, presentation, t));
 	return dl;
 }
 
-function renderEconomy(presentation: LootPresentationV1): HTMLElement {
+function renderEconomy(presentation: LootPresentationV1, t: Translator): HTMLElement {
 	const economy = createEl('section'); economy.className = 'tyrian-companion-loot__economy';
 	const heading = createEl('h4'); heading.textContent = presentation.economy.label; economy.append(heading);
 	const dl = createEl('dl');
-	addDefinition(dl, presentation.locale === 'es' ? 'Neto inmediato' : 'Immediate net',
-		money(presentation.economy.immediateCopper, presentation));
-	addDefinition(dl, presentation.locale === 'es' ? 'Neto listado' : 'Listing net',
-		money(presentation.economy.listingCopper, presentation));
-	addDefinition(dl, presentation.locale === 'es' ? 'Moneda neta' : 'Net coin',
-		money(presentation.economy.coinNetCopper, presentation));
+	addDefinition(dl, t.t('loot.immediateNet'), money(presentation.economy.immediateCopper, presentation));
+	addDefinition(dl, t.t('loot.listingNet'), money(presentation.economy.listingCopper, presentation));
+	addDefinition(dl, t.t('loot.netCoin'), money(presentation.economy.coinNetCopper, presentation));
 	if (presentation.economy.valuedItemKinds !== null && presentation.economy.totalItemKinds !== null) {
-		addDefinition(dl, presentation.locale === 'es' ? 'Tipos valorados' : 'Valued kinds',
+		addDefinition(dl, t.t('loot.valuedKinds'),
 			`${String(presentation.economy.valuedItemKinds)}/${String(presentation.economy.totalItemKinds)}`);
 	}
 	economy.append(dl);
@@ -134,11 +133,9 @@ function valuation(row: LootPresentationRow, route: 'immediate' | 'listing', pre
 	return money(route === 'immediate' ? row.valuation.immediateCopper : row.valuation.listingCopper, presentation);
 }
 
-function recommendation(row: LootPresentationRow, presentation: LootPresentationV1): string {
+function recommendation(row: LootPresentationRow, presentation: LootPresentationV1, t: Translator): string {
 	if (row.recommendation.status !== 'ready') return localizedLootState(presentation.locale, row.recommendation.status);
-	const action = presentation.locale === 'es'
-		? row.recommendation.action === 'open' ? 'Abrir' : 'Vender'
-		: row.recommendation.action === 'open' ? 'Open' : 'Sell';
+	const action = t.t(row.recommendation.action === 'open' ? 'loot.action.open' : 'loot.action.sell');
 	return `${action} ${String(row.recommendation.quantity)}`;
 }
 

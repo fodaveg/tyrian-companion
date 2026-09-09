@@ -63,6 +63,8 @@ interface CategorizedSettingDefinition {
 	visible?: () => boolean;
 	name: string;
 	desc: string;
+	/** Longer rationale kept out of the always-visible desc to respect the 90-char copy limit. */
+	tooltip?: string;
 	render: CategorizedSettingRenderer;
 }
 
@@ -182,6 +184,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			if (!isActiveSettingsCategory(definition.category, this.activeCategory)) continue;
 			if (definition.visible !== undefined && !definition.visible()) continue;
 			const setting = new Setting(section).setName(definition.name).setDesc(definition.desc);
+			if (definition.tooltip !== undefined) setting.setTooltip(definition.tooltip);
 			setting.settingEl.dataset.tyrianSettingRow = String(index);
 			definition.render(setting, (settings) => this.saveSettings(index, settings));
 			const state = this.saveStates.get(index);
@@ -348,6 +351,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						const resolved = resolveVaultFolderInput(outputFolder, this.app.vault.configDir);
 						if (resolved.status === 'invalid') {
 							error.setText(this.t('settings.output.invalid'));
+							error.setAttr('title', this.t('settings.output.invalid.tooltip'));
 							return;
 						}
 						error.setText('');
@@ -462,6 +466,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'advanced',
 				name: this.t('settings.salvage.kit.name'), desc: this.t('settings.salvage.kit.desc'),
+				tooltip: this.t('settings.salvage.kit.desc.tooltip'),
 				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('', this.t('settings.salvage.kit.default'))
@@ -707,6 +712,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'advanced',
 				name: this.t('settings.halloween.enabled.name'), desc: this.t('settings.halloween.enabled.desc'),
+				tooltip: this.t('settings.halloween.enabled.desc.tooltip'),
 				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
@@ -717,6 +723,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'advanced',
 				name: this.t('settings.alerts.webhook.name'), desc: this.t('settings.alerts.webhook.desc'),
+				tooltip: this.t('settings.alerts.webhook.desc.tooltip'),
 				render: (setting, save) => {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
@@ -741,6 +748,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			{
 				category: 'advanced',
 				name: this.t('settings.alerts.ingame.enabled.name'), desc: this.t('settings.alerts.ingame.enabled.desc'),
+				tooltip: this.t('settings.alerts.ingame.enabled.desc.tooltip'),
 				render: (setting, save) => {
 					setting.addDropdown((dropdown) => dropdown
 						.addOption('off', this.t('settings.off')).addOption('on', this.t('settings.halloween.on'))
@@ -1325,6 +1333,7 @@ function confirmLocalDebugExport(
 				const list = this.contentEl.createEl('ul');
 				for (const item of preview.included) list.createEl('li', { text: t(`settings.debug.exportModal.${item}`) });
 				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.excluded') });
+				this.contentEl.createEl('p', { text: t('settings.debug.exportModal.excludedUuids') });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
 				const confirm = actions.createEl('button', { text: t('settings.debug.exportModal.confirm'), cls: 'mod-cta' });
@@ -1371,7 +1380,11 @@ function confirmPilotMetricsExport(
 				this.contentEl.createEl('p', { text: t('settings.pilot.preview.summary', {
 					observations: preview.observationCount, platforms: preview.platformCount,
 				}) });
-				this.contentEl.createEl('p', { text: t('settings.pilot.preview.privacy') });
+				for (const key of [
+					'settings.pilot.preview.privacy',
+					'settings.pilot.preview.privacyExcludes',
+					'settings.pilot.preview.privacySync',
+				] as const) this.contentEl.createEl('p', { text: t(key) });
 				const list = this.contentEl.createEl('ul');
 				for (const file of preview.files) list.createEl('li', { text: file });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
@@ -1415,7 +1428,11 @@ function confirmPilotMetricsDisable(
 		const modal = new class extends Modal {
 			onOpen(): void {
 				this.setTitle(t('settings.pilot.disable.title'));
-				this.contentEl.createEl('p', { text: t('settings.pilot.disable.desc') });
+				for (const key of [
+					'settings.pilot.disable.desc',
+					'settings.pilot.disable.descExports',
+					'settings.pilot.disable.descResume',
+				] as const) this.contentEl.createEl('p', { text: t(key) });
 				const actions = this.contentEl.createDiv({ cls: 'modal-button-container' });
 				actions.createEl('button', { text: t('common.cancel') }).addEventListener('click', () => this.close());
 				const disable = actions.createEl('button', { text: t('settings.pilot.disable.confirm'), cls: 'mod-warning' });

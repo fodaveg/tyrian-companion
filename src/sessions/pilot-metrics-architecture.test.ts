@@ -73,8 +73,8 @@ describe('pilot metrics architecture', () => {
 	it('states that clear resets the review and disable leaves prior Vault exports untouched', () => {
 		for (const locale of ['es', 'en'] as const) {
 			expect(TRANSLATIONS[locale]['settings.pilot.clear.desc']).toMatch(/revisi|review/iu);
-			expect(TRANSLATIONS[locale]['settings.pilot.disable.desc']).toMatch(/Vault/u);
-			expect(TRANSLATIONS[locale]['settings.pilot.disable.desc']).toMatch(/no se borran|not deleted/iu);
+			expect(TRANSLATIONS[locale]['settings.pilot.disable.descExports']).toMatch(/Vault/u);
+			expect(TRANSLATIONS[locale]['settings.pilot.disable.descExports']).toMatch(/no se tocan|not touched/iu);
 		}
 	});
 
