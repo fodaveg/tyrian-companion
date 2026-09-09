@@ -54,7 +54,7 @@ function testEveryStepRunsEvenAfterARed() {
 }
 
 function testGreenGateIsGreen() {
-	for (const group of ['test', 'check']) {
+	for (const group of ['test', 'check', 'check:guardrails']) {
 		const { code, ledger } = runGate({ group, spawn: recordingSpawn(stepsForGroup(group), [], () => 0), out: sink(), err: sink() });
 		assert(code === 0, `the ${group} group returned red with every step green`);
 		assert(ledger.every((entry) => entry.status === PASSED), `the ${group} group left a step without a green verdict`);
@@ -122,7 +122,7 @@ function testUnknownGroupIsRed() {
 
 /** `check` used to run the observability census twice, once via `test` and once via `security:scan`. */
 function testNoDuplicatedWorkInsideAGroup() {
-	for (const group of ['test', 'check']) {
+	for (const group of ['test', 'check', 'check:guardrails']) {
 		const steps = stepsForGroup(group);
 		const ids = steps.map((step) => step.id);
 		assert(new Set(ids).size === ids.length, `the ${group} group declares a duplicated step id`);
@@ -157,12 +157,26 @@ function testManifestCoversDeclaredScripts() {
 	);
 }
 
+/**
+ * `check` and `check:guardrails` are a deliberate split (H14.16): together
+ * they must still audit everything `test` runs, and neither one alone is
+ * `test` anymore. A step that only `test` runs and neither CI group reaches
+ * would run on a developer's machine but never in CI.
+ */
 function testTestGroupIsContainedInCheck() {
 	const testIds = new Set(stepsForGroup('test').map((step) => step.id));
 	const checkIds = new Set(stepsForGroup('check').map((step) => step.id));
-	const missing = [...testIds].filter((id) => !checkIds.has(id));
-	assert(missing.length === 0, `check does not include these test steps: ${missing.join(', ')}`);
-	assert(checkIds.size > testIds.size, 'check does not add lint, typecheck or bundle on top of test');
+	const guardrailIds = new Set(stepsForGroup('check:guardrails').map((step) => step.id));
+	const combined = new Set([...checkIds, ...guardrailIds]);
+	const missing = [...testIds].filter((id) => !combined.has(id));
+	assert(missing.length === 0, `neither check nor check:guardrails cover these test steps: ${missing.join(', ')}`);
+	assert(checkIds.size > 0 && guardrailIds.size > 0, 'check and check:guardrails must both declare steps');
+	const overlap = [...checkIds].filter((id) => guardrailIds.has(id));
+	assert(overlap.length === 0, `check and check:guardrails both run: ${overlap.join(', ')}`);
+	assert(
+		checkIds.has('lint') && checkIds.has('typecheck') && checkIds.has('bundle'),
+		'check does not add lint, typecheck or bundle on top of test',
+	);
 }
 
 /**

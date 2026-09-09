@@ -16,4 +16,5 @@ coverage/
 .env.*
 *.pem
 *.key
+.eslintcache
 /.claude/

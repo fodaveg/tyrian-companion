@@ -170,7 +170,8 @@ function classifyCatalogBatch(body: unknown, ids: number[]): Map<number, Catalog
 	return result;
 }
 
-function classifyPriceBatch(body: unknown, ids: number[]): Map<number, PriceCoverage> {
+/** Exported so `commerce-prices.recorded.test.ts` can regression-test this exact classification against a real API capture. */
+export function classifyPriceBatch(body: unknown, ids: number[]): Map<number, PriceCoverage> {
 	const result = new Map<number, PriceCoverage>(ids.map((id) => [id, { status: 'no_quote', price: null }]));
 	if (!Array.isArray(body)) return new Map<number, PriceCoverage>(ids.map((id) => [id, { status: 'invalid', price: null }]));
 	const requested = new Set(ids);
