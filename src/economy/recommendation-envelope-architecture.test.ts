@@ -1,9 +1,9 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { isPlainJsonValue, moduleSpecifiers } from '../test/module-boundary';
+import { isPlainJsonValue, moduleSpecifiers, readModuleSource } from '../test/module-boundary';
 import * as containerRecommendationApi from './container-recommendation';
 import * as inventoryEnvelopeApi from './inventory-recommendation-envelope';
 import * as envelopeApi from './recommendation-envelope';
@@ -23,7 +23,7 @@ const FORBIDDEN_RUNTIME_EXPORT = /execut(?:e|or)|order|request|client|operation|
 describe('recommendation architecture boundary', () => {
 	it('fails when a recommendation module imports an I/O capability', () => {
 		for (const name of BOUNDARY_FILES) {
-			for (const specifier of moduleSpecifiers(readFileSync(join(ECONOMY_DIRECTORY, name), 'utf8'))) {
+			for (const specifier of moduleSpecifiers(readModuleSource(join(ECONOMY_DIRECTORY, name)))) {
 				expect(forbiddenDependency(specifier),
 					`${name} imports forbidden recommendation dependency ${specifier}`).toBe(false);
 			}

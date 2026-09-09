@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, it } from 'vitest';
+
+import { readModuleSource } from '../test/module-boundary';
 
 const BACKGROUND_FILES = [
 	'src/sessions/pending-proposal-model.ts',
@@ -10,27 +10,27 @@ const BACKGROUND_FILES = [
 
 describe('pending confirmation background boundary', () => {
 	it.each(BACKGROUND_FILES)('%s cannot import UI or side-effect surfaces', (path) => {
-		const source = readFileSync(path, 'utf8');
+		const source = readModuleSource(path);
 		expect(source).not.toMatch(/from\s+['"]obsidian['"]|\b(?:Notice|Notification|Modal)\b|\.focus\s*\(|revealLeaf\s*\(|requestUrl\s*\(|fetch\s*\(/u);
 	});
 
 	it('routes detector background changes through the in-place status port', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
-		const composition = readFileSync('src/runtime/assemble-sessions.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
+		const composition = readModuleSource('src/runtime/assemble-sessions.ts');
 		// The detector's state change is an in-place status refresh, never a repaint: the
 		// composition forwards it untouched and the plugin answers with the status port.
 		expect(source).toContain('onDetectionStateChange: () => this.refreshBackgroundIndicators()');
 		expect(composition).toMatch(/new AssistedDetectionService\(\{[\s\S]*onStateChange: input\.onDetectionStateChange/u);
 		expect(composition).not.toContain('renderViews');
 
-		const view = readFileSync('src/ui/companion-view.ts', 'utf8');
+		const view = readModuleSource('src/ui/companion-view.ts');
 		const refresh = view.slice(view.indexOf('refreshBackgroundStatus(): void'), view.indexOf('private projectStatus'));
 		expect(refresh).toContain('this.refreshDynamicStatus()');
 		expect(refresh).not.toMatch(/\.render\s*\(|contentEl\.empty/u);
 	});
 
 	it('keeps ordinary manual workflows independent from pending queue receipts', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 		const stop = source.slice(
 			source.indexOf('private async performStopManualSession'),
 			source.indexOf('\n\topenManualSessionStart('),
@@ -47,9 +47,9 @@ describe('pending confirmation background boundary', () => {
 	});
 
 	it('registers claim renewal timers with plugin unload lifecycle', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 		expect(source).toContain('this.pendingClaimRenewals = sessionServices.pendingClaimRenewals');
-		expect(readFileSync('src/runtime/assemble-sessions.ts', 'utf8'))
+		expect(readModuleSource('src/runtime/assemble-sessions.ts'))
 			.toContain('new PendingProposalRenewalRegistry({');
 		expect(source).toContain('this.pendingClaimRenewals?.dispose()');
 		expect(source).toContain('const stopRenewal = this.pendingClaimRenewals.start');
