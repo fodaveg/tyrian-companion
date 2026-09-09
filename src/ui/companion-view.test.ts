@@ -2,9 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./halloween-alert-panel', () => ({ renderHalloweenAlertPanel: vi.fn() }));
 
-import { TyrianCompanionView, liveSackRateText, simpleSessionCopy } from './companion-view';
+import { TyrianCompanionView, liveSackRateDetail, liveSackRateHeadline, simpleSessionCopy } from './companion-view';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime } from '../core/i18n-runtime-catalog';
+import { formatClock } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import { ProductActionController } from './product-action-controller';
@@ -24,6 +25,7 @@ describe('Companion local diagnostics warning', () => {
 			enabled: true, minimumLevel: 'debug', state: 'degraded', path: 'test-config-dir/plugins/tyrian-companion/logs/',
 			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 1,
 			errorCode: 'logger_failure', queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 0, lastError: null,
 		};
 		const warning = {
 			setAttr: (name: string, value: string) => { if (name === 'role') role = value; },
@@ -67,10 +69,39 @@ describe('Companion local diagnostics warning', () => {
 		render.call(harness, { createDiv });
 		expect(createDiv).not.toHaveBeenCalled();
 	});
+
+	it('surfaces errors since load and the last failure even while the writer itself is healthy (H14.5)', () => {
+		const texts: string[] = [];
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: '2026-09-08T12:22:00.000Z', droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 20,
+			lastError: { component: 'connection', action: 'connection_check', code: 'network_failure', occurredAt: '2026-09-08T12:22:00.000Z' },
+		};
+		const warning = {
+			setAttr: () => undefined,
+			createEl: (_tag: string, options: { text: string }) => { texts.push(options.text); return { addEventListener: () => undefined }; },
+		};
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: { getLocalDebugStatus: () => status, getLocale: () => 'en' as const },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderLocalDebugWarning(this: typeof harness, container: { createDiv(): typeof warning }): void;
+		}).renderLocalDebugWarning;
+		render.call(harness, { createDiv: () => warning });
+		expect(texts).toEqual([
+			'Errors since load: 20',
+			'Last failure: network_failure in connection/connection_check, 2026-09-08T12:22:00.000Z',
+		]);
+	});
 });
 
 describe('Companion game HUD narrative', () => {
 	it('renders the exact bag scope and last query to result to next query sequence', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.parse('2026-08-31T10:30:00.000Z'));
 		const document = new RetainedFakeDocument();
 		const container = new RetainedFakeElement('div', document);
 		const attemptedAt = Date.parse('2026-08-31T10:00:00.000Z');
@@ -570,9 +601,11 @@ describe('Companion retained product shell', () => {
 			scheduleRefresh: vi.fn(),
 			renderLocalDebugWarning: vi.fn(),
 			// The panels below have their own behavioural suites; this case only watches the shell.
+			renderSellSignal: vi.fn(),
 			renderPendingConfirmationSlot: vi.fn(),
 			renderAssistedDetection: vi.fn(),
 			renderHalloweenAlerts: vi.fn(),
+			renderManagedAssetsConflict: vi.fn(),
 			renderSessionHistory: vi.fn(),
 			sessionHistoryMount: null,
 			renderSimpleSession: (container: RetainedFakeElement) => {
@@ -644,7 +677,7 @@ describe('Companion live sack counter', () => {
 			getLocale: () => 'es' as const,
 			getLiveSessionLoot: () => ({
 				status: 'observing' as const, sessionId: 'session', restored: false, rows: [],
-				knownTotalCopper: 0, sackQuantity, hasUnknownValue: false, updatedAt: null, error: null,
+				knownTotalCopper: 0, sackQuantity, hasUnknownValue: false, updatedAt: BASELINE_AT, error: null,
 			}),
 			getSessionState: () => ({
 				version: 1 as const, status: 'active' as const, sessionId: 'session',
@@ -685,7 +718,11 @@ describe('Companion live sack counter', () => {
 		const texts = walkRetained(region).map((element) => element.textContent);
 		expect(texts).toContain('Sacos observados');
 		expect(texts).toContain('12');
-		expect(texts).toContain('18.0–36.0 sacos/h · ventana 30 min ± 10 min de caché de la API');
+		expect(texts).toContain('18.0–36.0 sacos/h');
+		expect(texts).toContain('ventana 30 min ± 10 min de caché de la API');
+		// The window/margin arithmetic sits behind the closed "Detalle" disclosure, not inline.
+		const disclosure = walkRetained(region).find((element) => element.tag === 'details');
+		expect(disclosure?.open).toBe(false);
 	});
 
 	it('repaints the pace in place on the tick the view already runs every second', () => {
@@ -703,22 +740,163 @@ describe('Companion live sack counter', () => {
 			harness, region as unknown as HTMLElement,
 			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
 		);
-		const rate = walkRetained(region).find((element) =>
-			element.textContent.endsWith('de caché de la API'));
-		expect(rate?.textContent).toBe('18.0–36.0 sacos/h · ventana 30 min ± 10 min de caché de la API');
+		const rate = walkRetained(region).find((element) => element.textContent.endsWith('sacos/h'));
+		const detail = walkRetained(region).find((element) => element.textContent.endsWith('de caché de la API'));
+		expect(rate?.textContent).toBe('18.0–36.0 sacos/h');
+		expect(detail?.textContent).toBe('ventana 30 min ± 10 min de caché de la API');
 
 		vi.setSystemTime(Date.parse(BASELINE_AT) + 3_600_000);
 		methods.refreshBackgroundStatus.call(harness);
 
-		// The same node, not a rebuilt one: a repaint that stole focus would be the bug here.
-		expect(rate?.textContent).toBe('10.3–14.4 sacos/h · ventana 60 min ± 10 min de caché de la API');
+		// The same nodes, not rebuilt ones: a repaint that stole focus would be the bug here.
+		expect(rate?.textContent).toBe('10.3–14.4 sacos/h');
+		expect(detail?.textContent).toBe('ventana 60 min ± 10 min de caché de la API');
 	});
 
 	it('says there is no window to measure instead of inventing a pace before the baseline', () => {
 		const copy = simpleSessionCopy('es');
-		expect(liveSackRateText(12, null, copy)).toBe('Ritmo aún sin ventana que medir');
-		expect(liveSackRateText(12, 0, copy)).toBe('Ritmo aún sin ventana que medir');
-		expect(liveSackRateText(12, 300_000, copy)).toBe('al menos 48.0 sacos/h · ventana 5 min ± 10 min de caché de la API');
+		expect(liveSackRateHeadline(12, null, copy)).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateHeadline(12, 0, copy)).toBe('Ritmo aún sin ventana que medir');
+		expect(liveSackRateHeadline(12, 300_000, copy)).toBe('al menos 48.0 sacos/h');
+		expect(liveSackRateDetail(12, 300_000, copy)).toBe('ventana 5 min ± 10 min de caché de la API');
+	});
+
+	it('shows a single "first reading at HH:MM" line instead of a zero breakdown before any poll has answered', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const region = new RetainedFakeElement('div', document);
+		const nextRunAt = Date.parse('2026-08-31T12:18:00.000Z');
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getLiveSessionLoot: () => ({
+					status: 'observing' as const, sessionId: 'session', restored: false, rows: [],
+					knownTotalCopper: 0, sackQuantity: 0, hasUnknownValue: false, updatedAt: null, error: null,
+				}),
+				getAssistedDetectionState: () => ({
+					status: 'armed' as const, armedAt: '2026-08-31T12:00:00.000Z', lastSnapshotAt: null,
+					scheduler: {
+						status: 'scheduled' as const, intervalMs: 300_000, nextRunAt,
+						lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+					},
+				}),
+			},
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderLiveLoot(this: typeof harness, container: HTMLElement, loot: unknown, copy: unknown): void;
+		}).renderLiveLoot;
+		render.call(
+			harness, region as unknown as HTMLElement,
+			harness.actions.getLiveSessionLoot(), simpleSessionCopy('es'),
+		);
+		const texts = walkRetained(region).map((element) => element.textContent);
+		expect(texts.some((text) => text.includes('0g') || text === '0')).toBe(false);
+		expect(texts).toContain(`Primera lectura a las ${formatClock(nextRunAt, 'es')}`);
+	});
+});
+
+/** H14.6: the sell/hold verdict as a permanent card line, independent of whether an alert fired. */
+describe('Companion sell signal line', () => {
+	function renderSellSignal(projection: unknown): RetainedFakeElement {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getSellSignalState: () => ({ seedStatus: 'unseeded', seedFailure: null, seedDayCount: 0, projection, lastGainCopper: null }),
+			},
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderSellSignal(this: typeof harness, container: HTMLElement): void;
+		}).renderSellSignal;
+		render.call(harness, container as unknown as HTMLElement);
+		return container;
+	}
+
+	it('shows price, verb and reason in sell state, with no alert wiring involved', () => {
+		const texts = walkRetained(renderSellSignal({
+			status: 'decided', signal: 'sell', dayUtc: '2026-10-20', bidCopper: 5_000,
+			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
+			sellThresholdCopper: 4_500, inSeason: false, origin: 'seeded',
+		})).map((element) => element.textContent).join(' ');
+		expect(texts).toContain('Bolsa de truco o trato: 0g 50s 0c');
+		expect(texts).toContain('Vende');
+		expect(texts).toContain('45s');
+	});
+
+	it('shows price, verb and reason in hold state', () => {
+		const texts = walkRetained(renderSellSignal({
+			status: 'decided', signal: 'hold', dayUtc: '2026-10-20', bidCopper: 3_000,
+			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
+			sellThresholdCopper: 4_500, inSeason: true, origin: 'seeded',
+		})).map((element) => element.textContent).join(' ');
+		expect(texts).toContain('Bolsa de truco o trato: 0g 30s 0c');
+		expect(texts).toContain('Espera');
+	});
+
+	it('renders nothing when the signal has not decided or is neutral', () => {
+		expect(walkRetained(renderSellSignal(null))).toHaveLength(1);
+		expect(walkRetained(renderSellSignal({ status: 'undecidable', reason: 'no_close_today' }))).toHaveLength(1);
+		expect(walkRetained(renderSellSignal({
+			status: 'decided', signal: 'none', dayUtc: '2026-10-20', bidCopper: 4_000,
+			referenceMaxCopper: 6_000, referenceMinCopper: 3_000, referenceDayCount: 365,
+			sellThresholdCopper: 4_500, inSeason: true, origin: 'seeded',
+		}))).toHaveLength(1);
+	});
+});
+
+/** H14.5: the escape hatch for a managed-assets `operation_conflict` that never resolves itself. */
+describe('Companion managed-assets conflict banner', () => {
+	it('shows a Resolve button that relaunches reconciliation and re-renders on completion', async () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const container = new RetainedFakeElement('div', document);
+		const retry = vi.fn(async () => undefined);
+		let renders = 0;
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getManagedAssetsView: () => ({ status: 'error' as const, message: 'operation_conflict' as const, plan: null }),
+				retryManagedAssetsReconciliation: retry,
+			},
+			render: () => { renders += 1; },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderManagedAssetsConflict(this: typeof harness, container: HTMLElement): void;
+		}).renderManagedAssetsConflict;
+		render.call(harness, container as unknown as HTMLElement);
+
+		const all = walkRetained(container);
+		expect(all.find((element) => element.attributes.get('role') === 'alert')).toBeDefined();
+		const button = all.find((element) => element.tag === 'button');
+		button?.listeners.get('click')?.[0]?.();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(retry).toHaveBeenCalledOnce();
+		expect(renders).toBe(2);
+	});
+
+	it('renders nothing for a healthy or a different managed-assets state', () => {
+		const document = new RetainedFakeDocument();
+		installRetainedDom(document);
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getManagedAssetsView: () => ({ status: 'ready' as const, message: 'assets_ready' as const, plan: null }),
+			},
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderManagedAssetsConflict(this: typeof harness, container: HTMLElement): void;
+		}).renderManagedAssetsConflict;
+		const container = new RetainedFakeElement('div', document);
+		render.call(harness, container as unknown as HTMLElement);
+		expect(container.children).toHaveLength(0);
 	});
 });
 
