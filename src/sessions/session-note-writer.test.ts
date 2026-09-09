@@ -11,7 +11,7 @@ import { createSessionContaminationReview } from './session-contamination-review
 import { createAcceptedDetectionEvent } from './session-detection-quality';
 import type { SessionDetectionQualitySummary } from './session-detection-quality';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
-import { createSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
+import { createSessionRuntimeRecord, SESSION_RUNTIME_VERSION, type SessionRuntimeRecord } from './session-runtime-store';
 import type { CompleteSessionState, SessionAuthority, SessionSnapshotReference } from './session';
 import {
 	prepareSessionNote,
@@ -78,15 +78,17 @@ describe('session note model and renderer', () => {
 		expect(first.note.content.match(/tyrian-companion:managed:start:/gu)).toHaveLength(6);
 	});
 
-	it('localizes note labels, provenance, activities and reason codes without changing tc enums', async () => {
+	// Nobody declares anything anymore (Lote S, 2026-09-09): the note no longer renders an
+	// activities line at all, so "Abrir contenedores"/"Open containers" is gone from what this
+	// asserts.
+	it('localizes note labels, provenance and reason codes without changing tc enums', async () => {
 		for (const [locale, expected] of [
-			['es', ['Clasificación: Exacta', 'Confianza: Alta', 'Abrir contenedores', 'El delta está limitado.', 'Núcleo y entrega', 'Precios del bazar de Guild Wars 2']],
-			['en', ['Classification: Exact', 'Confidence: High', 'Open containers', 'The delta is limited.', 'Core and delivery', 'Guild Wars 2 Trading Post prices']],
+			['es', ['Clasificación: Exacta', 'Confianza: Alta', 'El delta está limitado.', 'Núcleo y entrega', 'Precios del bazar de Guild Wars 2']],
+			['en', ['Classification: Exact', 'Confidence: High', 'The delta is limited.', 'Core and delivery', 'Guild Wars 2 Trading Post prices']],
 		] as const) {
 			const input = sessionInput('exact', locale);
 			const prepared = prepareSessionNote(input);
 			if (prepared.status !== 'ok') throw new Error('Invalid prepared fixture.');
-			prepared.note.runtime.review.answers.activities.open = true;
 			prepared.note.runtime.review.classification.reasons = [{ code: 'delta_limited' }];
 			const result = await renderSessionNote(prepared.note);
 			if (result.status !== 'ok') throw new Error('Render failed.');
@@ -191,12 +193,30 @@ describe('session note model and renderer', () => {
 		expect(renderedExact.content).toContain('Observed economy');
 		expect(renderedExact.content).toContain('Liquidation net');
 
-		const contaminated = sessionInput('contaminated');
+		// `contaminated` is gone from the validating construction path (Lote S, 2026-09-09):
+		// `isSessionRuntimeRecord`'s strict recompute can never match it anymore (the live classifier
+		// cannot produce it), so `prepareSessionNote` — which revalidates independently — always
+		// rejects a `contaminated` fixture built that way. This still only needs the render branch,
+		// so it prepares a valid `exact` runtime and mutates the ALREADY-PREPARED note directly;
+		// `renderSessionNote` itself never revalidates.
+		const contaminated = sessionInput('exact');
 		contaminated.valuation = valuation(contaminated.runtime);
-		const renderedContaminated = await rendered(contaminated);
-		expect(renderedContaminated.frontmatter.tc_observed_immediate_copper).toBeNull();
-		expect(renderedContaminated.content).toContain('La actividad externa impide atribuir valor');
-		expect(renderedContaminated.content).toContain('Contaminada');
+		const preparedContaminated = prepareSessionNote(contaminated);
+		if (preparedContaminated.status !== 'ok') throw new Error('Invalid fixture.');
+		preparedContaminated.note.runtime.review.classification = {
+			...preparedContaminated.note.runtime.review.classification,
+			status: 'contaminated',
+			confidence: 'high',
+			permissions: {
+				...preparedContaminated.note.runtime.review.classification.permissions,
+				valueNet: false, grossPerHour: false, recommend: false,
+			},
+		};
+		const renderResult = await renderSessionNote(preparedContaminated.note);
+		if (renderResult.status !== 'ok') throw new Error('Render failed.');
+		expect(renderResult.note.frontmatter.tc_observed_immediate_copper).toBeNull();
+		expect(renderResult.note.content).toContain('La actividad externa impide atribuir valor');
+		expect(renderResult.note.content).toContain('Contaminada');
 	});
 
 	it('degrades malformed optional economics without blocking valid runtime', () => {
@@ -470,15 +490,16 @@ function completeRuntime(classification: 'exact' | 'contaminated'): SessionRunti
 		currencies: [walletCurrency(1, 150)],
 	});
 	const delta = compareStorageSnapshots(baseline, final);
-	const activities = {
-		// A declared opening only estimates the session since H13.6; salvaging still contaminates.
-		open: false, salvage: classification === 'contaminated', consume: false, craft: false,
-		tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-	};
-	const review = createSessionContaminationReview(
-		baseline, final, delta, { certainty: 'confirmed', activities }, '2026-08-13T09:00:02.000Z',
-	);
-	if (!review || review.classification.status !== classification) throw new Error('Invalid review fixture.');
+	const review = createSessionContaminationReview(baseline, final, delta, '2026-08-13T09:00:02.000Z');
+	if (!review) throw new Error('Invalid review fixture.');
+	// Nobody's declaration ever contaminates a session anymore (Lote S, 2026-09-09): `contaminated`
+	// no longer comes out of the classifier for this fixture's clean evidence, so it is forced
+	// directly, purely to exercise the note's `contaminated` render branch.
+	if (classification === 'contaminated') review.classification = {
+		...review.classification, status: 'contaminated', confidence: 'high',
+		permissions: { ...review.classification.permissions, valueNet: false, grossPerHour: false, recommend: false },
+	} as never;
+	if (review.classification.status !== classification) throw new Error('Invalid review fixture.');
 	const state: CompleteSessionState = {
 		version: 1, status: 'complete', sessionId: 'session-sensitive-id', authority,
 		requestedAt: '2026-08-13T07:59:59.000Z', baseline: reference(baseline),
@@ -500,6 +521,17 @@ function completeRuntime(classification: 'exact' | 'contaminated'): SessionRunti
 		finalSnapshot: reference(final), finalizedAt: '2026-08-13T09:00:02.000Z', classification,
 	};
 	const prices = unavailableSessionPriceSnapshot(state.sessionId, delta, Date.parse(final.completedAt));
+	// `createSessionRuntimeRecord` now rejects ANY `contaminated` record on construction (Lote S,
+	// 2026-09-09): `isSessionContaminationReview`'s strict recompute can never match `contaminated`
+	// anymore, since the live classifier cannot produce it. This fixture only needs the note
+	// renderer's `contaminated` branch, so it builds the record shape directly here instead of
+	// through that validating factory.
+	if (classification === 'contaminated') {
+		return {
+			version: SESSION_RUNTIME_VERSION, state, baselineSnapshot: baseline, finalSnapshot: final,
+			delta, review, priceSnapshot: prices, persistedAt: Date.parse(state.finalizedAt),
+		};
+	}
 	const record = createSessionRuntimeRecord(state, baseline, final, delta, Date.parse(state.finalizedAt), review, prices);
 	if (!record) throw new Error('Invalid runtime fixture.');
 	return record;

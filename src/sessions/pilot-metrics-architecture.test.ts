@@ -87,7 +87,9 @@ describe('pilot metrics architecture', () => {
 		const disarm = main.slice(main.indexOf('disarmAssistedDetection(): void'), main.indexOf('recordAssistedProposalPresented(): void'));
 		expect(disarm).toContain("invalidateAndDisarmAssistedDetection('user')");
 		const settings = main.slice(main.indexOf('async updateSettings('), main.indexOf('\n\tprivate async loadSettings('));
-		expect(settings).toContain("invalidateAndDisarmAssistedDetection('mode_off')");
+		// `'mode_off'` is gone (Lote S, 2026-09-09): there is no more `detectionMode` toggle to turn
+		// off, so `updateSettings` never invalidates a live proposal for that reason anymore.
+		expect(settings).not.toContain("invalidateAndDisarmAssistedDetection('mode_off')");
 		expect(settings).toContain("invalidateAndDisarmAssistedDetection('connection_changed')");
 		const shutdown = main.slice(main.indexOf('private async shutdownRuntime()'), main.indexOf('getConnectionState():'));
 		expect(shutdown).toContain('const pilotProposalClosure = this.excludeLiveAssistedProposal()');

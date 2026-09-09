@@ -8,7 +8,6 @@ import {
 	type SessionLeaseCoordinator,
 } from './manual-session-start-service';
 import { API_SETTLEMENT_TICK_MS, API_SETTLEMENT_WINDOW_MS } from './session-api-settlement';
-import type { SessionContaminationAnswers } from './session-contamination-review';
 import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-runtime-store';
 import type { SessionStartCaptureResult } from './session-start-capture';
 
@@ -88,15 +87,6 @@ function tickSettlementWatcher(): void {
 	}
 }
 
-function cleanAnswers(): SessionContaminationAnswers {
-	return {
-		certainty: 'confirmed',
-		activities: {
-			open: false, salvage: false, consume: false, craft: false, tpBuy: false,
-			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-		},
-	};
-}
 
 async function startedService(
 	runtimeStore: SessionRuntimeStore,
@@ -177,15 +167,17 @@ describe('grace window before the final session snapshot', () => {
 		expect(forced.status).toBe('stopped');
 		expect(captureFinal).toHaveBeenCalledTimes(1);
 		expect(service.getApiSettlement()).toBe('skipped');
-		const reviewed = await service.reviewContamination(cleanAnswers());
+		const reviewed = await service.finalizeStoppedSession();
 		expect(reviewed).toMatchObject({
 			status: 'finalized',
 			review: {
 				classification: {
 					status: 'estimated',
 					reasons: [{ code: 'api_settlement_window_skipped' }],
-					reviewRequests: [{ code: 'confirm_session_boundaries' }],
-					permissions: { grossPerHour: false, recommend: false, showNet: true },
+					// Nobody reviews anything anymore (Lote S, 2026-09-09): a degraded classification
+					// never asks for one.
+					reviewRequests: [],
+					permissions: { grossPerHour: false, recommend: false, showNet: true, finalize: true },
 				},
 			},
 			state: { status: 'complete', classification: 'estimated' },
@@ -200,12 +192,14 @@ describe('grace window before the final session snapshot', () => {
 		clock = Date.parse('2026-08-13T09:00:30.000Z');
 		await service.stop();
 
-		await expect(service.reviewContamination(cleanAnswers())).resolves.toMatchObject({
+		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({
 			status: 'finalized',
 			review: {
 				classification: {
 					status: 'exact',
-					reasons: [{ code: 'trading_post_not_complete_clean_declaration_used' }],
+					// Nobody declares anything anymore (Lote S, 2026-09-09): an incomplete Trading Post
+					// read no longer leaves an information reason behind on a clean, exact reading.
+					reasons: [],
 					permissions: { grossPerHour: true },
 				},
 			},
@@ -288,7 +282,7 @@ describe('grace window before the final session snapshot', () => {
 		await vi.waitFor(() => expect(second.getState().status).toBe('provisional'));
 		expect(captureFinal).toHaveBeenCalledTimes(1);
 		expect(second.getApiSettlement()).toBe('exceeded');
-		await expect(second.reviewContamination(cleanAnswers())).resolves.toMatchObject({
+		await expect(second.finalizeStoppedSession()).resolves.toMatchObject({
 			status: 'finalized',
 			review: {
 				classification: {

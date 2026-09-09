@@ -46,7 +46,6 @@ describe('H14.1 · a real Labyrinth session (bags opened, keys spent, no bazaar)
 		});
 		expect(review.classification.reasons).toContainEqual({ code: 'consumable_currency_spent' });
 		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed' });
-		expect(review.classification.reasons).toContainEqual({ code: 'open_activity_declared' });
 		expect(review.classification.reviewRequests).toEqual([]);
 	});
 
@@ -66,12 +65,15 @@ describe('H14.1 · a real Labyrinth session (bags opened, keys spent, no bazaar)
 
 	// H14.4 point 5: the real 2026-09-07 note joined every motive with "., " into one line
 	// ("- Motivos: ..., La declaración no es limpia., ..."). Each motive now gets its own bullet.
+	// Nobody declares anything anymore (Lote S, 2026-09-09), so the two bullets this test used
+	// ("Declaraste haber abierto...", "La declaración no es limpia.") no longer exist; the property
+	// still holds for the two reasons this session's evidence actually produces.
 	it('renders each classification motive as its own bullet, never joined with "., "', async () => {
 		const note = await renderedNote(labyrinthSession());
 
-		expect(note.content).toContain('- Motivo: Declaraste haber abierto contenedores durante la sesión.');
-		expect(note.content).toContain('- Motivo: La declaración no es limpia.');
-		expect(note.content).not.toContain('., La declaración no es limpia., ');
+		expect(note.content).toContain('- Motivo: Se gastaron insumos del monedero (llaves, viales, magia o similares) abriendo o comprando mientras farmeabas.');
+		expect(note.content).toContain('- Motivo: Desaparecieron unidades de algún objeto; el neto observado no es rendimiento puro.');
+		expect(note.content).not.toContain('., Desaparecieron unidades de algún objeto');
 	});
 
 	it('shows the rate as a band promoted to the results header and a recommendation, never hidden', async () => {
@@ -94,13 +96,7 @@ function labyrinthSession(): LabyrinthSession {
 	const after = finalSnapshot();
 	const delta = compareStorageSnapshots(before, after);
 	if (delta.status === 'invalid') throw new Error('Invalid session fixture.');
-	const review = createSessionContaminationReview(before, after, delta, {
-		certainty: 'unsure',
-		activities: {
-			open: true, salvage: false, consume: false, craft: false, tpBuy: false,
-			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-		},
-	}, '2026-09-07T11:55:02.000Z');
+	const review = createSessionContaminationReview(before, after, delta, '2026-09-07T11:55:02.000Z');
 	if (!review) throw new Error('Invalid review fixture.');
 	const status = review.classification.status;
 	if (status === 'invalid') throw new Error('Invalid review fixture.');

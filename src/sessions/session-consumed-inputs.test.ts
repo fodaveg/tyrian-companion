@@ -54,7 +54,9 @@ describe('H13.6 · the 2026-09-03 farming session', () => {
 		expect(review.classification.reasons).toContainEqual({ code: 'consumable_currency_spent' });
 		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed' });
 		expect(review.classification.reasons).not.toContainEqual({ code: 'wallet_decreased' });
-		expect(review.classification.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+		// Nobody reviews anything anymore (Lote S, 2026-09-09): a degraded classification never
+		// asks for one.
+		expect(review.classification.reviewRequests).toEqual([]);
 		expect(review.classification.permissions).toMatchObject({
 			finalize: true, showNet: true, valueNet: true, grossPerHour: false,
 		});
@@ -171,13 +173,7 @@ function realSession(overrides: RealSessionOverrides = {}): RealSession {
 	const after = finalSnapshot(coinDelta);
 	const delta = compareStorageSnapshots(before, after);
 	if (delta.status === 'invalid') throw new Error('Invalid session fixture.');
-	const review = createSessionContaminationReview(before, after, delta, {
-		certainty: 'confirmed',
-		activities: {
-			open: false, salvage: false, consume: false, craft: false, tpBuy: false,
-			tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false,
-		},
-	}, '2026-09-03T06:24:42.000Z');
+	const review = createSessionContaminationReview(before, after, delta, '2026-09-03T06:24:42.000Z');
 	if (!review) throw new Error('Invalid review fixture.');
 	const status = review.classification.status;
 	if (status === 'invalid') throw new Error('Invalid review fixture.');
