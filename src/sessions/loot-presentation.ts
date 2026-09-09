@@ -391,7 +391,20 @@ function invalidPresentation(locale: SessionNoteLocale): LootPresentationV1 {
 	};
 }
 
+/**
+ * The basic wallet currency ids every player recognizes on sight, curated by hand because this
+ * pure presentation layer has no live `/v2/currencies` catalog to resolve them from: `1` Coin, `2`
+ * Karma, `3` Laurels, `4` Gems. Any other currency id keeps the numbered fallback below instead of
+ * a name nobody confirmed.
+ */
+const BASIC_CURRENCY_NAMES: Record<SessionNoteLocale, Partial<Record<number, string>>> = {
+	es: { 1: 'Oro', 2: 'Karma', 3: 'Laureles', 4: 'Gemas' },
+	en: { 1: 'Gold', 2: 'Karma', 3: 'Laurels', 4: 'Gems' },
+};
+
 function fallbackName(locale: SessionNoteLocale, namespace: 'item' | 'currency', id: number): string {
+	const known = namespace === 'currency' ? BASIC_CURRENCY_NAMES[locale][id] : undefined;
+	if (known !== undefined) return known;
 	const type = namespace === 'item' ? localized(locale, 'item') : localized(locale, 'currency');
 	return `${type} #${String(id)}`;
 }

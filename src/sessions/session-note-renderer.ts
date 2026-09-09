@@ -292,7 +292,9 @@ function renderEvidence(note: PreparedSessionNote): string {
 		`## ${noteText(note.locale, 'note.evidence')}`,
 		noteText(note.locale, `note.evidence.${evidenceStatus}`),
 		`- ${noteText(note.locale, 'note.confidence')}: ${confidence}`,
-		`- ${noteText(note.locale, 'note.reasons')}: ${classification.reasons.length > 0 ? classification.reasons.map((reason) => reasonText(reason, note.locale)).join(', ') : '—'}`,
+		...(classification.reasons.length > 0
+			? classification.reasons.map((reason) => `- ${noteText(note.locale, 'markdown.reason')}: ${reasonText(reason, note.locale)}`)
+			: [`- ${noteText(note.locale, 'note.reasons')}: ${noteText(note.locale, 'note.none')}`]),
 		`- ${noteText(note.locale, 'note.declaredActivity')}: ${activities.length > 0 ? activities.join(', ') : noteText(note.locale, 'note.none')}`,
 	].join('\n');
 }

@@ -21,6 +21,11 @@ export function renderLootMarkdown(presentation: LootPresentationV1): LootMarkdo
 	const results = [
 		`## ${markdownText(locale, 'markdown.results')}`,
 		`${markdownText(locale, 'markdown.quality')}: ${quality}`,
+		// The hourly rate is always published as a band, exact session or not (a session can be
+		// `exact/high` and still have consumed its own inputs). Promoted here so it reads without
+		// opening the economy disclosure below.
+		...bandLine(presentation, 'markdown.immediatePerHourBand', presentation.economy.immediateCopperPerHourBand,
+			(value) => money(value, presentation)),
 		'',
 		`| ${markdownText(locale, 'markdown.loot')} | ${markdownText(locale, 'markdown.netDelta')} | ${markdownText(locale, 'markdown.destination')} | ${markdownText(locale, 'markdown.immediateNet')} | ${markdownText(locale, 'markdown.listingNet')} | ${markdownText(locale, 'markdown.recommendation')} |`,
 		'|---|---:|---|---:|---:|---|',
