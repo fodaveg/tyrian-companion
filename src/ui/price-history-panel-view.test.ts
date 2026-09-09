@@ -213,6 +213,25 @@ describe('price-history panel', () => {
 		const seedNote = walk(mount.container).find((element) => element.className === 'tyrian-price-history__seed-note');
 		expect(seedNote?.textContent).toBe('History extended with datawars2: 1 days before your own capture.');
 	});
+
+	// H14.2: last-sample/next-capture go through the same today/yesterday-or-short-date wrapper
+	// every other timestamp in the plugin uses, not a bespoke `toLocaleString`.
+	it('shows the last sample and next capture as today/yesterday, not a locale-specific datetime', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(Date.parse('2026-08-29T12:00:00'));
+		const mount = createMount();
+		renderPriceHistoryPanel(mount.container as unknown as HTMLElement, createTranslator('en'), {
+			state: {
+				...state('collecting'), watchItemIds: [36_038], selectedItemId: 36_038,
+				lastSampleAtMs: Date.parse('2026-08-29T08:00:00'),
+				nextCaptureAtMs: Date.parse('2026-08-28T08:00:00'),
+			},
+			onEnable: vi.fn(), onLoad: vi.fn(),
+		});
+		const timing = walk(mount.container).find((element) => element.className === 'tyrian-price-history__timing');
+		expect(timing?.textContent).toMatch(/^Last sample: today [\d: APM]+ · Next capture: yesterday [\d: APM]+$/u);
+		vi.useRealTimers();
+	});
 });
 
 function state(status: PriceHistoryRuntimeState['status']): PriceHistoryRuntimeState {

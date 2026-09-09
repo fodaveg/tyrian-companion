@@ -23,6 +23,7 @@ import { SessionPriceSnapshotService } from '../economy/session-price-snapshot';
 import { TradingPostHistoryEvidenceService } from '../account/trading-post-evidence';
 import { AssistedDetectionService } from '../sessions/assisted-detection-service';
 import { ManualSessionStartService, type SessionLeaseCoordinator } from '../sessions/manual-session-start-service';
+import { SessionItemTypeSnapshotService } from '../sessions/session-item-type-capture';
 import { PendingProposalService } from '../sessions/pending-proposal-service';
 import { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
 import { IndexedDbPendingProposalStore } from '../sessions/pending-proposal-store';
@@ -113,6 +114,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 				input.factory, undefined, input.sessionRecoverPersistence,
 			),
 			priceCapture: new SessionPriceSnapshotService(input.priceGateway),
+			farmedLossItemTypeCapture: new SessionItemTypeSnapshotService(input.priceGateway),
 			tradingPostHistoryCapture: new TradingPostHistoryEvidenceService(input.client),
 			diagnostics: input.diagnostics ?? undefined,
 		},

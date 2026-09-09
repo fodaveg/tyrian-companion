@@ -33,6 +33,7 @@ import {
 	type SessionContaminationReview,
 	type SessionTradingPostContaminationProposal,
 } from './session-contamination-review';
+import type { SessionItemTypeCapture } from './session-item-type-capture';
 import type { TradingPostHistoryEvidenceV1 } from '../account/trading-post-evidence';
 import {
 	createSessionRuntimeRecord,
@@ -163,6 +164,13 @@ export interface ManualSessionStartServiceOptions {
 	onSettlementDue?: () => void;
 	runtimeStore: SessionRuntimeStore;
 	priceCapture?: SessionPriceCapture;
+	/**
+	 * Resolves the public-catalog type of the session's lost items before contamination review
+	 * (H14.1): a loss the catalog types `Container`/`Consumable` is farming input, not
+	 * contamination. Absent, or a resolution that misses an id, keeps that loss a conservative real
+	 * loss, exactly as before H14.1.
+	 */
+	farmedLossItemTypeCapture?: SessionItemTypeCapture;
 	tradingPostHistoryCapture?: {
 		capture(accountId: string, window: { from: string; to: string }): Promise<TradingPostHistoryEvidenceV1>;
 	};
@@ -201,6 +209,7 @@ export class ManualSessionStartService {
 	private readonly onSettlementDue: () => void;
 	private readonly runtimeStore: SessionRuntimeStore;
 	private readonly priceCapture: SessionPriceCapture | null;
+	private readonly farmedLossItemTypeCapture: SessionItemTypeCapture | null;
 	private readonly tradingPostHistoryCapture: ManualSessionStartServiceOptions['tradingPostHistoryCapture'];
 	private readonly diagnostics: LocalDebugActionPort | null;
 
@@ -217,6 +226,7 @@ export class ManualSessionStartService {
 		this.onSettlementDue = options.onSettlementDue ?? (() => { void this.stop(); });
 		this.runtimeStore = options.runtimeStore;
 		this.priceCapture = options.priceCapture ?? null;
+		this.farmedLossItemTypeCapture = options.farmedLossItemTypeCapture ?? null;
 		this.tradingPostHistoryCapture = options.tradingPostHistoryCapture;
 		this.diagnostics = options.diagnostics ?? null;
 	}
@@ -769,6 +779,7 @@ export class ManualSessionStartService {
 			Date.parse(this.state.finalSnapshot.completedAt),
 			previousReviewFloor,
 		));
+		const farmedLossItemIds = await this.resolveFarmedLossItemIds(this.provisionalDelta);
 		const review = createSessionContaminationReview(
 			this.baselineSnapshot,
 			this.finalSnapshot,
@@ -776,6 +787,7 @@ export class ManualSessionStartService {
 			answers,
 			reviewedAt,
 			this.stateSettlement(this.state),
+			farmedLossItemIds,
 		);
 		if (!review) return { status: 'failed', message: 'The contamination review is invalid.' };
 		const owned = await this.safeAssert(this.currentHandle);
@@ -830,6 +842,27 @@ export class ManualSessionStartService {
 		if (handle) await this.safeRelease(handle);
 		this.onStateChange();
 		return { status: 'finalized', review: structuredClone(review), state: this.getState() as Extract<SessionState, { status: 'complete' }> };
+	}
+
+	/**
+	 * Resolves, before classification, which of THIS delta's losses are farming input rather than
+	 * contamination (H14.1): a catalog `Container`/`Consumable`. Only the lost ids are ever asked
+	 * about, and a missing capture or a failed resolution leaves every loss unresolved, which
+	 * `classifySessionDelta` already treats conservatively as a real loss.
+	 */
+	private async resolveFarmedLossItemIds(delta: StorageDelta): Promise<number[]> {
+		if (this.farmedLossItemTypeCapture === null || delta.status === 'invalid') return [];
+		const lossItemIds = delta.itemChanges.filter((change) => change.delta < 0).map((change) => change.id);
+		if (lossItemIds.length === 0) return [];
+		try {
+			const types = await this.farmedLossItemTypeCapture.capture(lossItemIds);
+			return lossItemIds.filter((id) => {
+				const type = types.get(id);
+				return type === 'Container' || type === 'Consumable';
+			});
+		} catch {
+			return [];
+		}
 	}
 
 	/**

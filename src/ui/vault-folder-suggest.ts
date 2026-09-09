@@ -5,9 +5,9 @@ import { AbstractInputSuggest, type App } from 'obsidian';
  * dropdown stays short. Kept free of any DOM API so it can be tested without an Obsidian app.
  */
 export function matchVaultFolders(folderPaths: readonly string[], query: string, limit = 100): string[] {
-	const normalizedQuery = query.trim().toLocaleLowerCase();
+	const normalizedQuery = query.trim().toLowerCase();
 	return folderPaths
-		.filter((path) => path.toLocaleLowerCase().includes(normalizedQuery))
+		.filter((path) => path.toLowerCase().includes(normalizedQuery))
 		.sort((a, b) => a.localeCompare(b))
 		.slice(0, limit);
 }

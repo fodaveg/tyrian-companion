@@ -116,6 +116,24 @@ describe('session note model and renderer', () => {
 		}
 	});
 
+	// H14.3: `first_seen`/`rare_unpriced_or_bound` no longer alert; the note shows them as
+	// information instead, only when the session actually has one.
+	it('shows the first-seen and rare/unpriced sections only when the session has one', async () => {
+		const input = sessionInput();
+		input.displayNames = { ...input.displayNames, 'item:200': 'Objeto nuevo', 'item:300': 'Objeto raro' };
+		input.firstSeenItemIds = [200];
+		input.rareUnpricedOrBoundItemIds = [300];
+		const withEvidence = await rendered(input);
+		expect(withEvidence.content).toContain('### Objetos nuevos');
+		expect(withEvidence.content).toContain('- Objeto nuevo');
+		expect(withEvidence.content).toContain('### Sin cotización o vinculados');
+		expect(withEvidence.content).toContain('- Objeto raro');
+
+		const plain = await rendered(sessionInput());
+		expect(plain.content).not.toContain('Objetos nuevos');
+		expect(plain.content).not.toContain('Sin cotización o vinculados');
+	});
+
 	it('records only an explicit validated event and never infers it from session evidence', async () => {
 		const plain = sessionInput();
 		expect((await rendered(plain)).frontmatter.tc_event).toBeNull();
@@ -414,6 +432,7 @@ function sessionInput(classification: 'exact' | 'contaminated' = 'exact', locale
 	return {
 			runtime: completeRuntime(classification), valuation: null, reservation: null, hold: null,
 		recommendation: null, envelope: null, eventDeclaration: null, displayNames: { 'item:100': 'Objeto de prueba' },
+		firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
 		locale, outputFolder: 'Tyrian Companion',
 	};
 }

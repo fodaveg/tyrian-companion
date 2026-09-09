@@ -91,6 +91,17 @@ export interface SessionClassificationContext {
 	 * also used to classify a bare pair of snapshots); a session flow always declares it.
 	 */
 	apiSettlement?: 'settled' | 'skipped' | 'exceeded';
+	/**
+	 * Ids among THIS delta's losses whose public-catalog type resolved to `Container` or
+	 * `Consumable` before classification (H14.1): opening bags or using consumables is the farming
+	 * being measured, not a contamination of it, the same reasoning that already exempts the
+	 * curated Halloween ids. The classifier is synchronous and the public catalog is not, so a
+	 * caller resolves this asynchronously (`session-contamination-review.ts` /
+	 * `manual-session-start-service.ts`) before calling in. Absent, or missing one of the loss ids,
+	 * means the type could not be resolved (no network, or the catalog has no such item), and that
+	 * loss stays a conservative real loss, exactly as before H14.1.
+	 */
+	farmedLossItemIds?: number[];
 }
 
 export type SessionClassificationStatus = 'exact' | 'estimated' | 'contaminated' | 'invalid';

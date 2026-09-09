@@ -306,7 +306,26 @@ function renderEvidence(note: PreparedSessionNote): string {
 			? classification.reasons.map((reason) => `- ${noteText(note.locale, 'markdown.reason')}: ${reasonText(reason, note.locale)}`)
 			: [`- ${noteText(note.locale, 'note.reasons')}: ${noteText(note.locale, 'note.none')}`]),
 		`- ${noteText(note.locale, 'note.declaredActivity')}: ${activities.length > 0 ? activities.join(', ') : noteText(note.locale, 'note.none')}`,
+		...renderItemIdSection(note, 'note.firstSeenItems', note.firstSeenItemIds),
+		...renderItemIdSection(note, 'note.rareUnpricedOrBoundItems', note.rareUnpricedOrBoundItemIds),
 	].join('\n');
+}
+
+/**
+ * H14.3: `first_seen` and `rare_unpriced_or_bound` no longer page the player
+ * (`ALWAYS_ALERT_REASONS`); the note still shows them, purely as information, only when at least
+ * one gained item carries the reason.
+ */
+function renderItemIdSection(
+	note: PreparedSessionNote,
+	heading: RuntimeTranslationKey,
+	itemIds: readonly number[],
+): string[] {
+	if (itemIds.length === 0) return [];
+	return [
+		`### ${noteText(note.locale, heading)}`,
+		...itemIds.map((itemId) => `- ${text(note.displayNames[`item:${String(itemId)}`] ?? String(itemId))}`),
+	];
 }
 
 function renderProvenance(note: PreparedSessionNote): string {

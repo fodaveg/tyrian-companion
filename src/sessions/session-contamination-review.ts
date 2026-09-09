@@ -52,6 +52,14 @@ export interface SessionContaminationReview {
 	declaration: UserDeclaration;
 	boundary: BoundaryEvidence;
 	classification: SessionDeltaClassification | LegacySessionDeltaClassification;
+	/**
+	 * Ids among the session's losses whose public-catalog type resolved to `Container` or
+	 * `Consumable` before classification (H14.1). Stored, not recomputed: the classifier is
+	 * synchronous and cannot re-resolve the catalog from the persisted review alone, the same
+	 * reason `answers`/`declaration` are stored instead of re-derived. Canonically sorted, ids
+	 * unique.
+	 */
+	farmedLossItemIds: number[];
 }
 
 export type SessionTradingPostContaminationProposal =
@@ -81,9 +89,12 @@ export function createSessionContaminationReview(
 	answers: unknown,
 	reviewedAt: string,
 	apiSettlement: SessionApiSettlement = 'settled',
+	farmedLossItemIds: readonly number[] = [],
 ): SessionContaminationReview | null {
 	if (!isSessionContaminationAnswers(answers) || !isIsoTimestamp(reviewedAt)) return null;
 	if (Date.parse(reviewedAt) < Date.parse(after.completedAt)) return null;
+	if (!Array.isArray(farmedLossItemIds) || !farmedLossItemIds.every(isPositiveId)) return null;
+	const canonicalFarmedLossItemIds = [...new Set(farmedLossItemIds)].sort((left, right) => left - right);
 	const boundary = buildBoundaryEvidence(before, after);
 	const declaration = declarationFromAnswers(answers);
 	const classification = classifySessionDelta(delta, {
@@ -92,6 +103,7 @@ export function createSessionContaminationReview(
 		declaration,
 		boundaryCertainty: 'manual_confirmed',
 		apiSettlement,
+		farmedLossItemIds: canonicalFarmedLossItemIds,
 	});
 	if (boundary.status !== 'valid' || classification.status === 'invalid') return null;
 	return {
@@ -101,6 +113,7 @@ export function createSessionContaminationReview(
 		declaration: structuredClone(declaration),
 		boundary: structuredClone(boundary),
 		classification: structuredClone(classification),
+		farmedLossItemIds: canonicalFarmedLossItemIds,
 	};
 }
 
@@ -119,7 +132,7 @@ export function isSessionContaminationReview(
 	apiSettlement?: SessionApiSettlement,
 ): value is SessionContaminationReview {
 	if (!isRecord(value) || !hasOnlyKeys(value, [
-		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification',
+		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification', 'farmedLossItemIds',
 	])) return false;
 	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
 		return false;
@@ -142,6 +155,7 @@ function matchesRecomputedReview(
 		value.answers,
 		value.reviewedAt as string,
 		apiSettlement,
+		Array.isArray(value.farmedLossItemIds) ? value.farmedLossItemIds as number[] : [],
 	);
 	if (expected === null) return false;
 	if (JSON.stringify(expected) === JSON.stringify(value)) return true;
@@ -166,7 +180,7 @@ function matchesRecomputedReview(
  */
 export function isSessionContaminationReviewShape(value: unknown): value is SessionContaminationReview {
 	if (!isRecord(value) || !hasOnlyKeys(value, [
-		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification',
+		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification', 'farmedLossItemIds',
 	])) return false;
 	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
 		return false;
@@ -174,7 +188,18 @@ export function isSessionContaminationReviewShape(value: unknown): value is Sess
 	return isSessionContaminationAnswers(value.answers)
 		&& isUserDeclarationShape(value.declaration)
 		&& isBoundaryEvidenceShape(value.boundary)
-		&& isClassificationEnvelopeShape(value.classification);
+		&& isClassificationEnvelopeShape(value.classification)
+		&& isFarmedLossItemIdsShape(value.farmedLossItemIds);
+}
+
+/** Structural-only counterpart for the persisted, catalog-resolved ids: unique and canonically sorted. */
+function isFarmedLossItemIdsShape(value: unknown): value is number[] {
+	return Array.isArray(value) && value.every(isPositiveId)
+		&& value.every((id, index) => index === 0 || (value[index - 1] as number) < id);
+}
+
+function isPositiveId(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
 /**

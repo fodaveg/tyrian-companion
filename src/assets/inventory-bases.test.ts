@@ -13,10 +13,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 4, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 4, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 4, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 4, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 5, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 5, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 5, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 5, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -117,13 +117,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 4', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 5', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=4', 'version=1')
+				.replace('version=5', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -143,8 +143,8 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 4 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 4 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 5 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 5 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['note.tc_item_name']).toBeDefined();

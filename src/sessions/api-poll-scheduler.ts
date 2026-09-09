@@ -379,7 +379,13 @@ export class ApiPollScheduler {
 		try {
 			this.diagnostics.event({
 				...diagnostic.context,
-				level: phase === 'success' ? 'info' : phase === 'failure' ? 'error' : 'warn',
+				// H14.9: `cancel`/`skip` are routine scheduler operation (a poll cancelled because
+				// the session went idle, a poll skipped while offline or already in flight), the
+				// same reasoning `local-debug-persistence.ts` already applies to a routine `skip`.
+				// Only `retry` (a rate limit, a transient poll failure) and `failure` still warn.
+				level: phase === 'success' ? 'info'
+					: phase === 'failure' ? 'error'
+						: phase === 'retry' ? 'warn' : 'debug',
 				phase,
 				code,
 				durationMs: elapsed(this.monotonicNow(), diagnostic.startedAt),

@@ -50,6 +50,7 @@ function input() {
 			tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false } },
 		declaration: { status: 'activities', activities: ['open'] },
 		boundary: {} as SessionContaminationReview['boundary'], classification: {} as SessionContaminationReview['classification'],
+		farmedLossItemIds: [],
 	};
 	return { vaultId: 'vault', accountRef: 'account', episodeId: 'session:test', delta, review };
 }

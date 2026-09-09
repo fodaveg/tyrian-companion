@@ -203,6 +203,7 @@ async function completedSessionNote(runtime: ReturnType<typeof completedSessionR
 			event: 'halloween', source: 'manual_explicit', declaredAt: runtime.state.baseline.completedAt,
 		},
 		displayNames: { [`item:${String(item.id)}`]: 'Pimpollo de flor de cerezo' },
+		firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
 		locale: 'es', outputFolder: DEFAULT_SETTINGS.outputFolder,
 	});
 	if (prepared.status !== 'ok') throw new Error(`Invalid durable note fixture: ${prepared.reason}`);

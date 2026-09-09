@@ -153,7 +153,12 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 		['materials-base', 'Materials.base', materialsBody],
 	] as const) {
 		for (const locale of ['es', 'en'] as const) {
-			const draft = { id, kind: 'base', contentVersion: 4, locale, relativePath } as const;
+			// H14.8: the `note.tc_captured_at` → `file.mtime` column swap shipped in 0.1.30 without
+			// bumping this. `ManagedAssetsManager.validManifestRelations` treats an unchanged
+			// `contentVersion` whose semantic bytes moved as a corrupt manifest (`conflict`), not an
+			// `update` — the exact `managed_assets_conflict` regression this content change would
+			// have caused on every vault that already had 0.1.30 installed.
+			const draft = { id, kind: 'base', contentVersion: 5, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}

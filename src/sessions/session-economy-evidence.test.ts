@@ -86,7 +86,8 @@ describe('economic evidence for a completed session', () => {
 		const prepared = prepareSessionNote({
 			runtime, valuation: evidence.valuation, reservation: evidence.reservation,
 			hold: evidence.hold, recommendation: null, envelope: null, eventDeclaration: null,
-			displayNames: {}, locale: 'es', outputFolder: 'Tyrian Companion',
+			displayNames: {}, firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
+			locale: 'es', outputFolder: 'Tyrian Companion',
 		});
 		if (prepared.status !== 'ok') throw new Error(`The note rejected the evidence: ${prepared.reason}.`);
 		expect(prepared.note.valuation.status).toBe('valid');
@@ -104,7 +105,8 @@ describe('economic evidence for a completed session', () => {
 		const orphaned = prepareSessionNote({
 			runtime, valuation: evidence.valuation, reservation: null,
 			hold: null, recommendation: null, envelope: null, eventDeclaration: null,
-			displayNames: {}, locale: 'es', outputFolder: 'Tyrian Companion',
+			displayNames: {}, firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
+			locale: 'es', outputFolder: 'Tyrian Companion',
 		});
 		if (orphaned.status !== 'ok') throw new Error(`Unexpected note failure: ${orphaned.reason}.`);
 		expect(orphaned.note.valuation.status).toBe('invalid');

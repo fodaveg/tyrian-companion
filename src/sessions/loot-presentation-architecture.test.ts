@@ -63,6 +63,7 @@ function sessionInput(): SessionNoteInput {
 		runtime: completeRuntime(), valuation: null, reservation: null, hold: null,
 		recommendation: null, envelope: null, eventDeclaration: null, displayNames: { 'item:100': 'Objeto de prueba' },
 		locale: 'es', outputFolder: 'Tyrian Companion',
+		firstSeenItemIds: [], rareUnpricedOrBoundItemIds: [],
 	};
 }
 

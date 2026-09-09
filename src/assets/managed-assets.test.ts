@@ -612,6 +612,80 @@ describe('ManagedAssetsManager', () => {
 	});
 });
 
+/**
+ * H14.8: reproduces the real 0.1.30 → HEAD jump with the actual production bundle, not a synthetic
+ * fixture. `git show 0.1.30:src/assets/inventory-bases.ts` proved the ONLY asset content that
+ * changed since that release is `Inventory.base`/`Materials.base`'s `file.mtime` column (it used to
+ * read `note.tc_captured_at`), and it shipped WITHOUT a `contentVersion` bump — so this is exactly
+ * the case where a stale vault relies entirely on the semantic-hash comparison in `inspect()`
+ * (not the version number) to notice the update. `managed_assets_apply` must still come back
+ * `applied`, never `conflict`/`validation_failed`, against a manifest a real prior release wrote.
+ */
+describe('H14.8 · upgrading a vault a real prior release (0.1.30) left behind', () => {
+	it('upgrades to the current bundle without conflict and writes the new column', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const legacy = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 6, locale: 'es', assets: await release0130Bundle(),
+		});
+		const legacyLifecycle = new ManagedAssetsLifecycle(legacy, pointer);
+		await expect(legacyLifecycle.install('Tyrian Companion')).resolves.toMatchObject({ status: 'applied' });
+		expect(vault.contents.get('Tyrian Companion/Bases/Inventory.base')).toContain('note.tc_captured_at');
+
+		const current = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 6, locale: 'es', assets: await managedAssetsBundle(),
+		});
+		const currentLifecycle = new ManagedAssetsLifecycle(current, pointer);
+
+		const upgraded = await currentLifecycle.install('Tyrian Companion');
+
+		expect(upgraded.status).not.toBe('conflict');
+		expect(upgraded).toMatchObject({ status: 'applied' });
+		expect(vault.contents.get('Tyrian Companion/Bases/Inventory.base')).toContain('file.mtime');
+		expect(vault.contents.get('Tyrian Companion/Bases/Inventory.base')).not.toContain('tc_captured_at');
+		expect(vault.contents.get('Tyrian Companion/Bases/Materials.base')).toContain('file.mtime');
+	});
+
+	it('still fails closed if the manifest a prior release wrote is sabotaged', async () => {
+		const vault = new MemoryAssetVault();
+		const pointer = new MemoryManagedAssetsPointerStore();
+		const legacy = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 6, locale: 'es', assets: await release0130Bundle(),
+		});
+		await new ManagedAssetsLifecycle(legacy, pointer).install('Tyrian Companion');
+		const path = `Tyrian Companion/${MANAGED_ASSETS_MANIFEST}`;
+		const parsed = JSON.parse(vault.contents.get(path)!) as MutableJournal;
+		parsed.assets = parsed.assets.filter((entry) => entry.id !== 'inventory-base');
+		vault.contents.set(path, `${JSON.stringify(parsed, null, 2)}\n`);
+
+		const current = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 6, locale: 'es', assets: await managedAssetsBundle(),
+		});
+		const upgraded = await new ManagedAssetsLifecycle(current, pointer).install('Tyrian Companion');
+
+		expect(upgraded.status).toBe('conflict');
+	});
+});
+
+/**
+ * Reproduces exactly what 0.1.30 wrote for `Inventory.base`/`Materials.base`: same id and locale,
+ * `contentVersion: 4` (0.1.30's real number; HEAD bumped it to 5 once H14.8 caught the missing
+ * bump below) and the pre-H14.12 bytes (`note.tc_captured_at` instead of `file.mtime`), the one
+ * real content drift between that tag and HEAD (verified against
+ * `git show 0.1.30:src/assets/inventory-bases.ts`).
+ */
+async function release0130Bundle(): Promise<PackagedAsset[]> {
+	const current = await managedAssetsBundle();
+	return await Promise.all(current.map(async (asset) => {
+		if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
+		const contentVersion = 4;
+		const bytes = asset.bytes
+			.replace(`version=${String(asset.contentVersion)}`, `version=${String(contentVersion)}`)
+			.replaceAll('file.mtime', 'note.tc_captured_at');
+		return { ...asset, contentVersion, bytes, contentHash: await sha256Text(bytes) };
+	}));
+}
+
 async function stageReserializedRelocation(vault: MemoryAssetVault): Promise<{
 	bundle: PackagedAsset[];
 	instance: ManagedAssetsManager;

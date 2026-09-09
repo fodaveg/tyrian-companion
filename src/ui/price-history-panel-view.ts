@@ -1,4 +1,5 @@
 import type { Translator } from '../core/i18n';
+import { formatRelativeDay } from './format-time';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1, PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
@@ -98,8 +99,8 @@ export function renderPriceHistoryPanel(
 	const timing = createEl('p');
 	timing.className = 'tyrian-price-history__timing';
 	timing.textContent = translator.t('priceHistory.timing', {
-		last: state.lastSampleAtMs === null ? translator.t('priceHistory.never') : new Date(state.lastSampleAtMs).toLocaleString(translator.locale),
-		next: state.nextCaptureAtMs === null ? translator.t('priceHistory.unknown') : new Date(state.nextCaptureAtMs).toLocaleString(translator.locale),
+		last: state.lastSampleAtMs === null ? translator.t('priceHistory.never') : formatMoment(state.lastSampleAtMs, translator),
+		next: state.nextCaptureAtMs === null ? translator.t('priceHistory.unknown') : formatMoment(state.nextCaptureAtMs, translator),
 	});
 	container.append(timing);
 	const retention = createEl('p');
@@ -224,6 +225,13 @@ function stateText(state: PriceHistoryRuntimeState, translator: Translator): str
 }
 function errorState(status: PriceHistoryRuntimeState['status']): boolean {
 	return ['offline', 'backoff', 'invalid_payload', 'store_unavailable', 'store_corrupt', 'store_future'].includes(status);
+}
+
+/** H14.2: the same today/yesterday-or-short-date wrapper every other timestamp in the plugin uses. */
+function formatMoment(atMs: number, translator: Translator): string {
+	return formatRelativeDay(atMs, translator.locale, Date.now(), {
+		today: translator.t('time.today'), yesterday: translator.t('time.yesterday'),
+	});
 }
 
 /** `priceHistory.itemNamed` when the catalog resolved a name, `priceHistory.itemFallback` otherwise. */

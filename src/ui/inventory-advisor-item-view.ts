@@ -11,6 +11,7 @@ import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-cont
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
+import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type { ProductActionController } from './product-action-controller';
 import { renderProductShell, type ProductShellMount } from './product-shell';
 
@@ -45,6 +46,8 @@ export interface InventoryAdvisorViewActions {
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
+	/** Same account-level Halloween bag sell/hold verdict the session panel already reads (H14.6/H14.12). */
+	getSellSignalState?(): SellSignalRuntimeState | null;
 }
 
 /** Thin Obsidian adapter. Opening and rendering only read the controller's memory snapshot. */
@@ -132,6 +135,7 @@ export class InventoryAdvisorItemView extends ItemView {
 				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
 				inventorySync: sync,
 				priceHistory,
+				sellSignalState: this.actions.getSellSignalState?.() ?? null,
 			},
 		);
 	}
