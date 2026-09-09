@@ -16,7 +16,7 @@ describe('Halloween alert panel DOM', () => {
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
-		}, translator('en'));
+		}, translator('en'), 'en');
 		expect(acknowledge).not.toHaveBeenCalled();
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('aria-label')).toBe('Halloween alert inbox');
@@ -50,7 +50,7 @@ describe('Halloween alert panel DOM', () => {
 			getHalloweenPriceAlertState: disabledPriceState,
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
-		}, translator('en'));
+		}, translator('en'), 'en');
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
 		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
@@ -78,7 +78,7 @@ describe('Halloween alert panel DOM', () => {
 				: disabledPriceState(),
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
 			getEmittedAlerts: () => [],
-		}, translator('en'));
+		}, translator('en'), 'en');
 		const all = walk(mount);
 		expect(all.find(({ tag }) => tag === 'section')?.attributes.get('data-attention')).toBe('true');
 		expect(all.some(({ tag }) => tag === 'details')).toBe(false);
@@ -113,7 +113,7 @@ describe('Halloween alert panel DOM', () => {
 			getHalloweenPriceAlertState: () => ({ status: 'unread', projection: null, notices: [price], unreadCount: 1 }),
 			acknowledgeHalloweenPriceNotice: vi.fn(async () => true),
 			getEmittedAlerts: () => [],
-		}, translator('en'));
+		}, translator('en'), 'en');
 		const all = walk(mount);
 		expect(all.filter(({ tag }) => tag === 'tbody')[0]?.children).toHaveLength(18);
 		expect(all.find(({ tag }) => tag === 'caption')?.text).toContain('18 curated outcomes');
@@ -122,6 +122,51 @@ describe('Halloween alert panel DOM', () => {
 		expect(all.filter(({ tag }) => tag === 'th').every(({ attributes }) => attributes.get('scope') !== undefined)).toBe(true);
 		expect(all.filter(({ tag }) => tag === 'td').slice(0, 3).map(({ attributes }) => attributes.get('data-label')))
 			.toEqual(['Exact expected', 'Observed', 'Difference']);
+	});
+
+	it('separates name from quantity, translates the raw API rarity, and shows a short date for an old notice', () => {
+		const mount = new FakeElement('div');
+		const notice: HalloweenNoticeV1 = {
+			version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
+			observedAt: '2026-08-01T12:00:00.000Z', source: 'assisted_poll', wording: 'observed_change',
+			coverage: 'complete', acknowledgedAt: null,
+			items: [{
+				itemId: 1, quantity: 1, name: 'Sello formidable de aire', netUnitCopper: null, priceStatus: 'no_quote',
+				reasons: [{ code: 'rare_unpriced_or_bound', rarity: 'Rare' }],
+			}],
+		};
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => true),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [],
+		}, translator('es'), 'es', Date.parse('2026-08-31T12:00:00.000Z'));
+		const all = walk(mount);
+		const row = all.find(({ tag }) => tag === 'li');
+		expect(row?.children[0]?.text).toBe('Sello formidable de aire');
+		expect(row?.children[1]?.text).toBe(' · Cantidad: 1');
+		expect(all.map(({ text }) => text).join(' ')).toContain('Rareza Raro sin cotización o con vínculo');
+		// 30 days back: a short date, never the raw rarity string or a "today/yesterday" label.
+		expect(all.find(({ tag }) => tag === 'time')?.text).toMatch(/^\d{1,2}\/\d{1,2}\/\d{2}$/u);
+	});
+
+	it('names today and yesterday for a recent alert instead of a bare short date', () => {
+		const mount = new FakeElement('div');
+		const now = Date.parse('2026-08-31T12:00:00.000Z');
+		renderHalloweenAlertPanel(mount as unknown as HTMLElement, {
+			getHalloweenState: () => ({ status: 'ready', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
+			acknowledgeHalloweenNotice: vi.fn(async () => false),
+			getHalloweenPriceAlertState: disabledPriceState,
+			acknowledgeHalloweenPriceNotice: vi.fn(async () => false),
+			getEmittedAlerts: () => [{
+				version: 1 as const, vaultId: 'vault', accountRef: 'account', alertId: 'alert', kind: 'valuable_loot' as const,
+				itemId: 1, name: 'Bolsa de truco o trato', quantity: 1, totalCopper: 100, reason: 'valuable' as const,
+				emittedAt: new Date(now - 60_000).toISOString(),
+			}],
+		}, translator('es'), 'es', now);
+		const time = walk(mount).find(({ tag }) => tag === 'time');
+		expect(time?.text).toMatch(/^hoy \d{2}:\d{2}$/u);
 	});
 
 	it('uses responsive cards below 480px without a fixed 44rem table dependency', () => {
