@@ -1,9 +1,13 @@
 name: CI
 
+# H14.16 (measured 8 sep): a tag push used to trigger this workflow (`tags: ['*']`)
+# on top of the branch push that produced the tagged commit and on top of
+# release.yml, which is the one that actually publishes. That was 3 workflow
+# runs and 7 gate executions per release. `release.yml` already gates every
+# tag with its own `npm run check`, so this workflow only needs `branches:`.
 on:
   push:
     branches: ['**']
-    tags: ['*']
   pull_request:
     branches: ['**']
 
@@ -11,23 +15,73 @@ permissions:
   contents: read
 
 jobs:
+  # Node version matched to what Obsidian's bundled Electron actually ships
+  # (Electron 43.3.0 / Node 24.18.1, confirmed via `obsidian eval` for H14.7):
+  # testing 22.20.0/22.x/24.12.0 in parallel tripled this job's cost to prove
+  # compatibility with two runtimes nothing in `engines` requires us to ship.
   check:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: ['22.20.0', '22.x', '24.12.0']
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: '24.12.0'
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: npm run bench:h6-performance
-      - run: npm run test:bench:h6-performance-red
+      # Benches are a session-closing measurement, not a per-push gate; running
+      # them on every branch and PR push paid for 21 runs of the fixture with
+      # nothing reading the result until someone closed a session.
+      - if: github.ref == 'refs/heads/main'
+        run: npm run bench:h6-performance
+      - if: github.ref == 'refs/heads/main'
+        run: npm run test:bench:h6-performance-red
+
+  # The slower half of the H14.16 gate split (release/beta/BRAT/support
+  # contracts, the frozen architecture tests, `src/platform`). Runs in CI on
+  # every push and PR, same as `check`, just as its own job so a failure here
+  # is reported separately from the fast smoke.
+  check-guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.12.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check:guardrails
+
+  # `native/mumble-helper` is a Rust workspace nothing else in the repo reads
+  # at runtime (H8 stays on Mumble Link; see H8.5). Building and clippy-ing it
+  # on every push touching unrelated TypeScript cost 1 min 31 s on Linux and
+  # Windows each, for a helper that isn't published. `detect-native-changes`
+  # answers "did this push touch it" once so both platform jobs can skip.
+  detect-native-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          base="${{ github.event.pull_request.base.sha }}"
+          ref="${base:-$before}"
+          if [ -z "$ref" ] || ! git cat-file -e "$ref" 2>/dev/null; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "$ref" "${{ github.sha }}" -- native/mumble-helper | grep -q .; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
 
   rust-portable:
+    needs: detect-native-changes
+    if: needs.detect-native-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,6 +95,8 @@ jobs:
       - run: cargo metadata --format-version 1 --locked --no-deps
 
   rust-windows-helper:
+    needs: detect-native-changes
+    if: needs.detect-native-changes.outputs.changed == 'true'
     runs-on: windows-2022
     defaults:
       run:
@@ -91,14 +147,20 @@ jobs:
           retention-days: 1
 
   release-package:
-    needs: [check, rust-portable, rust-windows-helper]
-    if: github.event_name == 'push'
+    needs: [check, check-guardrails, rust-portable, rust-windows-helper]
+    # Both rust jobs can legitimately be `skipped` (no native change on this
+    # push); this job still runs as long as neither one *failed*.
+    if: |
+      always() && github.event_name == 'push' &&
+      needs.check.result == 'success' && needs.check-guardrails.result == 'success' &&
+      needs.rust-portable.result != 'failure' && needs.rust-portable.result != 'cancelled' &&
+      needs.rust-windows-helper.result != 'failure' && needs.rust-windows-helper.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '22.20.0'
+          node-version: '24.12.0'
           cache: npm
       - run: npm ci
       - run: npm run release:package

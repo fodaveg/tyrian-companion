@@ -8,7 +8,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
-		"lint": "eslint .",
+		"lint": "eslint . --cache --cache-location node_modules/.cache/eslint",
 		"test": "node scripts/run-gate.mjs test",
 		"test:h8-crossover-spike": "bash scripts/tests/probar-h8-crossover-spike.sh",
 		"bench:h6-performance": "node --expose-gc node_modules/jiti/lib/jiti-cli.mjs scripts/benchmark-h6-performance.ts",
@@ -31,6 +31,7 @@
 		"source-text:assertion-contract": "node scripts/source-text-assertion-contract.mjs",
 		"h8:helper-decision-contract": "node scripts/h8-native-decision-contract.mjs",
 		"check": "node scripts/run-gate.mjs check",
+		"check:guardrails": "node scripts/run-gate.mjs check:guardrails",
 		"release:preflight": "node scripts/release-preflight.mjs",
 		"release:brat-verify": "node scripts/brat-release-contract.mjs",
 		"release:brat-plan": "node scripts/brat-release-plan.mjs --from-staging",

@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const suitePath = resolve(process.argv[1]);
 const scannerPath = resolve(process.env.SECURITY_SCANNER_UNDER_TEST ?? 'scripts/security-scan.mjs');
 // eslint-disable-next-line no-unsanitized/method -- The path is an explicit local negative-control injection.
 const { scanReleaseArtifacts, scanSecurityBoundaries } = await import(`${pathToFileURL(scannerPath).href}?suite=${String(Date.now())}`);
@@ -22,6 +21,11 @@ const EXPECTED_RULES = [
 	'unauthorized-mumble-helper',
 ];
 
+// Shared by the positive control (testEveryRule) and the sabotage control
+// (testSabotageControls), so both check the same fixture per rule and a
+// regression in one cannot silently drift from the other.
+const RULE_CASES = buildRuleCases();
+
 try {
 	testEveryRule();
 	testCurrentGithubTokenFormats();
@@ -33,12 +37,42 @@ try {
 	testCanonicalLocalDebugBoundary();
 	testCliRedaction();
 	testReleaseArtifactCorpus();
-	if (process.env.SECURITY_SCANNER_NEGATIVE_CONTROL !== '1') {
-		testCurrentRepository();
-		testSabotageControls();
-	}
+	testCurrentRepository();
+	testSabotageControls();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
+}
+
+function buildRuleCases() {
+	const credential = syntheticCredential();
+	const providerCredential = ['AK', 'IA', '7F3D9K2M8Q4R6T1Z'].join('');
+	return [
+		{ rule: 'private-key', path: 'secrets/key.pem', source: `${['-----BEGIN', 'PRIVATE KEY-----'].join(' ')}\npayload\n-----END PRIVATE KEY-----` },
+		{ rule: 'known-provider-credential', path: 'config/provider.txt', source: providerCredential },
+		{ rule: 'long-credential-assignment', path: 'config/local.env', source: `GW2_API_KEY='${credential}'` },
+		{ rule: 'long-bearer-credential', path: 'config/request.txt', source: `Authorization: Bearer ${credential}` },
+		{ rule: 'fixture-credential', path: 'src/__fixtures__/credential.ts', source: `export const apiKey = '${credential}';` },
+		{ rule: 'production-console-log', path: 'src/logging.ts', source: `console?.['log']('status');` },
+		{ rule: 'production-logger-log', path: 'src/logging.ts', source: `logger.error('status');` },
+		{ rule: 'unauthorized-mumble-helper', path: 'src/native-helper.ts', source: 'export class MumbleLink {}' },
+	];
+}
+
+/**
+ * Runs every rule case through `scanFn` and reports, per rule, whether its own
+ * finding turned up. Shared between the real scanner (positive control) and a
+ * sabotaged wrapper (sabotage control) so both exercise the exact same
+ * assertion instead of two implementations that could drift apart.
+ */
+function runRuleCases(scanFn, rootPrefix) {
+	const localFailures = [];
+	for (const { rule, path, source } of RULE_CASES) {
+		const root = isolatedRoot(`${rootPrefix}-${rule}`);
+		write(root, path, source);
+		const findings = scanFn(root);
+		if (!findings.some((finding) => finding.rule === rule)) localFailures.push(`${rule} did not turn red`);
+	}
+	return localFailures;
 }
 
 function testMumbleVariants() {
@@ -335,24 +369,7 @@ if (failures.length > 0) {
 process.stdout.write('security scanner suite: PASS\n');
 
 function testEveryRule() {
-	const credential = syntheticCredential();
-	const providerCredential = ['AK', 'IA', '7F3D9K2M8Q4R6T1Z'].join('');
-	const cases = [
-		['private-key', 'secrets/key.pem', `${['-----BEGIN', 'PRIVATE KEY-----'].join(' ')}\npayload\n-----END PRIVATE KEY-----`],
-		['known-provider-credential', 'config/provider.txt', providerCredential],
-		['long-credential-assignment', 'config/local.env', `GW2_API_KEY='${credential}'`],
-		['long-bearer-credential', 'config/request.txt', `Authorization: Bearer ${credential}`],
-		['fixture-credential', 'src/__fixtures__/credential.ts', `export const apiKey = '${credential}';`],
-		['production-console-log', 'src/logging.ts', `console?.['log']('status');`],
-		['production-logger-log', 'src/logging.ts', `logger.error('status');`],
-		['unauthorized-mumble-helper', 'src/native-helper.ts', 'export class MumbleLink {}'],
-	];
-	for (const [rule, path, source] of cases) {
-		const root = isolatedRoot(`rule-${rule}`);
-		write(root, path, source);
-		const findings = scanSecurityBoundaries(root);
-		assert(findings.some((finding) => finding.rule === rule), `${rule} did not turn red`);
-	}
+	for (const message of runRuleCases(scanSecurityBoundaries, 'rule')) assert(false, message);
 }
 
 function testCurrentGithubTokenFormats() {
@@ -481,57 +498,29 @@ function testCurrentRepository() {
 	assert(findings.length === 0, `current repository produced ${String(findings.length)} security finding(s)`);
 }
 
+/**
+ * Sabotages the scanner's OUTPUT (not its own detection code, which has no
+ * per-rule seam to disable) by wrapping the real function and dropping one
+ * rule's findings, then runs the exact same rule cases and assertion as
+ * testEveryRule against that wrapper. A prior version proved this by
+ * relaunching the whole suite as a subprocess per rule (9 relaunches, each
+ * re-running every earlier corpus test): 12.9 s of the 74.7 s gate for what
+ * the CLI wiring itself (`testCliRedaction`, one spawn) already covers.
+ * Doing the filtering in-process keeps the causal check (this rule's own
+ * case goes red, and only this one) without the relaunch cost.
+ */
 function testSabotageControls() {
 	for (const rule of EXPECTED_RULES) {
-		const stub = createFilteringStub(rule);
-		const result = runSuiteAgainst(stub);
-		assertCausalFailure(result, `${rule} did not turn red`, `disabling ${rule}`);
+		const sabotaged = (root) => scanSecurityBoundaries(root).filter((finding) => finding.rule !== rule);
+		const localFailures = runRuleCases(sabotaged, `sabotage-${rule}`);
+		assert(
+			localFailures.length === 1 && localFailures[0] === `${rule} did not turn red`,
+			`disabling ${rule} did not cause exactly its own case to fail (got: ${localFailures.join('; ') || 'nothing'})`,
+		);
 	}
-	const alwaysGreen = join(testRoot, 'always-green.mjs');
-	writeFileSync(alwaysGreen, [
-		'export function scanSecurityBoundaries() { return []; }',
-		'export function scanReleaseArtifacts() { return []; }',
-	].join('\n'));
-	assertCausalFailure(runSuiteAgainst(alwaysGreen), 'private-key did not turn red', 'always-green scanner');
-}
-
-function assertCausalFailure(result, expectedMessage, sabotage) {
-	assert(result.error === undefined, `${sabotage} crashed before the suite ran: ${String(result.error)}`);
-	assert(result.signal === null, `${sabotage} terminated the suite with signal ${String(result.signal)}`);
-	assert(result.status === 1, `${sabotage} exited ${String(result.status)} instead of a controlled test failure`);
-	assert(result.stderr.includes(`FAIL: ${expectedMessage}`), `${sabotage} lacked causal failure ${JSON.stringify(expectedMessage)}`);
-	assert(!/\b(?:SyntaxError|TypeError|ReferenceError)\b|node:internal|\n\s*at\s+/u.test(result.stderr), `${sabotage} produced a runtime crash instead of an assertion`);
-}
-
-function createFilteringStub(rule) {
-	const directory = join(testRoot, `sabotage-${rule}`);
-	mkdirSync(directory, { recursive: true });
-	const stub = join(directory, 'scanner.mjs');
-	const actualUrl = pathToFileURL(resolve('scripts/security-scan.mjs')).href;
-	writeFileSync(stub, [
-		`import { resolve } from 'node:path';`,
-		`import { pathToFileURL } from 'node:url';`,
-		`import { scanSecurityBoundaries as actual } from ${JSON.stringify(actualUrl)};`,
-		`export function scanSecurityBoundaries(root) { return actual(root).filter((finding) => finding.rule !== ${JSON.stringify(rule)}); }`,
-		`export function scanReleaseArtifacts() { return []; }`,
-		`if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {`,
-		`  const findings = scanSecurityBoundaries(process.argv[2]);`,
-		`  if (findings.length > 0) { for (const finding of findings) console.error('- ' + JSON.stringify(finding.path) + ': ' + finding.rule); process.exitCode = 1; }`,
-		`}`,
-	].join('\n'));
-	return stub;
-}
-
-function runSuiteAgainst(scanner) {
-	return spawnSync(process.execPath, [suitePath], {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-		env: {
-			...process.env,
-			SECURITY_SCANNER_NEGATIVE_CONTROL: '1',
-			SECURITY_SCANNER_UNDER_TEST: scanner,
-		},
-	});
+	const alwaysGreen = () => [];
+	const localFailures = runRuleCases(alwaysGreen, 'sabotage-always-green');
+	assert(localFailures.includes('private-key did not turn red'), 'always-green scanner did not cause private-key to fail');
 }
 
 function initializeRepository(root) {
