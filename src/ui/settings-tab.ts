@@ -1260,7 +1260,7 @@ export function projectLocalDebugStatus(
 	t: (key: TranslationKey, params?: TranslationParams) => string,
 ): { role: 'status' | 'alert'; lines: readonly string[] } {
 	return {
-		role: status.state === 'degraded' ? 'alert' : 'status',
+		role: status.state === 'degraded' || status.errorsSinceLoad > 0 ? 'alert' : 'status',
 		lines: [
 			t(`settings.debug.writer.${status.state}`),
 			t('settings.debug.path', { path: status.path }),
@@ -1268,6 +1268,12 @@ export function projectLocalDebugStatus(
 			status.lastEventAt === null
 				? t('settings.debug.noEvents') : t('settings.debug.lastEvent', { timestamp: status.lastEventAt }),
 			t('settings.debug.dropped', { count: status.droppedRecords }),
+			status.errorsSinceLoad === 0
+				? t('settings.debug.noErrorsSinceLoad') : t('settings.debug.errorsSinceLoad', { count: status.errorsSinceLoad }),
+			...(status.lastError === null ? [] : [t('settings.debug.lastError', {
+				code: status.lastError.code, component: status.lastError.component,
+				action: status.lastError.action, timestamp: status.lastError.occurredAt,
+			})]),
 		],
 	};
 }
