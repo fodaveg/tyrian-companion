@@ -122,7 +122,7 @@ describe('ApiPollScheduler', () => {
 		await rateHarness.fireNext();
 		expect(rateDiagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'retry']);
 		expect(rateDiagnostics.events[1]).toMatchObject({
-			code: 'rate_limited', details: { status: 'backoff', retryAfterMs: 4_000 },
+			level: 'warn', code: 'rate_limited', details: { status: 'backoff', retryAfterMs: 4_000 },
 		});
 
 		const cancelHarness = new SchedulerHarness();
@@ -135,7 +135,8 @@ describe('ApiPollScheduler', () => {
 		deferred.resolve({ kind: 'success' });
 		await flushPromises();
 		expect(cancelDiagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'cancel']);
-		expect(cancelDiagnostics.events[1]).toMatchObject({ code: 'cancelled', details: { status: 'idle' } });
+		// H14.9: a poll cancelled because the session went idle is routine, not a warning.
+		expect(cancelDiagnostics.events[1]).toMatchObject({ level: 'debug', code: 'cancelled', details: { status: 'idle' } });
 	});
 
 	it('records a slept-through poll as start plus skip without calling the poller', async () => {
@@ -149,7 +150,8 @@ describe('ApiPollScheduler', () => {
 
 		expect(poll).not.toHaveBeenCalled();
 		expect(diagnostics.events.map(({ phase }) => phase)).toEqual(['start', 'skip']);
-		expect(diagnostics.events[1]).toMatchObject({ code: 'skipped', details: { status: 'paused_sleep' } });
+		// H14.9: a skipped poll (offline, sleep, single-flight) is routine, not a warning.
+		expect(diagnostics.events[1]).toMatchObject({ level: 'debug', code: 'skipped', details: { status: 'paused_sleep' } });
 	});
 
 	it('records a failure for central sanitization and remains fail-open when diagnostics throw', async () => {
@@ -160,7 +162,7 @@ describe('ApiPollScheduler', () => {
 		}, { diagnostics });
 		scheduler.start(10_000);
 		await harness.fireNext();
-		expect(diagnostics.events.at(-1)).toMatchObject({ phase: 'failure', code: 'unknown_failure' });
+		expect(diagnostics.events.at(-1)).toMatchObject({ level: 'error', phase: 'failure', code: 'unknown_failure' });
 		expect(diagnostics.events.at(-1)?.message).toBeInstanceOf(Error);
 
 		const failingDiagnostics = {
