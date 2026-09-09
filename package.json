@@ -45,6 +45,8 @@
 		"smoke:live": "node scripts/smoke-live.mjs",
 		"test:dev-install": "node scripts/tests/probar-dev-install.mjs",
 		"test:smoke-live": "node scripts/tests/probar-smoke-live.mjs",
+		"record:api-fixtures": "node scripts/record-api-fixtures.mjs",
+		"test:record-api-fixtures": "node scripts/tests/probar-record-api-fixtures.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [

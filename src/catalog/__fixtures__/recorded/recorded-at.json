@@ -1,0 +1,28 @@
+{
+	"version": 1,
+	"recordedAt": "2026-09-09T03:36:29.076Z",
+	"itemIds": [
+		36038,
+		83008,
+		19697,
+		19700,
+		19703
+	],
+	"sources": [
+		{
+			"file": "items.json",
+			"route": "items",
+			"url": "https://api.guildwars2.com/v2/items?ids=36038,83008,19697,19700,19703"
+		},
+		{
+			"file": "commerce-prices.json",
+			"route": "commerce/prices",
+			"url": "https://api.guildwars2.com/v2/commerce/prices?ids=36038,83008,19697,19700,19703"
+		},
+		{
+			"file": "commerce-listings.json",
+			"route": "commerce/listings",
+			"url": "https://api.guildwars2.com/v2/commerce/listings?ids=36038,83008,19697,19700,19703"
+		}
+	]
+}

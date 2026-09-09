@@ -56,6 +56,7 @@ export const GATE_STEPS = Object.freeze([
 	step('h8-helper-decision-contract', 'Suite del contrato de decision del helper H8', ['node', 'scripts/tests/probar-h8-helper-decision-contract.mjs'], ['test', 'check:guardrails']),
 	step('dev-install-suite', 'Suite de dev:install (copia + sha256 sobre un directorio temporal)', ['node', 'scripts/tests/probar-dev-install.mjs'], ['test', 'check:guardrails']),
 	step('smoke-live-suite', 'Suite de smoke:live (log falso con una linea error)', ['node', 'scripts/tests/probar-smoke-live.mjs'], ['test', 'check:guardrails']),
+	step('record-api-fixtures-suite', 'Suite de record-api-fixtures (sin red; fetch inyectado)', ['node', 'scripts/tests/probar-record-api-fixtures.mjs'], ['test', 'check:guardrails']),
 	step('bundle', 'Bundle de produccion con esbuild', ['node', 'esbuild.config.mjs', 'production'], ['check']),
 ]);
 

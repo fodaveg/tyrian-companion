@@ -29,7 +29,9 @@ export const SESSION_RUNTIME_VERSION = 3 as const;
 export const SESSION_RUNTIME_DB_NAME = 'tyrian-companion-session-runtime';
 export const SESSION_RUNTIME_DB_VERSION = 1;
 export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
-const RUNTIME_KEY = 'active-session';
+/** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
+export const SESSION_RUNTIME_KEY = 'active-session';
+const RUNTIME_KEY = SESSION_RUNTIME_KEY;
 
 export type PersistedSessionState =
 	| RecoverableSessionState

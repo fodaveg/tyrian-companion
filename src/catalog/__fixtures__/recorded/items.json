@@ -1,0 +1,114 @@
+[
+	{
+		"name": "Trick-or-Treat Bag",
+		"description": "Double-click to open.",
+		"type": "Container",
+		"level": 0,
+		"rarity": "Basic",
+		"vendor_value": 18,
+		"game_types": [
+			"PvpLobby",
+			"Activity",
+			"Wvw",
+			"Dungeon",
+			"Pve"
+		],
+		"flags": [
+			"NoSalvage",
+			"BulkConsume"
+		],
+		"restrictions": [],
+		"id": 36038,
+		"chat_link": "[&AgHGjAAA]",
+		"icon": "https://render.guildwars2.com/file/E6017363449406DEE3DD3B80263AA2A91716F1DE/499375.png",
+		"details": {
+			"type": "Default"
+		}
+	},
+	{
+		"name": "Piece of Rare Unidentified Gear",
+		"description": "Salvage for a reward of crafting materials, or double-click to identify and receive an item.",
+		"type": "Container",
+		"level": 0,
+		"rarity": "Rare",
+		"vendor_value": 206,
+		"game_types": [
+			"PvpLobby",
+			"Activity",
+			"Wvw",
+			"Dungeon",
+			"Pve"
+		],
+		"flags": [],
+		"restrictions": [],
+		"id": 83008,
+		"chat_link": "[&AgFARAEA]",
+		"icon": "https://render.guildwars2.com/file/EF63A10BD2317CECCEA63A3B7E6555550B414C4E/1766399.png",
+		"details": {
+			"type": "Default"
+		}
+	},
+	{
+		"name": "Copper Ore",
+		"description": "Refine into Copper Ingots or use Tin to refine into Bronze Ingots.",
+		"type": "CraftingMaterial",
+		"level": 0,
+		"rarity": "Basic",
+		"vendor_value": 1,
+		"game_types": [
+			"Activity",
+			"Wvw",
+			"Dungeon",
+			"Pve"
+		],
+		"flags": [
+			"NoSalvage"
+		],
+		"restrictions": [],
+		"id": 19697,
+		"chat_link": "[&AgHxTAAA]",
+		"icon": "https://render.guildwars2.com/file/6E17C5A65955239640743E48B30A3425FACA5D02/65925.png"
+	},
+	{
+		"name": "Mithril Ore",
+		"description": "Refine into Ingots.",
+		"type": "CraftingMaterial",
+		"level": 0,
+		"rarity": "Basic",
+		"vendor_value": 7,
+		"game_types": [
+			"Activity",
+			"Wvw",
+			"Dungeon",
+			"Pve"
+		],
+		"flags": [
+			"NoSalvage"
+		],
+		"restrictions": [],
+		"id": 19700,
+		"chat_link": "[&AgH0TAAA]",
+		"icon": "https://render.guildwars2.com/file/E90FE803CDC205CDEB13FE03694D4D04757ACF5D/65928.png"
+	},
+	{
+		"name": "Silver Ore",
+		"description": "Refine into Ingots.",
+		"type": "CraftingMaterial",
+		"level": 0,
+		"rarity": "Basic",
+		"vendor_value": 3,
+		"game_types": [
+			"Activity",
+			"Wvw",
+			"Dungeon",
+			"Pve"
+		],
+		"flags": [
+			"NoSalvage"
+		],
+		"restrictions": [],
+		"id": 19703,
+		"chat_link": "[&AgH3TAAA]",
+		"icon": "https://render.guildwars2.com/file/DA1D9FCF3006222DEE691016EFF8AEE162C3431D/65931.png"
+	}
+]
