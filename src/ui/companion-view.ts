@@ -46,7 +46,6 @@ import { formatLootMoney } from '../sessions/loot-presentation';
 import type { LiveSessionLootState } from '../sessions/live-session-loot';
 import {
 	formatBandMinutes,
-	formatMilliUnits,
 	observedRateBand,
 	unavailableRateBand,
 } from '../sessions/observed-rate-band';
@@ -54,6 +53,7 @@ import type { SessionHistoryLoadResult } from '../sessions/session-history-summa
 import type { StoredSessionLootSummary } from '../sessions/session-note-renderer';
 import {
 	buildCompanionStatus,
+	formatElapsed,
 	localizedCoverageStatus,
 	type CompanionStatusProjection,
 } from './companion-status-model';
@@ -65,6 +65,17 @@ import {
 	SessionHistoryPanelController,
 	type SessionHistoryPanelMount,
 } from './session-history-panel';
+import { formatDecimal } from './format-number';
+import {
+	renderSessionCard,
+	renderSessionCardCallout,
+	type SessionCardAction,
+	type SessionCardCallout,
+	type SessionCardCalloutLine,
+	type SessionCardFigure,
+	type SessionCardMount,
+	type SessionCardModel,
+} from './session-card';
 
 export const COMPANION_VIEW_TYPE = 'tyrian-companion-view';
 
@@ -132,20 +143,22 @@ export class TyrianCompanionView extends ItemView {
 	private refreshInterval: number | null = null;
 	/** Torn down in `onClose`; set once in `onOpen` so a repeated `render()` never registers twice. */
 	private visibilityCleanup: (() => void) | null = null;
+	/** The card's ticking clock (`.tyrian-companion-session__clock`), while a session is active. */
 	private headerElapsed: HTMLElement | null = null;
-	private liveSackCount: HTMLElement | null = null;
-	private liveSackRate: HTMLElement | null = null;
-	private liveSackRateDetail: HTMLElement | null = null;
-	private settlementCountdown: HTMLElement | null = null;
+	/** Retained figure nodes for the two live bands (observed value, sacks), refreshed every second. */
+	private liveFigures: SessionCardMount['figureNodes'] = [];
+	/** Which builder `refreshSessionFigures` recomputes from; `null` outside active/stopping. */
+	private liveFiguresKind: 'active' | 'stopping' | null = null;
 	private recoveryOwnerDetail: HTMLElement | null = null;
 	private recoveryOwnerExpiresAt: number | null = null;
 	private recoveryRecoverButton: HTMLButtonElement | null = null;
 	private recoveryDiscardButton: HTMLButtonElement | null = null;
 	private checkButton: HTMLButtonElement | null = null;
-	private incident: HTMLElement | null = null;
-	private incidentMessage: HTMLElement | null = null;
-	private incidentMore: HTMLElement | null = null;
+	/** The card's single callout slot, rebuilt in place every tick instead of the whole card. */
+	private calloutSlot: HTMLElement | null = null;
 	private detectionTimelineNodes: { last: HTMLElement; result: HTMLElement; next: HTMLElement } | null = null;
+	/** Carries each gaveto's open/closed state across a full `render()`, so a rebuild never closes it. */
+	private drawerOpen = { detail: false, alerts: false, history: false };
 	private pendingConfirmationContainer: HTMLElement | null = null;
 	private pendingConfirmationFocusTarget: HTMLElement | null = null;
 	private pendingConfirmationKey: string | null = null;
@@ -219,15 +232,14 @@ export class TyrianCompanionView extends ItemView {
 		const projection = this.projectStatus(now);
 
 		this.headerElapsed = null;
-		this.liveSackCount = null;
-		this.liveSackRate = null;
-		this.liveSackRateDetail = null;
-		this.settlementCountdown = null;
+		this.liveFigures = [];
 		this.checkButton = null;
-		this.incident = null;
-		this.incidentMessage = null;
-		this.incidentMore = null;
+		this.calloutSlot = null;
 		this.detectionTimelineNodes = null;
+		this.recoveryOwnerDetail = null;
+		this.recoveryOwnerExpiresAt = null;
+		this.recoveryRecoverButton = null;
+		this.recoveryDiscardButton = null;
 		this.pendingConfirmationContainer = null;
 		this.pendingConfirmationFocusTarget = null;
 		this.pendingConfirmationKey = null;
@@ -256,14 +268,8 @@ export class TyrianCompanionView extends ItemView {
 		const surface = this.productShell?.content ?? contentEl;
 		surface.empty();
 		surface.addClass('tyrian-companion-view__page');
-		this.renderSimpleSession(surface, connectionState, sessionState, projection);
-		this.renderSellSignal(surface);
+		this.renderSimpleSession(surface, connectionState, sessionState, projection, now);
 		this.renderPendingConfirmationSlot(surface, now);
-		this.renderAssistedDetection(surface, connectionState, sessionState);
-		this.renderHalloweenAlerts(surface);
-		this.renderManagedAssetsConflict(surface);
-		this.renderSessionHistory(surface);
-		this.renderLocalDebugWarning(surface);
 		const retryAt = getRetryAt(connectionState);
 		this.scheduleRefresh(projection, retryAt, now);
 	}
@@ -288,22 +294,10 @@ export class TyrianCompanionView extends ItemView {
 	/**
 	 * `operation_conflict` is the one managed-assets failure that never resolves on its own: Move
 	 * refuses to run over a modified/unowned root, so a blocked auto-reconciliation stays blocked
-	 * until the player acts. Settings already carries the full row; this is the escape hatch that
-	 * does not require opening it.
+	 * until the player acts. Its message becomes a line (or the title, if nothing graver is
+	 * present) of the card's single callout instead of a banner of its own — ranura 2 of
+	 * `diseno-sesion/FICHA.md` is exactly one callout, the worst problem first.
 	 */
-	private renderManagedAssetsConflict(container: HTMLElement): void {
-		const view = this.actions.getManagedAssetsView?.();
-		if (view === undefined || view.status !== 'error' || view.message !== 'operation_conflict') return;
-		const translator = createTranslator(this.actions.getLocale());
-		const warning = container.createDiv({ cls: 'tyrian-companion-view__debug-warning' });
-		warning.setAttr('role', 'alert');
-		warning.createEl('p', { text: projectManagedAssetsDescription(view, translator) });
-		if (this.actions.retryManagedAssetsReconciliation) {
-			const button = warning.createEl('button', { text: this.t('view.resolve') });
-			button.addEventListener('click', () => { void this.resolveManagedAssetsConflict(); });
-		}
-	}
-
 	private async resolveManagedAssetsConflict(): Promise<void> {
 		const retry = this.actions.retryManagedAssetsReconciliation?.() ?? Promise.resolve();
 		this.render();
@@ -311,8 +305,71 @@ export class TyrianCompanionView extends ItemView {
 		this.render();
 	}
 
-	/** Bridges the data-only Halloween panel onto the Companion surface and the runtime catalogue. */
+	/**
+	 * Builds the card's one callout (ranura 2) from every source of "something needs attention"
+	 * this view used to show as separate blocks: the projected session/detection incident, local
+	 * diagnostics (degraded writer or errors since load) and a blocked managed-assets
+	 * reconciliation. `null` when nothing needs attention, so the slot stays empty.
+	 */
+	private buildIncidentCallout(projection: CompanionStatusProjection): SessionCardCallout | null {
+		const translator = createTranslator(this.actions.getLocale());
+		const debug = this.actions.getLocalDebugStatus?.();
+		const errorsSinceLoad = debug?.errorsSinceLoad ?? 0;
+		const degraded = debug?.state === 'degraded';
+		const assetsView = this.actions.getManagedAssetsView?.();
+		const assetsConflict = assetsView !== undefined && assetsView.status === 'error' && assetsView.message === 'operation_conflict';
+		const assetsMessage = assetsConflict ? projectManagedAssetsDescription(assetsView, translator) : null;
+		const resolveAssetsButton = this.actions.retryManagedAssetsReconciliation
+			? { text: this.t('view.resolve'), onClick: () => { void this.resolveManagedAssetsConflict(); } }
+			: undefined;
+
+		let title: string | null = null;
+		let tone: 'error' | 'warning' = 'error';
+		let titleButton: SessionCardCallout['titleButton'];
+		const lines: SessionCardCalloutLine[] = [];
+		const openDiagnostics = this.actions.openLocalDebugSettings
+			? { text: translator.t('settings.debug.name'), onClick: () => this.actions.openLocalDebugSettings?.() }
+			: undefined;
+
+		if (errorsSinceLoad > 0) {
+			title = translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad });
+			titleButton = openDiagnostics;
+			if (debug?.lastError) {
+				lines.push({ text: translator.t('settings.debug.lastError', {
+					code: debug.lastError.code, component: debug.lastError.component,
+					action: debug.lastError.action, timestamp: this.formatMoment(debug.lastError.occurredAt),
+				}) });
+			}
+		} else if (degraded) {
+			title = translator.t('settings.debug.degraded.title');
+			tone = 'warning';
+			titleButton = openDiagnostics;
+			lines.push({ text: translator.t('settings.debug.degraded.desc') });
+		} else if (projection.errors.length > 0) {
+			title = projection.errors[0] ?? this.t('view.currentStateAttention');
+			tone = projection.incidentTone === 'error' ? 'error' : 'warning';
+			if (projection.errors.length > 1) {
+				lines.push({ text: this.t('view.moreErrors', { count: projection.errors.length - 1 }) });
+			}
+		}
+
+		if (assetsMessage !== null) {
+			if (title === null) {
+				title = assetsMessage;
+				tone = 'warning';
+				titleButton = resolveAssetsButton;
+			} else {
+				lines.push({ text: assetsMessage, button: resolveAssetsButton });
+			}
+		}
+
+		if (title === null) return null;
+		return { tone, title, titleButton, lines };
+	}
+
+	/** Bridges the data-only Halloween panel onto the Avisos gaveto and the runtime catalogue. */
 	private renderHalloweenAlerts(container: HTMLElement): void {
+		container.createEl('p', { text: this.t('view.alerts.policy'), cls: 'tyrian-companion-session__context' });
 		renderHalloweenAlertPanel(
 			container,
 			this.actions,
@@ -321,19 +378,50 @@ export class TyrianCompanionView extends ItemView {
 		);
 	}
 
-	/** Remounts the durable-history panel against its retained controller; mounting never reads the Vault. */
+	/**
+	 * Remounts the durable-history panel against its retained controller inside the Historial
+	 * gaveto; mounting never reads the Vault. The panel used to sit behind its own inner
+	 * `<details>` — now the outer gaveto is the only disclosure, so it mounts flat.
+	 */
 	private renderSessionHistory(container: HTMLElement): void {
 		this.sessionHistoryController ??= new SessionHistoryPanelController(
 			() => this.actions.loadSessionHistory(),
 		);
 		this.sessionHistoryMount?.dispose();
-		const disclosure = container.createEl('details', { cls: 'tyrian-companion-view__history' });
-		disclosure.createEl('summary', { text: this.t('view.sessionHistoryDisclosure') });
 		this.sessionHistoryMount = mountSessionHistoryPanel(
-			disclosure,
+			container,
 			this.actions.getLocale(),
 			this.sessionHistoryController,
 		);
+	}
+
+	/** `sin cargar` / `N sesiones`: the short state the Historial gaveto's `<summary>` carries closed. */
+	private historyDrawerSuffix(): string {
+		const state = this.sessionHistoryController?.current();
+		if (state?.status === 'ready') {
+			const count = state.aggregate.sessionCount;
+			return count === 1
+				? this.t('view.drawer.historyCount', { count })
+				: this.t('view.drawer.historyCountPlural', { count });
+		}
+		return this.t('view.drawer.historyIdle');
+	}
+
+	/** `0 sin revisar` / `N nuevos`: unread Halloween loot notices plus unread price notices. */
+	private alertsDrawerSuffix(): string {
+		const unread = this.actions.getHalloweenState().unreadCount + this.actions.getHalloweenPriceAlertState().unreadCount;
+		return unread === 1 ? this.t('view.alerts.unreadCount', { count: unread }) : this.t('view.alerts.unreadCountPlural', { count: unread });
+	}
+
+	/** `Detección desactivada` / `Detección activa · próxima HH:MM`: the Detalle gaveto's closed state. */
+	private detectionDrawerSuffix(mode: DetectionMode, state: AssistedDetectionState): string {
+		if (mode === 'off' || state.status === 'disarmed' || state.status === 'error') return this.t('view.drawer.detectionOff');
+		if (state.status === 'armed' && state.scheduler.nextRunAt !== null) {
+			return `${this.t('view.drawer.detectionActive')} · ${this.t('view.drawer.detectionNext', {
+				time: formatClock(state.scheduler.nextRunAt, this.actions.getLocale()),
+			})}`;
+		}
+		return this.t('view.drawer.detectionActive');
 	}
 
 	private renderSimpleSession(
@@ -341,121 +429,233 @@ export class TyrianCompanionView extends ItemView {
 		connection: ConnectionState,
 		session: SessionState,
 		projection: CompanionStatusProjection,
+		now: number = Date.now(),
 	): void {
-		const copy = simpleSessionCopy(this.actions.getLocale());
-		const observed = session.status === 'error' ? session.failedState : session;
-		// Reset every render: `renderRecovery` below repopulates these only while the recovery
+		const locale = this.actions.getLocale();
+		const copy = simpleSessionCopy(locale);
+		const observed = this.observedSession(session);
+		// Reset every render: `buildRecoveryModel` below repopulates these only while the recovery
 		// section is actually busy, and a stale reference from a previous busy render must not keep
 		// disabling buttons that this pass never touched.
 		this.recoveryOwnerDetail = null;
 		this.recoveryOwnerExpiresAt = null;
 		this.recoveryRecoverButton = null;
 		this.recoveryDiscardButton = null;
-		const card = container.createEl('section', { cls: 'tyrian-companion-session' });
-		card.setAttr('aria-label', copy.session);
-		const header = card.createEl('header', { cls: 'tyrian-companion-session__header' });
-		const heading = header.createDiv();
-		const sessionProjection = projection.items.find(({ id }) => id === 'session');
-		this.renderIncident(card, projection);
-		if (observed.status === 'idle') {
-			const recovery = this.actions.getSessionRecoveryState();
-			if (recovery.status !== 'none') {
-				this.renderRecovery(heading, header, recovery);
-				return;
+		this.liveFiguresKind = null;
+		// Field initializers never ran for a harness built via `Object.create` instead of `new`
+		// (several tests isolate a single method that way); this keeps `renderSimpleSession` itself
+		// safe to call directly without every one of them stubbing the new fields by hand.
+		this.drawerOpen ??= { detail: false, alerts: false, history: false };
+
+		const drawers = {
+			detail: {
+				summary: copy.detailDisclosure,
+				suffix: this.detectionDrawerSuffix(this.actions.getDetectionMode(), this.actions.getAssistedDetectionState()),
+				open: this.drawerOpen.detail,
+			},
+			alerts: { summary: this.t('halloween.title.generic'), suffix: this.alertsDrawerSuffix(), open: this.drawerOpen.alerts },
+			history: { summary: this.t('view.drawer.history'), suffix: this.historyDrawerSuffix(), open: this.drawerOpen.history },
+		};
+		const callout = this.buildIncidentCallout(projection);
+		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
+		const mount = renderSessionCard(container, model);
+		this.headerElapsed = mount.clock;
+		this.liveFigures = mount.figureNodes;
+		this.calloutSlot = mount.calloutSlot;
+
+		this.renderSellSignal(mount.sellSignalSlot);
+
+		const recovery = observed.status === 'idle' ? this.actions.getSessionRecoveryState() : { status: 'none' as const };
+		if (recovery.status !== 'none') {
+			this.renderPilotRecoveryKind(mount.heading, recovery.status === 'working');
+			if (recovery.status === 'busy') {
+				mount.meta.setAttr('aria-live', 'polite');
+				this.recoveryOwnerDetail = mount.meta;
+				this.recoveryOwnerExpiresAt = recovery.ownerExpiresAt;
+				this.recoveryDiscardButton = mount.actionButtons[0] ?? null;
+				this.recoveryRecoverButton = mount.actionButtons[1] ?? null;
 			}
-			heading.createEl('h2', { text: copy.ready });
-			heading.createEl('p', { text: accountSummary(connection, copy) });
-			const button = header.createEl('button', { text: copy.start, cls: 'mod-cta' });
-			button.disabled = !(this.actions.hasConfiguredApiKey?.() ?? true);
-			button.addEventListener('click', () => this.actions.openManualSessionStart());
-			if (button.disabled) heading.createEl('p', { text: copy.missingKey, cls: 'tyrian-companion-session__context' });
-			this.renderConnectionCheck(header, connection);
-			return;
-		}
-
-		if (observed.status === 'starting') {
-			heading.createEl('h2', { text: copy.preparing });
-			heading.createEl('p', { text: copy.capturing });
-			return;
-		}
-
-		if (observed.status === 'active') {
-			heading.createEl('h2', { text: copy.active });
-			this.headerElapsed = heading.createEl('p', {
-				text: sessionProjection?.detail ?? copy.observing,
-				cls: 'tyrian-companion-view__elapsed',
-			});
-			heading.createEl('p', { text: `${observed.startContext.characterName} · ${copy.observing}` });
-			const button = header.createEl('button', { text: copy.finish, cls: 'mod-cta' });
-			button.addEventListener('click', () => { void this.actions.stopManualSession(); });
-			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
-			const detection = this.actions.getAssistedDetectionState();
-			if (detection.status === 'error' || detection.status === 'disarmed') {
-				const warning = card.createEl('p', { text: copy.observationFailed, cls: 'tyrian-companion-session__warning' });
+		} else {
+			this.renderConnectionCheck(mount.detailBody, connection);
+			if (observed.status === 'stopping' && this.settlementWait() !== null) {
+				mount.detailBody.createEl('p', { text: this.t('view.settlementWhy'), cls: 'tyrian-companion-session__context' });
+				const warning = mount.detailBody.createEl('p', { text: this.t('view.captureNowWarning') });
 				warning.setAttr('role', 'alert');
 			}
-			return;
+			if (observed.status === 'active') this.liveFiguresKind = 'active';
+			if (observed.status === 'stopping') this.liveFiguresKind = 'stopping';
 		}
 
-		if (observed.status === 'stopping') {
-			heading.createEl('h2', { text: copy.finishing });
-			const wait = this.settlementWait();
-			if (wait === null) heading.createEl('p', { text: copy.reconciling });
-			else this.renderSettlementWait(card, heading, wait);
-			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
-			return;
-		}
+		this.renderAssistedDetection(mount.detailBody, connection, session);
+		this.renderHalloweenAlerts(mount.alertsBody);
+		this.renderSessionHistory(mount.historyBody);
 
-		if (observed.status === 'provisional') {
-			heading.createEl('h2', { text: copy.reviewNeeded });
-			this.renderMeasuredQuality(heading.createEl('p', { text: copy.reviewNeededDetail }), projection);
-			const button = header.createEl('button', { text: copy.review });
-			button.addEventListener('click', () => this.actions.openSessionReview());
-			this.renderLiveLoot(card, this.actions.getLiveSessionLoot?.() ?? { status: 'idle' }, copy);
-			return;
-		}
-
-		heading.createEl('h2', { text: copy.summary });
-		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
-		const saveLabel = saveState === 'saved' ? copy.saved
-			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
-		this.renderMeasuredQuality(
-			heading.createEl('p', { text: `${observed.startContext.characterName} · ${saveLabel}` }),
-			projection,
-		);
-		if (saveState === 'failed' && this.actions.retrySessionSummarySave) {
-			const retry = heading.createEl('button', { text: copy.retrySave });
-			retry.addEventListener('click', () => { void this.actions.retrySessionSummarySave?.(); });
-		}
-		this.renderSavedNoteAction(heading, copy);
-		if (this.actions.rotateToNewSession) {
-			const button = header.createEl('button', { text: copy.newSession, cls: 'mod-cta' });
-			button.addEventListener('click', () => { void this.actions.rotateToNewSession?.(); });
-		}
-		const liveLoot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' };
-		const storedLoot = this.actions.getStoredSessionLootSummary?.() ?? null;
-		const durableLoot = this.actions.getLootPresentation();
-		if (liveLoot.status === 'idle' && storedLoot !== null) this.renderStoredLoot(card, storedLoot, copy);
-		else if (liveLoot.status === 'idle' && durableLoot !== null) this.renderDurableLoot(card, durableLoot, copy);
-		else this.renderLiveLoot(card, liveLoot, copy);
+		mount.detailDrawer.addEventListener('toggle', () => { this.drawerOpen.detail = mount.detailDrawer.open; });
+		mount.alertsDrawer.addEventListener('toggle', () => { this.drawerOpen.alerts = mount.alertsDrawer.open; });
+		mount.historyDrawer.addEventListener('toggle', () => { this.drawerOpen.history = mount.historyDrawer.open; });
 	}
 
 	/**
-	 * The one place the projected incidents reach the user now that the status rail is gone. It is
-	 * always mounted and stays hidden while nothing needs attention, so the background refresh can
-	 * repaint it in place instead of rebuilding the card and stealing focus.
+	 * The one model builder for every session-lifecycle branch (ranura 1-3 of the card). Idle with
+	 * a saved-but-unresolved session defers to `buildRecoveryModel`, which replaces the ready
+	 * header outright — same as today. `drawers` and `callout` are shared across every branch:
+	 * ranura 5 never changes shape or order between states (FICHA §2).
 	 */
-	private renderIncident(card: HTMLElement, projection: CompanionStatusProjection): void {
-		const incident = card.createEl('p', { cls: 'tyrian-companion-session__warning' });
-		incident.setAttr('role', 'alert');
-		incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
-		incident.hidden = projection.errors.length === 0;
-		this.incident = incident;
-		this.incidentMessage = incident.createSpan({ text: projection.errors[0] ?? this.t('view.currentStateAttention') });
-		this.incidentMore = incident.createEl('small', {
-			text: this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }),
-		});
-		this.incidentMore.hidden = projection.errors.length <= 1;
+	private buildSessionCardModel(
+		connection: ConnectionState,
+		observed: ReturnType<TyrianCompanionView['observedSession']>,
+		projection: CompanionStatusProjection,
+		now: number,
+		copy: ReturnType<typeof simpleSessionCopy>,
+		locale: Locale,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+		callout: SessionCardCallout | null,
+	): SessionCardModel {
+		if (observed.status === 'idle') {
+			const recovery = this.actions.getSessionRecoveryState();
+			if (recovery.status !== 'none') return this.buildRecoveryModel(recovery, copy, callout, drawers);
+			const missingKey = !(this.actions.hasConfiguredApiKey?.() ?? true);
+			return {
+				ariaLabel: copy.session, state: copy.ready,
+				meta: { text: missingKey ? copy.missingKey : accountSummary(connection, copy) },
+				actions: [{ text: copy.start, cta: true, disabled: missingKey, onClick: () => this.actions.openManualSessionStart() }],
+				callout, figures: [], ...drawers,
+			};
+		}
+
+		if (observed.status === 'starting') {
+			return {
+				ariaLabel: copy.session, state: copy.preparing,
+				meta: { text: copy.capturing }, actions: [], callout, figures: [], ...drawers,
+			};
+		}
+
+		if (observed.status === 'active') {
+			const detection = this.actions.getAssistedDetectionState();
+			const fallbackCallout: SessionCardCallout | null = detection.status === 'error' || detection.status === 'disarmed'
+				? { tone: 'warning', title: copy.observationFailed, lines: [] } : null;
+			return {
+				ariaLabel: copy.session, state: copy.active,
+				meta: { clock: formatElapsed(now - Date.parse(observed.baseline.completedAt)), text: `· ${observed.startContext.characterName}` },
+				actions: [{ text: copy.finish, cta: true, onClick: () => { void this.actions.stopManualSession(); } }],
+				callout: callout ?? fallbackCallout, figures: this.buildActiveFigures(now, copy, locale), ...drawers,
+			};
+		}
+
+		if (observed.status === 'stopping') {
+			const wait = this.settlementWait();
+			const actions: SessionCardAction[] = [];
+			if (wait !== null && this.actions.captureSessionFinalNow) {
+				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.(); } });
+			}
+			return {
+				ariaLabel: copy.session, state: copy.finishing,
+				meta: wait === null ? { text: copy.reconciling } : { text: `· ${observed.startContext.characterName}` },
+				actions, callout,
+				figures: wait === null ? [] : [{ label: this.t('view.figure.captureFinalIn'), value: formatCountdown(settlementRemainingSeconds(wait)) }],
+				...drawers,
+			};
+		}
+
+		if (observed.status === 'provisional') {
+			const elapsed = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
+			return {
+				ariaLabel: copy.session, state: copy.reviewNeeded, badge: this.buildQualityBadge(projection),
+				meta: { text: copy.reviewNeededDetail },
+				actions: [{ text: copy.review, onClick: () => this.actions.openSessionReview() }],
+				callout, figures: this.buildTerminalFigures(elapsed, copy, locale), ...drawers,
+			};
+		}
+
+		return this.buildTerminalModel(observed, projection, copy, locale, callout, drawers);
+	}
+
+	/** Narrows a `SessionState` the same way every branch above already reads it. Type helper only. */
+	private observedSession(session: SessionState) {
+		return session.status === 'error' ? session.failedState : session;
+	}
+
+	/**
+	 * `Resumen guardado` / `Guardando…` / etc IS the header word now (FICHA §2's `h2 estado`
+	 * column), not a sentence buried in `meta`. `actions` never exceeds the two the header has
+	 * room for (ranura 1): the rare third one — a failed save with an already-stale note path —
+	 * drops the manual retry, since opening the note and starting again matter more.
+	 */
+	private buildTerminalModel(
+		observed: Extract<ReturnType<TyrianCompanionView['observedSession']>, { status: 'complete' }>,
+		projection: CompanionStatusProjection,
+		copy: ReturnType<typeof simpleSessionCopy>,
+		locale: Locale,
+		callout: SessionCardCallout | null,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+	): SessionCardModel {
+		const saveState = this.actions.getSessionSummarySaveState?.() ?? 'unknown';
+		const state = saveState === 'saved' ? copy.saved
+			: saveState === 'saving' ? copy.saving : saveState === 'failed' ? copy.notSaved : copy.localSummary;
+		const savedPath = this.actions.getSavedSessionNotePath?.() ?? null;
+		const canOpenNote = savedPath !== null && this.actions.openSavedSessionNote !== undefined;
+		const actions: SessionCardAction[] = [];
+		if (saveState === 'failed' && this.actions.retrySessionSummarySave) {
+			actions.push({ text: copy.retrySave, onClick: () => { void this.actions.retrySessionSummarySave?.(); } });
+		}
+		if (this.actions.rotateToNewSession) {
+			actions.push({ text: copy.newSession, cta: !canOpenNote, onClick: () => { void this.actions.rotateToNewSession?.(); } });
+		}
+		if (canOpenNote) {
+			actions.push({
+				text: copy.openNote, cta: true, ariaLabel: `${copy.openNote}: ${savedPath}`,
+				onClick: () => this.actions.openSavedSessionNote?.(),
+			});
+		}
+		const elapsed = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
+		return {
+			ariaLabel: copy.session, state, badge: this.buildQualityBadge(projection),
+			meta: { clock: formatElapsed(elapsed ?? 0), text: `· ${observed.startContext.characterName}` },
+			actions: actions.length > 2 ? actions.slice(actions.length - 2) : actions,
+			callout, figures: this.buildTerminalFigures(elapsed, copy, locale), ...drawers,
+		};
+	}
+
+	/**
+	 * A saved session that never closed replaces the ready header outright instead of sitting
+	 * beside it: starting a new one is blocked until it is resolved, so offering "start" here
+	 * would be a trap. The three gaveteros still mount underneath, unchanged.
+	 */
+	private buildRecoveryModel(
+		recovery: Exclude<SessionRecoveryState, { status: 'none' }>,
+		copy: ReturnType<typeof simpleSessionCopy>,
+		callout: SessionCardCallout | null,
+		drawers: Pick<SessionCardModel, 'detail' | 'alerts' | 'history'>,
+	): SessionCardModel {
+		const working = recovery.status === 'working';
+		const busy = recovery.status === 'busy';
+		const actions: SessionCardAction[] = [];
+		if (recovery.status === 'error') {
+			// Unreadable evidence cannot be recovered, only discarded: no "recover" button here.
+			actions.push({ text: this.t('view.discardSaved'), onClick: () => this.actions.confirmDiscardRecoveredSession() });
+		} else {
+			actions.push({
+				text: this.t('view.discardSaved'), disabled: working || busy,
+				onClick: () => this.actions.confirmDiscardRecoveredSession(),
+			});
+			actions.push({
+				text: this.t('view.recoverSession'), cta: true, disabled: working || busy,
+				onClick: () => { void this.runRecovery(); },
+			});
+		}
+		return {
+			ariaLabel: copy.session, state: this.t(recoveryTitleKey(recovery)),
+			meta: { text: this.recoveryDetailText(recovery) },
+			actions, callout, figures: [], ...drawers,
+		};
+	}
+
+	/** The generic key lookup covers every phase except `busy`, whose copy needs the live countdown. */
+	private recoveryDetailText(recovery: Exclude<SessionRecoveryState, { status: 'none' }>): string {
+		if (recovery.status === 'busy') {
+			return this.t('status.recoveryOwner', { seconds: leaseRemainingSeconds(recovery.ownerExpiresAt, Date.now()) });
+		}
+		return this.t(recoveryDetailKey(recovery));
 	}
 
 	/**
@@ -463,20 +663,23 @@ export class TyrianCompanionView extends ItemView {
 	 * session has nothing honest to claim: the account API answers from a cache of several minutes,
 	 * so the numbers on screen are always the last ones it published, never the current inventory.
 	 */
-	private renderMeasuredQuality(line: HTMLElement, projection: CompanionStatusProjection): void {
-		if (this.actions.getProvisionalDelta() === null && this.actions.getContaminationReview() === null) return;
+	private buildQualityBadge(projection: CompanionStatusProjection): SessionCardModel['badge'] {
+		if (this.actions.getProvisionalDelta() === null && this.actions.getContaminationReview() === null) return undefined;
 		const quality = projection.items.find(({ id }) => id === 'quality');
-		if (quality === undefined) return;
+		if (quality === undefined) return undefined;
 		// A badge beside the number, not a sentence of its own: the word is what the player reads,
 		// the reasoning stays one hover away.
-		const badge = line.createSpan({ text: quality.value, cls: 'tyrian-companion-session__badge' });
-		badge.setAttr('title', `${quality.label}: ${quality.detail}`);
-		badge.setAttr('aria-label', `${quality.label}: ${quality.value}. ${quality.detail}`);
+		return {
+			text: quality.value,
+			title: `${quality.label}: ${quality.detail}`,
+			ariaLabel: `${quality.label}: ${quality.value}. ${quality.detail}`,
+		};
 	}
 
 	/**
-	 * Settings owns the full connection detail; the card only offers the retry, and only while the
-	 * account is not answering, because that is where the failure is read.
+	 * Settings owns the full connection detail; the card only offers the retry, inside the Detalle
+	 * gaveto next to the detection toggle (FICHA decision 4), and only while the account is not
+	 * answering, because that is where the failure is read.
 	 */
 	private renderConnectionCheck(container: HTMLElement, connection: ConnectionState): void {
 		if (connection.status === 'connected' || connection.status === 'warning') return;
@@ -486,52 +689,6 @@ export class TyrianCompanionView extends ItemView {
 		button.disabled = connection.status === 'checking' || isCoolingDown(getRetryAt(connection));
 		button.addEventListener('click', () => { void this.checkConnection(); });
 		this.checkButton = button;
-	}
-
-	/**
-	 * A saved session that never closed replaces the ready state instead of sitting beside it:
-	 * starting a new one is blocked until it is resolved, so offering "start" here would be a trap.
-	 */
-	private renderRecovery(
-		heading: HTMLElement,
-		container: HTMLElement,
-		recovery: Exclude<SessionRecoveryState, { status: 'none' }>,
-	): void {
-		heading.createEl('h2', { text: this.t(recoveryTitleKey(recovery)) });
-		const detail = heading.createEl('p', { text: this.recoveryDetailText(recovery) });
-		if (recovery.status === 'busy') {
-			// The lease keeps expiring on its own; this line has to keep up with it instead of
-			// freezing the second it was first read.
-			detail.setAttr('aria-live', 'polite');
-			this.recoveryOwnerDetail = detail;
-			this.recoveryOwnerExpiresAt = recovery.ownerExpiresAt;
-		}
-		if (recovery.status === 'error') {
-			// Unreadable evidence cannot be recovered, only discarded: no "recover" button here.
-			const discard = container.createEl('button', { text: this.t('view.discardSaved') });
-			discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
-			return;
-		}
-		const working = recovery.status === 'working';
-		const recover = container.createEl('button', { text: this.t('view.recoverSession'), cls: 'mod-cta' });
-		const discard = container.createEl('button', { text: this.t('view.discardSaved') });
-		recover.disabled = working || recovery.status === 'busy';
-		discard.disabled = working || recovery.status === 'busy';
-		recover.addEventListener('click', () => { void this.runRecovery(); });
-		discard.addEventListener('click', () => this.actions.confirmDiscardRecoveredSession());
-		if (recovery.status === 'busy') {
-			this.recoveryRecoverButton = recover;
-			this.recoveryDiscardButton = discard;
-		}
-		this.renderPilotRecoveryKind(heading, working);
-	}
-
-	/** The generic key lookup covers every phase except `busy`, whose copy needs the live countdown. */
-	private recoveryDetailText(recovery: Exclude<SessionRecoveryState, { status: 'none' }>): string {
-		if (recovery.status === 'busy') {
-			return this.t('status.recoveryOwner', { seconds: leaseRemainingSeconds(recovery.ownerExpiresAt, Date.now()) });
-		}
-		return this.t(recoveryDetailKey(recovery));
 	}
 
 	/**
@@ -576,167 +733,116 @@ export class TyrianCompanionView extends ItemView {
 		this.render();
 	}
 
-	/** The only reachable route to the note the plugin just wrote; absent until a durable path exists. */
-	private renderSavedNoteAction(
-		container: HTMLElement,
-		copy: ReturnType<typeof simpleSessionCopy>,
-	): void {
-		const path = this.actions.getSavedSessionNotePath?.() ?? null;
-		if (path === null || this.actions.openSavedSessionNote === undefined) return;
-		const open = container.createEl('button', { text: copy.openNote });
-		open.setAttr('aria-label', `${copy.openNote}: ${path}`);
-		open.addEventListener('click', () => this.actions.openSavedSessionNote?.());
-	}
-
-	private renderStoredLoot(
-		container: HTMLElement,
-		loot: StoredSessionLootSummary,
-		copy: ReturnType<typeof simpleSessionCopy>,
-	): void {
-		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
-		region.setAttr('aria-label', copy.loot);
-		const gains = loot.rows.filter(({ netQuantity }) => netQuantity > 0);
-		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
-		summary.createSpan({ text: copy.durableValue });
-		summary.createEl('strong', {
-			text: loot.immediateCopper === null ? copy.valuePending : simpleMoney(loot.immediateCopper, this.actions.getLocale()),
-		});
-		if (gains.length === 0) {
-			summary.createEl('small', { text: copy.durableEmpty, cls: 'tyrian-companion-session__context' });
-			return;
-		}
-		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
-		for (const row of gains) {
-			const item = list.createEl('li');
-			const identity = item.createDiv();
-			identity.createEl('strong', { text: row.name });
-			identity.createSpan({ text: `×${String(row.netQuantity)}` });
-			item.createSpan({ text: row.immediateLabel });
-		}
-	}
-
-	private renderDurableLoot(
-		container: HTMLElement,
-		loot: LootPresentationV1,
-		copy: ReturnType<typeof simpleSessionCopy>,
-	): void {
-		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
-		region.setAttr('aria-label', copy.loot);
-		const gains = loot.rows.filter(({ direction }) => direction === 'gain');
-		const knownValues = gains.map(durableImmediateCopper);
-		const total = loot.economy.immediateCopper
-			?? knownValues.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
-		summary.createSpan({ text: copy.durableValue });
-		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
-		if (gains.length === 0) {
-			summary.createEl('small', { text: copy.durableEmpty, cls: 'tyrian-companion-session__context' });
-			return;
-		}
-		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
-		for (const row of gains) {
-			const item = list.createEl('li');
-			const identity = item.createDiv();
-			identity.createEl('strong', { text: durableLootName(row.name, row.namespace, this.actions.getLocale()) });
-			identity.createSpan({ text: `×${String(row.netQuantity)}` });
-			const value = durableImmediateCopper(row);
-			item.createSpan({ text: value === null ? copy.valuePending : simpleMoney(value, this.actions.getLocale()) });
-		}
-	}
-
-	private renderLiveLoot(
-		container: HTMLElement,
-		loot: LiveSessionLootState,
-		copy: ReturnType<typeof simpleSessionCopy>,
-	): void {
-		const region = container.createEl('section', { cls: 'tyrian-companion-session__loot' });
-		region.setAttr('aria-label', copy.loot);
-		if (loot.status !== 'idle' && loot.updatedAt === null) {
-			this.renderFirstReadingPending(region, copy);
-			return;
-		}
-		const summary = region.createDiv({ cls: 'tyrian-companion-session__total' });
-		summary.createSpan({ text: copy.observedValue });
-		const total = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
-		summary.createEl('strong', { text: simpleMoney(total, this.actions.getLocale()) });
-		this.renderLiveSackCounter(region, loot, copy);
-		if (loot.status === 'idle' || loot.rows.length === 0) {
-			region.createEl('p', { text: loot.status !== 'idle' && loot.restored ? copy.restoredEmpty : copy.empty });
-			return;
-		}
-		const list = region.createEl('ul', { cls: 'tyrian-companion-session__loot-list' });
-		for (const row of loot.rows) {
-			const item = list.createEl('li');
-			const identity = item.createDiv();
-			identity.createEl('strong', { text: row.name });
-			identity.createSpan({ text: `×${String(row.quantity)}` });
-			item.createSpan({ text: row.totalCopper === null ? copy.valuePending : simpleMoney(row.totalCopper, this.actions.getLocale()) });
-		}
-		if (loot.error !== null) {
-			const status = region.createEl('p', { text: copy.enrichmentPending, cls: 'tyrian-companion-session__context' });
-			status.setAttr('role', 'status');
-		}
-	}
-
 	/**
-	 * Before the account API has answered even once for this session, every number the loot section
-	 * would otherwise show (gold, sacks, pace) is a zero the plugin never measured, not a
-	 * measurement of an empty session. One line names when the first real reading is due instead of
-	 * a breakdown of zeroes that reads like the plugin is broken.
-	 *
-	 * The estimate is the session's own poll scheduler, not a guess: an active session always arms
-	 * it at the fixed five-minute cadence H13.3 declares, the same scheduler the detection timeline
-	 * already reads its "next query" from.
+	 * Figures for an active session (ranura 3): one pending figure ("Primera lectura") before the
+	 * account API has answered even once — every number a breakdown would otherwise show is a
+	 * zero the plugin never measured — or three once it has (observed value, sacks, last query).
+	 * The estimate for the pending case is the session's own poll scheduler, not a guess: an
+	 * active session always arms it at the fixed cadence the detection timeline already reads its
+	 * "next query" from.
 	 */
-	private renderFirstReadingPending(region: HTMLElement, copy: ReturnType<typeof simpleSessionCopy>): void {
-		const nextRunAt = this.actions.getAssistedDetectionState().scheduler.nextRunAt;
-		region.createEl('p', {
-			text: nextRunAt === null
-				? copy.firstReadingPending
-				: `${copy.firstReadingAt} ${formatClock(nextRunAt, this.actions.getLocale())}`,
-		});
-	}
-
-	/**
-	 * The running sack count and the pace it implies, repainted every second by the same tick that
-	 * moves the elapsed clock.
-	 *
-	 * The count is a plain observed total, so it is always exact. The pace beside it is not, and it
-	 * says so by being a band: the account cache blurs both ends of the window it is divided by,
-	 * and a single figure would keep changing under the player for reasons that are not the play.
-	 * The window and cache-margin arithmetic behind that band moves to a closed "Detalle"
-	 * disclosure: it explains the number for whoever opens it without crowding the one line every
-	 * other render of this card has to read at a glance.
-	 */
-	private renderLiveSackCounter(
-		region: HTMLElement,
-		loot: LiveSessionLootState,
-		copy: ReturnType<typeof simpleSessionCopy>,
-	): void {
-		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
-		const windowMs = this.liveSessionWindowMs(Date.now());
-		const counter = region.createDiv({ cls: 'tyrian-companion-session__sacks' });
-		counter.createSpan({ text: copy.sacks });
-		this.liveSackCount = counter.createEl('strong', { text: String(sacks) });
-		this.liveSackCount.setAttr('aria-live', 'polite');
-		this.liveSackRate = counter.createSpan({
-			text: liveSackRateHeadline(sacks, windowMs, copy),
-			cls: 'tyrian-companion-session__context',
-		});
-		const disclosure = region.createEl('details', { cls: 'tyrian-companion-session__rate-detail' });
-		disclosure.createEl('summary', { text: copy.detailDisclosure });
-		this.liveSackRateDetail = disclosure.createEl('p', { text: liveSackRateDetail(sacks, windowMs, copy) });
-	}
-
-	private refreshLiveSackCounter(now: number): void {
-		if (!this.liveSackCount || !this.liveSackRate) return;
+	private buildActiveFigures(now: number, copy: ReturnType<typeof simpleSessionCopy>, locale: Locale): SessionCardFigure[] {
 		const loot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
-		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		if (loot.status !== 'idle' && loot.updatedAt === null) {
+			const nextRunAt = this.actions.getAssistedDetectionState().scheduler.nextRunAt;
+			return [{
+				label: this.t('view.figure.firstReading'),
+				value: nextRunAt === null ? copy.firstReadingPending : formatClock(nextRunAt, locale),
+				band: this.t('view.figure.firstReadingBand'),
+				pending: true,
+			}];
+		}
 		const windowMs = this.liveSessionWindowMs(now);
+		const totalCopper = loot.status === 'idle' ? 0 : loot.knownTotalCopper;
+		const sacks = loot.status === 'idle' ? 0 : loot.sackQuantity;
+		const figures: SessionCardFigure[] = [
+			{ label: copy.observedValue, value: simpleMoney(totalCopper, locale), band: this.goldRateHeadline(totalCopper, windowMs, locale) },
+			{ label: copy.sacks, value: String(sacks), band: liveSackRateHeadline(sacks, windowMs, copy, locale) },
+		];
+		const lastSuccessAt = this.actions.getAssistedDetectionState().scheduler.lastSuccessAt;
+		if (lastSuccessAt !== null) figures.push({ label: this.t('view.detectionLastQuery'), value: formatClock(lastSuccessAt, locale) });
+		return figures;
+	}
+
+	/**
+	 * Figures for a terminated session (provisional or complete, ranura 3): the durable/observed
+	 * net value, plus a sacks figure only while the live tracker that measured it is still in
+	 * memory (a session restored from a note after a restart has no reliable sack count to show).
+	 * The "objetos libres" third figure the mockup sketches is a declared HOLE (FICHA §7.7):
+	 * that data belongs to the Inventory tab and no path brings it to this view today.
+	 */
+	private buildTerminalFigures(elapsedMs: number | null, copy: ReturnType<typeof simpleSessionCopy>, locale: Locale): SessionCardFigure[] {
+		const liveLoot = this.actions.getLiveSessionLoot?.() ?? { status: 'idle' as const };
+		const storedLoot = this.actions.getStoredSessionLootSummary?.() ?? null;
+		let label: string = copy.durableValue;
+		let totalCopper: number | null = null;
+		if (liveLoot.status !== 'idle') {
+			label = copy.observedValue;
+			totalCopper = liveLoot.knownTotalCopper;
+		} else if (storedLoot !== null) {
+			totalCopper = storedLoot.immediateCopper;
+		} else {
+			// Only reached without a live tracker or a stored summary, so a harness exercising the
+			// other two never has to stub this required method.
+			const durableLoot = this.actions.getLootPresentation();
+			if (durableLoot !== null) {
+				const gains = durableLoot.rows.filter(({ direction }) => direction === 'gain');
+				const known = gains.map(durableImmediateCopper);
+				totalCopper = durableLoot.economy.immediateCopper ?? known.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+			}
+		}
+		const valueFigure: SessionCardFigure = {
+			label,
+			value: totalCopper === null ? copy.valuePending : simpleMoney(totalCopper, locale),
+			band: totalCopper === null ? undefined : this.goldRateHeadline(totalCopper, elapsedMs, locale),
+		};
+		if (liveLoot.status === 'idle') return [valueFigure];
+		return [
+			valueFigure,
+			{
+				label: copy.sacks, value: String(liveLoot.sackQuantity),
+				band: liveSackRateHeadline(liveLoot.sackQuantity, elapsedMs, copy, locale),
+			},
+		];
+	}
+
+	/**
+	 * The observed-value band (g/h): the only new arithmetic this design adds (FICHA §7.4). Reuses
+	 * `observedRateBand` exactly like the sack pace already does, scaling copper into the same
+	 * milli-unit the sack band divides, so the two bands cannot round differently.
+	 */
+	private goldRateHeadline(totalCopper: number, windowMs: number | null, locale: Locale): string | undefined {
+		if (windowMs === null) return undefined;
+		const band = observedRateBand(Math.round(totalCopper * 1_000 / 10_000), windowMs);
+		if (band.status === 'unavailable' || band.low === null) return undefined;
+		const unit = this.t('view.figure.goldPerHour');
+		const low = formatDecimal(band.low / 1_000, locale);
+		if (band.high === null) return `${simpleSessionCopy(locale).sacksRateAtLeast} ${low} ${unit}`;
+		return `${low}–${formatDecimal(band.high / 1_000, locale)} ${unit}`;
+	}
+
+	/**
+	 * Repaints the two live figures (observed value/sacks while active, or the settlement
+	 * countdown while stopping) in place on the same 1s tick that already moves the clock, instead
+	 * of rebuilding the card and stealing focus from an open gaveto.
+	 */
+	private refreshSessionFigures(now: number): void {
+		if ((this.liveFigures?.length ?? 0) === 0 || (this.liveFiguresKind ?? null) === null) return;
 		const copy = simpleSessionCopy(this.actions.getLocale());
-		this.liveSackCount.setText(String(sacks));
-		this.liveSackRate.setText(liveSackRateHeadline(sacks, windowMs, copy));
-		this.liveSackRateDetail?.setText(liveSackRateDetail(sacks, windowMs, copy));
+		const locale = this.actions.getLocale();
+		const figures: SessionCardFigure[] = this.liveFiguresKind === 'active'
+			? this.buildActiveFigures(now, copy, locale)
+			: (() => {
+				const wait = this.settlementWait();
+				return wait === null ? [] : [{ label: this.t('view.figure.captureFinalIn'), value: formatCountdown(settlementRemainingSeconds(wait)) }];
+			})();
+		for (let index = 0; index < this.liveFigures.length && index < figures.length; index += 1) {
+			const node = this.liveFigures[index];
+			const figure = figures[index];
+			if (node === undefined || figure === undefined) continue;
+			node.dd.setText(figure.value);
+			if (node.band !== null && figure.band !== undefined) node.band.setText(figure.band);
+		}
 	}
 
 	/**
@@ -749,35 +855,6 @@ export class TyrianCompanionView extends ItemView {
 		if (!('baseline' in observed)) return null;
 		const elapsed = now - Date.parse(observed.baseline.completedAt);
 		return Number.isSafeInteger(elapsed) && elapsed > 0 ? elapsed : null;
-	}
-
-	/** Keeps a degraded writer visible without turning diagnostics into a blocking incident. */
-	private renderLocalDebugWarning(container: HTMLElement): void {
-		const status = this.actions.getLocalDebugStatus?.();
-		const degraded = status?.state === 'degraded';
-		const errorsSinceLoad = status?.errorsSinceLoad ?? 0;
-		if (!degraded && errorsSinceLoad <= 0) return;
-		const translator = createTranslator(this.actions.getLocale());
-		const warning = container.createDiv({ cls: 'tyrian-companion-view__debug-warning' });
-		warning.setAttr('role', 'alert');
-		warning.setAttr('aria-live', 'polite');
-		if (degraded) {
-			warning.createEl('strong', { text: translator.t('settings.debug.degraded.title') });
-			warning.createEl('p', { text: translator.t('settings.debug.degraded.desc') });
-		}
-		if (errorsSinceLoad > 0 && status) {
-			warning.createEl('p', { text: translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad }) });
-			if (status.lastError !== null) {
-				warning.createEl('p', { text: translator.t('settings.debug.lastError', {
-					code: status.lastError.code, component: status.lastError.component,
-					action: status.lastError.action, timestamp: status.lastError.occurredAt,
-				}) });
-			}
-		}
-		if (this.actions.openLocalDebugSettings) {
-			const button = warning.createEl('button', { text: translator.t('settings.debug.name') });
-			button.addEventListener('click', () => this.actions.openLocalDebugSettings?.());
-		}
 	}
 
 	refreshBackgroundStatus(): void {
@@ -888,23 +965,19 @@ export class TyrianCompanionView extends ItemView {
 		const connection = this.actions.getConnectionState();
 		this.refreshDetectionTimeline();
 		if (this.refreshPendingConfirmation(now)) this.pendingConfirmationFocusTarget?.focus();
-		const session = projection.items.find((status) => status.id === 'session');
-		if (session) this.headerElapsed?.setText(session.detail);
-		this.refreshLiveSackCounter(now);
-		this.refreshSettlementCountdown();
+		if (this.headerElapsed !== null) {
+			const session = this.actions.getSessionState();
+			const observed = session.status === 'error' ? session.failedState : session;
+			if (observed.status === 'active') this.headerElapsed.setText(formatElapsed(now - Date.parse(observed.baseline.completedAt)));
+		}
+		this.refreshSessionFigures(now);
 		this.refreshRecoveryOwnerCountdown();
 		const retryAt = getRetryAt(connection);
 		if (this.checkButton) {
 			this.checkButton.disabled = connection.status === 'checking' || isCoolingDown(retryAt);
 			this.checkButton.setText(connection.status === 'checking' ? this.t('view.checking') : this.t('view.checkConnection'));
 		}
-		if (this.incident && this.incidentMessage && this.incidentMore) {
-			this.incident.hidden = projection.errors.length === 0;
-			this.incident.setAttr('data-tone', projection.incidentTone ?? 'warning');
-			this.incidentMessage.setText(projection.errors[0] ?? this.t('view.currentStateAttention'));
-			this.incidentMore.hidden = projection.errors.length <= 1;
-			this.incidentMore.setText(this.t('view.moreErrors', { count: Math.max(0, projection.errors.length - 1) }));
-		}
+		if (this.calloutSlot) renderSessionCardCallout(this.calloutSlot, this.buildIncidentCallout(projection));
 		this.scheduleRefresh(projection, retryAt, now);
 	}
 
@@ -912,47 +985,6 @@ export class TyrianCompanionView extends ItemView {
 	private settlementWait(): SessionSettlementWait | null {
 		const wait = this.actions.getSessionSettlementWait?.() ?? null;
 		return wait !== null && wait.status === 'waiting' ? wait : null;
-	}
-
-	/**
-	 * Explains the wait instead of leaving a dead screen, and keeps the escape hatch visible: the
-	 * player can always capture now, told in the same breath what that costs.
-	 */
-	private renderSettlementWait(
-		card: HTMLElement,
-		heading: HTMLElement,
-		wait: SessionSettlementWait,
-	): void {
-		heading.createEl('p', { text: this.t('view.settlementWaiting') });
-		this.settlementCountdown = heading.createEl('p', {
-			text: this.settlementCountdownText(wait),
-			cls: 'tyrian-companion-session__countdown',
-		});
-		this.settlementCountdown.setAttr('aria-live', 'polite');
-		const details = card.createDiv({ cls: 'tyrian-companion-session__settlement' });
-		details.createEl('p', { text: this.t('view.settlementWhy'), cls: 'tyrian-companion-session__context' });
-		if (!this.actions.captureSessionFinalNow) return;
-		const button = details.createEl('button', { text: this.t('view.captureNow') });
-		button.addEventListener('click', () => { void this.actions.captureSessionFinalNow?.(); });
-		details.createEl('p', {
-			text: this.t('view.captureNowWarning'),
-			cls: 'tyrian-companion-session__warning',
-		});
-	}
-
-	private settlementCountdownText(wait: SessionSettlementWait): string {
-		return this.t('view.settlementCountdown', {
-			time: formatCountdown(settlementRemainingSeconds(wait)),
-		});
-	}
-
-	private refreshSettlementCountdown(): void {
-		const node = this.settlementCountdown;
-		if (!node) return;
-		const wait = this.actions.getSessionSettlementWait?.() ?? null;
-		node.setText(wait === null || wait.status === 'due'
-			? this.t('view.settlementDue')
-			: this.settlementCountdownText(wait));
 	}
 
 	private scheduleRefresh(projection: CompanionStatusProjection, retryAt: number | null, now: number): void {
@@ -1284,12 +1316,13 @@ export function liveSackRateHeadline(
 	sackQuantity: number,
 	windowMs: number | null,
 	copy: ReturnType<typeof simpleSessionCopy>,
+	locale: Locale,
 ): string {
 	const band = rateBandOf(sackQuantity, windowMs);
 	if (band.status === 'unavailable' || band.low === null) return copy.sacksRatePending;
 	const range = band.high === null
-		? `${copy.sacksRateAtLeast} ${formatMilliUnits(band.low)}`
-		: `${formatMilliUnits(band.low)}–${formatMilliUnits(band.high)}`;
+		? `${copy.sacksRateAtLeast} ${formatDecimal(band.low / 1_000, locale)}`
+		: `${formatDecimal(band.low / 1_000, locale)}–${formatDecimal(band.high / 1_000, locale)}`;
 	return `${range} ${copy.sacksPerHour}`;
 }
 
@@ -1334,16 +1367,17 @@ function simpleMoney(copper: number, locale: Locale): string {
 	return formatLootMoney(copper, locale).visual;
 }
 
+/** Non-negative duration between two ISO instants, or `null` for anything unparseable/inverted. */
+function elapsedBetween(startIso: string, endIso: string): number | null {
+	const ms = Date.parse(endIso) - Date.parse(startIso);
+	return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
 function durableImmediateCopper(row: LootPresentationRow): number | null {
 	return row.valuation.status === 'complete' || row.valuation.status === 'partial'
 		? row.valuation.immediateCopper : null;
 }
 
-function durableLootName(name: string, namespace: LootPresentationRow['namespace'], locale: Locale): string {
-	if (!/#\d+/u.test(name)) return name;
-	if (locale === 'es') return namespace === 'item' ? 'Objeto guardado' : 'Moneda guardada';
-	return namespace === 'item' ? 'Stored item' : 'Stored currency';
-}
 
 export class ConfirmDiscardSessionModal extends Modal {
 	constructor(

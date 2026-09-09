@@ -202,8 +202,10 @@ describe('Companion API settlement surface', () => {
 
 		render();
 
-		expect(texts(contentEl)).toContain('Esperando a que la API confirme los últimos minutos');
-		expect(texts(contentEl)).toContain('Captura final en 07:00');
+		// The countdown is the card's single figure while stopping (FICHA §2: dt "Captura final en",
+		// dd mm:ss), not a sentence: label and value are separate nodes.
+		expect(texts(contentEl)).toContain('Captura final en');
+		expect(texts(contentEl)).toContain('07:00');
 		const why = texts(contentEl).find((text) => text.includes('minutos de retraso'));
 		expect(why).toBeDefined();
 		expect(texts(contentEl)).toContain('Puede no incluir los últimos minutos; la sesión quedará marcada como estimada.');
@@ -224,12 +226,14 @@ describe('Companion API settlement surface', () => {
 
 		render();
 
-		expect(texts(contentEl)).not.toContain('Esperando a que la API confirme los últimos minutos');
+		expect(texts(contentEl)).toContain('Reconciliando el inventario y guardando el resumen…');
+		expect(texts(contentEl)).not.toContain('Captura final en');
 		expect(find(contentEl, (node) => node.textContent === 'Capturar ya')).toBeUndefined();
 	});
 });
 
-describe('Companion incident line', () => {
+/** Ranura 2 of `diseno-sesion/FICHA.md`: a single native `.callout[data-callout]`, not a bespoke warning line. */
+describe('Companion incident callout', () => {
 	it('carries the first projected incident into the card and counts the rest', () => {
 		const { contentEl, render } = mountCompanion({
 			getSessionState: () => stoppingSession(),
@@ -239,22 +243,19 @@ describe('Companion incident line', () => {
 
 		render();
 
-		const incident = incidentLine(contentEl);
-		expect(incident?.hidden).toBe(false);
-		expect(incident?.attributes.get('role')).toBe('alert');
-		expect(incident?.children[0]?.textContent).toContain('Final: ');
-		expect(incident?.children[1]?.textContent).toBe('+1 más');
-		expect(incident?.children[1]?.hidden).toBe(false);
+		const callout = find(contentEl, (node) => node.className === 'callout');
+		expect(callout?.attributes.get('data-callout')).toBeDefined();
+		expect(callout?.attributes.get('role')).toBe('alert');
+		expect(texts(contentEl).some((text) => text.includes('Final: '))).toBe(true);
+		expect(texts(contentEl)).toContain('+1 más');
 	});
 
-	it('keeps the line mounted and silent while nothing needs attention', () => {
+	it('mounts no callout at all while nothing needs attention', () => {
 		const { contentEl, render } = mountCompanion();
 
 		render();
 
-		const incident = incidentLine(contentEl);
-		expect(incident).toBeDefined();
-		expect(incident?.hidden).toBe(true);
+		expect(find(contentEl, (node) => node.className === 'callout')).toBeUndefined();
 	});
 });
 
@@ -377,12 +378,6 @@ describe('Companion account check', () => {
 	});
 });
 
-/** The card's single alert line, found by its role rather than by its position. */
-function incidentLine(root: FakeElement): FakeElement | undefined {
-	return find(root, (node) => node.tag === 'p'
-		&& node.className.includes('tyrian-companion-session__warning')
-		&& node.attributes.get('role') === 'alert');
-}
 
 function stoppingSession(): SessionState {
 	return {
@@ -426,8 +421,10 @@ function mountCompanion(overrides: Partial<CompanionActions> = {}): {
 	// one would keep every integrated line green while the model stopped feeding it.
 	const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 		actions, contentEl, refreshInterval: null,
-		headerElapsed: null, settlementCountdown: null, checkButton: null,
-		incident: null, incidentMessage: null, incidentMore: null,
+		headerElapsed: null, checkButton: null,
+		liveFigures: [], liveFiguresKind: null, calloutSlot: null,
+		drawerOpen: { detail: false, alerts: false, history: false },
+		recoveryOwnerDetail: null, recoveryOwnerExpiresAt: null, recoveryRecoverButton: null, recoveryDiscardButton: null,
 		detectionTimelineNodes: null, pendingConfirmationContainer: null, pendingConfirmationFocusTarget: null,
 		pendingConfirmationKey: null,
 		productShell: null, productShellKey: null, sessionHistoryController: null, sessionHistoryMount: null,

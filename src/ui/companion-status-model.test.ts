@@ -297,7 +297,9 @@ describe('status projection boundary', () => {
 		expect(source).not.toMatch(/setInterval\s*\(\s*\(\)\s*=>\s*this\.render\s*\(/);
 		expect(source).toContain('setInterval(() => this.refreshDynamicStatus()');
 		expect(source).toContain('this.checkButton.disabled');
-		expect(source).toContain('this.incident.hidden');
+		// Lote M/N (9 sep 2026): the incident line became the card's single callout, rebuilt in its
+		// own retained slot instead of a full card rebuild — same in-place-repaint property, new node.
+		expect(source).toContain('renderSessionCardCallout(this.calloutSlot');
 	});
 });
 

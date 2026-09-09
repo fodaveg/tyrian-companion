@@ -5,139 +5,317 @@
 	overflow-x: hidden;
 }
 
-/* Session companion reset: one primary action and one readable live ledger. */
+/* ==========================================================================
+ * Tarjeta de sesión (Lote M/N, 9 sep 2026). One `<section>`, five slots in a
+ * fixed order (header · callout · figures · sell-signal line · drawers), all
+ * color/size/radius/space from Obsidian vars. `--tyrian-figures` is the one
+ * layout token this component owns: it sizes the figures grid from TS
+ * (`session-card.ts`) instead of a fourth CSS class for a state with fewer
+ * measurements. See `diseno-sesion/FICHA.md` for the full rationale.
+ * ========================================================================== */
 .tyrian-companion-session {
+	container-type: inline-size;
 	display: grid;
-	gap: 1.25rem;
-	max-width: 58rem;
-	padding-block: 1rem;
+	gap: var(--size-4-4);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
 }
 
+/* Cabecera: identidad y acciones comparten un eje, en vez de cada botón a su altura. */
 .tyrian-companion-session__header {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 1rem;
-	padding-bottom: 1rem;
-	border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.tyrian-companion-session__header h2,
-.tyrian-companion-session__header p {
-	margin-block: 0 0.35rem;
-}
-
-.tyrian-companion-session__header button {
-	min-height: 44px;
-}
-
-.tyrian-companion-session__loot {
 	display: grid;
-	gap: 0.75rem;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: var(--size-4-3) var(--size-4-4);
 }
 
-.tyrian-companion-session__total {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 1rem;
-	font-size: var(--font-ui-large);
-}
-
-.tyrian-companion-session__total strong {
-	color: var(--text-accent);
-	font-size: 1.35em;
-}
-
-/* The live sack counter: count and pace share one row, the pace wrapping under it when narrow. */
-.tyrian-companion-session__sacks {
+.tyrian-companion-session__state {
 	display: flex;
 	align-items: baseline;
 	flex-wrap: wrap;
-	gap: 0.25rem 0.75rem;
+	gap: var(--size-4-2);
+	margin: 0;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+	line-height: var(--line-height-tight);
+	overflow-wrap: anywhere;
 }
 
-.tyrian-companion-session__sacks strong {
-	color: var(--text-accent);
+.tyrian-companion-session__meta {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 var(--size-4-2);
+	margin: var(--size-4-1) 0 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+}
+
+/* The clock is the only thing a 1s tick touches; tabular-nums keeps the name beside it still. */
+.tyrian-companion-session__clock {
 	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-medium);
+	color: var(--text-normal);
 }
 
-.tyrian-companion-session__loot-list {
+.tyrian-companion-session__actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+}
+
+.tyrian-companion-session__badge {
+	display: inline-block;
+	padding: 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	line-height: 1.6;
+	cursor: help;
+}
+
+/* Cifras: hasta tres huecos con un filete entre columnas. */
+.tyrian-companion-session__figures {
 	display: grid;
-	gap: 0;
+	grid-template-columns: repeat(var(--tyrian-figures, 3), minmax(0, 1fr));
+	gap: var(--size-4-4);
+	margin: 0;
+}
+
+.tyrian-companion-session__figure {
+	min-width: 0;
+	margin: 0;
+}
+
+.tyrian-companion-session__figure + .tyrian-companion-session__figure {
+	padding-inline-start: var(--size-4-4);
+	border-inline-start: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-companion-session__figure dt {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	letter-spacing: .06em;
+	text-transform: uppercase;
+}
+
+.tyrian-companion-session__figure dd {
+	margin: var(--size-4-1) 0 0;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
+	line-height: var(--line-height-tight);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-session__figure small {
+	display: block;
+	margin-top: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	line-height: var(--line-height-tight);
+	overflow-wrap: anywhere;
+}
+
+/* Measured, but nothing worth printing yet: never a fabricated zero. */
+.tyrian-companion-session__figure[data-pending="true"] dd {
+	color: var(--text-muted);
+	font-weight: var(--font-medium);
+}
+
+/* Línea permanente del saco (sell-signal-line.ts). */
+.tyrian-companion-view__sell-signal {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	gap: 0 var(--size-4-1);
+	margin: 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border-inline-start: 2px solid var(--text-accent);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-companion-view__sell-signal > span {
+	color: var(--text-muted);
+}
+
+/* Gaveteros: siempre los mismos tres, siempre en el mismo orden y con la misma altura plegada. */
+.tyrian-companion-session__drawers {
+	display: grid;
+}
+
+.tyrian-companion-session__drawer {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-companion-session__drawer > summary {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3) 0;
+	list-style: none;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-medium);
+}
+
+.tyrian-companion-session__drawer > summary::-webkit-details-marker {
+	display: none;
+}
+
+/* A custom triangle instead of the native one: it has to land in the same column in every gaveto. */
+.tyrian-companion-session__drawer > summary::before {
+	flex: 0 0 auto;
+	width: .6em;
+	color: var(--text-muted);
+	content: "\25B8";
+	transition: transform .12s ease-in-out;
+}
+
+.tyrian-companion-session__drawer[open] > summary::before {
+	transform: rotate(90deg);
+}
+
+.tyrian-companion-session__drawer > summary:hover {
+	color: var(--text-normal);
+}
+
+.tyrian-companion-session__drawer > summary > small {
+	margin-inline-start: auto;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	text-align: end;
+}
+
+.tyrian-companion-session__drawer-body {
+	display: grid;
+	gap: var(--size-4-3);
+	padding: 0 0 var(--size-4-4);
+	font-size: var(--font-ui-small);
+}
+
+.tyrian-companion-session__drawer-body p {
+	margin: 0;
+}
+
+.tyrian-companion-session__context {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* Listas dentro de gaveteros (avisos, historial). */
+.tyrian-companion-session__list {
+	display: grid;
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
-.tyrian-companion-session__loot-list li {
+.tyrian-companion-session__list li {
 	display: flex;
-	align-items: center;
+	align-items: baseline;
 	justify-content: space-between;
-	gap: 1rem;
-	min-height: 44px;
-	padding: 0.55rem 0;
-	border-bottom: 1px solid var(--background-modifier-border-hover);
+	gap: var(--size-4-3);
+	padding: var(--size-4-2) 0;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
-.tyrian-companion-session__loot-list li > div {
-	display: flex;
-	align-items: baseline;
-	gap: 0.5rem;
+.tyrian-companion-session__list li:first-child {
+	border-top: 0;
 }
 
-.tyrian-companion-session__warning {
+.tyrian-companion-session__list strong {
+	font-weight: var(--font-medium);
+}
+
+.tyrian-companion-session__list span {
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Callout nativo de Obsidian: texto a la izquierda, botón a la derecha, ancho de tarjeta. */
+.tyrian-companion-session .callout {
+	margin: 0;
+}
+
+.tyrian-companion-session .callout-title {
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.tyrian-companion-session .callout-title button {
+	flex: 0 0 auto;
+	margin-inline-start: auto;
+}
+
+.tyrian-companion-session__callout-line {
 	display: flex;
 	align-items: baseline;
-	gap: 0.5rem;
 	flex-wrap: wrap;
-	padding: 0.75rem 1rem;
-	border-inline-start: 3px solid var(--color-orange);
-	background: var(--background-secondary);
+	gap: var(--size-4-2);
+	color: var(--text-normal);
 }
 
-/* An incident the projection classified as an error must not read like an ordinary warning. */
-.tyrian-companion-session__warning[data-tone="error"] {
-	border-inline-start-color: var(--text-error);
-}
-
-.tyrian-companion-session__warning > span {
+.tyrian-companion-session__callout-line > span {
+	flex: 1 1 14rem;
 	min-width: 0;
-	flex: 1;
 	overflow-wrap: anywhere;
 }
 
-/* `display: flex` above would otherwise beat the hidden attribute of the quiet incident line. */
-.tyrian-companion-session__warning[hidden] {
-	display: none;
+/* This card takes its buttons'/summaries' height from Obsidian's own padding (FICHA §4); the
+   44px floor `.tyrian-companion-view button, summary` sets below stays for every other surface
+   in this view (detection, alerts, history, pending confirmations). */
+.tyrian-companion-session button,
+.tyrian-companion-session summary {
+	min-height: unset;
 }
 
-.tyrian-companion-session__context {
-	color: var(--text-muted);
-}
-
-.tyrian-companion-session__countdown {
-	font-variant-numeric: tabular-nums;
-	font-size: var(--font-ui-large);
-	font-weight: var(--font-semibold);
-}
-
-.tyrian-companion-session__settlement {
-	margin-top: 0.75rem;
-}
-
-.tyrian-companion-session__settlement > button {
-	min-height: 44px;
-}
-
-@container (max-width: 480px) {
-	.tyrian-companion-session__header,
-	.tyrian-companion-session__loot-list li {
-		align-items: stretch;
-		flex-direction: column;
+/* Responsive por ancho de contenedor (container query), no de ventana: FICHA §8. */
+@container (max-width: 520px) {
+	.tyrian-companion-session__figures {
+		grid-template-columns: minmax(0, 1fr);
+		gap: var(--size-4-3);
 	}
 
-	.tyrian-companion-session__header button {
+	.tyrian-companion-session__figure + .tyrian-companion-session__figure {
+		padding-inline-start: 0;
+		padding-block-start: var(--size-4-3);
+		border-inline-start: 0;
+		border-block-start: 1px solid var(--background-modifier-border);
+	}
+}
+
+@container (max-width: 400px) {
+	.tyrian-companion-session__header {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.tyrian-companion-session__actions {
+		justify-content: stretch;
+	}
+
+	.tyrian-companion-session__actions button {
+		flex: 1 1 auto;
+	}
+
+	.tyrian-companion-session .callout-title {
+		flex-wrap: wrap;
+	}
+
+	.tyrian-companion-session .callout-title button {
+		margin-inline-start: 0;
 		width: 100%;
 	}
 }
@@ -493,14 +671,6 @@
 	overflow-x: hidden;
 }
 
-.tyrian-companion-view__elapsed {
-	margin: 0;
-	color: var(--text-muted);
-	font-family: var(--font-monospace);
-	font-variant-numeric: tabular-nums;
-	overflow-wrap: anywhere;
-}
-
 .tyrian-companion-view button,
 .tyrian-companion-view summary {
 	min-height: 44px;
@@ -549,20 +719,14 @@
 	background: var(--background-secondary);
 }
 
-.tyrian-companion-view__detection-details,
-.tyrian-companion-view__history {
+.tyrian-companion-view__detection-details {
 	margin-block-start: var(--size-4-3);
 }
 
-.tyrian-companion-view__detection-details > summary,
-.tyrian-companion-view__history > summary {
+.tyrian-companion-view__detection-details > summary {
 	color: var(--text-muted);
 	font-size: var(--font-small);
 	cursor: pointer;
-}
-
-.tyrian-companion-view__history .tyrian-session-history {
-	margin-block-start: var(--size-4-2);
 }
 
 .tyrian-companion-session__badge {
@@ -2267,38 +2431,12 @@
 	min-inline-size: 0;
 }
 
-.tyrian-companion-settings__diagnostic-status[role="alert"],
-.tyrian-companion-view__debug-warning {
+.tyrian-companion-settings__diagnostic-status[role="alert"] {
 	border-color: var(--color-orange);
 	background: var(--background-modifier-error);
 	color: var(--text-warning);
 }
 
-.tyrian-companion-settings__diagnostic-status span,
-.tyrian-companion-view__debug-warning p {
+.tyrian-companion-settings__diagnostic-status span {
 	overflow-wrap: anywhere;
-}
-
-.tyrian-companion-view__debug-warning :focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: 2px;
-}
-
-.tyrian-companion-view__debug-warning {
-	display: grid;
-	gap: var(--size-4-1);
-	margin-block: var(--size-4-3);
-	padding: var(--size-4-3);
-	border: 1px solid var(--color-orange);
-	border-radius: var(--radius-m);
-}
-
-.tyrian-companion-view__debug-warning p {
-	margin: 0;
-}
-
-.tyrian-companion-view__debug-warning button {
-	justify-self: start;
-	min-block-size: 44px;
-	min-inline-size: 44px;
 }
