@@ -197,7 +197,7 @@ describe('a closed session publishes real money in its note', () => {
 });
 
 function seedCatalog(): void {
-	publicApi.items.set(HALLOWEEN_TOT_BAG_ITEM_ID, catalogPayload(HALLOWEEN_TOT_BAG_ITEM_ID, 'Bolsa de truco o trato', 10));
+	publicApi.items.set(HALLOWEEN_TOT_BAG_ITEM_ID, catalogPayload(HALLOWEEN_TOT_BAG_ITEM_ID, 'Saco de Halloween', 10));
 	publicApi.items.set(BLOOD_ITEM_ID, catalogPayload(BLOOD_ITEM_ID, 'Vial de sangre poderosa', 33));
 }
 

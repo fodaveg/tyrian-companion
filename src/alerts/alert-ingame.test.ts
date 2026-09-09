@@ -9,7 +9,7 @@ import { ALERT_INGAME_PAYLOAD_VERSION, alertIngameContent, alertIngamePayload } 
 import TyrianCompanionPlugin from '../main';
 
 const ALERT: AlertV1 = {
-	kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa de truco o trato', quantity: 3,
+	kind: 'valuable_loot', itemId: 36_038, name: 'Saco de Halloween', quantity: 3,
 	totalCopper: 120_000, priceStatus: 'known', reason: 'valuable',
 };
 
@@ -82,7 +82,7 @@ describe('H13.9/H13.15 in-game alert reason containment', () => {
 		for (const kind of ALERT_KINDS) {
 			const alert: AlertV1 = { ...ALERT, kind, reason };
 			expect(alertIngameContent(alert), `${kind}/${reason} changed the composed line`)
-				.toBe('Bolsa de truco o trato ×3 · 120000 copper');
+				.toBe('Saco de Halloween ×3 · 120000 copper');
 		}
 	});
 
@@ -91,7 +91,7 @@ describe('H13.9/H13.15 in-game alert reason containment', () => {
 			...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unquoted', reason: 'skin_not_unlocked',
 		});
 
-		expect(content).toBe('Bolsa de truco o trato ×3 · no quoted value');
+		expect(content).toBe('Saco de Halloween ×3 · no quoted value');
 		for (const reason of ALERT_REASONS) {
 			for (const locale of LOCALES) expect(content).not.toContain(reasonText(reason, locale));
 		}
@@ -109,7 +109,7 @@ describe('H13.9/H13.15 in-game alert reason containment', () => {
 			...ALERT, kind: 'always_alert', totalCopper: null, priceStatus: 'unquoted', reason: 'rare_unpriced_or_bound',
 		});
 
-		expect(unquoted).toBe('Bolsa de truco o trato ×3 · no quoted value');
+		expect(unquoted).toBe('Saco de Halloween ×3 · no quoted value');
 		expect(unavailable).not.toBe(unquoted);
 		expect(unavailable).not.toContain('no quoted value');
 	});

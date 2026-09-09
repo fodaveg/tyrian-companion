@@ -51,7 +51,7 @@ const ES = {
 		'alerts.queue.latency': 'Cada aviso llega entre {{minimum}} y {{maximum}} minutos después del drop: la API de cuenta responde desde una caché de 5 a 10 minutos y la sesión consulta cada 5.',
 		'alerts.queue.entry': '{{name}} ×{{quantity}} · {{reason}}',
 		'alerts.queue.noValue': 'sin cotización',
-		'alerts.bagName': 'Bolsa de truco o trato',
+		'alerts.bagName': 'Saco de Halloween',
 		'notices.sessionSummaryNotSaved': 'La sesión terminó, pero el resumen no pudo guardarse en el vault. Los datos locales se conservan para reintentar.',
 		'notices.newSessionBlocked': 'No se abrió una sesión nueva porque el resumen anterior no pudo verificarse en el historial.',
 		'manual.title': 'Iniciar sesión de farmeo',
@@ -101,7 +101,7 @@ const ES = {
 		'view.connectionFailed': 'La conexión falló',
 		'view.assistedDetection': 'Detección',
 		'view.sessionHistoryDisclosure': 'Historial de sesiones',
-		'view.detectionScope': 'Solo observa ganancias repetidas del saco de truco o trato #36038 para proponer un inicio; durante una sesión, el silencio sostenido puede proponer el final. No detecta farmeo general ni cambia una sesión sin tu confirmación.',
+		'view.detectionScope': 'Solo observa ganancias repetidas del saco de Halloween #36038 para proponer un inicio; durante una sesión, el silencio sostenido puede proponer el final. No detecta farmeo general ni cambia una sesión sin tu confirmación.',
 		'view.detectionTimeline': 'Última consulta, resultado y próxima consulta de la detección del saco #36038',
 		'view.detectionLastQuery': 'Última consulta', 'view.detectionResult': 'Resultado', 'view.detectionNextQuery': 'Próxima consulta',
 		'view.detectionApiLag': 'La API de Guild Wars 2 publica el inventario con minutos de retraso. Estas horas indican cuándo se consultó la cuenta, no el instante exacto en que ocurrió algo en el juego.',
@@ -582,7 +582,7 @@ const ES = {
 		'advisor.view.materialStorage.value': '{{stored}} / {{capacity}} · hueco antes: {{space}} · {{source}}',
 		'advisor.view.materialStorage.source.configured': 'configurada',
 		'advisor.view.materialStorage.source.minimum_guaranteed': 'mínimo garantizado',
-		'advisor.containerEconomy.title': 'Economía de Trick-or-Treat Bag',
+		'advisor.containerEconomy.title': 'Economía del Saco de Halloween',
 		'advisor.containerEconomy.liquidEv': 'EV líquido por bolsa',
 		'advisor.containerEconomy.knownAdjustment': 'Ajuste personal conocido',
 		'advisor.containerEconomy.adjustmentUnknown': 'Sin valores manuales todavía; no equivale a un ajuste conocido de cero',
@@ -840,6 +840,10 @@ const ES = {
 		'settings.halloween.price.margin.desc': 'Porcentaje mínimo por encima del p90 local, con un decimal.',
 		'settings.halloween.price.cooldown.name': 'Cooldown del aviso de precio',
 		'settings.halloween.price.cooldown.desc': 'Horas mínimas entre avisos, además del límite de uno por día UTC.',
+		// H14.3: fuera de temporada (y fuera del Laberinto, mapa 866) el panel deja de llamarse
+		// «Halloween», porque fuera de esas dos condiciones no hay festival en curso que nombrar.
+		'halloween.title.generic': 'Avisos', 'halloween.aria.generic': 'Bandeja de avisos',
+		'halloween.optional.generic': 'Avisos · opcional',
 	} as const;
 
 type RuntimeTranslations = { -readonly [K in keyof typeof ES]: string };
@@ -1627,6 +1631,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'settings.halloween.price.margin.desc': 'Minimum percentage above the local p90, with one decimal place.',
 	'settings.halloween.price.cooldown.name': 'Price-alert cooldown',
 	'settings.halloween.price.cooldown.desc': 'Minimum hours between alerts, in addition to at most one per UTC day.',
+	'halloween.title.generic': 'Alerts', 'halloween.aria.generic': 'Alert inbox',
+	'halloween.optional.generic': 'Alerts · optional',
 });
 
 export type RuntimeTranslationKey = keyof typeof RUNTIME_CATALOG.es;
