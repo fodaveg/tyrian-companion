@@ -154,6 +154,28 @@ describe('product action surface', () => {
 		expect(clearTimer).toHaveBeenLastCalledWith(2);
 	});
 
+	// H14.14: a listener that never unsubscribes (a view torn down without its own cleanup
+	// running, the way a plugin unload can leave one) used to leave this timer armed forever.
+	it('cancels a still-subscribed cooldown timer directly on dispose()', () => {
+		const setTimer = vi.fn(() => 1);
+		const clearTimer = vi.fn();
+		vi.stubGlobal('window', { setTimeout: setTimer, clearTimeout: clearTimer });
+		const controller = createController({
+			hasKey: true,
+			connection: () => ({ status: 'error', code: 'rate_limited', message: 'wait', retryAt: Date.now() + 60_000 }),
+		});
+		const unsubscribe = controller.subscribe(() => undefined);
+		expect(setTimer).toHaveBeenCalledOnce();
+
+		controller.dispose();
+		expect(clearTimer).toHaveBeenCalledWith(1);
+
+		// The subscriber is still live: unsubscribing afterwards must not schedule a second timer
+		// or throw on an already-cleared one.
+		unsubscribe();
+		expect(setTimer).toHaveBeenCalledOnce();
+	});
+
 	it('renders real three-surface navigation and an actionable global missing-key warning', () => {
 		const document = installFakeDocument();
 		const root = new FakeElement('div', document);

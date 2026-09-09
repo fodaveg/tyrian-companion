@@ -88,6 +88,11 @@ export class PublicCatalogService {
 	 * account snapshot would trade a handful of ids for thousands. Ids the API does not know are
 	 * simply absent from the result; the caller decides what a missing entry means.
 	 */
+	/** Releases the underlying cache's persistence handle (`IndexedDbCatalogRecordStore.close()`, a no-op in memory). */
+	dispose(): void {
+		this.cache.dispose();
+	}
+
 	async resolveItems(
 		itemIds: readonly number[],
 		locale: CatalogLocale,

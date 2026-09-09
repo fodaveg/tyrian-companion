@@ -137,7 +137,8 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 
 	it('censuses the explicit integration capabilities the controller may reach for', () => {
 		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts')?.source ?? '';
-		expect([...new Set(boundaryPortCalls(controller))].sort()).toEqual(['ports.invalidate', 'ports.load', 'ports.reclassify']);
+		expect([...new Set(boundaryPortCalls(controller))].sort())
+			.toEqual(['ports.dispose', 'ports.invalidate', 'ports.load', 'ports.reclassify']);
 	});
 
 	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {

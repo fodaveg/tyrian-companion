@@ -14,6 +14,8 @@ export interface InventoryAdvisorControllerPorts {
 	reclassify?(parent?: ResolvedLocalDebugActionContext): Promise<InventoryAdvisorWorkflowResult>;
 	/** Clears integration-owned retained evidence when the account or locale changes. */
 	invalidate?(): void;
+	/** Releases integration-owned persistence handles (the capture's own catalog cache). */
+	dispose?(): void;
 }
 
 /** Memory-only advisor projection cache with generation-scoped explicit refreshes. */
@@ -145,6 +147,7 @@ export class InventoryAdvisorPresentationController {
 		this.refreshWarning = undefined;
 		this.disposed = true;
 		this.contentVersion += 1;
+		this.ports.dispose?.();
 	}
 
 	private runFlight(

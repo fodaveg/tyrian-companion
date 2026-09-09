@@ -291,6 +291,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Deferred so the catalog database is only opened when a session actually has to be valued. */
 	private sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null = null;
 	private sessionCatalog: PublicCatalogService | null = null;
+	/** The catalog `previewInventorySync`'s memoized capture service resolves through; disposed alongside it. */
+	private inventoryVaultCaptureCatalog: PublicCatalogService | null = null;
 	/** Vault path of the note written for the session on screen; the only handle the view can open. */
 	private savedSessionNotePath: string | null = null;
 	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
@@ -716,10 +718,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let inventoryVaultCapture: InventoryVaultCaptureService | null = null;
 		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
 			if (inventoryVaultCapture === null) {
+				const catalog = new PublicCatalogService(
+					inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+				);
+				this.inventoryVaultCaptureCatalog = catalog;
 				inventoryVaultCapture = new InventoryVaultCaptureService(
 					inventoryClient,
 					inventorySnapshots,
-					new PublicCatalogService(inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics })),
+					catalog,
 					inventoryPublicClient,
 				);
 			}
@@ -981,6 +987,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		try {
 		const pilotProposalClosure = this.excludeLiveAssistedProposal();
 		this.sessionCommands?.dispose();
+		this.productActions?.dispose();
 		this.inventoryAdvisor?.dispose();
 		this.inventoryVaultSync?.dispose();
 		this.inventoryVaultSyncRun?.dispose();
@@ -992,7 +999,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
 		this.alertQueue?.dispose();
-		void this.alertIngameServer?.close();
+		this.sessionCatalog?.dispose();
+		this.sessionCatalog = null;
+		this.inventoryVaultCaptureCatalog?.dispose();
+		this.inventoryVaultCaptureCatalog = null;
+		// Awaited, not fire-and-forget: `dispose`'s own promise is already what `onunload` hands
+		// `localDebugShutdown` (see below), so this rides that same wait for free. A reload with
+		// the in-game channel enabled builds a fresh plugin instance right after this one's
+		// `onunload`; without waiting here, that instance's first bind could still race the old
+		// socket's actual release and land in the port-occupied retry table.
+		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
 		this.startModal?.close();
 		this.reviewModal?.close();

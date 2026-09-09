@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 425,
 		"promise_catch": 30,
-		"void_expression": 84,
-		"callback_registration": 175
+		"void_expression": 83,
+		"callback_registration": 176
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -2227,9 +2227,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 222,
+					"line": 227,
 					"column": 5,
-					"endLine": 235,
+					"endLine": 240,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2242,9 +2242,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 274,
+					"line": 279,
 					"column": 6,
-					"endLine": 279,
+					"endLine": 284,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2321,9 +2321,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 261,
+					"line": 264,
 					"column": 5,
-					"endLine": 263,
+					"endLine": 266,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2336,9 +2336,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 284,
+					"line": 287,
 					"column": 5,
-					"endLine": 289,
+					"endLine": 292,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2590,9 +2590,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 65,
+					"line": 69,
 					"column": 16,
-					"endLine": 86,
+					"endLine": 91,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -2606,9 +2606,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 79,
+					"line": 84,
 					"column": 6,
-					"endLine": 83,
+					"endLine": 88,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2621,9 +2621,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 96,
+					"line": 101,
 					"column": 5,
-					"endLine": 99,
+					"endLine": 104,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2636,9 +2636,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 114,
+					"line": 120,
 					"column": 8,
-					"endLine": 117,
+					"endLine": 123,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2651,9 +2651,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 121,
+					"line": 127,
 					"column": 5,
-					"endLine": 125,
+					"endLine": 131,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2666,9 +2666,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 140,
+					"line": 146,
 					"column": 6,
-					"endLine": 143,
+					"endLine": 149,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2681,9 +2681,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 186,
+					"line": 192,
 					"column": 5,
-					"endLine": 189,
+					"endLine": 195,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2696,9 +2696,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 194,
+					"line": 200,
 					"column": 16,
-					"endLine": 197,
+					"endLine": 203,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -2774,9 +2774,9 @@
 			"boundaries": [
 				{
 					"kind": "promise_catch",
-					"line": 77,
+					"line": 82,
 					"column": 9,
-					"endLine": 77,
+					"endLine": 82,
 					"endColumn": 41,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -2790,9 +2790,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 193,
+					"line": 198,
 					"column": 5,
-					"endLine": 195,
+					"endLine": 200,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5076,9 +5076,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 364,
+					"line": 366,
 					"column": 3,
-					"endLine": 367,
+					"endLine": 369,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5091,9 +5091,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 400,
+					"line": 408,
 					"column": 3,
-					"endLine": 410,
+					"endLine": 419,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -5105,9 +5105,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 411,
+					"line": 420,
 					"column": 3,
-					"endLine": 420,
+					"endLine": 430,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -5119,9 +5119,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 421,
+					"line": 431,
 					"column": 3,
-					"endLine": 433,
+					"endLine": 443,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -5133,9 +5133,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 434,
+					"line": 444,
 					"column": 3,
-					"endLine": 446,
+					"endLine": 456,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "observed",
@@ -5147,9 +5147,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 447,
+					"line": 457,
 					"column": 3,
-					"endLine": 455,
+					"endLine": 465,
 					"endColumn": 5,
 					"registration": "registerDomEvent",
 					"classification": "allowlisted",
@@ -5163,9 +5163,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 864,
+					"line": 882,
 					"column": 21,
-					"endLine": 864,
+					"endLine": 882,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5178,9 +5178,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 864,
+					"line": 882,
 					"column": 26,
-					"endLine": 864,
+					"endLine": 882,
 					"endColumn": 102,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5194,9 +5194,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 881,
+					"line": 899,
 					"column": 5,
-					"endLine": 881,
+					"endLine": 899,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5209,9 +5209,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 929,
+					"line": 947,
 					"column": 19,
-					"endLine": 929,
+					"endLine": 947,
 					"endColumn": 100,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5224,9 +5224,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 929,
+					"line": 947,
 					"column": 24,
-					"endLine": 929,
+					"endLine": 947,
 					"endColumn": 100,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5240,9 +5240,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 966,
+					"line": 984,
 					"column": 29,
-					"endLine": 966,
+					"endLine": 984,
 					"endColumn": 74,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5256,24 +5256,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 995,
-					"column": 3,
-					"endLine": 995,
-					"endColumn": 39,
-					"classification": "allowlisted",
-					"evidence": {
-						"type": "reviewed_detached_execution",
-						"target": "this.alertIngameServer.close",
-						"scope": "dispose",
-						"justification": "The \"dispose\" owner deliberately detaches \"this.alertIngameServer.close\"; a rejected close of an already-torn-down loopback listener has nothing left to report to and no in-flight alert delivery depends on it finishing."
-					},
-					"reason": "Allowlisted void_expression: The \"dispose\" owner deliberately detaches \"this.alertIngameServer.close\"; a rejected close of an already-torn-down loopback listener has nothing left to report to and no in-flight alert delivery depends on it finishing. Verified target: \"this.alertIngameServer.close\" in \"dispose\"."
-				},
-				{
-					"kind": "void_expression",
-					"line": 1004,
+					"line": 1032,
 					"column": 30,
-					"endLine": 1004,
+					"endLine": 1032,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5286,9 +5271,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1004,
+					"line": 1032,
 					"column": 35,
-					"endLine": 1004,
+					"endLine": 1032,
 					"endColumn": 99,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5302,9 +5287,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1339,
+					"line": 1367,
 					"column": 5,
-					"endLine": 1342,
+					"endLine": 1370,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5315,9 +5300,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1650,
+					"line": 1678,
 					"column": 3,
-					"endLine": 1655,
+					"endLine": 1683,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5330,9 +5315,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1672,
+					"line": 1700,
 					"column": 5,
-					"endLine": 1678,
+					"endLine": 1706,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5343,9 +5328,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1699,
+					"line": 1727,
 					"column": 4,
-					"endLine": 1702,
+					"endLine": 1730,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5358,9 +5343,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1724,
+					"line": 1752,
 					"column": 6,
-					"endLine": 1730,
+					"endLine": 1758,
 					"endColumn": 7,
 					"classification": "observed",
 					"evidence": {
@@ -5371,9 +5356,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1783,
+					"line": 1811,
 					"column": 3,
-					"endLine": 1783,
+					"endLine": 1811,
 					"endColumn": 42,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5386,9 +5371,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1793,
+					"line": 1821,
 					"column": 11,
-					"endLine": 1793,
+					"endLine": 1821,
 					"endColumn": 110,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5402,9 +5387,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1794,
+					"line": 1822,
 					"column": 5,
-					"endLine": 1796,
+					"endLine": 1824,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5417,9 +5402,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1803,
+					"line": 1831,
 					"column": 3,
-					"endLine": 1812,
+					"endLine": 1840,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5432,9 +5417,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1843,
+					"line": 1871,
 					"column": 19,
-					"endLine": 1845,
+					"endLine": 1873,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5447,9 +5432,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1894,
+					"line": 1922,
 					"column": 3,
-					"endLine": 1894,
+					"endLine": 1922,
 					"endColumn": 56,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5462,9 +5447,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 1936,
+					"line": 1964,
 					"column": 5,
-					"endLine": 1938,
+					"endLine": 1966,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5477,9 +5462,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1949,
+					"line": 1977,
 					"column": 18,
-					"endLine": 1953,
+					"endLine": 1981,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5493,9 +5478,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1949,
+					"line": 1977,
 					"column": 18,
-					"endLine": 1958,
+					"endLine": 1986,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5509,9 +5494,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1949,
+					"line": 1977,
 					"column": 18,
-					"endLine": 1962,
+					"endLine": 1990,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5525,9 +5510,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1989,
+					"line": 2017,
 					"column": 18,
-					"endLine": 1993,
+					"endLine": 2021,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5541,9 +5526,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1989,
+					"line": 2017,
 					"column": 18,
-					"endLine": 2001,
+					"endLine": 2029,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5557,9 +5542,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1989,
+					"line": 2017,
 					"column": 18,
-					"endLine": 2005,
+					"endLine": 2033,
 					"endColumn": 6,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5573,9 +5558,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2060,
+					"line": 2088,
 					"column": 5,
-					"endLine": 2060,
+					"endLine": 2088,
 					"endColumn": 76,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5588,9 +5573,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2200,
+					"line": 2228,
 					"column": 4,
-					"endLine": 2200,
+					"endLine": 2228,
 					"endColumn": 22,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5603,9 +5588,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2217,
+					"line": 2245,
 					"column": 4,
-					"endLine": 2217,
+					"endLine": 2245,
 					"endColumn": 22,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5618,9 +5603,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2220,
+					"line": 2248,
 					"column": 18,
-					"endLine": 2221,
+					"endLine": 2249,
 					"endColumn": 109,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5634,9 +5619,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 2220,
+					"line": 2248,
 					"column": 18,
-					"endLine": 2222,
+					"endLine": 2250,
 					"endColumn": 22,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -5650,9 +5635,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2220,
+					"line": 2248,
 					"column": 18,
-					"endLine": 2223,
+					"endLine": 2251,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5666,9 +5651,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2239,
+					"line": 2267,
 					"column": 18,
-					"endLine": 2242,
+					"endLine": 2270,
 					"endColumn": 4,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -5682,9 +5667,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2239,
+					"line": 2267,
 					"column": 18,
-					"endLine": 2242,
+					"endLine": 2270,
 					"endColumn": 91,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5698,9 +5683,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2350,
+					"line": 2378,
 					"column": 5,
-					"endLine": 2350,
+					"endLine": 2378,
 					"endColumn": 99,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5713,9 +5698,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2459,
+					"line": 2487,
 					"column": 3,
-					"endLine": 2459,
+					"endLine": 2487,
 					"endColumn": 113,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5728,9 +5713,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2484,
+					"line": 2512,
 					"column": 24,
-					"endLine": 2484,
+					"endLine": 2512,
 					"endColumn": 104,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5744,9 +5729,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2486,
+					"line": 2514,
 					"column": 4,
-					"endLine": 2486,
+					"endLine": 2514,
 					"endColumn": 94,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5759,9 +5744,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2612,
+					"line": 2640,
 					"column": 25,
-					"endLine": 2613,
+					"endLine": 2641,
 					"endColumn": 43,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5775,9 +5760,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2652,
+					"line": 2680,
 					"column": 29,
-					"endLine": 2655,
+					"endLine": 2683,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5790,9 +5775,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2659,
+					"line": 2687,
 					"column": 5,
-					"endLine": 2665,
+					"endLine": 2693,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5805,9 +5790,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2660,
+					"line": 2688,
 					"column": 55,
-					"endLine": 2663,
+					"endLine": 2691,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5820,9 +5805,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2681,
+					"line": 2709,
 					"column": 3,
-					"endLine": 2681,
+					"endLine": 2709,
 					"endColumn": 97,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5835,9 +5820,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2707,
+					"line": 2735,
 					"column": 3,
-					"endLine": 2707,
+					"endLine": 2735,
 					"endColumn": 49,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5850,9 +5835,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2735,
+					"line": 2763,
 					"column": 5,
-					"endLine": 2742,
+					"endLine": 2770,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -5863,9 +5848,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 2800,
+					"line": 2828,
 					"column": 25,
-					"endLine": 2800,
+					"endLine": 2828,
 					"endColumn": 89,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -5879,9 +5864,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2803,
+					"line": 2831,
 					"column": 5,
-					"endLine": 2803,
+					"endLine": 2831,
 					"endColumn": 102,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5894,9 +5879,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2824,
+					"line": 2852,
 					"column": 29,
-					"endLine": 2827,
+					"endLine": 2855,
 					"endColumn": 7,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5909,9 +5894,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2832,
+					"line": 2860,
 					"column": 7,
-					"endLine": 2832,
+					"endLine": 2860,
 					"endColumn": 87,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5924,9 +5909,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2836,
+					"line": 2864,
 					"column": 5,
-					"endLine": 2842,
+					"endLine": 2870,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5939,9 +5924,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 2837,
+					"line": 2865,
 					"column": 55,
-					"endLine": 2840,
+					"endLine": 2868,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5954,9 +5939,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 2948,
+					"line": 2976,
 					"column": 6,
-					"endLine": 2950,
+					"endLine": 2978,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5968,10 +5953,26 @@
 					"reason": "Allowlisted catch_clause: The \"perform\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"perform\"."
 				},
 				{
+					"kind": "callback_registration",
+					"line": 3066,
+					"column": 3,
+					"endLine": 3071,
+					"endColumn": 5,
+					"registration": "queueMicrotask",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "queueMicrotask",
+						"scope": "renderViews",
+						"justification": "The \"renderViews\" owner registers \"queueMicrotask\" to coalesce repeated repaint calls into one flush; the scheduled callback only toggles retained flags and repaints already-rendered views, doing no I/O and owning no state a caller needs surfaced."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderViews\" owner registers \"queueMicrotask\" to coalesce repeated repaint calls into one flush; the scheduled callback only toggles retained flags and repaints already-rendered views, doing no I/O and owning no state a caller needs surfaced. Verified registration: \"queueMicrotask\" in \"renderViews\"."
+				},
+				{
 					"kind": "void_expression",
-					"line": 3296,
+					"line": 3348,
 					"column": 19,
-					"endLine": 3296,
+					"endLine": 3348,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5984,9 +5985,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3299,
+					"line": 3351,
 					"column": 24,
-					"endLine": 3299,
+					"endLine": 3351,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6000,9 +6001,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3300,
+					"line": 3352,
 					"column": 3,
-					"endLine": 3303,
+					"endLine": 3355,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6015,9 +6016,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3301,
+					"line": 3353,
 					"column": 20,
-					"endLine": 3301,
+					"endLine": 3353,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6030,9 +6031,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3306,
+					"line": 3358,
 					"column": 20,
-					"endLine": 3306,
+					"endLine": 3358,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6045,9 +6046,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3311,
+					"line": 3363,
 					"column": 19,
-					"endLine": 3311,
+					"endLine": 3363,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6060,9 +6061,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3316,
+					"line": 3368,
 					"column": 19,
-					"endLine": 3316,
+					"endLine": 3368,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6075,9 +6076,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3319,
+					"line": 3371,
 					"column": 24,
-					"endLine": 3319,
+					"endLine": 3371,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6091,9 +6092,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3320,
+					"line": 3372,
 					"column": 3,
-					"endLine": 3323,
+					"endLine": 3375,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6106,9 +6107,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3321,
+					"line": 3373,
 					"column": 20,
-					"endLine": 3321,
+					"endLine": 3373,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6121,9 +6122,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3326,
+					"line": 3378,
 					"column": 20,
-					"endLine": 3326,
+					"endLine": 3378,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6136,9 +6137,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 3329,
+					"line": 3381,
 					"column": 19,
-					"endLine": 3329,
+					"endLine": 3381,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6151,9 +6152,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3425,
+					"line": 3477,
 					"column": 5,
-					"endLine": 3428,
+					"endLine": 3480,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -6164,9 +6165,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3584,
+					"line": 3636,
 					"column": 17,
-					"endLine": 3584,
+					"endLine": 3636,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6180,9 +6181,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3584,
+					"line": 3636,
 					"column": 17,
-					"endLine": 3584,
+					"endLine": 3636,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6196,9 +6197,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 3585,
+					"line": 3637,
 					"column": 20,
-					"endLine": 3585,
+					"endLine": 3637,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6212,9 +6213,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3585,
+					"line": 3637,
 					"column": 20,
-					"endLine": 3585,
+					"endLine": 3637,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6228,9 +6229,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3717,
+					"line": 3769,
 					"column": 5,
-					"endLine": 3717,
+					"endLine": 3769,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6243,9 +6244,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 3747,
+					"line": 3799,
 					"column": 5,
-					"endLine": 3747,
+					"endLine": 3799,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6258,9 +6259,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3779,
+					"line": 3831,
 					"column": 7,
-					"endLine": 3779,
+					"endLine": 3831,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6274,9 +6275,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 3784,
+					"line": 3836,
 					"column": 2,
-					"endLine": 3784,
+					"endLine": 3836,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6629,9 +6630,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 127,
+					"line": 131,
 					"column": 5,
-					"endLine": 130,
+					"endLine": 134,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -6642,9 +6643,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 177,
+					"line": 182,
 					"column": 6,
-					"endLine": 182,
+					"endLine": 187,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9094,9 +9095,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 298,
+					"line": 321,
 					"column": 4,
-					"endLine": 298,
+					"endLine": 321,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9110,9 +9111,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 318,
+					"line": 341,
 					"column": 4,
-					"endLine": 318,
+					"endLine": 341,
 					"endColumn": 86,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9126,9 +9127,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 318,
+					"line": 341,
 					"column": 45,
-					"endLine": 318,
+					"endLine": 341,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9141,9 +9142,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 341,
+					"line": 364,
 					"column": 4,
-					"endLine": 341,
+					"endLine": 364,
 					"endColumn": 76,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9157,9 +9158,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 356,
+					"line": 379,
 					"column": 4,
-					"endLine": 356,
+					"endLine": 379,
 					"endColumn": 93,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9173,9 +9174,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 356,
+					"line": 379,
 					"column": 44,
-					"endLine": 356,
+					"endLine": 379,
 					"endColumn": 89,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9188,9 +9189,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 361,
+					"line": 384,
 					"column": 4,
-					"endLine": 361,
+					"endLine": 384,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9204,9 +9205,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 361,
+					"line": 384,
 					"column": 45,
-					"endLine": 361,
+					"endLine": 384,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9219,9 +9220,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 415,
+					"line": 438,
 					"column": 3,
-					"endLine": 415,
+					"endLine": 438,
 					"endColumn": 75,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9235,9 +9236,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 415,
+					"line": 438,
 					"column": 44,
-					"endLine": 415,
+					"endLine": 438,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9250,9 +9251,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 440,
+					"line": 463,
 					"column": 4,
-					"endLine": 440,
+					"endLine": 463,
 					"endColumn": 90,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9266,9 +9267,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 448,
+					"line": 471,
 					"column": 3,
-					"endLine": 448,
+					"endLine": 471,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9282,9 +9283,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 448,
+					"line": 471,
 					"column": 45,
-					"endLine": 448,
+					"endLine": 471,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9297,9 +9298,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 449,
+					"line": 472,
 					"column": 3,
-					"endLine": 449,
+					"endLine": 472,
 					"endColumn": 89,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9313,9 +9314,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 494,
+					"line": 517,
 					"column": 3,
-					"endLine": 497,
+					"endLine": 520,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9329,9 +9330,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 496,
+					"line": 519,
 					"column": 4,
-					"endLine": 496,
+					"endLine": 519,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9344,9 +9345,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 496,
+					"line": 519,
 					"column": 9,
-					"endLine": 496,
+					"endLine": 519,
 					"endColumn": 82,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9360,9 +9361,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 516,
+					"line": 539,
 					"column": 3,
-					"endLine": 516,
+					"endLine": 539,
 					"endColumn": 78,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9376,9 +9377,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 661,
+					"line": 684,
 					"column": 4,
-					"endLine": 661,
+					"endLine": 684,
 					"endColumn": 83,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9392,9 +9393,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 725,
+					"line": 748,
 					"column": 3,
-					"endLine": 725,
+					"endLine": 748,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9407,9 +9408,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 727,
+					"line": 750,
 					"column": 3,
-					"endLine": 733,
+					"endLine": 756,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9423,9 +9424,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 728,
+					"line": 751,
 					"column": 4,
-					"endLine": 732,
+					"endLine": 755,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9438,9 +9439,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 728,
+					"line": 751,
 					"column": 9,
-					"endLine": 732,
+					"endLine": 755,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9454,9 +9455,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 731,
+					"line": 754,
 					"column": 10,
-					"endLine": 731,
+					"endLine": 754,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9469,9 +9470,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 735,
+					"line": 758,
 					"column": 3,
-					"endLine": 741,
+					"endLine": 764,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9485,9 +9486,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 818,
+					"line": 841,
 					"column": 3,
-					"endLine": 818,
+					"endLine": 841,
 					"endColumn": 92,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9501,9 +9502,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 818,
+					"line": 841,
 					"column": 44,
-					"endLine": 818,
+					"endLine": 841,
 					"endColumn": 88,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9516,9 +9517,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 847,
+					"line": 873,
 					"column": 27,
-					"endLine": 847,
+					"endLine": 873,
 					"endColumn": 99,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -9532,9 +9533,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 898,
+					"line": 924,
 					"column": 4,
-					"endLine": 898,
+					"endLine": 924,
 					"endColumn": 70,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9548,9 +9549,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 898,
+					"line": 924,
 					"column": 42,
-					"endLine": 898,
+					"endLine": 924,
 					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9563,9 +9564,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 912,
+					"line": 938,
 					"column": 4,
-					"endLine": 912,
+					"endLine": 938,
 					"endColumn": 72,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9579,9 +9580,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 912,
+					"line": 938,
 					"column": 44,
-					"endLine": 912,
+					"endLine": 938,
 					"endColumn": 68,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9594,9 +9595,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 914,
+					"line": 940,
 					"column": 4,
-					"endLine": 914,
+					"endLine": 940,
 					"endColumn": 82,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9610,9 +9611,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 917,
+					"line": 943,
 					"column": 4,
-					"endLine": 917,
+					"endLine": 943,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9625,9 +9626,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 925,
+					"line": 951,
 					"column": 4,
-					"endLine": 925,
+					"endLine": 951,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9641,9 +9642,9 @@
 				},
 				{
 					"kind": "catch_clause",
-					"line": 929,
+					"line": 955,
 					"column": 4,
-					"endLine": 929,
+					"endLine": 955,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9656,9 +9657,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 938,
+					"line": 964,
 					"column": 4,
-					"endLine": 938,
+					"endLine": 964,
 					"endColumn": 88,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9672,9 +9673,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 938,
+					"line": 964,
 					"column": 43,
-					"endLine": 938,
+					"endLine": 964,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9687,9 +9688,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1030,
+					"line": 1056,
 					"column": 3,
-					"endLine": 1030,
+					"endLine": 1056,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9703,9 +9704,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1035,
+					"line": 1061,
 					"column": 3,
-					"endLine": 1042,
+					"endLine": 1068,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9719,9 +9720,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1044,
+					"line": 1070,
 					"column": 3,
-					"endLine": 1044,
+					"endLine": 1070,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9735,9 +9736,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1242,
+					"line": 1268,
 					"column": 3,
-					"endLine": 1242,
+					"endLine": 1268,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9751,9 +9752,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1243,
+					"line": 1269,
 					"column": 3,
-					"endLine": 1247,
+					"endLine": 1273,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9767,9 +9768,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1246,
+					"line": 1272,
 					"column": 4,
-					"endLine": 1246,
+					"endLine": 1272,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9782,9 +9783,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1246,
+					"line": 1272,
 					"column": 9,
-					"endLine": 1246,
+					"endLine": 1272,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9798,9 +9799,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1280,
+					"line": 1306,
 					"column": 3,
-					"endLine": 1280,
+					"endLine": 1306,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9814,9 +9815,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1281,
+					"line": 1307,
 					"column": 3,
-					"endLine": 1285,
+					"endLine": 1311,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9830,9 +9831,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1284,
+					"line": 1310,
 					"column": 4,
-					"endLine": 1284,
+					"endLine": 1310,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9845,9 +9846,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1284,
+					"line": 1310,
 					"column": 9,
-					"endLine": 1284,
+					"endLine": 1310,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9861,9 +9862,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1308,
+					"line": 1334,
 					"column": 3,
-					"endLine": 1308,
+					"endLine": 1334,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9877,9 +9878,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1309,
+					"line": 1335,
 					"column": 3,
-					"endLine": 1313,
+					"endLine": 1339,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9893,9 +9894,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1312,
+					"line": 1338,
 					"column": 4,
-					"endLine": 1312,
+					"endLine": 1338,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9908,9 +9909,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1312,
+					"line": 1338,
 					"column": 9,
-					"endLine": 1312,
+					"endLine": 1338,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9924,9 +9925,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1357,
+					"line": 1383,
 					"column": 3,
-					"endLine": 1357,
+					"endLine": 1383,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9940,9 +9941,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1358,
+					"line": 1384,
 					"column": 3,
-					"endLine": 1380,
+					"endLine": 1406,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9956,9 +9957,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1375,
+					"line": 1401,
 					"column": 4,
-					"endLine": 1379,
+					"endLine": 1405,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9971,9 +9972,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1375,
+					"line": 1401,
 					"column": 9,
-					"endLine": 1375,
+					"endLine": 1401,
 					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -9987,9 +9988,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1375,
+					"line": 1401,
 					"column": 9,
-					"endLine": 1379,
+					"endLine": 1405,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10003,9 +10004,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1459,
+					"line": 1485,
 					"column": 3,
-					"endLine": 1459,
+					"endLine": 1485,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10019,9 +10020,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1460,
+					"line": 1486,
 					"column": 3,
-					"endLine": 1485,
+					"endLine": 1511,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10035,9 +10036,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1472,
+					"line": 1498,
 					"column": 4,
-					"endLine": 1484,
+					"endLine": 1510,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10050,9 +10051,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1472,
+					"line": 1498,
 					"column": 9,
-					"endLine": 1480,
+					"endLine": 1506,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10066,9 +10067,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1472,
+					"line": 1498,
 					"column": 9,
-					"endLine": 1484,
+					"endLine": 1510,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10082,9 +10083,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 1502,
+					"line": 1528,
 					"column": 3,
-					"endLine": 1544,
+					"endLine": 1570,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10097,9 +10098,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1502,
+					"line": 1528,
 					"column": 8,
-					"endLine": 1542,
+					"endLine": 1568,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10113,9 +10114,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 1502,
+					"line": 1528,
 					"column": 8,
-					"endLine": 1544,
+					"endLine": 1570,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10129,9 +10130,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1528,
+					"line": 1554,
 					"column": 4,
-					"endLine": 1536,
+					"endLine": 1562,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10145,9 +10146,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 1537,
+					"line": 1563,
 					"column": 4,
-					"endLine": 1541,
+					"endLine": 1567,
 					"endColumn": 6,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10350,9 +10351,9 @@
 			"boundaries": [
 				{
 					"kind": "callback_registration",
-					"line": 161,
+					"line": 164,
 					"column": 19,
-					"endLine": 164,
+					"endLine": 167,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10366,9 +10367,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 161,
+					"line": 164,
 					"column": 19,
-					"endLine": 179,
+					"endLine": 182,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10382,9 +10383,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 161,
+					"line": 164,
 					"column": 19,
-					"endLine": 185,
+					"endLine": 188,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -10398,9 +10399,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 161,
+					"line": 164,
 					"column": 19,
-					"endLine": 187,
+					"endLine": 190,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -11026,9 +11027,9 @@
 			"boundaries": [
 				{
 					"kind": "catch_clause",
-					"line": 234,
+					"line": 243,
 					"column": 5,
-					"endLine": 238,
+					"endLine": 247,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11041,9 +11042,9 @@
 				},
 				{
 					"kind": "callback_registration",
-					"line": 256,
+					"line": 265,
 					"column": 24,
-					"endLine": 259,
+					"endLine": 268,
 					"endColumn": 16,
 					"registration": "setTimeout",
 					"classification": "allowlisted",
@@ -11057,9 +11058,9 @@
 				},
 				{
 					"kind": "void_expression",
-					"line": 308,
+					"line": 317,
 					"column": 32,
-					"endLine": 308,
+					"endLine": 317,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11072,9 +11073,9 @@
 				},
 				{
 					"kind": "promise_catch",
-					"line": 308,
+					"line": 317,
 					"column": 37,
-					"endLine": 308,
+					"endLine": 317,
 					"endColumn": 78,
 					"registration": "catch",
 					"classification": "allowlisted",
