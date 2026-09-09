@@ -6,7 +6,6 @@ import type { SessionState } from '../sessions/session';
 export const SESSION_COMMAND_IDS = [
 	'start-farming-session',
 	'finish-farming-session',
-	'review-session',
 	'recover-saved-session',
 	'discard-saved-session',
 	'clear-completed-session',
@@ -43,7 +42,6 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
 		descriptor('finish-farming-session', context.state.status === 'stopping' ? t('commands.retryStop') : t('commands.finishSession'),
 			!recovering && (context.state.status === 'active' || (context.state.status === 'stopping' && context.stopFailure !== null)), 'square', false, targetKey(context, false)),
-		descriptor('review-session', t('commands.reviewSession'), !recovering && context.state.status === 'provisional', 'clipboard-check', false, targetKey(context, false)),
 		descriptor('recover-saved-session', t('commands.recoverSession'), recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
 		descriptor('discard-saved-session', t('commands.discardSession'), recoveryDiscardable, 'trash-2', true, targetKey(context, true)),
 		descriptor('clear-completed-session', t('commands.clearSession'), !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),

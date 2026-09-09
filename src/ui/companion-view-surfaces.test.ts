@@ -16,13 +16,15 @@ import type { SessionState } from '../sessions/session';
  */
 
 describe('Companion Halloween alert surface', () => {
-	it('renders the unread notice and acknowledges it from the mounted panel', async () => {
-		const acknowledgeHalloweenNotice = vi.fn(async () => true);
+	// Nobody marks an aviso as reviewed anymore (Lote S, 2026-09-09): the button and the acknowledge
+	// actions are gone from `CompanionActions`. These two cases used to click it and assert the
+	// action fired; they are replaced below by asserting the button never renders at all.
+	it('renders the unread notice without a review button', async () => {
 		const { contentEl, render } = mountCompanion({
-			acknowledgeHalloweenNotice, getHalloweenState: () => unreadHalloweenState(),
+			getHalloweenState: () => unreadHalloweenState(),
 			// The notice is observed 2026-08-31, outside the calendar window: the Labyrinth override
-			// keeps this surface test about acknowledging from the mounted panel, not about H14.3's
-			// season gate (covered on its own in halloween-alert-panel.test.ts).
+			// keeps this surface test about the mounted panel, not about H14.3's season gate (covered
+			// on its own in halloween-alert-panel.test.ts).
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-08-31T13:00:00.000Z'), inLabyrinth: true, sessionStartAt: null }),
 		});
 
@@ -33,17 +35,11 @@ describe('Companion Halloween alert surface', () => {
 		const notice = find(contentEl, (node) => node.className.includes('tyrian-companion-halloween__notice'));
 		expect(notice).toBeDefined();
 		const acknowledge = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Marcar como revisada');
-		expect(acknowledge).toBeDefined();
-
-		acknowledge?.click();
-		await Promise.resolve();
-		expect(acknowledgeHalloweenNotice).toHaveBeenCalledWith('notice');
+		expect(acknowledge).toBeUndefined();
 	});
 
-	it('acknowledges an unread price notice from the same panel', async () => {
-		const acknowledgeHalloweenPriceNotice = vi.fn(async () => true);
+	it('renders an unread price notice without a review button', async () => {
 		const { contentEl, render } = mountCompanion({
-			acknowledgeHalloweenPriceNotice,
 			getHalloweenPriceAlertState: () => ({ status: 'unread', projection: null, notices: [priceNotice()], unreadCount: 1 }),
 		});
 
@@ -52,23 +48,25 @@ describe('Companion Halloween alert surface', () => {
 		const price = find(contentEl, (node) => node.className.includes('tyrian-companion-halloween__price'));
 		expect(price).toBeDefined();
 		const acknowledge = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Marcar como revisada');
-		acknowledge?.click();
-		await Promise.resolve();
-		expect(acknowledgeHalloweenPriceNotice).toHaveBeenCalledWith('price-notice');
+		expect(acknowledge).toBeUndefined();
 	});
 });
 
 /**
  * Before the redesign, `halloween-alert-panel.ts` forced its own panel open for a fresh unread
  * notice (`isFreshNotice`, H14.3). The card now carries that at the gaveto level: the "Avisos"
- * `<details>` renders open even with `drawerOpen.alerts` false, and stops once the notice is no
- * longer fresh (acknowledged, or older than 24h).
+ * `<details>` renders open even with `drawerOpen.alerts` false, and stops once it is no longer
+ * fresh (older than 24h). Nobody marks an aviso reviewed anymore (Lote S, 2026-09-09), so the old
+ * "acknowledged" case is gone — freshness alone decides — and the trigger is an emitted alert
+ * (`getEmittedAlerts`), never a "Cambio observado" notice (`getHalloweenState().notices`), which
+ * is information about the session and never an aviso.
  */
-describe('Companion Avisos gaveto forced open by a fresh notice (H14.3 at card level)', () => {
-	function noticeAt(observedAt: string, acknowledgedAt: string | null = null): HalloweenNoticeV1 {
+describe('Companion Avisos gaveto forced open by a fresh alert (H14.3 at card level)', () => {
+	function valuableAlert(emittedAt: string) {
 		return {
-			version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
-			observedAt, source: 'assisted_poll', wording: 'observed_change', coverage: 'complete', items: [], acknowledgedAt,
+			version: 1 as const, vaultId: 'vault', accountRef: 'account', alertId: `alert-${emittedAt}`,
+			kind: 'valuable_loot' as const, itemId: 1, name: 'Objeto', quantity: 1, totalCopper: 60_000,
+			reason: 'valuable' as const, emittedAt,
 		};
 	}
 
@@ -77,10 +75,9 @@ describe('Companion Avisos gaveto forced open by a fresh notice (H14.3 at card l
 			node.children.some((child) => child.tag === 'summary' && child.textContent === 'Avisos'));
 	}
 
-	it('renders it open with a fresh unread notice, even though drawerOpen.alerts starts false', () => {
-		const notice = noticeAt('2026-09-09T10:00:00.000Z');
+	it('renders it open with a fresh alert, even though drawerOpen.alerts starts false', () => {
 		const { contentEl, render } = mountCompanion({
-			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			getEmittedAlerts: () => [valuableAlert('2026-09-09T10:00:00.000Z')],
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
 		});
 
@@ -89,22 +86,9 @@ describe('Companion Avisos gaveto forced open by a fresh notice (H14.3 at card l
 		expect(avisosDrawer(contentEl)?.open).toBe(true);
 	});
 
-	it('leaves it closed once the same notice is acknowledged', () => {
-		const notice = noticeAt('2026-09-09T10:00:00.000Z', '2026-09-09T10:05:00.000Z');
+	it('leaves it closed once the alert is more than 24h old', () => {
 		const { contentEl, render } = mountCompanion({
-			getHalloweenState: () => ({ status: 'ready', notices: [notice], unreadCount: 0, lastObservedAt: notice.observedAt, comparison: null }),
-			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
-		});
-
-		render();
-
-		expect(avisosDrawer(contentEl)?.open).toBe(false);
-	});
-
-	it('leaves it closed once the unread notice is more than 24h old', () => {
-		const notice = noticeAt('2026-09-08T09:00:00.000Z');
-		const { contentEl, render } = mountCompanion({
-			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			getEmittedAlerts: () => [valuableAlert('2026-09-08T09:00:00.000Z')],
 			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
 		});
 
@@ -169,22 +153,17 @@ describe('Companion assisted detection surface', () => {
 		expect(queried).not.toMatch(/\d{1,2}:\d{2}:\d{2}/u);
 	});
 
-	it('arms the detection from the mounted disarmed card', async () => {
-		const armAssistedDetection = vi.fn(async () => 'completed' as const);
+	// Detection is always armed with a connected account now (Lote S, 2026-09-09): no toggle and no
+	// arm button left in this row. `disarmed` here only ever means it is still waiting for one.
+	it('shows a waiting-for-account row with no arm button while disarmed', () => {
 		const { contentEl, render } = mountCompanion({
-			armAssistedDetection,
 			getAssistedDetectionState: () => ({ status: 'disarmed', reason: 'initial', scheduler: idleScheduler(), lastSnapshotAt: null }),
 		});
 
 		render();
 
-		const arm = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Activar detección');
-		expect(arm).toBeDefined();
-		expect(arm?.disabled).toBe(false);
-
-		arm?.click();
-		await Promise.resolve();
-		expect(armAssistedDetection).toHaveBeenCalledOnce();
+		expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Activar detección')).toBeUndefined();
+		expect(texts(contentEl)).toContain('Esperando cuenta');
 	});
 });
 
@@ -576,7 +555,6 @@ function baseActions(): CompanionActions {
 		}) as never,
 		checkConnection: async () => ({ status: 'idle' }) as never,
 		getSessionState: (): SessionState => ({ version: 1, status: 'idle' }),
-		getDetectionMode: () => 'assisted',
 		getAssistedDetectionState: () => armedDetection(),
 		getDetectionQualityState: () => ({ status: 'ready' }),
 		getSessionDetectionQuality: () => null,
@@ -597,8 +575,6 @@ function baseActions(): CompanionActions {
 		getLiveSessionLoot: () => ({ status: 'idle' }),
 		getSessionSummarySaveState: () => 'unknown',
 		getStoredSessionLootSummary: () => null,
-		reviewSessionContamination: async () => null,
-		openSessionReview: () => undefined,
 		confirmClearCompletedSession: () => undefined,
 		getSessionRecoveryState: () => ({ status: 'none' }),
 		openManualSessionStart: () => undefined,
@@ -608,9 +584,7 @@ function baseActions(): CompanionActions {
 		loadSessionHistory: async () => ({ status: 'ok', sessions: [], ignored: 0 }),
 		hasConfiguredApiKey: () => true,
 		getHalloweenState: () => ({ status: 'ready', notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
-		acknowledgeHalloweenNotice: async () => false,
 		getHalloweenPriceAlertState: () => ({ status: 'ready', projection: null, notices: [], unreadCount: 0 }),
-		acknowledgeHalloweenPriceNotice: async () => false,
 		getEmittedAlerts: () => [],
 	};
 }

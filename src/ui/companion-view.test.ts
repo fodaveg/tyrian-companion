@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./halloween-alert-panel', () => ({ renderHalloweenAlertPanel: vi.fn() }));
+vi.mock('./halloween-alert-panel', () => ({
+	renderHalloweenAlertPanel: vi.fn(),
+	visibleEmittedAlerts: () => [],
+	alertCountLabel: () => '',
+}));
 
 import { TyrianCompanionView, liveSackRateDetail, liveSackRateHeadline, simpleSessionCopy } from './companion-view';
 import { createTranslator } from '../core/i18n';
@@ -134,7 +138,6 @@ describe('Companion game HUD narrative', () => {
 				getLocale: () => 'es' as const,
 				getProvisionalDelta: () => null,
 				getContaminationReview: () => null,
-				getDetectionMode: () => 'assisted' as const,
 				getAssistedDetectionState: () => state,
 				getSessionState: () => session,
 			},
@@ -143,10 +146,10 @@ describe('Companion game HUD narrative', () => {
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const render = (TyrianCompanionView.prototype as unknown as {
 			renderDetectionTimeline(
-				this: typeof harness, container: HTMLElement, mode: 'assisted', state: AssistedDetectionState, session: unknown,
+				this: typeof harness, container: HTMLElement, state: AssistedDetectionState, session: unknown,
 			): void;
 		}).renderDetectionTimeline;
-		render.call(harness, container as unknown as HTMLElement, 'assisted', state, session);
+		render.call(harness, container as unknown as HTMLElement, state, session);
 
 		const cells = container.children[0]?.children ?? [];
 		expect(container.children[0]?.tag).toBe('dl');
@@ -448,7 +451,6 @@ function connectedFixture() {
 
 function minimalDrawerActions() {
 	return {
-		getDetectionMode: () => 'off' as const,
 		getAssistedDetectionState: () => ({
 			status: 'disarmed' as const, reason: 'initial' as const, lastSnapshotAt: null,
 			scheduler: { status: 'idle' as const, intervalMs: null, nextRunAt: null, lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0 },
@@ -456,26 +458,25 @@ function minimalDrawerActions() {
 		getDetectionQualityState: () => ({ status: 'ready' as const }),
 		getDetectionQualityStats: () => null,
 		getHalloweenState: () => ({ status: 'ready' as const, notices: [], unreadCount: 0, lastObservedAt: null, comparison: null }),
-		acknowledgeHalloweenNotice: async () => false,
 		getHalloweenPriceAlertState: () => ({ status: 'ready' as const, projection: null, notices: [], unreadCount: 0 }),
-		acknowledgeHalloweenPriceNotice: async () => false,
 		getEmittedAlerts: () => [],
 		loadSessionHistory: async () => ({ status: 'ok' as const, sessions: [], ignored: 0 }),
 	};
 }
 
 describe('Companion retained product shell', () => {
-	it('offers human review only when automatic finalization leaves a provisional session', () => {
+	// Nobody reviews a session anymore (Lote S, 2026-09-09): `provisional` is only the brief gap
+	// before the automatic finalize that follows a stop, never a state that waits on a human — no
+	// "Revisar" button, no action at all.
+	it('shows a saving state with no action while automatic finalization leaves a provisional session', () => {
 		const document = new RetainedFakeDocument();
 		installRetainedDom(document);
 		const container = new RetainedFakeElement('div', document);
-		const openSessionReview = vi.fn();
 		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
 			actions: {
 				getLocale: () => 'es' as const,
 				getProvisionalDelta: () => null,
 				getContaminationReview: () => null,
-				openSessionReview,
 				getLiveSessionLoot: () => ({ status: 'complete' as const, sessionId: 'session', restored: false,
 					rows: [], knownTotalCopper: 0, hasUnknownValue: false, updatedAt: null, error: null }),
 				...minimalDrawerActions(),
@@ -492,10 +493,8 @@ describe('Companion retained product shell', () => {
 			renderSimpleSession(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown, projection: unknown): void;
 		}).renderSimpleSession;
 		render.call(harness, container as unknown as HTMLElement, connectedFixture(), session, { items: [], errors: [] });
-		const button = walkRetained(container).find((element) => element.tag === 'button' && element.textContent === 'Revisar');
-		expect(button).toBeTruthy();
-		button?.listeners.get('click')?.[0]?.();
-		expect(openSessionReview).toHaveBeenCalledOnce();
+		expect(walkRetained(container).some((element) => element.tag === 'button' && element.textContent === 'Revisar')).toBe(false);
+		expect(walkRetained(container).map((element) => element.textContent).join(' ')).toContain('Guardando');
 	});
 
 	it('offers one-click next-session rotation from the completed summary', () => {
