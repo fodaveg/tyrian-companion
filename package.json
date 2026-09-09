@@ -41,6 +41,10 @@
 		"beta:artifact": "node scripts/prepare-beta-artifact.mjs",
 		"beta:install": "node scripts/install-beta.mjs install",
 		"beta:verify-runtime": "node scripts/verify-beta-runtime.mjs",
+		"dev:install": "node scripts/dev-install.mjs",
+		"smoke:live": "node scripts/smoke-live.mjs",
+		"test:dev-install": "node scripts/tests/probar-dev-install.mjs",
+		"test:smoke-live": "node scripts/tests/probar-smoke-live.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [
