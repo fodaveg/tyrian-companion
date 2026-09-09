@@ -93,6 +93,7 @@ function input(bags: number, gains: { id: number; delta: number }[]): {
 			version: 1, reviewedAt: '2026-08-28T11:00:01.000Z', answers: { certainty: 'confirmed', activities },
 			declaration: { status: 'activities', activities: ['open'] },
 			boundary: {} as SessionContaminationReview['boundary'], classification: {} as SessionContaminationReview['classification'],
+			farmedLossItemIds: [],
 		},
 	};
 }

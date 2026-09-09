@@ -401,6 +401,33 @@ describe('classifySessionDelta', () => {
 		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
 	});
 
+	// H14.1: the classifier is synchronous, so a caller who already resolved the public catalog
+	// type of a loss (Container or Consumable) passes it in `farmedLossItemIds` instead.
+	it('does not degrade the loss of a non-curated item whose catalog type resolved to Container', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			exactContext({ boundary: buildBoundaryEvidence(before, after), farmedLossItemIds: [999] }),
+		);
+		expect(result).toMatchObject({ status: 'exact', confidence: 'high', permissions: { recommend: true } });
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+	});
+
+	it('still degrades the loss of an item absent from farmedLossItemIds (a Weapon, or a type the catalog could not resolve)', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const result = classifySessionDelta(
+			compareStorageSnapshots(before, after),
+			// An unresolved sibling id (998) is present but the actual loss (999) is not: only the
+			// exact id resolved as farmed input is exempt, never every loss in the session.
+			exactContext({ boundary: buildBoundaryEvidence(before, after), farmedLossItemIds: [998] }),
+		);
+		expect(result.status).toBe('estimated');
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+		expect(result.reviewRequests).toContainEqual({ code: 'review_consumed_inputs' });
+	});
+
 	it.each([
 		['delivery missing on both sides', false, false],
 		['delivery asymmetric', true, false],
@@ -697,6 +724,14 @@ describe('classifySessionDelta', () => {
 			...cleanDelta(),
 			compositionChanges: [null],
 		}, exactContext()],
+		['non-array farmedLossItemIds', cleanDelta(), {
+			...exactContext(),
+			farmedLossItemIds: 'not-an-array',
+		}],
+		['farmedLossItemIds with a non-positive id', cleanDelta(), {
+			...exactContext(),
+			farmedLossItemIds: [0],
+		}],
 	])('returns invalid instead of throwing for malformed runtime input: %s', (_label, delta, context) => {
 		expect(() => classifySessionDelta(delta, context)).not.toThrow();
 		expect(classifySessionDelta(delta, context)).toMatchObject({

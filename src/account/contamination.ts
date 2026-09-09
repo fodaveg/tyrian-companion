@@ -50,6 +50,13 @@ const MONETARY_WALLET_CURRENCY_IDS: ReadonlySet<number> = new Set([1, 4]);
  * list only with ids proven to be consumed by opening/using them while farming, never inferred
  * from mutable catalog text. An id absent from here is treated conservatively as a real loss
  * (equipment sold, salvaged or destroyed), which still degrades the reading.
+ *
+ * H14.1 checked the other four Labyrinth drops the assisted detector already watches alongside
+ * the bag (`36041` Piece of Candy Corn, `36059` Plastic Fangs, `36060` Chattering Skull, `36061`
+ * Nougat Center; `GET /v2/items?ids=36038,36041,36059,36060,36061`). None of them is a `Container`:
+ * `36041` is a `Consumable`, already exempted at classification time by `farmedLossItemIds` below
+ * whenever the catalog resolves it, and the other three are `CraftingMaterial`, a real loss like
+ * any other crafting reagent. None gets added here.
  */
 const CURATED_FARMED_LOSS_ITEM_IDS: ReadonlySet<number> = new Set([36_038]);
 
@@ -206,9 +213,14 @@ function classifyValidatedSessionDelta(
 	const walletDecreased = walletCurrencies.some((currency) =>
 		currency.delta < 0 && MONETARY_WALLET_CURRENCY_IDS.has(currency.id));
 	const losses = delta.itemChanges.filter((change) => change.delta < 0);
-	// A loss the curated list or the catalog does not recognize is treated conservatively as a
-	// real loss (equipment sold, salvaged or destroyed), which still degrades the reading.
-	const nonFarmingLoss = losses.some((change) => !CURATED_FARMED_LOSS_ITEM_IDS.has(change.id));
+	// H14.1: a loss whose catalog type the caller already resolved as `Container`/`Consumable`
+	// (see `farmedLossItemIds` on `SessionClassificationContext`) is farmed input too, exactly like
+	// the static curated list. A loss neither list recognizes is treated conservatively as a real
+	// loss (equipment sold, salvaged or destroyed, or an id the catalog could not resolve), which
+	// still degrades the reading.
+	const farmedLossItemIds = new Set(context.farmedLossItemIds ?? []);
+	const nonFarmingLoss = losses.some((change) =>
+		!CURATED_FARMED_LOSS_ITEM_IDS.has(change.id) && !farmedLossItemIds.has(change.id));
 
 	const reasons: SessionClassificationReason[] = [];
 	const reviews: SessionReviewRequest[] = [];
@@ -529,17 +541,23 @@ export function isStorageDelta(value: unknown): value is StorageDelta {
 
 function isClassificationContext(value: unknown): value is SessionClassificationContext {
 	return isRecord(value) && hasOnlyKeys(value, [
-		'boundary', 'tradingPost', 'declaration', 'boundaryCertainty', 'apiSettlement',
+		'boundary', 'tradingPost', 'declaration', 'boundaryCertainty', 'apiSettlement', 'farmedLossItemIds',
 	]) && isBoundaryEvidenceShape(value.boundary) && isTradingPostEvidence(value.tradingPost) &&
 		isDeclaration(value.declaration) &&
 		['manual_confirmed', 'auto_confirmed', 'auto_uncertain'].includes(String(value.boundaryCertainty)) &&
-		isApiSettlement(value.apiSettlement);
+		isApiSettlement(value.apiSettlement) &&
+		isFarmedLossItemIds(value.farmedLossItemIds);
 }
 
 /** Absent is legal: only a session stop boundary can declare how long the capture waited. */
 function isApiSettlement(value: unknown): boolean {
 	return value === undefined
 		|| (typeof value === 'string' && ['settled', 'skipped', 'exceeded'].includes(value));
+}
+
+/** Absent is legal: only the async session-review flow resolves catalog types before classifying. */
+function isFarmedLossItemIds(value: unknown): boolean {
+	return value === undefined || (Array.isArray(value) && value.every(isPositiveId));
 }
 
 /**

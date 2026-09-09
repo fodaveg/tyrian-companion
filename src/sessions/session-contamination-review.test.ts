@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { compareStorageSnapshots } from '../account/storage-delta';
-import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
+import { afterSnapshot, looseHolding, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import type { ActiveSessionLeaseHandle } from './coordination-model';
 import {
 	ManualSessionStartService,
@@ -230,6 +230,34 @@ describe('session contamination review', () => {
 		} as never;
 		expect(isSessionContaminationReview(legacy, before, after, delta)).toBe(true);
 		expect(legacy).toMatchObject({ classification: { version: 1, permissions: { recommend: false } } });
+	});
+
+	// H14.1: the classifier is synchronous, so the caller resolves catalog types beforehand and
+	// hands the review the exact ids it treated as farming input, so a later reload can verify the
+	// same decision instead of guessing it.
+	it('keeps a resolved container/consumable loss exact and persists which ids it exempted', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const delta = compareStorageSnapshots(before, after);
+		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT, 'settled', [999]);
+
+		expect(review).toMatchObject({
+			farmedLossItemIds: [999],
+			classification: { status: 'exact', permissions: { recommend: true } },
+		});
+		expect(isSessionContaminationReview(review, before, after, delta)).toBe(true);
+	});
+
+	it('rejects tampering with the persisted farmedLossItemIds', () => {
+		const before = storageDeltaSnapshot({ holdings: [looseHolding(999, 3, { source: 'bank', slot: 0 })] });
+		const after = afterSnapshot({ holdings: [looseHolding(999, 1, { source: 'bank', slot: 0 })] });
+		const delta = compareStorageSnapshots(before, after);
+		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT, 'settled', [999]);
+		if (!review) throw new Error('Expected review fixture.');
+
+		const tampered = structuredClone(review);
+		tampered.farmedLossItemIds = [];
+		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
 	});
 
 	it('does not mutate answers or evidence inputs', () => {

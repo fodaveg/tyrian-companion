@@ -381,6 +381,65 @@ describe('ManualSessionStartService', () => {
 		});
 	});
 
+	// H14.1: the classifier is synchronous, so the review resolves the lost items' catalog type
+	// beforehand and only exempts the ones that resolve to Container/Consumable.
+	it('resolves lost items against the catalog before review and exempts a farmed container', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const final = afterSnapshot({ holdings: [] });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => structuredClone(final)),
+		};
+		const farmedLossItemTypeCapture = {
+			capture: vi.fn(async (itemIds: readonly number[]) => new Map(itemIds.map((id) => [id, 'Container']))),
+		};
+		const service = new ManualSessionStartService(
+			coordinator(),
+			capture,
+			serviceOptions({ runtimeStore, farmedLossItemTypeCapture }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await stopAfterSettlement(service);
+
+		const reviewed = await service.reviewContamination(reviewAnswers());
+
+		expect(farmedLossItemTypeCapture.capture).toHaveBeenCalledWith([100]);
+		expect(reviewed).toMatchObject({
+			status: 'finalized',
+			review: {
+				farmedLossItemIds: [100],
+				classification: { status: 'exact', permissions: { recommend: true } },
+			},
+		});
+	});
+
+	it('keeps a lost item degraded when its catalog type cannot be resolved', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const final = afterSnapshot({ holdings: [] });
+		const capture = {
+			capture: vi.fn(async () => structuredClone(captured)),
+			captureFinal: vi.fn(async () => structuredClone(final)),
+		};
+		const farmedLossItemTypeCapture = { capture: vi.fn(async () => { throw new Error('offline'); }) };
+		const service = new ManualSessionStartService(
+			coordinator(),
+			capture,
+			serviceOptions({ runtimeStore, farmedLossItemTypeCapture }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await stopAfterSettlement(service);
+
+		const reviewed = await service.reviewContamination(reviewAnswers());
+
+		expect(reviewed).toMatchObject({
+			status: 'finalized',
+			review: {
+				farmedLossItemIds: [],
+				classification: { status: 'estimated', reviewRequests: [{ code: 'review_consumed_inputs' }] },
+			},
+		});
+	});
+
 	it('does not block session stop when close-time prices are unavailable', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const service = new ManualSessionStartService(
