@@ -11,6 +11,7 @@ import {
 } from './__fixtures__/public-catalog';
 import { MemoryCatalogCache, type CatalogCacheKey } from './public-catalog-cache';
 import type { PublicCatalogGateway } from './public-catalog-client';
+import { PersistentCatalogCache } from './persistent-catalog-cache';
 import {
 	parseCatalogCurrencies,
 	parseCatalogItems,
@@ -464,6 +465,45 @@ describe('PublicCatalogService', () => {
 			id: 7,
 			relatedId: 10,
 		});
+	});
+
+	/**
+	 * H14.15: `resolveKind` opened one `cache.get` (one IndexedDB transaction on
+	 * `PersistentCatalogCache`) per requested id, unbounded — 4,840 concurrent transactions for a
+	 * large won-items bench (H6 fixture), each carrying its own diagnostic record. `getMany`
+	 * batches the whole lookup into a single call.
+	 */
+	it('reads a large id batch through one cache transaction instead of one per id (H14.15)', async () => {
+		const itemIds = Array.from({ length: 4_840 }, (_value, index) => index + 1);
+		let getManyCalls = 0;
+		let getCalls = 0;
+		const records = new Map<string, unknown>();
+		const store = {
+			async get(key: string): Promise<unknown> {
+				getCalls += 1;
+				return records.get(key);
+			},
+			async getMany(keys: readonly string[]): Promise<Map<string, unknown>> {
+				getManyCalls += 1;
+				const result = new Map<string, unknown>();
+				for (const storeKey of keys) {
+					const value = records.get(storeKey);
+					if (value !== undefined) result.set(storeKey, value);
+				}
+				return result;
+			},
+			async set(key: string, value: string): Promise<void> { records.set(key, value); },
+			async delete(key: string): Promise<void> { records.delete(key); },
+			close(): void { /* no-op */ },
+		};
+		const cache = new PersistentCatalogCache(store);
+		const api = gateway((path) => http(200, idsFrom(path).map(itemPayload)));
+
+		const resolved = await new PublicCatalogService(api, cache, () => NOW).resolveItems(itemIds, 'es');
+
+		expect(Object.keys(resolved)).toHaveLength(4_840);
+		expect(getManyCalls).toBe(1);
+		expect(getCalls).toBe(0);
 	});
 });
 

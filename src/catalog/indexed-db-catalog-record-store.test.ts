@@ -92,6 +92,37 @@ describe('IndexedDbCatalogRecordStore', () => {
 		await expect(write).rejects.toThrow('aborted');
 	});
 
+	it('opens exactly one transaction for a getMany batch, regardless of key count (H14.15)', async () => {
+		const factory = new IDBFactory();
+		const name = databaseName('get-many');
+		const store = await IndexedDbCatalogRecordStore.open(factory, name);
+		const keys = Array.from({ length: 500 }, (_value, index) => `key-${index}`);
+		await Promise.all(keys.slice(0, 3).map((key, index) => store.set(key, `{"value":${index}}`)));
+
+		let transactionCalls = 0;
+		const database = (store as unknown as { database: IDBDatabase }).database;
+		const openTransaction = database.transaction.bind(database);
+		database.transaction = ((...args: Parameters<IDBDatabase['transaction']>) => {
+			transactionCalls += 1;
+			return openTransaction(...args);
+		});
+
+		const results = await store.getMany(keys);
+
+		expect(transactionCalls).toBe(1);
+		expect(results.size).toBe(3);
+		expect(results.get('key-0')).toBe('{"value":0}');
+		store.close();
+	});
+
+	it('resolves an empty map for an empty getMany batch without opening a transaction', async () => {
+		const factory = new IDBFactory();
+		const store = await IndexedDbCatalogRecordStore.open(factory, databaseName('get-many-empty'));
+
+		await expect(store.getMany([])).resolves.toEqual(new Map());
+		store.close();
+	});
+
 	it('rejects a write transaction error through an event-faithful harness', async () => {
 		let transaction: Partial<IDBTransaction> | undefined;
 		const database = {
