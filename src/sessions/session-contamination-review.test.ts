@@ -12,6 +12,7 @@ import { MemorySessionRuntimeStore, type SessionRuntimeStore } from './session-r
 import {
 	createSessionContaminationReview,
 	isSessionContaminationReview,
+	isSessionContaminationReviewShape,
 	proposeTradingPostContamination,
 	type SessionContaminationAnswers,
 } from './session-contamination-review';
@@ -216,6 +217,18 @@ describe('session contamination review', () => {
 		const tampered = structuredClone(review);
 		tampered.classification.status = 'contaminated';
 		expect(isSessionContaminationReview(tampered, before, after, delta)).toBe(false);
+	});
+
+	it('reads a review persisted before farmedLossItemIds existed (0.1.30) as an empty exemption list', () => {
+		// Measured on a real vault on 9 sep 2026: two `session_recover validation_failed` at load, both
+		// on the review the released 0.1.30 had stored without the key the catalog-type exemption added.
+		const { before, after, delta } = fixtures();
+		const review = createSessionContaminationReview(before, after, delta, answers(), REVIEWED_AT);
+		if (!review) throw new Error('Expected review fixture.');
+		const { farmedLossItemIds: _dropped, ...stored } = structuredClone(review) as unknown as Record<string, unknown>;
+		expect(isSessionContaminationReviewShape(stored)).toBe(true);
+		expect(isSessionContaminationReview(stored, before, after, delta)).toBe(true);
+		expect(isSessionContaminationReviewShape({ ...stored, farmedLossItemIds: [3, 2] })).toBe(false);
 	});
 
 	it('loads an exact legacy v1 classification read-only but never grants recommendation permission', () => {

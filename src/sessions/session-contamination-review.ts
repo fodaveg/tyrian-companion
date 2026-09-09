@@ -131,14 +131,16 @@ export function isSessionContaminationReview(
 	delta: StorageDelta,
 	apiSettlement?: SessionApiSettlement,
 ): value is SessionContaminationReview {
-	if (!isRecord(value) || !hasOnlyKeys(value, [
+	if (!isRecord(value)) return false;
+	const stored = withFarmedLossItemIds(value);
+	if (!hasOnlyKeys(stored, [
 		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification', 'farmedLossItemIds',
 	])) return false;
-	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
+	if (stored.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(stored.reviewedAt)) {
 		return false;
 	}
 	const candidates = apiSettlement === undefined ? SESSION_API_SETTLEMENTS : [apiSettlement];
-	return candidates.some((settlement) => matchesRecomputedReview(value, before, after, delta, settlement));
+	return candidates.some((settlement) => matchesRecomputedReview(stored, before, after, delta, settlement));
 }
 
 function matchesRecomputedReview(
@@ -179,17 +181,29 @@ function matchesRecomputedReview(
  * classifier) uses this instead.
  */
 export function isSessionContaminationReviewShape(value: unknown): value is SessionContaminationReview {
-	if (!isRecord(value) || !hasOnlyKeys(value, [
+	if (!isRecord(value)) return false;
+	const stored = withFarmedLossItemIds(value);
+	if (!hasOnlyKeys(stored, [
 		'version', 'reviewedAt', 'answers', 'declaration', 'boundary', 'classification', 'farmedLossItemIds',
 	])) return false;
-	if (value.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(value.reviewedAt)) {
+	if (stored.version !== SESSION_CONTAMINATION_REVIEW_VERSION || !isIsoTimestamp(stored.reviewedAt)) {
 		return false;
 	}
-	return isSessionContaminationAnswers(value.answers)
-		&& isUserDeclarationShape(value.declaration)
-		&& isBoundaryEvidenceShape(value.boundary)
-		&& isClassificationEnvelopeShape(value.classification)
-		&& isFarmedLossItemIdsShape(value.farmedLossItemIds);
+	return isSessionContaminationAnswers(stored.answers)
+		&& isUserDeclarationShape(stored.declaration)
+		&& isBoundaryEvidenceShape(stored.boundary)
+		&& isClassificationEnvelopeShape(stored.classification)
+		&& isFarmedLossItemIdsShape(stored.farmedLossItemIds);
+}
+
+/**
+ * Reviews persisted before 0.1.31 carry no `farmedLossItemIds`: the catalog-type exemption did not
+ * exist, so every loss had been classified as a non-farming loss, which is exactly what an empty
+ * list means today. Reading them as `[]` keeps a stored session recoverable across the upgrade
+ * (measured on 9 sep 2026: two `session_recover validation_failed` on a real vault at load).
+ */
+function withFarmedLossItemIds(value: Record<string, unknown>): Record<string, unknown> {
+	return value.farmedLossItemIds === undefined ? { ...value, farmedLossItemIds: [] } : value;
 }
 
 /** Structural-only counterpart for the persisted, catalog-resolved ids: unique and canonically sorted. */
