@@ -261,8 +261,11 @@ function reasonText(reason: HalloweenAlertReason, t: Translate): string {
  * Whether an unread notice still earns the forced-open banner: within 24h of `nowMs`, and not from
  * a session that ended before the one on screen started. An unparseable timestamp reads as stale
  * rather than as a guessed "yes", the same choice `seasonalWindowStatusAtMs` makes for its clock.
+ *
+ * Exported so the session card (`companion-view.ts`) can reuse the exact same freshness rule to
+ * force its own "Avisos" gaveto open, instead of duplicating the 24h/session-boundary logic.
  */
-function isFreshNotice(observedAt: string, context: Pick<HalloweenPanelContext, 'nowMs' | 'sessionStartAt'>): boolean {
+export function isFreshNotice(observedAt: string, context: Pick<HalloweenPanelContext, 'nowMs' | 'sessionStartAt'>): boolean {
 	const observedMs = Date.parse(observedAt);
 	if (!Number.isFinite(observedMs) || context.nowMs - observedMs > NOTICE_STALE_AFTER_MS) return false;
 	if (context.sessionStartAt === null) return true;

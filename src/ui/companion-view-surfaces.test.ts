@@ -58,6 +58,62 @@ describe('Companion Halloween alert surface', () => {
 	});
 });
 
+/**
+ * Before the redesign, `halloween-alert-panel.ts` forced its own panel open for a fresh unread
+ * notice (`isFreshNotice`, H14.3). The card now carries that at the gaveto level: the "Avisos"
+ * `<details>` renders open even with `drawerOpen.alerts` false, and stops once the notice is no
+ * longer fresh (acknowledged, or older than 24h).
+ */
+describe('Companion Avisos gaveto forced open by a fresh notice (H14.3 at card level)', () => {
+	function noticeAt(observedAt: string, acknowledgedAt: string | null = null): HalloweenNoticeV1 {
+		return {
+			version: 1, vaultId: 'vault', accountRef: 'account', noticeId: 'notice', episodeId: 'episode',
+			observedAt, source: 'assisted_poll', wording: 'observed_change', coverage: 'complete', items: [], acknowledgedAt,
+		};
+	}
+
+	function avisosDrawer(contentEl: FakeElement): FakeElement | undefined {
+		return walk(contentEl).find((node) => node.tag === 'details' &&
+			node.children.some((child) => child.tag === 'summary' && child.textContent === 'Avisos'));
+	}
+
+	it('renders it open with a fresh unread notice, even though drawerOpen.alerts starts false', () => {
+		const notice = noticeAt('2026-09-09T10:00:00.000Z');
+		const { contentEl, render } = mountCompanion({
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		});
+
+		render();
+
+		expect(avisosDrawer(contentEl)?.open).toBe(true);
+	});
+
+	it('leaves it closed once the same notice is acknowledged', () => {
+		const notice = noticeAt('2026-09-09T10:00:00.000Z', '2026-09-09T10:05:00.000Z');
+		const { contentEl, render } = mountCompanion({
+			getHalloweenState: () => ({ status: 'ready', notices: [notice], unreadCount: 0, lastObservedAt: notice.observedAt, comparison: null }),
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		});
+
+		render();
+
+		expect(avisosDrawer(contentEl)?.open).toBe(false);
+	});
+
+	it('leaves it closed once the unread notice is more than 24h old', () => {
+		const notice = noticeAt('2026-09-08T09:00:00.000Z');
+		const { contentEl, render } = mountCompanion({
+			getHalloweenState: () => ({ status: 'unread', notices: [notice], unreadCount: 1, lastObservedAt: notice.observedAt, comparison: null }),
+			getHalloweenPanelContext: () => ({ nowMs: Date.parse('2026-09-09T11:00:00.000Z'), inLabyrinth: false, sessionStartAt: null }),
+		});
+
+		render();
+
+		expect(avisosDrawer(contentEl)?.open).toBe(false);
+	});
+});
+
 describe('Companion pending proposal surface', () => {
 	it('renders the queued proposal and reviews it from the mounted panel', async () => {
 		const reviewPendingProposal = vi.fn(async () => true);
@@ -255,6 +311,40 @@ describe('Companion incident callout', () => {
 
 		render();
 
+		expect(find(contentEl, (node) => node.className === 'callout')).toBeUndefined();
+	});
+
+	it('surfaces a failed connection alone as a warning callout line with its own check action', async () => {
+		const checkConnection = vi.fn(async () => ({ status: 'idle' }) as never);
+		const { contentEl, render } = mountCompanion({
+			checkConnection,
+			getConnectionState: () => ({ status: 'error', code: 'unavailable', message: 'offline', retryAt: null }),
+		});
+
+		render();
+
+		// A failed connection also feeds `companion-status-model.ts`'s generic incident line (its own
+		// closed, non-leaking wording, tone `error`); this line is the extra one the callout carries
+		// underneath it, with the raw failure text and its own action.
+		const callout = find(contentEl, (node) => node.className === 'callout');
+		expect(callout?.attributes.get('data-callout')).toBe('error');
+		expect(texts(contentEl)).toContain('offline');
+		// Both the Detalle row (decision 4) and this callout line offer the same recheck, so search
+		// broadly instead of assuming which one the walk visits first.
+		const checkButtons = walk(contentEl).filter((node) => node.tag === 'button' && node.textContent === 'Comprobar conexión');
+		expect(checkButtons.length).toBeGreaterThanOrEqual(1);
+
+		checkButtons[0]?.click();
+		await Promise.resolve();
+		expect(checkConnection).toHaveBeenCalledOnce();
+	});
+
+	it('mounts no callout line while the connection is healthy', () => {
+		const { contentEl, render } = mountCompanion();
+
+		render();
+
+		expect(texts(contentEl)).not.toContain('offline');
 		expect(find(contentEl, (node) => node.className === 'callout')).toBeUndefined();
 	});
 });

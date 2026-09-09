@@ -33,10 +33,15 @@ describe('Companion incident callout: local diagnostics', () => {
 
 	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 	const build = (TyrianCompanionView.prototype as unknown as {
-		buildIncidentCallout(this: object, projection: { errors: string[]; incidentTone: string | null }): {
-			tone: string; title: string; titleButton?: { text: string; onClick(): void }; lines: { text: string }[];
+		buildIncidentCallout(
+			this: object,
+			projection: { errors: string[]; incidentTone: string | null },
+			connection: { status: string },
+		): {
+			tone: string; title: string; titleButton?: { text: string; onClick(): void }; lines: { text: string; button?: { text: string; onClick(): void } }[];
 		} | null;
 	}).buildIncidentCallout;
+	const connected = { status: 'connected' as const };
 
 	it('surfaces a degraded writer as a warning callout with a navigable Settings action', () => {
 		const opened = vi.fn();
@@ -48,7 +53,7 @@ describe('Companion incident callout: local diagnostics', () => {
 		};
 		const harness = callHarness({ getLocalDebugStatus: () => status, openLocalDebugSettings: opened });
 
-		const callout = build.call(harness, { errors: [], incidentTone: null });
+		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
 		expect(callout?.tone).toBe('warning');
 		expect(callout?.title).toBe('Diagnostic logs are degraded');
 		expect(callout?.lines.map((line) => line.text)).toEqual(['Some entries could not be written. Plugin actions continue to work.']);
@@ -58,7 +63,7 @@ describe('Companion incident callout: local diagnostics', () => {
 
 	it('is null while nothing needs attention', () => {
 		const harness = callHarness({ getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }) });
-		expect(build.call(harness, { errors: [], incidentTone: null })).toBeNull();
+		expect(build.call(harness, { errors: [], incidentTone: null }, connected)).toBeNull();
 	});
 
 	it('surfaces errors since load and the last failure, with the timestamp formatted (H14.5)', () => {
@@ -71,12 +76,41 @@ describe('Companion incident callout: local diagnostics', () => {
 		};
 		const harness = callHarness({ getLocalDebugStatus: () => status });
 
-		const callout = build.call(harness, { errors: [], incidentTone: null });
+		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
 		expect(callout?.tone).toBe('error');
 		expect(callout?.title).toBe('Errors since load: 20');
 		expect(callout?.lines[0]?.text).toContain('network_failure in connection/connection_check');
 		// The raw ISO timestamp is exactly what `docs/SPEC-paneles-sin-prosa.md` forbids on screen.
 		expect(callout?.lines[0]?.text).not.toContain('2026-09-08T12:22:00.000Z');
+	});
+
+	it('surfaces a failed connection as a warning line with its own Comprobar conexión button', () => {
+		const checkConnection = vi.fn();
+		const harness = callHarness({ getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }) });
+		Object.assign(harness as object, { checkConnection });
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'network_failure', message: 'Could not reach the account API.', retryAt: null });
+		expect(callout?.tone).toBe('warning');
+		expect(callout?.title).toBe('Account unavailable');
+		expect(callout?.lines).toHaveLength(1);
+		expect(callout?.lines[0]?.text).toBe('Could not reach the account API.');
+		expect(callout?.lines[0]?.button?.text).toBe('Check connection');
+		callout?.lines[0]?.button?.onClick();
+		expect(checkConnection).toHaveBeenCalledOnce();
+	});
+
+	it('appends the connection line under an existing graver callout instead of replacing its title', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 1, lastError: null,
+		};
+		const harness = callHarness({ getLocalDebugStatus: () => status });
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'network_failure', message: 'Could not reach the account API.', retryAt: null });
+		expect(callout?.title).toBe('Errors since load: 1');
+		expect(callout?.lines.map((line) => line.text)).toEqual(['Could not reach the account API.']);
 	});
 });
 
@@ -899,10 +933,15 @@ describe('Companion sell signal line', () => {
 describe('Companion incident callout: managed-assets conflict', () => {
 	// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 	const build = (TyrianCompanionView.prototype as unknown as {
-		buildIncidentCallout(this: object, projection: { errors: string[]; incidentTone: string | null }): {
+		buildIncidentCallout(
+			this: object,
+			projection: { errors: string[]; incidentTone: string | null },
+			connection: { status: string },
+		): {
 			tone: string; title: string; titleButton?: { text: string; onClick(): void }; lines: { text: string }[];
 		} | null;
 	}).buildIncidentCallout;
+	const connected = { status: 'connected' as const };
 
 	it('shows a Resolve action that relaunches reconciliation and re-renders on completion', async () => {
 		const retry = vi.fn(async () => undefined);
@@ -916,7 +955,7 @@ describe('Companion incident callout: managed-assets conflict', () => {
 			render: () => { renders += 1; },
 		});
 
-		const callout = build.call(harness, { errors: [], incidentTone: null });
+		const callout = build.call(harness, { errors: [], incidentTone: null }, connected);
 		expect(callout?.tone).toBe('warning');
 		expect(callout?.titleButton?.text).toBe('Resolver');
 		callout?.titleButton?.onClick();
@@ -934,7 +973,7 @@ describe('Companion incident callout: managed-assets conflict', () => {
 				getManagedAssetsView: () => ({ status: 'ready' as const, message: 'assets_ready' as const, plan: null }),
 			},
 		});
-		expect(build.call(harness, { errors: [], incidentTone: null })).toBeNull();
+		expect(build.call(harness, { errors: [], incidentTone: null }, connected)).toBeNull();
 	});
 });
 
