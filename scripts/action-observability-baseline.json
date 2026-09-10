@@ -2462,11 +2462,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "aad5bb62ea39eff264bf8685bb0243b8e7e9b5ca",
+					"id": "41c7383199d8e9c90cbf769d266c008a220c9e3a",
 					"kind": "catch_clause",
-					"line": 179,
+					"line": 195,
 					"column": 5,
-					"endLine": 198,
+					"endLine": 217,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -2478,9 +2478,9 @@
 				{
 					"id": "0c3dc8f1e80d509cda86aa93093fd3266e9e9c50",
 					"kind": "catch_clause",
-					"line": 221,
+					"line": 240,
 					"column": 5,
-					"endLine": 223,
+					"endLine": 242,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2494,9 +2494,9 @@
 				{
 					"id": "af55548b1fbe19f7ddcfc1bfe96fb46b86fa2637",
 					"kind": "catch_clause",
-					"line": 234,
+					"line": 253,
 					"column": 5,
-					"endLine": 236,
+					"endLine": 255,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2510,9 +2510,9 @@
 				{
 					"id": "ff2e5da92fb758742f652df24d48de547fe0b220",
 					"kind": "catch_clause",
-					"line": 264,
+					"line": 283,
 					"column": 5,
-					"endLine": 266,
+					"endLine": 285,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -2524,11 +2524,11 @@
 					"reason": "Allowlisted catch_clause: The \"finishDiagnostic\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"finishDiagnostic\"."
 				},
 				{
-					"id": "bcb21b09d46601a55c674f268be2d16f1e865b77",
+					"id": "8989d701f5e8e9dd3942df8c214037a9d80912db",
 					"kind": "catch_clause",
-					"line": 287,
+					"line": 306,
 					"column": 5,
-					"endLine": 296,
+					"endLine": 315,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
