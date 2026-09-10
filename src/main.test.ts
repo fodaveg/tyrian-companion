@@ -29,6 +29,8 @@ import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './sessions/assisted-detection-
 import { proposalIntent, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
+import type { AlertDeliveryReport } from './alerts/alert-emitter';
+import type { AlertV1 } from './alerts/alert-contract';
 
 interface StartIntentHarness {
 	app: unknown;
@@ -1443,6 +1445,39 @@ describe('completed session note delivery', () => {
 		);
 		expect(failure).toMatchObject({
 			code: 'storage_failure', details: { status: 'unavailable', errorName: 'EACCES' },
+		});
+	});
+});
+
+describe('alert dispatch diagnostics', () => {
+	// H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matched `isOutcome()`, so
+	// `fireAndForget`'s span always logged `success ok` even after every enabled channel had
+	// failed (e.g. `ingame` enabled with no addon connected).
+	it('registers a notification_emit failure naming the channel that failed', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const report: AlertDeliveryReport = {
+			delivered: ['toast'], failed: [{ id: 'ingame', reason: 'Error' }], rejected: false,
+		};
+		const harness = {
+			emitAlert: vi.fn(async () => report),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'alert-dispatch' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const dispatch = (TyrianCompanionPlugin.prototype as unknown as {
+			dispatchAlert(this: typeof harness, alert: AlertV1): void;
+		}).dispatchAlert;
+		const alert: AlertV1 = {
+			kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000,
+			priceStatus: 'known', reason: 'valuable',
+		};
+
+		dispatch.call(harness, alert);
+		await vi.waitFor(() => {
+			const failure = record.mock.calls.map(([input]) => input).find(
+				(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
+			);
+			expect(failure).toMatchObject({ code: 'unavailable', details: { failed: [{ id: 'ingame' }] } });
 		});
 	});
 });

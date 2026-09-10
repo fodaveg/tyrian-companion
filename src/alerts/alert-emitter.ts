@@ -1,3 +1,4 @@
+import { errorClassName } from '../core/local-debug-error-details';
 import { isAlert, type AlertV1 } from './alert-contract';
 
 /**
@@ -22,9 +23,15 @@ export interface AlertChannel {
 	deliver(alert: AlertV1): unknown;
 }
 
+/** A channel that failed, with the rejection's class only (H15.16): never its message. */
+export interface AlertFailedChannel {
+	readonly id: AlertChannelId;
+	readonly reason: string;
+}
+
 export interface AlertDeliveryReport {
 	readonly delivered: readonly AlertChannelId[];
-	readonly failed: readonly AlertChannelId[];
+	readonly failed: readonly AlertFailedChannel[];
 	/** True when the input was not a valid alert, in which case no channel ran. */
 	readonly rejected: boolean;
 }
@@ -34,35 +41,40 @@ export class AlertEmitter {
 
 	async emit(alert: AlertV1): Promise<AlertDeliveryReport> {
 		if (!isAlert(alert)) return { delivered: [], failed: [], rejected: true };
-		const started = this.channels.map((channel) => ({
-			id: channel.id,
-			outcome: startChannel(channel, alert),
-		}));
-		const settled = await Promise.all(started.map(async ({ id, outcome }) => ({ id, ok: await outcome })));
+		const settled = await Promise.all(this.channels.map((channel) => startChannel(channel, alert)));
 		return {
-			delivered: settled.filter(({ ok }) => ok).map(({ id }) => id),
-			failed: settled.filter(({ ok }) => !ok).map(({ id }) => id),
+			delivered: settled.filter((entry) => entry.ok).map((entry) => entry.id),
+			failed: settled.filter((entry) => !entry.ok).map((entry) => ({ id: entry.id, reason: entry.reason })),
 			rejected: false,
 		};
 	}
 }
 
+interface ChannelOutcome { readonly id: AlertChannelId; readonly ok: boolean; readonly reason: string }
+
 /**
- * Runs one channel and reduces every way it can go wrong to `false`.
+ * Runs one channel and reduces every way it can go wrong to `{ok: false, reason}`.
  *
  * A channel may throw synchronously (a getter on a missing global) or reject
  * asynchronously (a network write). Both are caught here so the caller sees one
- * boolean and the fan-out above never has a rejected promise to propagate.
+ * closed outcome and the fan-out above never has a rejected promise to propagate.
+ * `reason` is the rejection's class only (H15.16, 2026-09-10 incident): before this
+ * it was discarded entirely, and `AlertDeliveryReport` could only say a channel failed,
+ * never which one or why.
  */
-function startChannel(channel: AlertChannel, alert: AlertV1): Promise<boolean> {
+function startChannel(channel: AlertChannel, alert: AlertV1): Promise<ChannelOutcome> {
+	const id = channel.id;
 	let result: unknown;
 	try {
 		result = channel.deliver(alert);
-	} catch {
-		return Promise.resolve(false);
+	} catch (error) {
+		return Promise.resolve({ id, ok: false, reason: errorClassName(error) });
 	}
-	if (!isThenable(result)) return Promise.resolve(true);
-	return result.then(() => true, () => false);
+	if (!isThenable(result)) return Promise.resolve({ id, ok: true, reason: '' });
+	return result.then(
+		(): ChannelOutcome => ({ id, ok: true, reason: '' }),
+		(error: unknown): ChannelOutcome => ({ id, ok: false, reason: errorClassName(error) }),
+	);
 }
 
 function isThenable(value: unknown): value is Promise<unknown> {

@@ -2108,11 +2108,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return emitter.emit(alert);
 	}
 
-	/** Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback. */
+	/**
+	 * Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback.
+	 *
+	 * H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matches `isOutcome()`, so
+	 * `fireAndForget`'s span always logged `success ok` even when every channel had failed;
+	 * the alert IS the product, so a failed delivery now surfaces as its own failure record.
+	 */
 	private dispatchAlert(alert: AlertV1): void {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
-			async () => await this.emitAlert(alert));
+			async () => {
+				const report = await this.emitAlert(alert);
+				if (report.failed.length === 0) return report;
+				return { ...report, phase: 'failure' as const, code: 'unavailable' as const, details: { failed: report.failed } };
+			});
 	}
 
 	/** Seeds once and reads the merged series. Never throws into the compaction that called it. */

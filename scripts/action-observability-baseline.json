@@ -1419,37 +1419,37 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "a2b71b6a3260e0a4172979a0fb24ab3fc51d9bad",
+					"id": "98a82eca434ef37916d00f587f864ff4a366b45a",
 					"kind": "catch_clause",
-					"line": 61,
+					"line": 70,
 					"column": 4,
-					"endLine": 63,
+					"endLine": 72,
 					"endColumn": 3,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
 						"behavior": "fallback_return",
 						"scope": "startChannel",
-						"justification": "The \"startChannel\" owner is the isolation boundary itself: it exists to turn a synchronous channel throw into \"fallback_return\" of false so one broken channel never stops the four that still work, and the caller reports it as a failed channel."
+						"justification": "The \"startChannel\" owner is the isolation boundary itself: it exists to turn a synchronous channel throw into \"fallback_return\" of a closed outcome so one broken channel never stops the four that still work, and the caller reports it as a failed channel."
 					},
-					"reason": "Allowlisted catch_clause: The \"startChannel\" owner is the isolation boundary itself: it exists to turn a synchronous channel throw into \"fallback_return\" of false so one broken channel never stops the four that still work, and the caller reports it as a failed channel. Verified recovery: \"fallback_return\" in \"startChannel\"."
+					"reason": "Allowlisted catch_clause: The \"startChannel\" owner is the isolation boundary itself: it exists to turn a synchronous channel throw into \"fallback_return\" of a closed outcome so one broken channel never stops the four that still work, and the caller reports it as a failed channel. Verified recovery: \"fallback_return\" in \"startChannel\"."
 				},
 				{
-					"id": "c3dac6e68ed24cce7c007f77f2894225ac1d81f4",
+					"id": "3622f047dd10191a55f8c39d2ca3677b6345ffdc",
 					"kind": "callback_registration",
-					"line": 65,
+					"line": 74,
 					"column": 9,
-					"endLine": 65,
-					"endColumn": 45,
+					"endLine": 77,
+					"endColumn": 3,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "startChannel",
-						"justification": "The \"startChannel\" owner registers \"then\" as the asynchronous half of the same isolation: it maps settle and reject onto one boolean so the fan-out above never holds a rejected promise."
+						"justification": "The \"startChannel\" owner registers \"then\" as the asynchronous half of the same isolation: it maps settle and reject onto one closed outcome so the fan-out above never holds a rejected promise."
 					},
-					"reason": "Allowlisted callback_registration: The \"startChannel\" owner registers \"then\" as the asynchronous half of the same isolation: it maps settle and reject onto one boolean so the fan-out above never holds a rejected promise. Verified registration: \"then\" in \"startChannel\"."
+					"reason": "Allowlisted callback_registration: The \"startChannel\" owner registers \"then\" as the asynchronous half of the same isolation: it maps settle and reject onto one closed outcome so the fan-out above never holds a rejected promise. Verified registration: \"then\" in \"startChannel\"."
 				}
 			]
 		},
