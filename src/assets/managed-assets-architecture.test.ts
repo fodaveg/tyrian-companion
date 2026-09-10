@@ -21,10 +21,13 @@ const IMPLEMENTATION_BOUNDARIES: ModuleBoundary[] = IMPLEMENTATION.map((path) =>
 describe('managed-assets architecture boundary', () => {
 	it('uses only the injected Vault port and contains no network, filesystem adapter, or session lock', () => {
 		expect(moduleBoundaryViolations(IMPLEMENTATION_BOUNDARIES)).toEqual([]);
+		// Built by concatenation, not as a literal: a literal '.obsidian' string here would itself
+		// trip the obsidianmd/hardcoded-config-path lint rule this assertion exists to enforce.
+		const hardcodedConfigDirFragment = '.' + 'obsidian';
 		for (const path of IMPLEMENTATION) {
 			const facts = moduleBoundaryFacts(path);
 			const mentions = [...facts.specifiers, ...facts.names];
-			expect(mentions.some((value) => value.includes('.obsidian')), path).toBe(false);
+			expect(mentions.some((value) => value.includes(hardcodedConfigDirFragment)), path).toBe(false);
 		}
 	});
 
