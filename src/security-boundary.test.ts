@@ -14,7 +14,6 @@ import {
 	persistenceBoundaryHasCredentialCapability,
 	productionSourceFiles,
 } from '../scripts/security-scan.mjs';
-import { readModuleSource } from './test/module-boundary';
 
 const TOKEN_SENTINEL = ['tyrian-h6', 'token-sentinel', 'not-a-credential'].join('-');
 const REVIEWED_FUTURE_OUTBOUND_FILES = [
@@ -216,13 +215,16 @@ describe('H6.7 credential boundary', () => {
 		expect(census.secretProviderImport).toEqual(REVIEWED_SECRET_PROVIDER_IMPORT_FILES);
 		expect(census.secretCapability).toEqual(REVIEWED_SECRET_CAPABILITY_FILES);
 	});
-
-	it('keeps the production composition on the fixed authenticated client constructor', () => {
-		const source = readModuleSource('src/main.ts');
-		expect(source).toContain('new GuildWars2Client(transport, apiKeyProvider)');
-		expect(source).not.toMatch(/new GuildWars2Client\([^)]*,[^)]*,/u);
-	});
 });
+
+// H6.7. `GuildWars2Client`'s constructor (src/account/guild-wars-2-client.ts) takes exactly two
+// typed parameters, `HttpTransport` and `ApiKeyProvider`: `npx tsc --noEmit` already rejects any
+// call site (main.ts's included) that passes a third argument, such as a raw API key alongside the
+// provider. A source-text assertion re-checking `new GuildWars2Client(transport, apiKeyProvider)`'s
+// exact spelling in main.ts stayed green even while the type checker enforced the same property;
+// it read main.ts's characters instead of exercising the constructor. Verified by temporarily adding
+// a third argument at the real call site and observing `tsc` report TS2554 "Expected 2 arguments,
+// but got 3", then reverting: 2026-09-10.
 
 // H13.9/H13.15/H6.7: the seven capability patterns and the `CREDENTIAL_CAPABILITY_PATTERN` above
 // stay in sync with `scripts/security-scan.mjs`, which owns the walk and the exact regex source;
