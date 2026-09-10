@@ -131,6 +131,129 @@ function matchesSpecifier(specifier: string, forbidden: string): boolean {
 	return specifier === forbidden || specifier.startsWith(`${forbidden}/`);
 }
 
+function parse(source: string): ts.SourceFile {
+	return ts.createSourceFile('boundary-facts.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+}
+
+function classMemberDeclarationName(member: ts.ClassElement): string | undefined {
+	if (
+		(ts.isMethodDeclaration(member) || ts.isPropertyDeclaration(member)
+			|| ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member))
+		&& member.name !== undefined
+		&& (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
+	) {
+		return member.name.text;
+	}
+	return undefined;
+}
+
+function findClassDeclaration(file: ts.SourceFile, className: string): ts.ClassDeclaration | undefined {
+	let found: ts.ClassDeclaration | undefined;
+	const visit = (node: ts.Node): void => {
+		if (found !== undefined) return;
+		if (ts.isClassDeclaration(node) && node.name?.text === className) { found = node; return; }
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return found;
+}
+
+/** Every method, property, getter and setter name declared directly on the named class body. */
+export function classMemberNames(source: string, className: string): string[] {
+	const declaration = findClassDeclaration(parse(source), className);
+	if (declaration === undefined) throw new Error(`class ${className} not found`);
+	return declaration.members
+		.map((member) => classMemberDeclarationName(member))
+		.filter((name): name is string => name !== undefined);
+}
+
+/**
+ * The full source text of one class member, located by the class and member name instead of by
+ * slicing between two literal neighbour signatures: a member inserted or reordered around it
+ * cannot silently widen or shrink the slice.
+ */
+export function classMethodBody(source: string, className: string, memberName: string): string {
+	const declaration = findClassDeclaration(parse(source), className);
+	if (declaration === undefined) throw new Error(`class ${className} not found`);
+	const member = declaration.members.find((candidate) => classMemberDeclarationName(candidate) === memberName);
+	if (member === undefined) throw new Error(`${className}.${memberName} not found`);
+	return member.getText(parse(source));
+}
+
+/** Every top-level exported declaration's name: named exports, `export class/function/const/…`, and `default`. */
+export function exportedDeclarationNames(source: string): string[] {
+	const file = parse(source);
+	const names = new Set<string>();
+	for (const statement of file.statements) {
+		if (ts.isExportDeclaration(statement) && statement.exportClause !== undefined
+			&& ts.isNamedExports(statement.exportClause)) {
+			for (const element of statement.exportClause.elements) names.add(element.name.text);
+			continue;
+		}
+		const hasExportModifier = ts.canHaveModifiers(statement)
+			&& (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+		const hasDefaultModifier = ts.canHaveModifiers(statement)
+			&& (ts.getModifiers(statement) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword);
+		if (!hasExportModifier) continue;
+		if (hasDefaultModifier) { names.add('default'); continue; }
+		if ((ts.isClassDeclaration(statement) || ts.isFunctionDeclaration(statement) || ts.isInterfaceDeclaration(statement)
+			|| ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) && statement.name !== undefined) {
+			names.add(statement.name.text);
+		} else if (ts.isVariableStatement(statement)) {
+			for (const declaration of statement.declarationList.declarations) {
+				if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+			}
+		}
+	}
+	return [...names].sort((left, right) => left.localeCompare(right));
+}
+
+function collectCallChains(root: ts.Node): string[] {
+	const chains: string[] = [];
+	const chainText = (expression: ts.Expression): string | undefined => {
+		if (ts.isIdentifier(expression)) return expression.text;
+		if (expression.kind === ts.SyntaxKind.ThisKeyword) return 'this';
+		if (ts.isPropertyAccessExpression(expression)) {
+			const base = chainText(expression.expression);
+			if (base === undefined) return undefined;
+			return `${base}${expression.questionDotToken !== undefined ? '?.' : '.'}${expression.name.text}`;
+		}
+		return undefined;
+	};
+	const visit = (node: ts.Node): void => {
+		if (ts.isCallExpression(node)) {
+			const name = chainText(node.expression);
+			if (name !== undefined) chains.push(name);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(root);
+	return chains;
+}
+
+/**
+ * Every call expression's callee, flattened to its dotted source text (`this.foo?.bar`,
+ * `registerThing`): a structural fact about which named functions a body reaches for, decided on
+ * the AST instead of by matching the call's characters inside an adjacent slice of source.
+ */
+export function propertyCallChains(source: string): string[] {
+	return collectCallChains(parse(source));
+}
+
+/**
+ * `propertyCallChains`, scoped to one class member by AST location instead of by re-parsing
+ * `classMethodBody`'s extracted text: a lone member's text starts with a `private`/`static`
+ * modifier that is not valid at the top of a standalone source file, so re-parsing it loses
+ * `this` to error recovery instead of reporting it as a caller.
+ */
+export function classMethodCallChains(source: string, className: string, memberName: string): string[] {
+	const declaration = findClassDeclaration(parse(source), className);
+	if (declaration === undefined) throw new Error(`class ${className} not found`);
+	const member = declaration.members.find((candidate) => classMemberDeclarationName(candidate) === memberName);
+	if (member === undefined) throw new Error(`${className}.${memberName} not found`);
+	return collectCallChains(member);
+}
+
 /** True when a loaded export is JSON-shaped data instead of a live capability object. */
 export function isPlainJsonValue(value: unknown): boolean {
 	if (value === null || ['string', 'number', 'boolean'].includes(typeof value)) return true;
