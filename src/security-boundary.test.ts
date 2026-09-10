@@ -57,6 +57,9 @@ const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/advisor/inventory-advisor-evidence.ts',
 	'src/catalog/public-catalog-client.ts',
 	'src/catalog/public-catalog-service.ts',
+	// H15.2. Imports only the `HttpTransportError` class for an `instanceof` check and its closed
+	// `kind`/`status` fields; it opens no transport and makes no call of its own.
+	'src/core/local-debug-error-details.ts',
 	'src/core/obsidian-http.ts',
 	'src/economy/commerce-listings-capture.ts',
 	'src/economy/price-history-capture.ts',
