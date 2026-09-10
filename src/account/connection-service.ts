@@ -32,7 +32,7 @@ export class ConnectionService {
 	 * threw something `mapConnectionError` upstream could not classify into a specific
 	 * `ConnectionCheckError`: without this, that failure collapses into the exact same generic
 	 * `unavailable` as any other, and a caller logging the check (`main.ts`'s `connection_check`)
-	 * has nothing to tell a `TypeError` apart from a rejected fetch.
+	 * has nothing to tell a `TypeError` apart from a rejected network request.
 	 */
 	private lastUnmappedFailureClass: string | null = null;
 
