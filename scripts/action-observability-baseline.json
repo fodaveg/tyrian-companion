@@ -3,7 +3,7 @@
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
 		"catch_clause": 429,
-		"promise_catch": 34,
+		"promise_catch": 35,
 		"void_expression": 79,
 		"callback_registration": 157
 	},
@@ -1903,7 +1903,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "d9cc385e3c3a262580edd800ee0891535758d7b4",
+					"id": "2383b91086b30cc20d4c0c2eb151ba2b30e7aeeb",
 					"kind": "catch_clause",
 					"line": 45,
 					"column": 5,
@@ -1935,7 +1935,7 @@
 					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"compareAndSet\"."
 				},
 				{
-					"id": "8e34199510e6d033338e0d4a45b451ba612e5257",
+					"id": "9f1f4e93fd29231aa7fd9caae5fc1db7385f82e9",
 					"kind": "catch_clause",
 					"line": 77,
 					"column": 5,
@@ -1951,7 +1951,7 @@
 					"reason": "Allowlisted catch_clause: The \"compareAndSet\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"compareAndSet\"."
 				},
 				{
-					"id": "a17126220e6ef6a9d66a2e499be55f28681073f3",
+					"id": "449ee9853c07fe2a9b1b5516975c9137778db9ed",
 					"kind": "catch_clause",
 					"line": 110,
 					"column": 5,
@@ -2206,7 +2206,7 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "6be6c4099ebdb1158c468542d0453078246e6407",
+					"id": "cdf62880b3c99e0db709800591131cb82210dfa5",
 					"kind": "catch_clause",
 					"line": 50,
 					"column": 5,
@@ -2222,7 +2222,7 @@
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"get\"."
 				},
 				{
-					"id": "fa2639a3a2cfaa00379e5bd14f7413d523e2b079",
+					"id": "4dae67d2ee07e40789577afd372103f15992117e",
 					"kind": "catch_clause",
 					"line": 84,
 					"column": 5,
@@ -2238,7 +2238,7 @@
 					"reason": "Allowlisted catch_clause: The \"getMany\" owner explicitly handles \"fallback_return\": The batched getMany read records the failed attempt on its own diagnostics probe (attempt.failure) and returns the empty results map, exactly like the single get above it; the enclosing catalog resolution owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"getMany\"."
 				},
 				{
-					"id": "9ab47625029d7de7c466b41f9cdddb1dae4bdc9f",
+					"id": "84c1462bcb8b2692961c4bfadac09b04fb5fcf28",
 					"kind": "catch_clause",
 					"line": 123,
 					"column": 5,
@@ -2254,7 +2254,7 @@
 					"reason": "Allowlisted catch_clause: The \"set\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"set\"."
 				},
 				{
-					"id": "0cdf56a8381968bb47cca7bb7906e5d38e632473",
+					"id": "b6463818d43605f3a61935f0214c1336ccd10eca",
 					"kind": "catch_clause",
 					"line": 138,
 					"column": 5,
@@ -2270,7 +2270,7 @@
 					"reason": "Allowlisted catch_clause: The \"deleteQuietly\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"deleteQuietly\"."
 				},
 				{
-					"id": "d060501d0c35afc5a54f6e9392365a6ac5526824",
+					"id": "0abb02ddfaef4043dd96b87fa163e63e81e8d719",
 					"kind": "catch_clause",
 					"line": 183,
 					"column": 4,
@@ -2286,7 +2286,7 @@
 					"reason": "Allowlisted catch_clause: The \"createCatalogCacheAdapter\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"createCatalogCacheAdapter\"."
 				},
 				{
-					"id": "32fa53815d25f7ea501949142988cd77c1d79ee6",
+					"id": "2f6d3f149ca6e97d1ca99cb517340649f84be9ce",
 					"kind": "catch_clause",
 					"line": 217,
 					"column": 5,
@@ -2302,7 +2302,7 @@
 					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
 				},
 				{
-					"id": "0a2259096b1f2a831d0a7597a8b4d4ffc170b945",
+					"id": "f6ec28ae76f50d73af5995496090cb28f18da7f8",
 					"kind": "catch_clause",
 					"line": 231,
 					"column": 6,
@@ -2318,7 +2318,7 @@
 					"reason": "Allowlisted catch_clause: The \"get\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"get\"."
 				},
 				{
-					"id": "81c2c30ecb1a8594eb538f94c27c098e188ef6df",
+					"id": "df62c0ad0664f2bc898894bd29148d4797132d91",
 					"kind": "catch_clause",
 					"line": 255,
 					"column": 6,
@@ -2334,7 +2334,7 @@
 					"reason": "Allowlisted catch_clause: The \"getMany\" owner explicitly handles \"fallback_return\": Opening the readonly IndexedDB transaction for the batched read records the failed attempt on the probe (attempt.failure) and rejects with a typed error, mirroring the single-record get path; the caller's own catch records the terminal outcome. Verified recovery: \"fallback_return\" in \"getMany\"."
 				},
 				{
-					"id": "cf4bf03f334478c0e21690e59fd5b321866d8642",
+					"id": "2aca1842363a82a42cbae834edc7e9fa16f7f9bf",
 					"kind": "catch_clause",
 					"line": 295,
 					"column": 6,
@@ -2524,11 +2524,11 @@
 					"reason": "Allowlisted catch_clause: The \"finishDiagnostic\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"finishDiagnostic\"."
 				},
 				{
-					"id": "db2872691db8c0e73fdf03f0b40beb3bbf7cf3f7",
+					"id": "bcb21b09d46601a55c674f268be2d16f1e865b77",
 					"kind": "catch_clause",
 					"line": 287,
 					"column": 5,
-					"endLine": 292,
+					"endLine": 296,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -5523,6 +5523,23 @@
 					"reason": "Allowlisted callback_registration: The \"onload\" owner registers \"registerDomEvent\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"registerDomEvent\" in \"onload\"."
 				},
 				{
+					"id": "d5e9cf5e3f8a58667fa236b69a9a137e12424f78",
+					"kind": "promise_catch",
+					"line": 479,
+					"column": 11,
+					"endLine": 479,
+					"endColumn": 108,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onload",
+						"justification": "The \"onload\" owner passes this `.catch` straight to `fireAndForget` as its whole action, with nothing further wrapping or reacting to it at this call site, which is why the census reports \"intentional_noop\" here. The callback itself stores the failure on `this.runtimeFailure` (read by `notifyRuntimeStarting`) before rethrowing, so the trace still reaches the log exactly as before, through `run()`'s own catch."
+					},
+					"reason": "Allowlisted promise_catch: The \"onload\" owner passes this `.catch` straight to `fireAndForget` as its whole action, with nothing further wrapping or reacting to it at this call site, which is why the census reports \"intentional_noop\" here. The callback itself stores the failure on `this.runtimeFailure` (read by `notifyRuntimeStarting`) before rethrowing, so the trace still reaches the log exactly as before, through `run()`'s own catch. Verified recovery: \"intentional_noop\" in \"onload\"."
+				},
+				{
 					"id": "bf32cbc6ea6e665362d4763f2fbc1fbb7da5c1be",
 					"kind": "void_expression",
 					"line": 888,
@@ -7552,11 +7569,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "acb82c0a4fcd91e3fb073d8aa5b26713409669e9",
+					"id": "17e39e6a9a0cf98a42700bb0b05c9eaf0a4f3dc8",
 					"kind": "catch_clause",
-					"line": 53,
+					"line": 54,
 					"column": 5,
-					"endLine": 56,
+					"endLine": 57,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7568,11 +7585,11 @@
 					"reason": "Allowlisted catch_clause: The \"open\" owner explicitly handles \"rethrow\" by recording the failed attempt on its own probe before rethrowing, so the caller still sees the original error and the diagnostic is not swallowed. Verified recovery: \"rethrow\" in \"open\"."
 				},
 				{
-					"id": "b0a5e4a07dd6b18de059690817ece3aae983a213",
+					"id": "3aae3bfd1cd5c49ee5dab1092ada76a916948f9f",
 					"kind": "catch_clause",
-					"line": 67,
+					"line": 68,
 					"column": 6,
-					"endLine": 70,
+					"endLine": 71,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7584,11 +7601,11 @@
 					"reason": "Allowlisted catch_clause: The \"read\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"read\"."
 				},
 				{
-					"id": "c00c8240b40cc5f5e9c4d47d76597322267a06fe",
+					"id": "40b0dd8563bb1730d4eb18f9435b5027603b1683",
 					"kind": "catch_clause",
-					"line": 89,
+					"line": 90,
 					"column": 6,
-					"endLine": 92,
+					"endLine": 93,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7602,9 +7619,9 @@
 				{
 					"id": "483e41c8da61799c2fd74aaf30d35fbfa91d7263",
 					"kind": "catch_clause",
-					"line": 102,
+					"line": 103,
 					"column": 7,
-					"endLine": 105,
+					"endLine": 106,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8348,11 +8365,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "f8b0993e8419c815b4587bc8b69f0aee5bf86b93",
+					"id": "22b10c19fa77f6e892c00b53ef558161753bd59a",
 					"kind": "catch_clause",
-					"line": 58,
+					"line": 59,
 					"column": 5,
-					"endLine": 61,
+					"endLine": 62,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8366,9 +8383,9 @@
 				{
 					"id": "4fee5c5a2b5afe027082982485f56e4f99538951",
 					"kind": "catch_clause",
-					"line": 82,
+					"line": 83,
 					"column": 7,
-					"endLine": 85,
+					"endLine": 86,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8380,11 +8397,11 @@
 					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
 				},
 				{
-					"id": "947b2730c8fcd45e5411c5a157fa4358322a8cd3",
+					"id": "d965959f1820cbd42acdb825c31f08b58c26c1ac",
 					"kind": "catch_clause",
-					"line": 93,
+					"line": 94,
 					"column": 5,
-					"endLine": 96,
+					"endLine": 97,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8396,11 +8413,11 @@
 					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"transaction\"."
 				},
 				{
-					"id": "1e2b8842731f3b304d9c6a22fe41ad803b00245d",
+					"id": "f0531fa2b1b40140bded5b313611deb5b713bed4",
 					"kind": "catch_clause",
-					"line": 131,
+					"line": 132,
 					"column": 5,
-					"endLine": 134,
+					"endLine": 135,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8951,11 +8968,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "1c0dc687ad547ec406100440db2843647e4dde55",
+					"id": "48ed0e7e0b14245707ed40bc6c6e89096fce7f1f",
 					"kind": "catch_clause",
-					"line": 89,
+					"line": 90,
 					"column": 5,
-					"endLine": 92,
+					"endLine": 93,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8967,11 +8984,11 @@
 					"reason": "Allowlisted catch_clause: The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"load\"."
 				},
 				{
-					"id": "f99dcf152327d464e2cc5c02a7ef6a74ee1110ec",
+					"id": "942fc1f70e2a23db39566fa101211e7af4033780",
 					"kind": "catch_clause",
-					"line": 104,
+					"line": 105,
 					"column": 5,
-					"endLine": 107,
+					"endLine": 108,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8983,11 +9000,11 @@
 					"reason": "Allowlisted catch_clause: The \"append\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"append\"."
 				},
 				{
-					"id": "8a892d739fc7aa4f7d8b57d5e12eb12758601738",
+					"id": "79ba9dd64197fe5b7617b9da4ec0fa26cc6fc414",
 					"kind": "catch_clause",
-					"line": 143,
+					"line": 144,
 					"column": 5,
-					"endLine": 146,
+					"endLine": 147,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9001,9 +9018,9 @@
 				{
 					"id": "226f8c3a81b99a8198bdddbc7dc5c5d786cfc21b",
 					"kind": "catch_clause",
-					"line": 157,
+					"line": 158,
 					"column": 6,
-					"endLine": 160,
+					"endLine": 161,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9017,9 +9034,9 @@
 				{
 					"id": "361b485d962afdd615d29dfae99c060f6fd0fedb",
 					"kind": "catch_clause",
-					"line": 179,
+					"line": 180,
 					"column": 6,
-					"endLine": 182,
+					"endLine": 183,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9485,11 +9502,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "bbf96c5bba100ab1d77999e3f1efb8b6875bc7e7",
+					"id": "c813ae35e2e59af105405d02da227260709470fd",
 					"kind": "catch_clause",
-					"line": 154,
+					"line": 155,
 					"column": 5,
-					"endLine": 157,
+					"endLine": 158,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9501,11 +9518,11 @@
 					"reason": "Allowlisted catch_clause: The \"load\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"load\"."
 				},
 				{
-					"id": "3aad1fb85c23b91c0abd4b331a41eb746e07d257",
+					"id": "520d83415f2af1e13913349cc5f2a77301744fee",
 					"kind": "catch_clause",
-					"line": 179,
+					"line": 180,
 					"column": 5,
-					"endLine": 182,
+					"endLine": 183,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9517,11 +9534,11 @@
 					"reason": "Allowlisted catch_clause: The \"save\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"save\"."
 				},
 				{
-					"id": "398b9d26afad3096b12a5569314dd87a60d6da07",
+					"id": "fbd0cf8aad03f79ab1914a184406d96499bde340",
 					"kind": "catch_clause",
-					"line": 201,
+					"line": 202,
 					"column": 5,
-					"endLine": 204,
+					"endLine": 205,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9533,11 +9550,11 @@
 					"reason": "Allowlisted catch_clause: The \"clear\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"clear\"."
 				},
 				{
-					"id": "9ab8e2b0b5ca46aa2aa8b4c63c8c68c9b3f68419",
+					"id": "be88ca61842476f044619b1cd9866d699980e15c",
 					"kind": "catch_clause",
-					"line": 217,
+					"line": 218,
 					"column": 5,
-					"endLine": 220,
+					"endLine": 221,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9549,11 +9566,11 @@
 					"reason": "Allowlisted catch_clause: The \"forceClear\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"forceClear\"."
 				},
 				{
-					"id": "d404a06c06be20d5ebb3659f634df474e70495f2",
+					"id": "883d1e91569cd789fdfcc6d1753f2371ba0989c7",
 					"kind": "catch_clause",
-					"line": 256,
+					"line": 257,
 					"column": 5,
-					"endLine": 259,
+					"endLine": 260,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9567,9 +9584,9 @@
 				{
 					"id": "b22ce7b6b0612db9964c3e931d37d84fb3dc9cd9",
 					"kind": "catch_clause",
-					"line": 270,
+					"line": 271,
 					"column": 6,
-					"endLine": 273,
+					"endLine": 274,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9583,9 +9600,9 @@
 				{
 					"id": "6d566910cdfbc85e8045b023a7b65d276fd3776f",
 					"kind": "catch_clause",
-					"line": 292,
+					"line": 293,
 					"column": 6,
-					"endLine": 295,
+					"endLine": 296,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9599,9 +9616,9 @@
 				{
 					"id": "541bbc3f0c15cae2d05afcb6d5ecd5c5f620f8ee",
 					"kind": "catch_clause",
-					"line": 306,
+					"line": 307,
 					"column": 7,
-					"endLine": 309,
+					"endLine": 310,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
