@@ -3,6 +3,7 @@ import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { HttpTransportError } from '../core/http';
+import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import {
 	unavailableSessionPriceSnapshot,
 	type SessionPriceCapture,
@@ -743,7 +744,7 @@ export class ManualSessionStartService {
 			await this.persistCurrentState(true);
 			return { status: 'started', state: this.getState() as Extract<SessionState, { status: 'active' }> };
 		} catch (error) {
-			const mapped = mapFailure(error);
+			const mapped = mapFailure(error, (raw) => { this.logUnmappedFailure('session_start', raw); });
 			await this.cleanupFailedStart(mapped, authority);
 			return { status: 'failed', failure: mapped };
 		}
@@ -838,7 +839,7 @@ export class ManualSessionStartService {
 				delta: structuredClone(delta),
 			};
 		} catch (error) {
-			const mapped = mapStopFailure(error);
+			const mapped = mapStopFailure(error, (raw) => { this.logUnmappedFailure('session_finish', raw); });
 			if (mapped.code === 'lease_lost' || mapped.code === 'coordination_unavailable') {
 				this.stopHeartbeat();
 				try {
@@ -1227,6 +1228,24 @@ export class ManualSessionStartService {
 		});
 	}
 
+	/**
+	 * The only local trace of a start/stop failure `mapFailure`/`mapStopFailure` could not classify:
+	 * without it, an `unexpected` (start) or the generic `snapshot_failed` (stop) result leaves the
+	 * debug log with nothing to tell a network `TypeError` apart from a rejected state transition or
+	 * an `AbortError` (2026-09-10 incident). Structured only, per the contract: the error's class and
+	 * any HTTP status or machine code it carries, never its message or stack.
+	 */
+	private logUnmappedFailure(action: 'session_start' | 'session_finish', error: unknown): void {
+		this.diagnostics?.event({
+			component: 'session',
+			action,
+			level: 'error',
+			phase: 'failure',
+			code: 'unknown_failure',
+			details: unmappedErrorLogDetails(error),
+		});
+	}
+
 	private async safeAssert(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult> {
 		try { return await this.coordinator.assertOwned(handle); } catch { return { status: 'error', code: 'unavailable' }; }
 	}
@@ -1262,7 +1281,7 @@ function failure(code: SessionStartFailure['code'], message: string): SessionSta
 	return { code, message };
 }
 
-function mapFailure(error: unknown): SessionStartFailure {
+function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStartFailure {
 	if (error instanceof ManualSessionStartError) return error.failure;
 	if (error instanceof SessionStartCaptureError) {
 		if (error.code === 'invalid_input') return failure('invalid_input', error.message);
@@ -1272,10 +1291,11 @@ function mapFailure(error: unknown): SessionStartFailure {
 	if (error instanceof HttpTransportError && error.status === 429) {
 		return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
 	}
+	onUnclassified?.(error);
 	return failure('unexpected', 'The farming session could not be started.');
 }
 
-function mapStopFailure(error: unknown): SessionStopFailure {
+function mapStopFailure(error: unknown, onUnclassified?: (error: unknown) => void): SessionStopFailure {
 	if (error instanceof ManualSessionStartError) {
 		if (error.failure.code === 'lease_lost') return { code: 'lease_lost', message: error.message };
 		if (error.failure.code === 'coordination_unavailable') {
@@ -1291,6 +1311,7 @@ function mapStopFailure(error: unknown): SessionStopFailure {
 			message: 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.',
 		};
 	}
+	onUnclassified?.(error);
 	return {
 		code: 'snapshot_failed',
 		message: 'The final account snapshot could not be captured. You can retry without losing the session baseline.',
