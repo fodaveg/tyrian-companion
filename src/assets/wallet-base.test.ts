@@ -6,7 +6,13 @@ import { walletManagedAssets } from './wallet-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
 import { WalletVaultSyncService, type WalletVaultFile, type WalletVaultPort } from '../wallet/wallet-vault-sync';
-import { readModuleSource } from '../test/module-boundary';
+import { moduleBoundaryFacts, moduleBoundaryViolations, type ModuleBoundary } from '../test/module-boundary';
+
+const WALLET_BASE_BOUNDARY: ModuleBoundary = {
+	path: 'src/assets/wallet-base.ts',
+	forbiddenImports: ['node:fs'],
+	forbiddenNames: ['Vault', 'fetch', 'requestUrl', 'XMLHttpRequest'],
+};
 
 const CONFIG_DIR = 'vault-config';
 
@@ -99,9 +105,11 @@ describe('wallet Base assets', () => {
 	});
 
 	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', () => {
-		const source = readModuleSource('src/assets/wallet-base.ts');
-		expect(source).not.toMatch(/\b(?:Vault|fetch|requestUrl|XMLHttpRequest|node:fs|session-note-writer)\b/u);
-		expect(source).not.toMatch(/https?:\/\//u);
+		expect(moduleBoundaryViolations([WALLET_BASE_BOUNDARY])).toEqual([]);
+		const facts = moduleBoundaryFacts(WALLET_BASE_BOUNDARY.path);
+		const mentions = [...facts.specifiers, ...facts.names];
+		expect(mentions.some((value) => value.includes('session-note-writer'))).toBe(false);
+		expect(mentions.some((value) => /https?:\/\//u.test(value))).toBe(false);
 	});
 });
 
