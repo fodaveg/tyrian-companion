@@ -1,3 +1,4 @@
+import { errorClassName } from '../core/local-debug-error-details';
 import { prepareSessionNote, type SessionNoteInput } from './session-note-model';
 import {
 	frontmatterSessionRef,
@@ -20,7 +21,10 @@ export interface SessionNoteVault {
 export type SessionNoteWriteResult =
 	| { status: 'written' | 'unchanged'; path: string }
 	| { status: 'invalid'; reason: string }
-	| { status: 'conflict' | 'unavailable'; message: string };
+	/** `errorName` is the underlying rejection's class only (never its message or stack), carried
+	 * so a caller's diagnostics can tell a permission failure from a race apart from this fixed
+	 * copy (H15.10, 2026-09-10 incident: `catch {}` here left every such rejection unlogged). */
+	| { status: 'conflict' | 'unavailable'; message: string; errorName?: string };
 
 export class SessionNoteWriter {
 	private readonly flights = new Map<string, Promise<SessionNoteWriteResult>>();
@@ -53,15 +57,15 @@ export class SessionNoteWriter {
 			try {
 				await this.vault.create(note.preferredPath, note.content);
 				return { status: 'written', path: note.preferredPath };
-			} catch {
+			} catch (error) {
 				const raced = this.vault.file(note.preferredPath);
-				if (!raced) return { status: 'unavailable', message: 'The session note could not be created.' };
+				if (!raced) return { status: 'unavailable', message: 'The session note could not be created.', errorName: errorClassName(error) };
 				const content = await this.vault.read(raced);
 				if (frontmatterSessionRef(content) === note.sessionRef) return await this.update(raced, content, note);
 				return await this.writeCollision(note);
 			}
-		} catch {
-			return { status: 'unavailable', message: 'The session note could not be written safely.' };
+		} catch (error) {
+			return { status: 'unavailable', message: 'The session note could not be written safely.', errorName: errorClassName(error) };
 		}
 	}
 
@@ -77,9 +81,9 @@ export class SessionNoteWriter {
 		try {
 			await this.vault.create(note.collisionPath, note.content);
 			return { status: 'written', path: note.collisionPath };
-		} catch {
+		} catch (error) {
 			const raced = this.vault.file(note.collisionPath);
-			if (!raced) return { status: 'unavailable', message: 'The collision-safe session note could not be created.' };
+			if (!raced) return { status: 'unavailable', message: 'The collision-safe session note could not be created.', errorName: errorClassName(error) };
 			const content = await this.vault.read(raced);
 			if (frontmatterSessionRef(content) !== note.sessionRef) {
 				return { status: 'conflict', message: 'The collision-safe session note path is already occupied.' };

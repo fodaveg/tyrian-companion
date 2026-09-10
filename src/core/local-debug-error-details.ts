@@ -23,8 +23,8 @@ export function unmappedErrorLogDetails(error: unknown): Record<string, unknown>
 	return details;
 }
 
-/** Names the error's class without ever reading its message. */
-function errorClassName(error: unknown): string {
+/** Names the error's class without ever reading its message. Shared with callers that need only the class (e.g. `errorName` in a structured outcome), not the full unmapped-failure shape above. */
+export function errorClassName(error: unknown): string {
 	if (error instanceof Error) return error.name || error.constructor.name;
 	if (error === null) return 'null';
 	if (typeof error !== 'object') return typeof error;

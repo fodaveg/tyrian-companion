@@ -12,6 +12,7 @@ import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
 import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
@@ -1337,6 +1338,40 @@ describe('completed session note delivery', () => {
 		expect(harness.savedSessionNotePath).toBeNull();
 		methods.openSavedSessionNote.call(harness);
 		expect(openLinkText).not.toHaveBeenCalled();
+	});
+
+	// H15.10 (2026-09-10 incident): the note is the summary's only durable delivery, and its
+	// `catch {}` used to leave a vault rejection (e.g. `EACCES` on the first create) completely
+	// unlogged: `note.status` never reached the local debug log at all.
+	it('registers a session_finish failure with the note status when the vault rejects the write', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
+			savedSessionNotePath: null as string | null,
+			settings: { language: 'en' as const },
+			sessionNotes: { write: vi.fn(async () => ({ status: 'unavailable' as const, message: 'failed', errorName: 'EACCES' })) },
+			sessionNoteInput: () => ({ session: 'input' }),
+			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
+			renderViews: vi.fn(),
+			emitNotice: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'note-write' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const persist = (TyrianCompanionPlugin.prototype as unknown as {
+			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
+		}).persistCompletedSessionSummary;
+
+		await persist.call(harness, false, { state: { status: 'complete' } });
+
+		expect(harness.sessionSummarySaveState).toBe('failed');
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'session' && input.action === 'session_finish' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({
+			code: 'storage_failure', details: { status: 'unavailable', errorName: 'EACCES' },
+		});
 	});
 });
 

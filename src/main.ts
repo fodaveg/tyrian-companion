@@ -2779,7 +2779,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.prepareSessionEconomyEvidence(runtime, true);
 		let note: SessionNoteWriteResult;
 		try {
-			note = await this.sessionNotes.write(this.sessionNoteInput(runtime));
+			note = await writeSessionNoteWithDiagnostics(
+				this.localDebugActions, () => this.sessionNotes.write(this.sessionNoteInput(runtime)),
+			);
 		} catch {
 			this.sessionSummarySaveState = 'failed';
 			if (notifyFailure) this.emitNotice(
@@ -3837,4 +3839,30 @@ function fireAndForgetLocal(
 /** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
 function consumeRecorded(action: Promise<unknown>): void {
 	action.catch(() => undefined);
+}
+
+/**
+ * The session note is the summary's only durable delivery: unlike `session-history.ts`, nothing
+ * else records that a close ever happened. Before this (H15.10, 2026-09-10 incident) a failed
+ * write surfaced only as the note's own fixed `message` in the UI, and the local debug log never
+ * learned `note.status` or the underlying rejection's class, so a disk-full or EACCES vault could
+ * silently eat every session for a whole run.
+ */
+async function writeSessionNoteWithDiagnostics(
+	actions: LocalDebugActionRunner | null,
+	write: () => Promise<SessionNoteWriteResult>,
+): Promise<SessionNoteWriteResult> {
+	const action = async () => {
+		const note = await write();
+		if (note.status === 'written' || note.status === 'unchanged') return note;
+		return {
+			...note,
+			phase: 'failure' as const,
+			code: 'storage_failure' as const,
+			details: { status: note.status, errorName: 'errorName' in note ? note.errorName : undefined },
+		};
+	};
+	return actions
+		? await actions.run({ component: 'session', action: 'session_finish', state: 'note_write' }, action)
+		: await action();
 }

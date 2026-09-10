@@ -9400,9 +9400,9 @@
 				{
 					"id": "da8f4628fdba7cb895586a99d0711861659cd67c",
 					"kind": "callback_registration",
-					"line": 37,
+					"line": 41,
 					"column": 18,
-					"endLine": 39,
+					"endLine": 43,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9415,11 +9415,11 @@
 					"reason": "Allowlisted callback_registration: The \"write\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"write\"."
 				},
 				{
-					"id": "2336dad0fdbe0ee9821d91d6d0b4d1afdf484d2d",
+					"id": "ddf0c12edb95244345eb69843bb13ef0f0a49c90",
 					"kind": "catch_clause",
-					"line": 56,
+					"line": 60,
 					"column": 6,
-					"endLine": 62,
+					"endLine": 66,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9431,11 +9431,11 @@
 					"reason": "Allowlisted catch_clause: The \"writeRendered\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"writeRendered\"."
 				},
 				{
-					"id": "ab3f83743e70647a368780651261eef111496de0",
+					"id": "7ec53fbb88e22238ae99271beaedc97aca9acd08",
 					"kind": "catch_clause",
-					"line": 63,
+					"line": 67,
 					"column": 5,
-					"endLine": 65,
+					"endLine": 69,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9447,11 +9447,11 @@
 					"reason": "Allowlisted catch_clause: The \"writeRendered\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"writeRendered\"."
 				},
 				{
-					"id": "0ffa6110dac1dc7c400e795af1dba7bf96c0ce46",
+					"id": "7119977c5937e3f67604c5495569d5ba1288a12b",
 					"kind": "catch_clause",
-					"line": 80,
+					"line": 84,
 					"column": 5,
-					"endLine": 88,
+					"endLine": 92,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9465,9 +9465,9 @@
 				{
 					"id": "87c3c384b359339e613b0b928f0a74481c922926",
 					"kind": "catch_clause",
-					"line": 117,
+					"line": 121,
 					"column": 5,
-					"endLine": 117,
+					"endLine": 121,
 					"endColumn": 89,
 					"classification": "allowlisted",
 					"evidence": {
