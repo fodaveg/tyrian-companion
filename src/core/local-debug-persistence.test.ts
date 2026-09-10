@@ -4,6 +4,7 @@ import { LocalDebugActionRunner } from './local-debug-action-runner';
 import { sanitizeLocalDebugRecord } from './local-debug-sanitizer';
 import {
 	createLocalDebugPersistenceSink,
+	localDebugStorageFailureCode,
 	LocalDebugPersistenceProbe,
 } from './local-debug-persistence';
 
@@ -45,6 +46,29 @@ describe('local debug persistence port', () => {
 			pluginVersion: '0.1.14',
 		});
 		expect(sanitized.details).toEqual({ operation: 'read', store: 'session_runtime' });
+	});
+
+	// H15.20: 8 stores called `attempt.failure()` pelado and lost `error.name` (a `QuotaExceededError`
+	// logged the exact same way as any other storage failure). `failure(code, error)` plus the sink
+	// now carry the error's class to the log, and only that: never its message.
+	it('carries the failed error\'s class to the log, and never its message', () => {
+		const records: LocalDebugRecordInput[] = [];
+		const runner = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const probe = new LocalDebugPersistenceProbe({
+			sink: createLocalDebugPersistenceSink(runner, 'session', 'session_lease'),
+			createId: () => '33333333-3333-4333-8333-333333333333',
+		});
+		const error = new DOMException('must-not-survive', 'QuotaExceededError');
+
+		const attempt = probe.begin('coordination', 'write');
+		attempt.failure(localDebugStorageFailureCode(error), error);
+
+		const failure = records.find((record) => record.phase === 'failure');
+		expect(failure).toMatchObject({ code: 'quota_exceeded', errorName: 'QuotaExceededError' });
+		expect(JSON.stringify(records)).not.toContain('must-not-survive');
 	});
 
 	// H14.9: a `skip` with the default `skipped` code is routine (a cold cache, a store not yet

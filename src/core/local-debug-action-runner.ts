@@ -30,6 +30,8 @@ export interface LocalDebugEventContext extends LocalDebugActionContext {
 	phase: LocalDebugPhase;
 	code: LocalDebugCode;
 	message?: unknown;
+	/** A pre-classified error class name, for a caller that already resolved it (never the message). */
+	errorName?: string;
 	stack?: unknown;
 	durationMs?: number;
 }
@@ -144,6 +146,7 @@ export class LocalDebugActionRunner {
 				context.durationMs,
 				context.details,
 				context.state,
+				context.errorName,
 			);
 		} catch { /* Diagnostics never own the product callback. */ }
 	}
@@ -192,6 +195,7 @@ export class LocalDebugActionRunner {
 		durationMs?: number,
 		details: unknown = context.details,
 		state: LocalDebugStateValue | undefined = context.state,
+		errorName?: string,
 	): void {
 		const input: LocalDebugRecordInput = {
 			level,
@@ -205,6 +209,7 @@ export class LocalDebugActionRunner {
 		if (context.attempt !== undefined) input.attempt = context.attempt;
 		if (state !== undefined) input.state = state;
 		if (message !== undefined) input.message = message;
+		if (errorName !== undefined) input.errorName = errorName;
 		if (stack !== undefined) input.stack = stack;
 		if (durationMs !== undefined) input.durationMs = durationMs;
 		if (details !== undefined) input.details = details;

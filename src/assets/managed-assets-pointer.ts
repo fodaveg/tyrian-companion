@@ -1,5 +1,5 @@
 import { openIndexedDb } from '../core/indexed-db-open';
-import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import { LocalDebugPersistenceProbe, localDebugStorageFailureCode } from '../core/local-debug-persistence';
 
 export const MANAGED_ASSETS_POINTER_DB = 'tyrian-companion-managed-assets';
 const STORE = 'pointer-v1';
@@ -43,7 +43,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure('storage_failure');
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -75,7 +75,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			else attempt.success();
 			return result;
 		} catch (error) {
-			attempt.failure('storage_failure');
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -108,7 +108,7 @@ export class IndexedDbManagedAssetsPointerStore implements ManagedAssetsPointerS
 			attempt.success();
 			return database;
 		} catch (error) {
-			attempt.failure('storage_failure');
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;

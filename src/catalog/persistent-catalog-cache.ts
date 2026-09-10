@@ -11,7 +11,7 @@ import type {
 } from './public-catalog-model';
 import { isCatalogJsonValue, isNormalizedCatalogEntity } from './public-catalog-validators';
 import { openIndexedDb } from '../core/indexed-db-open';
-import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
+import { LocalDebugPersistenceProbe, localDebugStorageFailureCode } from '../core/local-debug-persistence';
 
 export const CATALOG_CACHE_DB_NAME = 'tyrian-companion-public-catalog';
 export const CATALOG_CACHE_DB_VERSION = 1;
@@ -47,8 +47,8 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 		let raw: unknown;
 		try {
 			raw = await this.store.get(storageKey);
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return undefined;
 		}
 		if (raw === undefined) { attempt.skip(); return undefined; }
@@ -81,8 +81,8 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 			raws = this.store.getMany
 				? await this.store.getMany(storageKeys)
 				: await this.getManyByGet(storageKeys);
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return results;
 		}
 		const corrupt: string[] = [];
@@ -120,8 +120,8 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 			if (!isCompatibleEnvelope(jsonValue, cacheKey)) { attempt.failure('validation_failed'); return; }
 			await this.store.set(catalogCacheStorageKey(cacheKey), serialized);
 			attempt.success();
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			// A cache write must never fail the catalog resolution.
 		}
 	}
@@ -135,8 +135,8 @@ export class PersistentCatalogCache implements CatalogCacheAdapter {
 		try {
 			await this.store.delete(storageKey);
 			attempt.recover();
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			// Corruption still behaves as a miss when cleanup is unavailable.
 		}
 	}
@@ -180,8 +180,8 @@ export async function createCatalogCacheAdapter(
 		);
 		attempt.success();
 		return cache;
-	} catch {
-		attempt.failure();
+	} catch (error) {
+		attempt.failure(localDebugStorageFailureCode(error), error);
 		const fallback = diagnostics.begin('catalog', 'fallback');
 		fallback.success('unavailable');
 		return new MemoryCatalogCache();
@@ -215,7 +215,7 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 					: 'Could not open the public catalog cache.'),
 			});
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 		attempt.success();
@@ -229,7 +229,7 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 			try {
 				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readonly');
 			} catch (error) {
-				attempt.failure();
+				attempt.failure(localDebugStorageFailureCode(error), error);
 				reject(error instanceof Error ? error : new Error('Could not read the public catalog cache.'));
 				return;
 			}
@@ -253,7 +253,7 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 			try {
 				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readonly');
 			} catch (error) {
-				attempt.failure();
+				attempt.failure(localDebugStorageFailureCode(error), error);
 				reject(error instanceof Error ? error : new Error('Could not read the public catalog cache.'));
 				return;
 			}
@@ -293,7 +293,7 @@ export class IndexedDbCatalogRecordStore implements CatalogRecordStore {
 				transaction = this.database.transaction(CATALOG_CACHE_STORE_NAME, 'readwrite');
 				action(transaction.objectStore(CATALOG_CACHE_STORE_NAME));
 			} catch (error) {
-				attempt.failure();
+				attempt.failure(localDebugStorageFailureCode(error), error);
 				reject(error instanceof Error ? error : new Error('Could not write the public catalog cache.'));
 				return;
 			}

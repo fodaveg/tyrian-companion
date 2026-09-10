@@ -8,6 +8,7 @@ import {
 	LocalDebugActionRunner,
 	type ResolvedLocalDebugActionContext,
 } from './local-debug-action-runner';
+import { unmappedErrorLogDetails } from './local-debug-error-details';
 
 export const LOCAL_DEBUG_PERSISTENCE_STORES = [
 	'session_runtime',
@@ -40,6 +41,9 @@ export interface LocalDebugPersistenceEvent {
 	code: LocalDebugCode;
 	durationMs: number;
 	context?: LocalDebugPersistenceContext;
+	/** The error a `failure()` was given, if any. Never carried past this event: the sink turns it
+	 * into a structural `errorName` and nothing else (`local-debug-error-details.ts`). */
+	error?: unknown;
 }
 
 export type LocalDebugPersistenceSink = (event: LocalDebugPersistenceEvent) => void;
@@ -52,7 +56,9 @@ export interface LocalDebugPersistenceProbeOptions {
 
 export interface LocalDebugPersistenceAttempt {
 	success(code?: LocalDebugCode): void;
-	failure(code?: LocalDebugCode): void;
+	/** `error`, when given, never crosses further than this attempt: only its structural fingerprint
+	 * (class name) reaches the log, via the sink (`createLocalDebugPersistenceSink`). */
+	failure(code?: LocalDebugCode, error?: unknown): void;
 	skip(code?: LocalDebugCode): void;
 	recover(code?: LocalDebugCode): void;
 }
@@ -94,7 +100,7 @@ export class LocalDebugPersistenceProbe {
 			return NOOP_PERSISTENCE_ATTEMPT;
 		}
 		let settled = false;
-		const finish = (phase: LocalDebugPhase, code: LocalDebugCode): void => {
+		const finish = (phase: LocalDebugPhase, code: LocalDebugCode, error?: unknown): void => {
 			if (settled) return;
 			settled = true;
 			try {
@@ -105,6 +111,7 @@ export class LocalDebugPersistenceProbe {
 					code,
 					durationMs: elapsed(this.now(), startedAt),
 					context,
+					error,
 				});
 			} catch {
 				// Persistence diagnostics never own the storage operation.
@@ -112,7 +119,7 @@ export class LocalDebugPersistenceProbe {
 		};
 		return {
 			success: (code = 'ok') => finish('success', code),
-			failure: (code = 'storage_failure') => finish('failure', code),
+			failure: (code = 'storage_failure', error?: unknown) => finish('failure', code, error),
 			skip: (code = 'skipped') => finish('skip', code),
 			recover: (code = 'ok') => finish('success', code),
 		};
@@ -152,6 +159,9 @@ export function createLocalDebugPersistenceSink(
 			actionId: event.context?.actionId,
 			correlationId: event.context?.correlationId,
 			durationMs: event.durationMs,
+			// Structural fingerprint only (never `message` or stack): `unmappedErrorLogDetails`'s
+			// `reason` is the error's class name, computed without ever reading its message.
+			errorName: event.error === undefined ? undefined : String(unmappedErrorLogDetails(event.error).reason),
 			details: { store: event.store, operation: event.operation },
 		});
 	};
