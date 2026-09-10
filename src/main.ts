@@ -2608,9 +2608,30 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.sessions.getSettlementWait();
 	}
 
-	/** Explicit human override: capture the final snapshot without waiting out the cache window. */
+	/**
+	 * Explicit human override: capture the final snapshot without waiting out the cache window.
+	 * Unlike `stopManualSession`, this never went through `sessionCommands`, so a failure here used
+	 * to reach the caller with no Notice at all and a `session_finish` line with no cause (H15.9,
+	 * 2026-09-10 audit). The `catch` below gives it the same Notice `SessionCommandController`
+	 * already shows for every other stop failure, and the backend's real `SessionStopFailure` code
+	 * as `details.cause` instead of the generic `unknown_failure` the rethrow's own outer `run()`
+	 * still logs. It rethrows on purpose: the caller (`companion-view.ts`'s "Capturar ya" button)
+	 * already swallows the rejection with its own `.catch(() => undefined)`.
+	 */
 	async captureSessionFinalNow(): Promise<void> {
-		const perform = async () => await this.performStopManualSession(undefined, null, true);
+		const perform = async () => {
+			try {
+				await this.performStopManualSession(undefined, null, true);
+			} catch (error) {
+				this.localDebugActions?.event({
+					component: 'session', action: 'session_finish', level: 'error', phase: 'failure',
+					code: 'unknown_failure', state: 'settlement_skipped',
+					details: { cause: error instanceof SessionStopBackendFailure ? error.code : 'unknown_failure' },
+				});
+				this.emitNotice(createTranslator(this.settings.language).t('commands.actionFailed'), 'session_command');
+				throw error;
+			}
+		};
 		return await (this.localDebugActions?.run(
 			{ component: 'session', action: 'session_finish', state: 'settlement_skipped' },
 			perform,
@@ -2678,7 +2699,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 				});
 			}
 			this.renderViews();
-			if (result.status === 'failed') throw new Error('Stop failed.');
+			if (result.status === 'failed') throw new SessionStopBackendFailure(result.failure.code);
 		} catch (error) {
 			if (workflowProposalId && !pilotWorkflowSucceeded) void this.pilotMetrics?.proposalDecided({
 				proposalId: workflowProposalId,
@@ -3571,6 +3592,23 @@ class SessionRecoveryBackendFailure extends Error {
 		this.name = 'SessionRecoveryBackendFailure';
 		this.status = status;
 		this.code = status;
+	}
+}
+
+/**
+ * Thrown by `performStopManualSession` when `sessions.stop()`/`captureFinalNow()` returns
+ * `{status:'failed'}` (H15.9, 2026-09-10 audit): carries the backend's own `SessionStopFailure`
+ * code as an own `code` property instead of the fixed `'Stop failed.'` message it replaced, which
+ * discarded it entirely. `captureSessionFinalNow` reads this `code` to log `session_finish`
+ * `details.cause` and to show the same Notice the Terminar button's `SessionCommandController`
+ * already shows for every other stop failure.
+ */
+class SessionStopBackendFailure extends Error {
+	readonly code: SessionStopFailure['code'];
+	constructor(code: SessionStopFailure['code']) {
+		super('Session stop failed.');
+		this.name = 'SessionStopBackendFailure';
+		this.code = code;
 	}
 }
 

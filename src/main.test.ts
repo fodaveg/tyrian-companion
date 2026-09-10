@@ -5,6 +5,7 @@ const electronMocks = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
 vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
 
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
+import { createTranslator } from './core/i18n';
 import type { ConnectionState } from './account/connection-service';
 import { genericManagedAssets } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
@@ -1546,5 +1547,58 @@ describe('recovery backend failure observability (H15.6)', () => {
 		const [loggedEvent] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
 		expect((loggedEvent.details as Record<string, unknown> | undefined)?.code).toBe('failed');
 		expect(JSON.stringify(loggedEvent)).not.toContain('persisted safely');
+	});
+});
+
+describe('capture-now failure observability (H15.9)', () => {
+	/**
+	 * `captureSessionFinalNow` never went through `sessionCommands`, unlike the Terminar button: a
+	 * failed capture reached the caller with no Notice at all, and `session_finish` logged
+	 * `unknown_failure` with no trace of the real cause (a timed-out transport, here already mapped
+	 * to `snapshot_failed` by `mapStopFailure`, per `manual-session-start-service.test.ts`'s own
+	 * H15.1 coverage of that mapping). `void this.actions.captureSessionFinalNow?.()?.catch(() =>
+	 * undefined)` (`companion-view.ts`) is exactly what a real "Capturar ya" click runs.
+	 */
+	it('shows one Notice, logs session_finish with the real cause, and never leaves the rejection unhandled', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const notify = vi.fn();
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			captureSessionFinalNow(this: unknown): Promise<void>;
+		};
+		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			settings: { language: 'en' as const },
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			assistedDetection: { getState: () => ({ status: 'armed' }) },
+			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
+			sessions: { captureFinalNow: vi.fn(async () => ({
+				status: 'failed' as const,
+				failure: { code: 'snapshot_failed' as const, message: 'The final account snapshot could not be captured.' },
+			})) },
+			renderViews: vi.fn(),
+			emitNotice: (message: string) => { notify(message); },
+			localDebugActions: {
+				run: async (_context: unknown, action: () => Promise<void>) => await action(),
+				event: diagnosticsEvent,
+			},
+		});
+		const onClick = () => { void proto.captureSessionFinalNow.call(harness).catch(() => undefined); };
+
+		let unhandled = 0;
+		const onUnhandledRejection = () => { unhandled += 1; };
+		process.on('unhandledRejection', onUnhandledRejection);
+		try {
+			onClick();
+			await vi.waitFor(() => { expect(notify).toHaveBeenCalled(); });
+		} finally {
+			process.off('unhandledRejection', onUnhandledRejection);
+		}
+
+		expect(unhandled).toBe(0);
+		expect(notify).toHaveBeenCalledTimes(1);
+		expect(notify).toHaveBeenCalledWith(createTranslator('en').t('commands.actionFailed'));
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session', action: 'session_finish', phase: 'failure',
+			details: { cause: 'snapshot_failed' },
+		}));
 	});
 });

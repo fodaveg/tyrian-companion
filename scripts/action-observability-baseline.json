@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 429,
+		"catch_clause": 430,
 		"promise_catch": 35,
 		"void_expression": 80,
 		"callback_registration": 157
@@ -6123,6 +6123,20 @@
 						"justification": "The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"runManagedAssetsLifecycle\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"runManagedAssetsLifecycle\"."
+				},
+				{
+					"id": "e4b8418d4208d9e253dd918649efd374644ebb6f",
+					"kind": "catch_clause",
+					"line": 2625,
+					"column": 6,
+					"endLine": 2633,
+					"endColumn": 5,
+					"classification": "observed",
+					"evidence": {
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
+					},
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "263a458bd170dc1cdfc1c27167d087894bd14005",
