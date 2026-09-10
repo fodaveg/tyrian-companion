@@ -1525,6 +1525,37 @@ describe('in-game alert server start diagnostics', () => {
 	});
 });
 
+describe('managed assets preview diagnostics', () => {
+	// H15.19 (2026-09-10 incident): the catch fixed `managedAssetsView` but never registered
+	// anything, so a failed inspection looked identical in the local debug log to a preview
+	// that never ran at all.
+	it('registers a managed_assets_preview failure when the inspection throws', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			settings: { legacyManagedAssetsRoot: null, managedAssetsRoot: null, outputFolder: 'Tyrian Companion' },
+			managedAssetsView: { status: 'idle' as const, message: 'idle', plan: null },
+			managedAssets: { preview: vi.fn(async () => { throw new Error('manifest corrupt'); }) },
+			settingTab: { refreshManagedAssetsRow: vi.fn() },
+			notifyRuntimeStarting: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-preview' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const preview = (TyrianCompanionPlugin.prototype as unknown as {
+			previewManagedAssets(this: typeof harness): Promise<void>;
+		}).previewManagedAssets;
+
+		await preview.call(harness);
+
+		expect(harness.managedAssetsView).toMatchObject({ status: 'error', message: 'inspect_failed' });
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'assets' && input.action === 'managed_assets_preview' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure' });
+	});
+});
+
 describe('local diagnostics composition', () => {
 	it('clears a real logger without recreating a terminal record after the deletion', async () => {
 		const storage = memoryDebugStorage();

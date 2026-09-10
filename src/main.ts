@@ -2457,11 +2457,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
 		this.managedAssetsView = { status: 'working', message: 'inspecting', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
-		try {
-			const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
-			const plan = await this.managedAssets.preview(root, kind);
-			this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
-		} catch { this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null }; }
+		// H15.19 (2026-09-10 incident): the catch below fixed the view but never registered
+		// anything, so a failed inspection (a corrupt manifest, a Vault read that threw) looked
+		// identical in the local debug log to a preview that never ran at all.
+		const perform = async () => {
+			try {
+				const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
+				const plan = await this.managedAssets.preview(root, kind);
+				this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
+				return undefined;
+			} catch (error) {
+				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
+				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
+			}
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_preview' }, perform) ?? perform());
 		this.settingTab.refreshManagedAssetsRow();
 	}
 
