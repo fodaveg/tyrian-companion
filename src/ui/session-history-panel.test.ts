@@ -54,6 +54,8 @@ describe('mountSessionHistoryPanel', () => {
 
 		expect(load).not.toHaveBeenCalled();
 		expect(allText(container)).toContain('History has not been read yet');
+		const state = descendants(container).find((element) => element.className === 'tyrian-session-history__state')!;
+		expect(state.attributes.get('aria-live')).toBe('polite');
 		const button = descendants(container).find((element) => element.tag === 'button')!;
 		button.focus();
 		button.click();
@@ -68,6 +70,11 @@ describe('mountSessionHistoryPanel', () => {
 		expect(allText(container)).toContain('History validated');
 		expect(descendants(container).some((element) => element.tag === 'caption')).toBe(true);
 		expect(descendants(container).some((element) => element.tag === 'article')).toBe(true);
+		// Column headers and the per-row "ended" cell are both `<th>`: only the exact accessible
+		// scope on each distinguishes them for a screen reader.
+		const headers = descendants(container).filter((element) => element.tag === 'th');
+		expect(headers.some((header) => header.attributes.get('scope') === 'col')).toBe(true);
+		expect(headers.some((header) => header.attributes.get('scope') === 'row')).toBe(true);
 		// Lote P (9 sep 2026): no more "Historial durable" header, and the row that names the
 		// gaveto's closed-state suffix repaints to the loaded count once ready.
 		expect(descendants(container).some((element) => element.tag === 'h3')).toBe(false);
