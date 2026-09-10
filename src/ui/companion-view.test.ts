@@ -116,6 +116,28 @@ describe('Companion incident callout: local diagnostics', () => {
 		expect(callout?.title).toBe('Errors since load: 1');
 		expect(callout?.lines.map((line) => line.text)).toEqual(['Could not reach the account API.']);
 	});
+
+	// H15.7: `errorsSinceLoad` used to replace the whole callout title, so a `startFailure` (or any
+	// other `projection.errors` entry) never reached the screen while any unrelated error had been
+	// logged since load — exactly David's 10 sep incident (3 unrelated `global_error` lines hid a
+	// live `rate_limited` start failure).
+	it('surfaces the session start failure as the title even with errors since load, and keeps the count as a line', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 3, lastError: null,
+		};
+		const harness = callHarness({ getLocalDebugStatus: () => status });
+		const rateLimited = translateRuntime(createTranslator('en'), 'status.startFailure.rate_limited');
+		const startFailureText = translateRuntime(createTranslator('en'), 'status.startIncident', { detail: rateLimited });
+
+		const callout = build.call(harness, { errors: [startFailureText], incidentTone: 'error' }, connected);
+		expect(callout?.title).toBe(startFailureText);
+		expect(callout?.title).toContain(rateLimited);
+		expect(callout?.tone).toBe('error');
+		expect(callout?.lines.map((line) => line.text)).toContain('Errors since load: 3');
+	});
 });
 
 describe('Companion game HUD narrative', () => {
