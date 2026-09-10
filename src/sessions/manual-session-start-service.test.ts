@@ -1087,6 +1087,35 @@ describe('ManualSessionStartService', () => {
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
 	});
 
+	/**
+	 * H15.26 (2026-09-10 audit): every pre-lease start rejection `failWithoutLease` returns (disposed,
+	 * recovery pending, busy, coordination down) left 0 log lines — including a coordinator that
+	 * threw underneath `safeAcquire` instead of returning its own `{status:'error'}`.
+	 */
+	it('registers session_start failure when the coordinator throws acquiring the lease', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const service = new ManualSessionStartService(
+			coordinator({ acquire: vi.fn(async () => { throw new Error('IndexedDB is unavailable.'); }) }),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'coordination_unavailable' } });
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session', action: 'session_start', phase: 'failure',
+			details: { code: 'coordination_unavailable' },
+		}));
+		const [record] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+		expect(JSON.stringify(record)).not.toContain('IndexedDB is unavailable');
+	});
+
 	it('logs the error class of an unclassified start failure instead of discarding it (H15.1)', async () => {
 		const leases = coordinator();
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();

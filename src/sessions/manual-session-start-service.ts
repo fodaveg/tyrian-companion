@@ -1180,9 +1180,21 @@ export class ManualSessionStartService {
 		return { status: 'failed', failure: result };
 	}
 
+	/**
+	 * Every pre-lease start rejection (disposed, recovery pending, already in progress, lease busy,
+	 * coordination down) went through here with a useful `SessionStartFailure.code` for the player
+	 * but 0 lines in the debug log (H15.26, 2026-09-10 audit): nothing distinguished a genuinely busy
+	 * lease from the coordinator having thrown underneath `safeAcquire`/`safeRelease`. `details.code`
+	 * carries that `SessionStartFailure` code; never the free-text `message`.
+	 */
 	private failWithoutLease(code: SessionStartFailure['code'], message: string): ManualSessionStartResult {
 		const result = failure(code, message);
 		this.lastFailure = result;
+		this.diagnostics?.event({
+			component: 'session', action: 'session_start', level: 'error', phase: 'failure',
+			code: code === 'busy' ? 'precondition_failed' : 'unavailable',
+			details: { code },
+		});
 		this.onStateChange();
 		return { status: 'failed', failure: result };
 	}
