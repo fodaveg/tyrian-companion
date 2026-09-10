@@ -25,7 +25,7 @@ import {
 	SETTINGS_CATEGORIES,
 	SettingsWriteQueue,
 } from './settings-tab';
-import { forbiddenBoundaryUses, type ModuleBoundary, propertyCallChains, readModuleSource } from '../test/module-boundary';
+import { forbiddenBoundaryUses, type ModuleBoundary, calleeChains, readModuleSource } from '../test/module-boundary';
 
 describe('essential alert threshold', () => {
 	it('accepts a user-facing gold amount while preserving whole copper internally', () => {
@@ -227,7 +227,7 @@ describe('settings information architecture', () => {
 	it('renders a flat horizontal tablist with no nested advanced disclosure or forced touch sizing', () => {
 		const source = readModuleSource('src/ui/settings-tab.ts');
 		const styles = readModuleSource('styles.css');
-		expect(propertyCallChains(source)).not.toContain('renderProductShell');
+		expect(calleeChains(source)).not.toContain('renderProductShell');
 		const boundary: ModuleBoundary = {
 			path: 'src/ui/settings-tab.ts',
 			forbiddenImports: [],

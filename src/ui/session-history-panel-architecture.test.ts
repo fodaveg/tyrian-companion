@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-	classMethodCallChains, forbiddenBoundaryUses, type ModuleBoundary, propertyCallChains, readModuleSource,
+	classMethodCallChains, forbiddenBoundaryUses, type ModuleBoundary, calleeChains, readModuleSource,
 } from '../test/module-boundary';
 
 describe('H9.7 durable session history boundary', () => {
@@ -27,15 +27,15 @@ describe('H9.7 durable session history boundary', () => {
 		const companion = readModuleSource('src/ui/companion-view.ts');
 		const main = readModuleSource('src/main.ts');
 		// The panel is mounted by the Companion surface, but only the button may reach the Vault.
-		expect(propertyCallChains(companion)).toContain('mountSessionHistoryPanel');
+		expect(calleeChains(companion)).toContain('mountSessionHistoryPanel');
 		expect(classMethodCallChains(companion, 'TyrianCompanionView', 'onOpen')
 			.some((chain) => chain.endsWith('loadSessionHistory'))).toBe(false);
 		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'loadSessionHistory'))
 			.toContain('this.sessionHistory.scan');
-		expect(propertyCallChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
+		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.scan')).toHaveLength(1);
 		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'inspectCompletedSessionSummary'))
 			.toContain('this.sessionHistory.readSession');
-		expect(propertyCallChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
+		expect(calleeChains(main).filter((chain) => chain === 'this.sessionHistory.readSession')).toHaveLength(1);
 	});
 
 	it('uses local typed ES/EN copy and the required accessible responsive contracts', () => {

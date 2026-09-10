@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { TRANSLATIONS } from '../core/i18n';
 import {
-	classMemberNames, classMethodBody, exportedDeclarationNames, forbiddenBoundaryUses,
+	classMemberNamesOf, classMethodBody, exportedDeclarationNameList, forbiddenBoundaryUses,
 	type ModuleBoundary, readModuleSource,
 } from '../test/module-boundary';
 
@@ -31,8 +31,8 @@ describe('pilot metrics architecture', () => {
 
 	it('keeps all Vault writes inside the explicit exporter', () => {
 		const source = readModuleSource('src/sessions/pilot-metrics-export.ts');
-		expect(exportedDeclarationNames(source)).toContain('PilotMetricsExporter');
-		expect(classMemberNames(source, 'PilotMetricsExporter')).toContain('export');
+		expect(exportedDeclarationNameList(source)).toContain('PilotMetricsExporter');
+		expect(classMemberNamesOf(source, 'PilotMetricsExporter')).toContain('export');
 		const boundary: ModuleBoundary = {
 			path: 'src/sessions/pilot-metrics-export.ts',
 			forbiddenImports: [],

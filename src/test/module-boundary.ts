@@ -284,7 +284,7 @@ function findClassDeclaration(file: ts.SourceFile, className: string): ts.ClassD
 }
 
 /** Every method, property, getter and setter name declared directly on the named class body. */
-export function classMemberNames(source: string, className: string): string[] {
+export function classMemberNamesOf(source: string, className: string): string[] {
 	const declaration = findClassDeclaration(parse(source), className);
 	if (declaration === undefined) throw new Error(`class ${className} not found`);
 	return declaration.members
@@ -306,7 +306,7 @@ export function classMethodBody(source: string, className: string, memberName: s
 }
 
 /** Every top-level exported declaration's name: named exports, `export class/function/const/…`, and `default`. */
-export function exportedDeclarationNames(source: string): string[] {
+export function exportedDeclarationNameList(source: string): string[] {
 	const file = parse(source);
 	const names = new Set<string>();
 	for (const statement of file.statements) {
@@ -361,7 +361,7 @@ function collectCallChains(root: ts.Node): string[] {
  * `registerThing`): a structural fact about which named functions a body reaches for, decided on
  * the AST instead of by matching the call's characters inside an adjacent slice of source.
  */
-export function propertyCallChains(source: string): string[] {
+export function calleeChains(source: string): string[] {
 	return collectCallChains(parse(source));
 }
 

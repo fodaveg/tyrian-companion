@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classMethodBody, classMethodCallChains, propertyCallChains, readModuleSource } from '../test/module-boundary';
+import { classMethodBody, classMethodCallChains, calleeChains, readModuleSource } from '../test/module-boundary';
 
 describe('product action architecture', () => {
 	// Route 1: the panel's click-to-`controller.run` wiring and its `<aside class="tyrian-action-
@@ -9,7 +9,7 @@ describe('product action architecture', () => {
 
 	it('registers the palette exactly once, wired to the plugin\'s own session commands and executor', () => {
 		const main = readModuleSource('src/main.ts');
-		expect(propertyCallChains(main).filter((chain) => chain === 'registerProductActionPalette')).toHaveLength(1);
+		expect(calleeChains(main).filter((chain) => chain === 'registerProductActionPalette')).toHaveLength(1);
 		const setup = classMethodBody(main, 'TyrianCompanionPlugin', 'setupProductActions');
 		expect(setup).toContain('sessionCommands: this.sessionCommands');
 		expect(setup).toContain('execute: (id) => this.executeProductAction');
@@ -20,12 +20,12 @@ describe('product action architecture', () => {
 		const inventory = readModuleSource('src/ui/inventory-advisor-item-view.ts');
 		const settings = readModuleSource('src/ui/settings-tab.ts');
 		for (const surface of [companion, inventory]) {
-			const chains = propertyCallChains(surface);
+			const chains = calleeChains(surface);
 			expect(chains).toContain('renderProductShell');
 			expect(chains).toContain('this.actions.getProductActionController');
 		}
 		// The Settings tab renders native Obsidian rows only; the product shell header lives elsewhere.
-		expect(propertyCallChains(settings)).not.toContain('renderProductShell');
+		expect(calleeChains(settings)).not.toContain('renderProductShell');
 	});
 
 	it('refreshes the product actions from both view repaints, never from inside their own setup', () => {
