@@ -3160,6 +3160,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			getLocale: () => this.settings.language,
 			prepare: (id) => this.prepareSessionCommand(id),
 			notify: (message) => { this.emitNotice(message, 'session_command'); },
+			diagnostics: this.localDebugActions ?? undefined,
 		});
 		this.sessionDispatch = createSessionCommandDispatch(this.sessionCommands);
 		this.sessionRibbon = this.addRibbonIcon('compass', createTranslator(this.settings.language).t('commands.ribbon'), (event) => {
