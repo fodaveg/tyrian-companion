@@ -1,9 +1,8 @@
 {
-	"frozenCount": 28,
+	"frozenCount": 27,
 	"frozen": [
 		"src/advisor/inventory-advisor-builtin-bundle.test.ts",
 		"src/advisor/inventory-advisor-evidence-architecture.test.ts",
-		"src/advisor/inventory-advisor-presentation-architecture.test.ts",
 		"src/advisor/inventory-container-economy-architecture.test.ts",
 		"src/advisor/inventory-preferences-architecture.test.ts",
 		"src/assets/halloween-base.test.ts",

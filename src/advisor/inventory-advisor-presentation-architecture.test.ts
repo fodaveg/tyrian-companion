@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
+import { classMemberNames, moduleBoundaryFacts, moduleSpecifiers, propertyCallChains, referencedNames } from '../test/module-boundary';
 
 const inventoryAdvisorFiles = (directory: string) => readdirSync(directory)
 	.filter((file) => file.startsWith('inventory-advisor-')
@@ -14,8 +14,7 @@ const INVENTORY_ADVISOR_FILES = [
 	{ file: 'inventory-equipment-economy.ts', path: 'src/advisor/inventory-equipment-economy.ts' },
 	{ file: 'inventory-sync-panel-view.ts', path: 'src/ui/inventory-sync-panel-view.ts' },
 	{ file: 'price-history-panel-view.ts', path: 'src/ui/price-history-panel-view.ts' },
-].sort((left, right) => left.path.localeCompare(right.path))
-	.map((entry) => ({ ...entry, source: readModuleSource(entry.path) }));
+].sort((left, right) => left.path.localeCompare(right.path));
 
 const PRESENTATION_DOMAIN_ALLOWLIST = new Set([
 	'src/advisor/inventory-advisor-classifier-model.ts',
@@ -95,10 +94,13 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	}],
 ]);
 
-const FORBIDDEN_ITEM_OPERATION = /\b(?:destroyItem|deleteItem|salvageItem|openContainer)\s*\(/u;
-
-const CAPABILITY_NAME = '(?:(?:executor|gateway|client|store|timer|capture)(?:[A-Z_$][\\w$]*)?|[\\w$]+(?:Executor|Gateway|Client|Store|Timer|Capture)(?:[A-Z_$][\\w$]*)?)';
-const FORBIDDEN_CAPABILITY = new RegExp(`^\\s*(?:(?:public|private|protected|readonly|static|declare|abstract|override|async)\\s+)*(?:get\\s+|set\\s+)?#?${CAPABILITY_NAME}\\s*(?:\\?|!)?\\s*(?::|\\(|=)`, 'mu');
+const FORBIDDEN_ITEM_OPERATIONS = ['destroyItem', 'deleteItem', 'salvageItem', 'openContainer'];
+const CAPABILITY_STEMS = ['executor', 'gateway', 'client', 'store', 'timer', 'capture'];
+const CAPABILITY_SUFFIXES = ['Executor', 'Gateway', 'Client', 'Store', 'Timer', 'Capture'];
+// `this.ports.X()`/`this.actions.X()`/`this.preferenceSession.X()` only count with the explicit
+// `this.` prefix: a local DOM element a renderer happens to name `actions` is not the actions
+// port. `provider.X()` counts either way, since nothing else in this codebase is named `provider`.
+const THIS_ROOTED_PORT_CALL_RECEIVERS = new Set(['ports', 'actions', 'preferenceSession']);
 
 describe('H5.11 inventory advisor presentation boundary', () => {
 	it('censuses the complete presentation surface and keeps it review-only', () => {
@@ -127,54 +129,43 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 			'src/ui/price-history-panel-view.ts',
 		]);
 		expect(PRESENTATION_FILES.map(({ path }) => path)).toEqual([...PRESENTATION_DOMAIN_ALLOWLIST].sort());
-		for (const { path, source } of PRESENTATION_FILES) {
-			for (const specifier of moduleSpecifiers(source)) {
+		for (const { path } of PRESENTATION_FILES) {
+			const facts = moduleBoundaryFacts(path);
+			for (const specifier of facts.specifiers) {
 				expect(forbiddenDependency(specifier), `${path} imports forbidden dependency ${specifier}`).toBe(false);
 			}
-			expect(source, `${path} performs an irreversible item operation`).not.toMatch(FORBIDDEN_ITEM_OPERATION);
-			expect(source, `${path} declares a forbidden capability`).not.toMatch(FORBIDDEN_CAPABILITY);
+			for (const operation of FORBIDDEN_ITEM_OPERATIONS) {
+				expect(facts.names.has(operation), `${path} performs an irreversible item operation ${operation}`).toBe(false);
+			}
+			for (const member of facts.classMemberNames) {
+				expect(isForbiddenCapabilityMemberName(member), `${path} declares a forbidden capability ${member}`).toBe(false);
+			}
 		}
 	});
 
 	it('censuses the explicit integration capabilities the controller may reach for', () => {
-		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts')?.source ?? '';
-		expect([...new Set(boundaryPortCalls(controller))].sort())
-			.toEqual(['ports.dispose', 'ports.invalidate', 'ports.load', 'ports.reclassify']);
+		const controller = PRESENTATION_FILES.find(({ file }) => file === 'inventory-advisor-controller.ts');
+		if (controller === undefined) throw new Error('Missing inventory-advisor-controller.ts in the presentation census.');
+		const calls = knownPortCalls(moduleBoundaryFacts(controller.path).propertyCallChains);
+		expect(calls.sort()).toEqual(['ports.dispose', 'ports.invalidate', 'ports.load', 'ports.reclassify']);
 	});
 
 	it('guards workflow, presentation, ItemView and renderer with per-file import and capability allowlists', () => {
 		for (const [path, policy] of BOUNDARY_POLICIES) {
-			const source = readModuleSource(path);
-			expect([...new Set(moduleSpecifiers(source))].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
-			expect(source, `${path} performs an irreversible item operation`).not.toMatch(FORBIDDEN_ITEM_OPERATION);
-			expect(boundaryPortCalls(source).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
-		}
-	});
-
-	it('poisons a GuildWars2Client import in every UI boundary', () => {
-		for (const path of [
-			'src/ui/inventory-advisor-item-view.ts',
-			'src/ui/inventory-advisor-view.ts',
-			'src/ui/inventory-sync-panel-view.ts',
-			'src/ui/price-history-panel-view.ts',
-		]) {
-			const source = readModuleSource(path);
-			expect(boundarySourceAllowed(path, source)).toBe(true);
-			const poisoned = `import { GuildWars2Client } from '../account/guild-wars-2-client';\n${source}`;
-			expect(boundarySourceAllowed(path, poisoned)).toBe(false);
+			const facts = moduleBoundaryFacts(path);
+			expect([...new Set(facts.specifiers)].sort(), `${path} import allowlist`).toEqual([...policy.imports].sort());
+			for (const operation of FORBIDDEN_ITEM_OPERATIONS) {
+				expect(facts.names.has(operation), `${path} performs an irreversible item operation ${operation}`).toBe(false);
+			}
+			expect(knownPortCalls(facts.propertyCallChains).sort(), `${path} capability allowlist`).toEqual([...policy.portCalls].sort());
 		}
 	});
 
 	it('censuses non-null asserted port calls instead of letting an optional callback bypass the boundary guard', () => {
-		expect(boundaryPortCalls('this.actions.upsertInventoryGoal!(goal); this.ports.reclassify!(); this.actions.loadInventoryPreferences?.(); this.preferenceSession?.current();').sort())
-			.toEqual(['actions.loadInventoryPreferences', 'actions.upsertInventoryGoal', 'ports.reclassify', 'preferenceSession.current']);
-	});
-
-	it('turns red when an ItemView session capability is added without an allowlist entry', () => {
-		const source = readModuleSource('src/ui/inventory-advisor-item-view.ts');
-		const poisoned = `${source}\nthis.preferenceSession.exportEverything?.();`;
-		expect(boundaryPortCalls(poisoned)).toContain('preferenceSession.exportEverything');
-		expect(boundaryPortCalls(poisoned).sort()).not.toEqual(BOUNDARY_POLICIES.get('src/ui/inventory-advisor-item-view.ts')!.portCalls.slice().sort());
+		const calls = knownPortCalls(propertyCallChains(
+			'this.actions.upsertInventoryGoal!(goal); this.ports.reclassify!(); this.actions.loadInventoryPreferences?.(); this.preferenceSession?.current();',
+		));
+		expect(calls.sort()).toEqual(['actions.loadInventoryPreferences', 'actions.upsertInventoryGoal', 'ports.reclassify', 'preferenceSession.current']);
 	});
 
 	it.each([
@@ -195,7 +186,7 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 
 	it.each(['destroyItem(10);', 'deleteItem(10);', 'salvageItem(10);', 'openContainer(10);'])(
 		'turns red for the irreversible operation %s',
-		(source) => expect(FORBIDDEN_ITEM_OPERATION.test(source)).toBe(true),
+		(source) => expect(FORBIDDEN_ITEM_OPERATIONS.some((operation) => referencedNames(source).has(operation))).toBe(true),
 	);
 
 	it.each([
@@ -206,9 +197,31 @@ describe('H5.11 inventory advisor presentation boundary', () => {
 		'private timer() {}',
 		'public capture?(): void;',
 	])('turns red for capability declaration %s', (source) => {
-		expect(FORBIDDEN_CAPABILITY.test(source)).toBe(true);
+		const members = classMemberNames(`class Probe { ${source} }`);
+		expect([...members].some((member) => isForbiddenCapabilityMemberName(member))).toBe(true);
 	});
 });
+
+function isForbiddenCapabilityMemberName(name: string): boolean {
+	for (const stem of CAPABILITY_STEMS) {
+		if (name === stem) return true;
+		if (name.startsWith(stem) && /^[A-Z_$]/u.test(name.charAt(stem.length))) return true;
+	}
+	return CAPABILITY_SUFFIXES.some((suffix) => name.length > suffix.length && name.endsWith(suffix));
+}
+
+function knownPortCalls(chains: readonly string[]): string[] {
+	const result = new Set<string>();
+	for (const chain of chains) {
+		const thisRooted = chain.startsWith('this.');
+		const withoutThis = thisRooted ? chain.slice('this.'.length) : chain;
+		const receiver = withoutThis.split('.')[0] ?? '';
+		if ((thisRooted && THIS_ROOTED_PORT_CALL_RECEIVERS.has(receiver)) || receiver === 'provider') {
+			result.add(withoutThis);
+		}
+	}
+	return [...result];
+}
 
 function forbiddenDependency(specifier: string): boolean {
 	const forbiddenPackages = new Set([
@@ -221,16 +234,10 @@ function forbiddenDependency(specifier: string): boolean {
 	return specifier.split('/').some((token) => /(?:^|[-_.])(?:client|http|request|gateway|transport|secret|store|capture|evidence|executor|operation)(?:$|[-_.])/iu.test(token));
 }
 
-function boundaryPortCalls(source: string): string[] {
-	const instanceCalls = [...source.matchAll(/\bthis\.(ports|actions|preferenceSession)(?:!\.|\?\.|\.)(\w+)(?:\.(\w+))?(?:!|\?\.)?\s*\(/gu)]
-		.map((match) => `${match[1]}.${match[2]}${match[3] === undefined ? '' : `.${match[3]}`}`);
-	const providerCalls = [...source.matchAll(/\bprovider\.(\w+)\s*\(/gu)].map((match) => `provider.${match[1]}`);
-	return [...new Set([...instanceCalls, ...providerCalls])];
-}
-
-function boundarySourceAllowed(path: string, source: string): boolean {
-	const allowed = BOUNDARY_POLICIES.get(path)?.imports;
-	if (allowed === undefined) return false;
-	const actual = [...new Set(moduleSpecifiers(source))].sort();
-	return actual.length === allowed.length && actual.every((specifier, index) => specifier === [...allowed].sort()[index]);
-}
+// H14.17: the poisoned-import and added-capability regression cases that used to live here read
+// the real file, mutated its text and re-ran the same specifier/port-call extraction on the
+// splice. That is subsumed by the exact-allowlist checks above: `toEqual` against
+// `policy.imports`/`policy.portCalls` already fails the moment ANY extra import or call appears,
+// poisoned or not. Verified causally instead: temporarily adding a GuildWars2Client import (and,
+// separately, a preferenceSession.exportEverything call) to a real UI boundary file turns the
+// allowlist check above red; both were reverted after confirming it.

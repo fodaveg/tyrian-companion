@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	classMemberNames,
 	exportedDeclarationNames,
 	forbiddenBoundaryUses,
 	moduleBoundaryFacts,
 	moduleBoundaryViolations,
 	moduleSpecifiers,
+	propertyCallChains,
 	referencedNames,
 	type ModuleBoundary,
 } from './module-boundary';
@@ -94,6 +96,38 @@ describe('exported declaration names', () => {
 			export const value = 1, other = 2;
 		`);
 		expect([...names].sort()).toEqual(['Alias', 'Shape', 'Widget', 'build', 'other', 'value']);
+	});
+});
+
+describe('class member names', () => {
+	it('reports a declared member and keeps a differently-named local variable out of it', () => {
+		const names = classMemberNames(`
+			class Widget {
+				executor?: Executor;
+				run(): void { const gateway = build(); void gateway; }
+			}
+		`);
+		expect(names.has('gateway')).toBe(false);
+		expect([...names].sort()).toEqual(['executor', 'run']);
+	});
+});
+
+describe('property call chains', () => {
+	it('keeps a leading this so a this-rooted receiver is distinct from a bare local of the same name', () => {
+		const chains = propertyCallChains(`
+			this.ports.dispose();
+			this.actions.upsertInventoryGoal!(goal);
+			this.preferenceSession?.current();
+			provider.load();
+			actions.append(button);
+		`);
+		expect([...new Set(chains)].sort()).toEqual([
+			'actions.append', 'provider.load', 'this.actions.upsertInventoryGoal', 'this.ports.dispose', 'this.preferenceSession.current',
+		]);
+	});
+
+	it('ignores a bare function call with no receiver', () => {
+		expect(propertyCallChains('run();')).toEqual([]);
 	});
 });
 
