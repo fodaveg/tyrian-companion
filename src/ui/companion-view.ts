@@ -575,7 +575,9 @@ export class TyrianCompanionView extends ItemView {
 			return {
 				ariaLabel: copy.session, state: copy.active,
 				meta: { clock: formatElapsed(now - Date.parse(observed.baseline.completedAt)), text: `· ${observed.startContext.characterName}` },
-				actions: [{ text: copy.finish, cta: true, onClick: () => { void this.actions.stopManualSession(); } }],
+				// `stopManualSession` now rejects when its diagnostics span already logged the cause
+				// (H15.2, 2026-09-10 incident): swallow it here, there is nothing more this button can do.
+				actions: [{ text: copy.finish, cta: true, onClick: () => { void this.actions.stopManualSession().catch(() => undefined); } }],
 				callout: callout ?? fallbackCallout, figures: this.buildActiveFigures(now, copy, locale), ...drawers,
 			};
 		}
@@ -584,7 +586,7 @@ export class TyrianCompanionView extends ItemView {
 			const wait = this.settlementWait();
 			const actions: SessionCardAction[] = [];
 			if (wait !== null && this.actions.captureSessionFinalNow) {
-				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.(); } });
+				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.()?.catch(() => undefined); } });
 			}
 			return {
 				ariaLabel: copy.session, state: copy.finishing,
@@ -772,7 +774,9 @@ export class TyrianCompanionView extends ItemView {
 	}
 
 	private async runRecovery(): Promise<void> {
-		const recovery = this.actions.recoverSession();
+		// `recoverSession` now rejects when its diagnostics span already logged the cause (H15.2,
+		// 2026-09-10 incident): still repaint either way, there is nothing more this view can do.
+		const recovery = this.actions.recoverSession().catch(() => undefined);
 		this.render();
 		await recovery;
 		this.render();
@@ -1122,7 +1126,7 @@ export class TyrianCompanionView extends ItemView {
 			const answers = proposal.createDiv({ cls: 'tyrian-companion-view__session-actions' });
 			const stop = answers.createEl('button', { text: this.t('view.stopSession'), cls: 'mod-cta' });
 			stop.disabled = session.status !== 'active';
-			stop.addEventListener('click', () => { void this.actions.stopManualSession(null); });
+			stop.addEventListener('click', () => { void this.actions.stopManualSession(null).catch(() => undefined); });
 			this.addDismissAndDisarm(answers, 'stop');
 		} else {
 			stateText.setText(`${this.t('status.armed')} · ${this.t('view.detectionNextQuery')}: ${timeline.next}`);

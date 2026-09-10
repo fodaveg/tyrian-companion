@@ -986,6 +986,72 @@ describe('ManualSessionStartService', () => {
 		}));
 	});
 
+	it('logs the error class of an unclassified start failure instead of discarding it (H15.1)', async () => {
+		const leases = coordinator();
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		// A raw `TypeError` is exactly what `captureActiveBuild` relays unchanged for a network
+		// failure: `mapFailure` cannot classify it, so before H15.1 the debug log never learned it
+		// happened at all, and the player only ever saw "unexpected" (2026-09-10 incident).
+		const service = new ManualSessionStartService(
+			leases,
+			{ capture: vi.fn(async () => { throw new TypeError('Failed to fetch'); }) },
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'unexpected' } });
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_start',
+			level: 'error',
+			phase: 'failure',
+			code: 'unknown_failure',
+			details: { reason: 'TypeError' },
+		}));
+		const [record] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [Record<string, unknown>];
+		expect(record.message).toBeUndefined();
+		expect(record.stack).toBeUndefined();
+	});
+
+	it('logs the error class of an unclassified stop failure instead of discarding it (H15.1)', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				// `captureFinal` relaying a raw abort is the stop-side twin of the start-side network
+				// `TypeError`: `mapStopFailure` cannot classify it either, and forced it to the fixed
+				// `snapshot_failed` message while discarding the actual cause.
+				captureFinal: vi.fn(async () => { throw new DOMException('The operation was aborted.', 'AbortError'); }),
+			},
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(service.captureFinalNow())
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_finish',
+			level: 'error',
+			phase: 'failure',
+			code: 'unknown_failure',
+			details: { reason: 'AbortError' },
+		}));
+	});
+
 	it('blocks a new session when local recovery evidence is corrupt', async () => {
 		const leases = coordinator();
 		const capture = { capture: vi.fn(async () => structuredClone(captured)) };

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { SessionRecoveryState, SessionStopFailure } from '../sessions/manual-session-start-service';
 import type { SessionState } from '../sessions/session';
-import { SessionCommandController, type SessionCommandPorts } from './session-command-controller';
+import { LocalDebugActionRunner, type LocalDebugActionPort } from '../core/local-debug-action-runner';
+import type { LocalDebugRecordV1 } from '../core/local-debug-contract';
+import { LocalDebugLogger } from '../core/local-debug-logger';
+import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from '../core/local-debug-writer';
+import { SessionCommandBackendFailure, SessionCommandController, type SessionCommandPorts } from './session-command-controller';
 import {
 	createSessionCommandDispatch,
 	hasExactSessionBackendResult,
@@ -211,9 +215,36 @@ describe('SessionCommandController', () => {
 		// `provisional` no longer offers any command (Lote S, 2026-09-09: it finalizes on its own).
 		const harness = controllerHarness('complete');
 		harness.ports.prepare.mockResolvedValue(async () => { throw new Error('raw secret-bearing detail'); });
-		await harness.controller.run('clear-completed-session');
+		// `run()` rejects on a failed backend action (H15.2, 2026-09-10 incident) so the diagnostics
+		// span wrapping it stops logging a false success; the sanitized notice still fires either way.
+		await expect(harness.controller.run('clear-completed-session')).rejects.toThrow(SessionCommandBackendFailure);
 		expect(harness.ports.notify).toHaveBeenCalledWith('The session action could not be completed.');
 		expect(harness.ports.notify).not.toHaveBeenCalledWith(expect.stringContaining('raw'));
+	});
+
+	// H15.1 (2026-09-10 incident): a rejected backend action never rethrows past `flight()`, so
+	// without this log call the button path left no local trace at all, even though it always
+	// notified the player and always resolved to `'failed'`.
+	it.each([
+		['start-farming-session', 'idle', 'session_start'],
+		['finish-farming-session', 'active', 'session_finish'],
+	] as const)('logs a structured error record when %s rejects', async (id, status, action) => {
+		const harness = controllerHarness(status);
+		harness.ports.prepare.mockResolvedValue(async () => { throw new Error('Start failed.'); });
+
+		await expect(harness.controller.runWithOutcome(id)).resolves.toBe('failed');
+
+		expect(harness.ports.diagnostics.event).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action,
+			level: 'error',
+			phase: 'failure',
+			code: 'unknown_failure',
+			details: { reason: 'Error' },
+		}));
+		const [record] = (harness.ports.diagnostics.event as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [Record<string, unknown>];
+		expect(record.message).toBeUndefined();
+		expect(record.stack).toBeUndefined();
 	});
 
 	it('dispose prevents a confirmed late intent from executing', async () => {
@@ -237,6 +268,35 @@ describe('SessionCommandController', () => {
 		await run;
 		expect(harness.ports.prepare).not.toHaveBeenCalled();
 		expect(harness.ports.notify).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * H15.2 (2026-09-10 incident): `main.ts` wraps `sessionCommands.run(id)` in exactly this shape
+	 * (`localDebugActions.run({component:'session', action}, () => this.sessionCommands.run(id))`).
+	 * Before `legacy` rejected, that outer span always saw a promise that settled, so it logged a
+	 * false `success` for a start or stop that had just failed. This drives the real
+	 * `LocalDebugActionRunner`/`LocalDebugLogger` stack over an in-memory writer, the way `main.ts`
+	 * actually wires it, and reads back the persisted record.
+	 */
+	it('lets a real diagnostics span log the true failure instead of a false success', async () => {
+		const storage = new MemoryDebugStorage();
+		const writer = new LocalDebugJsonlWriter({ storage, directory: 'obsidian/plugins/tyrian-companion/logs' });
+		const logger = new LocalDebugLogger({ enabled: true, pluginVersion: '0.1.31', writer });
+		const runner = new LocalDebugActionRunner({ diagnostics: logger });
+		const harness = controllerHarness('active');
+		harness.ports.prepare.mockResolvedValue(async () => { throw new Error('Stop failed.'); });
+
+		await expect(runner.run(
+			{ component: 'session', action: 'session_finish' },
+			async () => harness.controller.run('finish-farming-session'),
+		)).rejects.toThrow();
+
+		await logger.flush();
+		const records = storage.records();
+		const outer = records.filter((record) => record.action === 'session_finish');
+		expect(outer).not.toHaveLength(0);
+		expect(outer.every((record) => record.phase !== 'success')).toBe(true);
+		expect(outer.some((record) => record.level === 'error' && record.phase === 'failure')).toBe(true);
 	});
 });
 
@@ -298,10 +358,12 @@ describe('session command adapters', () => {
 		await fromView;
 	});
 
-	it('contains a failed finish backend and emits only fixed feedback', async () => {
+	it('contains a failed finish backend, rejects and emits only fixed feedback', async () => {
 		const harness = controllerHarness('active');
 		harness.ports.prepare.mockResolvedValue(async () => { throw new Error('raw stop failure'); });
-		await expect(createSessionCommandDispatch(harness.controller).finish()).resolves.toBeUndefined();
+		// The rejection (H15.2, 2026-09-10 incident) is what lets a diagnostics span wrapping
+		// `finish()` in `main.ts` log the real failure instead of a false success.
+		await expect(createSessionCommandDispatch(harness.controller).finish()).rejects.toThrow(SessionCommandBackendFailure);
 		expect(harness.ports.notify).toHaveBeenCalledTimes(1);
 		expect(harness.ports.notify).toHaveBeenCalledWith('The session action could not be completed.');
 	});
@@ -361,10 +423,15 @@ function failure(): SessionStopFailure {
 
 function controllerHarness(initial: SessionState['status'], overrides: Partial<SessionCommandContext> = {}) {
 	let current = context(initial, overrides);
+	const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 	const ports = {
 		getContext: vi.fn(() => current),
 		prepare: vi.fn<SessionCommandPorts['prepare']>(async () => async () => undefined),
 		notify: vi.fn(),
+		diagnostics: {
+			createContext: (ctx) => ({ ...ctx, actionId: 'a', correlationId: 'a' }),
+			event: diagnosticsEvent,
+		} satisfies LocalDebugActionPort,
 	} satisfies SessionCommandPorts;
 	return {
 		ports,
@@ -383,4 +450,29 @@ function deferred<T>() {
 async function flush(): Promise<void> {
 	await Promise.resolve();
 	await Promise.resolve();
+}
+
+/** Minimal in-memory `LocalDebugStoragePort` so a test can drive the real writer/logger/runner stack. */
+class MemoryDebugStorage implements LocalDebugStoragePort {
+	private readonly files = new Map<string, string>();
+
+	async exists(path: string): Promise<boolean> { return this.files.has(path); }
+	async read(path: string): Promise<string> { return this.files.get(path) ?? ''; }
+	async write(path: string, data: string): Promise<void> { this.files.set(path, data); }
+	async append(path: string, data: string): Promise<void> { this.files.set(path, `${this.files.get(path) ?? ''}${data}`); }
+	async mkdir(): Promise<void> { /* a single flat log file needs no directory bookkeeping here. */ }
+	async remove(path: string): Promise<void> { this.files.delete(path); }
+	async rename(path: string, destination: string): Promise<void> {
+		const value = this.files.get(path);
+		if (value === undefined) return;
+		this.files.delete(path);
+		this.files.set(destination, value);
+	}
+
+	/** Parses every retained JSONL line back into a record, in the order they were appended. */
+	records(): LocalDebugRecordV1[] {
+		return [...this.files.values()]
+			.flatMap((content) => content.split('\n').filter((line) => line.length > 0))
+			.map((line) => JSON.parse(line) as LocalDebugRecordV1);
+	}
 }

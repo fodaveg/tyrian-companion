@@ -54,7 +54,10 @@ export function registerSessionPalette(
 			name: controller.describe(id).name,
 			checkCallback: (checking) => {
 				const available = controller.describe(id).available;
-				if (!checking && available) void controller.run(id);
+				// `run()` rejects on a failed backend action (H15.2, 2026-09-10 incident) so the span
+				// wrapping it can log the truth instead of a false success; this bare palette entry
+				// wraps nothing, so the rejection (already recorded, structured) is swallowed here.
+				if (!checking && available) void controller.run(id).catch(() => undefined);
 				return available;
 			},
 		});
