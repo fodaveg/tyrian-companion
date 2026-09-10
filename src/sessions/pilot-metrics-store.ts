@@ -17,6 +17,7 @@ import {
 	type PilotVerificationV1,
 } from './pilot-metrics-model';
 import { openIndexedDb } from '../core/indexed-db-open';
+import { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 
 export const PILOT_METRICS_DB_NAME = 'tyrian-companion-pilot-metrics';
 export const PILOT_METRICS_DB_VERSION = 2;
@@ -57,6 +58,7 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		vaultId: string,
 		databaseName = PILOT_METRICS_DB_NAME,
 		private readonly maximumObservations = PILOT_METRICS_MAX_OBSERVATIONS,
+		private readonly diagnostics: LocalDebugPersistenceProbe = new LocalDebugPersistenceProbe(),
 	) {
 		if (vaultId.length === 0 || vaultId.length > 128) throw new TypeError('Pilot metrics vault scope is invalid.');
 		this.databaseName = `${databaseName}:${vaultId}`;
@@ -417,8 +419,14 @@ export class IndexedDbPilotMetricsStore implements PilotMetricsStore {
 		return await this.database;
 	}
 
+	/**
+	 * Registers the rejection that just landed here (H15.23, 2026-09-10 incident): every one of
+	 * the nine catches above already had `{status:'error', code:'unavailable'}` to return, so a
+	 * real IndexedDB failure never reached the local debug log at all.
+	 */
 	private failed<T>(): PilotStoreResult<T> {
 		this.unavailable = true;
+		this.diagnostics.begin('pilot_metrics', 'transaction').failure();
 		return { status: 'error', code: 'unavailable' };
 	}
 }

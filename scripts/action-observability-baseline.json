@@ -8457,12 +8457,12 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "03191922549641c5299cbe5ccd8afefbc76bf40e",
+					"id": "40bac6d731d16265ae1093dd00e1dbb7cd8ef447",
 					"kind": "catch_clause",
-					"line": 58,
+					"line": 61,
 					"column": 3,
-					"endLine": 58,
-					"endColumn": 55,
+					"endLine": 61,
+					"endColumn": 64,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8473,12 +8473,12 @@
 					"reason": "Allowlisted catch_clause: The \"configure\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"configure\"."
 				},
 				{
-					"id": "8e7a4eb7adc21f72fc611dfa60a6ea829cc33b23",
+					"id": "4f58556cea5f4e64d01cffb5e6645e3fdac95f35",
 					"kind": "catch_clause",
-					"line": 72,
+					"line": 75,
 					"column": 5,
-					"endLine": 72,
-					"endColumn": 56,
+					"endLine": 75,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8489,12 +8489,12 @@
 					"reason": "Allowlisted catch_clause: The \"inspect\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"inspect\"."
 				},
 				{
-					"id": "245ce3d2c026f15608c399a151597b17dfcace54",
+					"id": "cd095734436951e06b62d9f3115ca133ac99d953",
 					"kind": "catch_clause",
-					"line": 110,
+					"line": 113,
 					"column": 4,
-					"endLine": 110,
-					"endColumn": 56,
+					"endLine": 113,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8505,12 +8505,12 @@
 					"reason": "Allowlisted catch_clause: The \"proposalDecided\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"proposalDecided\"."
 				},
 				{
-					"id": "6b5449b01239225a7416639b3a19f279b8d988de",
+					"id": "8f4a79854171a9179a182208cefdd6f2d677de62",
 					"kind": "catch_clause",
-					"line": 124,
+					"line": 127,
 					"column": 5,
-					"endLine": 124,
-					"endColumn": 57,
+					"endLine": 127,
+					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8521,12 +8521,12 @@
 					"reason": "Allowlisted catch_clause: The \"proposalExcluded\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"proposalExcluded\"."
 				},
 				{
-					"id": "f3db1ea84a7402b17ef953881fc0deb91f6c3cf8",
+					"id": "d7d8b9bba1200554ff02e884c241c0fd3f792dd5",
 					"kind": "catch_clause",
-					"line": 137,
+					"line": 140,
 					"column": 4,
-					"endLine": 137,
-					"endColumn": 56,
+					"endLine": 140,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8537,12 +8537,12 @@
 					"reason": "Allowlisted catch_clause: The \"sessionCompleted\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"sessionCompleted\"."
 				},
 				{
-					"id": "60493bd0e321db7d75b2a4d12756066c9e5fbf48",
+					"id": "83cfc2c958611b1240949d89f285b9ee68bca6de",
 					"kind": "catch_clause",
-					"line": 151,
+					"line": 154,
 					"column": 4,
-					"endLine": 151,
-					"endColumn": 56,
+					"endLine": 154,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8553,12 +8553,12 @@
 					"reason": "Allowlisted catch_clause: The \"recoveryClassified\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"recoveryClassified\"."
 				},
 				{
-					"id": "c422fc46bbd40daadbed77724ce694d0a3c83621",
+					"id": "353d12356c2cd91ac07aff0b126584d177d81331",
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 165,
 					"column": 5,
-					"endLine": 162,
-					"endColumn": 57,
+					"endLine": 165,
+					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8569,12 +8569,12 @@
 					"reason": "Allowlisted catch_clause: The \"recoveryFinished\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"recoveryFinished\"."
 				},
 				{
-					"id": "af97d9ccf121da5918b7cf9abe72dbfdeca0af32",
+					"id": "d27ac3ea446fc8fc62b80177e269f7060576a6e9",
 					"kind": "catch_clause",
-					"line": 173,
+					"line": 176,
 					"column": 5,
-					"endLine": 173,
-					"endColumn": 56,
+					"endLine": 176,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8585,12 +8585,12 @@
 					"reason": "Allowlisted catch_clause: The \"recoveryKind\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"recoveryKind\"."
 				},
 				{
-					"id": "10025b54086c813a80fc55eb6a14e6adc5d42a87",
+					"id": "cf739721545c7a31a727f2ca3b76317e31d71cdd",
 					"kind": "catch_clause",
-					"line": 185,
+					"line": 188,
 					"column": 5,
-					"endLine": 185,
-					"endColumn": 57,
+					"endLine": 188,
+					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8601,12 +8601,12 @@
 					"reason": "Allowlisted catch_clause: The \"reviewSilentLosses\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"reviewSilentLosses\"."
 				},
 				{
-					"id": "a7428382c7c6e62b0190a484a9b40efe93b6770e",
+					"id": "c8f6e9d968e680aede4b6c811af1d7e6585f9af1",
 					"kind": "catch_clause",
-					"line": 196,
+					"line": 199,
 					"column": 5,
-					"endLine": 196,
-					"endColumn": 56,
+					"endLine": 199,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8617,12 +8617,12 @@
 					"reason": "Allowlisted catch_clause: The \"clear\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"clear\"."
 				},
 				{
-					"id": "98886f7a0acd1fc903348c85da021fc081921773",
+					"id": "f93429be846d5d1d4d173ada9f96d1f5d05a8b08",
 					"kind": "catch_clause",
-					"line": 207,
+					"line": 210,
 					"column": 5,
-					"endLine": 207,
-					"endColumn": 56,
+					"endLine": 210,
+					"endColumn": 65,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8633,12 +8633,12 @@
 					"reason": "Allowlisted catch_clause: The \"disable\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"disable\"."
 				},
 				{
-					"id": "d8ee6787db6d0c19701cf2acdb0d0a235d571ca8",
+					"id": "3a32ac2a0b862d81f471a527713986550ccbf8c7",
 					"kind": "catch_clause",
-					"line": 221,
+					"line": 224,
 					"column": 5,
-					"endLine": 221,
-					"endColumn": 57,
+					"endLine": 224,
+					"endColumn": 66,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -8651,9 +8651,9 @@
 				{
 					"id": "5f95233f429844c2de67279fe27ac1d2b70b6e19",
 					"kind": "promise_catch",
-					"line": 249,
+					"line": 265,
 					"column": 19,
-					"endLine": 249,
+					"endLine": 265,
 					"endColumn": 50,
 					"registration": "catch",
 					"classification": "allowlisted",

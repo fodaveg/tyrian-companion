@@ -1556,6 +1556,32 @@ describe('managed assets preview diagnostics', () => {
 	});
 });
 
+describe('pilot metrics export diagnostics', () => {
+	// H15.23 (2026-09-10 incident): this ran entirely outside run(), so an 'unavailable' export
+	// (a Vault write conflict, a corrupt plan) never reached the local debug log, only the UI.
+	it('registers a session_projection failure when the export settles unavailable', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			pilotMetricsExportPlan: { snapshot: {}, health: 'ready', outputFolder: 'Tyrian Companion' },
+			pilotMetricsExporter: { export: vi.fn(async () => ({ status: 'unavailable' as const, files: [] })) },
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'pilot-metrics-export' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const exportMetrics = (TyrianCompanionPlugin.prototype as unknown as {
+			exportPilotMetrics(this: typeof harness): Promise<unknown>;
+		}).exportPilotMetrics;
+
+		await expect(exportMetrics.call(harness)).resolves.toMatchObject({ status: 'unavailable' });
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'session' && input.action === 'session_projection' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'storage_failure', state: 'pilot_metrics_export' });
+	});
+});
+
 describe('local diagnostics composition', () => {
 	it('clears a real logger without recreating a terminal record after the deletion', async () => {
 		const storage = memoryDebugStorage();

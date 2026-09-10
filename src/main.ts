@@ -939,6 +939,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			detectionQualityPersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
 			proposalQueuePersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
 			sessionRecoverPersistence: this.persistenceDiagnostics('session', 'session_recover'),
+			pilotMetricsPersistence: this.persistenceDiagnostics('session', 'session_projection'),
 		});
 		// Publication order is the contract, not construction order: the session state
 		// callback above reconciles against `pendingProposals` only once it exists, so
@@ -1640,11 +1641,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return await this.pilotMetricsExporter.preview(snapshot, health, this.settings.outputFolder);
 	}
 
+	/**
+	 * H15.23 (2026-09-10 incident): this ran entirely outside `run()`, so even a rejection that
+	 * escaped `PilotMetricsExporter.export()` (it does not normally throw, but nothing here relied
+	 * on that) would have gone unlogged; now a settled `unavailable`/`conflict` result also reaches
+	 * the local debug log instead of only the UI.
+	 */
 	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
 		if (!this.runtimeReady) return null;
 		const plan = this.pilotMetricsExportPlan;
 		if (!plan) return null;
-		return await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
+		const perform = async () => {
+			const result = await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
+			if (result.status !== 'unavailable' && result.status !== 'conflict') return result;
+			return { ...result, phase: 'failure' as const, code: 'storage_failure' as const, details: { status: result.status } };
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'session', action: 'session_projection', state: 'pilot_metrics_export' }, perform,
+		) ?? perform());
 	}
 
 	async clearPilotMetrics(): Promise<number | null> {

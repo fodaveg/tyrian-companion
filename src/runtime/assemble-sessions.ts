@@ -79,6 +79,7 @@ export interface SessionsAssemblyInput {
 	detectionQualityPersistence: LocalDebugPersistenceProbe;
 	proposalQueuePersistence: LocalDebugPersistenceProbe;
 	sessionRecoverPersistence: LocalDebugPersistenceProbe;
+	pilotMetricsPersistence: LocalDebugPersistenceProbe;
 }
 
 export interface SessionsAssembly {
@@ -99,8 +100,10 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		new IndexedDbDetectionQualityStore(input.factory, undefined, input.detectionQualityPersistence),
 	);
 	const pilotMetrics = new PilotMetricsRecorder(
-		new IndexedDbPilotMetricsStore(input.factory, input.vaultId),
+		new IndexedDbPilotMetricsStore(input.factory, input.vaultId, undefined, undefined, input.pilotMetricsPersistence),
 		PILOT_METRICS_MAX_OBSERVATIONS,
+		undefined,
+		input.diagnostics ?? undefined,
 	);
 	const pilotMetricsExporter = new PilotMetricsExporter(input.pilotMetricsVault);
 	const sessions = new ManualSessionStartService(
