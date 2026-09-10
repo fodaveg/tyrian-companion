@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+import { scanSecurityBoundaries } from '../../scripts/security-scan.mjs';
+
 const SPIKE_ROOT = 'spikes/h8-mumble-crossover';
 const SPIKE_TEST_ENTRY = 'scripts/tests/probar-h8-crossover-spike.sh';
 const EXPECTED_SPIKE_FILES = [
@@ -128,10 +130,31 @@ describe('H8.2 isolated CrossOver spike boundary', () => {
 		});
 	});
 
-	it('keeps the product scanner allowlist closed to the declarative contract', () => {
-		const scanner = readFileSync('scripts/security-scan.mjs', 'utf8');
-		expect(scanner).toContain("'src/platform/mumble-v2-contract.ts'");
-		expect(scanner).not.toMatch(/spikes\/h8|mumble_probe/iu);
+	// The former version of this test read scripts/security-scan.mjs as text and asserted it
+	// contained the string "'src/platform/mumble-v2-contract.ts'" and never matched
+	// "spikes/h8"/"mumble_probe": a check on how the scanner's own source happens to be typed,
+	// not on what it actually does when run. The property that matters -- that the C spike is
+	// structurally out of the production TypeScript scanner's reach, regardless of what its
+	// source contains -- is executed below by calling the real `scanSecurityBoundaries()` against
+	// an isolated fixture root built from the spike's own C source plus a benign contract file.
+	it('keeps the spike C sources outside the production scanner reach, even when they mention "mumble"', () => {
+		const directory = mkdtempSync(join(tmpdir(), 'tyrian-h8-spike-scanner-'));
+		try {
+			const spikeSource = spikeSources().get('mumble_probe_core.c') ?? '';
+			expect(spikeSource.toLowerCase()).toContain('mumble');
+			mkdirSync(join(directory, 'spikes/h8-mumble-crossover'), { recursive: true });
+			writeFileSync(join(directory, 'spikes/h8-mumble-crossover/mumble_probe_core.c'), spikeSource);
+			mkdirSync(join(directory, 'src/platform'), { recursive: true });
+			writeFileSync(
+				join(directory, 'src/platform/mumble-v2-contract.ts'),
+				readFileSync('src/platform/mumble-v2-contract.ts', 'utf8'),
+			);
+			const findings = scanSecurityBoundaries(directory);
+			expect(findings.filter((finding) => finding.path.startsWith('spikes/'))).toEqual([]);
+			expect(findings.some((finding) => finding.rule === 'unauthorized-mumble-helper')).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 
 	it('turns red for duplicate mappings, write flags and alternate sinks', () => {
