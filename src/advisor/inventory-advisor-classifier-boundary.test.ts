@@ -1,35 +1,33 @@
 import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { readModuleSource } from '../test/module-boundary';
+import { exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers, referencedNames } from '../test/module-boundary';
 
 const CLASSIFIER_FILES = readdirSync('src/advisor')
 	.filter((file) => /^inventory-advisor-(?:classifier|market).*\.ts$/u.test(file) && !file.endsWith('.test.ts'))
-	.sort()
-	.map((file) => ({ file, source: readModuleSource(`src/advisor/${file}`) }));
+	.sort();
 
-const FORBIDDEN = [
-	/\bonload\b/u, /from ['"]obsidian['"]/u,
-	/(?:\bfrom\s*|\bimport\s*\()\s*['"][^'"\n]*(?:client|gateway|http|secret|store|executor|transport|operation)[^'"\n]*['"]/u,
-	/\b(?:Vault|vault|workspace|Notice|Modal|setViewState|createEl)\b/u,
-	/\b(?:indexedDB|IndexedDB|localStorage|sessionStorage|readFileSync|writeFileSync)\b/u,
-	/\b(?:fetch|request|requestUrl|execute)\s*\(/u,
-	/\b(?:setTimeout|setInterval|requestAnimationFrame)\b/u,
-	/\b(?:deleteItem|salvageItem|openContainer|destroyItem)\s*\(/u,
-	/^\s*(?:client|operation|http|secret|store|executor|transport|gateway|requester)\??\s*:/mu,
-	/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:class|function|const|let|var|interface|type)\s+\w*(?:execut|order|request|client|operation|secret|store|destroy|delete|salvage|openContainer)\w*/iu,
+const FORBIDDEN_NAMES = [
+	'onload', 'Vault', 'vault', 'workspace', 'Notice', 'Modal', 'setViewState', 'createEl',
+	'indexedDB', 'IndexedDB', 'localStorage', 'sessionStorage', 'readFileSync', 'writeFileSync',
+	'fetch', 'request', 'requestUrl', 'execute',
+	'setTimeout', 'setInterval', 'requestAnimationFrame',
+	'deleteItem', 'salvageItem', 'openContainer', 'destroyItem',
+	'client', 'operation', 'http', 'secret', 'store', 'executor', 'transport', 'gateway', 'requester',
+];
+const HOSTILE_EXPORT_SUBSTRINGS = [
+	'execut', 'order', 'request', 'client', 'operation', 'secret', 'store', 'destroy', 'delete', 'salvage', 'opencontainer',
 ];
 
 describe('inventory advisor H4.15 classifier boundary', () => {
 	it('censuses every classifier module and keeps the engine pure', () => {
-		expect(CLASSIFIER_FILES.map(({ file }) => file)).toEqual([
+		expect(CLASSIFIER_FILES).toEqual([
 			'inventory-advisor-classifier-model.ts',
 			'inventory-advisor-classifier.ts',
 			'inventory-advisor-market.ts',
 		]);
-		for (const { source } of CLASSIFIER_FILES) {
-			for (const specifier of moduleSpecifiers(source)) expect(forbiddenDependency(specifier)).toBe(false);
-			for (const forbidden of FORBIDDEN) expect(source).not.toMatch(forbidden);
+		for (const file of CLASSIFIER_FILES) {
+			expect(boundaryViolation(moduleBoundaryFacts(`src/advisor/${file}`)), file).toBe(false);
 		}
 	});
 
@@ -41,7 +39,7 @@ describe('inventory advisor H4.15 classifier boundary', () => {
 			'gateway.salvageItem(itemId);', 'openContainer(itemId);',
 			'import { GuildWars2Client } from \'../account/guild-wars-2-client\';',
 			'gateway: TradingGateway;', 'export function executeOrder() {}',
-		]) expect(FORBIDDEN.some((forbidden) => forbidden.test(source))).toBe(true);
+		]) expect(boundaryViolation(factsOf(source)), source).toBe(true);
 	});
 
 	it.each([
@@ -54,15 +52,20 @@ describe('inventory advisor H4.15 classifier boundary', () => {
 	});
 });
 
-function moduleSpecifiers(source: string): string[] {
-	const patterns = [
-		/(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?['"]([^'"]+)['"]/gu,
-		/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-		/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/gu,
-	];
-	return patterns.flatMap((pattern) => [...source.matchAll(pattern)].map((match) => match[1])
-		.filter((value): value is string => value !== undefined));
+function boundaryViolation(facts: { specifiers: string[]; names: Set<string>; exportedNames: Set<string> }): boolean {
+	if (facts.specifiers.some(forbiddenDependency)) return true;
+	if (FORBIDDEN_NAMES.some((name) => facts.names.has(name))) return true;
+	for (const name of facts.exportedNames) {
+		const lower = name.toLowerCase();
+		if (HOSTILE_EXPORT_SUBSTRINGS.some((token) => lower.includes(token))) return true;
+	}
+	return false;
 }
+
+function factsOf(source: string): { specifiers: string[]; names: Set<string>; exportedNames: Set<string> } {
+	return { specifiers: moduleSpecifiers(source), names: referencedNames(source), exportedNames: exportedDeclarationNames(source) };
+}
+
 function forbiddenDependency(specifier: string): boolean {
 	return specifier === 'obsidian' || specifier.split('/').some((token) => /(?:^|[-_.])(client|operation|http|secret|store|executor|transport|gateway|request)(?:$|[-_.])/u.test(token));
 }

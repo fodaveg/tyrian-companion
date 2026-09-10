@@ -1,13 +1,9 @@
 import { readdirSync } from 'node:fs';
-import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
-import { readModuleSource } from '../test/module-boundary';
+import { exportedDeclarationNames, moduleBoundaryFacts, moduleSpecifiers, referencedNames } from '../test/module-boundary';
 
-const BUILTIN_FILES = readdirSync('src/advisor')
-	.filter(isBuiltinProductionFile)
-	.sort()
-	.map((file) => ({ file, source: readModuleSource(`src/advisor/${file}`) }));
+const BUILTIN_FILES = readdirSync('src/advisor').filter(isBuiltinProductionFile).sort();
 
 const ALLOWED_DEPENDENCIES = new Set([
 	'./inventory-advisor-classifier',
@@ -17,17 +13,21 @@ const ALLOWED_DEPENDENCIES = new Set([
 	'./inventory-container-economy',
 ]);
 
-const IO_OR_NETWORK = /\b(?:fetch|request|requestUrl|XMLHttpRequest|WebSocket|EventSource|readFile|readFileSync|writeFile|writeFileSync)\b/u;
-const PERSISTENCE = /\b(?:indexedDB|IndexedDB|localStorage|sessionStorage|Storage|store|Store)\b/u;
-const TIMERS = /\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u;
-const EXECUTION_CAPABILITY = /\b(?:GuildWars2Client|capture|Capture|operation|Operation|executor|Executor|destroy|Destroy|deleteItem|salvageItem|openContainer)\b/u;
-const CAPABILITY_FIELD = /^\s*(?:client|network|capture|operation|executor|destroy|store|requester|transport|gateway)\??\s*:/mu;
-const HOSTILE_EXPORT = /\bexport\s+(?:declare\s+)?(?:default\s+)?(?:async\s+)?(?:class|function|const|let|var|interface|type)\s+\w*(?:client|network|capture|operation|executor|destroy|store|request)\w*/iu;
+const EXACT_IO_NETWORK = ['fetch', 'requestUrl', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'readFile', 'readFileSync', 'writeFile', 'writeFileSync'];
+const EXACT_PERSISTENCE = ['indexedDB', 'IndexedDB', 'localStorage', 'sessionStorage', 'store', 'Store'];
+const EXACT_TIMERS = ['setTimeout', 'setInterval', 'requestAnimationFrame', 'queueMicrotask'];
+const EXACT_EXECUTION = ['GuildWars2Client', 'deleteItem', 'salvageItem', 'openContainer', 'capture', 'operation', 'executor', 'destroy'];
+const HOSTILE_EXPORT_TOKENS = ['client', 'network', 'capture', 'operation', 'executor', 'destroy', 'store', 'request'];
 
-describe('inventory advisor H4.17 built-in bundle architecture boundary', () => {
-	it('censuses the complete production bundle and keeps it pure', () => {
-		expect(BUILTIN_FILES.map(({ file }) => file)).toEqual(['inventory-advisor-builtin-bundle.ts']);
-		for (const { source } of BUILTIN_FILES) expect(violations(source)).toEqual([]);
+type Violation = 'dependency' | 'io-or-network' | 'persistence' | 'timer' | 'execution-capability' | 'hostile-export';
+type Facts = { specifiers: string[]; names: Set<string>; exportedNames: Set<string> };
+
+describe('inventory advisor H4.17 built-in bundle boundary', () => {
+	it('censuses the complete production bundle and keeps the real bundle pure', () => {
+		expect(BUILTIN_FILES).toEqual(['inventory-advisor-builtin-bundle.ts']);
+		for (const file of BUILTIN_FILES) {
+			expect(violations(moduleBoundaryFacts(`src/advisor/${file}`)), file).toEqual([]);
+		}
 	});
 
 	it('includes every prefixed production helper in the census', () => {
@@ -50,7 +50,7 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 	it('rejects a neutral helper import outside the exact reviewed allowlist', () => {
 		const source = `import { helper } from './helper';`;
 		expect(moduleSpecifiers(source)).toEqual(['./helper']);
-		expect(violations(source)).toContain('dependency');
+		expect(violations(factsOf(source))).toContain('dependency');
 	});
 
 	it('detects multiline import-from and export-from outside the allowlist', () => {
@@ -63,7 +63,7 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 			} from './foreign-helper';
 		`;
 		expect(moduleSpecifiers(source)).toEqual(['./helper', './foreign-helper']);
-		expect(violations(source)).toContain('dependency');
+		expect(violations(factsOf(source))).toContain('dependency');
 	});
 
 	it('detects import-from, export-from, side-effect, dynamic import and require dependencies', () => {
@@ -76,7 +76,7 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 		] as const;
 		for (const [source, expected] of probes) {
 			expect(moduleSpecifiers(source)).toEqual([expected]);
-			expect(violations(source)).toContain('dependency');
+			expect(violations(factsOf(source))).toContain('dependency');
 		}
 	});
 
@@ -87,7 +87,7 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 			"const fs = import('node:fs', { with: { type: 'json' } });",
 		]) {
 			expect(moduleSpecifiers(source)).toEqual(['node:fs']);
-			expect(violations(source)).toContain('dependency');
+			expect(violations(factsOf(source))).toContain('dependency');
 		}
 	});
 
@@ -95,28 +95,28 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 		for (const source of [
 			`fetch('/v2/items');`, `requestUrl({ url: '/v2/items' });`,
 			`new XMLHttpRequest();`, `new WebSocket('wss://example.invalid');`,
-		]) expect(violations(source)).toContain('io-or-network');
+		]) expect(violations(factsOf(source))).toContain('io-or-network');
 	});
 
 	it('turns red causally for persistence', () => {
 		for (const source of [
 			`indexedDB.open('advisor');`, `localStorage.setItem('key', 'value');`,
 			`sessionStorage.getItem('key');`, `store: InventoryStore;`,
-		]) expect(violations(source)).toContain('persistence');
+		]) expect(violations(factsOf(source))).toContain('persistence');
 	});
 
 	it('turns red causally for timers', () => {
 		for (const source of [
 			`setTimeout(run, 1);`, `setInterval(run, 1);`,
 			`requestAnimationFrame(run);`, `queueMicrotask(run);`,
-		]) expect(violations(source)).toContain('timer');
+		]) expect(violations(factsOf(source))).toContain('timer');
 	});
 
 	it('turns red causally for capture and execution capabilities', () => {
 		for (const source of [
 			`capture: CaptureService;`, `operation: InventoryOperation;`, `executor: DestroyExecutor;`,
 			`vault.destroy(itemId);`, `client.deleteItem(itemId);`, `client.salvageItem(itemId);`,
-		]) expect(violations(source)).toContain('execution-capability');
+		]) expect(violations(factsOf(source))).toContain('execution-capability');
 	});
 
 	it('turns red causally for hostile exports', () => {
@@ -124,43 +124,35 @@ describe('inventory advisor H4.17 built-in bundle architecture boundary', () => 
 			`export function executeRequest() {}`, `export class GuildWars2Client {}`,
 			`export interface DestroyExecutor {}`, `export const captureInventory = () => undefined;`,
 			`export type PersistentStore = unknown;`,
-		]) expect(violations(source)).toContain('hostile-export');
+		]) expect(violations(factsOf(source))).toContain('hostile-export');
 	});
 });
 
-type Violation = 'dependency' | 'io-or-network' | 'persistence' | 'timer' | 'execution-capability' | 'hostile-export';
-
-function violations(source: string): Violation[] {
+function violations(facts: Facts): Violation[] {
 	const found = new Set<Violation>();
-	if (moduleSpecifiers(source).some(forbiddenDependency)) found.add('dependency');
-	if (IO_OR_NETWORK.test(source)) found.add('io-or-network');
-	if (PERSISTENCE.test(source)) found.add('persistence');
-	if (TIMERS.test(source)) found.add('timer');
-	if (EXECUTION_CAPABILITY.test(source) || CAPABILITY_FIELD.test(source)) found.add('execution-capability');
-	if (HOSTILE_EXPORT.test(source)) found.add('hostile-export');
+	if (facts.specifiers.some(forbiddenDependency)) found.add('dependency');
+	if (hasExact(facts.names, EXACT_IO_NETWORK)) found.add('io-or-network');
+	if (hasExact(facts.names, EXACT_PERSISTENCE)) found.add('persistence');
+	if (hasExact(facts.names, EXACT_TIMERS)) found.add('timer');
+	if (hasExact(facts.names, EXACT_EXECUTION)) found.add('execution-capability');
+	if (hasSubstring(facts.exportedNames, HOSTILE_EXPORT_TOKENS)) found.add('hostile-export');
 	return [...found].sort();
 }
 
-function moduleSpecifiers(source: string): string[] {
-	const file = ts.createSourceFile('inventory-advisor-builtin-probe.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-	const specifiers: string[] = [];
-	const visit = (node: ts.Node): void => {
-		if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
-			&& node.moduleSpecifier !== undefined && ts.isStringLiteralLike(node.moduleSpecifier)) {
-			specifiers.push(node.moduleSpecifier.text);
-		} else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)
-			&& node.moduleReference.expression !== undefined && ts.isStringLiteralLike(node.moduleReference.expression)) {
-			specifiers.push(node.moduleReference.expression.text);
-		} else if (ts.isCallExpression(node) && node.arguments.length >= 1 && ts.isStringLiteralLike(node.arguments[0]!)) {
-			if (node.expression.kind === ts.SyntaxKind.ImportKeyword
-				|| (ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
-				specifiers.push(node.arguments[0].text);
-			}
-		}
-		ts.forEachChild(node, visit);
-	};
-	visit(file);
-	return specifiers;
+function factsOf(source: string): Facts {
+	return { specifiers: moduleSpecifiers(source), names: referencedNames(source), exportedNames: exportedDeclarationNames(source) };
+}
+
+function hasExact(names: Set<string>, candidates: readonly string[]): boolean {
+	return candidates.some((candidate) => names.has(candidate));
+}
+
+function hasSubstring(names: Set<string>, tokens: readonly string[]): boolean {
+	for (const name of names) {
+		const lower = name.toLowerCase();
+		if (tokens.some((token) => lower.includes(token.toLowerCase()))) return true;
+	}
+	return false;
 }
 
 function forbiddenDependency(specifier: string): boolean {

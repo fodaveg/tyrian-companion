@@ -1,8 +1,7 @@
 {
-	"frozenCount": 30,
+	"frozenCount": 29,
 	"frozen": [
 		"src/advisor/inventory-advisor-builtin-bundle.test.ts",
-		"src/advisor/inventory-advisor-classifier-architecture.test.ts",
 		"src/advisor/inventory-advisor-discard-architecture.test.ts",
 		"src/advisor/inventory-advisor-evidence-architecture.test.ts",
 		"src/advisor/inventory-advisor-presentation-architecture.test.ts",
