@@ -3334,7 +3334,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 		if (!hasExactSessionBackendResult('recover', result)) {
 			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw new Error('Recovery failed.');
+			throw new SessionRecoveryBackendFailure('recover', result.status === 'busy' ? 'busy' : 'failed');
 		}
 		const recovered = this.sessions.getState();
 		if (recovered.status === 'active') this.startLiveObservation(recovered.sessionId, true);
@@ -3354,7 +3354,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 		if (!hasExactSessionBackendResult('discard', result)) {
 			if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'failed');
-			throw new Error('Discard failed.');
+			throw new SessionRecoveryBackendFailure('discard', result.status === 'busy' ? 'busy' : 'failed');
 		}
 		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'discarded');
 	}
@@ -3552,6 +3552,27 @@ const IDLE_ASSISTED_DETECTION_STATE: AssistedDetectionState = {
 	},
 	lastSnapshotAt: null,
 };
+
+/**
+ * Thrown by `performRecoverSession`/`performDiscardRecoveredSession` when the confirmed backend
+ * action did not settle on `'recovered'`/`'discarded'` (H15.6, 2026-09-10 audit): carries the
+ * backend's own `status` and a `code` own property instead of `result.message`, which stays out of
+ * the debug log on purpose (`core/local-debug-error-details.ts` never reads a message or stack).
+ * `unmappedErrorLogDetails` picks up any error's own `code` property, so
+ * `SessionCommandController`'s catch (`session-command-controller.ts`) now records
+ * `session_recover`/`session_discard failure` with `details.code` set to `'busy'`/`'failed'`
+ * instead of the opaque `unknown_failure` every other unclassified rejection gets there.
+ */
+class SessionRecoveryBackendFailure extends Error {
+	readonly status: 'busy' | 'failed';
+	readonly code: 'busy' | 'failed';
+	constructor(action: 'recover' | 'discard', status: 'busy' | 'failed') {
+		super(`Session ${action} ${status}.`);
+		this.name = 'SessionRecoveryBackendFailure';
+		this.status = status;
+		this.code = status;
+	}
+}
 
 /**
  * Identity of the evidence a valuation was measured from. Both halves matter: re-running a session
