@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 
 import { InventoryPreferencesService } from './inventory-preferences-service';
 import { IndexedDbInventoryPreferencesStore } from './inventory-preferences-store';
-import { moduleSpecifiers, readModuleSource } from '../test/module-boundary';
+import { moduleBoundaryFacts, moduleSpecifiers } from '../test/module-boundary';
 
 const PRODUCT_MODULES = readdirSync(new URL('.', import.meta.url))
 	.filter((file) => /^inventory-preferences-[a-z-]+\.ts$/.test(file) && !file.endsWith('.test.ts'))
 	.sort();
-const FORBIDDEN_IMPORTS = ["'../ui/", "'../sessions/", "'../account/", "'../catalog/", "'obsidian'"];
+const FORBIDDEN_IMPORT_PREFIXES = ['../ui/', '../sessions/', '../account/', '../catalog/'];
+const FORBIDDEN_IMPORT_EXACT = new Set(['obsidian']);
 const ALLOWED_CORE_IMPORTS = new Map<string, readonly string[]>([
 	['inventory-preferences-runtime.ts', ['../core/local-debug-action-runner']],
 	// `../core/indexed-db-open` is reviewed in: it imports nothing at all and holds
@@ -25,13 +26,13 @@ describe('inventory preferences architecture', () => {
 			'inventory-preferences-service.ts',
 			'inventory-preferences-store.ts',
 		]);
-		assertImportBoundary(productSources());
+		assertImportBoundary(productModuleSpecifiers());
 	});
 
 	it('turns causal import sabotage red', () => {
-		expect(() => assertImportBoundary(new Map([['sabotage.ts', "import { Notice } from 'obsidian';"]])))
+		expect(() => assertImportBoundary(new Map([['sabotage.ts', moduleSpecifiers("import { Notice } from 'obsidian';")]])))
 			.toThrow('forbidden import');
-		expect(() => assertImportBoundary(new Map([['sabotage.ts', "import { Vault } from '../core/vault';"]])))
+		expect(() => assertImportBoundary(new Map([['sabotage.ts', moduleSpecifiers("import { Vault } from '../core/vault';")]])))
 			.toThrow('forbidden import');
 	});
 
@@ -45,19 +46,23 @@ describe('inventory preferences architecture', () => {
 	});
 });
 
-function productSources(): Map<string, string> {
-	return new Map(PRODUCT_MODULES.map((file) => [file, readModuleSource(`src/advisor/${file}`)]));
+function productModuleSpecifiers(): Map<string, string[]> {
+	return new Map(PRODUCT_MODULES.map((file) => [file, moduleBoundaryFacts(`src/advisor/${file}`).specifiers]));
 }
 
-function assertImportBoundary(sources: Map<string, string>): void {
-	for (const [file, source] of sources) {
-		for (const forbidden of FORBIDDEN_IMPORTS) {
-			if (source.includes(forbidden)) throw new Error(`forbidden import in ${file}`);
+function assertImportBoundary(specifiersByFile: ReadonlyMap<string, readonly string[]>): void {
+	for (const [file, specifiers] of specifiersByFile) {
+		for (const specifier of specifiers) {
+			if (isForbiddenImport(specifier)) throw new Error(`forbidden import in ${file}`);
 		}
-		for (const specifier of moduleSpecifiers(source).filter((entry) => entry.startsWith('../core/'))) {
+		for (const specifier of specifiers.filter((entry) => entry.startsWith('../core/'))) {
 			if (!ALLOWED_CORE_IMPORTS.get(file)?.includes(specifier)) throw new Error(`forbidden import in ${file}`);
 		}
 	}
+}
+
+function isForbiddenImport(specifier: string): boolean {
+	return FORBIDDEN_IMPORT_EXACT.has(specifier) || FORBIDDEN_IMPORT_PREFIXES.some((prefix) => specifier.startsWith(prefix));
 }
 
 // The layer boundary is the import graph and is only observable in the source. Every ambient

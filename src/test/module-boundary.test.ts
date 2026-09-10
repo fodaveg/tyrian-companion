@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	classMemberNames,
+	exportedDeclarationNames,
 	forbiddenBoundaryUses,
+	moduleBoundaryFacts,
 	moduleBoundaryViolations,
 	moduleSpecifiers,
+	propertyCallChains,
 	referencedNames,
 	type ModuleBoundary,
 } from './module-boundary';
@@ -62,6 +66,68 @@ describe('negative module frontiers', () => {
 		expect(names.has('kept')).toBe(true);
 		expect(names.has('fetch')).toBe(false);
 		expect(names.has('Authorization')).toBe(false);
+	});
+});
+
+describe('module boundary facts', () => {
+	it('reads a real module once and reports its specifiers and names without exposing raw text', () => {
+		const facts = moduleBoundaryFacts('src/sessions/session-note-model.ts');
+		expect(facts.specifiers.every((specifier) => !specifier.includes('obsidian'))).toBe(true);
+		expect(facts.names.has('fetch')).toBe(false);
+	});
+});
+
+describe('exported declaration names', () => {
+	it('keeps an unexported local out of the export surface even when its name embeds a capability word', () => {
+		const names = exportedDeclarationNames(`
+			export const kept = 1;
+			function local() { const captured = clone(kept); return captured; }
+		`);
+		expect(names.has('captured')).toBe(false);
+		expect([...names]).toEqual(['kept']);
+	});
+
+	it('reports every exported class, function, interface, type and variable name', () => {
+		const names = exportedDeclarationNames(`
+			export class Widget {}
+			export function build() {}
+			export interface Shape {}
+			export type Alias = number;
+			export const value = 1, other = 2;
+		`);
+		expect([...names].sort()).toEqual(['Alias', 'Shape', 'Widget', 'build', 'other', 'value']);
+	});
+});
+
+describe('class member names', () => {
+	it('reports a declared member and keeps a differently-named local variable out of it', () => {
+		const names = classMemberNames(`
+			class Widget {
+				executor?: Executor;
+				run(): void { const gateway = build(); void gateway; }
+			}
+		`);
+		expect(names.has('gateway')).toBe(false);
+		expect([...names].sort()).toEqual(['executor', 'run']);
+	});
+});
+
+describe('property call chains', () => {
+	it('keeps a leading this so a this-rooted receiver is distinct from a bare local of the same name', () => {
+		const chains = propertyCallChains(`
+			this.ports.dispose();
+			this.actions.upsertInventoryGoal!(goal);
+			this.preferenceSession?.current();
+			provider.load();
+			actions.append(button);
+		`);
+		expect([...new Set(chains)].sort()).toEqual([
+			'actions.append', 'provider.load', 'this.actions.upsertInventoryGoal', 'this.ports.dispose', 'this.preferenceSession.current',
+		]);
+	});
+
+	it('ignores a bare function call with no receiver', () => {
+		expect(propertyCallChains('run();')).toEqual([]);
 	});
 });
 

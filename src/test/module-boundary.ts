@@ -27,6 +27,131 @@ export function readModuleSources(paths: readonly string[], root = process.cwd()
 	return new Map(paths.map((path) => [path, readModuleSource(path, root)]));
 }
 
+/**
+ * Reads the module at `path` once and hands back only its two AST-derived boundary
+ * projections: the literal specifiers it imports and every name (identifier, member and
+ * string literal) it mentions. Never the raw text.
+ *
+ * `scripts/source-text-assertion-contract.mjs` flags a `*.test.ts` file the moment it calls
+ * `readFile`/`readFileSync`/`readModuleSource`/`readModuleSources` itself, on the theory that a
+ * suite holding raw source text will eventually match over its characters. This function does
+ * that read here instead, inside test infrastructure the contract does not scan, so a suite can
+ * decide against a real module's import graph and capability names without ever holding (or
+ * being tempted to regex) its text.
+ */
+export interface ModuleBoundaryFacts {
+	readonly specifiers: string[];
+	readonly names: Set<string>;
+	readonly exportedNames: Set<string>;
+	readonly classMemberNames: Set<string>;
+	readonly propertyCallChains: string[];
+}
+
+export function moduleBoundaryFacts(path: string, root = process.cwd()): ModuleBoundaryFacts {
+	const source = readModuleSource(path, root);
+	return {
+		specifiers: moduleSpecifiers(source),
+		names: referencedNames(source),
+		exportedNames: exportedDeclarationNames(source),
+		classMemberNames: classMemberNames(source),
+		propertyCallChains: propertyCallChains(source),
+	};
+}
+
+/**
+ * Every name a source declares directly on an `export` statement: a class, function, interface,
+ * type alias or `const`/`let`/`var`. A capability word embedded in one of these (a `store` inside
+ * `PersistentStore`, a `client` inside `TradingClientFactory`) is a widened export surface, not a
+ * local implementation detail; a capability word inside an unexported local variable is neither.
+ * Only the AST distinguishes the two, so this walks it instead of matching the word anywhere.
+ */
+export function exportedDeclarationNames(source: string): Set<string> {
+	const file = ts.createSourceFile('exported-names-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	const names = new Set<string>();
+	const isExported = (node: ts.Node): boolean => ts.canHaveModifiers(node)
+		&& (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+	const visit = (node: ts.Node): void => {
+		if (isExported(node)) {
+			if ((ts.isClassDeclaration(node) || ts.isFunctionDeclaration(node)
+				|| ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) && node.name !== undefined) {
+				names.add(node.name.text);
+			} else if (ts.isVariableStatement(node)) {
+				for (const declaration of node.declarationList.declarations) {
+					if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+				}
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return names;
+}
+
+/**
+ * Every class property, method and accessor name a source declares, regardless of modifiers.
+ * A capability-shaped member name (`executor`, `gatewayClient`, `PersistentStore`) is only a
+ * capability at the position where it is DECLARED as a member; the same word as a local variable
+ * inside a method body is not the same thing. Only the AST distinguishes the two positions.
+ */
+export function classMemberNames(source: string): Set<string> {
+	const file = ts.createSourceFile('class-member-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	const names = new Set<string>();
+	const visit = (node: ts.Node): void => {
+		if ((ts.isPropertyDeclaration(node) || ts.isMethodDeclaration(node)
+			|| ts.isGetAccessorDeclaration(node) || ts.isSetAccessorDeclaration(node))
+			&& (ts.isIdentifier(node.name) || ts.isPrivateIdentifier(node.name))) {
+			names.add(node.name.text);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return names;
+}
+
+/**
+ * Every `receiver.member(...)` call chain a source makes, as a `"receiver.member"` string (a
+ * longer chain like `this.a.b.c()` keeps every segment: `"this.a.b.c"`). A non-null assertion or
+ * an optional-chain call (`this.x!.y()`, `this.x?.y()`) counts the same as a plain call: an
+ * optional callback is still a capability this module reaches for.
+ *
+ * A leading `this` is kept, not dropped: a local DOM element a view happens to name the same as a
+ * reviewed port (`const actions = createDiv(); actions.append(button);`) is not that port, and
+ * only the explicit `this.` prefix tells the two apart.
+ * Not observable by running the module: an optional callback that is never invoked in a test
+ * still widened the capability surface the moment it was written.
+ */
+export function propertyCallChains(source: string): string[] {
+	const file = ts.createSourceFile('property-call-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	const chains: string[] = [];
+	const visit = (node: ts.Node): void => {
+		if (ts.isCallExpression(node)) {
+			const chain = propertyChain(node.expression);
+			if (chain !== null) chains.push(chain);
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return chains;
+}
+
+function propertyChain(expression: ts.Expression): string | null {
+	const unwrapped = unwrapNonNull(expression);
+	if (!ts.isPropertyAccessExpression(unwrapped)) return null;
+	const segments: string[] = [unwrapped.name.text];
+	let current: ts.Expression = unwrapNonNull(unwrapped.expression);
+	while (ts.isPropertyAccessExpression(current)) {
+		segments.unshift(current.name.text);
+		current = unwrapNonNull(current.expression);
+	}
+	if (current.kind === ts.SyntaxKind.ThisKeyword) return ['this', ...segments].join('.');
+	if (ts.isIdentifier(current)) return [current.text, ...segments].join('.');
+	return null;
+}
+
+function unwrapNonNull(expression: ts.Expression): ts.Expression {
+	return ts.isNonNullExpression(expression) ? unwrapNonNull(expression.expression) : expression;
+}
+
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
 export function moduleSpecifiers(source: string): string[] {
 	const file = ts.createSourceFile('boundary-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);

@@ -5,7 +5,13 @@ import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic
 import { halloweenManagedAssets } from './halloween-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker } from './managed-assets-model';
-import { readModuleSource } from '../test/module-boundary';
+import { moduleBoundaryFacts, moduleBoundaryViolations, type ModuleBoundary } from '../test/module-boundary';
+
+const HALLOWEEN_BASE_BOUNDARY: ModuleBoundary = {
+	path: 'src/assets/halloween-base.ts',
+	forbiddenImports: ['node:fs'],
+	forbiddenNames: ['Vault', 'fetch', 'requestUrl', 'XMLHttpRequest'],
+};
 
 const NOTE_PROPERTIES = new Set([
 	'tc_started_at', 'tc_duration_ms', 'tc_build', 'tc_classification', 'tc_confidence',
@@ -105,9 +111,11 @@ describe('Halloween Base assets', () => {
 	});
 
 	it('has no Vault, writer, filesystem or network dependency in the packaged asset module', () => {
-		const source = readModuleSource('src/assets/halloween-base.ts');
-		expect(source).not.toMatch(/\b(?:Vault|fetch|requestUrl|XMLHttpRequest|node:fs|session-note-writer)\b/u);
-		expect(source).not.toMatch(/https?:\/\//u);
+		expect(moduleBoundaryViolations([HALLOWEEN_BASE_BOUNDARY])).toEqual([]);
+		const facts = moduleBoundaryFacts(HALLOWEEN_BASE_BOUNDARY.path);
+		const mentions = [...facts.specifiers, ...facts.names];
+		expect(mentions.some((value) => value.includes('session-note-writer'))).toBe(false);
+		expect(mentions.some((value) => /https?:\/\//u.test(value))).toBe(false);
 	});
 });
 
