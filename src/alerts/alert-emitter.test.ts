@@ -35,7 +35,7 @@ describe('H13.4 alert fan-out', () => {
 		]);
 
 		await expect(emitter.emit(ALERT)).resolves.toEqual({
-			delivered: ['toast', 'queue'], failed: ['system_notification'], rejected: false,
+			delivered: ['toast', 'queue'], failed: [{ id: 'system_notification', reason: 'Error' }], rejected: false,
 		});
 		expect(toast).toHaveBeenCalledWith(ALERT);
 		expect(queue).toHaveBeenCalledWith(ALERT);
@@ -48,7 +48,7 @@ describe('H13.4 alert fan-out', () => {
 			channel('webhook', () => Promise.reject(new Error('timeout'))),
 		]);
 
-		await expect(emitter.emit(ALERT)).resolves.toMatchObject({ delivered: ['toast'], failed: ['webhook'] });
+		await expect(emitter.emit(ALERT)).resolves.toMatchObject({ delivered: ['toast'], failed: [{ id: 'webhook', reason: 'Error' }] });
 		expect(toast).toHaveBeenCalledOnce();
 	});
 

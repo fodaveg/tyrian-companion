@@ -34,7 +34,7 @@ export type Language = 'es' | 'en';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
 
 export type InventoryVaultSyncRunStatus = 'success' | 'error';
-export type InventoryVaultSyncRunErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure';
+export type InventoryVaultSyncRunErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
 
 /** Structural twin of the ui layer's plan summary; settings never imports from ui. */
 export interface InventoryVaultSyncPlanSummarySnapshot {
@@ -53,6 +53,15 @@ export interface InventoryVaultSyncLastRun {
 	durationMs: number;
 	summary: InventoryVaultSyncPlanSummarySnapshot | null;
 	error: InventoryVaultSyncRunErrorReason | null;
+	/**
+	 * Set only for a partial `storage_failure` (H15.11, 2026-09-10 incident): how many of the
+	 * plan's writes already landed before the rejection, and how many the plan had in total, so
+	 * the panel can say "wrote N of M" instead of implying nothing was written.
+	 */
+	written?: number;
+	total?: number;
+	/** The underlying rejection's class only (H15.11), never its message or stack. */
+	errorName?: string;
 }
 
 export interface TyrianSettings {
@@ -334,7 +343,7 @@ function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: numb
 }
 
 const SYNC_RUN_STATUSES: ReadonlySet<string> = new Set(['success', 'error']);
-const SYNC_RUN_ERROR_REASONS: ReadonlySet<string> = new Set(['capture_unavailable', 'write_unavailable', 'unexpected_failure']);
+const SYNC_RUN_ERROR_REASONS: ReadonlySet<string> = new Set(['capture_unavailable', 'write_unavailable', 'unexpected_failure', 'storage_failure']);
 const SYNC_PLAN_SUMMARY_FIELDS = ['positions', 'create', 'update', 'unchanged', 'deactivate', 'conflicts'] as const;
 
 /** Tolerates an absent field (pre-0.1.7) and purges anything that is not exactly this closed shape. */
@@ -346,12 +355,19 @@ function inventoryVaultSyncLastRun(value: unknown): InventoryVaultSyncLastRun | 
 	const error = typeof value.error === 'string' && SYNC_RUN_ERROR_REASONS.has(value.error)
 		? value.error as InventoryVaultSyncRunErrorReason : null;
 	if (value.status === 'error' && error === null) return null;
+	const written = typeof value.written === 'number' && Number.isInteger(value.written) && value.written >= 0 ? value.written : undefined;
+	const total = typeof value.total === 'number' && Number.isInteger(value.total) && value.total >= 0 ? value.total : undefined;
+	const errorName = typeof value.errorName === 'string' && value.errorName.length > 0 && value.errorName.length <= 128
+		? value.errorName : undefined;
 	return {
 		status: value.status as InventoryVaultSyncRunStatus,
 		finishedAt: value.finishedAt,
 		durationMs: value.durationMs,
 		summary: inventoryVaultSyncPlanSummarySnapshot(value.summary),
 		error: value.status === 'success' ? null : error,
+		...(written === undefined ? {} : { written }),
+		...(total === undefined ? {} : { total }),
+		...(errorName === undefined ? {} : { errorName }),
 	};
 }
 

@@ -405,6 +405,18 @@ describe('SessionNoteWriter', () => {
 		await expect(writeSessionNoteBeforeClear(writer, sessionInput(), clear)).resolves.toBe(false);
 		expect(clear).not.toHaveBeenCalled();
 	});
+
+	// H15.10 (2026-09-10 incident): the outer `catch {}` around the whole write turned every
+	// rejection, including a permission-denied create, into the exact same fixed message, with
+	// nothing left for a caller to tell an EACCES apart from a race. This is the one place a caller
+	// can still learn what actually failed, so the class has to survive the catch.
+	it('carries the rejection class through an unavailable result instead of discarding it', async () => {
+		const vault = new MemoryVault();
+		const failure = Object.assign(new Error('permission denied'), { name: 'EACCES' });
+		vault.create = vi.fn(async () => { throw failure; });
+		const result = await new SessionNoteWriter(vault).write(sessionInput());
+		expect(result).toMatchObject({ status: 'unavailable', errorName: 'EACCES' });
+	});
 });
 
 class MemoryVault implements SessionNoteVault {

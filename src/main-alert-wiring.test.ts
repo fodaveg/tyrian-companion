@@ -135,7 +135,7 @@ describe('H13.4 alert channel cabling', () => {
 			return await plugin.emitAlert(VALUABLE);
 		})();
 
-		expect([...report.failed].sort()).toEqual(['sound', 'system_notification']);
+		expect([...report.failed].map((entry) => entry.id).sort()).toEqual(['sound', 'system_notification']);
 		expect([...report.delivered].sort()).toEqual(['ingame', 'queue', 'toast', 'webhook']);
 		await vi.waitFor(() => {
 			expect(plugin.getEmittedAlerts()).toHaveLength(1);
@@ -156,7 +156,7 @@ describe('H13.4 alert channel cabling', () => {
 		// Enabled but unreachable must NOT read as success: the whole point of this
 		// channel is a banner inside the game, and a swallowed failure here is a
 		// banner the player never gets shown with nothing in the report to say why.
-		expect(report.failed).toContain('ingame');
+		expect(report.failed.map((entry) => entry.id)).toContain('ingame');
 		expect(report.delivered).not.toContain('ingame');
 
 		// Port 0 really opens a loopback listener; close it so the suite does not

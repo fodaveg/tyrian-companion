@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 const electronMocks = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
 vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
 
+const alertIngameServerMocks = vi.hoisted(() => ({
+	start: vi.fn(async () => { throw new Error('not stubbed'); }),
+}));
+vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
+	...await importOriginal<Record<string, unknown>>(),
+	startAlertIngameServer: alertIngameServerMocks.start,
+}));
+
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
@@ -31,6 +39,8 @@ import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './sessions/assisted-detection-
 import { proposalIntent, type PendingProposalIntent } from './sessions/pending-proposal-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import { createInventoryAdvisorBuiltinRulesProvider } from './advisor/inventory-advisor-workflow';
+import type { AlertDeliveryReport } from './alerts/alert-emitter';
+import type { AlertV1 } from './alerts/alert-contract';
 
 interface StartIntentHarness {
 	app: unknown;
@@ -43,6 +53,7 @@ interface InventoryVaultIntentHarness {
 	inventoryVaultSync: {
 		preview(): Promise<unknown>;
 		apply(): Promise<unknown>;
+		current(): { status: string };
 	};
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
@@ -604,6 +615,42 @@ describe('product navigation diagnostics', () => {
 		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
 
+	// H15.14 (2026-09-10 incident): `perform()` never rejects (it always returns the closed
+	// `ProductActionOutcome` string), so the outer `run()` span logged `success ok` even when
+	// `pendingProposals.acknowledge` threw and the review actually failed.
+	it('registers a detection_proposal failure when acknowledging a reviewed proposal throws', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			settings: { language: 'en' as const },
+			pendingProposals: { acknowledge: vi.fn(async () => { throw new Error('storage failed'); }) },
+			notifyRuntimeStarting: vi.fn(),
+			emitNotice: vi.fn(),
+			activateView: vi.fn(async () => undefined),
+			renderViews: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'proposal-review' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewPendingProposalOutcome(
+				this: typeof harness,
+				intent: PendingProposalIntent,
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).reviewPendingProposalOutcome;
+		const intent = {
+			proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
+			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
+		};
+
+		await expect(review.call(harness, intent)).resolves.toBe('failed');
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'detection' && input.action === 'detection_proposal' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure', state: 'review' });
+	});
+
 	it('journals a materialized pending-proposal card with its durable generation interval', async () => {
 		const proposalPresented = vi.fn(async () => true);
 		const proposal = {
@@ -769,7 +816,10 @@ describe('durable inventory Vault commands', () => {
 		const preview = vi.fn(() => pending.promise);
 		const render = vi.fn();
 		const activate = vi.fn(async () => undefined);
-		const plugin = { inventoryVaultSync: { preview, apply: vi.fn() }, activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render };
+		const plugin = {
+			inventoryVaultSync: { preview, apply: vi.fn(), current: () => ({ status: 'idle' }) },
+			activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render,
+		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
 			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
@@ -790,6 +840,7 @@ describe('durable inventory Vault commands', () => {
 			inventoryVaultSync: {
 				preview: vi.fn(async () => { order.push('preview'); }),
 				apply: vi.fn(async () => { order.push('apply'); }),
+				current: () => ({ status: 'idle' }),
 			},
 			activateInventoryAdvisorView: vi.fn(async () => { order.push('open'); }),
 			renderInventoryAdvisorViews: vi.fn(() => { order.push('render'); }),
@@ -805,6 +856,37 @@ describe('durable inventory Vault commands', () => {
 		expect(plugin.inventoryVaultSync.preview).toHaveBeenCalledOnce();
 		expect(plugin.inventoryVaultSync.apply).toHaveBeenCalledOnce();
 		expect(order).toEqual(['apply', 'render', 'render']);
+	});
+
+	// H15.11 (2026-09-10 incident): `applyInventoryVaultSync` never inspected its own write's
+	// result, so `run()` always logged `success ok` even after a real storage rejection hit
+	// mid-plan (85 notes updated, then EACCES on the next create, surfaced as a false conflict
+	// with zero log lines).
+	it('registers an inventory_sync storage_failure with what already landed when the apply hits a real storage rejection', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const plugin = {
+			inventoryVaultSync: {
+				preview: vi.fn(async () => undefined),
+				apply: vi.fn(async () => undefined),
+				current: () => ({ status: 'error' as const, reason: 'storage_failure' as const, cause: 'EACCES', written: 2, total: 5 }),
+			},
+			renderInventoryAdvisorViews: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'inventory-sync-storage-failure' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+			applyInventoryVaultSync(this: typeof plugin): Promise<void>;
+		}).applyInventoryVaultSync;
+
+		await invoke.call(plugin);
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'inventory' && input.action === 'inventory_sync' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({
+			code: 'storage_failure', details: { reason: 'storage_failure', errorName: 'EACCES', written: 2 },
+		});
 	});
 });
 
@@ -1371,6 +1453,165 @@ describe('completed session note delivery', () => {
 		expect(harness.savedSessionNotePath).toBeNull();
 		methods.openSavedSessionNote.call(harness);
 		expect(openLinkText).not.toHaveBeenCalled();
+	});
+
+	// H15.10 (2026-09-10 incident): the note is the summary's only durable delivery, and its
+	// `catch {}` used to leave a vault rejection (e.g. `EACCES` on the first create) completely
+	// unlogged: `note.status` never reached the local debug log at all.
+	it('registers a session_finish failure with the note status when the vault rejects the write', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			sessionSummarySaveState: 'unknown' as 'unknown' | 'saving' | 'saved' | 'failed',
+			savedSessionNotePath: null as string | null,
+			settings: { language: 'en' as const },
+			sessionNotes: { write: vi.fn(async () => ({ status: 'unavailable' as const, message: 'failed', errorName: 'EACCES' })) },
+			sessionNoteInput: () => ({ session: 'input' }),
+			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
+			renderViews: vi.fn(),
+			emitNotice: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'note-write' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const persist = (TyrianCompanionPlugin.prototype as unknown as {
+			persistCompletedSessionSummary(this: typeof harness, notifyFailure: boolean, runtime: unknown): Promise<unknown>;
+		}).persistCompletedSessionSummary;
+
+		await persist.call(harness, false, { state: { status: 'complete' } });
+
+		expect(harness.sessionSummarySaveState).toBe('failed');
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'session' && input.action === 'session_finish' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({
+			code: 'storage_failure', details: { status: 'unavailable', errorName: 'EACCES' },
+		});
+	});
+});
+
+describe('alert dispatch diagnostics', () => {
+	// H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matched `isOutcome()`, so
+	// `fireAndForget`'s span always logged `success ok` even after every enabled channel had
+	// failed (e.g. `ingame` enabled with no addon connected).
+	it('registers a notification_emit failure naming the channel that failed', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const report: AlertDeliveryReport = {
+			delivered: ['toast'], failed: [{ id: 'ingame', reason: 'Error' }], rejected: false,
+		};
+		const harness = {
+			emitAlert: vi.fn(async () => report),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'alert-dispatch' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const dispatch = (TyrianCompanionPlugin.prototype as unknown as {
+			dispatchAlert(this: typeof harness, alert: AlertV1): void;
+		}).dispatchAlert;
+		const alert: AlertV1 = {
+			kind: 'valuable_loot', itemId: 36_038, name: 'Bolsa', quantity: 2, totalCopper: 90_000,
+			priceStatus: 'known', reason: 'valuable',
+		};
+
+		dispatch.call(harness, alert);
+		await vi.waitFor(() => {
+			const failure = record.mock.calls.map(([input]) => input).find(
+				(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
+			);
+			expect(failure).toMatchObject({ code: 'unavailable', details: { failed: [{ id: 'ingame' }] } });
+		});
+	});
+});
+
+describe('in-game alert server start diagnostics', () => {
+	// H15.17 (2026-09-10 incident): `.catch(() => null)` discarded the rejection entirely, so a
+	// port already in use (or denied by the OS) looked identical to the addon simply not being
+	// connected yet: no log line, and the settings row kept the toggle looking fine.
+	it('registers a notification_emit failure carrying the rejection code when the port is unavailable', async () => {
+		alertIngameServerMocks.start.mockRejectedValueOnce(
+			Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' }),
+		);
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			settings: { alertIngamePort: 47_823 },
+			alertIngameServer: null,
+			alertIngameServerPort: null,
+			alertIngameServerFlight: null,
+			alertIngameServerErrorCode: null as string | null,
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
+			settingTab: { refreshAlertIngameServerRow: vi.fn() },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
+			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
+		}).ensureAlertIngameServer;
+
+		await expect(ensure.call(harness)).resolves.toBeNull();
+
+		expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
+		expect(harness.settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unavailable', state: 'ingame_server_start', details: { code: 'EADDRINUSE' } });
+	});
+});
+
+describe('managed assets preview diagnostics', () => {
+	// H15.19 (2026-09-10 incident): the catch fixed `managedAssetsView` but never registered
+	// anything, so a failed inspection looked identical in the local debug log to a preview
+	// that never ran at all.
+	it('registers a managed_assets_preview failure when the inspection throws', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			settings: { legacyManagedAssetsRoot: null, managedAssetsRoot: null, outputFolder: 'Tyrian Companion' },
+			managedAssetsView: { status: 'idle' as const, message: 'idle', plan: null },
+			managedAssets: { preview: vi.fn(async () => { throw new Error('manifest corrupt'); }) },
+			settingTab: { refreshManagedAssetsRow: vi.fn() },
+			notifyRuntimeStarting: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'managed-assets-preview' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const preview = (TyrianCompanionPlugin.prototype as unknown as {
+			previewManagedAssets(this: typeof harness): Promise<void>;
+		}).previewManagedAssets;
+
+		await preview.call(harness);
+
+		expect(harness.managedAssetsView).toMatchObject({ status: 'error', message: 'inspect_failed' });
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'assets' && input.action === 'managed_assets_preview' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure' });
+	});
+});
+
+describe('pilot metrics export diagnostics', () => {
+	// H15.23 (2026-09-10 incident): this ran entirely outside run(), so an 'unavailable' export
+	// (a Vault write conflict, a corrupt plan) never reached the local debug log, only the UI.
+	it('registers a session_projection failure when the export settles unavailable', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			pilotMetricsExportPlan: { snapshot: {}, health: 'ready', outputFolder: 'Tyrian Companion' },
+			pilotMetricsExporter: { export: vi.fn(async () => ({ status: 'unavailable' as const, files: [] })) },
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'pilot-metrics-export' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const exportMetrics = (TyrianCompanionPlugin.prototype as unknown as {
+			exportPilotMetrics(this: typeof harness): Promise<unknown>;
+		}).exportPilotMetrics;
+
+		await expect(exportMetrics.call(harness)).resolves.toMatchObject({ status: 'unavailable' });
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'session' && input.action === 'session_projection' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'storage_failure', state: 'pilot_metrics_export' });
 	});
 });
 

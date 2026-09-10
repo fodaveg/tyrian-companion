@@ -79,7 +79,7 @@ describe('wallet Vault sync controller', () => {
 		['capture network', new Error('network account-private'), 'capture_unavailable'],
 	] as const)('redacts %s failures into a stable error reason', async (_label, failure, reason) => {
 		const controller = new WalletVaultSyncController(portsFor({ preview: vi.fn(async () => { throw failure; }) }));
-		expect(await controller.preview()).toEqual({ status: 'error', reason });
+		expect(await controller.preview()).toEqual({ status: 'error', reason, cause: 'Error' });
 		expect(JSON.stringify(controller.current())).not.toMatch(/secret|account-private|403/u);
 	});
 
@@ -100,7 +100,7 @@ describe('wallet Vault sync controller', () => {
 		const ports = portsFor({ apply: vi.fn(async () => { throw new Error('raw Vault failure'); }) });
 		const controller = new WalletVaultSyncController(ports);
 		await controller.preview();
-		expect(await controller.apply()).toEqual({ status: 'error', reason: 'unexpected_failure' });
+		expect(await controller.apply()).toEqual({ status: 'error', reason: 'unexpected_failure', cause: 'Error' });
 		expect(controller.canApply()).toBe(false);
 	});
 

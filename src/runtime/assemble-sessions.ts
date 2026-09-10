@@ -101,6 +101,8 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 	const pilotMetrics = new PilotMetricsRecorder(
 		new IndexedDbPilotMetricsStore(input.factory, input.vaultId),
 		PILOT_METRICS_MAX_OBSERVATIONS,
+		undefined,
+		input.diagnostics ?? undefined,
 	);
 	const pilotMetricsExporter = new PilotMetricsExporter(input.pilotMetricsVault);
 	const sessions = new ManualSessionStartService(
@@ -118,7 +120,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		},
 	);
 	const sessionNotes = new SessionNoteWriter(input.sessionNoteVault);
-	const sessionHistory = new SessionHistoryService(input.sessionHistoryVault);
+	const sessionHistory = new SessionHistoryService(input.sessionHistoryVault, input.diagnostics ?? undefined);
 	const pendingProposals = new PendingProposalService(
 		new IndexedDbPendingProposalStore(input.factory, undefined, input.proposalQueuePersistence),
 		input.instanceId,

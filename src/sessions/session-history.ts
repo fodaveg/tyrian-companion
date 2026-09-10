@@ -1,3 +1,5 @@
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
+import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { normalizeSessionOutputFolder } from './session-note-model';
 import {
 	inspectStoredSessionLootSummary,
@@ -180,7 +182,22 @@ export class SessionHistoryService {
 	private scrubFlight: Promise<SessionHistoryScrubResult> | null = null;
 	private readonly scrubPlans = new Map<string, readonly ScrubPlanItem[]>();
 
-	constructor(private readonly vault: SessionHistoryVault) {}
+	constructor(
+		private readonly vault: SessionHistoryVault,
+		private readonly diagnostics?: LocalDebugActionPort,
+	) {}
+
+	/**
+	 * Records the only local trace a durable-Vault rejection leaves here: every catch below
+	 * already has its own closed status to return (H15.15, 2026-09-10 incident), so this never
+	 * changes that outcome, only whether the local debug log learns it happened at all.
+	 */
+	private logFailure(action: 'vault_read' | 'vault_write', state: string, error: unknown): void {
+		this.diagnostics?.event({
+			component: 'vault', action, level: 'error', phase: 'failure', code: 'storage_failure',
+			state, details: unmappedErrorLogDetails(error),
+		});
+	}
 
 	async scan(): Promise<SessionHistoryScan> {
 		try {
@@ -203,7 +220,10 @@ export class SessionHistoryService {
 			}
 			if (invalid > 0 || duplicates > 0) return { status: 'conflict', invalid, duplicates };
 			return { status: 'ok', sessions: sessions.sort(compareSessions), ignored };
-		} catch { return { status: 'conflict', invalid: 1, duplicates: 0 }; }
+		} catch (error) {
+			this.logFailure('vault_read', 'scan', error);
+			return { status: 'conflict', invalid: 1, duplicates: 0 };
+		}
 	}
 
 	/** Looks up one durable note for startup recovery without ever entering a write path. */
@@ -214,7 +234,7 @@ export class SessionHistoryService {
 			for (const file of this.vault.markdownFiles()) {
 				let content: string;
 				try { content = await this.vault.read(file); }
-				catch { unreadable = true; continue; }
+				catch (error) { unreadable = true; this.logFailure('vault_read', 'read_session', error); continue; }
 				const decoded = await decodeDurableSession(content);
 				if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) continue;
 				matches.push({
@@ -225,7 +245,10 @@ export class SessionHistoryService {
 			if (matches.length > 1) return { status: 'conflict' };
 			if (matches.length === 1) return matches[0]!;
 			return { status: unreadable ? 'unavailable' : 'missing' };
-		} catch { return { status: 'unavailable' }; }
+		} catch (error) {
+			this.logFailure('vault_read', 'read_session', error);
+			return { status: 'unavailable' };
+		}
 	}
 
 	export(outputFolder: unknown): Promise<SessionHistoryExportResult> {
@@ -249,7 +272,10 @@ export class SessionHistoryService {
 			const token = crypto.randomUUID();
 			this.scrubPlans.set(token, plan.items);
 			return { status: 'ready', token, sessions: plan.items.length };
-		} catch { return { status: 'unavailable', message: 'History scrub could not be prepared safely.' }; }
+		} catch (error) {
+			this.logFailure('vault_read', 'scrub_preview', error);
+			return { status: 'unavailable', message: 'History scrub could not be prepared safely.' };
+		}
 	}
 
 	revokeScrub(token: string): void { this.scrubPlans.delete(token); }
@@ -283,10 +309,12 @@ export class SessionHistoryService {
 				if (file === null) return { status: 'conflict', ...progress, message: 'A scrub target was deleted, renamed, or is no longer a file.' };
 				let before: string;
 				try { before = await this.vault.read(file); }
-				catch {
-					return this.vault.file(item.path) === null
-						? { status: 'conflict', ...progress, message: 'A scrub target was deleted, renamed, or is no longer a file.' }
-						: { status: 'unavailable', ...progress, message: 'A scrub target could not be read safely.' };
+				catch (error) {
+					if (this.vault.file(item.path) === null) {
+						return { status: 'conflict', ...progress, message: 'A scrub target was deleted, renamed, or is no longer a file.' };
+					}
+					this.logFailure('vault_read', 'scrub', error);
+					return { status: 'unavailable', ...progress, message: 'A scrub target could not be read safely.' };
 				}
 				if (await sha256Text(before) !== item.expectedHash || before !== item.expectedContent) {
 					if (before === item.scrubbedContent) { progress.alreadyAbsent += 1; continue; }
@@ -302,10 +330,12 @@ export class SessionHistoryService {
 						outcome.value = 'erased';
 						return item.scrubbedContent;
 					});
-				} catch {
-					return this.vault.file(item.path) === null
-						? { status: 'conflict', ...progress, message: 'A scrub target was deleted, renamed, or is no longer a file.' }
-						: { status: 'unavailable', ...progress, message: 'A scrub target could not be updated safely.' };
+				} catch (error) {
+					if (this.vault.file(item.path) === null) {
+						return { status: 'conflict', ...progress, message: 'A scrub target was deleted, renamed, or is no longer a file.' };
+					}
+					this.logFailure('vault_write', 'scrub', error);
+					return { status: 'unavailable', ...progress, message: 'A scrub target could not be updated safely.' };
 				}
 				if (outcome.value === 'erased') { progress.erased += 1; continue; }
 				if (current === item.scrubbedContent) { progress.alreadyAbsent += 1; continue; }
@@ -354,7 +384,10 @@ export class SessionHistoryService {
 			const csvResult = await this.createOnly(csvPath, csv);
 			if (csvResult === 'conflict') return { status: 'conflict', message: 'An existing history export has different content.' };
 			return { status: jsonResult === 'unchanged' && csvResult === 'unchanged' ? 'unchanged' : 'written', sessions: scan.sessions.length };
-		} catch { return { status: 'unavailable', message: 'History export could not be created safely.' }; }
+		} catch (error) {
+			this.logFailure('vault_write', 'export', error);
+			return { status: 'unavailable', message: 'History export could not be created safely.' };
+		}
 	}
 
 	private async preflightExports(jsonPath: string, json: string, csvPath: string, csv: string): Promise<'ready' | 'conflict'> {

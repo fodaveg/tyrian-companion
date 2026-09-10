@@ -1,3 +1,5 @@
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
+import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import type { DetectionCorrectionCause, DetectionEvidenceQuality, DetectionPhase } from './session-detection-quality';
 import {
 	createPilotEnvironment,
@@ -38,6 +40,7 @@ export class PilotMetricsRecorder {
 		private readonly store: PilotMetricsStore,
 		private readonly limit: number,
 		private readonly now: () => Date = () => new Date(),
+		private readonly diagnostics?: LocalDebugActionPort,
 	) {}
 
 	getState(): PilotMetricsState { return structuredClone(this.state); }
@@ -55,7 +58,7 @@ export class PilotMetricsRecorder {
 			if (saved) await this.inspect();
 			return saved;
 		}
-		catch { this.failure('unavailable'); return false; }
+		catch (error) { this.failureFromError(error); return false; }
 	}
 
 	async inspect(): Promise<PilotJournalSnapshotV1 | null> {
@@ -69,7 +72,7 @@ export class PilotMetricsRecorder {
 				: loaded.value.observations.length >= this.limit ? 'full' : 'ready';
 			this.state = { status: health, observations: loaded.value.observations.length, limit: this.limit };
 			return structuredClone(loaded.value);
-		} catch { this.failure('unavailable'); return null; }
+		} catch (error) { this.failureFromError(error); return null; }
 	}
 
 	async profile(): Promise<PilotEnvironmentV1 | null> {
@@ -107,7 +110,7 @@ export class PilotMetricsRecorder {
 		};
 		return await this.serialize(`proposal:${input.proposalId}`, async () => {
 			try { return this.consume(await this.store.finishProposal(await pilotProposalRef(input.proposalId), terminal, true), false); }
-			catch { this.failure('unavailable'); return false; }
+			catch (error) { this.failureFromError(error); return false; }
 		});
 	}
 
@@ -121,7 +124,7 @@ export class PilotMetricsRecorder {
 				status: 'excluded', decidedAt: recordedAt, decision: null, effectiveResult: null,
 				correctionCause: null, humanBoundaryAt: null, exclusionReason: reason,
 			}, true), false);
-		} catch { this.failure('unavailable'); return false; } });
+		} catch (error) { this.failureFromError(error); return false; } });
 	}
 
 	async sessionStarted(sessionId: string, startedAt: string): Promise<boolean> {
@@ -134,7 +137,7 @@ export class PilotMetricsRecorder {
 	async sessionCompleted(sessionId: string, completedAt: string): Promise<boolean> {
 		return await this.serialize(`session:${sessionId}`, async () => {
 			try { return this.consume(await this.store.finishSession(await pilotSessionRef(sessionId), completedAt, true), false); }
-			catch { this.failure('unavailable'); return false; }
+			catch (error) { this.failureFromError(error); return false; }
 		});
 	}
 
@@ -148,7 +151,7 @@ export class PilotMetricsRecorder {
 	async recoveryClassified(localId: string, recoveryKind: PilotRecoveryKind): Promise<boolean> {
 		return await this.serialize(`recovery:${localId}`, async () => {
 			try { return this.consume(await this.store.classifyRecovery(await pilotRecoveryRef(localId), recoveryKind), false); }
-			catch { this.failure('unavailable'); return false; }
+			catch (error) { this.failureFromError(error); return false; }
 		});
 	}
 
@@ -159,7 +162,7 @@ export class PilotMetricsRecorder {
 	): Promise<boolean> {
 		return await this.serialize(`recovery:${localId}`, async () => { try {
 			return this.consume(await this.store.finishRecovery(await pilotRecoveryRef(localId), { outcome, recordedAt }, true), false);
-		} catch { this.failure('unavailable'); return false; } });
+		} catch (error) { this.failureFromError(error); return false; } });
 	}
 
 	async recoveryKind(localId: string): Promise<PilotRecoveryKind | null> {
@@ -170,7 +173,7 @@ export class PilotMetricsRecorder {
 			const recovery = snapshot.observations.find((entry) =>
 				entry.kind === 'recovery' && entry.recoveryRef === recoveryRef);
 			return recovery?.kind === 'recovery' ? recovery.recoveryKind : null;
-		} catch { this.failure('unavailable'); return null; }
+		} catch (error) { this.failureFromError(error); return null; }
 	}
 
 	async reviewSilentLosses(silentLosses: PilotSilentLossReview): Promise<boolean> {
@@ -182,7 +185,7 @@ export class PilotMetricsRecorder {
 				version: 1, silentLosses, reviewedAt: this.timestamp(), environment: snapshot.value.profile,
 				sampleRevision: snapshot.value.sampleRevision,
 			}), false);
-		} catch { this.failure('unavailable'); return false; }
+		} catch (error) { this.failureFromError(error); return false; }
 	}
 
 	async clear(): Promise<number | null> {
@@ -193,7 +196,7 @@ export class PilotMetricsRecorder {
 			if (result.status === 'stale') return null;
 			this.state = { status: 'ready', observations: 0, limit: this.limit };
 			return result.value;
-		} catch { this.failure('unavailable'); return null; }
+		} catch (error) { this.failureFromError(error); return null; }
 	}
 
 	async disable(): Promise<number | null> {
@@ -204,7 +207,7 @@ export class PilotMetricsRecorder {
 			if (result.status === 'stale') return null;
 			this.state = { status: 'unconfigured' };
 			return result.value;
-		} catch { this.failure('unavailable'); return null; }
+		} catch (error) { this.failureFromError(error); return null; }
 	}
 
 	dispose(): void { this.store.close(); }
@@ -218,7 +221,7 @@ export class PilotMetricsRecorder {
 			if (loaded.status === 'missing') { this.failure('inconsistent'); return false; }
 			if (loaded.status === 'stale') return false;
 			return this.consume(await operation(loaded.value), true);
-		} catch { this.failure('unavailable'); return false; }
+		} catch (error) { this.failureFromError(error); return false; }
 	}
 
 	private consume(result: PilotStoreResult<unknown>, countNew: boolean): boolean {
@@ -234,6 +237,19 @@ export class PilotMetricsRecorder {
 			limit: this.limit,
 		};
 		return true;
+	}
+
+	/**
+	 * Registers that a `PilotMetricsStore` call threw (H15.23, 2026-09-10 incident): every catch
+	 * here already had its own closed `false`/`null` to return, so a real store rejection was
+	 * indistinguishable in the local debug log from the store simply being unconfigured.
+	 */
+	private failureFromError(error: unknown): void {
+		this.failure('unavailable');
+		this.diagnostics?.event({
+			component: 'session', action: 'session_projection', level: 'error', phase: 'failure',
+			code: 'storage_failure', state: 'pilot_metrics', details: unmappedErrorLogDetails(error),
+		});
 	}
 
 	private failure(code: 'unavailable' | 'inconsistent' | 'full' | 'unconfigured'): void {

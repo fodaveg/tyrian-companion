@@ -6,9 +6,10 @@
  * differ solely in their plan and result payloads, which is exactly what the type
  * parameters carry; the states, the reasons and the race semantics are shared.
  */
+import { errorClassName } from '../core/local-debug-error-details';
 
 export type VaultSyncDisabledReason = 'missing_key' | 'legacy_root' | 'unsafe_root';
-export type VaultSyncErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure';
+export type VaultSyncErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
 
 export type VaultSyncStepStatus = 'create' | 'update' | 'unchanged' | 'deactivate' | 'conflict';
 
@@ -21,7 +22,7 @@ export interface VaultSyncPlanShape {
 
 /** The minimum a domain result must expose for the shared machine to map it to a state. */
 export interface VaultSyncResultShape {
-	status: 'applied' | 'unchanged' | 'conflict' | 'invalid' | 'unavailable';
+	status: 'applied' | 'unchanged' | 'conflict' | 'invalid' | 'unavailable' | 'storage_failure';
 }
 
 export interface VaultSyncPlanSummary {
@@ -41,7 +42,13 @@ export type VaultSyncViewState<Result extends VaultSyncResultShape> =
 	| { status: 'applying'; summary: VaultSyncPlanSummary }
 	| { status: 'success'; summary: VaultSyncPlanSummary; result: SettledVaultSyncResult<Result> }
 	| { status: 'conflict'; summary: VaultSyncPlanSummary | null }
-	| { status: 'error'; reason: VaultSyncErrorReason };
+	/**
+	 * `cause` is the underlying rejection's class only (H15.11, 2026-09-10 incident: both catches
+	 * below used to discard it entirely); `written`/`total` are set only for a partial
+	 * `storage_failure` apply, so a caller can say how much of the plan actually landed instead of
+	 * implying nothing did.
+	 */
+	| { status: 'error'; reason: VaultSyncErrorReason; cause?: string; written?: number; total?: number };
 
 /** The applied/unchanged half of a domain result, the only half a success state may carry. */
 export type SettledVaultSyncResult<Result extends VaultSyncResultShape> =
@@ -89,10 +96,10 @@ export class VaultSyncController<Plan extends VaultSyncPlanShape, Result extends
 			const summary = summarizeVaultSyncPlan(plan);
 			this.plan = plan.canApply ? structuredClone(plan) : null;
 			this.state = plan.canApply ? { status: 'preview', summary } : { status: 'conflict', summary };
-		} catch {
+		} catch (error) {
 			if (!this.disposed && generation === this.generation) {
 				this.plan = null;
-				this.state = { status: 'error', reason: 'capture_unavailable' };
+				this.state = { status: 'error', reason: 'capture_unavailable', cause: errorClassName(error) };
 			}
 		}
 		return this.current();
@@ -112,13 +119,19 @@ export class VaultSyncController<Plan extends VaultSyncPlanShape, Result extends
 				this.state = { status: 'success', summary, result };
 			} else if (result.status === 'conflict' || result.status === 'invalid') {
 				this.state = { status: 'conflict', summary };
+			} else if (result.status === 'storage_failure') {
+				const failure = storageFailureDetails(result);
+				this.state = {
+					status: 'error', reason: 'storage_failure',
+					cause: failure.cause, written: failure.written, total: summary.positions,
+				};
 			} else {
 				this.state = { status: 'error', reason: 'write_unavailable' };
 			}
-		} catch {
+		} catch (error) {
 			if (!this.disposed && generation === this.generation) {
 				this.plan = null;
-				this.state = { status: 'error', reason: 'unexpected_failure' };
+				this.state = { status: 'error', reason: 'unexpected_failure', cause: errorClassName(error) };
 			}
 		}
 		return this.current();
@@ -156,4 +169,17 @@ function isSettledVaultSyncResult<Result extends VaultSyncResultShape>(
 	result: Result,
 ): result is SettledVaultSyncResult<Result> {
 	return result.status === 'applied' || result.status === 'unchanged';
+}
+
+/**
+ * Reads a domain result's `written`/`errorName` without widening `VaultSyncResultShape` itself:
+ * every domain's `storage_failure` variant carries them, but the shared shape only promises
+ * `status`.
+ */
+function storageFailureDetails(result: VaultSyncResultShape): { cause?: string; written?: number } {
+	const record = result as unknown as Record<string, unknown>;
+	return {
+		cause: typeof record.errorName === 'string' ? record.errorName : undefined,
+		written: typeof record.written === 'number' ? record.written : undefined,
+	};
 }

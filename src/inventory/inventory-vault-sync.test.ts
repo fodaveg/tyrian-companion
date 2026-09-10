@@ -240,6 +240,21 @@ describe('inventory Vault preview and apply', () => {
 		expect(unchangedTicks).toEqual([[5, 5]]);
 	});
 
+	// H15.11 (2026-09-10 incident): a `create` rejection with nothing landed at the path was
+	// mapped to `conflict` ("An inventory note occupied a planned path."), even though the
+	// preceding writes had already updated the Vault and there was no colliding note at all.
+	it('reports a storage_failure with how many notes already landed when create is denied mid-apply', async () => {
+		const vault = new FlakyCreateInventoryVault(2);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const input = await inputWithAllSources();
+		const preview = await service.preview(ROOT, input);
+		expect(preview.steps.filter((entry) => entry.status === 'create')).toHaveLength(5);
+		await expect(service.apply(preview)).resolves.toEqual({
+			status: 'storage_failure', message: 'An inventory note could not be created.', written: 2, errorName: 'EACCES',
+		});
+		expect(vault.markdownFiles()).toHaveLength(2);
+	});
+
 	it('writes deterministic opaque filenames and redacts capture identities and raw credentials', async () => {
 		const accountId = 'account-private-123';
 		const snapshotId = 'snapshot-private-456';
@@ -658,6 +673,17 @@ class MemoryInventoryVault implements InventoryVaultPort {
 		if (!this.contents.has(file.path)) throw new Error('not_file');
 		this.mutations += 1;
 		this.contents.delete(file.path);
+	}
+}
+
+/** Succeeds the first `okCount` creates, then rejects every further one with a permission error. */
+class FlakyCreateInventoryVault extends MemoryInventoryVault {
+	private creates = 0;
+	constructor(private readonly okCount: number) { super(); }
+	override async create(path: string, content: string): Promise<InventoryVaultFile> {
+		this.creates += 1;
+		if (this.creates > this.okCount) throw Object.assign(new Error('permission denied'), { name: 'EACCES' });
+		return await super.create(path, content);
 	}
 }
 

@@ -58,6 +58,7 @@ import {
 	type LocalDebugActionOutcome,
 	type ResolvedLocalDebugActionContext,
 } from './core/local-debug-action-runner';
+import { unmappedErrorLogDetails } from './core/local-debug-error-details';
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { resanitizeLocalDebugRecord } from './core/local-debug-sanitizer';
 import {
@@ -322,6 +323,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngameServer: AlertIngameServerHandle | null = null;
 	private alertIngameServerPort: number | null = null;
 	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
+	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
+	private alertIngameServerErrorCode: string | null = null;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
 	private settingTab!: TyrianCompanionSettingTab;
@@ -1468,13 +1471,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
 	async runInventoryVaultSync(): Promise<void> {
-		const perform = async () => { await this.inventoryVaultSyncRun.run(); };
+		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
-		const perform = async () => { await this.inventoryVaultSyncRun.confirm(); };
+		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
@@ -1503,11 +1506,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyInventoryVaultSync(): Promise<void> {
-		const perform = async (): Promise<void> => {
-		const operation = this.inventoryVaultSync.apply();
-		this.renderInventoryAdvisorViews();
-		await operation;
-		this.renderInventoryAdvisorViews();
+		const perform = async () => {
+			const operation = this.inventoryVaultSync.apply();
+			this.renderInventoryAdvisorViews();
+			await operation;
+			this.renderInventoryAdvisorViews();
+			return vaultSyncFailureOutcome(this.inventoryVaultSync.current());
 		};
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
@@ -1534,9 +1538,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyWalletVaultSync(): Promise<void> {
-		const perform = async (): Promise<void> => {
-		const state = await this.walletVaultSync.apply();
-		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+		const perform = async () => {
+			const state = await this.walletVaultSync.apply();
+			this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+			return vaultSyncFailureOutcome(state);
 		};
 		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_sync' }, perform) ?? perform());
 	}
@@ -1663,11 +1668,24 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return await this.pilotMetricsExporter.preview(snapshot, health, this.settings.outputFolder);
 	}
 
+	/**
+	 * H15.23 (2026-09-10 incident): this ran entirely outside `run()`, so even a rejection that
+	 * escaped `PilotMetricsExporter.export()` (it does not normally throw, but nothing here relied
+	 * on that) would have gone unlogged; now a settled `unavailable`/`conflict` result also reaches
+	 * the local debug log instead of only the UI.
+	 */
 	async exportPilotMetrics(): Promise<PilotMetricsExportResult | null> {
 		if (!this.runtimeReady) return null;
 		const plan = this.pilotMetricsExportPlan;
 		if (!plan) return null;
-		return await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
+		const perform = async () => {
+			const result = await this.pilotMetricsExporter.export(plan.snapshot, plan.health, plan.outputFolder);
+			if (result.status !== 'unavailable' && result.status !== 'conflict') return result;
+			return { ...result, phase: 'failure' as const, code: 'storage_failure' as const, details: { status: result.status } };
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'session', action: 'session_projection', state: 'pilot_metrics_export' }, perform,
+		) ?? perform());
 	}
 
 	async clearPilotMetrics(): Promise<number | null> {
@@ -1734,11 +1752,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.activateView();
 			this.renderViews();
 			return 'completed';
-		} catch {
+		} catch (error) {
 			this.emitNotice(
 				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
 				'proposal_review_failed',
 			);
+			// `perform()` never rejects here (the outer `run()` would then log the failure itself);
+			// this is the only place left that still learns the review actually failed (H15.14).
+			this.localDebugActions?.event({
+				component: 'detection', action: 'detection_proposal', state: 'review',
+				level: 'error', phase: 'failure', code: 'unknown_failure',
+				details: unmappedErrorLogDetails(error),
+			});
 			return 'failed';
 		}
 		};
@@ -2138,11 +2163,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return emitter.emit(alert);
 	}
 
-	/** Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback. */
+	/**
+	 * Fire-and-forget entry for the runtimes that produce alerts inside a synchronous callback.
+	 *
+	 * H15.16 (2026-09-10 incident): `AlertDeliveryReport` never matches `isOutcome()`, so
+	 * `fireAndForget`'s span always logged `success ok` even when every channel had failed;
+	 * the alert IS the product, so a failed delivery now surfaces as its own failure record.
+	 */
 	private dispatchAlert(alert: AlertV1): void {
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'notification', action: 'notification_emit', state: alertNoticeSource(alert.kind) },
-			async () => await this.emitAlert(alert));
+			async () => {
+				const report = await this.emitAlert(alert);
+				if (report.failed.length === 0) return report;
+				return { ...report, phase: 'failure' as const, code: 'unavailable' as const, details: { failed: report.failed } };
+			});
 	}
 
 	/** Seeds once and reads the merged series. Never throws into the compaction that called it. */
@@ -2153,7 +2188,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await runtime.ensureSeed();
 			const fromDayUtc = new Date(Math.max(0, port.nowMs - SELL_SIGNAL_SERIES_SPAN_MS)).toISOString().slice(0, 10);
 			runtime.evaluate(await port.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc), port.nowMs);
-		} catch { /* The sell signal never fails a price-history compaction. */ }
+		} catch (error) {
+			// H15.18 (2026-09-10 incident): the sell signal still never fails the compaction that
+			// called this, but before this the local debug log never learned it had died either.
+			this.localDebugActions?.event({
+				component: 'price_history', action: 'price_history_compact', state: 'sell_signal',
+				level: 'error', phase: 'failure', code: 'unknown_failure',
+				details: unmappedErrorLogDetails(error),
+			});
+		}
 	}
 
 	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
@@ -2318,11 +2361,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
 		const flight = startAlertIngameServer(port, { schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds) })
-			.then((server) => { this.alertIngameServer = server; this.alertIngameServerPort = port; return server; })
-			.catch(() => null)
+			.then((server) => {
+				this.alertIngameServer = server;
+				this.alertIngameServerPort = port;
+				this.alertIngameServerErrorCode = null;
+				this.settingTab.refreshAlertIngameServerRow();
+				return server;
+			})
+			.catch((error: unknown) => {
+				// H15.17 (2026-09-10 incident): this used to discard the rejection entirely, so a
+				// port already in use or denied by the OS looked identical to the addon simply not
+				// being enabled: no log line, and the settings row kept showing the toggle as fine.
+				const mapped = unmappedErrorLogDetails(error);
+				this.alertIngameServerErrorCode = typeof mapped.code === 'string' ? mapped.code : mapped.reason as string;
+				this.localDebugActions?.event({
+					component: 'notification', action: 'notification_emit', state: 'ingame_server_start',
+					level: 'error', phase: 'failure', code: 'unavailable',
+					details: { errorName: mapped.reason, code: mapped.code },
+				});
+				this.settingTab.refreshAlertIngameServerRow();
+				return null;
+			})
 			.finally(() => { this.alertIngameServerFlight = null; });
 		this.alertIngameServerFlight = flight;
 		return await flight;
+	}
+
+	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise. */
+	getAlertIngameServerErrorCode(): string | null {
+		return this.alertIngameServerErrorCode;
 	}
 
 	private nextAlertIngameSeq(): number {
@@ -2446,11 +2513,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const root = this.settings.managedAssetsRoot ?? this.settings.outputFolder;
 		this.managedAssetsView = { status: 'working', message: 'inspecting', plan: null };
 		this.settingTab.refreshManagedAssetsRow();
-		try {
-			const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
-			const plan = await this.managedAssets.preview(root, kind);
-			this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
-		} catch { this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null }; }
+		// H15.19 (2026-09-10 incident): the catch below fixed the view but never registered
+		// anything, so a failed inspection (a corrupt manifest, a Vault read that threw) looked
+		// identical in the local debug log to a preview that never ran at all.
+		const perform = async () => {
+			try {
+				const kind = this.settings.managedAssetsRoot ? 'upgrade' : 'install';
+				const plan = await this.managedAssets.preview(root, kind);
+				this.managedAssetsView = { status: 'ready', message: plan.canApply ? 'preview_ready' : 'preview_blocked', plan };
+				return undefined;
+			} catch (error) {
+				this.managedAssetsView = { status: 'error', message: 'inspect_failed', plan: null };
+				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
+			}
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_preview' }, perform) ?? perform());
 		this.settingTab.refreshManagedAssetsRow();
 	}
 
@@ -2843,7 +2920,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.prepareSessionEconomyEvidence(runtime, true);
 		let note: SessionNoteWriteResult;
 		try {
-			note = await this.sessionNotes.write(this.sessionNoteInput(runtime));
+			note = await writeSessionNoteWithDiagnostics(
+				this.localDebugActions, () => this.sessionNotes.write(this.sessionNoteInput(runtime)),
+			);
 		} catch {
 			this.sessionSummarySaveState = 'failed';
 			if (notifyFailure) this.emitNotice(
@@ -3826,6 +3905,34 @@ function vaultSyncActionOutcome(
 	return state.status === 'success' ? 'completed' : 'unavailable';
 }
 
+/**
+ * H15.11 (2026-09-10 incident): `applyInventoryVaultSync`/`applyWalletVaultSync` never inspected
+ * the result of their own write, so `run()` always logged `success ok` even after the apply hit a
+ * real storage rejection mid-plan. `code` is fixed at `storage_failure` (this subsystem's only
+ * write-failure code); `reason` inside `details` carries which of the shared machine's error
+ * branches actually fired.
+ */
+function vaultSyncFailureOutcome(
+	state: InventoryVaultSyncViewState | WalletVaultSyncViewState,
+): { phase: 'failure'; code: 'storage_failure'; details: Record<string, unknown> } | undefined {
+	if (state.status !== 'error') return undefined;
+	return {
+		phase: 'failure', code: 'storage_failure',
+		details: { reason: state.reason, errorName: state.cause, written: state.written },
+	};
+}
+
+/** Same idea as `vaultSyncFailureOutcome`, for the one-click runner's own idle+lastRun shape. */
+function inventoryOneClickSyncOutcome(
+	state: InventoryVaultSyncRunState,
+): { phase: 'failure'; code: 'storage_failure'; details: Record<string, unknown> } | undefined {
+	if (state.status !== 'idle' || state.lastRun === null || state.lastRun.status !== 'error') return undefined;
+	return {
+		phase: 'failure', code: 'storage_failure',
+		details: { reason: state.lastRun.error, errorName: state.lastRun.errorName, written: state.lastRun.written },
+	};
+}
+
 function sessionHistoryView(result: SessionHistoryExportResult): {
 	status: 'written' | 'unchanged' | 'conflict' | 'invalid' | 'unavailable';
 	sessions: number; erased: 0; alreadyAbsent: 0;
@@ -3939,4 +4046,30 @@ function fireAndForgetLocal(
 /** Consumes a promise whose rejection was already captured by its inner diagnostic action. */
 function consumeRecorded(action: Promise<unknown>): void {
 	action.catch(() => undefined);
+}
+
+/**
+ * The session note is the summary's only durable delivery: unlike `session-history.ts`, nothing
+ * else records that a close ever happened. Before this (H15.10, 2026-09-10 incident) a failed
+ * write surfaced only as the note's own fixed `message` in the UI, and the local debug log never
+ * learned `note.status` or the underlying rejection's class, so a disk-full or EACCES vault could
+ * silently eat every session for a whole run.
+ */
+async function writeSessionNoteWithDiagnostics(
+	actions: LocalDebugActionRunner | null,
+	write: () => Promise<SessionNoteWriteResult>,
+): Promise<SessionNoteWriteResult> {
+	const action = async () => {
+		const note = await write();
+		if (note.status === 'written' || note.status === 'unchanged') return note;
+		return {
+			...note,
+			phase: 'failure' as const,
+			code: 'storage_failure' as const,
+			details: { status: note.status, errorName: 'errorName' in note ? note.errorName : undefined },
+		};
+	};
+	return actions
+		? await actions.run({ component: 'session', action: 'session_finish', state: 'note_write' }, action)
+		: await action();
 }

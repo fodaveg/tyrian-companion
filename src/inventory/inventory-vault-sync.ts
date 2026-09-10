@@ -9,6 +9,7 @@ import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
 import type { PublicCatalogService } from '../catalog/public-catalog-service';
+import { errorClassName } from '../core/local-debug-error-details';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
 	isInventoryMarketDepthEvidence,
@@ -91,7 +92,15 @@ export interface InventoryVaultSyncPlan {
 
 export type InventoryVaultSyncResult =
 	| { status: 'applied' | 'unchanged'; created: number; updated: number; deactivated: number }
-	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string };
+	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string }
+	/**
+	 * A real storage rejection (e.g. `EACCES`) hit mid-apply, distinct from `conflict` (another
+	 * writer's note occupies the path) and from `unavailable` (H15.11, 2026-09-10 incident: the
+	 * apply is not atomic, so `written` carries how many of the plan's writes already landed
+	 * instead of implying nothing did). `errorName` is the rejection's class only, never its
+	 * message or stack.
+	 */
+	| { status: 'storage_failure'; message: string; written: number; errorName: string };
 
 /**
  * `tc_unit_sell_copper` is the instant-sell (bid) quote and `tc_unit_list_copper` is
@@ -393,6 +402,8 @@ export class InventoryVaultSyncService {
 		if (!isInventoryVaultSyncPlan(plan, this.configDir) || !plan.canApply) {
 			return { status: 'invalid', message: 'The inventory preview is invalid or blocked.' };
 		}
+		const total = plan.steps.length;
+		let completed = 0;
 		try {
 			for (const entry of plan.steps) {
 				const file = this.vault.file(entry.path);
@@ -404,9 +415,8 @@ export class InventoryVaultSyncService {
 					}
 				}
 			}
-			const total = plan.steps.length;
 			const writes = plan.steps.filter((entry) => entry.status !== 'unchanged');
-			let completed = total - writes.length;
+			completed = total - writes.length;
 			onStep?.(completed, total);
 			if (writes.length === 0) return { status: 'unchanged', created: 0, updated: 0, deactivated: 0 };
 			await ensureFolders(this.vault, inventoryFolder(plan.root));
@@ -417,9 +427,17 @@ export class InventoryVaultSyncService {
 				if (entry.status === 'create') {
 					if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
 					try { await this.vault.create(entry.path, entry.after); }
-					catch {
+					catch (error) {
 						const raced = this.vault.file(entry.path);
-						if (!raced || normalizeLf(await this.vault.read(raced)) !== entry.after) {
+						// No file landed at all: the create really failed (e.g. `EACCES`), not a race
+						// against another writer, so this is a storage failure, not a conflict.
+						if (!raced) {
+							return {
+								status: 'storage_failure', message: 'An inventory note could not be created.',
+								written: completed, errorName: errorClassName(error),
+							};
+						}
+						if (normalizeLf(await this.vault.read(raced)) !== entry.after) {
 							return { status: 'conflict', message: 'An inventory note occupied a planned path.' };
 						}
 					}
@@ -455,8 +473,11 @@ export class InventoryVaultSyncService {
 				onStep?.(completed, total);
 			}
 			return { status: 'applied', created, updated, deactivated };
-		} catch {
-			return { status: 'unavailable', message: 'Inventory notes could not be written safely.' };
+		} catch (error) {
+			return {
+				status: 'storage_failure', message: 'Inventory notes could not be written safely.',
+				written: completed, errorName: errorClassName(error),
+			};
 		}
 	}
 

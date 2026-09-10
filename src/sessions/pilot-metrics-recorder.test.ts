@@ -1,6 +1,9 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 
+import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
+import type { LocalDebugRecordInput } from '../core/local-debug-contract';
+import type { LocalDebugLogger } from '../core/local-debug-logger';
 import { PilotMetricsRecorder } from './pilot-metrics-recorder';
 import { IndexedDbPilotMetricsStore, type PilotMetricsStore } from './pilot-metrics-store';
 import { createPilotEnvironment, pilotProposalRef } from './pilot-metrics-model';
@@ -110,9 +113,20 @@ describe('PilotMetricsRecorder', () => {
 			disable: vi.fn(async () => { throw new Error('quota'); }),
 			close: vi.fn(),
 		};
-		const recorder = new PilotMetricsRecorder(unavailable, 10_000, () => NOW);
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const actions = new LocalDebugActionRunner({ diagnostics, createId: () => 'pilot-metrics' });
+		const recorder = new PilotMetricsRecorder(unavailable, 10_000, () => NOW, actions);
 		await expect(recorder.configure(profile())).resolves.toBe(false);
 		expect(recorder.getState()).toMatchObject({ status: 'unavailable' });
+
+		// H15.23 (2026-09-10 incident): every catch here already returned its own closed
+		// false/null, so a real store rejection was indistinguishable in the local debug log
+		// from the store simply being unconfigured.
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'session' && input.action === 'session_projection' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'storage_failure', state: 'pilot_metrics' });
 	});
 
 	it('keeps conflict health sticky when a later duplicate presentation succeeds', async () => {
