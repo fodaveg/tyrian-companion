@@ -1,5 +1,5 @@
 {
-	"frozenCount": 32,
+	"frozenCount": 31,
 	"frozen": [
 		"src/advisor/inventory-advisor-architecture.test.ts",
 		"src/advisor/inventory-advisor-builtin-bundle-architecture.test.ts",
@@ -23,7 +23,6 @@
 		"src/platform/mumble-v2-launch-architecture.test.ts",
 		"src/platform/mumble-v2-shadow-architecture.test.ts",
 		"src/platform/mumble-v2-spike-architecture.test.ts",
-		"src/security-boundary.test.ts",
 		"src/sessions/pending-proposal-architecture.test.ts",
 		"src/sessions/pilot-metrics-architecture.test.ts",
 		"src/sessions/session-debug-semantics-architecture.test.ts",
