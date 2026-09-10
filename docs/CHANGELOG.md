@@ -1,5 +1,55 @@
 # Changelog
 
+## Release beta 0.1.32 - el arranque fallido deja su causa en el log, y los tests ejecutan en vez de leer
+
+### Sesión: la causa del fallo llega al log (H15.1, incidente del 10 sep 08:05)
+
+- Incidente: «Iniciar sesión» mostró «no se pudo iniciar» con conexión conectada y `logs/debug.jsonl`
+  recibió 0 líneas. Dos causas medidas: (1) `session-command-controller.ts` convertía cualquier
+  excepción de iniciar/terminar/recuperar/descartar/limpiar en un aviso fijo y devolvía `failed` sin
+  rechazar, así que el registro de diagnóstico de `main.ts` anotaba `success`; (2) `mapFailure` /
+  `mapStopFailure` en `manual-session-start-service.ts` descartaban el error original (TypeError de
+  red, AbortError, transición rechazada) y lo dejaban en `unexpected`.
+- Ahora: los cinco comandos de sesión registran `level:error` con clase del error, `status` y `code`
+  HTTP si existen (nuevo `src/core/local-debug-error-details.ts`), nunca mensajes ni stacks; `run()`
+  rechaza con `SessionCommandBackendFailure` para que el registro exterior diga la verdad. Tests que
+  ejecutan la función con la dependencia rota: `manual-session-start-service.test.ts`,
+  `session-command-model.test.ts` (extremo a extremo con el runner y logger reales sobre un store en
+  memoria), `local-debug-error-details.test.ts`.
+
+### Audit de funcionamiento (H15.2 y H15.3), informes en `docs/audit/`
+
+- `docs/audit/2026-09-10-H15.2-tragaderos.md`: 718 fronteras revisadas; 241 pierden la causa (43
+  graves); 304 correctas. Hallazgo transversal: 8 stores llaman `attempt.failure()` sin el error y el
+  log no distingue cuota llena de fallo de escritura.
+- `docs/audit/2026-09-10-H15.3-sabotaje-en-vivo.md`: 31 parejas dependencia × acción sobre la bóveda
+  real (API 502/429/403/timeout/red, disco denegado, reloj atrás, lease ajeno); 19 pantallas sin
+  mensaje útil; 6 acciones sin ninguna línea de log. Los cinco más graves: el callout de «errores
+  desde la carga» tapa el copy de fallo de sesión; una sesión muerta por `lease_lost` / `clock_anomaly`
+  solo se sale recargando Obsidian; «Capturar ya» sin captura de error; el sync de inventario escribe
+  85 notas y luego anuncia «conflicto» con «0 conflictos»; detección en error sin rearme.
+- Todo hallazgo NO es ahora una tarea hija H15.5 a H15.26 en Lumbre, cada una con fichero, arreglo y
+  el test que debe fallar sin él.
+- Aviso: el sabotaje dejó 85 notas de `Inventory/Positions` actualizadas con datos reales por un apply
+  parcial; la siguiente sincronización real las reconcilia.
+
+### Tests que ejecutan la función en vez de leer el fuente (H15.4, parcial)
+
+- El contrato `scripts/source-text-assertion-contract.mjs` baja de 32 a 18 ficheros congelados.
+  Convertidos o borrados: 4 de `src/advisor/` (lote A), 4 de `src/platform/` (2 borrados por redundantes
+  con `scripts/security-scan.mjs`, que ya ejecuta esas propiedades sobre el árbol real), 11 de
+  `src/advisor/` y `src/assets/` (lote D). Los 6 de `src/ui/` ya solo leían `styles.css`.
+  `src/test/module-boundary.ts` gana `moduleBoundaryFacts`, `exportedDeclarationNames`,
+  `classMemberNames` y `propertyCallChains` para los allowlists de imports, que son estáticos por
+  diseño.
+- Quedan 18 (economy, halloween, sessions, ui, security-boundary, 3 de platform): H15.4 sigue abierta.
+
+### Documentación (H13.13)
+
+- La narrativa H8.1 a H8.7 de Mumble Link sale de `docs/ARCHITECTURE.md` (144 → 128 kB) a
+  `docs/historico/ARCHITECTURE-h8-mumble.md`; queda un párrafo vivo con lo que exige
+  `h8-native-decision-contract.mjs`. Los cinco ADR siguen vigentes.
+
 ## Release beta 0.1.31 - el audit del 8 sep en lotes, y nada pide revisión ni aprobación
 
 Probado en la bóveda real con `npm run dev:install` y `npm run smoke:live` (0 errores nuevos en el
