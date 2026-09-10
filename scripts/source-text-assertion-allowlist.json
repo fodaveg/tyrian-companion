@@ -1,7 +1,6 @@
 {
-	"frozenCount": 22,
+	"frozenCount": 21,
 	"frozen": [
-		"src/advisor/inventory-advisor-builtin-bundle.test.ts",
 		"src/advisor/inventory-advisor-evidence-architecture.test.ts",
 		"src/economy/price-history-architecture.test.ts",
 		"src/economy/recommendation-envelope-architecture.test.ts",

@@ -24,7 +24,7 @@ import {
 } from './inventory-advisor-classifier';
 import { applyInventoryDiscardAllowlist, isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-discard';
 import { isInventoryAdvisorResultForInput } from './inventory-advisor-result';
-import { readModuleSource } from '../test/module-boundary';
+import { moduleBoundaryFacts } from '../test/module-boundary';
 import {
 	isInventoryContainerEconomyPack,
 	isInventoryContainerPriceEvidence,
@@ -444,11 +444,13 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	});
 
 	it('contains no execution, clock read, or I/O capability', () => {
-		const source = readModuleSource('src/advisor/inventory-advisor-builtin-bundle.ts');
-		expect(source).not.toContain('free_to_play');
-		expect(source).not.toContain('whitelist');
-		expect(source).not.toContain('Date.now');
-		expect(source).not.toMatch(/\b(?:fetch|requestUrl|XMLHttpRequest|WebSocket|destroyItem|deleteItem|salvageItem|openContainer)\b/u);
+		const facts = moduleBoundaryFacts('src/advisor/inventory-advisor-builtin-bundle.ts');
+		expect(facts.names.has('free_to_play')).toBe(false);
+		expect(facts.names.has('whitelist')).toBe(false);
+		expect(facts.propertyCallChains).not.toContain('Date.now');
+		for (const name of ['fetch', 'requestUrl', 'XMLHttpRequest', 'WebSocket', 'destroyItem', 'deleteItem', 'salvageItem', 'openContainer']) {
+			expect(facts.names.has(name), name).toBe(false);
+		}
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
 		expect(JSON.stringify(result)).not.toMatch(/"(?:executor|execution|sideEffects|requiresUserAction)"/u);
 	});
