@@ -76,17 +76,89 @@ describe('command_execute failure observability (H15.13)', () => {
 	});
 });
 
+/**
+ * H15.25: the Detalle button disables discard while `recovery.status === 'busy'`
+ * (`disabled: working || busy` in `companion-view.ts`); the palette's `checkCallback` and the
+ * action panel both read `session-command-model.ts`'s `recoveryDiscardable`, which keeps `busy`
+ * discardable on purpose (`session-command-model.test.ts`: the backend still needs to surface its
+ * own `precondition_failed` line). The controller now matches the button instead of offering a
+ * discard the backend will only reject.
+ */
+describe('discard-saved-session availability while recovery is busy (H15.25)', () => {
+	it('is unavailable while another window owns the saved session, matching the Detalle button', () => {
+		const controller = createController({
+			recovery: () => ({ status: 'busy', ownerExpiresAt: Date.now() + 1_000, ownerInstanceId: 'other', ownerMachineId: 'other' } as never),
+		});
+		expect(controller.describe('discard-saved-session').available).toBe(false);
+	});
+
+	it('stays available once the busy lease clears', () => {
+		const controller = createController({ recovery: () => ({ status: 'available' } as never) });
+		expect(controller.describe('discard-saved-session').available).toBe(true);
+	});
+});
+
+/**
+ * H15.25 (second half): the "Start" button on the Detalle card is only disabled by a missing API
+ * key (`disabled: missingKey`), never by an unchecked connection — `openManualSessionStart` checks
+ * the connection itself before starting. The palette command used to require an already-`connected`
+ * state, so pressing it with a merely `idle` connection did nothing at all.
+ */
+describe('start-farming-session availability with an unchecked connection (H15.25)', () => {
+	it('is available while connection is idle if a session could otherwise start', () => {
+		const controller = createController({
+			hasKey: true,
+			connection: () => ({ status: 'idle' } as never),
+			canStartSession: () => true,
+			sessionDescribe: (id) => descriptorFor(id, id !== 'start-farming-session'),
+		});
+		expect(controller.describe('start-farming-session').available).toBe(true);
+	});
+
+	it('checks the connection before running, the same as openManualSessionStart', async () => {
+		const checkConnection = vi.fn(async () => ({ status: 'connected' }) as never);
+		const sessionRun = vi.fn(async () => 'completed' as const);
+		const controller = createController({
+			hasKey: true,
+			connection: () => ({ status: 'idle' } as never),
+			canStartSession: () => true,
+			checkConnection,
+			sessionRun,
+			sessionDescribe: (id) => descriptorFor(id, id !== 'start-farming-session'),
+		});
+
+		await controller.run('start-farming-session');
+
+		expect(checkConnection).toHaveBeenCalledOnce();
+		expect(sessionRun).toHaveBeenCalledWith('start-farming-session');
+	});
+
+	it('stays unavailable while nothing else could start a session (recovering, active…)', () => {
+		const controller = createController({
+			hasKey: true,
+			connection: () => ({ status: 'idle' } as never),
+			canStartSession: () => false,
+			sessionDescribe: (id) => descriptorFor(id, id !== 'start-farming-session'),
+		});
+		expect(controller.describe('start-farming-session').available).toBe(false);
+	});
+});
+
 function descriptorFor(id: SessionCommandId, available: boolean): SessionCommandDescriptor {
 	return { id, name: id, available, icon: 'test', destructive: id.includes('discard') || id.includes('clear'), targetKey: 'test' };
 }
 
 function createController(overrides: {
 	readonly sessionRun?: (id: SessionCommandId) => Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+	readonly sessionDescribe?: (id: SessionCommandId) => SessionCommandDescriptor;
 	readonly execute?: ProductActionControllerPorts['execute'];
 	readonly hasKey?: boolean;
 	readonly locale?: 'es' | 'en';
 	readonly connection?: ProductActionControllerPorts['getConnectionState'];
 	readonly detection?: ProductActionControllerPorts['getDetectionState'];
+	readonly recovery?: NonNullable<ProductActionControllerPorts['getRecoveryState']>;
+	readonly checkConnection?: NonNullable<ProductActionControllerPorts['checkConnection']>;
+	readonly canStartSession?: NonNullable<ProductActionControllerPorts['canStartSession']>;
 	readonly diagnostics?: LocalDebugActionPort;
 } = {}): ProductActionController {
 	return new ProductActionController({
@@ -97,10 +169,13 @@ function createController(overrides: {
 		canArmDetection: () => true, canApplyInventory: () => false, canApplyWallet: () => false,
 		isInventoryBusy: () => false,
 		sessionCommands: {
-			describe: (id) => descriptorFor(id, true),
+			describe: overrides.sessionDescribe ?? ((id) => descriptorFor(id, true)),
 			runWithOutcome: overrides.sessionRun ?? vi.fn(async () => 'completed' as const),
 		},
 		execute: overrides.execute ?? vi.fn(async () => 'completed' as const),
+		getRecoveryState: overrides.recovery ?? (() => ({ status: 'none' } as never)),
+		checkConnection: overrides.checkConnection,
+		canStartSession: overrides.canStartSession,
 		diagnostics: overrides.diagnostics,
 	});
 }

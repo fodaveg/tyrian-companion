@@ -2,9 +2,10 @@ import { getRetryAt, type ConnectionState } from '../account/connection-service'
 import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
+import type { SessionRecoveryState } from '../sessions/manual-session-start-service';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import type { SessionCommandController, SessionCommandOutcome } from './session-command-controller';
-import { SESSION_COMMAND_IDS, type SessionCommandId } from './session-command-model';
+import { SESSION_COMMAND_IDS, type SessionCommandDescriptor, type SessionCommandId } from './session-command-model';
 
 export const PRODUCT_ACTION_IDS = [
 	'open-companion',
@@ -50,6 +51,15 @@ export interface ProductActionControllerPorts {
 	isInventoryBusy(): boolean;
 	sessionCommands: Pick<SessionCommandController, 'describe' | 'runWithOutcome'>;
 	execute(id: Exclude<ProductActionId, SessionCommandId>): ProductActionOutcome | Promise<ProductActionOutcome>;
+	/**
+	 * Only used to keep `discard-saved-session` (H15.25) and `start-farming-session` (below) lined
+	 * up with the buttons the Detalle gaveto already renders for the same recovery state.
+	 */
+	getRecoveryState?(): SessionRecoveryState;
+	/** Mirrors the connection check `openManualSessionStart` runs before starting a session. */
+	checkConnection?(): Promise<ConnectionState>;
+	/** Whether a session could start right now if the account were connected (H15.25). */
+	canStartSession?(): boolean;
 	diagnostics?: LocalDebugActionPort;
 }
 
@@ -129,7 +139,7 @@ export class ProductActionController {
 		const translator = createTranslator(locale);
 		const session = isSessionCommand(id) ? this.ports.sessionCommands.describe(id) : null;
 		const availability = isSessionCommand(id)
-			? { available: session!.available, reason: session!.available ? null : translator.t('productAction.reason.state') }
+			? this.sessionAvailability(id, session!, translator)
 			: this.nonSessionAvailability(id);
 		const retryAt = getRetryAt(this.ports.getConnectionState());
 		const coolingDown = retryAt !== null && retryAt > Date.now();
@@ -197,6 +207,12 @@ export class ProductActionController {
 	}
 
 	async run(id: ProductActionId): Promise<ProductActionOutcome> {
+		// `start-farming-session` never disables on a merely-unchecked connection (the Detalle
+		// button doesn't either, see `sessionAvailability` below); it checks it here instead,
+		// exactly where `openManualSessionStart` does (H15.25).
+		if (id === 'start-farming-session' && this.ports.getConnectionState().status === 'idle') {
+			await this.ports.checkConnection?.();
+		}
 		if (!this.describe(id).available || this.running.has(id)) return 'unavailable';
 		this.running.add(id);
 		this.failed.delete(id);
@@ -260,6 +276,35 @@ export class ProductActionController {
 	private actionName(id: Exclude<ProductActionId, SessionCommandId>): string {
 		const translator = createTranslator(this.ports.getLocale());
 		return translator.t(TRANSLATION_BY_ID[id]);
+	}
+
+	/**
+	 * `discard-saved-session` stays "available" at the session-command-model level while recovery
+	 * is `busy` (`session-command-model.test.ts` keeps that on purpose so the actual attempt still
+	 * surfaces the backend's `precondition_failed` line); the Detalle button disables it during the
+	 * same wait (`disabled: working || busy`). H15.25 lines the palette and action panel up with
+	 * that button instead of offering a discard the backend will only reject.
+	 *
+	 * `start-farming-session` is the mirror case: the button never disables on a merely-unchecked
+	 * connection (`disabled: missingKey` only), it just checks the connection first on click. This
+	 * mirrors that here too, deferring to `run()`'s connection check above.
+	 */
+	private sessionAvailability(
+		id: SessionCommandId,
+		session: SessionCommandDescriptor,
+		translator: Translator,
+	): { available: boolean; reason: string | null } {
+		if (id === 'discard-saved-session' && this.ports.getRecoveryState?.().status === 'busy') {
+			return { available: false, reason: translator.t('productAction.reason.state') };
+		}
+		if (
+			id === 'start-farming-session' && !session.available
+			&& this.ports.getConnectionState().status === 'idle'
+			&& (this.ports.canStartSession?.() ?? false)
+		) {
+			return { available: true, reason: null };
+		}
+		return { available: session.available, reason: session.available ? null : translator.t('productAction.reason.state') };
 	}
 
 	private nonSessionAvailability(id: Exclude<ProductActionId, SessionCommandId>): { available: boolean; reason: string | null } {

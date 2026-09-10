@@ -178,6 +178,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
 			armAssistedDetection(this: typeof harness): Promise<string>;
 		}).armAssistedDetection;
@@ -211,6 +212,7 @@ describe('armAssistedDetection observability (H15.12)', () => {
 			settings: { ...DEFAULT_SETTINGS },
 			localDebugActions,
 		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
 		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
 			armAssistedDetection(this: typeof harness): Promise<string>;
 		}).armAssistedDetection;

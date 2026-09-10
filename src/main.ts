@@ -3202,6 +3202,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			),
 			sessionCommands: this.sessionCommands,
 			execute: (id) => this.executeProductAction(id),
+			getRecoveryState: () => this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' },
+			checkConnection: () => this.checkConnection(),
+			canStartSession: () => this.runtimeReady
+				&& this.sessions.getRecoveryState().status === 'none'
+				&& this.sessions.getState().status === 'idle',
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
