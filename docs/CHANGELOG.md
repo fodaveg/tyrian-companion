@@ -1,5 +1,30 @@
 # Changelog
 
+## Release beta 0.1.33 - los nueve arreglos restantes del audit H15
+
+Cierra las tareas hijas del audit del 10 sep que quedaron fuera de la 0.1.32 (H15.10, 11, 14 a 19 y 23). Cada una lleva un test que ejecuta la función y falla sin el arreglo.
+
+- Nota de sesión: si la nota no se puede escribir (por ejemplo permiso denegado en disco), `session_finish`
+  registra `failure` con `details.status` y la clase del error; antes el `catch` vacío de
+  `session-note-writer.ts` la dejaba fuera del log (H15.10).
+- Sync de inventario y cartera: un fallo de escritura ya no se anuncia como «conflicto con 0 conflictos»;
+  el estado distingue `storage_failure` de `conflict`, guarda la causa (clase del error) y el registro
+  `inventory_vault_sync` lleva cuántas notas se escribieron antes del fallo (`inventory-vault-sync.ts`,
+  `wallet-vault-sync.ts`, `vault-sync-controller.ts`, `inventory-vault-sync-run-controller.ts`, H15.11).
+- Propuesta de detección: revisar o aceptar con el store roto registra `detection_proposal failure` con
+  causa (H15.14).
+- Historial de sesiones: `SessionHistory` acepta un puerto de diagnóstico y cada lectura o escritura
+  fallida del vault registra `vault_read`/`vault_write failure` en vez de devolver `unavailable` en
+  silencio (H15.15).
+- Alertas: cada canal (webhook, in-game, cola, notificación, sonido) devuelve su motivo de fallo y
+  `notification_emit` se registra como `failure` con la lista de canales caídos; antes el informe de
+  entrega salía como `success` (`alert-emitter.ts`, H15.16). Si el servidor in-game no puede abrir el
+  puerto (`EADDRINUSE`), queda registrado con el código y la fila de ajustes lo muestra (H15.17).
+- Precios y assets: el sell signal que fallaba dentro de la compactación registra `price_history_compact
+  failure` (H15.18); `previewManagedAssets` corre bajo el runner y registra su fallo (H15.19);
+  `PilotMetricsRecorder` registra `storage_failure` en vez de devolver `false`, y `exportPilotMetrics`
+  va bajo el runner (H15.23).
+
 ## Release beta 0.1.32 - el arranque fallido deja su causa en el log, y los tests ejecutan en vez de leer
 
 ### Sesión: la causa del fallo llega al log (H15.1, incidente del 10 sep 08:05)
