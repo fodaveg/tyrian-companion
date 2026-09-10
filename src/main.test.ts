@@ -7,12 +7,13 @@ vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
+import { createTranslator } from './core/i18n';
 import { genericManagedAssets } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
-import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
@@ -21,6 +22,7 @@ import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
 import type { PreparedSessionCommand, SessionCommandPorts } from './ui/session-command-controller';
+import type { SessionCommandContext } from './ui/session-command-model';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
 import type { SessionStartInput } from './sessions/session-start-capture';
 import type { StorageDelta } from './account/storage-delta-model';
@@ -1612,3 +1614,101 @@ function buildManagedAssetsRootHarness(
 	};
 	return harness;
 }
+
+describe('recovery backend failure observability (H15.6)', () => {
+	it('logs session_recover failure with the backend status as its code, never the free-text message', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			performRecoverSession(this: unknown): Promise<void>;
+		};
+		const plugin = {
+			pilotRecoveryIdentity: () => null,
+			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
+			sessions: {
+				recover: vi.fn(async () => ({
+					status: 'failed' as const,
+					message: 'The recovered authority could not be persisted safely.',
+				})),
+			},
+			renderViews: vi.fn(),
+		};
+		const notify = vi.fn();
+		const controller = new SessionCommandController({
+			getContext: () => ({
+				state: { version: 1, status: 'idle' },
+				recovery: { status: 'available', state: { sessionId: 'session-a', authority: { fence: 1 } } } as SessionCommandContext['recovery'],
+				connection: 'connected',
+				stopFailure: null,
+			}),
+			prepare: () => Promise.resolve(() => proto.performRecoverSession.call(plugin)),
+			notify,
+			diagnostics: {
+				createContext: (ctx) => ({ ...ctx, actionId: 'a', correlationId: 'a' }),
+				event: diagnosticsEvent,
+			} satisfies LocalDebugActionPort,
+		} satisfies SessionCommandPorts);
+
+		await expect(controller.runWithOutcome('recover-saved-session')).resolves.toBe('failed');
+
+		expect(notify).toHaveBeenCalledTimes(1);
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session', action: 'session_recover', phase: 'failure',
+		}));
+		const [loggedEvent] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+		expect((loggedEvent.details as Record<string, unknown> | undefined)?.code).toBe('failed');
+		expect(JSON.stringify(loggedEvent)).not.toContain('persisted safely');
+	});
+});
+
+describe('capture-now failure observability (H15.9)', () => {
+	/**
+	 * `captureSessionFinalNow` never went through `sessionCommands`, unlike the Terminar button: a
+	 * failed capture reached the caller with no Notice at all, and `session_finish` logged
+	 * `unknown_failure` with no trace of the real cause (a timed-out transport, here already mapped
+	 * to `snapshot_failed` by `mapStopFailure`, per `manual-session-start-service.test.ts`'s own
+	 * H15.1 coverage of that mapping). `void this.actions.captureSessionFinalNow?.()?.catch(() =>
+	 * undefined)` (`companion-view.ts`) is exactly what a real "Capturar ya" click runs.
+	 */
+	it('shows one Notice, logs session_finish with the real cause, and never leaves the rejection unhandled', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const notify = vi.fn();
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			captureSessionFinalNow(this: unknown): Promise<void>;
+		};
+		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
+			settings: { language: 'en' as const },
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			assistedDetection: { getState: () => ({ status: 'armed' }) },
+			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
+			sessions: { captureFinalNow: vi.fn(async () => ({
+				status: 'failed' as const,
+				failure: { code: 'snapshot_failed' as const, message: 'The final account snapshot could not be captured.' },
+			})) },
+			renderViews: vi.fn(),
+			emitNotice: (message: string) => { notify(message); },
+			localDebugActions: {
+				run: async (_context: unknown, action: () => Promise<void>) => await action(),
+				event: diagnosticsEvent,
+			},
+		});
+		const onClick = () => { void proto.captureSessionFinalNow.call(harness).catch(() => undefined); };
+
+		let unhandled = 0;
+		const onUnhandledRejection = () => { unhandled += 1; };
+		process.on('unhandledRejection', onUnhandledRejection);
+		try {
+			onClick();
+			await vi.waitFor(() => { expect(notify).toHaveBeenCalled(); });
+		} finally {
+			process.off('unhandledRejection', onUnhandledRejection);
+		}
+
+		expect(unhandled).toBe(0);
+		expect(notify).toHaveBeenCalledTimes(1);
+		expect(notify).toHaveBeenCalledWith(createTranslator('en').t('commands.actionFailed'));
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session', action: 'session_finish', phase: 'failure',
+			details: { cause: 'snapshot_failed' },
+		}));
+	});
+});

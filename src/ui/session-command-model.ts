@@ -40,8 +40,15 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 	const connected = context.connection === 'connected' || context.connection === 'warning';
 	return [
 		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
-		descriptor('finish-farming-session', context.state.status === 'stopping' ? t('commands.retryStop') : t('commands.finishSession'),
-			!recovering && (context.state.status === 'active' || (context.state.status === 'stopping' && context.stopFailure !== null)), 'square', false, targetKey(context, false)),
+		descriptor('finish-farming-session',
+			(context.state.status === 'stopping' || context.state.status === 'error') ? t('commands.retryStop') : t('commands.finishSession'),
+			// A live authority failure (heartbeat `lease_lost`, stop `clock_anomaly`) used to leave
+			// `sessionCommands.available()` empty once `state.status` became `error` — no descriptor
+			// here checked it at all (H15.8, 2026-09-10 audit). Only the case with a recorded stop
+			// failure retries anything real; a heartbeat failure mid-`active` has no stop to retry yet.
+			!recovering && (context.state.status === 'active'
+				|| ((context.state.status === 'stopping' || context.state.status === 'error') && context.stopFailure !== null)),
+			'square', false, targetKey(context, false)),
 		descriptor('recover-saved-session', t('commands.recoverSession'), recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
 		descriptor('discard-saved-session', t('commands.discardSession'), recoveryDiscardable, 'trash-2', true, targetKey(context, true)),
 		descriptor('clear-completed-session', t('commands.clearSession'), !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),

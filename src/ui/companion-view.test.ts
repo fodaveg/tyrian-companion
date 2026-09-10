@@ -12,6 +12,9 @@ import { translateRuntime } from '../core/i18n-runtime-catalog';
 import { formatClock } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
+import type { SessionStopFailure } from '../sessions/manual-session-start-service';
+import type { SessionState } from '../sessions/session';
+import type { SessionCardAction } from './session-card';
 import { ProductActionController } from './product-action-controller';
 
 afterEach(() => {
@@ -1076,6 +1079,65 @@ describe('Companion stop proposal staleness', () => {
 		['2026-08-20T10:00:00.000Z', 'not-a-timestamp'],
 	])('says nothing when there is no lag to declare (%s, %s)', (possibleTo, detectedAt) => {
 		expect(walkRetained(renderLag(possibleTo, detectedAt))).toHaveLength(1);
+	});
+});
+
+/**
+ * H15.8 (2026-09-10 audit): `observedSession` unwraps `session.status === 'error'` down to the
+ * failed state's own phase for the rest of the card builder, so a live authority failure (heartbeat
+ * `lease_lost`, stop `clock_anomaly`) used to leave the header showing "Sesión activa"/"Terminando
+ * sesión" with whatever action that phase offers for a lease the coordinator has already given up
+ * on — a retry that never worked, or nothing. `sessionErrorRecoveryActions` is the isolated
+ * function that decides the card's actions instead, once `session-command-model.ts` grants the
+ * retry through `sessionCommands`.
+ */
+describe('Session error recovery action (H15.8)', () => {
+	function recoveryActions(session: SessionState, stopFailure: SessionStopFailure | null) {
+		const stopManualSession = vi.fn(async () => undefined);
+		const harness = {
+			actions: { getSessionStopFailure: () => stopFailure, getLocale: () => 'en' as const, stopManualSession },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated harness.
+		const compute = (TyrianCompanionView.prototype as unknown as {
+			sessionErrorRecoveryActions(this: typeof harness, session: SessionState): SessionCardAction[];
+		}).sessionErrorRecoveryActions;
+		return { actions: compute.call(harness, session), stopManualSession };
+	}
+
+	const failedActiveSession: SessionState = {
+		version: 1, status: 'error', failedAt: '2026-09-10T10:00:00.000Z', code: 'lease_lost',
+		failedState: {
+			version: 1, status: 'active', sessionId: 'session-error',
+			authority: { machineId: 'machine', instanceId: 'instance', sessionId: 'session-error', fence: 1, acquiredAt: 1 },
+			requestedAt: '2026-09-10T09:00:00.000Z',
+			baseline: { snapshotId: 'snapshot-before' },
+			startContext: {
+				characterName: 'Astra Uno', magicFind: { value: 0, source: 'manual' },
+				build: {
+					tab: 1, name: 'Farm', profession: 'Revenant',
+					specializations: [{ id: 3, traits: [1, 2, 3] }, { id: 52, traits: [4, 5, 6] }, { id: 63, traits: [7, 8, 9] }],
+					skills: { heal: 1, utilities: [2, 3, 4], elite: 5 },
+					aquaticSkills: { heal: 6, utilities: [7, 8, 9], elite: 10 },
+				},
+				capturedAt: '2026-09-10T09:00:01.000Z',
+			},
+		},
+	} as unknown as SessionState;
+
+	it('offers exactly one retry action once a stop failure is on record', () => {
+		const { actions, stopManualSession } = recoveryActions(failedActiveSession, { code: 'coordination_unavailable', message: 'x' });
+		expect(actions).toHaveLength(1);
+		actions[0]?.onClick();
+		expect(stopManualSession).toHaveBeenCalledTimes(1);
+	});
+
+	it('offers nothing without a recorded stop failure (a heartbeat failure mid-active has no stop to retry)', () => {
+		expect(recoveryActions(failedActiveSession, null).actions).toEqual([]);
+	});
+
+	it('offers nothing outside session error', () => {
+		const idle: SessionState = { version: 1, status: 'idle' };
+		expect(recoveryActions(idle, { code: 'coordination_unavailable', message: 'x' }).actions).toEqual([]);
 	});
 });
 

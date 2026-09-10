@@ -24,6 +24,8 @@ import {
 	type SessionRuntimeStore,
 } from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
+import { SessionCommandController } from '../ui/session-command-controller';
+import { HttpTransportError } from '../core/http';
 
 const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
 const handle: ActiveSessionLeaseHandle = {
@@ -443,6 +445,7 @@ describe('ManualSessionStartService', () => {
 
 	it('does not block session stop when close-time prices are unavailable', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const service = new ManualSessionStartService(
 			coordinator(),
 			{
@@ -452,6 +455,10 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({
 				runtimeStore,
 				priceCapture: { capture: vi.fn(async () => { throw new Error('offline'); }) },
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
 			}),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
@@ -465,6 +472,16 @@ describe('ManualSessionStartService', () => {
 			status: 'loaded',
 			record: { priceSnapshot: { status: 'unavailable' } },
 		});
+		// H15.8 (2026-09-10 audit): the stop above still succeeds with a degraded valuation, but
+		// until now the degradation itself left 0 log lines and no trace of why.
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_finish',
+			level: 'error',
+			phase: 'failure',
+			state: 'price_capture',
+			details: { reason: 'Error' },
+		}));
 	});
 
 	it('coalesces double stop clicks into one final capture', async () => {
@@ -591,6 +608,61 @@ describe('ManualSessionStartService', () => {
 			failedState: { status: 'stopping', baseline: { snapshotId: 'snapshot-before' } },
 		});
 		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	/**
+	 * H15.8 (2026-09-10 audit): a clock rolled back mid-stop left `session_finish` with 0 log lines
+	 * and `sessionCommands.available()` empty — the card froze on "Terminando sesión" with no button
+	 * that still worked, and the only way out was reloading Obsidian. `owned.status === 'error'`
+	 * (any coordinator code) used to collapse into a bare `coordination_unavailable` throw with no
+	 * trace of which code the coordinator actually returned.
+	 */
+	it('registers session_finish failure with the coordinator\'s own clock_anomaly code, and still offers a retry', async () => {
+		const assertOwned = vi.fn()
+			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'error' as const, code: 'clock_anomaly' as const });
+		const leases = coordinator({ assertOwned });
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const service = new ManualSessionStartService(
+			leases,
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
+			status: 'failed',
+			failure: { code: 'coordination_unavailable' },
+		});
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_finish',
+			level: 'error',
+			phase: 'failure',
+			details: { code: 'clock_anomaly' },
+		}));
+
+		const controller = new SessionCommandController({
+			getContext: () => ({
+				state: service.getState(),
+				recovery: service.getRecoveryState(),
+				connection: 'connected',
+				stopFailure: service.getLastStopFailure(),
+			}),
+			prepare: async () => async () => undefined,
+			notify: vi.fn(),
+		});
+		expect(controller.available().length).toBeGreaterThan(0);
 	});
 
 	it('does not expose provisional as successful when durable final evidence cannot commit', async () => {
@@ -984,6 +1056,64 @@ describe('ManualSessionStartService', () => {
 				selfInstanceId: 'instance-second',
 			},
 		}));
+	});
+
+	/**
+	 * H15.24 (2026-09-10 audit): a 403 without the `builds` scope classified as `unexpected`, which
+	 * told the player to "check the connection and try again" instead of naming the real, fixable
+	 * problem (`status.startFailure.missing_capability` already exists and says exactly that).
+	 */
+	it('classifies a 401/403 without the required scope as missing_capability, not unexpected', async () => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => { throw new HttpTransportError('http', 403, null, 'Forbidden'); }) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'missing_capability' } });
+		expect(service.getLastFailure()?.code).toBe('missing_capability');
+	});
+
+	/** Same audit: a timeout or network failure also classified as `unexpected` instead of `snapshot_failed`. */
+	it.each(['timeout', 'network'] as const)('classifies an HTTP %s as snapshot_failed, not unexpected', async (kind) => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => { throw new HttpTransportError(kind, null, null, kind); }) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
+	});
+
+	/**
+	 * H15.26 (2026-09-10 audit): every pre-lease start rejection `failWithoutLease` returns (disposed,
+	 * recovery pending, busy, coordination down) left 0 log lines — including a coordinator that
+	 * threw underneath `safeAcquire` instead of returning its own `{status:'error'}`.
+	 */
+	it('registers session_start failure when the coordinator throws acquiring the lease', async () => {
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const service = new ManualSessionStartService(
+			coordinator({ acquire: vi.fn(async () => { throw new Error('IndexedDB is unavailable.'); }) }),
+			{ capture: vi.fn(async () => structuredClone(captured)) },
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'coordination_unavailable' } });
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session', action: 'session_start', phase: 'failure',
+			details: { code: 'coordination_unavailable' },
+		}));
+		const [record] = (diagnosticsEvent as ReturnType<typeof vi.fn>).mock.calls[0] as [Record<string, unknown>];
+		expect(JSON.stringify(record)).not.toContain('IndexedDB is unavailable');
 	});
 
 	it('logs the error class of an unclassified start failure instead of discarding it (H15.1)', async () => {

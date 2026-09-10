@@ -35,6 +35,16 @@ describe('projectSessionCommands', () => {
 		expect(available(context('stopping', { stopFailure: failure() }))).toEqual(['finish-farming-session']);
 	});
 
+	/**
+	 * H15.8 (2026-09-10 audit): a live authority failure (heartbeat `lease_lost`, stop
+	 * `clock_anomaly`) leaves `state.status === 'error'` with a recorded `stopFailure`, and no
+	 * descriptor here checked that status at all: `sessionCommands.available()` came back `[]`, the
+	 * exact dead end the audit measured (only a manual Obsidian reload got the player out).
+	 */
+	it('offers a retry from a live authority-failure error once a stop failure is on record', () => {
+		expect(available(context('error', { stopFailure: failure() }))).toEqual(['finish-farming-session']);
+	});
+
 	it('does not define or offer an active-session cancel command', () => {
 		expect(SESSION_COMMAND_IDS as readonly string[]).not.toContain('cancel-session');
 		for (const status of ['idle', 'starting', 'active', 'stopping', 'provisional', 'complete', 'error'] as const) {

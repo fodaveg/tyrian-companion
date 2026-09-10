@@ -804,7 +804,13 @@ export class ManualSessionStartService {
 						delta,
 						Math.max(this.safeNow(), Date.parse(finalSnapshot.completedAt)),
 					);
-			} catch {
+			} catch (error) {
+				// H15.8 (2026-09-10 audit): the stop still succeeds with a degraded valuation, but
+				// until now nothing recorded that the degradation happened at all, or why.
+				this.diagnostics?.event({
+					component: 'session', action: 'session_finish', level: 'error', phase: 'failure',
+					code: 'unavailable', state: 'price_capture', details: unmappedErrorLogDetails(error),
+				});
 				priceSnapshot = unavailableSessionPriceSnapshot(
 					stopping.sessionId,
 					delta,
@@ -814,6 +820,7 @@ export class ManualSessionStartService {
 			if (this.authorityFailure) throw new ManualSessionStartError(this.authorityFailure);
 			const owned = await this.safeAssert(this.requireHandle());
 			if (owned.status === 'error') {
+				this.logAuthorityFailure('session_finish', owned.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable');
 				throw new ManualSessionStartError(
 					failure('coordination_unavailable', 'Session coordination became unavailable.'),
 				);
@@ -1051,11 +1058,16 @@ export class ManualSessionStartService {
 				}
 				return;
 			}
-			const mapped = result.status === 'lost'
+			const reason = result.status === 'lost'
+				? 'lease_lost'
+				: result.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable';
+			this.logAuthorityFailure('session_heartbeat', reason);
+			const mapped = reason === 'lease_lost'
 				? failure('lease_lost', 'The session lease was lost.')
 				: failure('coordination_unavailable', 'Session coordination became unavailable.');
 			this.failFromAuthority(mapped);
 		} catch {
+			this.logAuthorityFailure('session_heartbeat', 'coordination_unavailable');
 			const mapped = failure('coordination_unavailable', 'Session coordination became unavailable.');
 			this.failFromAuthority(mapped);
 		}
@@ -1168,9 +1180,21 @@ export class ManualSessionStartService {
 		return { status: 'failed', failure: result };
 	}
 
+	/**
+	 * Every pre-lease start rejection (disposed, recovery pending, already in progress, lease busy,
+	 * coordination down) went through here with a useful `SessionStartFailure.code` for the player
+	 * but 0 lines in the debug log (H15.26, 2026-09-10 audit): nothing distinguished a genuinely busy
+	 * lease from the coordinator having thrown underneath `safeAcquire`/`safeRelease`. `details.code`
+	 * carries that `SessionStartFailure` code; never the free-text `message`.
+	 */
 	private failWithoutLease(code: SessionStartFailure['code'], message: string): ManualSessionStartResult {
 		const result = failure(code, message);
 		this.lastFailure = result;
+		this.diagnostics?.event({
+			component: 'session', action: 'session_start', level: 'error', phase: 'failure',
+			code: code === 'busy' ? 'precondition_failed' : 'unavailable',
+			details: { code },
+		});
 		this.onStateChange();
 		return { status: 'failed', failure: result };
 	}
@@ -1246,6 +1270,29 @@ export class ManualSessionStartService {
 		});
 	}
 
+	/**
+	 * The only local trace of WHY the heartbeat or a live stop declared the session's authority
+	 * lost (H15.8, 2026-09-10 audit): both `heartbeat()`'s renew failure and `stopInternal`'s owned
+	 * check collapse every coordinator code into the same fixed `coordination_unavailable`/
+	 * `lease_lost` copy for the player, so a clock rolled back and a genuinely contested lease used
+	 * to look identical here too. `reason` carries the coordinator's own code (`lease_lost`,
+	 * `clock_anomaly`, or the generic `coordination_unavailable`); the top-level `code` only has to
+	 * pick the closest fit from the closed local-debug vocabulary.
+	 */
+	private logAuthorityFailure(
+		action: 'session_heartbeat' | 'session_finish',
+		reason: 'lease_lost' | 'clock_anomaly' | 'coordination_unavailable',
+	): void {
+		this.diagnostics?.event({
+			component: 'session',
+			action,
+			level: 'error',
+			phase: 'failure',
+			code: reason === 'lease_lost' ? 'precondition_failed' : reason === 'clock_anomaly' ? 'internal_failure' : 'unavailable',
+			details: { code: reason },
+		});
+	}
+
 	private async safeAssert(handle: ActiveSessionLeaseHandle): Promise<AssertLeaseResult> {
 		try { return await this.coordinator.assertOwned(handle); } catch { return { status: 'error', code: 'unavailable' }; }
 	}
@@ -1288,8 +1335,20 @@ function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): 
 		if (error.code === 'build_scope_missing') return failure('missing_capability', error.message);
 		return failure('snapshot_failed', error.message);
 	}
-	if (error instanceof HttpTransportError && error.status === 429) {
-		return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
+	if (error instanceof HttpTransportError) {
+		if (error.status === 429) {
+			return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
+		}
+		// H15.24 (2026-09-10 audit): a 401/403 without the required scope and a network-level
+		// failure both used to fall through to the generic `unexpected`, which sent the player to
+		// "check the connection and try again" instead of the copy that names the actual problem
+		// (`status.startFailure.missing_capability`/`snapshot_failed`, `companion-status-model.ts`).
+		if (error.kind === 'http' && (error.status === 401 || error.status === 403)) {
+			return failure('missing_capability', 'The API key does not have the required permission scope.');
+		}
+		if (error.kind === 'timeout' || error.kind === 'network') {
+			return failure('snapshot_failed', 'The baseline could not be captured. Check the connection and start again.');
+		}
 	}
 	onUnclassified?.(error);
 	return failure('unexpected', 'The farming session could not be started.');
