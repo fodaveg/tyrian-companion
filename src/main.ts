@@ -55,6 +55,7 @@ import {
 	LocalDebugActionRunner,
 	startLocalDebugAction,
 	type LocalDebugActionContext,
+	type LocalDebugActionOutcome,
 	type ResolvedLocalDebugActionContext,
 } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
@@ -254,6 +255,7 @@ type NoticeDiagnosticSource =
 	| 'proposal_review_failed'
 	| 'pending_start_failed'
 	| 'plugin_starting'
+	| 'plugin_start_failed'
 	| 'managed_assets_relocated'
 	| 'managed_assets_blocked'
 	| 'session_command'
@@ -342,6 +344,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private readonly sessionHistoryRuntimeAuthority = new SessionHistoryRuntimeAuthority(() => this.sessionHistoryScrubGate());
 	/** False until `initializeRuntime` finishes constructing every runtime service. */
 	private runtimeReady = false;
+	/**
+	 * Set only when `initializeRuntime` itself threw (a broken boot), never merely because it has
+	 * not finished yet. `runtimeReady` stays `false` either way (H15.2: without this, every caller
+	 * that checks it, and `notifyRuntimeStarting` in particular, presented a broken boot as "the
+	 * plugin is still starting" forever). The trace is already in the log, from the `run()` this
+	 * error is rethrown into at `onLayoutReady`; this is only the flag `notifyRuntimeStarting` reads.
+	 */
+	private runtimeFailure: unknown = null;
 	/** True once `onunload` has run; guards the deferred boot tail against writing after teardown. */
 	private unloaded = false;
 	/** Local diagnostics remain optional and fail-open throughout teardown and isolated unit harnesses. */
@@ -463,7 +473,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => {
 			this.localDebugActions?.fireAndForget(
 				{ component: 'plugin', action: 'plugin_load', state: 'runtime_initialize' },
-				() => this.initializeRuntime(),
+				// The trace already reaches the log through this same `run()`, on rethrow
+				// (`writeFailure`); this `.catch` only records that the boot broke, for
+				// `notifyRuntimeStarting` to tell apart from one still in progress.
+				() => this.initializeRuntime().catch((error: unknown) => { this.runtimeFailure = error; throw error; }),
 			);
 		});
 		});
@@ -1075,12 +1088,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async checkConnection(): Promise<ConnectionState> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ConnectionState> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return { status: 'idle' }; }
+		// `perform` returns a `LocalDebugActionOutcome`, not the `ConnectionState` itself: a bare
+		// `ConnectionState` never satisfies `isOutcome`, so `run()` used to log every check as
+		// `success ok` even when it failed (H15.2). The real state is captured in the closure and
+		// returned below, once the diagnostic has seen the outcome.
+		let state: ConnectionState = { status: 'idle' };
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<LocalDebugActionOutcome> => {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); state = { status: 'idle' }; return { phase: 'success', code: 'ok' }; }
 		const check = this.connection.check(context);
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
-		const state = await check;
+		state = await check;
 		if (state.status === 'connected' || state.status === 'warning') {
 			await this.switchHalloweenAccount(state.details.account.id, context);
 			// Assisted detection is always armed with a connected account now (David, 2026-09-09: no
@@ -1093,11 +1111,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 			() => this.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
-		return state;
+		return {
+			phase: state.status === 'error' ? 'failure' : 'success',
+			code: state.status === 'error' ? 'unavailable' : 'ok',
+			state: state.status,
+			details: state.status !== 'error' ? undefined : {
+				code: state.code,
+				...(this.connection.getLastUnmappedFailureClass() === null
+					? {} : { reason: this.connection.getLastUnmappedFailureClass() }),
+			},
 		};
-		return await (this.localDebugActions?.run(
+		};
+		await (this.localDebugActions?.run(
 			{ component: 'connection', action: 'connection_check' }, perform,
 		) ?? perform());
+		return state;
 	}
 
 	getSessionState(): SessionState {
@@ -2071,8 +2099,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 		};
 	}
 
-	/** Tells the user an action was ignored because `initializeRuntime` has not finished yet. */
+	/**
+	 * Tells the user an action was ignored because `runtimeReady` is still `false`: either
+	 * `initializeRuntime` has not finished yet, or it broke outright (H15.2: this used to say
+	 * "still starting" forever for the second case too, with no way to tell them apart).
+	 */
 	private notifyRuntimeStarting(): void {
+		if (this.runtimeFailure !== null) {
+			this.emitNotice(
+				translateRuntime(createTranslator(this.settings.language), 'notices.pluginStartFailed'),
+				'plugin_start_failed',
+				() => this.openLocalDebugSettings(),
+			);
+			return;
+		}
 		this.emitNotice(
 			translateRuntime(createTranslator(this.settings.language), 'notices.pluginStarting'),
 			'plugin_starting',
@@ -2367,8 +2407,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	/** Records only the closed delivery cause; visible notice text never enters diagnostics. */
-	private emitNotice(message: string, source: NoticeDiagnosticSource): void {
-		const deliver = (): void => { new Notice(message); };
+	private emitNotice(message: string, source: NoticeDiagnosticSource, onClick?: () => void): void {
+		const deliver = (): void => {
+			const notice = new Notice(message);
+			if (onClick) notice.containerEl.addEventListener('click', onClick);
+		};
 		if (this.localDebugActions) this.localDebugActions.runSync(
 			{ component: 'notification', action: 'notification_emit', state: source },
 			deliver,

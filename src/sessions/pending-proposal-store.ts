@@ -2,6 +2,7 @@ import type { PendingProposalQueueRecord } from './pending-proposal-model';
 import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
+	localDebugStorageFailureCode,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
 
@@ -56,7 +57,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -91,7 +92,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return value;
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		}
 	}
@@ -129,7 +130,7 @@ export class IndexedDbPendingProposalStore implements PendingProposalStore {
 			attempt.success();
 			return database;
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;

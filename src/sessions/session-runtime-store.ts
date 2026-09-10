@@ -4,6 +4,7 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
+	localDebugStorageFailureCode,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
 import {
@@ -151,8 +152,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			}
 			attempt.success();
 			return { status: 'loaded', record: normalized.record };
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -176,8 +177,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			else if (result.status === 'stale') attempt.skip();
 			else attempt.failure('validation_failed');
 			return result;
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -198,8 +199,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			else if (result.status === 'stale') attempt.skip();
 			else attempt.failure('validation_failed');
 			return result;
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -214,8 +215,8 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			);
 			attempt.success();
 			return result;
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -254,7 +255,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 			attempt.success();
 			return database;
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;

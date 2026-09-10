@@ -322,6 +322,35 @@ describe('ObsidianRequestTransport', () => {
 		await expect(result).rejects.not.toThrow(/secret-token|guildwars2/u);
 	});
 
+	// H15.22: a rejected `request` (Electron's own transport failing, e.g. DNS or TLS) used to
+	// become a fixed "Network request failed." with no way to tell one cause from another, in the
+	// log too. The wrapped `HttpTransportError`'s own `message` stays the fixed string (H6.7: an
+	// underlying rejection's message is untrusted and must never reach a caller directly), but its
+	// `cause` carries Electron's own detail through to the log, sanitized the same way as any
+	// other logged error.
+	it('carries the underlying transport rejection detail into the log, never onto the thrown message', async () => {
+		const diagnostics = diagnosticHarness();
+		const transport = new ResilientHttpTransport({
+			request: async () => { throw new Error('net::ERR_NAME_NOT_RESOLVED'); },
+			maxRetries: 0,
+			diagnostics: diagnostics.port,
+			...inertTimer,
+		});
+
+		const result = transport.send({
+			url: 'https://api.guildwars2.com/v2/account',
+			method: 'GET',
+		});
+		await expect(result).rejects.toMatchObject({ kind: 'network', message: 'Network request failed.' });
+		await expect(result).rejects.not.toThrow(/ERR_NAME_NOT_RESOLVED/u);
+		const thrown = await result.catch((error: unknown) => error);
+		expect(JSON.stringify(thrown)).not.toContain('ERR_NAME_NOT_RESOLVED');
+
+		const failure = diagnostics.events.at(-1) as { phase: string; message: unknown };
+		expect(failure.phase).toBe('failure');
+		expect(String((failure.message as Error).message)).toContain('net::ERR_NAME_NOT_RESOLVED');
+	});
+
 	it('raises a logical timeout without exposing request details', async () => {
 		let timeout: (() => void) | undefined;
 		const transport = new ResilientHttpTransport({

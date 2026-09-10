@@ -60,16 +60,32 @@ export interface HttpTransport {
 
 export type HttpErrorKind = 'http' | 'timeout' | 'network';
 
-/** A sanitized transport error. It never contains request headers, URLs, or raw bodies. */
+/**
+ * A sanitized transport error. Its own `message` never contains request headers, URLs, raw
+ * bodies, or anything else pulled from an untrusted lower-level failure (H6.7): an underlying
+ * rejection's own message is not reviewed text and cannot be trusted not to echo the request it
+ * describes. That untrusted detail, when there is any, travels only as `cause` (never
+ * enumerable, so neither `JSON.stringify` nor `String()` surface it) for a caller that
+ * explicitly wants it for diagnostics, sanitized the same way as any other logged error.
+ */
 export class HttpTransportError extends Error {
+	// `declare`d, never assigned as a normal class field: target is ES2021 (no native `Error`
+	// `cause` typing), and a plain field assignment would make it enumerable, which is exactly
+	// what it must not be. Set through `Object.defineProperty` below instead.
+	declare readonly cause?: unknown;
+
 	constructor(
 		readonly kind: HttpErrorKind,
 		readonly status: number | null,
 		readonly retryAfterMs: number | null,
 		message: string,
+		cause?: unknown,
 	) {
 		super(message);
 		this.name = 'HttpTransportError';
+		if (cause !== undefined) {
+			Object.defineProperty(this, 'cause', { value: cause, enumerable: false, configurable: true });
+		}
 	}
 }
 
@@ -192,7 +208,10 @@ export class ResilientHttpTransport implements HttpTransport {
 						itemIds: request.diagnosticItemIds.slice(0, MAX_DIAGNOSTIC_ITEM_IDS),
 					}),
 				},
-				error,
+				// Prefers the untrusted underlying cause's own message when there is one (Electron's
+				// own transport detail, e.g. `net::ERR_NAME_NOT_RESOLVED`): the sanitizer below runs on
+				// whichever error lands here either way, so the log stays exactly as safe.
+				transportError?.cause instanceof Error ? transportError.cause : error,
 			);
 			throw error;
 		}
@@ -288,7 +307,11 @@ export class ResilientHttpTransport implements HttpTransport {
 			if (error instanceof HttpTransportError) {
 				throw error;
 			}
-			throw new HttpTransportError('network', null, null, 'Network request failed.');
+			// The thrown error's own message stays the fixed string (H6.7: `error`'s message is
+			// untrusted and must never reach a caller unsanitized); Electron's own detail (e.g.
+			// `net::ERR_NAME_NOT_RESOLVED`) still reaches the log, as `cause`, through the same
+			// sanitizer (`sanitizeErrorText`) as any other logged error (see `send`'s catch below).
+			throw new HttpTransportError('network', null, null, 'Network request failed.', error);
 		} finally {
 			if (timer !== undefined) {
 				this.cancelTimeout(timer);

@@ -6,6 +6,7 @@ import {
 import { openIndexedDb } from '../core/indexed-db-open';
 import {
 	LocalDebugPersistenceProbe,
+	localDebugStorageFailureCode,
 	type LocalDebugPersistenceContext,
 } from '../core/local-debug-persistence';
 
@@ -86,8 +87,8 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 				status: 'loaded',
 				events: values.map((value) => structuredClone(value)).sort(compareDetectionQualityEvents),
 			};
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -101,8 +102,8 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			else if (result.status === 'duplicate') attempt.skip();
 			else attempt.failure('validation_failed');
 			return result;
-		} catch {
-			attempt.failure();
+		} catch (error) {
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			return { status: 'error', code: 'unavailable' };
 		}
 	}
@@ -141,7 +142,7 @@ export class IndexedDbDetectionQualityStore implements DetectionQualityStore {
 			attempt.success();
 			return database;
 		} catch (error) {
-			attempt.failure();
+			attempt.failure(localDebugStorageFailureCode(error), error);
 			throw error;
 		} finally {
 			if (this.opening === opening) this.opening = null;
