@@ -38,7 +38,14 @@ export class Modal {
 export class Plugin {}
 export class ItemView {}
 export class Menu {}
-export class Notice {}
+export class Notice {
+	/** No real DOM in the default (node) test environment: enough surface for a caller that wires
+	 * an optional click action (H15.2's `notices.pluginStartFailed`) without needing jsdom. */
+	containerEl: { addEventListener: (type: string, listener: () => void) => void } = {
+		addEventListener: () => undefined,
+	};
+	constructor(_message?: string, _timeout?: number) {}
+}
 export class PluginSettingTab {}
 export class SecretComponent {}
 export class Setting {}

@@ -125,6 +125,59 @@ describe('deferred runtime startup with persisted terminal state', () => {
 	});
 });
 
+describe('deferred runtime startup failure', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	// H15.2: `runtimeReady` stays `false` whether the boot is still running or broke outright, and
+	// every guarded action (`checkConnection` included) used to say "still starting" for both.
+	// `initializeRuntime`'s own rejection now flags the second case, and `notifyRuntimeStarting`
+	// tells them apart instead of leaving the user stuck on a message that will never change.
+	it('presents a broken boot as a failed start, not as still starting', async () => {
+		const captured: { onLayoutReady: (() => void) | null } = { onLayoutReady: null };
+		const fakeRibbon = { setAttr: () => undefined, toggleClass: () => undefined } as unknown as HTMLElement;
+		const fakeApp = {
+			vault: { configDir: 'test-config-dir' },
+			workspace: { onLayoutReady: (callback: () => void) => { captured.onLayoutReady = callback; } },
+		} as unknown as App;
+		const fakeManifest = { id: 'tyrian-companion' } as unknown as PluginManifest;
+
+		const plugin = new TyrianCompanionPlugin(fakeApp, fakeManifest);
+		plugin.app = fakeApp;
+		plugin.manifest = fakeManifest;
+		plugin.loadData = async () => undefined;
+		plugin.saveData = async () => undefined;
+		plugin.registerView = vi.fn();
+		plugin.addSettingTab = vi.fn();
+		plugin.addCommand = vi.fn((command: unknown) => command) as unknown as typeof plugin.addCommand;
+		plugin.registerDomEvent = vi.fn();
+		plugin.addRibbonIcon = vi.fn(() => fakeRibbon);
+		plugin.registerMarkdownCodeBlockProcessor = vi.fn();
+		vi.stubGlobal('window', {});
+		vi.stubGlobal('document', {});
+		vi.spyOn(
+			TyrianCompanionPlugin.prototype as unknown as { initializeRuntime(): Promise<void> },
+			'initializeRuntime',
+		).mockRejectedValue(new Error('boot broke'));
+
+		await plugin.onload();
+		expect(captured.onLayoutReady).not.toBeNull();
+		const runSync = vi.spyOn(LocalDebugActionRunner.prototype, 'runSync');
+		captured.onLayoutReady?.();
+		// The rejection reaches `this.runtimeFailure` through a chain of `.catch`es (its own,
+		// then `run()`'s, then `fireAndForget`'s); a macrotask boundary is enough to drain them.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect((plugin as unknown as { runtimeReady: boolean }).runtimeReady).toBe(false);
+		await expect(plugin.checkConnection()).resolves.toEqual({ status: 'idle' });
+
+		const notice = runSync.mock.calls.find(([context]) => context.action === 'notification_emit');
+		expect(notice?.[0]).toMatchObject({ state: 'plugin_start_failed' });
+	});
+});
+
 function runtimeBootPlugin(factory: IDBFactory, notes = new Map<string, string>()): RuntimeBootHarness {
 	const workspace = {
 		getLeavesOfType: vi.fn(() => []),
