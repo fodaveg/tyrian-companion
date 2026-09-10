@@ -3,7 +3,7 @@
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
 		"catch_clause": 429,
-		"promise_catch": 28,
+		"promise_catch": 34,
 		"void_expression": 79,
 		"callback_registration": 157
 	},
@@ -2784,6 +2784,11 @@
 			]
 		},
 		"src/core/local-debug-contract.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/core/local-debug-error-details.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
@@ -6363,9 +6368,9 @@
 				{
 					"id": "067ba5486d3d80aaa0f1d600beb8bceea7c7cd65",
 					"kind": "void_expression",
-					"line": 3325,
+					"line": 3326,
 					"column": 19,
-					"endLine": 3325,
+					"endLine": 3326,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6379,9 +6384,9 @@
 				{
 					"id": "8e63ca7b01cc6c7f9e584ef045b09c2371c15a26",
 					"kind": "callback_registration",
-					"line": 3328,
+					"line": 3329,
 					"column": 24,
-					"endLine": 3328,
+					"endLine": 3329,
 					"endColumn": 85,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6396,9 +6401,9 @@
 				{
 					"id": "78acf0fca33f159cdba18e2da6403e9d0b0b81f3",
 					"kind": "catch_clause",
-					"line": 3329,
+					"line": 3330,
 					"column": 3,
-					"endLine": 3332,
+					"endLine": 3333,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6412,9 +6417,9 @@
 				{
 					"id": "c0edfac3f5de89e6478fe2c7dce8858ec84cae65",
 					"kind": "void_expression",
-					"line": 3330,
+					"line": 3331,
 					"column": 20,
-					"endLine": 3330,
+					"endLine": 3331,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6428,9 +6433,9 @@
 				{
 					"id": "cfa4468c5fe829aae2e39d9babb0b31447101bb6",
 					"kind": "void_expression",
-					"line": 3335,
+					"line": 3336,
 					"column": 20,
-					"endLine": 3335,
+					"endLine": 3336,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6444,9 +6449,9 @@
 				{
 					"id": "0ba6ca87256252cfecfc5d27117d5c786d1ac027",
 					"kind": "void_expression",
-					"line": 3340,
+					"line": 3341,
 					"column": 19,
-					"endLine": 3340,
+					"endLine": 3341,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6460,9 +6465,9 @@
 				{
 					"id": "e6592aa19937bd70339ce63085f5119913c3aaa5",
 					"kind": "void_expression",
-					"line": 3345,
+					"line": 3346,
 					"column": 19,
-					"endLine": 3345,
+					"endLine": 3346,
 					"endColumn": 69,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6476,9 +6481,9 @@
 				{
 					"id": "305ee8b08d0e3cbcd8ce31f0944e92287f0e330f",
 					"kind": "callback_registration",
-					"line": 3348,
+					"line": 3349,
 					"column": 24,
-					"endLine": 3348,
+					"endLine": 3349,
 					"endColumn": 93,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -6493,9 +6498,9 @@
 				{
 					"id": "4ac81611dc90be8ecb071c40b83fa1bf86715db5",
 					"kind": "catch_clause",
-					"line": 3349,
+					"line": 3350,
 					"column": 3,
-					"endLine": 3352,
+					"endLine": 3353,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6509,9 +6514,9 @@
 				{
 					"id": "7e4ffbd05e87522a46d25eae5e43f09837bca504",
 					"kind": "void_expression",
-					"line": 3350,
+					"line": 3351,
 					"column": 20,
-					"endLine": 3350,
+					"endLine": 3351,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6525,9 +6530,9 @@
 				{
 					"id": "a28831a758075db85b40f8bdb9f77eb48444124e",
 					"kind": "void_expression",
-					"line": 3355,
+					"line": 3356,
 					"column": 20,
-					"endLine": 3355,
+					"endLine": 3356,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6541,9 +6546,9 @@
 				{
 					"id": "5094260763b7330a6d52d9df8da7e693bfcd3ab3",
 					"kind": "void_expression",
-					"line": 3358,
+					"line": 3359,
 					"column": 19,
-					"endLine": 3358,
+					"endLine": 3359,
 					"endColumn": 83,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6557,9 +6562,9 @@
 				{
 					"id": "5d94ca57ebd56128ecdcfd498ac6c0a685e8613c",
 					"kind": "catch_clause",
-					"line": 3473,
+					"line": 3474,
 					"column": 5,
-					"endLine": 3476,
+					"endLine": 3477,
 					"endColumn": 4,
 					"classification": "observed",
 					"evidence": {
@@ -6571,9 +6576,9 @@
 				{
 					"id": "dcb37085b462f3936be430964c8f36a6c84f554d",
 					"kind": "callback_registration",
-					"line": 3632,
+					"line": 3633,
 					"column": 17,
-					"endLine": 3632,
+					"endLine": 3633,
 					"endColumn": 61,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6588,9 +6593,9 @@
 				{
 					"id": "dee400255be7d438fe2f590e1e9662c3e2d4bb68",
 					"kind": "promise_catch",
-					"line": 3632,
+					"line": 3633,
 					"column": 17,
-					"endLine": 3632,
+					"endLine": 3633,
 					"endColumn": 84,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6605,9 +6610,9 @@
 				{
 					"id": "e272c0307cb3271e00dfe0ea97ad45efbdc73689",
 					"kind": "callback_registration",
-					"line": 3633,
+					"line": 3634,
 					"column": 20,
-					"endLine": 3633,
+					"endLine": 3634,
 					"endColumn": 67,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -6622,9 +6627,9 @@
 				{
 					"id": "b040c43f82ef4364404ecb02d5fa35de2583c135",
 					"kind": "promise_catch",
-					"line": 3633,
+					"line": 3634,
 					"column": 20,
-					"endLine": 3633,
+					"endLine": 3634,
 					"endColumn": 90,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6639,9 +6644,9 @@
 				{
 					"id": "d3567c6a307b81a793b3d87e4b0fdaffccc89bd0",
 					"kind": "catch_clause",
-					"line": 3755,
+					"line": 3756,
 					"column": 5,
-					"endLine": 3755,
+					"endLine": 3756,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6655,9 +6660,9 @@
 				{
 					"id": "117f613e8e0dfd3d89aa8773befdf12de8fa2080",
 					"kind": "catch_clause",
-					"line": 3785,
+					"line": 3786,
 					"column": 5,
-					"endLine": 3785,
+					"endLine": 3786,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -6671,9 +6676,9 @@
 				{
 					"id": "4cf7fb6962fed23292246b8ea5bc8b4eb0afaaf6",
 					"kind": "promise_catch",
-					"line": 3817,
+					"line": 3818,
 					"column": 7,
-					"endLine": 3817,
+					"endLine": 3818,
 					"endColumn": 38,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -6688,9 +6693,9 @@
 				{
 					"id": "3fce44fcf2126aaefc12594053feb33792a425a5",
 					"kind": "promise_catch",
-					"line": 3822,
+					"line": 3823,
 					"column": 2,
-					"endLine": 3822,
+					"endLine": 3823,
 					"endColumn": 31,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -7712,9 +7717,9 @@
 				{
 					"id": "4975a591f4832757e7b7daa5ef764ffbbcb96e3b",
 					"kind": "void_expression",
-					"line": 238,
+					"line": 239,
 					"column": 62,
-					"endLine": 238,
+					"endLine": 239,
 					"endColumn": 78,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7728,9 +7733,9 @@
 				{
 					"id": "ece7f301135473e1747af10a53bac87e604c67b8",
 					"kind": "callback_registration",
-					"line": 302,
+					"line": 303,
 					"column": 18,
-					"endLine": 304,
+					"endLine": 305,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7745,9 +7750,9 @@
 				{
 					"id": "11d0928664608b8f20f5b2e108bfc213effd5529",
 					"kind": "callback_registration",
-					"line": 319,
+					"line": 320,
 					"column": 18,
-					"endLine": 321,
+					"endLine": 322,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7762,9 +7767,9 @@
 				{
 					"id": "c215646a3b0e1b7f87d8b3a6498a6969539e0ece",
 					"kind": "catch_clause",
-					"line": 347,
+					"line": 348,
 					"column": 5,
-					"endLine": 349,
+					"endLine": 350,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7778,9 +7783,9 @@
 				{
 					"id": "ab7458faba989804a7934dbdcbb546d8c7f135c7",
 					"kind": "callback_registration",
-					"line": 360,
+					"line": 361,
 					"column": 18,
-					"endLine": 362,
+					"endLine": 363,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7795,9 +7800,9 @@
 				{
 					"id": "f57cd004227700ddfec7b2d4452b8edf0d2a6592",
 					"kind": "callback_registration",
-					"line": 376,
+					"line": 377,
 					"column": 18,
-					"endLine": 378,
+					"endLine": 379,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7812,9 +7817,9 @@
 				{
 					"id": "5c64f4e01bb401e8baa1bf031334c033893bc99a",
 					"kind": "catch_clause",
-					"line": 408,
+					"line": 409,
 					"column": 52,
-					"endLine": 408,
+					"endLine": 409,
 					"endColumn": 93,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7828,9 +7833,9 @@
 				{
 					"id": "91c2355d361c271d60f42ecbf7a71ce118dc0f33",
 					"kind": "callback_registration",
-					"line": 534,
+					"line": 535,
 					"column": 18,
-					"endLine": 536,
+					"endLine": 537,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7845,9 +7850,9 @@
 				{
 					"id": "ccd6a889042fa85fa4b9a4870259410419cbcec4",
 					"kind": "catch_clause",
-					"line": 696,
+					"line": 697,
 					"column": 5,
-					"endLine": 699,
+					"endLine": 700,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7859,11 +7864,11 @@
 					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
 				},
 				{
-					"id": "c3435ac05b9e5effc45a9c63986ea0f30928fe2d",
+					"id": "fb7e7f4691f05d0462e736da2b7a7504a545fcde",
 					"kind": "catch_clause",
-					"line": 745,
+					"line": 746,
 					"column": 5,
-					"endLine": 749,
+					"endLine": 750,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7877,9 +7882,9 @@
 				{
 					"id": "d68cf5d0883c63c9fa3733a72e05142d5eb7c882",
 					"kind": "catch_clause",
-					"line": 806,
+					"line": 807,
 					"column": 6,
-					"endLine": 812,
+					"endLine": 813,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7891,11 +7896,11 @@
 					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"stopInternal\"."
 				},
 				{
-					"id": "8df48507996df4bb41f0bf970801945461ad170c",
+					"id": "1ecfc5f2c0a8de798a59ad30337a338aeca5965d",
 					"kind": "catch_clause",
-					"line": 840,
+					"line": 841,
 					"column": 5,
-					"endLine": 858,
+					"endLine": 859,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7909,9 +7914,9 @@
 				{
 					"id": "d9b07796f4adb8f5cde284ff618cd10964f333a7",
 					"kind": "catch_clause",
-					"line": 855,
+					"line": 856,
 					"column": 7,
-					"endLine": 855,
+					"endLine": 856,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7925,9 +7930,9 @@
 				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 956,
+					"line": 957,
 					"column": 5,
-					"endLine": 958,
+					"endLine": 959,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7941,9 +7946,9 @@
 				{
 					"id": "3a3ac2b6bd2ce08c85ee241602d72f093aa592a0",
 					"kind": "void_expression",
-					"line": 1030,
+					"line": 1031,
 					"column": 56,
-					"endLine": 1030,
+					"endLine": 1031,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7957,9 +7962,9 @@
 				{
 					"id": "ae210ccd786489f094001462c575dc9599be828c",
 					"kind": "callback_registration",
-					"line": 1035,
+					"line": 1036,
 					"column": 18,
-					"endLine": 1037,
+					"endLine": 1038,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7974,9 +7979,9 @@
 				{
 					"id": "ceb89e7ab2f5941f16cfc7d32b74900402e770bb",
 					"kind": "catch_clause",
-					"line": 1057,
+					"line": 1058,
 					"column": 5,
-					"endLine": 1060,
+					"endLine": 1061,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7990,9 +7995,9 @@
 				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1083,
+					"line": 1084,
 					"column": 4,
-					"endLine": 1083,
+					"endLine": 1084,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8006,9 +8011,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1083,
+					"line": 1084,
 					"column": 9,
-					"endLine": 1083,
+					"endLine": 1084,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8023,9 +8028,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1084,
+					"line": 1085,
 					"column": 5,
-					"endLine": 1084,
+					"endLine": 1085,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8039,9 +8044,9 @@
 				{
 					"id": "823819fb29f080f24b88993f2c9faabc0b02df60",
 					"kind": "catch_clause",
-					"line": 1143,
+					"line": 1144,
 					"column": 5,
-					"endLine": 1143,
+					"endLine": 1144,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8055,9 +8060,9 @@
 				{
 					"id": "4875e885d3e9147fb0429f1113fbf326799594cc",
 					"kind": "catch_clause",
-					"line": 1152,
+					"line": 1153,
 					"column": 5,
-					"endLine": 1152,
+					"endLine": 1153,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8071,9 +8076,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 1188,
+					"line": 1189,
 					"column": 50,
-					"endLine": 1190,
+					"endLine": 1191,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8087,9 +8092,9 @@
 				{
 					"id": "88bcc48dd42e18c052403d5cc21911384100e5aa",
 					"kind": "catch_clause",
-					"line": 1201,
+					"line": 1202,
 					"column": 61,
-					"endLine": 1201,
+					"endLine": 1202,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8103,9 +8108,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 1231,
+					"line": 1250,
 					"column": 62,
-					"endLine": 1231,
+					"endLine": 1250,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8119,9 +8124,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 1235,
+					"line": 1254,
 					"column": 58,
-					"endLine": 1235,
+					"endLine": 1254,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9727,9 +9732,9 @@
 				{
 					"id": "890af555c5bdbfcc4d9ae1d0fff15ab89f8a2833",
 					"kind": "callback_registration",
-					"line": 530,
+					"line": 531,
 					"column": 3,
-					"endLine": 530,
+					"endLine": 531,
 					"endColumn": 109,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9744,9 +9749,9 @@
 				{
 					"id": "98967692c4f51572e8656e48fcae2686e25b90e7",
 					"kind": "callback_registration",
-					"line": 531,
+					"line": 532,
 					"column": 3,
-					"endLine": 531,
+					"endLine": 532,
 					"endColumn": 109,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9761,9 +9766,9 @@
 				{
 					"id": "bd3e2728a011dc08f19af2a28b37509bfe1ebdd3",
 					"kind": "callback_registration",
-					"line": 532,
+					"line": 533,
 					"column": 3,
-					"endLine": 532,
+					"endLine": 533,
 					"endColumn": 112,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9776,43 +9781,77 @@
 					"reason": "Allowlisted callback_registration: The \"renderSimpleSession\" owner explicitly handles \"addEventListener\": the toggle listener only remembers whether the Historial drawer is open so the next render keeps it; it performs no action and has no failure to record. Verified registration: \"addEventListener\" in \"renderSimpleSession\"."
 				},
 				{
-					"id": "fee529808df95ef0eb220ade9865975b46e4f4e7",
+					"id": "c284db029907a1968b3b33060aeb5f9f4afca2f5",
 					"kind": "void_expression",
-					"line": 577,
+					"line": 580,
 					"column": 64,
-					"endLine": 577,
-					"endColumn": 101,
+					"endLine": 580,
+					"endColumn": 124,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
+						"target": "this.actions.stopManualSession().catch",
 						"scope": "onClick",
-						"justification": "The \"onClick\" owner explicitly handles \"this.actions.stopManualSession\": the Terminar button detaches stopManualSession, the session command in main whose action runner records its own outcome; the card only draws the button."
+						"justification": "The \"onClick\" owner deliberately detaches \"this.actions.stopManualSession().catch\": the Terminar button detaches stopManualSession, the session command in main whose action runner records its own outcome; the `.catch()` added in H15.2 only keeps this detached call from ever surfacing as an unhandled rejection."
 					},
-					"reason": "Allowlisted void_expression: The \"onClick\" owner explicitly handles \"this.actions.stopManualSession\": the Terminar button detaches stopManualSession, the session command in main whose action runner records its own outcome; the card only draws the button. Verified target: \"this.actions.stopManualSession\" in \"onClick\"."
+					"reason": "Allowlisted void_expression: The \"onClick\" owner deliberately detaches \"this.actions.stopManualSession().catch\": the Terminar button detaches stopManualSession, the session command in main whose action runner records its own outcome; the `.catch()` added in H15.2 only keeps this detached call from ever surfacing as an unhandled rejection. Verified target: \"this.actions.stopManualSession().catch\" in \"onClick\"."
 				},
 				{
-					"id": "4890e4185f795d07c62d8b9608fbbfbd798cf08e",
+					"id": "271e74be7d88f32d8d29e4a4d20c7bf77189e7f6",
+					"kind": "promise_catch",
+					"line": 580,
+					"column": 69,
+					"endLine": 580,
+					"endColumn": 124,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onClick",
+						"justification": "The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `stopManualSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`."
+					},
+					"reason": "Allowlisted promise_catch: The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `stopManualSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`. Verified recovery: \"intentional_noop\" in \"onClick\"."
+				},
+				{
+					"id": "13b407562d352bfc14dbb29545334ddf4a265fe1",
 					"kind": "void_expression",
-					"line": 586,
+					"line": 589,
 					"column": 70,
-					"endLine": 586,
-					"endColumn": 114,
+					"endLine": 589,
+					"endColumn": 138,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
-						"target": "this.actions.captureSessionFinalNow",
+						"target": "this.actions.captureSessionFinalNow().catch",
 						"scope": "onClick",
-						"justification": "The \"onClick\" owner explicitly handles \"this.actions.captureSessionFinalNow\": the Capturar ahora button detaches captureSessionFinalNow, the session command in main whose action runner records its own outcome; the card only draws the button."
+						"justification": "The \"onClick\" owner deliberately detaches \"this.actions.captureSessionFinalNow().catch\": the Capturar ahora button detaches captureSessionFinalNow, the session command in main whose action runner records its own outcome; the `.catch()` added in H15.2 only keeps this detached call from ever surfacing as an unhandled rejection."
 					},
-					"reason": "Allowlisted void_expression: The \"onClick\" owner explicitly handles \"this.actions.captureSessionFinalNow\": the Capturar ahora button detaches captureSessionFinalNow, the session command in main whose action runner records its own outcome; the card only draws the button. Verified target: \"this.actions.captureSessionFinalNow\" in \"onClick\"."
+					"reason": "Allowlisted void_expression: The \"onClick\" owner deliberately detaches \"this.actions.captureSessionFinalNow().catch\": the Capturar ahora button detaches captureSessionFinalNow, the session command in main whose action runner records its own outcome; the `.catch()` added in H15.2 only keeps this detached call from ever surfacing as an unhandled rejection. Verified target: \"this.actions.captureSessionFinalNow().catch\" in \"onClick\"."
+				},
+				{
+					"id": "088ee883bf8a6d2e844a34d87f22a6d97c9d92ee",
+					"kind": "promise_catch",
+					"line": 589,
+					"column": 75,
+					"endLine": 589,
+					"endColumn": 138,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onClick",
+						"justification": "The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `captureSessionFinalNow`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`."
+					},
+					"reason": "Allowlisted promise_catch: The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `captureSessionFinalNow`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`. Verified recovery: \"intentional_noop\" in \"onClick\"."
 				},
 				{
 					"id": "ab5f51855b26fc0553853c4fc61cde5c2c43acea",
 					"kind": "void_expression",
-					"line": 639,
+					"line": 642,
 					"column": 58,
-					"endLine": 639,
+					"endLine": 642,
 					"endColumn": 103,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9826,9 +9865,9 @@
 				{
 					"id": "50e09a2a94b971d66a47cb0625d9a870fc155c5f",
 					"kind": "void_expression",
-					"line": 642,
+					"line": 645,
 					"column": 78,
-					"endLine": 642,
+					"endLine": 645,
 					"endColumn": 118,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9842,9 +9881,9 @@
 				{
 					"id": "cf0715cdc9cb73c05d429f2a783f7a032c92a0ff",
 					"kind": "void_expression",
-					"line": 683,
+					"line": 686,
 					"column": 22,
-					"endLine": 683,
+					"endLine": 686,
 					"endColumn": 45,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9858,9 +9897,9 @@
 				{
 					"id": "f8ff8ee099b3e0a907f81c14bd877a1eee1eae81",
 					"kind": "callback_registration",
-					"line": 734,
+					"line": 737,
 					"column": 3,
-					"endLine": 734,
+					"endLine": 737,
 					"endColumn": 75,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9875,9 +9914,9 @@
 				{
 					"id": "549fa46f04eb53d1a6c733142963693beb71335a",
 					"kind": "void_expression",
-					"line": 734,
+					"line": 737,
 					"column": 44,
-					"endLine": 734,
+					"endLine": 737,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9891,9 +9930,9 @@
 				{
 					"id": "0553cec68f89bfa2aa57f019625c940a604132dc",
 					"kind": "callback_registration",
-					"line": 767,
+					"line": 770,
 					"column": 3,
-					"endLine": 770,
+					"endLine": 773,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9908,9 +9947,9 @@
 				{
 					"id": "b72bd4860d70663f9b61829f6f8351314bd4eb68",
 					"kind": "void_expression",
-					"line": 769,
+					"line": 772,
 					"column": 4,
-					"endLine": 769,
+					"endLine": 772,
 					"endColumn": 82,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9924,9 +9963,9 @@
 				{
 					"id": "5e0421ab8f003bcd27d6cee59c69b8668c7a3047",
 					"kind": "promise_catch",
-					"line": 769,
+					"line": 772,
 					"column": 9,
-					"endLine": 769,
+					"endLine": 772,
 					"endColumn": 82,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -9939,11 +9978,28 @@
 					"reason": "Allowlisted promise_catch: The \"renderPilotRecoveryKind\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderPilotRecoveryKind\"."
 				},
 				{
+					"id": "d35bb1afc9c4257fe75a7b6ddf2a92c0f6e28f51",
+					"kind": "promise_catch",
+					"line": 779,
+					"column": 20,
+					"endLine": 779,
+					"endColumn": 72,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "runRecovery",
+						"justification": "The \"runRecovery\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `recoverSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`, and this view still repaints either way."
+					},
+					"reason": "Allowlisted promise_catch: The \"runRecovery\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `recoverSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`, and this view still repaints either way. Verified recovery: \"intentional_noop\" in \"runRecovery\"."
+				},
+				{
 					"id": "24378bc0453ae15b316b91c882d2fea4a1bc1f3a",
 					"kind": "catch_clause",
-					"line": 963,
+					"line": 968,
 					"column": 3,
-					"endLine": 963,
+					"endLine": 968,
 					"endColumn": 74,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9957,9 +10013,9 @@
 				{
 					"id": "a395627ecadc8268191fd5db9ddbb0e7174d9d7e",
 					"kind": "callback_registration",
-					"line": 965,
+					"line": 970,
 					"column": 3,
-					"endLine": 971,
+					"endLine": 976,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -9974,9 +10030,9 @@
 				{
 					"id": "baba5c07132cb60a0aaeea0345450e2ca1eea7a5",
 					"kind": "void_expression",
-					"line": 966,
+					"line": 971,
 					"column": 4,
-					"endLine": 970,
+					"endLine": 975,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9990,9 +10046,9 @@
 				{
 					"id": "f5367a1693135c198f2333192dbfc043f5a5f648",
 					"kind": "callback_registration",
-					"line": 966,
+					"line": 971,
 					"column": 9,
-					"endLine": 970,
+					"endLine": 975,
 					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10007,9 +10063,9 @@
 				{
 					"id": "f9c34e9a22190f1a2207c5157b4920b16f11d4d8",
 					"kind": "void_expression",
-					"line": 969,
+					"line": 974,
 					"column": 10,
-					"endLine": 969,
+					"endLine": 974,
 					"endColumn": 60,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10023,9 +10079,9 @@
 				{
 					"id": "89c7f799a2d7d8e25be5214ac9f9b11370ddd1da",
 					"kind": "callback_registration",
-					"line": 973,
+					"line": 978,
 					"column": 3,
-					"endLine": 979,
+					"endLine": 984,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10040,9 +10096,9 @@
 				{
 					"id": "ac6d09ae4849c684bd1877ad212c901c9762923d",
 					"kind": "callback_registration",
-					"line": 1043,
+					"line": 1048,
 					"column": 27,
-					"endLine": 1043,
+					"endLine": 1048,
 					"endColumn": 99,
 					"registration": "setInterval",
 					"classification": "allowlisted",
@@ -10057,9 +10113,9 @@
 				{
 					"id": "30add2133fb14a1fe1a3e15678bd5318a4d17656",
 					"kind": "catch_clause",
-					"line": 1102,
+					"line": 1107,
 					"column": 4,
-					"endLine": 1102,
+					"endLine": 1107,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10073,9 +10129,9 @@
 				{
 					"id": "eee34c4eb0f68993e5be7f001b51d100fb0a2f86",
 					"kind": "callback_registration",
-					"line": 1111,
+					"line": 1116,
 					"column": 4,
-					"endLine": 1111,
+					"endLine": 1116,
 					"endColumn": 84,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10090,9 +10146,9 @@
 				{
 					"id": "02f668dc3601b40a7c8ba758741f6e21df635a3d",
 					"kind": "catch_clause",
-					"line": 1115,
+					"line": 1120,
 					"column": 4,
-					"endLine": 1115,
+					"endLine": 1120,
 					"endColumn": 75,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10104,44 +10160,61 @@
 					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
 				},
 				{
-					"id": "599aca7ddfb9d8e52b12da27fac6896a01f136f0",
+					"id": "106a0b531d204ea98a3d29fcc56c390e8c6f0622",
 					"kind": "callback_registration",
-					"line": 1124,
+					"line": 1129,
 					"column": 4,
-					"endLine": 1124,
-					"endColumn": 88,
+					"endLine": 1129,
+					"endColumn": 111,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "addEventListener",
 						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition (and the `.catch()` added in H15.2) owns diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition (and the `.catch()` added in H15.2) owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
 				},
 				{
-					"id": "5e9579ffb3afb6582c134e65224e3f52568438bd",
+					"id": "54c81d787df8689a717f0eb9199952d6b58d7e08",
 					"kind": "void_expression",
-					"line": 1124,
+					"line": 1129,
 					"column": 43,
-					"endLine": 1124,
-					"endColumn": 84,
+					"endLine": 1129,
+					"endColumn": 107,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
-						"target": "this.actions.stopManualSession",
+						"target": "this.actions.stopManualSession().catch",
 						"scope": "renderAssistedDetection",
-						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics."
+						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession().catch\": that named operation owns rejection and terminal diagnostics; the `.catch()` added in H15.2 only keeps it from ever surfacing as an unhandled rejection."
 					},
-					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.stopManualSession\" in \"renderAssistedDetection\"."
+					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.stopManualSession().catch\": that named operation owns rejection and terminal diagnostics; the `.catch()` added in H15.2 only keeps it from ever surfacing as an unhandled rejection. Verified target: \"this.actions.stopManualSession().catch\" in \"renderAssistedDetection\"."
+				},
+				{
+					"id": "9993a394942bcc8a106247329e5ccab2a577ca82",
+					"kind": "promise_catch",
+					"line": 1129,
+					"column": 48,
+					"endLine": 1129,
+					"endColumn": 107,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `stopManualSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`."
+					},
+					"reason": "Allowlisted promise_catch: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `stopManualSession`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
 				},
 				{
 					"id": "6805a54a1a8360f2e7404108a9b3fbb1fbfa5d22",
 					"kind": "callback_registration",
-					"line": 1200,
+					"line": 1205,
 					"column": 3,
-					"endLine": 1207,
+					"endLine": 1212,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10156,9 +10229,9 @@
 				{
 					"id": "0f504242c22c8b8455685e239def8740fdd136f5",
 					"kind": "callback_registration",
-					"line": 1209,
+					"line": 1214,
 					"column": 3,
-					"endLine": 1209,
+					"endLine": 1214,
 					"endColumn": 81,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10173,9 +10246,9 @@
 				{
 					"id": "7bec48aa0ae7de63e510a5115a8e5d58814b5083",
 					"kind": "callback_registration",
-					"line": 1412,
+					"line": 1417,
 					"column": 3,
-					"endLine": 1412,
+					"endLine": 1417,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10190,9 +10263,9 @@
 				{
 					"id": "c788c18fe2a2bb65c493059db8a961dd220fe37c",
 					"kind": "callback_registration",
-					"line": 1413,
+					"line": 1418,
 					"column": 3,
-					"endLine": 1417,
+					"endLine": 1422,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10207,9 +10280,9 @@
 				{
 					"id": "3eb64f1e085f805f293527536d7a73d15fe191a1",
 					"kind": "void_expression",
-					"line": 1416,
+					"line": 1421,
 					"column": 4,
-					"endLine": 1416,
+					"endLine": 1421,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10223,9 +10296,9 @@
 				{
 					"id": "45546f30413fbeb6e13bf980f0a07b4290c1d328",
 					"kind": "callback_registration",
-					"line": 1416,
+					"line": 1421,
 					"column": 9,
-					"endLine": 1416,
+					"endLine": 1421,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10240,9 +10313,9 @@
 				{
 					"id": "6d1612cddb609531160a36cfe6684d6e46b98619",
 					"kind": "callback_registration",
-					"line": 1450,
+					"line": 1455,
 					"column": 3,
-					"endLine": 1450,
+					"endLine": 1455,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10257,9 +10330,9 @@
 				{
 					"id": "b4da6fbf79577e444ee9cc71ff8649ab2527bf65",
 					"kind": "callback_registration",
-					"line": 1451,
+					"line": 1456,
 					"column": 3,
-					"endLine": 1455,
+					"endLine": 1460,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10274,9 +10347,9 @@
 				{
 					"id": "dad65d481490834c4dfa3bc3b2afadaa51ab2367",
 					"kind": "void_expression",
-					"line": 1454,
+					"line": 1459,
 					"column": 4,
-					"endLine": 1454,
+					"endLine": 1459,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10290,9 +10363,9 @@
 				{
 					"id": "08ae24450f02c7ba9432684948ae71b199bb7a75",
 					"kind": "callback_registration",
-					"line": 1454,
+					"line": 1459,
 					"column": 9,
-					"endLine": 1454,
+					"endLine": 1459,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10307,9 +10380,9 @@
 				{
 					"id": "320cdab82621dc5085f626765efbfb5ae4383e7a",
 					"kind": "callback_registration",
-					"line": 1478,
+					"line": 1483,
 					"column": 3,
-					"endLine": 1478,
+					"endLine": 1483,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10324,9 +10397,9 @@
 				{
 					"id": "219ad628ec156ee98e00ba6c74f212058904f3e8",
 					"kind": "callback_registration",
-					"line": 1479,
+					"line": 1484,
 					"column": 3,
-					"endLine": 1483,
+					"endLine": 1488,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10341,9 +10414,9 @@
 				{
 					"id": "02510c10f890733758abcffd562abe3d859f3f4f",
 					"kind": "void_expression",
-					"line": 1482,
+					"line": 1487,
 					"column": 4,
-					"endLine": 1482,
+					"endLine": 1487,
 					"endColumn": 53,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10357,9 +10430,9 @@
 				{
 					"id": "c5ace1b792bf38522525ce7f081958b690fee6b6",
 					"kind": "callback_registration",
-					"line": 1482,
+					"line": 1487,
 					"column": 9,
-					"endLine": 1482,
+					"endLine": 1487,
 					"endColumn": 53,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -10374,9 +10447,9 @@
 				{
 					"id": "2a76f324f5f8dcfcd97b37e7880de318cb088a02",
 					"kind": "callback_registration",
-					"line": 1527,
+					"line": 1532,
 					"column": 3,
-					"endLine": 1527,
+					"endLine": 1532,
 					"endColumn": 55,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10391,9 +10464,9 @@
 				{
 					"id": "a1396c7f6d95dcf057d061d9e887c173697b1cdd",
 					"kind": "callback_registration",
-					"line": 1528,
+					"line": 1533,
 					"column": 3,
-					"endLine": 1550,
+					"endLine": 1555,
 					"endColumn": 5,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
@@ -10408,9 +10481,9 @@
 				{
 					"id": "2b98eab0f75874cb4268e5d351781a101eea6bb6",
 					"kind": "void_expression",
-					"line": 1545,
+					"line": 1550,
 					"column": 4,
-					"endLine": 1549,
+					"endLine": 1554,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -10424,9 +10497,9 @@
 				{
 					"id": "028a6335a48ddaedff2d2560ce6e8cf2f2b4f247",
 					"kind": "callback_registration",
-					"line": 1545,
+					"line": 1550,
 					"column": 9,
-					"endLine": 1545,
+					"endLine": 1550,
 					"endColumn": 75,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -10441,9 +10514,9 @@
 				{
 					"id": "0a84e6f36735d2020a9653cb3c3d4ee76399b8dd",
 					"kind": "promise_catch",
-					"line": 1545,
+					"line": 1550,
 					"column": 9,
-					"endLine": 1549,
+					"endLine": 1554,
 					"endColumn": 6,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11552,20 +11625,37 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "acf8d527cd0b4b14a14baabb9887db9dcd40a0b0",
+					"id": "350e90c324de5c18852140c9ecfe633d5126a9a2",
 					"kind": "void_expression",
-					"line": 57,
+					"line": 60,
 					"column": 33,
-					"endLine": 57,
-					"endColumn": 56,
+					"endLine": 60,
+					"endColumn": 79,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_detached_execution",
-						"target": "controller.run",
+						"target": "controller.run().catch",
 						"scope": "checkCallback",
-						"justification": "The \"checkCallback\" owner deliberately detaches \"controller.run\"; that named operation owns rejection and terminal diagnostics."
+						"justification": "The \"checkCallback\" owner deliberately detaches \"controller.run().catch\": `run()` rejects on a failed backend action (H15.2) and this bare palette entry now swallows it right there; that named operation owns rejection and terminal diagnostics."
 					},
-					"reason": "Allowlisted void_expression: The \"checkCallback\" owner deliberately detaches \"controller.run\"; that named operation owns rejection and terminal diagnostics. Verified target: \"controller.run\" in \"checkCallback\"."
+					"reason": "Allowlisted void_expression: The \"checkCallback\" owner deliberately detaches \"controller.run().catch\": `run()` rejects on a failed backend action (H15.2) and this bare palette entry now swallows it right there; that named operation owns rejection and terminal diagnostics. Verified target: \"controller.run().catch\" in \"checkCallback\"."
+				},
+				{
+					"id": "63896190bdbd97ce951d81fef600363afd3d1461",
+					"kind": "promise_catch",
+					"line": 60,
+					"column": 38,
+					"endLine": 60,
+					"endColumn": 79,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "checkCallback",
+						"justification": "The \"checkCallback\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `run()`'s rejection is already recorded, structured, by `flight()`'s own diagnostics call before this bare palette entry swallows it."
+					},
+					"reason": "Allowlisted promise_catch: The \"checkCallback\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `run()`'s rejection is already recorded, structured, by `flight()`'s own diagnostics call before this bare palette entry swallows it. Verified recovery: \"intentional_noop\" in \"checkCallback\"."
 				}
 			]
 		},
@@ -11576,9 +11666,9 @@
 				{
 					"id": "50788a023eb45a8c419e319020a566ce2949d289",
 					"kind": "callback_registration",
-					"line": 45,
+					"line": 72,
 					"column": 19,
-					"endLine": 61,
+					"endLine": 88,
 					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
@@ -11591,11 +11681,11 @@
 					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"flight\"."
 				},
 				{
-					"id": "b769372b83c1c7c52a25d69cb50ceaa210b4dd9c",
+					"id": "166ec0165e216f3c892b0415ae5a97383610c77d",
 					"kind": "promise_catch",
-					"line": 45,
+					"line": 72,
 					"column": 19,
-					"endLine": 64,
+					"endLine": 99,
 					"endColumn": 5,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -11608,28 +11698,45 @@
 					"reason": "Allowlisted promise_catch: The \"flight\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"flight\"."
 				},
 				{
-					"id": "f4fe6e970b3b33479a1057db6e758b8e630703b7",
+					"id": "1987d7e01033f40b7887d6d384ed83dc8804d19b",
 					"kind": "callback_registration",
-					"line": 65,
+					"line": 100,
 					"column": 18,
-					"endLine": 65,
-					"endColumn": 47,
+					"endLine": 102,
+					"endColumn": 5,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "then",
 						"scope": "flight",
-						"justification": "The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"justification": "The \"flight\" owner registers \"then\" as a framework callback: it deliberately turns a `'failed'` outcome into `legacy`'s rejection (H15.2), and whichever span wraps `run()` owns the resulting terminal diagnostics."
 					},
-					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"then\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"then\" in \"flight\"."
+					"reason": "Allowlisted callback_registration: The \"flight\" owner registers \"then\" as a framework callback: it deliberately turns a `'failed'` outcome into `legacy`'s rejection (H15.2), and whichever span wraps `run()` owns the resulting terminal diagnostics. Verified registration: \"then\" in \"flight\"."
+				},
+				{
+					"id": "23d6c283957cad688b2e0dd728377e15bb83d6d1",
+					"kind": "promise_catch",
+					"line": 109,
+					"column": 3,
+					"endLine": 109,
+					"endColumn": 32,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "flight",
+						"justification": "The \"flight\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): the cause is already recorded, structured, by this same method's diagnostics call above; this only keeps `legacy` from being flagged an unhandled rejection when only `.outcome` is read."
+					},
+					"reason": "Allowlisted promise_catch: The \"flight\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): the cause is already recorded, structured, by this same method's diagnostics call above; this only keeps `legacy` from being flagged an unhandled rejection when only `.outcome` is read. Verified recovery: \"intentional_noop\" in \"flight\"."
 				},
 				{
 					"id": "525526a49412f164f605225c0e1658d930e582eb",
 					"kind": "void_expression",
-					"line": 68,
+					"line": 112,
 					"column": 3,
-					"endLine": 70,
+					"endLine": 114,
 					"endColumn": 5,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11643,9 +11750,9 @@
 				{
 					"id": "7fcbeb8caba319f8b498d7f1a0dcd1f18ea58726",
 					"kind": "callback_registration",
-					"line": 68,
+					"line": 112,
 					"column": 8,
-					"endLine": 70,
+					"endLine": 114,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
