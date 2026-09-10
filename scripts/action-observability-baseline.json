@@ -6008,12 +6008,12 @@
 					"reason": "Allowlisted void_expression: The \"ensureAlertIngameServer\" owner deliberately detaches \"stale.close\" when the port setting changes mid-session; the stale server is already unreferenced and its close outcome has no caller left to observe. Verified target: \"stale.close\" in \"ensureAlertIngameServer\"."
 				},
 				{
-					"id": "4755bc80058b945a055a537ba2c90e81c64cb164",
+					"id": "2eb9a4c3fdb7bdd53a739176efe0b5bedec05419",
 					"kind": "callback_registration",
-					"line": 2290,
+					"line": 2302,
 					"column": 18,
-					"endLine": 2291,
-					"endColumn": 109,
+					"endLine": 2309,
+					"endColumn": 6,
 					"registration": "then",
 					"classification": "allowlisted",
 					"evidence": {
@@ -6025,28 +6025,26 @@
 					"reason": "Allowlisted callback_registration: The \"ensureAlertIngameServer\" owner registers \"then\" only to record the newly started server and the port it bound, which cannot itself fail; a failed start is caught by the sibling catch on the same chain. Verified registration: \"then\" in \"ensureAlertIngameServer\"."
 				},
 				{
-					"id": "5fd0fa34514ab383ef9d59c0e43d148896996e3d",
+					"id": "4759c1778049e9321bddc392b9826827fde695a8",
 					"kind": "promise_catch",
-					"line": 2290,
+					"line": 2302,
 					"column": 18,
-					"endLine": 2292,
-					"endColumn": 22,
+					"endLine": 2323,
+					"endColumn": 6,
 					"registration": "catch",
-					"classification": "allowlisted",
+					"classification": "observed",
 					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "intentional_noop",
-						"scope": "ensureAlertIngameServer",
-						"justification": "The \"ensureAlertIngameServer\" owner explicitly handles \"intentional_noop\" as local recovery, reducing a failed start to null; the \"ingame\" channel throws its own diagnosed not-available error from that null, so the enclosing deliver call owns the terminal diagnostic."
+						"type": "direct_observability_call",
+						"callee": "this.localDebugActions.event"
 					},
-					"reason": "Allowlisted promise_catch: The \"ensureAlertIngameServer\" owner explicitly handles \"intentional_noop\" as local recovery, reducing a failed start to null; the \"ingame\" channel throws its own diagnosed not-available error from that null, so the enclosing deliver call owns the terminal diagnostic. Verified recovery: \"intentional_noop\" in \"ensureAlertIngameServer\"."
+					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this promise_catch boundary."
 				},
 				{
-					"id": "faab420f7784b16db6738dc2a84bb6974c128b6d",
+					"id": "67bf5ad1976fb0c4ecf348ca79a9c704a4c45dda",
 					"kind": "callback_registration",
-					"line": 2290,
+					"line": 2302,
 					"column": 18,
-					"endLine": 2293,
+					"endLine": 2324,
 					"endColumn": 60,
 					"registration": "finally",
 					"classification": "allowlisted",

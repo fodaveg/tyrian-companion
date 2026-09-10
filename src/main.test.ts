@@ -4,6 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 const electronMocks = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
 vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
 
+const alertIngameServerMocks = vi.hoisted(() => ({
+	start: vi.fn(async () => { throw new Error('not stubbed'); }),
+}));
+vi.mock('./alerts/alert-ingame-server', async (importOriginal) => ({
+	...await importOriginal<Record<string, unknown>>(),
+	startAlertIngameServer: alertIngameServerMocks.start,
+}));
+
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import type { ConnectionState } from './account/connection-service';
 import { genericManagedAssets } from './assets/generic-assets';
@@ -1479,6 +1487,41 @@ describe('alert dispatch diagnostics', () => {
 			);
 			expect(failure).toMatchObject({ code: 'unavailable', details: { failed: [{ id: 'ingame' }] } });
 		});
+	});
+});
+
+describe('in-game alert server start diagnostics', () => {
+	// H15.17 (2026-09-10 incident): `.catch(() => null)` discarded the rejection entirely, so a
+	// port already in use (or denied by the OS) looked identical to the addon simply not being
+	// connected yet: no log line, and the settings row kept the toggle looking fine.
+	it('registers a notification_emit failure carrying the rejection code when the port is unavailable', async () => {
+		alertIngameServerMocks.start.mockRejectedValueOnce(
+			Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' }),
+		);
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			settings: { alertIngamePort: 47_823 },
+			alertIngameServer: null,
+			alertIngameServerPort: null,
+			alertIngameServerFlight: null,
+			alertIngameServerErrorCode: null as string | null,
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'ingame-server-start' }),
+			settingTab: { refreshAlertIngameServerRow: vi.fn() },
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const ensure = (TyrianCompanionPlugin.prototype as unknown as {
+			ensureAlertIngameServer(this: typeof harness): Promise<unknown>;
+		}).ensureAlertIngameServer;
+
+		await expect(ensure.call(harness)).resolves.toBeNull();
+
+		expect(harness.alertIngameServerErrorCode).toBe('EADDRINUSE');
+		expect(harness.settingTab.refreshAlertIngameServerRow).toHaveBeenCalled();
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'notification' && input.action === 'notification_emit' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unavailable', state: 'ingame_server_start', details: { code: 'EADDRINUSE' } });
 	});
 });
 

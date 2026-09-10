@@ -104,6 +104,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private connectionButton: ButtonComponent | null = null;
 	private countdownInterval: number | null = null;
 	private managedAssetsSetting: Setting | null = null;
+	private alertIngameServerFeedbackEl: HTMLElement | null = null;
 	private sessionHistorySetting: Setting | null = null;
 	private sessionHistoryButton: ButtonComponent | null = null;
 	private sessionHistoryScrubButton: ButtonComponent | null = null;
@@ -162,6 +163,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.connectionStatusEl = null;
 		this.connectionButton = null;
 		this.managedAssetsSetting = null;
+		this.alertIngameServerFeedbackEl = null;
 		this.sessionHistorySetting = null;
 		this.sessionHistoryButton = null;
 		this.sessionHistoryScrubButton = null;
@@ -216,6 +218,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 		this.connectionStatusEl = null;
 		this.connectionButton = null;
 		this.managedAssetsSetting = null;
+		this.alertIngameServerFeedbackEl = null;
 		this.sessionHistorySetting = null;
 		this.sessionHistoryButton = null;
 		this.sessionHistoryScrubButton = null;
@@ -243,6 +246,20 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			canMove: this.plugin.hasManagedAssetsRoot() && this.plugin.settings.managedAssetsRoot !== this.plugin.settings.outputFolder,
 		});
 		for (const [action, button] of this.managedAssetButtons) button.setDisabled(!enabled[action]);
+	}
+
+	/**
+	 * Reflects the last in-game alert server start rejection (H15.17) next to the port field: a
+	 * port already occupied or denied by the OS used to look identical to the addon simply not
+	 * being connected yet, with nothing on this row to say a start had actually failed.
+	 */
+	refreshAlertIngameServerRow(): void {
+		const code = this.plugin.getAlertIngameServerErrorCode();
+		const el = this.alertIngameServerFeedbackEl;
+		if (el === null) return;
+		if (code === null) { el.setAttr('role', 'status'); el.setText(''); return; }
+		el.setAttr('role', 'alert');
+		el.setText(this.t('settings.alerts.ingame.startFailed', { code }));
 	}
 
 	refreshSessionHistoryRow(): void {
@@ -748,6 +765,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
 					feedback.setAttr('role', 'status');
 					feedback.setAttr('aria-live', 'polite');
+					this.alertIngameServerFeedbackEl = feedback;
+					this.refreshAlertIngameServerRow();
 					setting.addText((text) => text
 						.setValue(String(this.plugin.settings.alertIngamePort))
 						.setDisabled(!this.plugin.settings.alertIngameEnabled)

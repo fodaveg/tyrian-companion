@@ -321,6 +321,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngameServer: AlertIngameServerHandle | null = null;
 	private alertIngameServerPort: number | null = null;
 	private alertIngameServerFlight: Promise<AlertIngameServerHandle | null> | null = null;
+	/** The last start rejection's machine-readable `.code` own property, e.g. `EADDRINUSE`. Null once a start succeeds. */
+	private alertIngameServerErrorCode: string | null = null;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
 	private settingTab!: TyrianCompanionSettingTab;
@@ -2298,11 +2300,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
 		const flight = startAlertIngameServer(port, { schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds) })
-			.then((server) => { this.alertIngameServer = server; this.alertIngameServerPort = port; return server; })
-			.catch(() => null)
+			.then((server) => {
+				this.alertIngameServer = server;
+				this.alertIngameServerPort = port;
+				this.alertIngameServerErrorCode = null;
+				this.settingTab.refreshAlertIngameServerRow();
+				return server;
+			})
+			.catch((error: unknown) => {
+				// H15.17 (2026-09-10 incident): this used to discard the rejection entirely, so a
+				// port already in use or denied by the OS looked identical to the addon simply not
+				// being enabled: no log line, and the settings row kept showing the toggle as fine.
+				const mapped = unmappedErrorLogDetails(error);
+				this.alertIngameServerErrorCode = typeof mapped.code === 'string' ? mapped.code : mapped.reason as string;
+				this.localDebugActions?.event({
+					component: 'notification', action: 'notification_emit', state: 'ingame_server_start',
+					level: 'error', phase: 'failure', code: 'unavailable',
+					details: { errorName: mapped.reason, code: mapped.code },
+				});
+				this.settingTab.refreshAlertIngameServerRow();
+				return null;
+			})
 			.finally(() => { this.alertIngameServerFlight = null; });
 		this.alertIngameServerFlight = flight;
 		return await flight;
+	}
+
+	/** Null once a start has succeeded; the last rejection's machine-readable `.code` otherwise. */
+	getAlertIngameServerErrorCode(): string | null {
+		return this.alertIngameServerErrorCode;
 	}
 
 	private nextAlertIngameSeq(): number {
