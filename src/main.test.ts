@@ -572,6 +572,42 @@ describe('product navigation diagnostics', () => {
 		expect(emitNotice).toHaveBeenCalledTimes(2);
 	});
 
+	// H15.14 (2026-09-10 incident): `perform()` never rejects (it always returns the closed
+	// `ProductActionOutcome` string), so the outer `run()` span logged `success ok` even when
+	// `pendingProposals.acknowledge` threw and the review actually failed.
+	it('registers a detection_proposal failure when acknowledging a reviewed proposal throws', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			runtimeReady: true,
+			settings: { language: 'en' as const },
+			pendingProposals: { acknowledge: vi.fn(async () => { throw new Error('storage failed'); }) },
+			notifyRuntimeStarting: vi.fn(),
+			emitNotice: vi.fn(),
+			activateView: vi.fn(async () => undefined),
+			renderViews: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'proposal-review' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated plugin harness.
+		const review = (TyrianCompanionPlugin.prototype as unknown as {
+			reviewPendingProposalOutcome(
+				this: typeof harness,
+				intent: PendingProposalIntent,
+			): Promise<'completed' | 'cancelled' | 'unavailable' | 'failed'>;
+		}).reviewPendingProposalOutcome;
+		const intent = {
+			proposalId: 'proposal-1', accountId: 'account-1', phase: 'start' as const,
+			binding: { kind: 'idle' as const, ruleSetId: 'rules', ruleSetVersion: 1 },
+		};
+
+		await expect(review.call(harness, intent)).resolves.toBe('failed');
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'detection' && input.action === 'detection_proposal' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure', state: 'review' });
+	});
+
 	it('journals a materialized pending-proposal card with its durable generation interval', async () => {
 		const proposalPresented = vi.fn(async () => true);
 		const proposal = {

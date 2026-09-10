@@ -57,6 +57,7 @@ import {
 	type LocalDebugActionContext,
 	type ResolvedLocalDebugActionContext,
 } from './core/local-debug-action-runner';
+import { unmappedErrorLogDetails } from './core/local-debug-error-details';
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { resanitizeLocalDebugRecord } from './core/local-debug-sanitizer';
 import {
@@ -1708,11 +1709,18 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.activateView();
 			this.renderViews();
 			return 'completed';
-		} catch {
+		} catch (error) {
 			this.emitNotice(
 				translateRuntime(createTranslator(this.settings.language), 'notices.proposalReviewFailed'),
 				'proposal_review_failed',
 			);
+			// `perform()` never rejects here (the outer `run()` would then log the failure itself);
+			// this is the only place left that still learns the review actually failed (H15.14).
+			this.localDebugActions?.event({
+				component: 'detection', action: 'detection_proposal', state: 'review',
+				level: 'error', phase: 'failure', code: 'unknown_failure',
+				details: unmappedErrorLogDetails(error),
+			});
 			return 'failed';
 		}
 		};
