@@ -9,7 +9,7 @@ import {
 	inventoryAdvisorWorkflowFailureReceipt,
 	inventoryAdvisorWorkflowReceipt,
 } from '../runtime/assemble-advisor';
-import { readModuleSource } from '../test/module-boundary';
+import { classMethodBody, forbiddenBoundaryUses, type ModuleBoundary, readModuleSource } from '../test/module-boundary';
 
 describe('H5.11 Inventory Advisor runtime integration', () => {
 	it('registers separate open and explicit refresh commands without polling or on-load capture', () => {
@@ -24,8 +24,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 		const onload = inventoryAdvisorOnloadSource(source);
 		expect(inventoryAdvisorOnloadSafe(source)).toBe(true);
 		expect(onload).not.toMatch(/setInterval[^\n]*inventory|inventory[^\n]*setInterval/iu);
-		const genericRender = source.slice(source.indexOf('\n\tprivate renderViews()'), source.indexOf('\n\tprivate renderInventoryAdvisorViews()'));
-		expect(genericRender).not.toContain('renderInventoryAdvisorViews');
+		expect(classMethodBody(source, 'TyrianCompanionPlugin', 'renderViews')).not.toContain('renderInventoryAdvisorViews');
 	});
 
 	it('wires the exact built-in review-only provider instead of an unavailable production stub', () => {
@@ -105,10 +104,7 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			data: `${JSON.stringify(receipt, null, '\t')}\n`,
 		}]);
 		const mainSource = readModuleSource('src/main.ts');
-		const writer = mainSource.slice(
-			mainSource.indexOf('private async writeInventoryAdvisorCaptureReceipt'),
-			mainSource.indexOf('\n\tasync loadInventoryPreferences'),
-		);
+		const writer = classMethodBody(mainSource, 'TyrianCompanionPlugin', 'writeInventoryAdvisorCaptureReceipt');
 		expect(writer).not.toContain('saveData');
 	});
 
@@ -162,12 +158,22 @@ describe('H5.11 Inventory Advisor runtime integration', () => {
 			'src/ui/inventory-advisor-item-view.ts',
 			'src/ui/inventory-advisor-view.ts',
 		];
-		const source = files.map((path) => readModuleSource(path)).join('\n');
-		expect(source).not.toMatch(/\bdestroy\s*\(|\bexecutor\b|requestUrl|\.requestDetailed\s*\(/u);
-		const uiSource = ['src/ui/inventory-advisor-item-view.ts', 'src/ui/inventory-advisor-view.ts']
-			.map((path) => readModuleSource(path)).join('\n');
-		expect(uiSource).not.toMatch(/action\s*===?\s*['"]discard_candidate|value\s*===?\s*['"]discard_candidate/u);
-		expect(source).toContain("presentationAction = decision.action === 'discard_candidate' ? 'discard_review'");
+		for (const path of files) {
+			const boundary: ModuleBoundary = {
+				path,
+				forbiddenImports: [],
+				forbiddenNames: ['destroy', 'executor', 'requestUrl', 'requestDetailed'],
+			};
+			expect(forbiddenBoundaryUses(readModuleSource(path), boundary)).toEqual([]);
+		}
+		// The UI surfaces only ever receive the already-mapped `discard_review` presentation action;
+		// the raw `discard_candidate` decision is a fact for the mapper below, not for a UI branch.
+		for (const path of ['src/ui/inventory-advisor-item-view.ts', 'src/ui/inventory-advisor-view.ts']) {
+			const boundary: ModuleBoundary = { path, forbiddenImports: [], forbiddenNames: ['discard_candidate'] };
+			expect(forbiddenBoundaryUses(readModuleSource(path), boundary)).toEqual([]);
+		}
+		expect(readModuleSource('src/advisor/inventory-advisor-presentation.ts'))
+			.toContain("presentationAction = decision.action === 'discard_candidate' ? 'discard_review'");
 	});
 });
 

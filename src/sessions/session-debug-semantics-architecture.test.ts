@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +6,7 @@ import { RateLimitCoordinator } from '../core/rate-limit-coordinator';
 import type { LocalDebugActionPort, LocalDebugEventContext } from '../core/local-debug-action-runner';
 import { PriceHistoryRuntime } from '../economy/price-history-runtime';
 import type { PriceHistorySettings } from '../economy/price-history-model';
+import { readModuleSource } from '../test/module-boundary';
 
 describe('session debug semantics', () => {
 	afterEach(() => { vi.unstubAllGlobals(); });
@@ -82,7 +81,7 @@ describe('session debug semantics', () => {
 	 * anywhere else and the text match stays here in the meantime.
 	 */
 	it('reserves human session actions for gestures and labels internal maintenance explicitly', () => {
-		const source = readFileSync('src/main.ts', 'utf8');
+		const source = readModuleSource('src/main.ts');
 
 		expect(source).toContain("this.persistenceDiagnostics('session', 'session_lease')");
 		expect(source).not.toContain("this.persistenceDiagnostics('session', 'session_start')");

@@ -49,6 +49,8 @@ describe('product action surface', () => {
 		const run = vi.spyOn(controller, 'run').mockResolvedValue('completed');
 		const panelMount = mountActionPanel(controller, 'es');
 		const panel = panelMount.element as unknown as FakeElement;
+		expect(panel.tag).toBe('aside');
+		expect(panel.className).toBe('tyrian-action-panel');
 		const elements = walk(panel);
 		const actions = elements.filter((element) => element.className.includes('tyrian-action-panel__action'));
 		expect(actions).toHaveLength(15);

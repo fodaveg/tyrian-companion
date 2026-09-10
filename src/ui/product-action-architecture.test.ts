@@ -1,33 +1,45 @@
 import { describe, expect, it } from 'vitest';
 
-import { readModuleSource } from '../test/module-boundary';
+import { classMethodBody, classMethodCallChains, propertyCallChains, readModuleSource } from '../test/module-boundary';
 
 describe('product action architecture', () => {
-	it('registers the palette once from the same controller rendered by all three surfaces', () => {
+	// Route 1: the panel's click-to-`controller.run` wiring and its `<aside class="tyrian-action-
+	// panel">` mount shape are exercised for real by `product-action-panel.test.ts` ("renders every
+	// action, a visible disabled reason, live feedback, and routes clicks to controller.run").
+
+	it('registers the palette exactly once, wired to the plugin\'s own session commands and executor', () => {
 		const main = readModuleSource('src/main.ts');
+		expect(propertyCallChains(main).filter((chain) => chain === 'registerProductActionPalette')).toHaveLength(1);
+		const setup = classMethodBody(main, 'TyrianCompanionPlugin', 'setupProductActions');
+		expect(setup).toContain('sessionCommands: this.sessionCommands');
+		expect(setup).toContain('execute: (id) => this.executeProductAction');
+	});
+
+	it('renders the same product shell from the companion and inventory surfaces, never from settings', () => {
 		const companion = readModuleSource('src/ui/companion-view.ts');
 		const inventory = readModuleSource('src/ui/inventory-advisor-item-view.ts');
 		const settings = readModuleSource('src/ui/settings-tab.ts');
-		const panel = readModuleSource('src/ui/product-shell.ts');
-		expect(main.match(/registerProductActionPalette\(/gu)).toHaveLength(1);
-		expect(main).toContain('sessionCommands: this.sessionCommands');
-		expect(main).toContain('execute: (id) => this.executeProductAction');
 		for (const surface of [companion, inventory]) {
-			expect(surface).toContain('renderProductShell(');
-			expect(surface).toContain('getProductActionController');
+			const chains = propertyCallChains(surface);
+			expect(chains).toContain('renderProductShell');
+			expect(chains).toContain('this.actions.getProductActionController');
 		}
 		// The Settings tab renders native Obsidian rows only; the product shell header lives elsewhere.
-		expect(settings).not.toContain('renderProductShell(');
-		expect(panel).toContain("button.addEventListener('click', () => { void controller.run(action.id).catch(() => undefined); });");
-		expect(panel).toContain("createEl('aside', { cls: 'tyrian-action-panel' })");
-		const setup = main.slice(main.indexOf('private setupProductActions()'), main.indexOf('\n\tprivate async executeProductAction'));
-		expect(setup).not.toContain('renderViews()');
-		expect(setup).not.toContain('renderInventoryAdvisorViews()');
-		expect(setup).not.toContain('refreshForSettingsChange()');
-		const companionRefresh = main.slice(main.indexOf('private renderViews()'), main.indexOf('\n\tprivate renderInventoryAdvisorViews()'));
-		const inventoryRefresh = main.slice(main.indexOf('private renderInventoryAdvisorViews()'), main.indexOf('\n\tprivate invalidateInventoryAdvisor()'));
-		expect(companionRefresh).toContain('this.productActions?.refresh();');
-		expect(inventoryRefresh).toContain('this.productActions?.refresh();');
+		expect(propertyCallChains(settings)).not.toContain('renderProductShell');
+	});
+
+	it('refreshes the product actions from both view repaints, never from inside their own setup', () => {
+		const main = readModuleSource('src/main.ts');
+		const setup = classMethodCallChains(main, 'TyrianCompanionPlugin', 'setupProductActions');
+		expect(setup).not.toContain('this.renderViews');
+		expect(setup).not.toContain('this.renderInventoryAdvisorViews');
+		expect(setup).not.toContain('this.settingTab.refreshForSettingsChange');
+		// `renderViews()` only marks the Companion surface dirty; the coalesced microtask it
+		// schedules is what actually refreshes the actions, in `flushRenderViews`.
+		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'flushRenderViews'))
+			.toContain('this.productActions?.refresh');
+		expect(classMethodCallChains(main, 'TyrianCompanionPlugin', 'renderInventoryAdvisorViews'))
+			.toContain('this.productActions?.refresh');
 	});
 
 	it('keeps responsive, focus, reduced-motion, and 44px contracts in the product stylesheet', () => {
