@@ -4,6 +4,7 @@ import {
 	type ConnectionDetails,
 } from './account-service';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
+import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 
 export type WarningReason = 'future_capabilities' | 'stale_connection';
 
@@ -26,6 +27,14 @@ export class ConnectionService {
 	private lastGood: ConnectionDetails | null = null;
 	private runId = 0;
 	private inFlight: { runId: number; promise: Promise<ConnectionState> } | null = null;
+	/**
+	 * The most recent failure's class name (never its message or stack), set only when `check()`
+	 * threw something `mapConnectionError` upstream could not classify into a specific
+	 * `ConnectionCheckError`: without this, that failure collapses into the exact same generic
+	 * `unavailable` as any other, and a caller logging the check (`main.ts`'s `connection_check`)
+	 * has nothing to tell a `TypeError` apart from a rejected fetch.
+	 */
+	private lastUnmappedFailureClass: string | null = null;
 
 	constructor(
 		private readonly gateway: AccountGateway,
@@ -34,6 +43,11 @@ export class ConnectionService {
 
 	getState(): ConnectionState {
 		return this.state;
+	}
+
+	/** The unmapped failure's class from the most recent check, if any (diagnostics only). */
+	getLastUnmappedFailureClass(): string | null {
+		return this.lastUnmappedFailureClass;
 	}
 
 	reset(): void {
@@ -104,10 +118,12 @@ export class ConnectionService {
 	}
 
 	private failedState(error: unknown): ConnectionState {
-		const failure =
-			error instanceof ConnectionCheckError
-				? error
-				: new ConnectionCheckError('unavailable', 'The connection check failed.', true);
+		const failure = error instanceof ConnectionCheckError
+			? error
+			: new ConnectionCheckError('unavailable', 'The connection check failed.', true);
+		this.lastUnmappedFailureClass = error instanceof ConnectionCheckError
+			? null
+			: String(unmappedErrorLogDetails(error).reason);
 		const retryAt =
 			failure.retryAfterMs === null ? null : this.now() + Math.max(0, failure.retryAfterMs);
 

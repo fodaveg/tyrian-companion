@@ -55,6 +55,7 @@ import {
 	LocalDebugActionRunner,
 	startLocalDebugAction,
 	type LocalDebugActionContext,
+	type LocalDebugActionOutcome,
 	type ResolvedLocalDebugActionContext,
 } from './core/local-debug-action-runner';
 import { LocalDebugLogger } from './core/local-debug-logger';
@@ -1075,12 +1076,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async checkConnection(): Promise<ConnectionState> {
-		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<ConnectionState> => {
-		if (!this.runtimeReady) { this.notifyRuntimeStarting(); return { status: 'idle' }; }
+		// `perform` returns a `LocalDebugActionOutcome`, not the `ConnectionState` itself: a bare
+		// `ConnectionState` never satisfies `isOutcome`, so `run()` used to log every check as
+		// `success ok` even when it failed (H15.2). The real state is captured in the closure and
+		// returned below, once the diagnostic has seen the outcome.
+		let state: ConnectionState = { status: 'idle' };
+		const perform = async (context?: ResolvedLocalDebugActionContext): Promise<LocalDebugActionOutcome> => {
+		if (!this.runtimeReady) { this.notifyRuntimeStarting(); state = { status: 'idle' }; return { phase: 'success', code: 'ok' }; }
 		const check = this.connection.check(context);
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
-		const state = await check;
+		state = await check;
 		if (state.status === 'connected' || state.status === 'warning') {
 			await this.switchHalloweenAccount(state.details.account.id, context);
 			// Assisted detection is always armed with a connected account now (David, 2026-09-09: no
@@ -1093,11 +1099,21 @@ export default class TyrianCompanionPlugin extends Plugin {
 			() => this.reconcilePendingProposals());
 		this.settingTab.refreshConnectionRow();
 		this.renderViews();
-		return state;
+		return {
+			phase: state.status === 'error' ? 'failure' : 'success',
+			code: state.status === 'error' ? 'unavailable' : 'ok',
+			state: state.status,
+			details: state.status !== 'error' ? undefined : {
+				code: state.code,
+				...(this.connection.getLastUnmappedFailureClass() === null
+					? {} : { reason: this.connection.getLastUnmappedFailureClass() }),
+			},
 		};
-		return await (this.localDebugActions?.run(
+		};
+		await (this.localDebugActions?.run(
 			{ component: 'connection', action: 'connection_check' }, perform,
 		) ?? perform());
+		return state;
 	}
 
 	getSessionState(): SessionState {

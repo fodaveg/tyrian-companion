@@ -288,7 +288,11 @@ export class ResilientHttpTransport implements HttpTransport {
 			if (error instanceof HttpTransportError) {
 				throw error;
 			}
-			throw new HttpTransportError('network', null, null, 'Network request failed.');
+			// Carries Electron's own transport message (e.g. `net::ERR_NAME_NOT_RESOLVED`) into the
+			// log instead of a fixed string: `finishDiagnostic` routes this through the same
+			// message sanitizer (`sanitizeErrorText`) as any other logged error.
+			throw new HttpTransportError('network', null, null,
+				error instanceof Error ? error.message : 'Network request failed.');
 		} finally {
 			if (timer !== undefined) {
 				this.cancelTimeout(timer);

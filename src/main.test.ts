@@ -5,7 +5,8 @@ const electronMocks = vi.hoisted(() => ({ openPath: vi.fn(async () => '') }));
 vi.mock('electron', () => ({ shell: { openPath: electronMocks.openPath } }));
 
 import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
-import type { ConnectionState } from './account/connection-service';
+import { ConnectionService, type ConnectionState } from './account/connection-service';
+import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { genericManagedAssets } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
@@ -56,7 +57,7 @@ describe('connection diagnostics composition', () => {
 		}));
 		const harness = {
 			runtimeReady: true,
-			connection: { check },
+			connection: { check, getLastUnmappedFailureClass: () => null },
 			settingTab: { refreshConnectionRow: vi.fn() },
 			renderViews: vi.fn(),
 			localDebugActions: {
@@ -71,6 +72,37 @@ describe('connection diagnostics composition', () => {
 
 		await expect(checkConnection.call(harness)).resolves.toMatchObject({ status: 'error' });
 		expect(check).toHaveBeenCalledWith(parent);
+	});
+
+	// H15.22: `perform` used to return the raw `ConnectionState`, which never satisfies `isOutcome`,
+	// so `run()` logged every check as `success ok` even when the gateway threw. `perform` now
+	// returns a closed outcome and `checkConnection` still resolves to the real `ConnectionState`.
+	it('logs connection_check as a failure when the gateway throws unclassified', async () => {
+		const records: LocalDebugRecordInput[] = [];
+		const actions = new LocalDebugActionRunner({
+			diagnostics: { record: (record: LocalDebugRecordInput) => { records.push(record); } } as never,
+			createId: () => 'connection-check',
+		});
+		const connection = new ConnectionService({
+			checkConnection: async () => { throw new Error('schema'); },
+		});
+		const harness = {
+			runtimeReady: true,
+			connection,
+			settingTab: { refreshConnectionRow: vi.fn() },
+			renderViews: vi.fn(),
+			localDebugActions: actions,
+			reconcilePendingProposals: vi.fn(async () => undefined),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const checkConnection = (TyrianCompanionPlugin.prototype as unknown as {
+			checkConnection(this: typeof harness): Promise<ConnectionState>;
+		}).checkConnection;
+
+		await expect(checkConnection.call(harness)).resolves.toMatchObject({ status: 'error' });
+		expect(records).toContainEqual(
+			expect.objectContaining({ action: 'connection_check', phase: 'failure' }),
+		);
 	});
 });
 

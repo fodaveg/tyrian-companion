@@ -37,7 +37,12 @@ export interface LocalDebugEventContext extends LocalDebugActionContext {
 }
 
 export interface LocalDebugActionOutcome {
-	phase?: Extract<LocalDebugPhase, 'success' | 'cancel' | 'skip' | 'retry'>;
+	/**
+	 * `'failure'` is for an action that returns a closed, classified failure instead of throwing
+	 * (H15.2: without it, `writeOutcome` had no way to log one of these as anything but `success
+	 * ok`). It logs at `error`, same as a thrown one (`writeFailure`).
+	 */
+	phase?: Extract<LocalDebugPhase, 'success' | 'failure' | 'cancel' | 'skip' | 'retry'>;
 	code?: LocalDebugCode;
 	state?: LocalDebugStateValue;
 	details?: unknown;
@@ -157,7 +162,7 @@ export class LocalDebugActionRunner {
 			const outcome = isOutcome(result) ? result : undefined;
 			this.write(
 				context,
-				outcome?.phase === 'retry' ? 'warn' : 'info',
+				outcome?.phase === 'retry' ? 'warn' : outcome?.phase === 'failure' ? 'error' : 'info',
 				outcome?.phase ?? 'success',
 				outcome?.code ?? 'ok',
 				undefined,
