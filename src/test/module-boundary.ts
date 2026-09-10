@@ -27,6 +27,23 @@ export function readModuleSources(paths: readonly string[], root = process.cwd()
 	return new Map(paths.map((path) => [path, readModuleSource(path, root)]));
 }
 
+/**
+ * Reads the module at `path` once and hands back only its two AST-derived boundary
+ * projections: the literal specifiers it imports and every name (identifier, member and
+ * string literal) it mentions. Never the raw text.
+ *
+ * `scripts/source-text-assertion-contract.mjs` flags a `*.test.ts` file the moment it calls
+ * `readFile`/`readFileSync`/`readModuleSource`/`readModuleSources` itself, on the theory that a
+ * suite holding raw source text will eventually match over its characters. This function does
+ * that read here instead, inside test infrastructure the contract does not scan, so a suite can
+ * decide against a real module's import graph and capability names without ever holding (or
+ * being tempted to regex) its text.
+ */
+export function moduleBoundaryFacts(path: string, root = process.cwd()): { specifiers: string[]; names: Set<string> } {
+	const source = readModuleSource(path, root);
+	return { specifiers: moduleSpecifiers(source), names: referencedNames(source) };
+}
+
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
 export function moduleSpecifiers(source: string): string[] {
 	const file = ts.createSourceFile('boundary-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);

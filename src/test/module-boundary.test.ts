@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	forbiddenBoundaryUses,
+	moduleBoundaryFacts,
 	moduleBoundaryViolations,
 	moduleSpecifiers,
 	referencedNames,
@@ -62,6 +63,14 @@ describe('negative module frontiers', () => {
 		expect(names.has('kept')).toBe(true);
 		expect(names.has('fetch')).toBe(false);
 		expect(names.has('Authorization')).toBe(false);
+	});
+});
+
+describe('module boundary facts', () => {
+	it('reads a real module once and reports its specifiers and names without exposing raw text', () => {
+		const facts = moduleBoundaryFacts('src/sessions/session-note-model.ts');
+		expect(facts.specifiers.every((specifier) => !specifier.includes('obsidian'))).toBe(true);
+		expect(facts.names.has('fetch')).toBe(false);
 	});
 });
 
