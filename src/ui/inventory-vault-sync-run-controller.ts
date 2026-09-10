@@ -1,4 +1,5 @@
 import type { InventoryVaultSyncLastRun } from '../core/settings';
+import { errorClassName } from '../core/local-debug-error-details';
 import type {
 	InventoryVaultSyncPlan,
 	InventoryVaultSyncResult,
@@ -137,14 +138,14 @@ export class InventoryVaultOneClickSyncController {
 			this.enter({ status: 'running', ...this.progressFor('preview', startedAt) }, generation);
 			plan = await this.ports.previewSync();
 			if (this.stale(generation)) return this.current();
-		} catch {
-			this.settle('error', 'capture_unavailable', startedAt, generation);
+		} catch (error) {
+			this.settle('error', 'capture_unavailable', startedAt, generation, null, errorClassName(error));
 			return this.current();
 		}
 		try {
 			await this.afterPreview(plan, startedAt, generation);
-		} catch {
-			this.settle('error', 'unexpected_failure', startedAt, generation);
+		} catch (error) {
+			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error));
 		}
 		return this.current();
 	}
@@ -158,8 +159,8 @@ export class InventoryVaultOneClickSyncController {
 		const startedAt = this.now();
 		try {
 			await this.applyPlan(plan, summary, startedAt, generation);
-		} catch {
-			this.settle('error', 'unexpected_failure', startedAt, generation);
+		} catch (error) {
+			this.settle('error', 'unexpected_failure', startedAt, generation, null, errorClassName(error));
 		}
 		return this.current();
 	}
@@ -228,6 +229,8 @@ export class InventoryVaultOneClickSyncController {
 			this.settle('success', null, startedAt, generation, summary);
 		} else if (result.status === 'conflict' || result.status === 'invalid') {
 			this.enter({ status: 'conflict', summary }, generation);
+		} else if (result.status === 'storage_failure') {
+			this.settle('error', 'storage_failure', startedAt, generation, summary, result.errorName, result.written, plan.steps.length);
 		} else {
 			this.settle('error', 'write_unavailable', startedAt, generation, summary);
 		}
@@ -240,6 +243,9 @@ export class InventoryVaultOneClickSyncController {
 		startedAt: number,
 		generation: number,
 		summary: InventoryVaultSyncPlanSummary | null = null,
+		errorName?: string,
+		written?: number,
+		total?: number,
 	): void {
 		if (this.disposed || generation !== this.generation) return;
 		const disabledBeforePersist = this.ports.disabledReason();
@@ -251,6 +257,9 @@ export class InventoryVaultOneClickSyncController {
 		const outcome: InventoryVaultSyncLastRun = {
 			status, finishedAt: new Date(this.now()).toISOString(),
 			durationMs: Math.max(0, this.now() - startedAt), summary, error: reason,
+			...(errorName === undefined ? {} : { errorName }),
+			...(written === undefined ? {} : { written }),
+			...(total === undefined ? {} : { total }),
 		};
 		this.lastRun = outcome;
 		this.onFinished(outcome);

@@ -1440,13 +1440,13 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** The one-click flow: refresh, preview, and (unless it must pause) apply. */
 	async runInventoryVaultSync(): Promise<void> {
-		const perform = async () => { await this.inventoryVaultSyncRun.run(); };
+		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
-		const perform = async () => { await this.inventoryVaultSyncRun.confirm(); };
+		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
 
@@ -1475,11 +1475,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyInventoryVaultSync(): Promise<void> {
-		const perform = async (): Promise<void> => {
-		const operation = this.inventoryVaultSync.apply();
-		this.renderInventoryAdvisorViews();
-		await operation;
-		this.renderInventoryAdvisorViews();
+		const perform = async () => {
+			const operation = this.inventoryVaultSync.apply();
+			this.renderInventoryAdvisorViews();
+			await operation;
+			this.renderInventoryAdvisorViews();
+			return vaultSyncFailureOutcome(this.inventoryVaultSync.current());
 		};
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
 	}
@@ -1506,9 +1507,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	async applyWalletVaultSync(): Promise<void> {
-		const perform = async (): Promise<void> => {
-		const state = await this.walletVaultSync.apply();
-		this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+		const perform = async () => {
+			const state = await this.walletVaultSync.apply();
+			this.emitNotice(this.walletVaultSyncNoticeText(state), 'wallet_sync');
+			return vaultSyncFailureOutcome(state);
 		};
 		await (this.localDebugActions?.run({ component: 'wallet', action: 'wallet_sync' }, perform) ?? perform());
 	}
@@ -3724,6 +3726,34 @@ function vaultSyncActionOutcome(
 	if (state.status === 'conflict' || state.status === 'error') return 'failed';
 	if (request === 'preview') return state.status === 'preview' ? 'completed' : 'unavailable';
 	return state.status === 'success' ? 'completed' : 'unavailable';
+}
+
+/**
+ * H15.11 (2026-09-10 incident): `applyInventoryVaultSync`/`applyWalletVaultSync` never inspected
+ * the result of their own write, so `run()` always logged `success ok` even after the apply hit a
+ * real storage rejection mid-plan. `code` is fixed at `storage_failure` (this subsystem's only
+ * write-failure code); `reason` inside `details` carries which of the shared machine's error
+ * branches actually fired.
+ */
+function vaultSyncFailureOutcome(
+	state: InventoryVaultSyncViewState | WalletVaultSyncViewState,
+): { phase: 'failure'; code: 'storage_failure'; details: Record<string, unknown> } | undefined {
+	if (state.status !== 'error') return undefined;
+	return {
+		phase: 'failure', code: 'storage_failure',
+		details: { reason: state.reason, errorName: state.cause, written: state.written },
+	};
+}
+
+/** Same idea as `vaultSyncFailureOutcome`, for the one-click runner's own idle+lastRun shape. */
+function inventoryOneClickSyncOutcome(
+	state: InventoryVaultSyncRunState,
+): { phase: 'failure'; code: 'storage_failure'; details: Record<string, unknown> } | undefined {
+	if (state.status !== 'idle' || state.lastRun === null || state.lastRun.status !== 'error') return undefined;
+	return {
+		phase: 'failure', code: 'storage_failure',
+		details: { reason: state.lastRun.error, errorName: state.lastRun.errorName, written: state.lastRun.written },
+	};
 }
 
 function sessionHistoryView(result: SessionHistoryExportResult): {

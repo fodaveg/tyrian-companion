@@ -82,7 +82,9 @@ export function inventorySyncPanel(
 		tone: lastRun.status, statusWord: translator.t(`advisor.sync.status.${lastRun.status}`),
 		message: lastRun.status === 'success'
 			? translator.t('advisor.sync.lastRun.success', inventorySyncSummaryParams(lastRun.summary ?? EMPTY_SYNC_SUMMARY))
-			: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`),
+			: lastRun.error === 'storage_failure' && lastRun.written !== undefined && lastRun.total !== undefined
+				? translator.t('advisor.sync.state.error.storage_failure', { written: lastRun.written, total: lastRun.total })
+				: translator.t(`advisor.sync.state.error.${lastRun.error ?? 'unexpected_failure'}`),
 		percent, progressLabel: progressLabel(percent, null, null, null),
 		summaryLine: lastRun.summary === null ? null : translator.t('advisor.sync.summaryLine', inventorySyncSummaryParams(lastRun.summary)),
 		lastRunNote: translator.t('advisor.sync.lastRunNote'),

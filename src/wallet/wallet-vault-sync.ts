@@ -6,6 +6,7 @@ import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale } from '../catalog/public-catalog-model';
 import { parseCatalogCurrencies } from '../catalog/public-catalog-parsers';
+import { errorClassName } from '../core/local-debug-error-details';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 
 export const WALLET_NOTE_SCHEMA_VERSION = 1 as const;
@@ -65,7 +66,15 @@ export interface WalletVaultSyncPlan {
 
 export type WalletVaultSyncResult =
 	| { status: 'applied' | 'unchanged'; created: number; updated: number; deactivated: number }
-	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string };
+	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string }
+	/**
+	 * A real storage rejection (e.g. `EACCES`) hit mid-apply, distinct from `conflict` (another
+	 * writer's note occupies the path) and from `unavailable` (H15.11, 2026-09-10 incident: the
+	 * apply is not atomic, so `written` carries how many of the plan's writes already landed
+	 * instead of implying nothing did). `errorName` is the rejection's class only, never its
+	 * message or stack.
+	 */
+	| { status: 'storage_failure'; message: string; written: number; errorName: string };
 
 interface WalletNoteFields {
 	tc_schema: typeof WALLET_NOTE_SCHEMA_VERSION;
@@ -215,6 +224,7 @@ export class WalletVaultSyncService {
 		if (!isWalletVaultSyncPlan(plan, this.configDir) || !plan.canApply) {
 			return { status: 'invalid', message: 'The wallet preview is invalid or blocked.' };
 		}
+		let written = 0;
 		try {
 			for (const entry of plan.steps) {
 				const file = this.vault.file(entry.path);
@@ -236,13 +246,22 @@ export class WalletVaultSyncService {
 				if (entry.after === null) return { status: 'invalid', message: 'The wallet plan contains an empty write.' };
 				if (entry.status === 'create') {
 					try { await this.vault.create(entry.path, entry.after); }
-					catch {
+					catch (error) {
 						const raced = this.vault.file(entry.path);
-						if (!raced || normalizeLf(await this.vault.read(raced)) !== entry.after) {
+						// No file landed at all: the create really failed (e.g. `EACCES`), not a race
+						// against another writer, so this is a storage failure, not a conflict.
+						if (!raced) {
+							return {
+								status: 'storage_failure', message: 'A wallet note could not be created.',
+								written, errorName: errorClassName(error),
+							};
+						}
+						if (normalizeLf(await this.vault.read(raced)) !== entry.after) {
 							return { status: 'conflict', message: 'A wallet note occupied a planned path.' };
 						}
 					}
 					created += 1;
+					written += 1;
 					continue;
 				}
 				const file = this.vault.file(entry.path);
@@ -259,10 +278,14 @@ export class WalletVaultSyncService {
 				}
 				if (entry.status === 'deactivate') deactivated += 1;
 				else updated += 1;
+				written += 1;
 			}
 			return { status: 'applied', created, updated, deactivated };
-		} catch {
-			return { status: 'unavailable', message: 'Wallet notes could not be written safely.' };
+		} catch (error) {
+			return {
+				status: 'storage_failure', message: 'Wallet notes could not be written safely.',
+				written, errorName: errorClassName(error),
+			};
 		}
 	}
 

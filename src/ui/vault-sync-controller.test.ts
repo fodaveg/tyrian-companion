@@ -26,6 +26,7 @@ interface VaultSyncBinding<Plan extends VaultSyncPlanShape, Result extends Vault
 		readonly conflict: Result;
 		readonly invalid: Result;
 		readonly unavailable: Result;
+		readonly storageFailure: Result;
 	};
 	readonly create: (ports: VaultSyncControllerPorts<Plan, Result>) => VaultSyncController<Plan, Result>;
 }
@@ -51,6 +52,7 @@ const walletBinding: VaultSyncBinding<WalletVaultSyncPlan, WalletVaultSyncResult
 		conflict: { status: 'conflict', message: 'note changed outside the plugin' },
 		invalid: { status: 'invalid', message: 'plan no longer matches the Vault' },
 		unavailable: { status: 'unavailable', message: 'writer unavailable' },
+		storageFailure: { status: 'storage_failure', message: 'A wallet note could not be created.', written: 1, errorName: 'Error' },
 	},
 	create: (ports) => new WalletVaultSyncController(ports),
 };
@@ -76,6 +78,7 @@ const inventoryBinding: VaultSyncBinding<InventoryVaultSyncPlan, InventoryVaultS
 		conflict: { status: 'conflict', message: 'note changed outside the plugin' },
 		invalid: { status: 'invalid', message: 'plan no longer matches the Vault' },
 		unavailable: { status: 'unavailable', message: 'writer unavailable' },
+		storageFailure: { status: 'storage_failure', message: 'An inventory note could not be created.', written: 1, errorName: 'Error' },
 	},
 	create: (ports) => new InventoryVaultSyncController(ports),
 };
@@ -114,16 +117,16 @@ function describeSharedVaultSyncMachine<Plan extends VaultSyncPlanShape, Result 
 			expect(controller.current()).toEqual({ status: 'idle' });
 		});
 
-		it('maps a failed capture to capture_unavailable', async () => {
+		it('maps a failed capture to capture_unavailable and carries the rejection class as cause', async () => {
 			const controller = binding.create({
 				disabledReason: () => null,
 				preview: () => Promise.reject(new Error('capture down')),
 				apply: async () => binding.results.applied,
 			});
-			await expect(controller.preview()).resolves.toEqual({ status: 'error', reason: 'capture_unavailable' });
+			await expect(controller.preview()).resolves.toEqual({ status: 'error', reason: 'capture_unavailable', cause: 'Error' });
 		});
 
-		it('maps an unavailable writer to write_unavailable and a thrown writer to unexpected_failure', async () => {
+		it('maps an unavailable writer to write_unavailable and a thrown writer to unexpected_failure with its class as cause', async () => {
 			const unavailable = binding.create({
 				disabledReason: () => null,
 				preview: async () => binding.planWith(['create']),
@@ -138,7 +141,22 @@ function describeSharedVaultSyncMachine<Plan extends VaultSyncPlanShape, Result 
 				apply: () => Promise.reject(new Error('writer exploded')),
 			});
 			await thrown.preview();
-			await expect(thrown.apply()).resolves.toEqual({ status: 'error', reason: 'unexpected_failure' });
+			await expect(thrown.apply()).resolves.toEqual({ status: 'error', reason: 'unexpected_failure', cause: 'Error' });
+		});
+
+		// H15.11 (2026-09-10 incident): a real storage rejection mid-apply used to fall into the
+		// same generic `write_unavailable` bucket as "the writer returned unavailable", losing how
+		// many of the plan's writes had already landed.
+		it('maps a storage_failure writer result to its own reason with cause, written and total', async () => {
+			const controller = binding.create({
+				disabledReason: () => null,
+				preview: async () => binding.planWith(['create', 'create']),
+				apply: async () => binding.results.storageFailure,
+			});
+			await controller.preview();
+			await expect(controller.apply()).resolves.toEqual({
+				status: 'error', reason: 'storage_failure', cause: 'Error', written: 1, total: 2,
+			});
 		});
 
 		it.each(['conflict', 'invalid'] as const)('maps a %s writer result to the conflict state', async (outcome) => {

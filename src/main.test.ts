@@ -41,6 +41,7 @@ interface InventoryVaultIntentHarness {
 	inventoryVaultSync: {
 		preview(): Promise<unknown>;
 		apply(): Promise<unknown>;
+		current(): { status: string };
 	};
 	activateInventoryAdvisorView(): Promise<unknown>;
 	renderInventoryAdvisorViews(): void;
@@ -736,7 +737,10 @@ describe('durable inventory Vault commands', () => {
 		const preview = vi.fn(() => pending.promise);
 		const render = vi.fn();
 		const activate = vi.fn(async () => undefined);
-		const plugin = { inventoryVaultSync: { preview, apply: vi.fn() }, activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render };
+		const plugin = {
+			inventoryVaultSync: { preview, apply: vi.fn(), current: () => ({ status: 'idle' }) },
+			activateInventoryAdvisorView: activate, renderInventoryAdvisorViews: render,
+		};
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
 		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
 			previewInventoryVaultSync(this: InventoryVaultIntentHarness, openView?: boolean): Promise<void>;
@@ -757,6 +761,7 @@ describe('durable inventory Vault commands', () => {
 			inventoryVaultSync: {
 				preview: vi.fn(async () => { order.push('preview'); }),
 				apply: vi.fn(async () => { order.push('apply'); }),
+				current: () => ({ status: 'idle' }),
 			},
 			activateInventoryAdvisorView: vi.fn(async () => { order.push('open'); }),
 			renderInventoryAdvisorViews: vi.fn(() => { order.push('render'); }),
@@ -772,6 +777,37 @@ describe('durable inventory Vault commands', () => {
 		expect(plugin.inventoryVaultSync.preview).toHaveBeenCalledOnce();
 		expect(plugin.inventoryVaultSync.apply).toHaveBeenCalledOnce();
 		expect(order).toEqual(['apply', 'render', 'render']);
+	});
+
+	// H15.11 (2026-09-10 incident): `applyInventoryVaultSync` never inspected its own write's
+	// result, so `run()` always logged `success ok` even after a real storage rejection hit
+	// mid-plan (85 notes updated, then EACCES on the next create, surfaced as a false conflict
+	// with zero log lines).
+	it('registers an inventory_sync storage_failure with what already landed when the apply hits a real storage rejection', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const plugin = {
+			inventoryVaultSync: {
+				preview: vi.fn(async () => undefined),
+				apply: vi.fn(async () => undefined),
+				current: () => ({ status: 'error' as const, reason: 'storage_failure' as const, cause: 'EACCES', written: 2, total: 5 }),
+			},
+			renderInventoryAdvisorViews: vi.fn(),
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'inventory-sync-storage-failure' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const invoke = (TyrianCompanionPlugin.prototype as unknown as {
+			applyInventoryVaultSync(this: typeof plugin): Promise<void>;
+		}).applyInventoryVaultSync;
+
+		await invoke.call(plugin);
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'inventory' && input.action === 'inventory_sync' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({
+			code: 'storage_failure', details: { reason: 'storage_failure', errorName: 'EACCES', written: 2 },
+		});
 	});
 });
 
