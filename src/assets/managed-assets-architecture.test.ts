@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ManagedAssetsManager, type ManagedAssetsVault } from './managed-assets';
-import { readModuleSource } from '../test/module-boundary';
+import { moduleBoundaryFacts, moduleBoundaryViolations, type ModuleBoundary } from '../test/module-boundary';
 
 const IMPLEMENTATION = [
 	'src/assets/managed-assets-model.ts',
@@ -12,11 +12,19 @@ const IMPLEMENTATION = [
 	'src/assets/managed-assets-ui.ts',
 ];
 
+const IMPLEMENTATION_BOUNDARIES: ModuleBoundary[] = IMPLEMENTATION.map((path) => ({
+	path,
+	forbiddenImports: ['fs', 'node:fs'],
+	forbiddenNames: ['adapter', 'fetch', 'requestUrl', 'SecretStorage', 'SessionLease', 'ActiveSession'],
+}));
+
 describe('managed-assets architecture boundary', () => {
 	it('uses only the injected Vault port and contains no network, filesystem adapter, or session lock', () => {
+		expect(moduleBoundaryViolations(IMPLEMENTATION_BOUNDARIES)).toEqual([]);
 		for (const path of IMPLEMENTATION) {
-			const source = readModuleSource(path);
-			expect(source, path).not.toMatch(/from ['"](?:node:)?fs|\.adapter\b|\bfetch\s*\(|requestUrl|SecretStorage|SessionLease|ActiveSession|\.obsidian/u);
+			const facts = moduleBoundaryFacts(path);
+			const mentions = [...facts.specifiers, ...facts.names];
+			expect(mentions.some((value) => value.includes('.obsidian')), path).toBe(false);
 		}
 	});
 
