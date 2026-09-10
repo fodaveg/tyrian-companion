@@ -25,6 +25,7 @@ import {
 } from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
 import { SessionCommandController } from '../ui/session-command-controller';
+import { HttpTransportError } from '../core/http';
 
 const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
 const handle: ActiveSessionLeaseHandle = {
@@ -1055,6 +1056,35 @@ describe('ManualSessionStartService', () => {
 				selfInstanceId: 'instance-second',
 			},
 		}));
+	});
+
+	/**
+	 * H15.24 (2026-09-10 audit): a 403 without the `builds` scope classified as `unexpected`, which
+	 * told the player to "check the connection and try again" instead of naming the real, fixable
+	 * problem (`status.startFailure.missing_capability` already exists and says exactly that).
+	 */
+	it('classifies a 401/403 without the required scope as missing_capability, not unexpected', async () => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => { throw new HttpTransportError('http', 403, null, 'Forbidden'); }) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'missing_capability' } });
+		expect(service.getLastFailure()?.code).toBe('missing_capability');
+	});
+
+	/** Same audit: a timeout or network failure also classified as `unexpected` instead of `snapshot_failed`. */
+	it.each(['timeout', 'network'] as const)('classifies an HTTP %s as snapshot_failed, not unexpected', async (kind) => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => { throw new HttpTransportError(kind, null, null, kind); }) },
+			serviceOptions(),
+		);
+
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
 	});
 
 	it('logs the error class of an unclassified start failure instead of discarding it (H15.1)', async () => {

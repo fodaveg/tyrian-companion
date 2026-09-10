@@ -1323,8 +1323,20 @@ function mapFailure(error: unknown, onUnclassified?: (error: unknown) => void): 
 		if (error.code === 'build_scope_missing') return failure('missing_capability', error.message);
 		return failure('snapshot_failed', error.message);
 	}
-	if (error instanceof HttpTransportError && error.status === 429) {
-		return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
+	if (error instanceof HttpTransportError) {
+		if (error.status === 429) {
+			return failure('rate_limited', 'Guild Wars 2 is rate limiting requests. Try again after the shared cooldown clears.');
+		}
+		// H15.24 (2026-09-10 audit): a 401/403 without the required scope and a network-level
+		// failure both used to fall through to the generic `unexpected`, which sent the player to
+		// "check the connection and try again" instead of the copy that names the actual problem
+		// (`status.startFailure.missing_capability`/`snapshot_failed`, `companion-status-model.ts`).
+		if (error.kind === 'http' && (error.status === 401 || error.status === 403)) {
+			return failure('missing_capability', 'The API key does not have the required permission scope.');
+		}
+		if (error.kind === 'timeout' || error.kind === 'network') {
+			return failure('snapshot_failed', 'The baseline could not be captured. Check the connection and start again.');
+		}
 	}
 	onUnclassified?.(error);
 	return failure('unexpected', 'The farming session could not be started.');
