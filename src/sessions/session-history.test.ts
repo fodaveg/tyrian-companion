@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
+import type { LocalDebugLogger } from '../core/local-debug-logger';
+import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import { SESSION_NOTE_BLOCK_IDS } from './session-note-model';
 import { sha256Text } from './session-note-renderer';
 import {
@@ -47,6 +50,32 @@ describe('durable session history', () => {
 		const after = authority.acquireRuntimeMutation();
 		expect(after).not.toBeNull();
 		after?.release();
+	});
+
+	// H15.15 (2026-09-10 incident): every catch here already had its own closed status to
+	// return, so a real Vault rejection (not just an unparseable note) never reached the local
+	// debug log at all, including during startup recovery's `readSession` lookup.
+	it('registers a vault_read failure when a markdown file cannot be read', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const actions = new LocalDebugActionRunner({ diagnostics, createId: () => 'session-history-read' });
+		const brokenVault: SessionHistoryVault = {
+			markdownFiles: () => [{ path: 'Sessions/broken.md' }],
+			exists: () => true,
+			file: (path) => ({ path }),
+			read: async () => { throw Object.assign(new Error('disk unavailable'), { name: 'EIO' }); },
+			process: async () => undefined,
+			createFolder: async () => undefined,
+			create: async (path) => ({ path }),
+		};
+		const history = new SessionHistoryService(brokenVault, actions);
+
+		await expect(history.readSession('a'.repeat(64))).resolves.toEqual({ status: 'unavailable' });
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'vault' && input.action === 'vault_read' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'storage_failure', state: 'read_session' });
 	});
 
 	it('uses an opaque preview token to scrub only tc metadata and six validated blocks', async () => {

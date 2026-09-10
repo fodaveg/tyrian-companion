@@ -9054,9 +9054,9 @@
 				{
 					"id": "5e8920cb187cca99f66b4a535661449fd24929e7",
 					"kind": "catch_clause",
-					"line": 192,
+					"line": 209,
 					"column": 52,
-					"endLine": 192,
+					"endLine": 209,
 					"endColumn": 85,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9068,12 +9068,12 @@
 					"reason": "Allowlisted catch_clause: The \"scan\" owner explicitly handles \"control_flow_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"control_flow_recovery\" in \"scan\"."
 				},
 				{
-					"id": "92d319abb3500950c1607fb44295b6778e61ce4c",
+					"id": "4f44fce05a01db37cb7e6cbc912c4ae909d0c8e4",
 					"kind": "catch_clause",
-					"line": 206,
+					"line": 223,
 					"column": 5,
-					"endLine": 206,
-					"endColumn": 72,
+					"endLine": 226,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -9084,12 +9084,12 @@
 					"reason": "Allowlisted catch_clause: The \"scan\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"scan\"."
 				},
 				{
-					"id": "02161918e710369ac24f8a8e8d470c24ee24be16",
+					"id": "ee642c2378bb20d99369fb59482dfab40bc02d2b",
 					"kind": "catch_clause",
-					"line": 217,
+					"line": 237,
 					"column": 5,
-					"endLine": 217,
-					"endColumn": 43,
+					"endLine": 237,
+					"endColumn": 105,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -9100,12 +9100,12 @@
 					"reason": "Allowlisted catch_clause: The \"readSession\" owner explicitly handles \"control_flow_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"control_flow_recovery\" in \"readSession\"."
 				},
 				{
-					"id": "9ddb804514a4a08c19184b71cbbc07a1a1efc493",
+					"id": "8880287b45d549af852cfcd4eb25e16ebd33fc35",
 					"kind": "catch_clause",
-					"line": 228,
+					"line": 248,
 					"column": 5,
-					"endLine": 228,
-					"endColumn": 48,
+					"endLine": 251,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -9118,9 +9118,9 @@
 				{
 					"id": "a87850de46cc5bd2bbdc3b792faddb762f710b1e",
 					"kind": "callback_registration",
-					"line": 233,
+					"line": 256,
 					"column": 18,
-					"endLine": 235,
+					"endLine": 258,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9133,12 +9133,12 @@
 					"reason": "Allowlisted callback_registration: The \"export\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"export\"."
 				},
 				{
-					"id": "b1028f1bf04fee52685b385241c9ef54da076db6",
+					"id": "83ba5f30ad4e2a6e8a3b8c304e459b990f8bdd38",
 					"kind": "catch_clause",
-					"line": 252,
+					"line": 275,
 					"column": 5,
-					"endLine": 252,
-					"endColumn": 104,
+					"endLine": 278,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -9151,9 +9151,9 @@
 				{
 					"id": "ae813b045a9592e18458609c0d999f321a6f4c0a",
 					"kind": "callback_registration",
-					"line": 265,
+					"line": 291,
 					"column": 18,
-					"endLine": 267,
+					"endLine": 293,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -9166,11 +9166,11 @@
 					"reason": "Allowlisted callback_registration: The \"scrub\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"scrub\"."
 				},
 				{
-					"id": "b167deb4ecd04958536ade6050a5761866e54f88",
+					"id": "2daa9840e3c4d0c0bae9c05617c650cc87d99470",
 					"kind": "catch_clause",
-					"line": 286,
+					"line": 312,
 					"column": 5,
-					"endLine": 290,
+					"endLine": 318,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9182,11 +9182,11 @@
 					"reason": "Allowlisted catch_clause: The \"scrubInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"scrubInternal\"."
 				},
 				{
-					"id": "b8ee37234dcb35be86123fbb34d40f0fc29d9290",
+					"id": "f8ae64acec0af346df65af28acf6f1addf0a7828",
 					"kind": "catch_clause",
-					"line": 305,
+					"line": 333,
 					"column": 7,
-					"endLine": 309,
+					"endLine": 339,
 					"endColumn": 6,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9200,9 +9200,9 @@
 				{
 					"id": "75159cb51ba90c2d79128c631d26178d9a58aaf6",
 					"kind": "catch_clause",
-					"line": 323,
+					"line": 353,
 					"column": 51,
-					"endLine": 323,
+					"endLine": 353,
 					"endColumn": 84,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9214,12 +9214,12 @@
 					"reason": "Allowlisted catch_clause: The \"buildScrubPlan\" owner explicitly handles \"control_flow_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"control_flow_recovery\" in \"buildScrubPlan\"."
 				},
 				{
-					"id": "c5304b3d0bf546ca7736a23ca280af57b90e507d",
+					"id": "b2cb49480de55ca45fe5636fec610ba471926d6e",
 					"kind": "catch_clause",
-					"line": 357,
+					"line": 387,
 					"column": 5,
-					"endLine": 357,
-					"endColumn": 104,
+					"endLine": 390,
+					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_recovery",
@@ -9232,9 +9232,9 @@
 				{
 					"id": "04b5b9d69ce2d08ec2765d90ffeaa6115e7d1b85",
 					"kind": "catch_clause",
-					"line": 374,
+					"line": 407,
 					"column": 3,
-					"endLine": 381,
+					"endLine": 414,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9248,9 +9248,9 @@
 				{
 					"id": "5dd4765ca86365c74ab6651326387976b01aee80",
 					"kind": "catch_clause",
-					"line": 390,
+					"line": 423,
 					"column": 5,
-					"endLine": 390,
+					"endLine": 423,
 					"endColumn": 81,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9264,9 +9264,9 @@
 				{
 					"id": "6dd084086a7242a18daef4fff8b04e1eda7d467f",
 					"kind": "catch_clause",
-					"line": 520,
+					"line": 553,
 					"column": 4,
-					"endLine": 520,
+					"endLine": 553,
 					"endColumn": 26,
 					"classification": "allowlisted",
 					"evidence": {

@@ -118,7 +118,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		},
 	);
 	const sessionNotes = new SessionNoteWriter(input.sessionNoteVault);
-	const sessionHistory = new SessionHistoryService(input.sessionHistoryVault);
+	const sessionHistory = new SessionHistoryService(input.sessionHistoryVault, input.diagnostics ?? undefined);
 	const pendingProposals = new PendingProposalService(
 		new IndexedDbPendingProposalStore(input.factory, undefined, input.proposalQueuePersistence),
 		input.instanceId,
