@@ -3,8 +3,8 @@
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
 		"catch_clause": 429,
-		"promise_catch": 34,
-		"void_expression": 79,
+		"promise_catch": 35,
+		"void_expression": 80,
 		"callback_registration": 157
 	},
 	"files": {
@@ -7880,27 +7880,25 @@
 					"reason": "Allowlisted catch_clause: The \"startInternal\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"startInternal\"."
 				},
 				{
-					"id": "d68cf5d0883c63c9fa3733a72e05142d5eb7c882",
+					"id": "c3ed97e76d43be26bfb009db898d98fd333b3b94",
 					"kind": "catch_clause",
 					"line": 807,
 					"column": 6,
-					"endLine": 813,
+					"endLine": 819,
 					"endColumn": 5,
-					"classification": "allowlisted",
+					"classification": "observed",
 					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "local_recovery",
-						"scope": "stopInternal",
-						"justification": "The \"stopInternal\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics."
+						"type": "direct_observability_call",
+						"callee": "this.diagnostics.event"
 					},
-					"reason": "Allowlisted catch_clause: The \"stopInternal\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"stopInternal\"."
+					"reason": "Direct observability call \"this.diagnostics.event\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "1ecfc5f2c0a8de798a59ad30337a338aeca5965d",
 					"kind": "catch_clause",
-					"line": 841,
+					"line": 848,
 					"column": 5,
-					"endLine": 859,
+					"endLine": 866,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7914,9 +7912,9 @@
 				{
 					"id": "d9b07796f4adb8f5cde284ff618cd10964f333a7",
 					"kind": "catch_clause",
-					"line": 856,
+					"line": 863,
 					"column": 7,
-					"endLine": 856,
+					"endLine": 863,
 					"endColumn": 91,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7930,9 +7928,9 @@
 				{
 					"id": "2f7a91f51e101efba27e637e8a30d2843a9e5842",
 					"kind": "catch_clause",
-					"line": 957,
+					"line": 964,
 					"column": 5,
-					"endLine": 959,
+					"endLine": 966,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7946,9 +7944,9 @@
 				{
 					"id": "3a3ac2b6bd2ce08c85ee241602d72f093aa592a0",
 					"kind": "void_expression",
-					"line": 1031,
+					"line": 1038,
 					"column": 56,
-					"endLine": 1031,
+					"endLine": 1038,
 					"endColumn": 80,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7962,9 +7960,9 @@
 				{
 					"id": "ae210ccd786489f094001462c575dc9599be828c",
 					"kind": "callback_registration",
-					"line": 1036,
+					"line": 1043,
 					"column": 18,
-					"endLine": 1038,
+					"endLine": 1045,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -7977,11 +7975,11 @@
 					"reason": "Allowlisted callback_registration: The \"runHeartbeat\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"runHeartbeat\"."
 				},
 				{
-					"id": "ceb89e7ab2f5941f16cfc7d32b74900402e770bb",
+					"id": "be241d8353516e762b8c7f7ef86841165c12ef24",
 					"kind": "catch_clause",
-					"line": 1058,
+					"line": 1069,
 					"column": 5,
-					"endLine": 1061,
+					"endLine": 1073,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -7995,9 +7993,9 @@
 				{
 					"id": "e813f9a75d1ea7c82817777c76c228f4b6fedca8",
 					"kind": "void_expression",
-					"line": 1084,
+					"line": 1096,
 					"column": 4,
-					"endLine": 1084,
+					"endLine": 1096,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8011,9 +8009,9 @@
 				{
 					"id": "be8ef9e94e36dd77b03b5ebe973e77f58c8f648a",
 					"kind": "promise_catch",
-					"line": 1084,
+					"line": 1096,
 					"column": 9,
-					"endLine": 1084,
+					"endLine": 1096,
 					"endColumn": 58,
 					"registration": "catch",
 					"classification": "allowlisted",
@@ -8028,9 +8026,9 @@
 				{
 					"id": "70a537878b3202797185e681ca881c3772dff1d0",
 					"kind": "catch_clause",
-					"line": 1085,
+					"line": 1097,
 					"column": 5,
-					"endLine": 1085,
+					"endLine": 1097,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8044,9 +8042,9 @@
 				{
 					"id": "823819fb29f080f24b88993f2c9faabc0b02df60",
 					"kind": "catch_clause",
-					"line": 1144,
+					"line": 1156,
 					"column": 5,
-					"endLine": 1144,
+					"endLine": 1156,
 					"endColumn": 71,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8060,9 +8058,9 @@
 				{
 					"id": "4875e885d3e9147fb0429f1113fbf326799594cc",
 					"kind": "catch_clause",
-					"line": 1153,
+					"line": 1165,
 					"column": 5,
-					"endLine": 1153,
+					"endLine": 1165,
 					"endColumn": 58,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8076,9 +8074,9 @@
 				{
 					"id": "a35bb57cf78b7d9cbc1bc79554ca9de0848b62ba",
 					"kind": "catch_clause",
-					"line": 1189,
+					"line": 1201,
 					"column": 50,
-					"endLine": 1191,
+					"endLine": 1203,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8092,9 +8090,9 @@
 				{
 					"id": "88bcc48dd42e18c052403d5cc21911384100e5aa",
 					"kind": "catch_clause",
-					"line": 1202,
+					"line": 1214,
 					"column": 61,
-					"endLine": 1202,
+					"endLine": 1214,
 					"endColumn": 119,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8108,9 +8106,9 @@
 				{
 					"id": "44717ecdead23eb3317c04301854643e6ecd0ae6",
 					"kind": "catch_clause",
-					"line": 1250,
+					"line": 1285,
 					"column": 62,
-					"endLine": 1250,
+					"endLine": 1285,
 					"endColumn": 120,
 					"classification": "allowlisted",
 					"evidence": {
@@ -8124,9 +8122,9 @@
 				{
 					"id": "c254da1e12c35c1b99a40fd8d17f34a890bea42d",
 					"kind": "catch_clause",
-					"line": 1254,
+					"line": 1289,
 					"column": 58,
-					"endLine": 1254,
+					"endLine": 1289,
 					"endColumn": 116,
 					"classification": "allowlisted",
 					"evidence": {
@@ -9845,6 +9843,39 @@
 						"justification": "The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `captureSessionFinalNow`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`."
 					},
 					"reason": "Allowlisted promise_catch: The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.2): `captureSessionFinalNow`'s rejection is already recorded, structured, by the diagnostics span wrapping it in `main.ts`. Verified recovery: \"intentional_noop\" in \"onClick\"."
+				},
+				{
+					"id": "8220d41b3689dfdf0cd5219a1d6e9e2eff33de86",
+					"kind": "void_expression",
+					"line": 639,
+					"column": 21,
+					"endLine": 639,
+					"endColumn": 81,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.stopManualSession().catch",
+						"scope": "onClick",
+						"justification": "The \"onClick\" owner deliberately detaches \"this.actions.stopManualSession().catch\": the session-error retry button (H15.8, 2026-09-10 audit) detaches stopManualSession exactly like the active-state Terminar button; the `.catch()` only keeps this detached call from ever surfacing as an unhandled rejection."
+					},
+					"reason": "Allowlisted void_expression: The \"onClick\" owner deliberately detaches \"this.actions.stopManualSession().catch\": the session-error retry button (H15.8, 2026-09-10 audit) detaches stopManualSession exactly like the active-state Terminar button; the `.catch()` only keeps this detached call from ever surfacing as an unhandled rejection. Verified target: \"this.actions.stopManualSession().catch\" in \"onClick\"."
+				},
+				{
+					"id": "043a12ea0cddd8eb5b82ae2cbf1e573cddf4c62f",
+					"kind": "promise_catch",
+					"line": 639,
+					"column": 26,
+					"endLine": 639,
+					"endColumn": 81,
+					"registration": "catch",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "intentional_noop",
+						"scope": "onClick",
+						"justification": "The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.8): stopManualSession's rejection is already recorded, structured, by the diagnostics span wrapping it in main.ts, exactly as the active-state Terminar button's own catch already does."
+					},
+					"reason": "Allowlisted promise_catch: The \"onClick\" owner explicitly handles \"intentional_noop\" as local recovery (H15.8): stopManualSession's rejection is already recorded, structured, by the diagnostics span wrapping it in main.ts, exactly as the active-state Terminar button's own catch already does. Verified recovery: \"intentional_noop\" in \"onClick\"."
 				},
 				{
 					"id": "ab5f51855b26fc0553853c4fc61cde5c2c43acea",

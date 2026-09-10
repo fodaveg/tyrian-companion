@@ -24,6 +24,7 @@ import {
 	type SessionRuntimeStore,
 } from './session-runtime-store';
 import { SessionStartCaptureError, type SessionStartCaptureResult } from './session-start-capture';
+import { SessionCommandController } from '../ui/session-command-controller';
 
 const acquiredAt = Date.parse('2026-08-13T07:59:59.000Z');
 const handle: ActiveSessionLeaseHandle = {
@@ -443,6 +444,7 @@ describe('ManualSessionStartService', () => {
 
 	it('does not block session stop when close-time prices are unavailable', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const service = new ManualSessionStartService(
 			coordinator(),
 			{
@@ -452,6 +454,10 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({
 				runtimeStore,
 				priceCapture: { capture: vi.fn(async () => { throw new Error('offline'); }) },
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
 			}),
 		);
 		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
@@ -465,6 +471,16 @@ describe('ManualSessionStartService', () => {
 			status: 'loaded',
 			record: { priceSnapshot: { status: 'unavailable' } },
 		});
+		// H15.8 (2026-09-10 audit): the stop above still succeeds with a degraded valuation, but
+		// until now the degradation itself left 0 log lines and no trace of why.
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_finish',
+			level: 'error',
+			phase: 'failure',
+			state: 'price_capture',
+			details: { reason: 'Error' },
+		}));
 	});
 
 	it('coalesces double stop clicks into one final capture', async () => {
@@ -591,6 +607,61 @@ describe('ManualSessionStartService', () => {
 			failedState: { status: 'stopping', baseline: { snapshotId: 'snapshot-before' } },
 		});
 		expect(service.getProvisionalDelta()).toBeNull();
+	});
+
+	/**
+	 * H15.8 (2026-09-10 audit): a clock rolled back mid-stop left `session_finish` with 0 log lines
+	 * and `sessionCommands.available()` empty — the card froze on "Terminando sesión" with no button
+	 * that still worked, and the only way out was reloading Obsidian. `owned.status === 'error'`
+	 * (any coordinator code) used to collapse into a bare `coordination_unavailable` throw with no
+	 * trace of which code the coordinator actually returned.
+	 */
+	it('registers session_finish failure with the coordinator\'s own clock_anomaly code, and still offers a retry', async () => {
+		const assertOwned = vi.fn()
+			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'owned' as const })
+			.mockResolvedValueOnce({ status: 'error' as const, code: 'clock_anomaly' as const });
+		const leases = coordinator({ assertOwned });
+		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
+		const service = new ManualSessionStartService(
+			leases,
+			{
+				capture: vi.fn(async () => structuredClone(captured)),
+				captureFinal: vi.fn(async () => afterSnapshot()),
+			},
+			serviceOptions({
+				diagnostics: {
+					createContext: (context) => ({ ...context, actionId: 'a', correlationId: 'a' }),
+					event: diagnosticsEvent,
+				} satisfies LocalDebugActionPort,
+			}),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+
+		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
+			status: 'failed',
+			failure: { code: 'coordination_unavailable' },
+		});
+
+		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
+			component: 'session',
+			action: 'session_finish',
+			level: 'error',
+			phase: 'failure',
+			details: { code: 'clock_anomaly' },
+		}));
+
+		const controller = new SessionCommandController({
+			getContext: () => ({
+				state: service.getState(),
+				recovery: service.getRecoveryState(),
+				connection: 'connected',
+				stopFailure: service.getLastStopFailure(),
+			}),
+			prepare: async () => async () => undefined,
+			notify: vi.fn(),
+		});
+		expect(controller.available().length).toBeGreaterThan(0);
 	});
 
 	it('does not expose provisional as successful when durable final evidence cannot commit', async () => {

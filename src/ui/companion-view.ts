@@ -497,7 +497,9 @@ export class TyrianCompanionView extends ItemView {
 		};
 		const callout = this.buildIncidentCallout(projection, connection);
 		const model = this.buildSessionCardModel(connection, observed, projection, now, copy, locale, drawers, callout);
-		const mount = renderSessionCard(container, model);
+		const errorRecoveryActions = this.sessionErrorRecoveryActions(session);
+		const cardModel = errorRecoveryActions.length > 0 ? { ...model, actions: errorRecoveryActions } : model;
+		const mount = renderSessionCard(container, cardModel);
 		this.headerElapsed = mount.clock;
 		this.liveFigures = mount.figureNodes;
 		this.calloutSlot = mount.calloutSlot;
@@ -616,6 +618,26 @@ export class TyrianCompanionView extends ItemView {
 	/** Narrows a `SessionState` the same way every branch above already reads it. Type helper only. */
 	private observedSession(session: SessionState) {
 		return session.status === 'error' ? session.failedState : session;
+	}
+
+	/**
+	 * Session `error` (H15.8, 2026-09-10 audit): `observedSession` unwraps a live authority failure
+	 * (heartbeat `lease_lost`, stop `clock_anomaly`) down to the failed state's OWN phase, so
+	 * `buildSessionCardModel` renders "Sesión activa"/"Terminando sesión" with whatever action that
+	 * phase would normally offer — the countdown is long gone and `captureSessionFinalNow` keeps
+	 * hitting the same dead lease, so in practice that meant no working action at all (the audit's
+	 * "solo se sale recargando Obsidian"). `session-command-model.ts` now grants a retry through
+	 * `sessionCommands` once a stop failure is on record; this puts that same retry on the card
+	 * itself, replacing the header actions the failed phase would otherwise have shown, instead of
+	 * leaving them pointing at a lease the coordinator has already given up on.
+	 */
+	private sessionErrorRecoveryActions(session: SessionState): SessionCardAction[] {
+		if (session.status !== 'error' || this.actions.getSessionStopFailure() === null) return [];
+		return [{
+			text: createTranslator(this.actions.getLocale()).t('commands.retryStop'),
+			cta: true,
+			onClick: () => { void this.actions.stopManualSession().catch(() => undefined); },
+		}];
 	}
 
 	/**

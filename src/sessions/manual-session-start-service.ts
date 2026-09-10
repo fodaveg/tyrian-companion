@@ -804,7 +804,13 @@ export class ManualSessionStartService {
 						delta,
 						Math.max(this.safeNow(), Date.parse(finalSnapshot.completedAt)),
 					);
-			} catch {
+			} catch (error) {
+				// H15.8 (2026-09-10 audit): the stop still succeeds with a degraded valuation, but
+				// until now nothing recorded that the degradation happened at all, or why.
+				this.diagnostics?.event({
+					component: 'session', action: 'session_finish', level: 'error', phase: 'failure',
+					code: 'unavailable', state: 'price_capture', details: unmappedErrorLogDetails(error),
+				});
 				priceSnapshot = unavailableSessionPriceSnapshot(
 					stopping.sessionId,
 					delta,
@@ -814,6 +820,7 @@ export class ManualSessionStartService {
 			if (this.authorityFailure) throw new ManualSessionStartError(this.authorityFailure);
 			const owned = await this.safeAssert(this.requireHandle());
 			if (owned.status === 'error') {
+				this.logAuthorityFailure('session_finish', owned.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable');
 				throw new ManualSessionStartError(
 					failure('coordination_unavailable', 'Session coordination became unavailable.'),
 				);
@@ -1051,11 +1058,16 @@ export class ManualSessionStartService {
 				}
 				return;
 			}
-			const mapped = result.status === 'lost'
+			const reason = result.status === 'lost'
+				? 'lease_lost'
+				: result.code === 'clock_anomaly' ? 'clock_anomaly' : 'coordination_unavailable';
+			this.logAuthorityFailure('session_heartbeat', reason);
+			const mapped = reason === 'lease_lost'
 				? failure('lease_lost', 'The session lease was lost.')
 				: failure('coordination_unavailable', 'Session coordination became unavailable.');
 			this.failFromAuthority(mapped);
 		} catch {
+			this.logAuthorityFailure('session_heartbeat', 'coordination_unavailable');
 			const mapped = failure('coordination_unavailable', 'Session coordination became unavailable.');
 			this.failFromAuthority(mapped);
 		}
@@ -1243,6 +1255,29 @@ export class ManualSessionStartService {
 			phase: 'failure',
 			code: 'unknown_failure',
 			details: unmappedErrorLogDetails(error),
+		});
+	}
+
+	/**
+	 * The only local trace of WHY the heartbeat or a live stop declared the session's authority
+	 * lost (H15.8, 2026-09-10 audit): both `heartbeat()`'s renew failure and `stopInternal`'s owned
+	 * check collapse every coordinator code into the same fixed `coordination_unavailable`/
+	 * `lease_lost` copy for the player, so a clock rolled back and a genuinely contested lease used
+	 * to look identical here too. `reason` carries the coordinator's own code (`lease_lost`,
+	 * `clock_anomaly`, or the generic `coordination_unavailable`); the top-level `code` only has to
+	 * pick the closest fit from the closed local-debug vocabulary.
+	 */
+	private logAuthorityFailure(
+		action: 'session_heartbeat' | 'session_finish',
+		reason: 'lease_lost' | 'clock_anomaly' | 'coordination_unavailable',
+	): void {
+		this.diagnostics?.event({
+			component: 'session',
+			action,
+			level: 'error',
+			phase: 'failure',
+			code: reason === 'lease_lost' ? 'precondition_failed' : reason === 'clock_anomaly' ? 'internal_failure' : 'unavailable',
+			details: { code: reason },
 		});
 	}
 

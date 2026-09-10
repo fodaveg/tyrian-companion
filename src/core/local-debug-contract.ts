@@ -19,7 +19,7 @@ export const LOCAL_DEBUG_ACTIONS = [
 	'plugin_load', 'plugin_unload',
 	'settings_load', 'settings_save',
 	'connection_check', 'http_request',
-	'session_start', 'session_finish', 'session_review', 'session_recover', 'session_clear', 'session_discard',
+	'session_start', 'session_finish', 'session_heartbeat', 'session_review', 'session_recover', 'session_clear', 'session_discard',
 	'session_lease', 'session_projection',
 	'detection_arm', 'detection_disarm', 'detection_poll', 'detection_proposal',
 	'inventory_refresh', 'inventory_preview', 'inventory_sync',
