@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('electron', () => ({ shell: { openPath: vi.fn(async () => '') } }));
 
 import TyrianCompanionPlugin from './main';
+import { LocalDebugActionRunner } from './core/local-debug-action-runner';
+import type { LocalDebugRecordInput } from './core/local-debug-contract';
+import type { LocalDebugLogger } from './core/local-debug-logger';
 import { ObsidianRequestTransport } from './core/obsidian-http';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
 import { storageDeltaSnapshot } from './account/__fixtures__/storage-delta';
@@ -149,6 +152,29 @@ describe('H13.2 sell signal cabling', () => {
 
 		expect(send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed')).toHaveLength(0);
 		expect(plugin.sellSignal?.getState().seedStatus).toBe('unseeded');
+	});
+
+	// H15.18 (2026-09-10 incident): `ensureSeed`/`evaluate` throwing an unexpected error (not the
+	// modeled `unreachable` outcome above) died silently inside the price-history compaction that
+	// calls this, with nothing in the local debug log to say the sell signal had stopped running.
+	it('registers a price_history_compact failure when ensureSeed throws unexpectedly', async () => {
+		const record = vi.fn((_input: LocalDebugRecordInput) => true);
+		const diagnostics = { record } as unknown as LocalDebugLogger;
+		const harness = {
+			sellSignal: { ensureSeed: vi.fn(async () => { throw new Error('indexeddb unavailable'); }), evaluate: vi.fn() },
+			localDebugActions: new LocalDebugActionRunner({ diagnostics, createId: () => 'sell-signal-compact' }),
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const evaluate = (TyrianCompanionPlugin.prototype as unknown as {
+			evaluateSellSignal(this: typeof harness, port: { nowMs: number; readDaily: () => Promise<PriceHistoryDailyV1[]> }): Promise<void>;
+		}).evaluateSellSignal;
+
+		await expect(evaluate.call(harness, { nowMs: SELL_DAY_MS, readDaily: async () => [] })).resolves.toBeUndefined();
+
+		const failure = record.mock.calls.map(([input]) => input).find(
+			(input) => input.component === 'price_history' && input.action === 'price_history_compact' && input.phase === 'failure',
+		);
+		expect(failure).toMatchObject({ code: 'unknown_failure', state: 'sell_signal' });
 	});
 });
 

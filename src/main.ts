@@ -2135,7 +2135,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await runtime.ensureSeed();
 			const fromDayUtc = new Date(Math.max(0, port.nowMs - SELL_SIGNAL_SERIES_SPAN_MS)).toISOString().slice(0, 10);
 			runtime.evaluate(await port.readDaily(HALLOWEEN_PRICE_ALERT_ITEM_ID, fromDayUtc), port.nowMs);
-		} catch { /* The sell signal never fails a price-history compaction. */ }
+		} catch (error) {
+			// H15.18 (2026-09-10 incident): the sell signal still never fails the compaction that
+			// called this, but before this the local debug log never learned it had died either.
+			this.localDebugActions?.event({
+				component: 'price_history', action: 'price_history_compact', state: 'sell_signal',
+				level: 'error', phase: 'failure', code: 'unknown_failure',
+				details: unmappedErrorLogDetails(error),
+			});
+		}
 	}
 
 	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
