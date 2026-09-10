@@ -939,7 +939,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 			detectionQualityPersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
 			proposalQueuePersistence: this.persistenceDiagnostics('detection', 'detection_proposal'),
 			sessionRecoverPersistence: this.persistenceDiagnostics('session', 'session_recover'),
-			pilotMetricsPersistence: this.persistenceDiagnostics('session', 'session_projection'),
 		});
 		// Publication order is the contract, not construction order: the session state
 		// callback above reconciles against `pendingProposals` only once it exists, so
