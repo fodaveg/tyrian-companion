@@ -145,6 +145,82 @@ describe('Halloween backfill wiring (H14.11)', () => {
 	});
 });
 
+/**
+ * H15.12: `detectionActionOutcome` maps an armed detector that stopped in error to a plain
+ * `'failed'` string, and `LocalDebugActionRunner.run()` only recognizes the closed
+ * `{phase|code|state|details}` shape as a failure — a bare string always writes `info success ok`.
+ * `armAssistedDetection` now registers the failure itself instead of relying on `run()`'s outcome
+ * projection.
+ */
+describe('armAssistedDetection observability (H15.12)', () => {
+	it('registers a detection_arm failure with the returned code when arming stops in error', async () => {
+		const events: unknown[] = [];
+		const localDebugActions = {
+			run: async (_context: unknown, action: (context?: unknown) => Promise<unknown>) => action(),
+			event: (context: unknown) => { events.push(context); },
+		};
+		const harness = {
+			runtimeReady: true,
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
+			connection: { getState: () => ({ status: 'connected' as const }) },
+			sessions: {
+				getState: () => ({ version: SESSION_STATE_VERSION, status: 'idle' as const }),
+				getRecoveryState: () => ({ status: 'none' as const }),
+			},
+			renderViews: vi.fn(),
+			assistedDetection: {
+				arm: async () => ({
+					status: 'error' as const, code: 'rate_limited' as const,
+					message: 'Assisted detection is waiting for a shared API rate limit to clear.',
+					scheduler: {}, lastSnapshotAt: null,
+				}),
+			},
+			settings: { ...DEFAULT_SETTINGS },
+			localDebugActions,
+		};
+		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
+			armAssistedDetection(this: typeof harness): Promise<string>;
+		}).armAssistedDetection;
+
+		const outcome = await armAssistedDetection.call(harness);
+
+		expect(outcome).toBe('failed');
+		expect(events).toContainEqual(expect.objectContaining({
+			component: 'detection', action: 'detection_arm', level: 'error', phase: 'failure', code: 'rate_limited',
+		}));
+	});
+
+	it('registers nothing when arming succeeds', async () => {
+		const events: unknown[] = [];
+		const localDebugActions = {
+			run: async (_context: unknown, action: (context?: unknown) => Promise<unknown>) => action(),
+			event: (context: unknown) => { events.push(context); },
+		};
+		const harness = {
+			runtimeReady: true,
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
+			connection: { getState: () => ({ status: 'connected' as const }) },
+			sessions: {
+				getState: () => ({ version: SESSION_STATE_VERSION, status: 'idle' as const }),
+				getRecoveryState: () => ({ status: 'none' as const }),
+			},
+			renderViews: vi.fn(),
+			assistedDetection: {
+				arm: async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }),
+			},
+			settings: { ...DEFAULT_SETTINGS },
+			localDebugActions,
+		};
+		const armAssistedDetection = (TyrianCompanionPlugin.prototype as unknown as {
+			armAssistedDetection(this: typeof harness): Promise<string>;
+		}).armAssistedDetection;
+
+		await armAssistedDetection.call(harness);
+
+		expect(events).toEqual([]);
+	});
+});
+
 describe('atomic settings persistence', () => {
 	it('flushes the settings terminal before disabling capture and emits one event when enabling it again', async () => {
 		const events: string[] = [];

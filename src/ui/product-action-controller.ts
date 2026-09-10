@@ -256,7 +256,13 @@ export class ProductActionController {
 			? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.pending') };
 		if (id === 'arm-assisted-detection') {
 			if (!this.ports.hasApiKey()) return { available: false, reason: t.t('productAction.reason.key') };
-			if (this.ports.getDetectionState().status !== 'disarmed') return { available: false, reason: t.t('productAction.reason.armed') };
+			// H15.12: `status: 'error'` means the detector stopped and needs rearming, not that it
+			// is still "armed" and refusing a second arm — that reading left the Detalle's
+			// "Activar de nuevo" button and this same command permanently unavailable.
+			const detectionStatus = this.ports.getDetectionState().status;
+			if (detectionStatus !== 'disarmed' && detectionStatus !== 'error') {
+				return { available: false, reason: t.t('productAction.reason.armed') };
+			}
 			return this.ports.canArmDetection() ? { available: true, reason: null } : { available: false, reason: t.t('productAction.reason.state') };
 		}
 		if (id === 'disarm-assisted-detection') return this.ports.getDetectionState().status === 'disarmed'

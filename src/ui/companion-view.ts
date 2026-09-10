@@ -1109,6 +1109,10 @@ export class TyrianCompanionView extends ItemView {
 		} else if (state.status === 'error') {
 			stateText.setText(`${this.t('status.error')} · ${this.t('status.detectionStopped')}`);
 			stateText.addClass('tyrian-companion-view__session-error');
+			// H15.12: without this, a detector stopped by an error had no way back short of a
+			// manual disarm+arm round trip or waiting for the next automatic poll.
+			const retry = dd.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
+			retry.addEventListener('click', () => { void this.actions.armAssistedDetection(); });
 		} else if (state.status === 'start_proposed') {
 			try { this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }

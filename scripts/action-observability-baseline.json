@@ -4,8 +4,8 @@
 	"totals": {
 		"catch_clause": 429,
 		"promise_catch": 28,
-		"void_expression": 79,
-		"callback_registration": 157
+		"void_expression": 80,
+		"callback_registration": 158
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -10102,6 +10102,39 @@
 						"justification": "The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics."
 					},
 					"reason": "Allowlisted catch_clause: The \"renderAssistedDetection\" owner explicitly handles \"intentional_noop\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"intentional_noop\" in \"renderAssistedDetection\"."
+				},
+				{
+					"id": "e047efebd801ada065f4bd153a27a5c53dde3453",
+					"kind": "callback_registration",
+					"line": 1115,
+					"column": 4,
+					"endLine": 1115,
+					"endColumn": 88,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderAssistedDetection\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderAssistedDetection\"."
+				},
+				{
+					"id": "0ef7e565b9560cbc45a429dbe9044dd2d6df46e6",
+					"kind": "void_expression",
+					"line": 1115,
+					"column": 44,
+					"endLine": 1115,
+					"endColumn": 84,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "this.actions.armAssistedDetection",
+						"scope": "renderAssistedDetection",
+						"justification": "The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.armAssistedDetection\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderAssistedDetection\" owner deliberately detaches \"this.actions.armAssistedDetection\"; that named operation owns rejection and terminal diagnostics. Verified target: \"this.actions.armAssistedDetection\" in \"renderAssistedDetection\"."
 				},
 				{
 					"id": "599aca7ddfb9d8e52b12da27fac6896a01f136f0",
