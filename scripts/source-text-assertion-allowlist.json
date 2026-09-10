@@ -4,7 +4,7 @@
 		"src/advisor/inventory-advisor-architecture.test.ts",
 		"src/advisor/inventory-advisor-builtin-bundle-architecture.test.ts",
 		"src/advisor/inventory-advisor-builtin-bundle.test.ts",
-		"src/advisor/inventory-advisor-classifier-architecture.test.ts",
+		"src/advisor/inventory-advisor-classifier-boundary.test.ts",
 		"src/advisor/inventory-advisor-discard-architecture.test.ts",
 		"src/advisor/inventory-advisor-presentation-architecture.test.ts",
 		"src/advisor/inventory-container-economy-architecture.test.ts",
