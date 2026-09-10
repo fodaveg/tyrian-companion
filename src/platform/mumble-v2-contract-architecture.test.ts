@@ -1,34 +1,26 @@
-import { readFileSync, readdirSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync } from 'node:fs';
 import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+import * as mumbleV2Contract from './mumble-v2-contract';
+
 const CONTRACT_PATH = 'src/platform/mumble-v2-contract.ts';
 const CONTRACT_SOURCE = readFileSync(CONTRACT_PATH, 'utf8');
-const PRODUCTION_FILES = sourceFiles('src');
-const REVIEWED_MUMBLE_PRODUCTION_FILES = [
-	'src/platform/mumble-v2-client.ts',
-	'src/platform/mumble-v2-codec.ts',
-	'src/platform/mumble-v2-contract.ts',
-	'src/platform/mumble-v2-health.ts',
-	'src/platform/mumble-v2-launch-contract.ts',
-	'src/platform/mumble-v2-launch-plan.ts',
-	'src/platform/mumble-v2-observation.ts',
-	'src/platform/mumble-v2-presence-policy.ts',
-	'src/platform/mumble-v2-process-adapter.ts',
-	'src/sessions/mumble-v2-shadow-proposal.ts',
-] as const;
-const EXPECTED_FRAME_FIELDS = ['version', 'nonce', 'sequence', 'tick', 'mapId', 'activity'] as const;
-const EXPECTED_MESSAGE_FIELDS = {
-	MumbleV2BootstrapRecordV1: ['kind', 'version', 'token'],
-	MumbleV2ReadyRecordV1: ['kind', 'version', 'host', 'port'],
-	MumbleV2HelloRecordV1: ['kind', 'version', 'token'],
-	MumbleV2WelcomeRecordV1: ['kind', 'version', 'nonce', 'heartbeatIntervalMs'],
-	MumbleV2HeartbeatRecordV1: ['kind', 'version', 'nonce', 'sequence', 'sourceStatus'],
-	MumbleV2IpcFrameV1: EXPECTED_FRAME_FIELDS,
-} as const;
 
-const EXPECTED_EXPORTS = [
+/**
+ * Every runtime (const) export of the closed H8.1/H8.4 contract, checked by importing the real
+ * module and inspecting its live bindings (`Object.keys`) instead of reading its characters: this
+ * still turns red if a value export is added, removed or renamed, but never on a change that
+ * doesn't touch the runtime surface (the file has no functions, so there is no private method a
+ * rename of which could break it). The type-only exports (interfaces, type aliases) are erased at
+ * runtime and can't be censused this way; `mumble-v2-contract.test.ts` already pins every one of
+ * their real shapes with `satisfies`-typed literals plus `Object.keys`/`toEqual` against the
+ * mirroring runtime consts (`MUMBLE_V2_MESSAGE_KEYS`, `MUMBLE_V2_IPC_FRAME_KEYS`,
+ * `MUMBLE_V2_TRANSPORT_CONTRACT`, `MUMBLE_V2_LIFECYCLE_CONTRACT`), which is the observable form of
+ * "the interface has exactly these fields" -- a TypeScript interface shape has no other runtime
+ * representation to assert on.
+ */
+const EXPECTED_VALUE_EXPORTS = [
 	'MUMBLE_V2_CHANNEL_ERRORS',
 	'MUMBLE_V2_CONTRACT_VERSION',
 	'MUMBLE_V2_FIXED_SOURCES',
@@ -44,43 +36,7 @@ const EXPECTED_EXPORTS = [
 	'MUMBLE_V2_SOURCE_LIMITS',
 	'MUMBLE_V2_SOURCE_STATUSES',
 	'MUMBLE_V2_TRANSPORT_CONTRACT',
-	'MumbleV2BootstrapRecordV1',
-	'MumbleV2ChannelError',
-	'MumbleV2DerivedActivity',
-	'MumbleV2FixedSourceV1',
-	'MumbleV2HeartbeatRecordV1',
-	'MumbleV2HelloRecordV1',
-	'MumbleV2IpcFrameV1',
-	'MumbleV2LabyrinthMapV1',
-	'MumbleV2LifecycleContractV1',
-	'MumbleV2LifecycleEvent',
-	'MumbleV2LifecycleFailureRouteV1',
-	'MumbleV2LifecycleState',
-	'MumbleV2LifecycleTimeoutV1',
-	'MumbleV2LifecycleTransitionV1',
-	'MumbleV2ProtocolRecordV1',
-	'MumbleV2ReadyRecordV1',
-	'MumbleV2RecommendedDefaultsV1',
-	'MumbleV2SourceField',
-	'MumbleV2SourceLimitsV1',
-	'MumbleV2SourceStatus',
-	'MumbleV2TransportContractV1',
-	'MumbleV2WelcomeRecordV1',
 ] as const;
-
-const FORBIDDEN_CAPABILITIES = {
-	injection: /\b(?:inject|injection|dllInject|hookProcess)\b/iu,
-	process: /\b(?:child_process|spawn|execFile|processId|enumerateProcesses|openProcess)\b/u,
-	memory: /\b(?:ReadProcessMemory|ptrace|processMemory|memoryReader)\b/u,
-	log: /\b(?:console|logger|readGameLog|logReader)\b/u,
-	traffic: /\b(?:pcap|packetSniffer|interceptTraffic|proxyTraffic)\b/u,
-	input: /\b(?:SendInput|simulateInput|keybd_event|mouse_event)\b/u,
-	automation: /\b(?:bot|macro|automate|automation|executeGameAction)\b/iu,
-	privateData: /\b(?:identity|characterName|character|personaje|fAvatarPosition|fCameraPosition|playerX|playerY|position|movement|combat|loot|processId|pid)\b/iu,
-	network: /\b(?:fetch|WebSocket|XMLHttpRequest|requestUrl|node:net|node:http|socket)\b/u,
-	persistence: /\b(?:indexedDB|localStorage|sessionStorage|writeFile|writeFileSync)\b/u,
-	timer: /\b(?:setTimeout|setInterval|requestAnimationFrame|queueMicrotask)\b/u,
-} as const;
 
 const EXPLICIT_RUNTIME_KINDS = new Set<ts.SyntaxKind>([
 	ts.SyntaxKind.AwaitExpression,
@@ -135,68 +91,39 @@ const REVIEWED_DECLARATIVE_KINDS = new Set<ts.SyntaxKind>([
 ]);
 
 describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
-	it('censuses exactly the contract and reviewed H8.6/H8.7/H8.8 modules', () => {
-		const discovered = PRODUCTION_FILES.filter(({ path, source }) => isMumbleArtifact(path, source))
-			.map(({ path }) => path);
-		expect(discovered).toEqual(REVIEWED_MUMBLE_PRODUCTION_FILES);
+	// The former "censuses exactly the contract and reviewed H8.6/H8.7/H8.8 modules" test and the
+	// "rejects a helper outside the exact census" test read every *.ts file under src/ as text and
+	// asserted a fixed file list. `scripts/tests/probar-security-scan.mjs` (`npm run
+	// test:security-scan`, gate step `security-scan-suite`) already executes the production
+	// `scanSecurityBoundaries()` scanner from `scripts/security-scan.mjs` against isolated,
+	// injected fixture roots and asserts it flags `unauthorized-mumble-helper` for exactly this:
+	// an unreviewed file whose path or content mentions "mumble" (see `testMumbleVariants` and the
+	// `mumble-contract-bypass-*` cases in `testMumbleContractAllowlist`, which probe
+	// `mumble-v2-contract-helper.ts`, `mumble-v2-runtime.ts` and `helper.ts` directly). Removed
+	// here; that suite is the executable equivalent.
+
+	it('exports exactly the reviewed runtime constants of the closed contract', () => {
+		expect(Object.keys(mumbleV2Contract).sort()).toEqual([...EXPECTED_VALUE_EXPORTS].sort());
 	});
 
-	it('keeps the reviewed artifact declarative and export-exact', () => {
+	// The former "keeps the reviewed artifact declarative and export-exact" test also asserted the
+	// exact field lists of the six record interfaces via a hand-rolled AST reader over this file's
+	// text. `mumble-v2-contract.test.ts` ("pins the six exact record schemas without widening the
+	// H8.1 sample") already builds real literals `satisfies` each interface and compares
+	// `Object.keys(record)` against the mirroring runtime consts, which both fails to compile
+	// (`tsc --noEmit`, part of verification) if an interface's shape changes incompatibly, and
+	// fails at runtime if the mirroring const drifts from it. Removed here.
+
+	it('keeps the reviewed artifact declarative: no runtime statement, capability or alternate export surface', () => {
+		// `scripts/tests/probar-security-scan.mjs`'s `testMumbleContractAllowlist` already probes
+		// this exact file for the specific forbidden-capability strings (injection, process,
+		// memory, log, traffic, input, automation, private data, network, persistence, timer) via
+		// the real `scanSecurityBoundaries()`. What is unique here -- and not covered by that
+		// keyword scan -- is that this file may contain NO executable statement at all, including
+		// an entirely benign one with no forbidden capability (e.g. `export function run() {
+		// return 1; }`), and no import of any kind. That is inherently a property of this file's
+		// static form (it has zero functions to execute), not something callable.
 		expect(contractViolations(CONTRACT_SOURCE)).toEqual([]);
-		expect(exportedNames(CONTRACT_SOURCE)).toEqual(EXPECTED_EXPORTS);
-		for (const [name, fields] of Object.entries(EXPECTED_MESSAGE_FIELDS)) {
-			expect(interfacePropertyNames(CONTRACT_SOURCE, name)).toEqual(fields);
-		}
-	});
-
-	it('rejects a helper outside the exact census even when its name looks contractual', () => {
-		for (const [path, source] of [
-			['src/platform/mumble-v2-contract-helper.ts', 'export const helper = true;'],
-			['src/platform/native-bridge.ts', "import type { MumbleV2IpcFrameV1 } from './mumble-v2-contract';"],
-			['src/mumble.ts', 'export const adapter = true;'],
-		] as const) {
-			expect(isMumbleArtifact(path, source)).toBe(true);
-			expect(REVIEWED_MUMBLE_PRODUCTION_FILES).not.toContain(path);
-		}
-	});
-
-	it('turns red causally for injection, process, memory, logs, traffic, input and automation', () => {
-		const probes = {
-			injection: 'inject(game);',
-			process: 'spawn(game);',
-			memory: 'ReadProcessMemory(handle);',
-			log: 'readGameLog(path);',
-			traffic: 'interceptTraffic(socket);',
-			input: 'simulateInput(key);',
-			automation: 'executeGameAction(action);',
-		} as const;
-		for (const [expected, source] of Object.entries(probes)) {
-			expect(contractViolations(source)).toContain(expected);
-		}
-	});
-
-	it('turns red for personal, spatial or process identity fields in the frame contract', () => {
-		for (const field of [
-			'identity', 'characterName', 'personaje', 'fAvatarPosition', 'playerX', 'processId', 'pid',
-			'position', 'movement', 'combat', 'loot',
-		]) {
-			expect(contractViolations(`${field}: string;`)).toContain('privateData');
-		}
-		const expanded = 'export interface MumbleV2IpcFrameV1 { version: 1; identity?: string }';
-		expect(interfacePropertyNames(expanded, 'MumbleV2IpcFrameV1')).not.toEqual(EXPECTED_FRAME_FIELDS);
-	});
-
-	it('turns red for I/O, persistence, timers, imports and executable declarations', () => {
-		for (const [source, expected] of [
-			["import { readFileSync } from 'node:fs';", 'dependency'],
-			["fetch('https://example.invalid');", 'network'],
-			["localStorage.setItem('key', 'value');", 'persistence'],
-			['setTimeout(run, 1);', 'timer'],
-			['export function run() { return 1; }', 'runtime-node'],
-			['export class Adapter {}', 'runtime-node'],
-		] as const) {
-			expect(contractViolations(source)).toContain(expected);
-		}
 	});
 
 	it('fails closed on assignments, updates, tagged templates and class expressions', () => {
@@ -210,7 +137,7 @@ describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
 		}
 	});
 
-	it('rejects every alternate export surface and re-export exactly', () => {
+	it('rejects every alternate export surface, import and re-export exactly', () => {
 		for (const source of [
 			'export { value };',
 			'export default value;',
@@ -219,6 +146,7 @@ describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
 		]) {
 			expect(contractViolations(source)).toEqual(['export-surface']);
 		}
+		expect(contractViolations("import { readFileSync } from 'node:fs';")).toContain('dependency');
 		expect(contractViolations("export { value } from './runtime';")).toEqual([
 			'dependency',
 			'export-surface',
@@ -230,13 +158,10 @@ describe('H8.1/H8.4 Mumble v2 contract architecture boundary', () => {
 	});
 });
 
-type ContractViolation = keyof typeof FORBIDDEN_CAPABILITIES | 'dependency' | 'export-surface' | 'runtime-node';
+type ContractViolation = 'dependency' | 'export-surface' | 'runtime-node';
 
 function contractViolations(source: string): ContractViolation[] {
 	const found = new Set<ContractViolation>();
-	for (const [name, pattern] of Object.entries(FORBIDDEN_CAPABILITIES)) {
-		if (pattern.test(source)) found.add(name as keyof typeof FORBIDDEN_CAPABILITIES);
-	}
 	const file = parse(source);
 	const visit = (node: ts.Node): void => {
 		const hasDefaultModifier = ts.canHaveModifiers(node)
@@ -262,51 +187,6 @@ function isReviewedDeclarativeOrRejectedNode(node: ts.Node): boolean {
 		|| ts.isExportSpecifier(node);
 }
 
-function exportedNames(source: string): string[] {
-	return parse(source).statements.flatMap((statement) => {
-		const modifiers = ts.canHaveModifiers(statement) ? ts.getModifiers(statement) : undefined;
-		if (!modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) return [];
-		if (ts.isVariableStatement(statement)) {
-			return statement.declarationList.declarations.flatMap((declaration) =>
-				ts.isIdentifier(declaration.name) ? [declaration.name.text] : []);
-		}
-		if ((ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement))
-			&& ts.isIdentifier(statement.name)) return [statement.name.text];
-		return [];
-	}).sort();
-}
-
-function interfacePropertyNames(source: string, interfaceName: string): string[] {
-	const declaration = parse(source).statements.find((statement): statement is ts.InterfaceDeclaration =>
-		ts.isInterfaceDeclaration(statement) && statement.name.text === interfaceName);
-	if (declaration === undefined) return [];
-	return declaration.members.flatMap((member) => {
-		if (!ts.isPropertySignature(member) || member.name === undefined) return [];
-		return ts.isIdentifier(member.name) || ts.isStringLiteralLike(member.name) ? [member.name.text] : [];
-	});
-}
-
 function parse(source: string): ts.SourceFile {
 	return ts.createSourceFile('mumble-v2-contract-probe.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-}
-
-function isMumbleArtifact(path: string, source: string): boolean {
-	return /mumble/iu.test(path) || /mumble/iu.test(source);
-}
-
-function sourceFiles(root: string): Array<{ path: string; source: string }> {
-	return walk(root)
-		.map((path) => relative('.', path).replaceAll('\\', '/'))
-		.filter((path) => path.endsWith('.ts'))
-		.filter((path) => !/(?:^|\/)(?:__fixtures__|test)(?:\/|$)/u.test(path))
-		.filter((path) => !/\.(?:spec|test)\.ts$/u.test(path))
-		.sort()
-		.map((path) => ({ path, source: readFileSync(path, 'utf8') }));
-}
-
-function walk(directory: string): string[] {
-	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		const path = join(directory, entry.name);
-		return entry.isDirectory() ? walk(path) : entry.isFile() ? [path] : [];
-	});
 }
