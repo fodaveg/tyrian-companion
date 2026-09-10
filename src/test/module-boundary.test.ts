@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	exportedDeclarationNames,
 	forbiddenBoundaryUses,
 	moduleBoundaryFacts,
 	moduleBoundaryViolations,
@@ -71,6 +72,28 @@ describe('module boundary facts', () => {
 		const facts = moduleBoundaryFacts('src/sessions/session-note-model.ts');
 		expect(facts.specifiers.every((specifier) => !specifier.includes('obsidian'))).toBe(true);
 		expect(facts.names.has('fetch')).toBe(false);
+	});
+});
+
+describe('exported declaration names', () => {
+	it('keeps an unexported local out of the export surface even when its name embeds a capability word', () => {
+		const names = exportedDeclarationNames(`
+			export const kept = 1;
+			function local() { const captured = clone(kept); return captured; }
+		`);
+		expect(names.has('captured')).toBe(false);
+		expect([...names]).toEqual(['kept']);
+	});
+
+	it('reports every exported class, function, interface, type and variable name', () => {
+		const names = exportedDeclarationNames(`
+			export class Widget {}
+			export function build() {}
+			export interface Shape {}
+			export type Alias = number;
+			export const value = 1, other = 2;
+		`);
+		expect([...names].sort()).toEqual(['Alias', 'Shape', 'Widget', 'build', 'other', 'value']);
 	});
 });
 

@@ -39,9 +39,45 @@ export function readModuleSources(paths: readonly string[], root = process.cwd()
  * decide against a real module's import graph and capability names without ever holding (or
  * being tempted to regex) its text.
  */
-export function moduleBoundaryFacts(path: string, root = process.cwd()): { specifiers: string[]; names: Set<string> } {
+export function moduleBoundaryFacts(
+	path: string,
+	root = process.cwd(),
+): { specifiers: string[]; names: Set<string>; exportedNames: Set<string> } {
 	const source = readModuleSource(path, root);
-	return { specifiers: moduleSpecifiers(source), names: referencedNames(source) };
+	return {
+		specifiers: moduleSpecifiers(source),
+		names: referencedNames(source),
+		exportedNames: exportedDeclarationNames(source),
+	};
+}
+
+/**
+ * Every name a source declares directly on an `export` statement: a class, function, interface,
+ * type alias or `const`/`let`/`var`. A capability word embedded in one of these (a `store` inside
+ * `PersistentStore`, a `client` inside `TradingClientFactory`) is a widened export surface, not a
+ * local implementation detail; a capability word inside an unexported local variable is neither.
+ * Only the AST distinguishes the two, so this walks it instead of matching the word anywhere.
+ */
+export function exportedDeclarationNames(source: string): Set<string> {
+	const file = ts.createSourceFile('exported-names-probe.ts', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+	const names = new Set<string>();
+	const isExported = (node: ts.Node): boolean => ts.canHaveModifiers(node)
+		&& (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+	const visit = (node: ts.Node): void => {
+		if (isExported(node)) {
+			if ((ts.isClassDeclaration(node) || ts.isFunctionDeclaration(node)
+				|| ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) && node.name !== undefined) {
+				names.add(node.name.text);
+			} else if (ts.isVariableStatement(node)) {
+				for (const declaration of node.declarationList.declarations) {
+					if (ts.isIdentifier(declaration.name)) names.add(declaration.name.text);
+				}
+			}
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(file);
+	return names;
 }
 
 /** Every literal static, side-effect, dynamic and `require` specifier of a TypeScript source. */
