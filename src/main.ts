@@ -3202,6 +3202,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			),
 			sessionCommands: this.sessionCommands,
 			execute: (id) => this.executeProductAction(id),
+			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
 			{ addCommand: (command) => { this.addCommand(command); } },

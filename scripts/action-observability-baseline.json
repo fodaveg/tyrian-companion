@@ -11312,20 +11312,18 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "f103d4630e1340c930f5353cdd247b72ba9867ec",
+					"id": "2744e4f845d11dcd6f02068d20b69313b89569fe",
 					"kind": "catch_clause",
-					"line": 212,
+					"line": 214,
 					"column": 5,
-					"endLine": 216,
+					"endLine": 230,
 					"endColumn": 4,
-					"classification": "allowlisted",
+					"classification": "observed",
 					"evidence": {
-						"type": "reviewed_recovery",
-						"behavior": "rethrow",
-						"scope": "run",
-						"justification": "The \"run\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics."
+						"type": "direct_observability_call",
+						"callee": "this.ports.diagnostics.event"
 					},
-					"reason": "Allowlisted catch_clause: The \"run\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"run\"."
+					"reason": "Direct observability call \"this.ports.diagnostics.event\" is present inside this catch_clause boundary."
 				},
 				{
 					"id": "3fa58ff9c9c7ada848755dd49b9309ccb184dea3",

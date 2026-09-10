@@ -1,5 +1,6 @@
 import { getRetryAt, type ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale, type TranslationKey, type Translator } from '../core/i18n';
+import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { ProposalQueueState } from '../sessions/pending-proposal-service';
 import type { SessionCommandController, SessionCommandOutcome } from './session-command-controller';
@@ -49,6 +50,7 @@ export interface ProductActionControllerPorts {
 	isInventoryBusy(): boolean;
 	sessionCommands: Pick<SessionCommandController, 'describe' | 'runWithOutcome'>;
 	execute(id: Exclude<ProductActionId, SessionCommandId>): ProductActionOutcome | Promise<ProductActionOutcome>;
+	diagnostics?: LocalDebugActionPort;
 }
 
 export interface ProductActionFeedback {
@@ -212,6 +214,18 @@ export class ProductActionController {
 		} catch (error) {
 			this.failed.add(id);
 			this.feedback = { kind: 'error', actionId: id, message: feedbackCopy(this.ports.getLocale(), 'error') };
+			// H15.13: every caller here (the palette's `checkCallback`, the action panel's button,
+			// and the companion/shell nav) swallows this rejection with `.catch(() => undefined)`,
+			// so this is the one place left that can still register the failure.
+			this.ports.diagnostics?.event({
+				component: 'ui',
+				action: 'command_execute',
+				level: 'error',
+				phase: 'failure',
+				code: 'unknown_failure',
+				state: id,
+				message: error,
+			});
 			throw error;
 		} finally {
 			this.running.delete(id);
