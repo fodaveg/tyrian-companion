@@ -326,26 +326,37 @@ export class TyrianCompanionView extends ItemView {
 			? { text: translator.t('settings.debug.name'), onClick: () => this.actions.openLocalDebugSettings?.() }
 			: undefined;
 
-		if (errorsSinceLoad > 0) {
-			title = translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad });
-			titleButton = openDiagnostics;
-			if (debug?.lastError) {
-				lines.push({ text: translator.t('settings.debug.lastError', {
-					code: debug.lastError.code, component: debug.lastError.component,
-					action: debug.lastError.action, timestamp: this.formatMoment(debug.lastError.occurredAt),
-				}) });
-			}
-		} else if (degraded) {
-			title = translator.t('settings.debug.degraded.title');
-			tone = 'warning';
-			titleButton = openDiagnostics;
-			lines.push({ text: translator.t('settings.debug.degraded.desc') });
-		} else if (projection.errors.length > 0) {
+		const lastErrorLine = (): void => {
+			if (!debug?.lastError) return;
+			lines.push({ text: translator.t('settings.debug.lastError', {
+				code: debug.lastError.code, component: debug.lastError.component,
+				action: debug.lastError.action, timestamp: this.formatMoment(debug.lastError.occurredAt),
+			}) });
+		};
+
+		// H15.7: a session/detection/recovery incident always wins the title, even with errors
+		// since load in play (David's 3 unrelated `global_error` lines used to bury the very
+		// `startFailure`/`stopFailure` copy this callout exists to surface). The diagnostics count
+		// only relegates to a line, with its own button so Settings stays one click away.
+		if (projection.errors.length > 0) {
 			title = projection.errors[0] ?? this.t('view.currentStateAttention');
 			tone = projection.incidentTone === 'error' ? 'error' : 'warning';
 			if (projection.errors.length > 1) {
 				lines.push({ text: this.t('view.moreErrors', { count: projection.errors.length - 1 }) });
 			}
+			if (errorsSinceLoad > 0) {
+				lines.push({ text: translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad }), button: openDiagnostics });
+				lastErrorLine();
+			}
+		} else if (errorsSinceLoad > 0) {
+			title = translator.t('settings.debug.errorsSinceLoad', { count: errorsSinceLoad });
+			titleButton = openDiagnostics;
+			lastErrorLine();
+		} else if (degraded) {
+			title = translator.t('settings.debug.degraded.title');
+			tone = 'warning';
+			titleButton = openDiagnostics;
+			lines.push({ text: translator.t('settings.debug.degraded.desc') });
 		}
 
 		if (assetsMessage !== null) {
@@ -1102,6 +1113,10 @@ export class TyrianCompanionView extends ItemView {
 		} else if (state.status === 'error') {
 			stateText.setText(`${this.t('status.error')} · ${this.t('status.detectionStopped')}`);
 			stateText.addClass('tyrian-companion-view__session-error');
+			// H15.12: without this, a detector stopped by an error had no way back short of a
+			// manual disarm+arm round trip or waiting for the next automatic poll.
+			const retry = dd.createEl('button', { text: this.t('view.tryArmingAgain'), cls: 'mod-cta' });
+			retry.addEventListener('click', () => { void this.actions.armAssistedDetection(); });
 		} else if (state.status === 'start_proposed') {
 			try { this.actions.recordAssistedProposalPresented?.(); }
 			catch { /* Optional pilot metrics never affect foreground actions. */ }

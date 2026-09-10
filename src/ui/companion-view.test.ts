@@ -116,6 +116,28 @@ describe('Companion incident callout: local diagnostics', () => {
 		expect(callout?.title).toBe('Errors since load: 1');
 		expect(callout?.lines.map((line) => line.text)).toEqual(['Could not reach the account API.']);
 	});
+
+	// H15.7: `errorsSinceLoad` used to replace the whole callout title, so a `startFailure` (or any
+	// other `projection.errors` entry) never reached the screen while any unrelated error had been
+	// logged since load — exactly David's 10 sep incident (3 unrelated `global_error` lines hid a
+	// live `rate_limited` start failure).
+	it('surfaces the session start failure as the title even with errors since load, and keeps the count as a line', () => {
+		const status: LocalDebugStatus = {
+			enabled: true, minimumLevel: 'debug', state: 'ready', path: 'test-config-dir/plugins/tyrian-companion/logs/',
+			bytes: 0, fileCount: 0, lastEventAt: null, droppedRecords: 0,
+			errorCode: null, queuedRecords: 0, recoveredTails: 0,
+			errorsSinceLoad: 3, lastError: null,
+		};
+		const harness = callHarness({ getLocalDebugStatus: () => status });
+		const rateLimited = translateRuntime(createTranslator('en'), 'status.startFailure.rate_limited');
+		const startFailureText = translateRuntime(createTranslator('en'), 'status.startIncident', { detail: rateLimited });
+
+		const callout = build.call(harness, { errors: [startFailureText], incidentTone: 'error' }, connected);
+		expect(callout?.title).toBe(startFailureText);
+		expect(callout?.title).toContain(rateLimited);
+		expect(callout?.tone).toBe('error');
+		expect(callout?.lines.map((line) => line.text)).toContain('Errors since load: 3');
+	});
 });
 
 describe('Companion game HUD narrative', () => {
@@ -353,6 +375,41 @@ describe('Companion pilot metrics fail-open actions', () => {
 		button?.listeners.get('click')?.[0]?.();
 		if (status === 'start_proposed') expect(openStart).toHaveBeenCalledWith(null);
 		else expect(stop).toHaveBeenCalledWith(null);
+	});
+
+	// H15.12: `status: 'error'` used to leave the Detalle drawer with no way back to armed short of
+	// disarm+arm or waiting for the next automatic poll (`view.tryArmingAgain` was already in the
+	// runtime catalogue, but no button ever rendered it).
+	it('renders an "Activar de nuevo" button while detection stopped in error, wired to armAssistedDetection', () => {
+		const document = new RetainedFakeDocument();
+		const container = new RetainedFakeElement('div', document);
+		const arm = vi.fn(async () => 'completed' as const);
+		const actions = {
+			getAssistedDetectionState: () => ({ status: 'error', message: 'boom', scheduler: {}, lastSnapshotAt: null }) as never,
+			getLocale: () => 'en' as const,
+			armAssistedDetection: arm,
+		};
+		const harness = {
+			actions,
+			t: (key: string) => key,
+			renderConnectionRow: vi.fn(),
+			renderDetectionQualityStatus: vi.fn(),
+			renderDetectionTimeline: vi.fn(),
+			projectDetectionTimeline: () => ({ last: '', result: '', next: '' }),
+			renderProposalDetails: vi.fn(),
+			renderStopProposalLag: vi.fn(),
+			addDismissAndDisarm: vi.fn(),
+			formatInterval: () => '',
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit isolated fail-open harness.
+		const render = (TyrianCompanionView.prototype as unknown as {
+			renderAssistedDetection(this: typeof harness, container: HTMLElement, connection: unknown, session: unknown): void;
+		}).renderAssistedDetection;
+		render.call(harness, container as unknown as HTMLElement, {}, { status: 'idle' });
+		const button = walkRetained(container).find((element) => element.textContent === 'view.tryArmingAgain');
+		expect(button).toBeDefined();
+		button?.listeners.get('click')?.[0]?.();
+		expect(arm).toHaveBeenCalledOnce();
 	});
 
 	it.each(['missing', 'throwing'] as const)(

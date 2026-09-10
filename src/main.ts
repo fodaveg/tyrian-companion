@@ -1794,6 +1794,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 				this.renderViews();
 				const state = await this.assistedDetection.arm(this.settings.pollingIntervalMinutes * 60_000, context);
 				this.renderViews();
+				// H15.12: `detectionActionOutcome` returns a plain `'failed'` string, which `run()`
+				// only recognizes as a failure when it has the closed `{phase|code|state|details}`
+				// shape; a bare string always writes `info success ok`, so a stopped detector left
+				// zero warn+ lines behind it.
+				if (state.status === 'error') {
+					this.localDebugActions?.event({
+						component: 'detection', action: 'detection_arm', level: 'error', phase: 'failure',
+						code: state.code ?? 'unknown_failure', message: state.message,
+					});
+				}
 				return detectionActionOutcome(state, 'arm');
 			} finally { runtimeLease.release(); }
 		};
@@ -3193,6 +3203,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			),
 			sessionCommands: this.sessionCommands,
 			execute: (id) => this.executeProductAction(id),
+			getRecoveryState: () => this.runtimeReady ? this.sessions.getRecoveryState() : { status: 'none' },
+			checkConnection: () => this.checkConnection(),
+			canStartSession: () => this.runtimeReady
+				&& this.sessions.getRecoveryState().status === 'none'
+				&& this.sessions.getState().status === 'idle',
+			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
 			{ addCommand: (command) => { this.addCommand(command); } },
