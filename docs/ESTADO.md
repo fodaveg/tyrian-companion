@@ -2,14 +2,14 @@
 
 ## Vertical activa
 
-**Estado a 10 sep 2026.** `main` lleva, sin publicar, los once lotes del audit del 8 sep más el H15
+**Estado a 10 sep 2026.** La 0.1.31 publicó los once lotes del audit del 8 sep; la 0.1.32 lleva el H15
 (causa del fallo de sesión en el log, audit de funcionamiento con 22 arreglos hijos, tests
 ejecutables): la regla firmada de qué degrada una sesión, la tarjeta de sesión como componente único,
 un solo aviso por umbral, la captura en una pasada, el barrido de Halloween acotado, las notas de
 inventario con hash estable, el log sin ruido, el bucle `dev:install` + `smoke:live`, el gate partido,
 el censo por hash AST, y la observabilidad de fallos por comando de sesión. Verificado: `check` 7/7 y
 `check:guardrails` 24/24 en verde. Pendientes abiertos: H15.4 (18 ficheros congelados restantes),
-H15.5 a H15.26 (22 arreglos del audit), QA humana de `docs/QA-MVP.md` sin ejecutarse.
+H15.10, H15.11, H15.14 a H15.19 y H15.23 (9 arreglos del audit) y la mitad de H15.24, QA humana de `docs/QA-MVP.md` sin ejecutarse.
 
 **La versión vigente es la que declara `manifest.json` (y `package.json`), que es también la última
 release publicada en GitHub.** No se repite esa cifra aquí porque queda obsoleta con cada release y

@@ -29,9 +29,37 @@
   solo se sale recargando Obsidian; «Capturar ya» sin captura de error; el sync de inventario escribe
   85 notas y luego anuncia «conflicto» con «0 conflictos»; detección en error sin rearme.
 - Todo hallazgo NO es ahora una tarea hija H15.5 a H15.26 en Lumbre, cada una con fichero, arreglo y
-  el test que debe fallar sin él.
+  el test que debe fallar sin él; doce van en esta release.
 - Aviso: el sabotaje dejó 85 notas de `Inventory/Positions` actualizadas con datos reales por un apply
   parcial; la siguiente sincronización real las reconcilia.
+
+### Doce arreglos del audit ya en esta release (H15.5 a H15.26, parcial)
+
+- Vista: el callout «Errores desde la carga» ya no tapa el motivo del fallo de sesión, que va de titular
+  (`companion-view.ts`, H15.7). Con la detección en `error` aparece «Activar de nuevo» en el Detalle, el
+  palette la vuelve a ofrecer y el fallo de armado queda en el log con código (H15.12). Los `checkCallback`
+  del palette usan la misma disponibilidad que los botones: descartar no aparece con la recuperación
+  ocupada y arrancar con conexión `idle` comprueba la conexión (H15.25). La barra de acciones y el
+  palette registran `command_execute failure` cuando una acción devuelve `failed` o lanza
+  (`product-action-controller.ts`, H15.13).
+- Sesión: recuperar y descartar conservan estado y código del fallo en el log (`session_recover`/`session_discard`
+  con `details.code`, H15.6). Una sesión muerta por `lease_lost` o `clock_anomaly` registra
+  `session_heartbeat`/`session_finish failure` con el código y ofrece reintentar desde el estado `error`
+  sin recargar Obsidian; el fallo de captura de precios al parar también queda registrado (H15.8).
+  «Capturar ya» muestra el mismo aviso que Terminar y `session_finish` lleva `details.cause` (H15.9).
+  `mapFailure` clasifica 401/403 como `missing_capability` y timeout/red como `snapshot_failed` en vez
+  de `unexpected` (H15.24, queda pendiente traducir `connection.message` en el callout). Sin lease o con
+  la coordinación caída queda línea `session_start failure` con código (H15.26).
+- Almacenamiento y red: los 8 stores (`session-runtime-store`, `coordination-store`,
+  `pending-proposal-store`, `session-detection-quality-store`, `persistent-catalog-cache`,
+  `managed-assets-pointer` y los dos de precios) pasan el error a `attempt.failure`, y el log lleva
+  `errorName` y distingue cuota llena (`quota_exceeded`) de fallo de escritura (H15.20). Los errores de
+  red de Electron (`net::ERR_NAME_NOT_RESOLVED`) llegan al log como `cause` no enumerable, nunca al
+  mensaje del error (el guardarraíl H6.7 lo exige), y `connection_check` registra `failure` cuando la
+  comprobación falla (H15.22). Un arranque roto del plugin se presenta como fallo con acceso a los
+  ajustes de diagnóstico, no como «arrancando» (`notices.pluginStartFailed`, H15.21).
+- Quedan para la siguiente: H15.10, H15.11, H15.14 a H15.19 y H15.23 (nota de sesión, sync de inventario,
+  alertas, historial, métricas), en curso.
 
 ### Tests que ejecutan la función en vez de leer el fuente (H15.4, parcial)
 
