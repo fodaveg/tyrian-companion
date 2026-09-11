@@ -8,16 +8,16 @@ import { seasonalWindowClosesAfterMs, seasonalWindowOpensAfterMs, type SeasonalW
  *
  * `hold_for_legendary` is a member of the closed union the frontmatter schema needs from day one,
  * exactly like `docs/SPEC-recomendacion-por-objeto.md` §2.1 requires: `tc_recommendation` never
- * grows a new value on the day M4 lands. `recommendPosition` below implements rules (b) and (c)
- * (M3); it never emits `hold_for_legendary` (M4, still blocked on decision 1 as of this commit).
+ * grows a new value on the day M4 lands. `recommendPosition` implements rule (a) (M4, this
+ * commit) ahead of rules (b) and (c) (M3).
  */
 export const POSITION_RECOMMENDATION_ACTIONS = ['sell', 'hold', 'hold_for_legendary', 'sell_at_season', 'review'] as const;
 export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTIONS[number];
 
 /**
- * Closed reason-code set for rules (b) and (c). `hold_for_legendary` (M4) brings its own reason
- * codes when that milestone is implemented; widening this union is that milestone's commit, not a
- * speculative addition here.
+ * Closed reason-code set for rules (a), (b) and (c). `reserved_for_goal` is rule (a)'s only reason
+ * (M4): every `hold_for_legendary` verdict carries it, there is no second legendary reason code to
+ * distinguish.
  *
  * The four `undecidable`-shaped codes (`malformed_input`, `no_close_today`, `insufficient_reference`,
  * `undecidable_calendar`) are `evaluateSellSignal`'s OWN `SellSignalProjection['reason']` values
@@ -26,6 +26,7 @@ export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTION
  * avoid.
  */
 export const POSITION_RECOMMENDATION_REASON_CODES = [
+	'reserved_for_goal',
 	'price_history_disabled',
 	'below_capital_threshold',
 	'price_history_insufficient',
@@ -98,6 +99,18 @@ export interface PositionRecommendationInput {
 	 * just also get a calendar-shaped read of it.
 	 */
 	seasonal: PositionRecommendationSeasonalInput | null;
+	/**
+	 * Rule (a), M4: `null` when this position's item is not part of any active legendary
+	 * requirement this sync. A non-null, positive shortfall is the item-level (account-wide)
+	 * missing quantity `createReservationPlan` computed for it — identical across every position
+	 * holding the item, since the shortage is a property of the material, not of any one stack —
+	 * and wins over every rule below unconditionally, including "price history disabled": whether
+	 * to hold for a legendary goal never depends on having a price. A non-null shortfall of 0 means
+	 * the material is fully reserved already; this position's own `totalSellCopper` is expected to
+	 * already be scaled down to its free share by the caller (`scaledSellCopper`,
+	 * `src/economy/legendary-goals.ts`) before rules (b)/(c) below ever see it.
+	 */
+	legendaryShortfall: number | null;
 }
 
 const DAY_MS = 86_400_000;
@@ -109,6 +122,11 @@ const DAY_MS = 86_400_000;
  * Precedence is fixed and mirrors `evaluateSellSignal`'s discipline of taking the instant as an
  * argument: no network, no IndexedDB, no `Date.now()` inside this function.
  *
+ * 0. Rule (a), M4: `legendaryShortfall` is not null and greater than 0 → `hold_for_legendary`/
+ *    `reserved_for_goal`, `missing` = the shortfall, `until` = null (no price-based expiry: the
+ *    hold ends when the account has enough, not when a price quote goes stale). This precedes
+ *    EVERY rule below, including rule 1: whether the account owns enough of a legendary's material
+ *    has nothing to do with whether price history is on.
  * 1. Price history off → `review`/`price_history_disabled`. Nothing below this line runs on
  *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell". This gates rule
  *    (b) too: a festival item's window has nothing to read against without the merged series.
@@ -126,6 +144,12 @@ const DAY_MS = 86_400_000;
  *    `hold`/`below_local_band`.
  */
 export function recommendPosition(input: PositionRecommendationInput): PositionRecommendationV1 {
+	if (input.legendaryShortfall !== null && input.legendaryShortfall > 0) {
+		return {
+			action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null,
+			missing: input.legendaryShortfall, pricePercentile: null, priceCoverageDays: null,
+		};
+	}
 	if (!input.priceHistoryEnabled) {
 		return {
 			action: 'review', reason: 'price_history_disabled', until: null, missing: null,

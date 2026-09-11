@@ -22,6 +22,7 @@ function baseInput(overrides: Partial<PositionRecommendationInput> = {}): Positi
 		priceHistoryWindowDays: 180,
 		priceHistoryRequiredDays: 42,
 		seasonal: null,
+		legendaryShortfall: null,
 		...overrides,
 	};
 }
@@ -339,5 +340,32 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, real festiva
 		}));
 		expect(result).toMatchObject({ action: 'sell', reason: 'seasonal_sell_window' });
 		expect(result.until).toBe(new Date(seasonalWindowClosesAfterMs(CARAMEL_BAR_WINDOW, capturedAtMs)!).toISOString());
+	});
+});
+
+describe('rule (a): hold_for_legendary (M4)', () => {
+	it('a positive legendaryShortfall wins over everything, including price history disabled', () => {
+		const result = recommendPosition(baseInput({ priceHistoryEnabled: false, legendaryShortfall: 40 }));
+		expect(result).toEqual({
+			action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null,
+			missing: 40, pricePercentile: null, priceCoverageDays: null,
+		});
+	});
+
+	it('a positive legendaryShortfall wins over an in-season sell window too', () => {
+		const result = recommendPosition(baseInput({
+			legendaryShortfall: 5, seasonal: seasonalInput({ window: SACO_WINDOW }),
+		}));
+		expect(result.action).toBe('hold_for_legendary');
+	});
+
+	it('a zero legendaryShortfall falls through to the ordinary rules', () => {
+		const result = recommendPosition(baseInput({ legendaryShortfall: 0, totalSellCopper: 200_000 }));
+		expect(result.action).not.toBe('hold_for_legendary');
+	});
+
+	it('null legendaryShortfall never triggers rule (a)', () => {
+		const result = recommendPosition(baseInput({ legendaryShortfall: null }));
+		expect(result.action).not.toBe('hold_for_legendary');
 	});
 });
