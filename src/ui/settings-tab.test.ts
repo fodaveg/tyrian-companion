@@ -196,19 +196,20 @@ describe('settings information architecture', () => {
 	// The detection settings row is gone (Lote S, 2026-09-09: assisted detection is always armed
 	// with a connected account, no more on/off setting), dropping the "Advanced" tab from 28 to 27
 	// rows and the total from 32 to 31. M1 of SPEC-recomendacion-por-objeto adds the recommendation
-	// capital threshold as a new "Advanced" row, back up to 28/32.
-	it('assigns all 32 existing rows to explicit intent categories', () => {
+	// capital threshold as a new "Advanced" row, back up to 28/32. M4 adds the legendary targets
+	// row, another "Advanced" row, to 29/33.
+	it('assigns all 33 existing rows to explicit intent categories', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(32);
+		expect(assignments).toHaveLength(33);
 		// H14.20: the first screen is exactly the four rows a new install needs;
-		// every other row (28) lives under the single "Advanced" tab.
+		// every other row (29) lives under the single "Advanced" tab.
 		const essentials = assignments.filter(({ category }) => category === 'essentials');
 		expect(essentials).toHaveLength(4);
 		expect(essentials.map(({ name }) => name).sort()).toEqual(
 			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
 		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(28);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(29);
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
 	});
 

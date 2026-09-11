@@ -110,7 +110,7 @@ import type {
 } from './advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
-import { LEGENDARY_MATERIALS_TABLE } from './economy/legendary-materials';
+import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from './economy/legendary-materials';
 import {
 	mergeSettingsUpdate,
 	migrateSettings,
@@ -255,6 +255,19 @@ export interface LocalDebugExportPreview {
 	readonly excluded: readonly ['secret_name', 'character', 'paths', 'payloads'];
 }
 
+/** One `GET /v2/legendaryarmory` entry, named and iconed via the public catalog (M4). */
+export interface LegendaryArmoryOptionV1 {
+	itemId: number;
+	name: string;
+	icon: string | null;
+	/** `false` when `LEGENDARY_MATERIALS_TABLE` has no curated entry for this legendary yet. */
+	hasTable: boolean;
+}
+
+export type LegendaryArmoryOptionsResult =
+	| { status: 'ok'; options: readonly LegendaryArmoryOptionV1[] }
+	| { status: 'error' };
+
 type NoticeDiagnosticSource =
 	| 'halloween_price_alert'
 	| 'halloween_observation' | 'inventory_advisor_missing_key'
@@ -300,6 +313,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private sessionCatalog: PublicCatalogService | null = null;
 	/** The catalog `previewInventorySync`'s memoized capture service resolves through; disposed alongside it. */
 	private inventoryVaultCaptureCatalog: PublicCatalogService | null = null;
+	/**
+	 * M4: `GET /v2/legendaryarmory` plus its names/icons, resolved and cached for the plugin's
+	 * lifetime the FIRST time the settings panel's own button is pressed. `null` before that: never
+	 * populated at settings-panel open or plugin load (SPEC-recomendacion-por-objeto.md M4).
+	 */
+	private legendaryArmoryOptionsCache: readonly LegendaryArmoryOptionV1[] | null = null;
+	private legendaryArmoryOptionsInFlight: Promise<LegendaryArmoryOptionsResult> | null = null;
+	loadLegendaryArmoryOptions: () => Promise<LegendaryArmoryOptionsResult> = async () => ({ status: 'error' });
 	/** Vault path of the note written for the session on screen; the only handle the view can open. */
 	private savedSessionNotePath: string | null = null;
 	private detectionQualityInitialization: Promise<DetectionQualityRecorderState> = Promise.resolve({ status: 'loading' });
@@ -652,6 +673,50 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionCatalogFactory = async () => new PublicCatalogService(
 			publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
 		);
+		// M4: only ever invoked by the settings panel's own button (`SettingsTab`), never here at
+		// load. Cached for the plugin's lifetime once it succeeds; a failure is not cached, so the
+		// next click retries instead of being stuck on a transient error forever.
+		this.loadLegendaryArmoryOptions = async (): Promise<LegendaryArmoryOptionsResult> => {
+			if (this.legendaryArmoryOptionsCache !== null) return { status: 'ok', options: this.legendaryArmoryOptionsCache };
+			if (this.legendaryArmoryOptionsInFlight !== null) return await this.legendaryArmoryOptionsInFlight;
+			const request = (async (): Promise<LegendaryArmoryOptionsResult> => {
+				try {
+					const response = await publicClient.requestDetailed('legendaryarmory');
+					if (response.status !== 200 || !Array.isArray(response.body)) return { status: 'error' };
+					const ids: number[] = [];
+					for (const entry of response.body as unknown[]) {
+						if (typeof entry !== 'object' || entry === null) return { status: 'error' };
+						const id = (entry as Record<string, unknown>).id;
+						if (!Number.isSafeInteger(id)) return { status: 'error' };
+						ids.push(id as number);
+					}
+					this.sessionCatalogFactory ??= async () => new PublicCatalogService(
+						publicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
+					);
+					this.sessionCatalog ??= await this.sessionCatalogFactory();
+					const items = await this.sessionCatalog.resolveItems(ids, this.settings.language);
+					const options: LegendaryArmoryOptionV1[] = ids.map((itemId) => {
+						const item = items[String(itemId)];
+						return {
+							itemId,
+							name: item?.name ?? `#${String(itemId)}`,
+							icon: item?.icon ?? null,
+							hasTable: legendaryMaterialsEntryFor(LEGENDARY_MATERIALS_TABLE, itemId) !== null,
+						};
+					}).sort((left, right) => left.name.localeCompare(right.name));
+					this.legendaryArmoryOptionsCache = options;
+					return { status: 'ok', options };
+				} catch {
+					return { status: 'error' };
+				}
+			})();
+			this.legendaryArmoryOptionsInFlight = request;
+			try {
+				return await request;
+			} finally {
+				this.legendaryArmoryOptionsInFlight = null;
+			}
+		};
 		// Built here, ahead of Halloween assembly below, so the same boundary-capture
 		// snapshot service that measures sessions by difference can also seed the
 		// already-owned baseline: it needs `client` and `rateLimitCoordinator`, both

@@ -28,7 +28,7 @@ import type { PriceHistoryDailyRetentionDays, PriceHistoryIntervalMinutes, Price
 import { createTranslator, type TranslationKey, type TranslationParams } from '../core/i18n';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel, type LocalDebugStatus } from '../core/local-debug-contract';
 import type TyrianCompanionPlugin from '../main';
-import type { LocalDebugExportPreview, SettingsUpdateResult } from '../main';
+import type { LegendaryArmoryOptionV1, LocalDebugExportPreview, SettingsUpdateResult } from '../main';
 import type { SessionHistoryScrubPreview } from '../sessions/session-history';
 import type { PilotMetricsExportPreview } from '../sessions/pilot-metrics-export';
 import {
@@ -118,6 +118,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 	private readonly saveStates = new Map<number, SettingSaveState>();
 	private readonly saveRevisions = new Map<number, number>();
 	private readonly settingsWrites = new SettingsWriteQueue();
+	/** M4: `null` until the "Cargar lista" button succeeds once; `'loading'`/`'error'` are transient render states. */
+	private legendaryArmoryOptions: readonly LegendaryArmoryOptionV1[] | null | 'loading' | 'error' = null;
 
 	constructor(
 		app: App,
@@ -482,6 +484,68 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							feedback.setAttr('role', 'status');
 							feedback.setText('');
 							await save({ recommendationCapitalThresholdCopper: threshold });
+						}));
+				},
+			},
+			{
+				category: 'advanced',
+				name: this.t('settings.legendary.targets.name'), desc: this.t('settings.legendary.targets.desc'),
+				render: (setting, save) => {
+					const status = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					status.setAttr('role', 'status');
+					status.setAttr('aria-live', 'polite');
+					const list = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__legendary-targets' });
+					const renderList = (): void => {
+						list.empty();
+						const selected = new Set(this.plugin.settings.legendaryTargetItemIds);
+						if (this.legendaryArmoryOptions === null) {
+							status.setText(this.t('settings.legendary.targets.selectedCount', { count: selected.size }));
+							return;
+						}
+						if (this.legendaryArmoryOptions === 'loading') {
+							status.setText(this.t('settings.legendary.targets.loading'));
+							return;
+						}
+						if (this.legendaryArmoryOptions === 'error') {
+							status.setAttr('role', 'alert');
+							status.setText(this.t('settings.legendary.targets.loadError'));
+							return;
+						}
+						status.setAttr('role', 'status');
+						status.setText(this.t('settings.legendary.targets.selectedCount', { count: selected.size }));
+						for (const option of this.legendaryArmoryOptions) {
+							const row = list.createDiv({ cls: 'tyrian-companion-settings__legendary-target-row' });
+							const checkboxId = `tyrian-companion-legendary-target-${String(option.itemId)}`;
+							const checkbox = row.createEl('input', { type: 'checkbox' });
+							checkbox.id = checkboxId;
+							checkbox.checked = selected.has(option.itemId);
+							const label = row.createEl('label', { text: option.name });
+							label.setAttr('for', checkboxId);
+							if (!option.hasTable) {
+								row.createSpan({
+									cls: 'tyrian-companion-settings__legendary-target-warning',
+									text: this.t('settings.legendary.targets.noTable'),
+								});
+							}
+							checkbox.addEventListener('change', () => {
+								void (async () => {
+									const next = new Set(this.plugin.settings.legendaryTargetItemIds);
+									if (checkbox.checked) next.add(option.itemId); else next.delete(option.itemId);
+									await save({ legendaryTargetItemIds: [...next].sort((left, right) => left - right) });
+									renderList();
+								})();
+							});
+						}
+					};
+					renderList();
+					setting.addButton((button) => button
+						.setButtonText(this.t('settings.legendary.targets.load'))
+						.onClick(async () => {
+							this.legendaryArmoryOptions = 'loading';
+							renderList();
+							const result = await this.plugin.loadLegendaryArmoryOptions();
+							this.legendaryArmoryOptions = result.status === 'ok' ? result.options : 'error';
+							renderList();
 						}));
 				},
 			},
