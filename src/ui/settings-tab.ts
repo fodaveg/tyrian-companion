@@ -513,6 +513,15 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 						}
 						status.setAttr('role', 'status');
 						status.setText(this.t('settings.legendary.targets.selectedCount', { count: selected.size }));
+						// Named, not an inline IIFE: `applyLegendaryTargetChange` is what the census's
+						// `void` review below points at, and it is the operation that owns `save`'s
+						// rejection (there is none to own here; `save` never throws, see `SettingsWriteQueue`).
+						const applyLegendaryTargetChange = async (checkbox: HTMLInputElement, itemId: number): Promise<void> => {
+							const next = new Set(this.plugin.settings.legendaryTargetItemIds);
+							if (checkbox.checked) next.add(itemId); else next.delete(itemId);
+							await save({ legendaryTargetItemIds: [...next].sort((left, right) => left - right) });
+							renderList();
+						};
 						for (const option of this.legendaryArmoryOptions) {
 							const row = list.createDiv({ cls: 'tyrian-companion-settings__legendary-target-row' });
 							const checkboxId = `tyrian-companion-legendary-target-${String(option.itemId)}`;
@@ -528,12 +537,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								});
 							}
 							checkbox.addEventListener('change', () => {
-								void (async () => {
-									const next = new Set(this.plugin.settings.legendaryTargetItemIds);
-									if (checkbox.checked) next.add(option.itemId); else next.delete(option.itemId);
-									await save({ legendaryTargetItemIds: [...next].sort((left, right) => left - right) });
-									renderList();
-								})();
+								void applyLegendaryTargetChange(checkbox, option.itemId);
 							});
 						}
 					};

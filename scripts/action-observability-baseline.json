@@ -2,10 +2,10 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 438,
+		"catch_clause": 441,
 		"promise_catch": 36,
-		"void_expression": 81,
-		"callback_registration": 158
+		"void_expression": 82,
+		"callback_registration": 159
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -3349,6 +3349,33 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/economy/legendary-goals.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
+		"src/economy/legendary-materials.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": [
+				{
+					"id": "88d7a71910f7c74998fae7cc2b7f4ddc8004176f",
+					"kind": "catch_clause",
+					"line": 162,
+					"column": 55,
+					"endLine": 162,
+					"endColumn": 78,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "isHttpsUrl",
+						"justification": "The \"isHttpsUrl\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"isHttpsUrl\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"isHttpsUrl\"."
+				}
+			]
+		},
 		"src/economy/material-storage-deposit-validation.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -4115,6 +4142,11 @@
 					"reason": "Allowlisted catch_clause: The \"transaction\" owner explicitly handles \"local_recovery\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"local_recovery\" in \"transaction\"."
 				}
 			]
+		},
+		"src/economy/price-seed-history-merge.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/economy/price-seed-model.ts": {
 			"classification": "production_source",
@@ -5642,6 +5674,38 @@
 						"justification": "The \"onload\" owner passes this `.catch` straight to `fireAndForget` as its whole action, with nothing further wrapping or reacting to it at this call site, which is why the census reports \"intentional_noop\" here. The callback itself stores the failure on `this.runtimeFailure` (read by `notifyRuntimeStarting`) before rethrowing, so the trace still reaches the log exactly as before, through `run()`'s own catch."
 					},
 					"reason": "Allowlisted promise_catch: The \"onload\" owner passes this `.catch` straight to `fireAndForget` as its whole action, with nothing further wrapping or reacting to it at this call site, which is why the census reports \"intentional_noop\" here. The callback itself stores the failure on `this.runtimeFailure` (read by `notifyRuntimeStarting`) before rethrowing, so the trace still reaches the log exactly as before, through `run()`'s own catch. Verified recovery: \"intentional_noop\" in \"onload\"."
+				},
+				{
+					"id": "dc7c02bbcbd5330492cc14e45f8851be6635ef8a",
+					"kind": "catch_clause",
+					"line": 709,
+					"column": 7,
+					"endLine": 711,
+					"endColumn": 6,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "initializeRuntime",
+						"justification": "The \"initializeRuntime\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"initializeRuntime\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"initializeRuntime\"."
+				},
+				{
+					"id": "29575a7dfa9444bc86e08eff95cc533985d6989d",
+					"kind": "catch_clause",
+					"line": 918,
+					"column": 10,
+					"endLine": 920,
+					"endColumn": 9,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readLegendaryArmoryCounts",
+						"justification": "The \"readLegendaryArmoryCounts\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"readLegendaryArmoryCounts\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"readLegendaryArmoryCounts\"."
 				},
 				{
 					"id": "bf32cbc6ea6e665362d4763f2fbc1fbb7da5c1be",
@@ -12119,6 +12183,39 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
+					"id": "87d1a9c2a5d897e35e6d76d4d27fb263fe257d97",
+					"kind": "callback_registration",
+					"line": 539,
+					"column": 8,
+					"endLine": 541,
+					"endColumn": 10,
+					"registration": "addEventListener",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "addEventListener",
+						"scope": "renderList",
+						"justification": "The \"renderList\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome."
+					},
+					"reason": "Allowlisted callback_registration: The \"renderList\" owner registers \"addEventListener\" as a framework or user-interaction callback; the callback only updates local view state or delegates work to the action owner that reports its outcome. Verified registration: \"addEventListener\" in \"renderList\"."
+				},
+				{
+					"id": "3df29c4fd86c51ad74513efe8b648b7725b3110c",
+					"kind": "void_expression",
+					"line": 540,
+					"column": 9,
+					"endLine": 540,
+					"endColumn": 65,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_detached_execution",
+						"target": "applyLegendaryTargetChange",
+						"scope": "renderList",
+						"justification": "The \"renderList\" owner deliberately detaches \"applyLegendaryTargetChange\"; that named operation owns rejection and terminal diagnostics."
+					},
+					"reason": "Allowlisted void_expression: The \"renderList\" owner deliberately detaches \"applyLegendaryTargetChange\"; that named operation owns rejection and terminal diagnostics. Verified target: \"applyLegendaryTargetChange\" in \"renderList\"."
+				},
+				{
 					"id": "33c79ee5f21a9f074b1ed0b905f5cd921083c86e",
 					"kind": "catch_clause",
 					"line": 913,
@@ -12789,11 +12886,6 @@
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
-		},
-		"src/economy/price-seed-history-merge.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
 		}
 	}
 }
