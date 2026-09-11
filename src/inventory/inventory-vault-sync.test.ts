@@ -166,6 +166,45 @@ describe('inventory Vault projection', () => {
 	});
 
 	/**
+	 * M4 test 8 (docs/SPEC-recomendacion-por-objeto.md): with the legendary-target setting empty
+	 * (`DEFAULT_RECOMMENDATION_PORT`'s own `legendaryTargetItemIds: () => []`), `capture()`'s
+	 * output is byte-identical to 85b8c96: `reservedQuantity`/`freeQuantity` are always null and
+	 * `GET /v2/account/legendaryarmory` is never called at all (`readLegendaryArmoryCounts` is a
+	 * spy here specifically to prove that, not just that its RESULT is unused).
+	 */
+	it('an empty legendary-target setting reproduces the exact pre-M4 capture DTO', async () => {
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
+		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
+		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
+		const readLegendaryArmoryCounts = vi.fn(async (): Promise<ReadonlyMap<number, number> | null> => null);
+		const recommendation = {
+			priceHistoryEnabled: () => false,
+			capitalThresholdCopper: () => 100_000,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			readDaily: async () => [],
+			readCachedSeed: async () => null,
+			updateDerivedWatchList: async () => undefined,
+			refreshPriceSeeds: async () => undefined,
+			seasonalInputFor: () => null,
+			legendaryTargetItemIds: () => [],
+			legendaryMaterialsTable: () => null,
+			readLegendaryArmoryCounts,
+		};
+		const service = new InventoryVaultCaptureService(
+			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
+		);
+		const input = await service.capture('es');
+		expect(readLegendaryArmoryCounts).not.toHaveBeenCalled();
+		expect(input.positions).toHaveLength(1);
+		expect(input.positions[0]).toMatchObject({
+			reservedQuantity: null, freeQuantity: null,
+			recommendation: 'review', recommendationReason: 'price_history_disabled',
+		});
+	});
+
+	/**
 	 * M2 criterion of closure, test 5 (docs/SPEC-recomendacion-por-objeto.md §5): `capture()` over
 	 * two items with distinct series writes `tc_price_percentile`/`tc_price_coverage_days`
 	 * coherent with each item's own series, never a percentile with zero days behind it.
