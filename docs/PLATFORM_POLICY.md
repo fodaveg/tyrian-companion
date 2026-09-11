@@ -65,6 +65,21 @@ a exactamente estos cuatro objetos, listados en un único sitio
 caramelo), `#47909` (Barra de caramelo) y `#36059` (Colmillos de plástico). El resto de notas de
 inventario no cambia y no lleva el bloque.
 
+## Semilla de datawars2 por lote tras "Sincronizar inventario" (SPEC-recomendacion-por-objeto.md, decisión 4)
+
+Aprobado por David el 11 de septiembre de 2026 (spec §7, decisión 4), ampliando H13.2/H9.1: se pide el
+mismo endpoint de datawars2 (`api.datawars2.ie/gw2/v2/history/json?itemID=<id>&fields=…`), por ítem,
+para varios ítems dentro de una sola acción, algo que hasta ahora la política solo autorizaba de uno
+en uno. Ocurre exclusivamente detrás del botón «Sincronizar inventario», nunca al cargar el plugin ni
+al abrir una vista: cada `capture()` recorre la lista de vigilancia derivada del inventario (decisión 3
+de la misma spec) y pide semilla para los ítems cuya entrada de caché falta o tiene más de 24 horas, la
+misma caché de 24 horas por `(vaultId, itemId)` en `tyrian-companion-price-seed-cache` que ya usan H9.1
+y H9.2. Las peticiones son **en serie, nunca en paralelo**: la siguiente no empieza hasta que la
+anterior termina. Un tope por ejecución (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN`, 25 ítems,
+`src/economy/price-seed-bulk-refresh.ts`) limita cuántas peticiones nuevas dispara una sola
+sincronización; lo que queda fuera del tope se siembra en la sincronización siguiente. Un fallo de
+datawars2 en un ítem se registra y la siembra continúa con el siguiente; ninguno detiene el resto.
+
 La nota que el plugin escribe embebe únicamente un bloque de código Markdown mínimo con el id del
 objeto (`\`\`\`tyrian-price-history` / `itemId: <id>`), nunca una serie de precios ni ningún dato
 descargado: los días históricos no se persisten en el Vault en ningún formato. Ese bloque lo dibuja
