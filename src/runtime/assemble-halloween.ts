@@ -20,6 +20,7 @@ import { translateRuntime } from '../core/i18n-runtime-catalog';
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import type { RateLimitCoordinator } from '../core/rate-limit-coordinator';
+import { createTradingPostValueWithPolicy } from '../economy/gw2-fees';
 import { HalloweenEvidenceService } from '../halloween/halloween-evidence-service';
 import type { HalloweenAlertItem } from '../halloween/halloween-model';
 import { HalloweenBackfillCache, scanHalloweenSessionNotes, type HalloweenBackfillVault } from '../halloween/halloween-note-backfill';
@@ -45,6 +46,12 @@ export interface HalloweenAssemblyInput {
 	rateLimit: RateLimitCoordinator;
 	/** Scopes the API key currently carries, so unlock capture can decline instead of failing. */
 	connectionScopes: () => readonly string[];
+	/**
+	 * Bags the account currently holds free, the same source `SellSignalRuntime` reads for its own
+	 * `sell_signal`/`hold_signal` alerts (H16.2). The p90 alert used to hardcode `quantity: 1` and
+	 * price a single bag no matter how many the player was sitting on.
+	 */
+	heldQuantity: () => number;
 	/** Durable session notes, the only source the opt-in backfill reads. */
 	notes: HalloweenBackfillVault;
 	/** Owned item ids from the account's current storage snapshot, seeding `first_seen` once. */
@@ -80,11 +87,22 @@ export function assembleHalloween(input: HalloweenAssemblyInput): HalloweenAssem
 		accountRef: input.accountRef,
 		// H13.4 routes the price surface through the one exit point. The evaluation behind
 		// it is still the local p90 crossing; H13.2 replaces the detector, not the kind.
+		//
+		// H16.2: `quantity` used to be hardcoded to 1 and `totalCopper` to one bag's raw bid,
+		// while the other `sell_signal` producer (`SellSignalRuntime`) already prices the whole
+		// pile the player holds. `totalCopper` here is the net proceeds of instant-selling the
+		// whole pile at this bid, the same trading-post-fee convention `createTradingPostValueWithPolicy`
+		// applies everywhere else a (unitCopper, quantity) pair becomes a total. A pile of zero
+		// earns no alert: there is nothing to sell, so there is nothing worth telling the player.
 		onNotice: (notice) => {
+			const quantity = input.heldQuantity();
+			if (!Number.isSafeInteger(quantity) || quantity <= 0) return;
+			const netValue = createTradingPostValueWithPolicy('instant_sell', notice.bidCopper, quantity);
+			if (netValue.status !== 'ok') return;
 			input.emitAlert({
-				kind: 'sell_signal', itemId: notice.itemId, quantity: 1,
+				kind: 'sell_signal', itemId: notice.itemId, quantity,
 				name: translateRuntime(createTranslator(input.locale()), 'alerts.bagName'),
-				totalCopper: notice.bidCopper, priceStatus: 'known', reason: 'bid_above_reference',
+				totalCopper: netValue.value.netCopper, priceStatus: 'known', reason: 'bid_above_reference',
 			});
 		},
 		onStateChange: input.onPriceAlertStateChange,

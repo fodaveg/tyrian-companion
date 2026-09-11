@@ -6,6 +6,10 @@
   reutiliza el formato «5g 10s 0c» de `formatLootMoney`, extraído a un formateador puro
   compartido. `alertIngameContent`/`alertIngamePayload` siguen recibiendo solo `AlertV1`
   (`src/core/copper-format.ts`, `src/alerts/alert-ingame.ts`, H16.1).
+- Aviso p90 de la bolsa de Halloween: emitía `quantity: 1` y el precio de una sola bolsa sin
+  importar la pila que el jugador tuviera. Ahora lleva la pila real (la misma fuente que
+  `SellSignalRuntime`) y el valor neto de venderla entera a esa puja; una pila de cero no emite
+  aviso (`src/runtime/assemble-halloween.ts`, `src/main.ts`, H16.2).
 
 ## Release beta 0.1.33 - los nueve arreglos restantes del audit H15
 

@@ -653,6 +653,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			publicGateway: publicClient,
 			rateLimit: rateLimitCoordinator,
 			connectionScopes: () => connectionScopes(this.connection.getState()),
+			heldQuantity: () => this.observedBagQuantity(),
 			notes: {
 				// Only the session notes the plugin itself writes are a candidate source of
 				// evidence: a vault with thousands of unrelated notes must not pay a `vault.read`
