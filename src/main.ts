@@ -92,6 +92,7 @@ import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
+import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
 import {
 	assembleAdvisor,
 	type InventoryAdvisorCaptureProgressListenerRef,
@@ -762,6 +763,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 					inventorySnapshots,
 					catalog,
 					inventoryPublicClient,
+					{
+						priceHistoryEnabled: () => this.settings.priceHistoryEnabled,
+						capitalThresholdCopper: () => this.settings.recommendationCapitalThresholdCopper,
+						// The curated pack's own age policy, not a constant here: same discipline as
+						// `assembleSellSignal`'s `minimumOfMaxBps`. Falls back to the bundle's shipped
+						// value only while the pack itself is unavailable or expired.
+						maxPriceAgeMs: () => {
+							const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+							return loaded.status === 'available' ? loaded.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
+						},
+						priceHistoryWindowDays: () => this.settings.priceHistoryDailyRetentionDays,
+						// The same read-only store lookup the H13.2 sell-signal detector already uses
+						// after every compaction (src/runtime/assemble-price-history.ts); a second,
+						// independent reader that never touches the panel's own selected series.
+						readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
+					},
 				);
 			}
 			const input = await inventoryVaultCapture.capture(this.settings.language);
@@ -3709,6 +3726,13 @@ export default class TyrianCompanionPlugin extends Plugin {
  * before midnight UTC still has the whole year behind it.
  */
 const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000;
+
+/**
+ * `recommendPosition`'s `maxPriceAgeMs` while the curated pack is unavailable or expired.
+ * Mirrors the value the bundle itself ships (`src/advisor/inventory-advisor-builtin-bundle.ts`),
+ * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
+ */
+const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
 
 type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
 
