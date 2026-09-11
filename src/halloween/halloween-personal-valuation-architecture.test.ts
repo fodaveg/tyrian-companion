@@ -33,7 +33,7 @@ describe('H11.6 personal Halloween valuation architecture', () => {
 		const settings = readModuleSource('src/core/settings.ts');
 		const settingsTab = readModuleSource('src/ui/settings-tab.ts');
 		const main = readModuleSource('src/main.ts');
-		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 12');
+		expect(settings).toContain('SETTINGS_SCHEMA_VERSION = 13');
 		expect(settings).toContain('halloweenPersonalValuation: { version: 1 as const, values: [] }');
 		expect(settingsTab.indexOf("settings.halloween.personal.name")).toBeLessThan(
 			settingsTab.indexOf("settings.halloween.enabled.name"),

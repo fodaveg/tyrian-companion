@@ -22,7 +22,7 @@ import type {
 } from '../economy/equipment-salvage-economy';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract';
 
-export const SETTINGS_SCHEMA_VERSION = 12 as const;
+export const SETTINGS_SCHEMA_VERSION = 13 as const;
 
 /** Lowest port the in-game bridge accepts. Below this range needs a privilege the plugin never asks for. */
 export const ALERT_INGAME_MIN_PORT = 1_024;
@@ -106,6 +106,17 @@ export interface TyrianSettings {
 	 * silently rewritten the per-unit policy of every install that had tuned it.
 	 */
 	valuableLootThresholdCopper: number;
+	/**
+	 * `tc_total_sell_copper` floor below which the per-object recommendation (rule c,
+	 * `docs/SPEC-recomendacion-por-objeto.md`) never suggests selling regardless of price.
+	 *
+	 * Deliberately its own field rather than a reuse of `valuableLootThresholdCopper` above: that
+	 * one measures the value of ONE drop observed in a session, this one measures capital PARKED
+	 * in a durable position, and folding them together would have silently rewritten the drop
+	 * alert's policy on every install that had already tuned it — the exact mistake this file's
+	 * own `valuableLootThresholdCopper` comment already documents once.
+	 */
+	recommendationCapitalThresholdCopper: number;
 	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
 	alertWebhookUrl: string;
 	/** Optional in-game alert relay (H13.9/H13.15). Off by default: no port opens on a fresh install. */
@@ -149,6 +160,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenEnabled: false,
 	halloweenValueThresholdCopper: 10_000,
 	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
+	recommendationCapitalThresholdCopper: 100_000,
 	alertWebhookUrl: '',
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
@@ -238,6 +250,11 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		// every existing install along with them.
 		valuableLootThresholdCopper: safeNonNegativeInteger(data.valuableLootThresholdCopper,
 			DEFAULT_SETTINGS.valuableLootThresholdCopper),
+		// v13. Read defensively rather than gated by `hasExplicitDebugSettings`-style version
+		// checks: an absent value on any pre-v13 install falls through to the default exactly
+		// like `valuableLootThresholdCopper` above already does for its own older field.
+		recommendationCapitalThresholdCopper: safeNonNegativeInteger(data.recommendationCapitalThresholdCopper,
+			DEFAULT_SETTINGS.recommendationCapitalThresholdCopper),
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
