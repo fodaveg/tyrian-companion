@@ -1,5 +1,12 @@
 # Changelog
 
+## Sin publicar
+
+- Aviso in-game: `alertIngameContent` pintaba el valor en cobre crudo (`51000 copper`); ahora
+  reutiliza el formato «5g 10s 0c» de `formatLootMoney`, extraído a un formateador puro
+  compartido. `alertIngameContent`/`alertIngamePayload` siguen recibiendo solo `AlertV1`
+  (`src/core/copper-format.ts`, `src/alerts/alert-ingame.ts`, H16.1).
+
 ## Release beta 0.1.33 - los nueve arreglos restantes del audit H15
 
 Cierra las tareas hijas del audit del 10 sep que quedaron fuera de la 0.1.32 (H15.10, 11, 14 a 19 y 23). Cada una lleva un test que ejecuta la función y falla sin el arreglo.

@@ -1,4 +1,5 @@
 import { declaresConsumedInputs } from '../account/contamination';
+import { formatCopperVisual } from '../core/copper-format';
 import type { ContainerDispositionRecommendation } from '../economy/container-recommendation';
 import { observedRateBand, unavailableRateBand, type ObservedRateBand } from './observed-rate-band';
 import type { PreparedSessionNote, SessionNoteLocale } from './session-note-model';
@@ -464,7 +465,7 @@ export function formatLootMoney(copper: number, locale: SessionNoteLocale): { vi
 	const silver = Math.floor(value / 100) % 100;
 	const bronze = value % 100;
 	return {
-		visual: `${sign}${String(gold)}g ${String(silver)}s ${String(bronze)}c`,
+		visual: formatCopperVisual(copper),
 		accessible: locale === 'es'
 			? `${sign}${String(gold)} oro, ${String(silver)} plata y ${String(bronze)} cobre`
 			: `${sign}${String(gold)} gold, ${String(silver)} silver and ${String(bronze)} copper`,

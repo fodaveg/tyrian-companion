@@ -1,3 +1,4 @@
+import { formatCopperVisual } from '../core/copper-format';
 import type { AlertKind, AlertV1 } from './alert-contract';
 
 /**
@@ -54,10 +55,15 @@ const PRICE_UNAVAILABLE_CONTENT = 'price unavailable';
  *
  * It takes an `AlertV1` and nothing else on purpose, exactly like `alertWebhookContent`. See the
  * module header: a fourth, already-composed input is the whole leak this module exists to prevent.
+ *
+ * H16.1: the value renders as "5g 10s 0c", not raw copper, the same `visual` half
+ * `formatLootMoney` builds for the session note. It is locale-free on purpose: this line runs
+ * inside a full-screen game where "5g 10s 0c" is unambiguous, and `AlertV1` carries no locale for
+ * it to translate "gold"/"silver"/"copper" into even if it wanted to.
  */
 export function alertIngameContent(alert: AlertV1): string {
 	const value = alert.totalCopper !== null
-		? `${String(alert.totalCopper)} copper`
+		? formatCopperVisual(alert.totalCopper)
 		: alert.priceStatus === 'unavailable' ? PRICE_UNAVAILABLE_CONTENT : UNQUOTED_CONTENT;
 	return `${alert.name} ×${String(alert.quantity)} · ${value}`;
 }

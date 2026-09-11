@@ -82,8 +82,14 @@ describe('H13.9/H13.15 in-game alert reason containment', () => {
 		for (const kind of ALERT_KINDS) {
 			const alert: AlertV1 = { ...ALERT, kind, reason };
 			expect(alertIngameContent(alert), `${kind}/${reason} changed the composed line`)
-				.toBe('Saco de Halloween ×3 · 120000 copper');
+				.toBe('Saco de Halloween ×3 · 12g 0s 0c');
 		}
+	});
+
+	/** H16.1: raw copper used to leak straight into the addon; the value renders "Ng Ns Nc" now. */
+	it('renders the value as gold/silver/copper instead of raw copper', () => {
+		const content = alertIngameContent({ ...ALERT, totalCopper: 51_000 });
+		expect(content).toBe('Saco de Halloween ×3 · 5g 10s 0c');
 	});
 
 	it('says an alert has no value without naming why it fired', () => {
