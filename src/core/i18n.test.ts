@@ -113,6 +113,8 @@ const H5_11_KEYS = [
 	'advisor.view.reason.price_history_disabled', 'advisor.view.reason.below_capital_threshold',
 	'advisor.view.reason.price_history_insufficient', 'advisor.view.reason.bid_above_reference',
 	'advisor.view.reason.below_local_band',
+	'advisor.view.reason.malformed_input', 'advisor.view.reason.no_close_today',
+	'advisor.view.reason.insufficient_reference', 'advisor.view.reason.undecidable_calendar',
 	'advisor.view.reason.no_sell', 'advisor.view.reason.no_salvage',
 	'advisor.view.reason.salvage_value_unknown', 'advisor.view.reason.salvage_exotic_rate_unverified',
 	'advisor.view.reason.salvage_mystic_cost_unmodeled', 'advisor.view.reason.salvage_item_evidence_uncertain',
