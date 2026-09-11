@@ -26,6 +26,8 @@ import {
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
 import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
+import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -215,6 +217,16 @@ export interface InventoryPositionRecommendationPort {
 	priceHistoryWindowDays(): number;
 	readDaily(itemId: number, fromDayUtc: string): Promise<readonly PriceHistoryDailyV1[]>;
 	/**
+	 * Read-only lookup of the datawars2 seed `PriceSeedBulkRefreshService` already cached for
+	 * `itemId` (decision 4, M2, `price-seed-cache-store.ts`), or null when nothing has been cached
+	 * for it yet. Never triggers a download itself: `refreshPriceSeeds` below is the only member of
+	 * this port that reaches the network. Read fresh per `capture()`, same as `readDaily`, and
+	 * AFTER `refreshPriceSeeds` runs (see the ordering note on `capture()` itself): a seed this same
+	 * call just cached for a newly-derived item must be visible to this read, or decision 4's whole
+	 * point (never wait 42 days per item) fails on exactly the sync that downloaded it.
+	 */
+	readCachedSeed(itemId: number): Promise<PriceSeedV1 | null>;
+	/**
 	 * Replaces the capital-derived slice of the local price-history watch list with `itemIds`
 	 * (already ranked and capped by `selectDerivedWatchListItemIds`). SPEC-recomendacion-por-
 	 * objeto.md, decision 3, M2: called once per `capture()`, only while price history is on, so a
@@ -242,6 +254,7 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 	maxPriceAgeMs: () => 900_000,
 	priceHistoryWindowDays: () => 180,
 	readDaily: async () => [],
+	readCachedSeed: async () => null,
 	updateDerivedWatchList: async () => undefined,
 	refreshPriceSeeds: async () => undefined,
 };
@@ -272,18 +285,41 @@ export class InventoryVaultCaptureService {
 		const itemIds = [...new Set(
 			Object.entries(snapshot.availableByItem).filter(([, quantity]) => quantity > 0).map(([itemId]) => Number(itemId)),
 		)];
-		const [catalog, prices, tradingPostAccess, marketDepth, dailyByItem] = await Promise.all([
+		const [catalog, prices, tradingPostAccess, marketDepth] = await Promise.all([
 			this.catalog.resolve(snapshot, locale),
 			captureInventoryPrices(snapshot, this.publicGateway, capturedAt),
 			captureInventoryTradingPostAccess(operation, snapshot.accountId),
 			captureInventoryMarketDepth(itemIds, this.publicGateway, capturedAt),
-			// No point reading a store nothing writes to: price history is opt-in, and the rule
-			// this feeds short-circuits to `review`/`price_history_disabled` before it ever looks
-			// at a percentile when it is off.
-			priceHistoryEnabled ? this.readDailyByItem(itemIds, capturedAt, windowDays) : Promise.resolve(new Map<number, readonly PriceHistoryDailyV1[]>()),
 		]);
+		const cores = await buildInventoryVaultPositionCores(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth);
 		const capitalThresholdCopper = this.recommendation.capitalThresholdCopper();
-		const input = await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth, {
+		/**
+		 * Decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2) run BEFORE `dailyByItem` is
+		 * read below, not after it as an earlier build had it. `totalSellCopper` (what
+		 * `selectDerivedWatchListItemIds` needs) never depended on price history, so this ordering
+		 * was always free to make; it matters because `refreshPriceSeeds` writes into
+		 * `tyrian-companion-price-seed-cache` and `readDailyByItem` below now also reads it
+		 * (`readCachedSeed`, decision 4): reading first meant a seed THIS SAME capture just
+		 * downloaded for a newly-derived item was invisible to `recommendPosition` until the NEXT
+		 * "Sincronizar inventario" — the item stayed `review`/`price_history_insufficient` on the
+		 * one run David was actually going to look at, defeating decision 4's entire point (never
+		 * wait 42 days per item).
+		 */
+		if (priceHistoryEnabled) {
+			const derivedItemIds = selectDerivedWatchListItemIds(
+				cores.map((core) => ({ itemId: core.itemId, totalSellCopper: core.totalSellCopper })),
+				capitalThresholdCopper,
+			);
+			await this.recommendation.updateDerivedWatchList(derivedItemIds);
+			await this.recommendation.refreshPriceSeeds(derivedItemIds);
+		}
+		// No point reading a store nothing writes to: price history is opt-in, and the rule this
+		// feeds short-circuits to `review`/`price_history_disabled` before it ever looks at a
+		// percentile when it is off.
+		const dailyByItem = priceHistoryEnabled
+			? await this.readDailyByItem(itemIds, capturedAt, windowDays)
+			: new Map<number, readonly PriceHistoryDailyV1[]>();
+		const positions = attachPositionRecommendations(cores, {
 			priceHistoryEnabled,
 			capitalThresholdCopper,
 			maxPriceAgeMs: this.recommendation.maxPriceAgeMs(),
@@ -292,20 +328,11 @@ export class InventoryVaultCaptureService {
 			dailyByItem,
 			capturedAtMs: capturedAt,
 		});
-		// Decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2): both live behind the same
-		// "Sincronizar inventario" gate as the percentile itself, and both are pointless with the
-		// feature off, since nothing will ever read the watch list or a seed it produces.
-		if (priceHistoryEnabled) {
-			const derivedItemIds = selectDerivedWatchListItemIds(
-				input.positions.map((position) => ({ itemId: position.itemId, totalSellCopper: position.totalSellCopper })),
-				capitalThresholdCopper,
-			);
-			await this.recommendation.updateDerivedWatchList(derivedItemIds);
-			await this.recommendation.refreshPriceSeeds(derivedItemIds);
-		}
-		return input;
+		positions.sort(comparePositions);
+		return { schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: snapshot.completedAt, locale, positions };
 	}
 
+	/** Own capture merged with whatever seed is already cached for the item (decision 4, M2). */
 	private async readDailyByItem(
 		itemIds: readonly number[],
 		capturedAtMs: number,
@@ -313,7 +340,13 @@ export class InventoryVaultCaptureService {
 	): Promise<Map<number, readonly PriceHistoryDailyV1[]>> {
 		const fromDayUtc = new Date(Math.max(0, capturedAtMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
 		const entries = await Promise.all(
-			itemIds.map(async (itemId) => [itemId, await this.recommendation.readDaily(itemId, fromDayUtc)] as const),
+			itemIds.map(async (itemId) => {
+				const [daily, seed] = await Promise.all([
+					this.recommendation.readDaily(itemId, fromDayUtc),
+					this.recommendation.readCachedSeed(itemId),
+				]);
+				return [itemId, mergePriceHistoryWithSeed(itemId, daily, seed)] as const;
+			}),
 		);
 		return new Map(entries);
 	}
@@ -341,19 +374,27 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 	dailyByItem: new Map(),
 };
 
+/** Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a recommendation. */
+type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
+	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'>;
+
 /**
- * Converts account-bound evidence into the identity-free rows allowed in Vault.
- * Only loose holdings from the four supported inventory locations are retained.
+ * Groups holdings into rows and values them, stopping short of `recommendPosition`.
+ *
+ * Split out of `prepareInventoryVaultSyncInput` so `capture()` can read `totalSellCopper` (what
+ * `selectDerivedWatchListItemIds` needs) BEFORE it has any price-history series to feed
+ * `recommendPosition` with, letting decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2)
+ * run ahead of that read instead of after it. Only loose holdings from the four supported
+ * inventory locations are retained.
  */
-export async function prepareInventoryVaultSyncInput(
+async function buildInventoryVaultPositionCores(
 	snapshot: StorageSnapshot,
 	catalog: CatalogResolution,
 	prices: InventoryPriceSnapshotV1,
 	tradingPostAccess: InventoryTradingPostAccess,
 	locale: CatalogLocale,
 	marketDepth?: InventoryMarketDepthEvidenceV1,
-	recommendationInputs: InventoryPositionRecommendationInputs = DEFAULT_RECOMMENDATION_INPUTS,
-): Promise<InventoryVaultSyncInput> {
+): Promise<InventoryVaultPositionCore[]> {
 	assertCaptureRelations(snapshot, catalog, prices, locale);
 	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
 		|| !sameNumbers(marketDepth.requestedItemIds, prices.requestedItemIds))) {
@@ -380,7 +421,7 @@ export async function prepareInventoryVaultSyncInput(
 	const consumedByItem = new Map<number, number>();
 	const orderedGroups = [...grouped.values()].sort((left, right) => left.itemId - right.itemId
 		|| left.source.localeCompare(right.source) || (left.character ?? '').localeCompare(right.character ?? ''));
-	const positions: InventoryVaultPosition[] = [];
+	const cores: InventoryVaultPositionCore[] = [];
 	for (const group of orderedGroups) {
 		const item = catalog.items[String(group.itemId)] ?? null;
 		const price = priceById.get(group.itemId);
@@ -401,17 +442,7 @@ export async function prepareInventoryVaultSyncInput(
 			: depth.coverage !== 'complete' ? depth.coverage === 'invalid' ? 'invalid' : 'unavailable'
 				: demonstrated?.status ?? 'invalid';
 		const totalSellCopper = demonstrated?.status === 'complete' ? demonstrated.netCopper : null;
-		const recommendation = recommendPosition({
-			capturedAtMs: recommendationInputs.capturedAtMs,
-			priceHistoryEnabled: recommendationInputs.priceHistoryEnabled,
-			totalSellCopper,
-			capitalThresholdCopper: recommendationInputs.capitalThresholdCopper,
-			maxPriceAgeMs: recommendationInputs.maxPriceAgeMs,
-			priceHistoryDaily: recommendationInputs.dailyByItem.get(group.itemId) ?? [],
-			priceHistoryWindowDays: recommendationInputs.priceHistoryWindowDays,
-			priceHistoryRequiredDays: recommendationInputs.priceHistoryRequiredDays,
-		});
-		positions.push({
+		cores.push({
 			positionId: await positionId(group.itemId, group.source, group.character),
 			itemId: group.itemId,
 			source: group.source,
@@ -429,14 +460,54 @@ export async function prepareInventoryVaultSyncInput(
 			type: item?.type ? cleanText(item.type) : null,
 			rarity: item?.rarity ? cleanText(item.rarity) : null,
 			icon: item?.icon ?? null,
+		});
+	}
+	return cores;
+}
+
+/** Attaches `recommendPosition`'s verdict to every core row, in the same order it was given. */
+function attachPositionRecommendations(
+	cores: readonly InventoryVaultPositionCore[],
+	recommendationInputs: InventoryPositionRecommendationInputs,
+): InventoryVaultPosition[] {
+	return cores.map((core) => {
+		const recommendation = recommendPosition({
+			capturedAtMs: recommendationInputs.capturedAtMs,
+			priceHistoryEnabled: recommendationInputs.priceHistoryEnabled,
+			totalSellCopper: core.totalSellCopper,
+			capitalThresholdCopper: recommendationInputs.capitalThresholdCopper,
+			maxPriceAgeMs: recommendationInputs.maxPriceAgeMs,
+			priceHistoryDaily: recommendationInputs.dailyByItem.get(core.itemId) ?? [],
+			priceHistoryWindowDays: recommendationInputs.priceHistoryWindowDays,
+			priceHistoryRequiredDays: recommendationInputs.priceHistoryRequiredDays,
+		});
+		return {
+			...core,
 			recommendation: recommendation.action,
 			recommendationReason: recommendation.reason,
 			recommendationUntil: recommendation.until,
 			recommendationMissing: recommendation.missing,
 			pricePercentile: recommendation.pricePercentile,
 			priceCoverageDays: recommendation.priceCoverageDays,
-		});
-	}
+		};
+	});
+}
+
+/**
+ * Converts account-bound evidence into the identity-free rows allowed in Vault.
+ * Only loose holdings from the four supported inventory locations are retained.
+ */
+export async function prepareInventoryVaultSyncInput(
+	snapshot: StorageSnapshot,
+	catalog: CatalogResolution,
+	prices: InventoryPriceSnapshotV1,
+	tradingPostAccess: InventoryTradingPostAccess,
+	locale: CatalogLocale,
+	marketDepth?: InventoryMarketDepthEvidenceV1,
+	recommendationInputs: InventoryPositionRecommendationInputs = DEFAULT_RECOMMENDATION_INPUTS,
+): Promise<InventoryVaultSyncInput> {
+	const cores = await buildInventoryVaultPositionCores(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth);
+	const positions = attachPositionRecommendations(cores, recommendationInputs);
 	positions.sort(comparePositions);
 	return {
 		schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION,

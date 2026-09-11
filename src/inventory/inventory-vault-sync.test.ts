@@ -1,16 +1,22 @@
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PINNED_SCHEMA, type ItemHolding, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
+import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
+import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import {
 	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
 	prepareInventoryVaultSyncInput,
+	type InventoryPositionRecommendationPort,
 	type InventoryVaultFile,
 	type InventoryVaultPort,
 } from './inventory-vault-sync';
@@ -134,6 +140,7 @@ describe('inventory Vault projection', () => {
 			maxPriceAgeMs: () => 900_000,
 			priceHistoryWindowDays: () => 180,
 			readDaily: async () => [],
+			readCachedSeed: async () => null,
 			updateDerivedWatchList: async () => undefined,
 			refreshPriceSeeds: async () => undefined,
 		};
@@ -200,6 +207,69 @@ describe('inventory Vault projection', () => {
 	});
 
 	/**
+	 * H15.x (2026-09-11, measured against 3292cd9): `capture()` fed `recommendPosition` only the
+	 * plugin's own capture, never the datawars2 seed `PriceSeedBulkRefreshService` already cached in
+	 * `tyrian-companion-price-seed-cache`. An item with zero of its own captures but 60 cached seed
+	 * days stayed `review`/`price_history_insufficient` forever, defeating decision 4's whole point
+	 * (never wait 42 days per item). This exercises the REAL `IndexedDbPriceSeedCacheStore` (the
+	 * same fake IndexedDB `price-seed-cache-store.test.ts` and `price-seed-bulk-refresh.test.ts` use)
+	 * and a `recommendation` port built the same way `main.ts` wires it (`readCachedSeed` reading
+	 * that same cache, read-only), not a stub of `readDaily`.
+	 */
+	it('merges a cached datawars2 seed into the recommendation even with zero of the plugin\'s own captures', async () => {
+		const itemId = 42;
+		const capturedAtMs = Date.parse(CAPTURED_AT);
+		const vaultId = 'vault-h15';
+		const factory = new IDBFactory();
+		const writeStore = await IndexedDbPriceSeedCacheStore.open(factory);
+		await writeStore.put(vaultId, itemId, seedWith(seedDaysFor(60, 100, 1, capturedAtMs)), capturedAtMs);
+		writeStore.close();
+		// A second, independent connection to the same database: `main.ts` opens
+		// `priceSeedBulkRefresh`'s writer and the recommendation port's reader separately too.
+		const readStore = await IndexedDbPriceSeedCacheStore.open(factory);
+
+		const snapshot: StorageSnapshot = { ...snapshotWith([holding(itemId, 5, { source: 'bank', slot: 0 })]), availableByItem: { [String(itemId)]: 5 } };
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshot) };
+		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
+		const gateway: PublicCatalogGateway = {
+			requestDetailed: async (path) => {
+				if (path.startsWith('commerce/listings?')) {
+					return { status: 200, headers: {}, body: [{ id: itemId, buys: [{ listings: 1, unit_price: 100, quantity: 15 }], sells: [] }] };
+				}
+				if (path.startsWith('commerce/prices?')) {
+					return { status: 200, headers: {}, body: [{ id: itemId, whitelisted: true, buys: { quantity: 1, unit_price: 100 }, sells: { quantity: 1, unit_price: 110 } }] };
+				}
+				throw new Error(`unexpected path in test gateway: ${path}`);
+			},
+		};
+		const recommendation: InventoryPositionRecommendationPort = {
+			priceHistoryEnabled: () => true,
+			capitalThresholdCopper: () => 1,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			// Zero of the plugin's own captures: exactly the fresh-watch-list-item case decision 4 exists for.
+			readDaily: async () => [],
+			readCachedSeed: async (id) => (await readStore.get(vaultId, id))?.seed ?? null,
+			updateDerivedWatchList: async () => undefined,
+			refreshPriceSeeds: async () => undefined,
+		};
+		const service = new InventoryVaultCaptureService(
+			client as never, snapshots, catalog, gateway, recommendation, () => capturedAtMs,
+		);
+		const input = await service.capture('es');
+		const position = input.positions.find((entry) => entry.itemId === itemId);
+		// Measured failing on 3292cd9 (no `readCachedSeed` in the port, `readDailyByItem` reading
+		// only `readDaily`): `toMatchObject({ priceCoverageDays: 60, pricePercentile: 100 })` fails
+		// with `object.priceCoverageDays: expected 60, received 0` and `object.pricePercentile:
+		// expected 100, received null` (recommendationReason `price_history_insufficient`).
+		expect(position?.priceCoverageDays).toBeGreaterThanOrEqual(42);
+		expect(typeof position?.pricePercentile).toBe('number');
+		expect(position).toMatchObject({ recommendation: 'sell', recommendationReason: 'bid_above_reference', priceCoverageDays: 60, pricePercentile: 100 });
+		readStore.close();
+	});
+
+	/**
 	 * M2 test 4 (docs/SPEC-recomendacion-por-objeto.md, `docs/PLATFORM_POLICY.md`): the decision-3
 	 * watch-list update and the decision-4 bulk seed refresh are both opt-in side effects of
 	 * `capture()`, gated on `priceHistoryEnabled`. A fresh install (the default port, feature off)
@@ -218,6 +288,7 @@ describe('inventory Vault projection', () => {
 			maxPriceAgeMs: () => 900_000,
 			priceHistoryWindowDays: () => 180,
 			readDaily: async () => [],
+			readCachedSeed: async () => null,
 			updateDerivedWatchList,
 			refreshPriceSeeds,
 		};
@@ -240,6 +311,7 @@ describe('inventory Vault projection', () => {
 			maxPriceAgeMs: () => 900_000,
 			priceHistoryWindowDays: () => 180,
 			readDaily: async () => [],
+			readCachedSeed: async () => null,
 			updateDerivedWatchList,
 			refreshPriceSeeds,
 		};
@@ -755,6 +827,20 @@ function dailySeriesFor(itemId: number, days: number, startCopper: number, step:
 				medianCopperX2: (startCopper + index * step) * 2, closeCopper: startCopper + index * step, closeCapturedAtMs: endMs,
 			},
 		});
+	}
+	return out;
+}
+
+function seedWith(days: PriceSeedDayV1[]): PriceSeedV1 {
+	return { version: 1, itemId: 42, source: 'datawars2', retrievedAt: CAPTURED_AT, days };
+}
+
+/** One seed day per day, bid rising by `step` from `startCopper`, ending on `endMs`'s own day. */
+function seedDaysFor(days: number, startCopper: number, step: number, endMs: number): PriceSeedDayV1[] {
+	const out: PriceSeedDayV1[] = [];
+	for (let index = 0; index < days; index += 1) {
+		const dayUtc = new Date(endMs - (days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
+		out.push({ dayUtc, bidCopper: startCopper + index * step, askCopper: null });
 	}
 	return out;
 }
