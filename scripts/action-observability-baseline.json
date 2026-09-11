@@ -2457,6 +2457,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
+		"src/core/copper-format.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
+		},
 		"src/core/http.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
@@ -11244,11 +11249,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "050a3a6b9b3a1bb8061c64983b5d78494ba11b7c",
+					"id": "8260f5da2d3faab7f42b7f0ea464b3184fd77088",
 					"kind": "catch_clause",
-					"line": 141,
+					"line": 142,
 					"column": 5,
-					"endLine": 144,
+					"endLine": 152,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11262,9 +11267,9 @@
 				{
 					"id": "ae7486df08de29a96206c6337a45336b976bd73d",
 					"kind": "catch_clause",
-					"line": 147,
+					"line": 155,
 					"column": 5,
-					"endLine": 149,
+					"endLine": 157,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -11278,9 +11283,9 @@
 				{
 					"id": "8aaaacbec7cede2945697abfbbf970184538122c",
 					"kind": "catch_clause",
-					"line": 162,
+					"line": 170,
 					"column": 5,
-					"endLine": 164,
+					"endLine": 172,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12529,11 +12534,11 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "802c9a98d47f5a8240fb36f79a98715f17eca050",
+					"id": "3fecb5620680a4d6bd45197024a9ea8cbd10fec4",
 					"kind": "catch_clause",
-					"line": 99,
+					"line": 101,
 					"column": 5,
-					"endLine": 104,
+					"endLine": 113,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
@@ -12547,9 +12552,9 @@
 				{
 					"id": "762ee83bf9a9d39190d53e2b53bb5a8bedce13ec",
 					"kind": "catch_clause",
-					"line": 131,
+					"line": 140,
 					"column": 5,
-					"endLine": 136,
+					"endLine": 145,
 					"endColumn": 4,
 					"classification": "allowlisted",
 					"evidence": {
