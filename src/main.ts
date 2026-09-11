@@ -88,6 +88,8 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-s
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
+import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
+import { fetchPriceSeed } from './economy/price-seed-source';
 import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
@@ -308,6 +310,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private priceHistory: PriceHistoryRuntime | null = null;
 	/** Deferred to the panel's own load action; never touched from `onload`. */
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
+	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
+	private priceSeedBulkRefresh: PriceSeedBulkRefreshService | null = null;
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
@@ -712,6 +716,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 			now: () => Date.now(),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
+		// Construction opens no I/O; decision 4 (SPEC-recomendacion-por-objeto.md §7) only ever
+		// runs from inside `capture()`'s own post-sync pass, itself gated on `priceHistoryEnabled`.
+		this.priceSeedBulkRefresh = new PriceSeedBulkRefreshService({
+			factory: window.indexedDB,
+			vaultId,
+			now: () => Date.now(),
+			fetchSeed: async (itemId, actionContext) => await fetchPriceSeed(itemId, { transport, now: () => Date.now(), actionContext }),
+			diagnostics: this.localDebugActions ?? undefined,
+		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
 			const sessionRoot = `${this.settings.outputFolder}/sessions/`;
 			const currentSessionNote = file instanceof TFile && file.extension === 'md' && file.path.startsWith(sessionRoot);
@@ -778,6 +791,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 						// after every compaction (src/runtime/assemble-price-history.ts); a second,
 						// independent reader that never touches the panel's own selected series.
 						readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
+						// Decision 3 (SPEC-recomendacion-por-objeto.md §7): capital-derived watch list,
+						// recomputed on every sync so an item that drops below the threshold leaves it.
+						updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
+						// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
+						refreshPriceSeeds: async (itemIds) => { await this.priceSeedBulkRefresh?.run(itemIds); },
 					},
 				);
 			}
@@ -1065,6 +1083,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.inventoryPreferences?.dispose();
 		this.priceHistory?.dispose();
 		this.priceHistoryPanelSeed?.dispose();
+		this.priceSeedBulkRefresh?.dispose();
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
