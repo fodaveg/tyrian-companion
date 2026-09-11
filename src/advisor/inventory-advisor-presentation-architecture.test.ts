@@ -40,6 +40,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 		imports: ['../economy/gw2-fees', './inventory-advisor-result', './inventory-advisor-discard',
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
 			'./inventory-advisor-presentation-model', '../economy/item-liquidity', '../economy/reservation',
+			'../economy/reservation-model',
 			'./inventory-container-economy', '../economy/commerce-listings', './inventory-equipment-economy'],
 		portCalls: [],
 	}],
