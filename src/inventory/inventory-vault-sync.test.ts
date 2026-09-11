@@ -11,6 +11,7 @@ import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
+import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import {
 	InventoryVaultCaptureService,
@@ -143,6 +144,7 @@ describe('inventory Vault projection', () => {
 			readCachedSeed: async () => null,
 			updateDerivedWatchList: async () => undefined,
 			refreshPriceSeeds: async () => undefined,
+			seasonalInputFor: () => null,
 		};
 		const service = new InventoryVaultCaptureService(
 			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
@@ -190,6 +192,7 @@ describe('inventory Vault projection', () => {
 			priceHistoryRequiredDays: 42,
 			dailyByItem,
 			capturedAtMs: Date.parse(CAPTURED_AT),
+			seasonalInputFor: () => null,
 		});
 		const byItem = new Map(input.positions.map((position) => [position.itemId, position]));
 		const ready = byItem.get(42);
@@ -204,6 +207,65 @@ describe('inventory Vault projection', () => {
 		for (const position of input.positions) {
 			if (position.pricePercentile !== null) expect(position.priceCoverageDays).toBeGreaterThan(0);
 		}
+	});
+
+	/**
+	 * Test 3, M3 cierre (docs/SPEC-recomendacion-por-objeto.md §5): `capture()`'s cableado, not just
+	 * the pure `recommendPosition`. A festival item in season, at the floor of its own reference,
+	 * writes `sell_at_season` with `tc_recommendation_until` at the close of ITS OWN window, never
+	 * Halloween's; an item absent from `seasonalInputFor`'s table falls straight to rule (c).
+	 */
+	it('a festival item writes sell_at_season with `until` at the close of ITS OWN window; a non-calendar item falls to rule (c)', async () => {
+		const festivalItemId = 47_909;
+		const otherItemId = 99;
+		const capturedAtMs = Date.parse('2026-12-20T12:00:00.000Z');
+		const window: SeasonalWindowV1 = { version: 1, seasonId: 'test-window', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12 };
+		const snapshot = snapshotWith([
+			holding(festivalItemId, 5, { source: 'bank', slot: 0 }),
+			holding(otherItemId, 5, { source: 'bank', slot: 1 }),
+		]);
+		// Ascending by itemId: the market-depth evidence type requires strictly ascending ids.
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: otherItemId, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
+			{ itemId: festivalItemId, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
+		]);
+		const marketDepth: InventoryMarketDepthEvidenceV1 = {
+			version: 1, capturedAt: CAPTURED_AT, source: 'gw2-commerce-listings', requestedItemIds: [otherItemId, festivalItemId], status: 'complete',
+			items: [
+				{ itemId: otherItemId, coverage: 'complete', buys: [{ unitCopper: 100, quantity: 10 }], sells: [] },
+				{ itemId: festivalItemId, coverage: 'complete', buys: [{ unitCopper: 100, quantity: 10 }], sells: [] },
+			],
+		};
+		// Flat 36-day series at 500 copper: today is at the reference floor for both items, but only
+		// the festival item has a calendar entry that reads it as `in_season`.
+		const dailyByItem = new Map<number, PriceHistoryDailyV1[]>([
+			[festivalItemId, dailySeriesFor(festivalItemId, 36, 500, 0, capturedAtMs)],
+			[otherItemId, dailySeriesFor(otherItemId, 36, 500, 0, capturedAtMs)],
+		]);
+		const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es', marketDepth, {
+			priceHistoryEnabled: true,
+			capitalThresholdCopper: 1,
+			maxPriceAgeMs: 900_000,
+			priceHistoryWindowDays: 180,
+			priceHistoryRequiredDays: 42,
+			dailyByItem,
+			capturedAtMs,
+			seasonalInputFor: (itemId) => itemId === festivalItemId
+				? { window, parameters: { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 } }
+				: null,
+		});
+		const byItem = new Map(input.positions.map((position) => [position.itemId, position]));
+		const festival = byItem.get(festivalItemId);
+		const other = byItem.get(otherItemId);
+		const expectedUntil = new Date(seasonalWindowClosesAfterMs(window, capturedAtMs)!).toISOString();
+		expect(festival).toMatchObject({ recommendation: 'sell_at_season', recommendationReason: 'seasonal_hold', recommendationUntil: expectedUntil });
+		// Never Halloween's close for the same instant.
+		expect(festival?.recommendationUntil).not.toBe(new Date(seasonalWindowClosesAfterMs(
+			{ version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 }, capturedAtMs,
+		)!).toISOString());
+		// The non-calendar item falls to rule (c): flat series at its own reference floor sells or
+		// holds on the percentile, never `sell_at_season`.
+		expect(other?.recommendation).not.toBe('sell_at_season');
 	});
 
 	/**
@@ -253,6 +315,7 @@ describe('inventory Vault projection', () => {
 			readCachedSeed: async (id) => (await readStore.get(vaultId, id))?.seed ?? null,
 			updateDerivedWatchList: async () => undefined,
 			refreshPriceSeeds: async () => undefined,
+			seasonalInputFor: () => null,
 		};
 		const service = new InventoryVaultCaptureService(
 			client as never, snapshots, catalog, gateway, recommendation, () => capturedAtMs,
@@ -291,6 +354,7 @@ describe('inventory Vault projection', () => {
 			readCachedSeed: async () => null,
 			updateDerivedWatchList,
 			refreshPriceSeeds,
+			seasonalInputFor: () => null,
 		};
 		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
 		await service.capture('es');
@@ -314,6 +378,7 @@ describe('inventory Vault projection', () => {
 			readCachedSeed: async () => null,
 			updateDerivedWatchList,
 			refreshPriceSeeds,
+			seasonalInputFor: () => null,
 		};
 		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
 		await service.capture('es');

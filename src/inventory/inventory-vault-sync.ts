@@ -11,6 +11,7 @@ import {
 	POSITION_RECOMMENDATION_REASON_CODES,
 	type PositionRecommendationAction,
 	type PositionRecommendationReasonCode,
+	type PositionRecommendationSeasonalInput,
 } from '../advisor/inventory-position-recommendation';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
@@ -240,6 +241,14 @@ export interface InventoryPositionRecommendationPort {
 	 * botón «Sincronizar»".
 	 */
 	refreshPriceSeeds(itemIds: readonly number[]): Promise<void>;
+	/**
+	 * Rule (b), M3: this item's entry in the curated festival calendar (its window and the pack's
+	 * shared `sellSignal` parameters), or `null` when the item has none, which routes it straight
+	 * to rule (c) exactly as before M3. Synchronous and pure (the calendar lives in the same
+	 * in-memory curated bundle `maxPriceAgeMs` above already reads), but still read fresh per
+	 * `capture()`: the bundle can expire between two captures like any of its other fields.
+	 */
+	seasonalInputFor(itemId: number): PositionRecommendationSeasonalInput | null;
 }
 
 /**
@@ -257,6 +266,7 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 	readCachedSeed: async () => null,
 	updateDerivedWatchList: async () => undefined,
 	refreshPriceSeeds: async () => undefined,
+	seasonalInputFor: () => null,
 };
 
 const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
@@ -327,6 +337,7 @@ export class InventoryVaultCaptureService {
 			priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
 			dailyByItem,
 			capturedAtMs: capturedAt,
+			seasonalInputFor: (itemId) => this.recommendation.seasonalInputFor(itemId),
 		});
 		positions.sort(comparePositions);
 		return { schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: snapshot.completedAt, locale, positions };
@@ -361,6 +372,8 @@ export interface InventoryPositionRecommendationInputs {
 	priceHistoryWindowDays: number;
 	priceHistoryRequiredDays: number;
 	dailyByItem: ReadonlyMap<number, readonly PriceHistoryDailyV1[]>;
+	/** Rule (b), M3: per-item, unlike every other field here, because the calendar is per item. */
+	seasonalInputFor(itemId: number): PositionRecommendationSeasonalInput | null;
 }
 
 /** Matches `DEFAULT_RECOMMENDATION_PORT`: every position comes back `review`/`price_history_disabled`. */
@@ -371,6 +384,7 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 	maxPriceAgeMs: 900_000,
 	priceHistoryWindowDays: 180,
 	priceHistoryRequiredDays: 42,
+	seasonalInputFor: () => null,
 	dailyByItem: new Map(),
 };
 
@@ -480,6 +494,7 @@ function attachPositionRecommendations(
 			priceHistoryDaily: recommendationInputs.dailyByItem.get(core.itemId) ?? [],
 			priceHistoryWindowDays: recommendationInputs.priceHistoryWindowDays,
 			priceHistoryRequiredDays: recommendationInputs.priceHistoryRequiredDays,
+			seasonal: recommendationInputs.seasonalInputFor(core.itemId),
 		});
 		return {
 			...core,
