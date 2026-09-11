@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
-import { seasonalWindowClosesAfterMs } from '../economy/seasonal-window';
+import { isFestivalCalendar, isSeasonalWindow, seasonalWindowClosesAfterMs, sha256FestivalCalendar } from '../economy/seasonal-window';
 import {
 	createInventoryAdvisorBuiltinBundleProvider,
 	inventoryAdvisorBuiltinBundleProvider,
@@ -74,9 +74,15 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(isInventoryAdvisorRulePackAny(result.bundle.rulePack)).toBe(true);
 		expect(isInventoryKnowledgePack(result.bundle.knowledgePack)).toBe(true);
 		expect(isInventoryContainerEconomyPack(result.bundle.economyPack)).toBe(true);
+		expect(isFestivalCalendar(result.bundle.festivalCalendar)).toBe(true);
 		expect(sha256InventoryRulePack(result.bundle.rulePack)).toBe(result.bundle.rulePack.sha256);
 		expect(sha256InventoryKnowledgePack(result.bundle.knowledgePack)).toBe(result.bundle.knowledgePack.sha256);
 		expect(sha256InventoryContainerEconomyPack(result.bundle.economyPack)).toBe(result.bundle.economyPack.sha256);
+		// Test 4 (M3 cierre): the hash embedded in the pack matches what the repo's own hash
+		// function recomputes, same discipline `scripts/recompute-bundle-hashes.ts` applies to the
+		// rule/knowledge pack constants above (unaffected here: this commit adds no new rule or
+		// knowledge pack entry, so re-running that script prints the SAME two constants).
+		expect(sha256FestivalCalendar(result.bundle.festivalCalendar)).toBe(result.bundle.festivalCalendar.sha256);
 		expect(result.bundle.rulePack).toMatchObject({
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-16T05:22:24.000Z', reviewStatus: 'human_reviewed',
 			validUntil: '2026-12-01T00:00:00.000Z',
@@ -85,6 +91,29 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 			publishedAt: '2026-08-14T18:04:33.000Z', reviewedAt: '2026-08-14T18:04:33.000Z',
 			validUntil: '2026-12-01T00:00:00.000Z',
 		});
+	});
+
+	/**
+	 * Test 2, M3 cierre (docs/SPEC-recomendacion-por-objeto.md §5): every calendar `seasonId` is a
+	 * real, distinct, valid window, and 36059 (no bid market measured, audit §5) is NOT in it.
+	 */
+	it('carries a valid, distinct festival calendar entry per measured item, and excludes 36059', () => {
+		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
+		if (result.status !== 'available') throw new Error('expected built-in bundle');
+		const calendar = result.bundle.festivalCalendar;
+		expect(isFestivalCalendar(calendar)).toBe(true);
+		expect(sha256FestivalCalendar(calendar)).toBe(calendar.sha256);
+		const itemIds = calendar.entries.map((entry) => entry.itemId).sort((left, right) => left - right);
+		expect(itemIds).toEqual([36_038, 36_041, 43_320, 47_909, 48_805]);
+		expect(itemIds).not.toContain(36_059);
+		const seasonIds = new Set<string>();
+		for (const entry of calendar.entries) {
+			expect(isSeasonalWindow(entry.window)).toBe(true);
+			expect(entry.auditRow.length).toBeGreaterThan(0);
+			expect(seasonIds.has(entry.window.seasonId)).toBe(false);
+			seasonIds.add(entry.window.seasonId);
+		}
+		expect(seasonIds.size).toBe(5);
 	});
 
 	it('uses standard SHA-256 rather than a self-consistent local fingerprint', () => {

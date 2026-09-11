@@ -13,7 +13,12 @@ import type {
 import {
 	isInventoryContainerEconomyPack,
 	enabledHalloweenContainerEconomyPack,
+	isFestivalCalendar,
+	sha256FestivalCalendar,
+	FESTIVAL_CALENDAR_VERSION,
 	type InventoryContainerEconomyPackV1,
+	type FestivalCalendarV1,
+	type FestivalCalendarEntryV1,
 } from './inventory-container-economy';
 
 export const INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION = 3 as const;
@@ -24,6 +29,8 @@ export interface InventoryAdvisorBuiltinBundleV3 {
 	rulePack: InventoryAdvisorRulePackV2;
 	knowledgePack: InventoryKnowledgePackV1;
 	economyPack: InventoryContainerEconomyPackV1;
+	/** M3: per-item selling windows, separate from `economyPack.season` (the bag's own opening rule). */
+	festivalCalendar: FestivalCalendarV1;
 }
 
 export type InventoryAdvisorBuiltinBundleV2 = InventoryAdvisorBuiltinBundleV3;
@@ -78,6 +85,53 @@ const BUILTIN_RULE_PACK: InventoryAdvisorRulePackV2 = {
 	}],
 };
 
+/**
+ * M3: measured per-item selling windows (`docs/audit/2026-09-11-festivales-datawars2.md`), 7
+ * editions (2019-2025) of Shadow of the Mad King against datawars2's `buy_price_avg`. Distinct
+ * from `HALLOWEEN_SEASONAL_WINDOW`/`economyPack.season`: none of these five windows coincide with
+ * the festival's own 10-01..11-15 span, so each carries its own `seasonId`.
+ *
+ * 36059 (Plastic Fangs) has NO entry: its `buy_price_avg` is 0 or null across its whole measured
+ * history (the audit's resumen table, id 36059), so it falls to rule (c) rather than a guessed
+ * window. It stays in `PRICE_HISTORY_NOTE_PILOT_ITEMS` regardless (its sell-side series is fine).
+ */
+const FESTIVAL_CALENDAR_ENTRIES: FestivalCalendarEntryV1[] = [
+	{
+		itemId: 36_038,
+		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (36038 Saco de Halloween)',
+		window: { version: 1, seasonId: 'saco-halloween-primavera', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 },
+	},
+	{
+		itemId: 36_041,
+		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (36041 Trozo de caramelo)',
+		window: { version: 1, seasonId: 'trozo-caramelo-semana-previa', opensOn: '09-28', closesOn: '10-17', returnsInMonth: 9 },
+	},
+	{
+		itemId: 47_909,
+		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (47909 Barra de caramelo)',
+		window: { version: 1, seasonId: 'barra-caramelo-inicio-festival', opensOn: '10-05', closesOn: '10-24', returnsInMonth: 10 },
+	},
+	{
+		itemId: 43_320,
+		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (43320 Jorcamelo)',
+		window: { version: 1, seasonId: 'jorcamelo-junio', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 },
+	},
+	{
+		itemId: 48_805,
+		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (48805 Colmillos de plástico de alta calidad)',
+		window: { version: 1, seasonId: 'colmillos-alta-calidad-inicio-festival', opensOn: '10-05', closesOn: '10-24', returnsInMonth: 10 },
+	},
+];
+
+const FESTIVAL_CALENDAR: FestivalCalendarV1 = buildFestivalCalendar(FESTIVAL_CALENDAR_ENTRIES);
+
+function buildFestivalCalendar(entries: FestivalCalendarEntryV1[]): FestivalCalendarV1 {
+	const candidate = { version: FESTIVAL_CALENDAR_VERSION, entries, sha256: '' };
+	candidate.sha256 = sha256FestivalCalendar(candidate);
+	if (!isFestivalCalendar(candidate)) throw new Error('Invalid built-in festival calendar.');
+	return Object.freeze(candidate);
+}
+
 const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 	version: INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION,
 	policy: {
@@ -117,6 +171,7 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 		},
 		knowledgePackSha256: KNOWLEDGE_PACK_SHA256,
 	}, HUMAN_REVIEWED_AT),
+	festivalCalendar: FESTIVAL_CALENDAR,
 };
 
 /**
@@ -153,12 +208,13 @@ export function createInventoryAdvisorBuiltinBundleProvider(
 export const inventoryAdvisorBuiltinBundleProvider = createInventoryAdvisorBuiltinBundleProvider();
 
 function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundleV3 {
-	if (!record(value) || !exactKeys(value, ['version', 'policy', 'rulePack', 'knowledgePack', 'economyPack'])
+	if (!record(value) || !exactKeys(value, ['version', 'policy', 'rulePack', 'knowledgePack', 'economyPack', 'festivalCalendar'])
 		|| value.version !== INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION
 		|| !isInventoryAdvisorPolicy(value.policy)
 		|| !isInventoryAdvisorRulePackV2(value.rulePack)
 		|| !isInventoryKnowledgePack(value.knowledgePack)
-		|| !isInventoryContainerEconomyPack(value.economyPack)) return false;
+		|| !isInventoryContainerEconomyPack(value.economyPack)
+		|| !isFestivalCalendar(value.festivalCalendar)) return false;
 	const bundle = value as unknown as InventoryAdvisorBuiltinBundleV3;
 	return exactPolicy(bundle.policy)
 		&& bundle.rulePack.id === 'tc.inventory-rules.curated-v2'
@@ -185,7 +241,8 @@ function isBuiltinBundle(value: unknown): value is InventoryAdvisorBuiltinBundle
 		&& bundle.economyPack.activation.activatedAt === HUMAN_REVIEWED_AT
 		&& bundle.economyPack.rulePack.sha256 === RULE_PACK_SHA256
 		&& bundle.economyPack.knowledgePackSha256 === KNOWLEDGE_PACK_SHA256
-		&& canonical(bundle.economyPack) === canonical(BUILTIN_BUNDLE.economyPack);
+		&& canonical(bundle.economyPack) === canonical(BUILTIN_BUNDLE.economyPack)
+		&& canonical(bundle.festivalCalendar) === canonical(BUILTIN_BUNDLE.festivalCalendar);
 }
 
 function exactPolicy(value: InventoryAdvisorPolicyV1): boolean {
