@@ -26,6 +26,13 @@ describe('LEGENDARY_MATERIALS_TABLE (Klobjarne Geirr, M4)', () => {
 		expect(sha256LegendaryMaterialsTable(withoutHash)).toBe(LEGENDARY_MATERIALS_TABLE.sha256);
 	});
 
+	// The self-computed hash above can only ever equal itself, so on its own it cannot notice a
+	// changed quantity. Pinning the value makes any edit to the curated data a deliberate one:
+	// change the data, re-review its wiki sources, then update this literal in the same commit.
+	it('pins the curated table content to its reviewed hash', () => {
+		expect(LEGENDARY_MATERIALS_TABLE.sha256).toBe('3ce461b6ced182637d75e8aa2642598cc2cdb71972b63778419a75928277dfc3');
+	});
+
 	it('has exactly one entry, for Klobjarne Geirr, with 77 leaves split 71 resolvable / 6 unresolved', () => {
 		expect(LEGENDARY_MATERIALS_TABLE.entries).toHaveLength(1);
 		const entry = legendaryMaterialsEntryFor(LEGENDARY_MATERIALS_TABLE, LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR);
