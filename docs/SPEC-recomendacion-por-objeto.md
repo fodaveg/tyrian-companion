@@ -4,6 +4,9 @@ Escrita el 2026-09-11 sobre `main@2e58083` (0.1.33). Es la especificación que l
 implementa: no arrastra la conversación de diseño. Todo lo que afirma sobre el código lleva
 `ruta:línea` y se puede comprobar en ese SHA.
 
+**Decisiones cerradas el 11 sep 2026 (§7).** La implementación arranca en sesión aparte leyendo solo
+este fichero.
+
 ## Lo que David quiere, con sus palabras
 
 «quiero un campo que me diga si vender o mantener. Por ejemplo: pedazo de ámbar gris son 440 oros.
@@ -552,3 +555,16 @@ reescribiría en silencio la política de cualquier instalación que lo hubiera 
 error que el propio comentario de `src/core/settings.ts:101-106` documenta como ya cometido una vez.
 Con 10 oros, de tu captura entran el ámbar gris, las esquirlas y la gema amalgamada, y quedan fuera
 las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/settings.ts:25`).
+
+### Veredictos de David (11 sep 2026)
+
+1. **Decidido el 11 sep 2026: SÍ, acotado.** Se reabre «qué me falta para X» solo para legendarias que
+   David nombre en un ajuste; materiales desde tabla curada; lo conseguido se descuenta con
+   `/v2/account/legendaryarmory`. M4 queda desbloqueado. Anotado en `docs/PRODUCT.md`.
+2. **Decidido el 11 sep 2026: tabla curada.** La API no tiene recetas de Forja Mística (medición de la
+   decisión 2).
+3. **Decidido el 11 sep 2026: lista derivada del inventario, tope 400.**
+4. **Decidido el 11 sep 2026: SÍ, solo tras «Sincronizar inventario», secuencial**, con caché de 24 h y
+   tope por ejecución. Pendiente de anotar en `docs/PLATFORM_POLICY.md` en M2.
+5. **Decidido el 11 sep 2026: ajuste nuevo, 10 oros (100 000 cobre).** No se reutiliza
+   `valuableLootThresholdCopper`.

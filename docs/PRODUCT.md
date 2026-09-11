@@ -104,6 +104,16 @@ Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque 
   objeto» y «raro sin cotización o vinculado» dejan de avisar y pasan a información en la nota de
   sesión. La etiqueta «Halloween» solo aparece en temporada (1 oct a 15 nov UTC) o en el mapa 866.
 
+## Decisiones de rumbo del 2026-09-11
+
+**Se reabre, acotado, el frente «qué me falta para X»** que la decisión del 2026-09-01 dejó cerrado.
+David lo reabre el 2026-09-11 al pedir una recomendación de vender o mantener por objeto («¿es
+necesario para alguna legendaria que quiera hacer?»). El alcance es solo el de legendarias que él
+nombre en un ajuste del plugin: ni colecciones ni ascendidos. Los materiales por legendaria salen de
+una tabla curada del repo con `sourceIds` y `retrievedAt` (la API pública no tiene recetas de Forja
+Mística, medido ese día), y lo ya conseguido se descuenta con `/v2/account/legendaryarmory`. Las
+cinco decisiones y su spec: `docs/SPEC-recomendacion-por-objeto.md` §7.
+
 ## Alcance de v1
 
 La primera versión de producto incluye:
