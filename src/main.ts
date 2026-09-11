@@ -110,6 +110,7 @@ import type {
 } from './advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
+import { LEGENDARY_MATERIALS_TABLE } from './economy/legendary-materials';
 import {
 	mergeSettingsUpdate,
 	migrateSettings,
@@ -828,6 +829,30 @@ export default class TyrianCompanionPlugin extends Plugin {
 									minimumReferenceDays: loaded.bundle.economyPack.sellSignal.minimumReferenceDays,
 								},
 							};
+						},
+						// Rule (a), M4: the settings' target list, empty by default.
+						legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
+						legendaryMaterialsTable: () => LEGENDARY_MATERIALS_TABLE,
+						// GET /v2/account/legendaryarmory, called ONLY from inside capture() (decision 1's
+						// own scoping): never from the settings panel or plugin load. A rejected or
+						// malformed response becomes null, which buildLegendaryReservations treats as
+						// "assume none of the targets are forged yet" rather than skipping rule (a).
+						readLegendaryArmoryCounts: async () => {
+							try {
+								const operation = inventoryClient.beginOperation();
+								const response = await operation.request('account/legendaryarmory');
+								if (!Array.isArray(response)) return null;
+								const counts = new Map<number, number>();
+								for (const entry of response) {
+									if (typeof entry !== 'object' || entry === null) return null;
+									const { id, count } = entry as Record<string, unknown>;
+									if (!Number.isSafeInteger(id) || !Number.isSafeInteger(count) || (count as number) < 0) return null;
+									counts.set(id as number, count as number);
+								}
+								return counts;
+							} catch {
+								return null;
+							}
 						},
 					},
 				);

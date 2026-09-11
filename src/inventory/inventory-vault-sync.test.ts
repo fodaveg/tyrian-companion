@@ -26,6 +26,13 @@ const ROOT = 'Tyrian Companion';
 const CONFIG_DIR = 'vault-config';
 const CAPTURED_AT = '2026-08-25T08:00:01.000Z';
 
+/** Rule (a), M4: every port fixture in this file that predates it opts out entirely, matching M4 test 8. */
+const LEGENDARY_DISABLED_PORT_FIELDS = {
+	legendaryTargetItemIds: () => [],
+	legendaryMaterialsTable: () => null,
+	readLegendaryArmoryCounts: async () => null,
+} as const;
+
 describe('inventory Vault projection', () => {
 	it('aggregates piles by item and location without extrapolating one buy quote to every pile', async () => {
 		const snapshot = snapshotWith([
@@ -145,6 +152,7 @@ describe('inventory Vault projection', () => {
 			updateDerivedWatchList: async () => undefined,
 			refreshPriceSeeds: async () => undefined,
 			seasonalInputFor: () => null,
+			...LEGENDARY_DISABLED_PORT_FIELDS,
 		};
 		const service = new InventoryVaultCaptureService(
 			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
@@ -316,6 +324,7 @@ describe('inventory Vault projection', () => {
 			updateDerivedWatchList: async () => undefined,
 			refreshPriceSeeds: async () => undefined,
 			seasonalInputFor: () => null,
+			...LEGENDARY_DISABLED_PORT_FIELDS,
 		};
 		const service = new InventoryVaultCaptureService(
 			client as never, snapshots, catalog, gateway, recommendation, () => capturedAtMs,
@@ -355,6 +364,7 @@ describe('inventory Vault projection', () => {
 			updateDerivedWatchList,
 			refreshPriceSeeds,
 			seasonalInputFor: () => null,
+			...LEGENDARY_DISABLED_PORT_FIELDS,
 		};
 		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
 		await service.capture('es');
@@ -379,6 +389,7 @@ describe('inventory Vault projection', () => {
 			updateDerivedWatchList,
 			refreshPriceSeeds,
 			seasonalInputFor: () => null,
+			...LEGENDARY_DISABLED_PORT_FIELDS,
 		};
 		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
 		await service.capture('es');
