@@ -14,12 +14,16 @@ import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store'
 import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import {
+	attachPositionRecommendations,
+	sumSellCopperByItem,
 	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
 	prepareInventoryVaultSyncInput,
 	type InventoryPositionRecommendationPort,
+	type InventoryPositionRecommendationInputs,
 	type InventoryVaultFile,
 	type InventoryVaultPort,
+	type InventoryVaultPositionCore,
 } from './inventory-vault-sync';
 
 const ROOT = 'Tyrian Companion';
@@ -505,6 +509,143 @@ describe('inventory Vault projection', () => {
 		expect(plan.steps[0]).toMatchObject({ status: 'update' });
 		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1 });
 		expect(frontmatter(vault.contents.get(stalePath)!).tc_unit_sell_copper).toBe(10);
+	});
+});
+
+describe('sumSellCopperByItem (SPEC-recomendacion-por-objeto.md §3.c / §7 decision 5, 11 sep 2026)', () => {
+	it('sums totalSellCopper across positions of the same item, leaving other items untouched', () => {
+		const result = sumSellCopperByItem([
+			{ itemId: 36_041, totalSellCopper: 34_884 },
+			{ itemId: 36_041, totalSellCopper: 140_350 },
+			{ itemId: 36_041, totalSellCopper: 59_500 },
+			{ itemId: 99, totalSellCopper: 10 },
+		]);
+		expect(result.get(36_041)).toBe(234_734);
+		expect(result.get(99)).toBe(10);
+	});
+
+	it('a null position contributes nothing to the sum without turning it null when another position has a value', () => {
+		const result = sumSellCopperByItem([
+			{ itemId: 1, totalSellCopper: 60_000 },
+			{ itemId: 1, totalSellCopper: null },
+			{ itemId: 1, totalSellCopper: 50_000 },
+		]);
+		expect(result.get(1)).toBe(110_000);
+	});
+
+	it('stays null when every position of the item is null, exactly like a single undemonstrated position', () => {
+		const result = sumSellCopperByItem([{ itemId: 1, totalSellCopper: null }, { itemId: 1, totalSellCopper: null }]);
+		expect(result.get(1)).toBeNull();
+	});
+});
+
+/**
+ * David, 11 sep 2026: the capital-parked threshold (rule (c), condition 1) is measured PER OBJECT
+ * (the sum of `tc_total_sell_copper` across every position holding that `itemId`), never per note.
+ * Before this decision `recommendPosition` compared each position's OWN `totalSellCopper`: the
+ * Trozo de caramelo (36041) sitting in three notes of 34 884, 140 350 and 59 500 copper had two of
+ * them read `below_capital_threshold` even though the object as a whole is worth more than 23 gold.
+ */
+describe('attachPositionRecommendations: capital threshold measured per object (11 sep 2026)', () => {
+	function coreFixture(overrides: Partial<InventoryVaultPositionCore> & { positionId: string; itemId: number }): InventoryVaultPositionCore {
+		return {
+			source: 'bank', character: null, quantity: 1,
+			unitSellCopper: null, sellDepthStatus: 'unavailable', sellCoveredQuantity: 0, sellUncoveredQuantity: 1,
+			unitListCopper: null, totalListCopper: null, totalSellCopper: null,
+			name: `Objeto ${String(overrides.itemId)}`, type: null, rarity: null, icon: null,
+			...overrides,
+		};
+	}
+
+	function recommendationInputsFixture(overrides: Partial<InventoryPositionRecommendationInputs> = {}): InventoryPositionRecommendationInputs {
+		return {
+			capturedAtMs: Date.parse(CAPTURED_AT),
+			priceHistoryEnabled: true,
+			capitalThresholdCopper: 100_000,
+			maxPriceAgeMs: 900_000,
+			priceHistoryWindowDays: 180,
+			priceHistoryRequiredDays: 42,
+			dailyByItem: new Map(),
+			seasonalInputFor: () => null,
+			...overrides,
+		};
+	}
+
+	const baseInputs = recommendationInputsFixture();
+
+	it('measured failing on 31b6359: three notes of one object at 34 884 / 140 350 / 59 500 copper (threshold 100 000) never read below_capital_threshold once compared by object sum', () => {
+		const cores: InventoryVaultPositionCore[] = [
+			coreFixture({ positionId: 'a', itemId: 36_041, source: 'bank', totalSellCopper: 34_884 }),
+			coreFixture({ positionId: 'b', itemId: 36_041, source: 'character', character: 'Alfa', totalSellCopper: 140_350 }),
+			coreFixture({ positionId: 'c', itemId: 36_041, source: 'character', character: 'Beta', totalSellCopper: 59_500 }),
+		];
+		const positions = attachPositionRecommendations(cores, baseInputs);
+		// On 31b6359 (per-position threshold, `recommendPosition` reading `core.totalSellCopper`
+		// straight) this fails for positions 'a' and 'c': `expect(received).not.toBe(expected)` /
+		// `expected: not "below_capital_threshold"` / `received: "below_capital_threshold"`, since
+		// 34 884 and 59 500 are each individually under the 100 000 threshold.
+		for (const position of positions) {
+			expect(position.recommendationReason).not.toBe('below_capital_threshold');
+		}
+	});
+
+	it('two notes of one object at 30 000 and 40 000 (object sum 70 000, still under 100 000) both stay hold/below_capital_threshold', () => {
+		const cores: InventoryVaultPositionCore[] = [
+			coreFixture({ positionId: 'a', itemId: 1, source: 'bank', totalSellCopper: 30_000 }),
+			coreFixture({ positionId: 'b', itemId: 1, source: 'character', character: 'Alfa', totalSellCopper: 40_000 }),
+		];
+		const positions = attachPositionRecommendations(cores, baseInputs);
+		for (const position of positions) {
+			expect(position).toMatchObject({ recommendation: 'hold', recommendationReason: 'below_capital_threshold' });
+		}
+	});
+
+	it('a null note never turns a known object sum "undemonstrated": 60 000 + 50 000 + null clears the threshold for all three', () => {
+		const cores: InventoryVaultPositionCore[] = [
+			coreFixture({ positionId: 'a', itemId: 1, source: 'bank', totalSellCopper: 60_000 }),
+			coreFixture({ positionId: 'b', itemId: 1, source: 'character', character: 'Alfa', totalSellCopper: 50_000 }),
+			coreFixture({ positionId: 'c', itemId: 1, source: 'character', character: 'Beta', totalSellCopper: null }),
+		];
+		const positions = attachPositionRecommendations(cores, baseInputs);
+		for (const position of positions) {
+			expect(position.recommendationReason).not.toBe('below_capital_threshold');
+		}
+	});
+
+	it('two different objects never share a sum: each stays below its own threshold independently', () => {
+		const cores: InventoryVaultPositionCore[] = [
+			coreFixture({ positionId: 'a', itemId: 1, source: 'bank', totalSellCopper: 60_000 }),
+			coreFixture({ positionId: 'b', itemId: 2, source: 'bank', totalSellCopper: 60_000 }),
+		];
+		const positions = attachPositionRecommendations(cores, baseInputs);
+		for (const position of positions) {
+			expect(position).toMatchObject({ recommendation: 'hold', recommendationReason: 'below_capital_threshold' });
+		}
+	});
+
+	it('rule (a) active: the object sum uses each note\'s FREE share (scaledSellCopper), not its raw totalSellCopper', () => {
+		const cores: InventoryVaultPositionCore[] = [
+			coreFixture({ positionId: 'a', itemId: 1, source: 'bank', quantity: 10, totalSellCopper: 100_000 }),
+			coreFixture({ positionId: 'b', itemId: 1, source: 'character', character: 'Alfa', quantity: 10, totalSellCopper: 100_000 }),
+		];
+		// Both notes half-reserved (freeQuantity 5 of 10): free share is 50 000 each, summing to
+		// exactly 100 000 - not the 200 000 the raw totals would sum to.
+		const reservations = new Map([
+			['a', { reservedQuantity: 5, freeQuantity: 5, shortfall: 0 }],
+			['b', { reservedQuantity: 5, freeQuantity: 5, shortfall: 0 }],
+		]);
+		const aboveTheFreeSum = attachPositionRecommendations(
+			cores, recommendationInputsFixture({ capitalThresholdCopper: 100_001 }), reservations,
+		);
+		for (const position of aboveTheFreeSum) {
+			expect(position).toMatchObject({ recommendation: 'hold', recommendationReason: 'below_capital_threshold' });
+		}
+		const atTheFreeSum = attachPositionRecommendations(
+			cores, recommendationInputsFixture({ capitalThresholdCopper: 100_000 }), reservations,
+		);
+		for (const position of atTheFreeSum) {
+			expect(position.recommendationReason).not.toBe('below_capital_threshold');
+		}
 	});
 });
 
