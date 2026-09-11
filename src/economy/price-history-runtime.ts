@@ -211,6 +211,37 @@ export class PriceHistoryRuntime {
 		return await store.readDaily(this.options.vaultId, itemId, fromDayUtc);
 	}
 
+	/**
+	 * Replaces the capital-derived slice of the watch list (SPEC-recomendacion-por-objeto.md,
+	 * decision 3, M2), called once per "Sincronizar inventario". A no-op while the store has never
+	 * been opened, exactly what "price history disabled" looks like from here, same as `readDaily`
+	 * above. Unlike `readDaily`, this DOES refresh `watchItemIds` in state: the panel's own item
+	 * picker (`price-history-panel-view.ts`) reads that list to offer something to load.
+	 */
+	async applyDerivedWatchList(
+		itemIds: readonly number[],
+		parent?: ResolvedLocalDebugActionContext,
+	): Promise<void> {
+		const span = startLocalDebugAction(this.options.diagnostics, {
+			component: 'price_history', action: 'price_history_observe', ...inheritedIds(parent),
+			details: { itemCount: itemIds.length },
+		}, this.now);
+		const store = this.store;
+		if (store === null || !this.settings.enabled) { span.skip('skipped', this.state.status); return; }
+		const generation = this.generation;
+		try {
+			await store.applyDerivedWatchList(this.options.vaultId, itemIds, this.now());
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return; }
+			const watch = await store.readWatchList(this.options.vaultId);
+			if (!this.owns(generation, store)) { span.cancel(this.state.status); return; }
+			this.setState({ watchItemIds: watch.map(({ itemId }) => itemId), selectedItemId: this.state.selectedItemId ?? watch[0]?.itemId ?? null });
+			span.success(this.state.status, { itemCount: itemIds.length });
+		} catch (error) {
+			span.failure(error, 'storage_failure', 'store_unavailable', { itemCount: itemIds.length });
+			if (this.owns(generation, store)) this.storeFailure(error);
+		}
+	}
+
 	async loadSeries(
 		itemId: number,
 		side: PriceHistorySide,
