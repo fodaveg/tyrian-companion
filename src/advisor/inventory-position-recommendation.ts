@@ -1,21 +1,29 @@
 import { priceHistoryDayUtc, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { calculatePriceHistoryPercentile } from '../economy/price-history-statistics';
+import { evaluateSellSignal, type SellSignalParameters, type SellSignalSeries } from '../economy/sell-signal';
+import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 
 /**
- * Per-position sell/hold recommendation (SPEC-recomendacion-por-objeto, M1).
+ * Per-position sell/hold recommendation (SPEC-recomendacion-por-objeto).
  *
- * `hold_for_legendary` and `sell_at_season` are members of the closed union the frontmatter
- * schema needs from day one, exactly like `docs/SPEC-recomendacion-por-objeto.md` §2.1
- * requires: `tc_recommendation` never grows a new value on the day M3/M4 land. `recommendPosition`
- * below implements only rule (c) (M1) and never emits either of them.
+ * `hold_for_legendary` is a member of the closed union the frontmatter schema needs from day one,
+ * exactly like `docs/SPEC-recomendacion-por-objeto.md` §2.1 requires: `tc_recommendation` never
+ * grows a new value on the day M4 lands. `recommendPosition` below implements rules (b) and (c)
+ * (M3); it never emits `hold_for_legendary` (M4, still blocked on decision 1 as of this commit).
  */
 export const POSITION_RECOMMENDATION_ACTIONS = ['sell', 'hold', 'hold_for_legendary', 'sell_at_season', 'review'] as const;
 export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTIONS[number];
 
 /**
- * Closed reason-code set for M1's rule (c) only. `hold_for_legendary` (M4) and `sell_at_season`
- * (M3) each bring their own reason codes when those milestones are implemented; widening this
- * union is that milestone's commit, not a speculative addition here.
+ * Closed reason-code set for rules (b) and (c). `hold_for_legendary` (M4) brings its own reason
+ * codes when that milestone is implemented; widening this union is that milestone's commit, not a
+ * speculative addition here.
+ *
+ * The four `undecidable`-shaped codes (`malformed_input`, `no_close_today`, `insufficient_reference`,
+ * `undecidable_calendar`) are `evaluateSellSignal`'s OWN `SellSignalProjection['reason']` values
+ * (`src/economy/sell-signal.ts`), carried through verbatim rather than re-coded: a `review` that
+ * hides which of the four things went wrong is exactly the ambiguity §3.b's precedence exists to
+ * avoid.
  */
 export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'price_history_disabled',
@@ -23,8 +31,24 @@ export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'price_history_insufficient',
 	'bid_above_reference',
 	'below_local_band',
+	'seasonal_hold',
+	'malformed_input',
+	'no_close_today',
+	'insufficient_reference',
+	'undecidable_calendar',
 ] as const;
 export type PositionRecommendationReasonCode = typeof POSITION_RECOMMENDATION_REASON_CODES[number];
+
+/**
+ * Rule (b)'s per-item inputs: `null` when the item has no entry in the curated festival calendar,
+ * which routes it straight to rule (c). Present, the window and parameters come from the calendar
+ * entry (`FestivalCalendarEntryV1`) and the pack's `sellSignal` policy respectively; neither is
+ * read from a store here, keeping this module's no-network-no-IndexedDB guarantee.
+ */
+export interface PositionRecommendationSeasonalInput {
+	window: SeasonalWindowV1;
+	parameters: SellSignalParameters;
+}
 
 export interface PositionRecommendationV1 {
 	action: PositionRecommendationAction;
@@ -65,23 +89,38 @@ export interface PositionRecommendationInput {
 	priceHistoryWindowDays: number;
 	/** Fewest covered days required before the percentile is trusted (`calculatePriceHistoryPercentile`'s own floor is 42). */
 	priceHistoryRequiredDays: number;
+	/**
+	 * Rule (b), M3: `null` for an item with no entry in the curated festival calendar, which
+	 * routes it straight to rule (c) exactly as before M3. Present, `recommendPosition` evaluates
+	 * `evaluateSellSignal` over the SAME merged (seed ∪ capture) series `priceHistoryDaily` already
+	 * carries for rule (c): festival items are not exempt from decision 4's watch-list merge, they
+	 * just also get a calendar-shaped read of it.
+	 */
+	seasonal: PositionRecommendationSeasonalInput | null;
 }
 
 const DAY_MS = 86_400_000;
 
 /**
- * Rule (c) of the recommendation spec: the only rule M1 implements.
+ * Rules (b) and (c) of the recommendation spec, in precedence order. (a) is not implemented here
+ * (M4, blocked on decision 1) and never emitted.
  *
  * Precedence is fixed and mirrors `evaluateSellSignal`'s discipline of taking the instant as an
  * argument: no network, no IndexedDB, no `Date.now()` inside this function.
  *
  * 1. Price history off → `review`/`price_history_disabled`. Nothing below this line runs on
- *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell".
- * 2. Capital below the threshold → `hold`/`below_capital_threshold`. Too little is parked here to
+ *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell". This gates rule
+ *    (b) too: a festival item's window has nothing to read against without the merged series.
+ * 2. Rule (b): the item has a festival calendar entry → `evaluateSellSignal` decides.
+ *    `sell` → `sell`/`bid_above_reference` (same reason rule (c) uses for the same statement: the
+ *    price is above its reference). `hold` → `sell_at_season`/`seasonal_hold`, `until` = the
+ *    window's own close (`seasonalWindowClosesAfterMs`), never Halloween's. `none` falls through
+ *    to rule (c) below. `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave.
+ * 3. Capital below the threshold → `hold`/`below_capital_threshold`. Too little is parked here to
  *    make the recommendation worth acting on either way.
- * 3. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
+ * 4. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
  *    and "it's cheap" are opposite recommendations that must never share an outcome.
- * 4. Percentile at or above the local p90 → `sell`/`bid_above_reference`; otherwise
+ * 5. Percentile at or above the local p90 → `sell`/`bid_above_reference`; otherwise
  *    `hold`/`below_local_band`.
  */
 export function recommendPosition(input: PositionRecommendationInput): PositionRecommendationV1 {
@@ -90,6 +129,10 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 			action: 'review', reason: 'price_history_disabled', until: null, missing: null,
 			pricePercentile: null, priceCoverageDays: null,
 		};
+	}
+	if (input.seasonal !== null) {
+		const seasonal = evaluateSeasonalRule(input.seasonal, input.priceHistoryDaily, input.capturedAtMs, input);
+		if (seasonal !== null) return seasonal;
 	}
 	if (input.totalSellCopper === null || input.totalSellCopper < input.capitalThresholdCopper) {
 		return {
@@ -125,6 +168,70 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 
 function priceUntil(input: PositionRecommendationInput): string {
 	return new Date(input.capturedAtMs + input.maxPriceAgeMs).toISOString();
+}
+
+/**
+ * Rule (b). Returns `null` only for `evaluateSellSignal`'s `none` outcome, which is the one case
+ * the spec says falls through to rule (c) rather than being a verdict of its own.
+ */
+function evaluateSeasonalRule(
+	seasonal: PositionRecommendationSeasonalInput,
+	priceHistoryDaily: readonly PriceHistoryDailyV1[],
+	capturedAtMs: number,
+	input: PositionRecommendationInput,
+): PositionRecommendationV1 | null {
+	const series = toSellSignalSeries(priceHistoryDaily);
+	const projection = evaluateSellSignal(series, capturedAtMs, seasonal.parameters, seasonal.window);
+	if (projection.status === 'undecidable') {
+		return {
+			action: 'review', reason: projection.reason, until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
+	}
+	if (projection.signal === 'none') return null;
+	if (projection.signal === 'sell') {
+		return {
+			action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
+	}
+	const closesAfterMs = seasonalWindowClosesAfterMs(seasonal.window, capturedAtMs);
+	if (closesAfterMs === null) {
+		return {
+			action: 'review', reason: 'undecidable_calendar', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
+	}
+	return {
+		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(closesAfterMs).toISOString(), missing: null,
+		pricePercentile: null, priceCoverageDays: null,
+	};
+}
+
+/**
+ * `priceHistoryDaily` is already the merged (seed ∪ capture) series decision 4 built for rule (c)
+ * (`price-seed-history-merge.ts`, applied by the caller before this function runs): reusing it here
+ * is what makes the SAME series answer both rules, as `docs/SPEC-recomendacion-por-objeto.md` §3.b
+ * requires. This is a local, deliberately-duplicated slice of `mergeSellSignalSeries`'s own
+ * dayUtc-keyed close extraction (`src/economy/sell-signal.ts`): the input shape here is a single
+ * already-item-filtered list, not a seed plus a daily list to union, so calling that function would
+ * need a synthetic empty seed for no benefit.
+ */
+function toSellSignalSeries(daily: readonly PriceHistoryDailyV1[]): SellSignalSeries {
+	const byDay = new Map<string, number>();
+	for (const entry of daily) {
+		const close = entry.bid?.closeCopper;
+		if (close === undefined || close === null || !Number.isSafeInteger(close) || close < 0) continue;
+		byDay.set(entry.dayUtc, close);
+	}
+	const days = [...byDay.entries()]
+		.map(([dayUtc, bidCopper]) => ({ dayUtc, bidCopper }))
+		.sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
+	// `origin` is carried through to the projection but never read by anything downstream of it
+	// here (`sellSignalGainCopper`'s absolute-gain math is the runtime's concern, not the note
+	// field's); `'seeded'` is a documented, harmless placeholder rather than a third boolean no
+	// caller needs.
+	return { origin: 'seeded', days };
 }
 
 /** Keeps only the days that fall inside `windowDays` calendar days back from `nowMs`, today included. */

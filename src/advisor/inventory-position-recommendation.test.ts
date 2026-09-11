@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { recommendPosition, type PositionRecommendationInput } from './inventory-position-recommendation';
+import {
+	recommendPosition,
+	type PositionRecommendationInput,
+	type PositionRecommendationSeasonalInput,
+} from './inventory-position-recommendation';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 
 const CAPTURED_AT_MS = Date.parse('2026-09-11T12:00:00.000Z');
 const MAX_PRICE_AGE_MS = 900_000;
@@ -16,8 +21,37 @@ function baseInput(overrides: Partial<PositionRecommendationInput> = {}): Positi
 		priceHistoryDaily: [],
 		priceHistoryWindowDays: 180,
 		priceHistoryRequiredDays: 42,
+		seasonal: null,
 		...overrides,
 	};
+}
+
+const WINTER_WINDOW: SeasonalWindowV1 = {
+	version: 1, seasonId: 'winter-test', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12,
+};
+/** Inside `WINTER_WINDOW`, and outside `HALLOWEEN_SEASONAL_WINDOW` (10-01..11-15). */
+const WINTER_CAPTURED_AT_MS = Date.parse('2026-12-20T12:00:00.000Z');
+
+function seasonalInput(overrides: Partial<PositionRecommendationSeasonalInput> = {}): PositionRecommendationSeasonalInput {
+	return {
+		window: WINTER_WINDOW,
+		parameters: { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 },
+		...overrides,
+	};
+}
+
+/** One closing bid per day, ending on `endMs`'s own day. `bidCopper(index)` decides the value. */
+function bidSeries(days: number, endMs: number, bidCopper: (index: number) => number): PriceHistoryDailyV1[] {
+	const out: PriceHistoryDailyV1[] = [];
+	for (let index = 0; index < days; index += 1) {
+		const dayUtc = new Date(endMs - (days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
+		const copper = bidCopper(index);
+		out.push({
+			version: 1, vaultId: 'vault', itemId: 1, dayUtc, snapshotCount: 1, partialSnapshotCount: 0, ask: null,
+			bid: { count: 1, minCopper: copper, maxCopper: copper, medianCopperX2: copper * 2, closeCopper: copper, closeCapturedAtMs: endMs },
+		});
+	}
+	return out;
 }
 
 /** One daily row per day, closing bid rising by `step` from `startCopper`, ending on `capturedAtMs`'s own day. */
@@ -139,7 +173,7 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		expect(result.action).not.toBe('review');
 	});
 
-	it('never emits hold_for_legendary or sell_at_season: M1 implements only rule (c)', () => {
+	it('never emits hold_for_legendary or sell_at_season for an item outside the festival calendar (seasonal: null)', () => {
 		const scenarios = [
 			baseInput({ priceHistoryEnabled: false }),
 			baseInput({ totalSellCopper: 0 }),
@@ -150,5 +184,83 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		for (const input of scenarios) {
 			expect(['sell', 'hold', 'review']).toContain(recommendPosition(input).action);
 		}
+	});
+});
+
+describe('recommendPosition (SPEC-recomendacion-por-objeto, M3, regla b)', () => {
+	it('precedence: (b) decides even when capital is below the threshold that gates rule (c)', () => {
+		// 35 flat reference days plus a floor today: `hold` inside the window, regardless of how
+		// little capital is parked here.
+		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500);
+		const result = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, totalSellCopper: 1, capitalThresholdCopper: 1_000_000,
+			priceHistoryDaily: daily, seasonal: seasonalInput(),
+		}));
+		expect(result.action).toBe('sell_at_season');
+		expect(result.reason).toBe('seasonal_hold');
+	});
+
+	it('hold -> sell_at_season, with `until` at the CLOSE OF ITS OWN WINDOW, not Halloween\'s', () => {
+		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500);
+		const result = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
+		}));
+		const expectedCloses = seasonalWindowClosesAfterMs(WINTER_WINDOW, WINTER_CAPTURED_AT_MS);
+		expect(result).toMatchObject({ action: 'sell_at_season', reason: 'seasonal_hold' });
+		expect(result.until).toBe(new Date(expectedCloses!).toISOString());
+		// Distinct from what Halloween's own window would have said for the same instant.
+		expect(result.until).not.toBe(new Date(seasonalWindowClosesAfterMs(
+			{ version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 }, WINTER_CAPTURED_AT_MS,
+		)!).toISOString());
+	});
+
+	it('sell -> sell/bid_above_reference, out of season and at the top of the reference', () => {
+		// Strictly increasing series, evaluated OUTSIDE the winter window: today is the maximum,
+		// out of season, so `sell` fires.
+		const daily = bidSeries(40, CAPTURED_AT_MS, (index) => 100 + index * 10);
+		const result = recommendPosition(baseInput({ priceHistoryDaily: daily, seasonal: seasonalInput() }));
+		expect(result.action).toBe('sell');
+		expect(result.reason).toBe('bid_above_reference');
+		expect(result.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
+	});
+
+	it('none falls through to rule (c), reproducing exactly what rule (c) alone decides on the same series', () => {
+		// Flat reference at 500, today far below it: out of season for the winter window (default
+		// `CAPTURED_AT_MS` is September), today does not meet the 90 % sell threshold, so
+		// `evaluateSellSignal` decides `none` and rule (c) alone gets to answer.
+		const daily = bidSeries(42, CAPTURED_AT_MS, (index) => (index === 41 ? 100 : 500));
+		const withoutSeasonal = recommendPosition(baseInput({ priceHistoryDaily: daily }));
+		const withSeasonal = recommendPosition(baseInput({ priceHistoryDaily: daily, seasonal: seasonalInput() }));
+		expect(withSeasonal.action).not.toBe('sell_at_season');
+		expect(withSeasonal).toEqual(withoutSeasonal);
+	});
+
+	it('undecidable (insufficient_reference) -> review with the EXACT reason, not a generic one', () => {
+		const daily = bidSeries(5, WINTER_CAPTURED_AT_MS, () => 500);
+		const result = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
+		}));
+		expect(result).toEqual({
+			action: 'review', reason: 'insufficient_reference', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		});
+	});
+
+	it('undecidable (no_close_today) -> review, never a silent fall-through to rule (c)', () => {
+		// The series ends 5 days before `capturedAtMs`: there is no entry for today at all.
+		const daily = bidSeries(30, WINTER_CAPTURED_AT_MS - 5 * 86_400_000, () => 500);
+		const result = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
+		}));
+		expect(result).toEqual({
+			action: 'review', reason: 'no_close_today', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		});
+	});
+
+	it('an item with no festival calendar entry (seasonal: null) is unaffected by this rule', () => {
+		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500);
+		const result = recommendPosition(baseInput({ capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: null }));
+		expect(result.action).not.toBe('sell_at_season');
 	});
 });
