@@ -463,6 +463,30 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 			},
 			{
 				category: 'advanced',
+				name: this.t('settings.recommendation.threshold.name'), desc: this.t('settings.recommendation.threshold.desc'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.recommendationCapitalThresholdCopper / 10_000))
+						.onChange(async (value) => {
+							const threshold = goldThresholdToCopper(value);
+							if (threshold === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.recommendation.threshold.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setAttr('role', 'status');
+							feedback.setText('');
+							await save({ recommendationCapitalThresholdCopper: threshold });
+						}));
+				},
+			},
+			{
+				category: 'advanced',
 				name: this.t('settings.salvage.kit.name'), desc: this.t('settings.salvage.kit.desc'),
 				tooltip: this.t('settings.salvage.kit.desc.tooltip'),
 				render: (setting, save) => {
