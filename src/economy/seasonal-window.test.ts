@@ -4,6 +4,7 @@ import { HALLOWEEN_SEASONAL_WINDOW } from './models/halloween-season';
 import {
 	isSeasonalWindow,
 	seasonalWindowClosesAfterMs,
+	seasonalWindowOpensAfterMs,
 	seasonalWindowStatusAt,
 	seasonalWindowStatusAtMs,
 	isFestivalCalendar,
@@ -97,6 +98,37 @@ describe('H13.7 end of the window', () => {
 		expect(seasonalWindowClosesAfterMs({ opensOn: '10-01' }, Date.parse('2026-10-16T00:00:00.000Z'))).toBeNull();
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, Number.NaN)).toBeNull();
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, 'today')).toBeNull();
+	});
+});
+
+/**
+ * M3 fix (§3.b, rule (b) branch 4): the recommendation for an item caught outside its own selling
+ * window has to wait for the window to open again, not for it to close a second time.
+ */
+describe('the next opening of a window', () => {
+	const wintersday: SeasonalWindowV1 = {
+		version: 1, seasonId: 'wintersday-test', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12,
+	};
+
+	it('rolls to next year once this year\'s opening has already passed', () => {
+		// Both boundaries (12-15 and 01-10) of this cross-year window are behind 20 January: the
+		// next opening is December of the SAME year, not the one that already opened in December
+		// of the PREVIOUS year and is currently running.
+		expect(seasonalWindowOpensAfterMs(wintersday, Date.parse('2027-01-20T00:00:00.000Z')))
+			.toBe(Date.parse('2027-12-15T00:00:00.000Z'));
+	});
+
+	it('still looks forward to NEXT year\'s opening when asked from inside the window', () => {
+		// 20 December is already inside `wintersday` (opened on the 15th): there is no "this
+		// window's start" left to return, only next year's.
+		expect(seasonalWindowOpensAfterMs(wintersday, Date.parse('2026-12-20T00:00:00.000Z')))
+			.toBe(Date.parse('2027-12-15T00:00:00.000Z'));
+	});
+
+	it('answers null for an unreadable window or clock rather than guessing', () => {
+		expect(seasonalWindowOpensAfterMs({ closesOn: '01-10' }, Date.parse('2026-10-16T00:00:00.000Z'))).toBeNull();
+		expect(seasonalWindowOpensAfterMs(wintersday, Number.NaN)).toBeNull();
+		expect(seasonalWindowOpensAfterMs(wintersday, 'today')).toBeNull();
 	});
 });
 

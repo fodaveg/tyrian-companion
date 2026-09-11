@@ -96,6 +96,32 @@ export function seasonalWindowClosesAfterMs(window: unknown, fromMs: unknown): n
 	return null;
 }
 
+/**
+ * Start of the first opening day of the window at or after `fromMs`.
+ *
+ * Exists for rule (b)'s M3 fix: an item caught outside its own selling window, with today's bid
+ * not good enough to sell anyway, holds until the window opens again, not until it closes (the bag
+ * priced low in September waits for next May, not for the May window's own end). Mirrors
+ * `seasonalWindowClosesAfterMs`'s year-rollover discipline exactly, including the rejection of a
+ * malformed window or clock: a window is read once, at the top, and both instants derived from it
+ * share the same failure mode rather than each guessing on its own.
+ *
+ * Returns null for an unreadable window or clock, never a guess.
+ */
+export function seasonalWindowOpensAfterMs(window: unknown, fromMs: unknown): number | null {
+	if (!isSeasonalWindow(window) || typeof fromMs !== 'number' || !Number.isSafeInteger(fromMs)) return null;
+	const from = new Date(fromMs);
+	const iso = Number.isFinite(from.getTime()) ? from.toISOString() : null;
+	if (iso === null) return null;
+	const year = Number.parseInt(iso.slice(0, 4), 10);
+	for (const candidate of [year, year + 1]) {
+		const opens = Date.parse(`${String(candidate)}-${window.opensOn}T00:00:00.000Z`);
+		if (!Number.isFinite(opens)) return null;
+		if (opens > fromMs) return opens;
+	}
+	return null;
+}
+
 function utcMonthDay(epochMs: number): string | null {
 	const date = new Date(epochMs);
 	const iso = Number.isFinite(date.getTime()) ? date.toISOString() : null;
