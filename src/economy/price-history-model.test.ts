@@ -34,4 +34,19 @@ describe('selectDerivedWatchListItemIds (SPEC-recomendacion-por-objeto, decision
 	it('returns nothing when every position is below the threshold or undemonstrated', () => {
 		expect(selectDerivedWatchListItemIds([{ itemId: 1, totalSellCopper: 1 }, { itemId: 2, totalSellCopper: null }], 100_000)).toEqual([]);
 	});
+
+	/**
+	 * SPEC-recomendacion-por-objeto.md §3.c/§7 decision 5 (11 sep 2026): this function already
+	 * aggregated per item before that decision (it always summed capital across positions of the
+	 * same item, see the test above from M2) — decision 5 only reaffirms it should stay this way
+	 * for the capital-threshold rule (c) itself, which is what changed in
+	 * `attachPositionRecommendations` (`src/inventory/inventory-vault-sync.ts`), not here.
+	 */
+	it('an item whose per-object total clears the threshold is derived even though no single position alone does', () => {
+		const positions = [
+			{ itemId: 36_041, totalSellCopper: 60_000 },
+			{ itemId: 36_041, totalSellCopper: 50_000 },
+		];
+		expect(selectDerivedWatchListItemIds(positions, 100_000)).toEqual([36_041]);
+	});
 });
