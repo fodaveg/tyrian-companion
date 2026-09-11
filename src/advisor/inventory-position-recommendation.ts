@@ -33,6 +33,19 @@ export interface PositionRecommendationV1 {
 	until: string | null;
 	/** Only meaningful for `hold_for_legendary` (M4); always null while M1 is the only rule that runs. */
 	missing: number | null;
+	/**
+	 * `calculatePriceHistoryPercentile`'s own percentile, rounded to the nearest integer
+	 * (SPEC-recomendacion-por-objeto.md §5, M2): populated only when the statistic actually ran
+	 * (the `ready` branch of rule (c)), null on every earlier exit. Never a guess: a percentile
+	 * with zero days behind it would be indistinguishable from a real one.
+	 */
+	pricePercentile: number | null;
+	/**
+	 * `coveredDays` from the same call, in both `ready` and `insufficient_history`: it is the one
+	 * number that tells the note "how close is this to being trustworthy" even while the rule
+	 * itself still says `review`. Null only when the percentile was never computed at all.
+	 */
+	priceCoverageDays: number | null;
 }
 
 export interface PositionRecommendationInput {
@@ -73,10 +86,16 @@ const DAY_MS = 86_400_000;
  */
 export function recommendPosition(input: PositionRecommendationInput): PositionRecommendationV1 {
 	if (!input.priceHistoryEnabled) {
-		return { action: 'review', reason: 'price_history_disabled', until: null, missing: null };
+		return {
+			action: 'review', reason: 'price_history_disabled', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
 	}
 	if (input.totalSellCopper === null || input.totalSellCopper < input.capitalThresholdCopper) {
-		return { action: 'hold', reason: 'below_capital_threshold', until: priceUntil(input), missing: null };
+		return {
+			action: 'hold', reason: 'below_capital_threshold', until: priceUntil(input), missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
 	}
 	// `calculatePriceHistoryPercentile` slices the last `windowDays` ENTRIES, not calendar days: a
 	// series with holes can let `.slice(-windowDays)` reach back across a gap of missing days and
@@ -88,11 +107,20 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 		windowed, 'bid', input.priceHistoryWindowDays, input.priceHistoryRequiredDays,
 	);
 	if (percentile.status === 'insufficient_history') {
-		return { action: 'review', reason: 'price_history_insufficient', until: null, missing: null };
+		return {
+			action: 'review', reason: 'price_history_insufficient', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: percentile.coveredDays,
+		};
 	}
 	return percentile.percentile >= 90
-		? { action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null }
-		: { action: 'hold', reason: 'below_local_band', until: priceUntil(input), missing: null };
+		? {
+			action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null,
+			pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
+		}
+		: {
+			action: 'hold', reason: 'below_local_band', until: priceUntil(input), missing: null,
+			pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
+		};
 }
 
 function priceUntil(input: PositionRecommendationInput): string {

@@ -40,7 +40,10 @@ function dailySeries(days: number, startCopper: number, step: number, endMs = CA
 describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () => {
 	it('rule 1: price history disabled always reviews, regardless of capital or price data', () => {
 		const result = recommendPosition(baseInput({ priceHistoryEnabled: false, totalSellCopper: 999_999_999 }));
-		expect(result).toEqual({ action: 'review', reason: 'price_history_disabled', until: null, missing: null });
+		expect(result).toEqual({
+			action: 'review', reason: 'price_history_disabled', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		});
 	});
 
 	it('rule 2: capital below the threshold holds, even with price history enabled', () => {
@@ -63,11 +66,18 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		expect(result.action).not.toBe('hold');
 		expect(result.until).toBeNull();
 		expect(result.missing).toBeNull();
+		// M2: `coveredDays` is at the note's disposal even while the rule itself says "review", but
+		// a percentile is never invented for a series that never reached the statistic.
+		expect(result.pricePercentile).toBeNull();
+		expect(result.priceCoverageDays).toBe(10);
 	});
 
 	it('an item with no history at all is insufficient_history, not a crash or a silent sell', () => {
 		const result = recommendPosition(baseInput({ priceHistoryDaily: [] }));
-		expect(result).toEqual({ action: 'review', reason: 'price_history_insufficient', until: null, missing: null });
+		expect(result).toEqual({
+			action: 'review', reason: 'price_history_insufficient', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: 0,
+		});
 	});
 
 	it('rule 4: today at the top of its own 42-day band sells', () => {
@@ -77,6 +87,8 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		expect(result.action).toBe('sell');
 		expect(result.reason).toBe('bid_above_reference');
 		expect(result.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
+		expect(result.pricePercentile).toBe(100);
+		expect(result.priceCoverageDays).toBe(42);
 	});
 
 	it('rule 4: today at the bottom of its own band holds instead of selling at the floor', () => {
@@ -86,6 +98,17 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		expect(result.action).toBe('hold');
 		expect(result.reason).toBe('below_local_band');
 		expect(result.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
+		// Nearest-rank empirical percentile: today (the minimum) is still `<= itself`, so its rank
+		// is 1 of 42 (~2.38%, rounded to 2), not 0 — low enough to fall well under the p90 band either way.
+		expect(result.pricePercentile).toBe(2);
+		expect(result.priceCoverageDays).toBe(42);
+	});
+
+	it('rule 2: below the capital threshold never carries a percentile, even with enough history to compute one', () => {
+		const result = recommendPosition(baseInput({
+			totalSellCopper: 1, capitalThresholdCopper: 100_000, priceHistoryDaily: dailySeries(42, 100, 10),
+		}));
+		expect(result).toMatchObject({ action: 'hold', reason: 'below_capital_threshold', pricePercentile: null, priceCoverageDays: null });
 	});
 
 	it('filters the series by calendar dayUtc before the percentile, dropping entries older than the window even when that leaves fewer than windowDays entries', () => {
