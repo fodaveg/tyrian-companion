@@ -79,7 +79,16 @@ export interface PositionRecommendationInput {
 	capturedAtMs: number;
 	/** `priceHistoryEnabled` from settings (opt-in, off by default). */
 	priceHistoryEnabled: boolean;
-	/** `tc_total_sell_copper`: demonstrated instant-sell value, or null when it cannot be demonstrated. */
+	/**
+	 * The value rule (c)'s capital-threshold check (below) compares against `capitalThresholdCopper`.
+	 * Since 11 sep 2026 (David) this is measured PER ITEM, not per position: the caller
+	 * (`attachPositionRecommendations`, `src/inventory/inventory-vault-sync.ts`) sums
+	 * `tc_total_sell_copper` across every position holding the same `itemId` before calling
+	 * `recommendPosition`, so every position of one object gets the same threshold verdict. Before
+	 * that date this was one position's own `tc_total_sell_copper`, which let an object split across
+	 * several notes (different characters or containers) read `below_capital_threshold` on some of
+	 * its notes while the object as a whole cleared the threshold comfortably.
+	 */
 	totalSellCopper: number | null;
 	/** The capital-parked threshold below which selling is never worth recommending (settings, decision 5). */
 	capitalThresholdCopper: number;
@@ -137,7 +146,8 @@ const DAY_MS = 86_400_000;
  *    own close. Today outside it with a qualifying bid → `sell`/`bid_above_reference`. Today
  *    outside it without one → `sell_at_season`/`seasonal_hold`, `until` = the window's NEXT open.
  * 3. Capital below the threshold → `hold`/`below_capital_threshold`. Too little is parked here to
- *    make the recommendation worth acting on either way.
+ *    make the recommendation worth acting on either way. Since 11 sep 2026, `totalSellCopper` is
+ *    the caller's per-item sum (see the field's own doc comment), not this one position's value.
  * 4. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
  *    and "it's cheap" are opposite recommendations that must never share an outcome.
  * 5. Percentile at or above the local p90 → `sell`/`bid_above_reference`; otherwise
