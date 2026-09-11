@@ -6,10 +6,12 @@
  * differ solely in their plan and result payloads, which is exactly what the type
  * parameters carry; the states, the reasons and the race semantics are shared.
  */
+import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import { errorClassName } from '../core/local-debug-error-details';
 
 export type VaultSyncDisabledReason = 'missing_key' | 'legacy_root' | 'unsafe_root';
-export type VaultSyncErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
+export type VaultSyncErrorReason =
+	| 'capture_unavailable' | 'credential_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
 
 export type VaultSyncStepStatus = 'create' | 'update' | 'unchanged' | 'deactivate' | 'conflict';
 
@@ -99,7 +101,14 @@ export class VaultSyncController<Plan extends VaultSyncPlanShape, Result extends
 		} catch (error) {
 			if (!this.disposed && generation === this.generation) {
 				this.plan = null;
-				this.state = { status: 'error', reason: 'capture_unavailable', cause: errorClassName(error) };
+				// H16.5 (11 sep incident): a reload can leave the selected key not yet readable from
+				// Obsidian's own secret storage. That is a distinct, actionable claim from "the
+				// capture itself failed" and used to collapse into the same generic wording.
+				this.state = {
+					status: 'error',
+					reason: error instanceof MissingApiKeyError ? 'credential_unavailable' : 'capture_unavailable',
+					cause: errorClassName(error),
+				};
 			}
 		}
 		return this.current();

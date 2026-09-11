@@ -41,7 +41,7 @@ import { AssistedDetectionService } from './sessions/assisted-detection-service'
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import type { LiveSessionLootTracker } from './sessions/live-session-loot';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
-import type { ActiveSessionState, SessionSnapshotReference } from './sessions/session';
+import type { ActiveSessionState, SessionSnapshotReference, SessionState } from './sessions/session';
 
 /**
  * Cabling of the four H13.10 assemblers, not their shape.
@@ -198,6 +198,66 @@ describe('H13.10 Halloween price alert cabling', () => {
 		await priceAlert.evaluate(readDaily(STACK_BID_COPPER, CROSSING_NOW + 1), CROSSING_NOW + 1);
 
 		expect(plugin.getEmittedAlerts()).toHaveLength(0);
+	});
+});
+
+/**
+ * H16.5 (11 sep incident): a reload used to leave the selected key unread by Obsidian's own
+ * secret storage until the player pressed "Comprobar conexión" by hand; the advisor's first
+ * refresh and the one-click inventory sync saw `missing_key`/`capture_unavailable` in the
+ * meantime. `checkConnection` is mocked here rather than driven through a real account fetch:
+ * this asserts the CABLING (`initializeRuntime` reaches for it on its own) the same way the
+ * rest of this file asserts wiring, not the account gateway's own behaviour, which is covered
+ * elsewhere.
+ */
+describe('H16.5 connection warmup cabling', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it('warms the connection at startup when a key is already configured, without a manual check', async () => {
+		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+			.mockResolvedValue({ status: 'idle' });
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue({
+			status: 'armed', armedAt: '2026-09-01T08:00:00.000Z', lastSnapshotAt: record.baselineSnapshot.completedAt,
+			scheduler: {
+				status: 'scheduled', intervalMs: 300_000, nextRunAt: Date.now() + 300_000,
+				lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+			},
+		});
+		const plugin = assembledRuntimePlugin(new IDBFactory());
+		plugin.settings.apiKeySecret = 'gw2-primary';
+
+		await plugin.initializeRuntime();
+
+		expect(checkConnection).toHaveBeenCalled();
+	});
+
+	it('never asks for a connection at startup when no key is configured', async () => {
+		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+			.mockResolvedValue({ status: 'idle' });
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue({
+			status: 'armed', armedAt: '2026-09-01T08:00:00.000Z', lastSnapshotAt: record.baselineSnapshot.completedAt,
+			scheduler: {
+				status: 'scheduled', intervalMs: 300_000, nextRunAt: Date.now() + 300_000,
+				lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+			},
+		});
+		const plugin = assembledRuntimePlugin(new IDBFactory());
+		// `settings.apiKeySecret` stays the default empty string.
+
+		await plugin.initializeRuntime();
+
+		expect(checkConnection).not.toHaveBeenCalled();
 	});
 });
 

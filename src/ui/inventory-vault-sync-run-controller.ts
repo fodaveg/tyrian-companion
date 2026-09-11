@@ -1,3 +1,4 @@
+import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { InventoryVaultSyncLastRun } from '../core/settings';
 import { errorClassName } from '../core/local-debug-error-details';
 import type {
@@ -139,7 +140,14 @@ export class InventoryVaultOneClickSyncController {
 			plan = await this.ports.previewSync();
 			if (this.stale(generation)) return this.current();
 		} catch (error) {
-			this.settle('error', 'capture_unavailable', startedAt, generation, null, errorClassName(error));
+			// H16.5 (11 sep incident): a reload can leave the selected key not yet readable from
+			// Obsidian's own secret storage, which is a distinct, actionable claim from "capture
+			// itself failed" and used to collapse into the same generic wording.
+			this.settle(
+				'error',
+				error instanceof MissingApiKeyError ? 'credential_unavailable' : 'capture_unavailable',
+				startedAt, generation, null, errorClassName(error),
+			);
 			return this.current();
 		}
 		try {

@@ -34,7 +34,8 @@ export type Language = 'es' | 'en';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
 
 export type InventoryVaultSyncRunStatus = 'success' | 'error';
-export type InventoryVaultSyncRunErrorReason = 'capture_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
+export type InventoryVaultSyncRunErrorReason =
+	| 'capture_unavailable' | 'credential_unavailable' | 'write_unavailable' | 'unexpected_failure' | 'storage_failure';
 
 /** Structural twin of the ui layer's plan summary; settings never imports from ui. */
 export interface InventoryVaultSyncPlanSummarySnapshot {
@@ -343,7 +344,9 @@ function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: numb
 }
 
 const SYNC_RUN_STATUSES: ReadonlySet<string> = new Set(['success', 'error']);
-const SYNC_RUN_ERROR_REASONS: ReadonlySet<string> = new Set(['capture_unavailable', 'write_unavailable', 'unexpected_failure', 'storage_failure']);
+const SYNC_RUN_ERROR_REASONS: ReadonlySet<string> = new Set([
+	'capture_unavailable', 'credential_unavailable', 'write_unavailable', 'unexpected_failure', 'storage_failure',
+]);
 const SYNC_PLAN_SUMMARY_FIELDS = ['positions', 'create', 'update', 'unchanged', 'deactivate', 'conflicts'] as const;
 
 /** Tolerates an absent field (pre-0.1.7) and purges anything that is not exactly this closed shape. */

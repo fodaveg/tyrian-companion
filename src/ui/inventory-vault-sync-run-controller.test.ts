@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Vitest spies intentionally occupy port method slots. */
 import { describe, expect, it, vi } from 'vitest';
 
+import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { InventoryVaultSyncLastRun } from '../core/settings';
 import type { InventoryVaultSyncPlan, InventoryVaultSyncResult } from '../inventory/inventory-vault-sync';
 import {
@@ -252,6 +253,19 @@ describe('inventory Vault one-click sync controller', () => {
 		const final = await controller.run();
 		expect(final).toMatchObject({ status: 'idle', lastRun: { status: 'error', error: 'capture_unavailable' } });
 		expect(JSON.stringify(finished)).not.toMatch(/secret|403/u);
+	});
+
+	/**
+	 * H16.5 (11 sep incident): a reload can leave the selected key unread by Obsidian's own secret
+	 * storage, which surfaced as the SAME `capture_unavailable` a genuinely broken capture gets,
+	 * even though the two need different actions from the player.
+	 */
+	it('reports a missing API key as credential_unavailable instead of the generic capture_unavailable', async () => {
+		const ports = portsFor({ previewSync: vi.fn(async () => { throw new MissingApiKeyError(); }) });
+		const finished: InventoryVaultSyncLastRun[] = [];
+		const { controller } = harness(ports, null, (outcome) => finished.push(outcome));
+		const final = await controller.run();
+		expect(final).toMatchObject({ status: 'idle', lastRun: { status: 'error', error: 'credential_unavailable' } });
 	});
 
 	it('reports an automatic apply failure as an unexpected write failure, never as capture unavailable', async () => {
