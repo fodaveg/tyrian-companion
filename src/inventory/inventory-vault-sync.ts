@@ -5,6 +5,13 @@ import type { ItemHolding, StorageSnapshot } from '../account/storage-snapshot-m
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
 import { captureInventoryPrices, captureInventoryTradingPostAccess } from '../advisor/inventory-advisor-evidence';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
+import {
+	recommendPosition,
+	POSITION_RECOMMENDATION_ACTIONS,
+	POSITION_RECOMMENDATION_REASON_CODES,
+	type PositionRecommendationAction,
+	type PositionRecommendationReasonCode,
+} from '../advisor/inventory-position-recommendation';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
@@ -18,6 +25,7 @@ import {
 } from '../economy/commerce-listings';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
+import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -57,6 +65,10 @@ export interface InventoryVaultPosition {
 	type: string | null;
 	rarity: string | null;
 	icon: string | null;
+	recommendation: PositionRecommendationAction;
+	recommendationReason: PositionRecommendationReasonCode;
+	recommendationUntil: string | null;
+	recommendationMissing: number | null;
 }
 
 export interface InventoryVaultSyncInput {
@@ -130,6 +142,10 @@ interface InventoryNoteFields {
 	tc_item_type: string | null;
 	tc_item_rarity: string | null;
 	tc_icon: string | null;
+	tc_recommendation: PositionRecommendationAction;
+	tc_recommendation_reason: PositionRecommendationReasonCode;
+	tc_recommendation_until: string | null;
+	tc_recommendation_missing: number | null;
 	descripcion: string;
 }
 
@@ -139,7 +155,9 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_unit_sell_copper', 'tc_total_sell_copper', 'tc_sell_depth_status', 'tc_sell_covered_quantity',
 	'tc_sell_uncovered_quantity', 'tc_unit_list_copper', 'tc_total_list_copper', 'tc_active',
 	'tc_item_name', 'tc_item_type',
-	'tc_item_rarity', 'tc_icon', 'descripcion',
+	'tc_item_rarity', 'tc_icon',
+	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
+	'descripcion',
 ] as const;
 
 /**
@@ -158,6 +176,7 @@ const INVENTORY_NOTE_KEYS = [
 const INVENTORY_NOTE_KEYS_ADDED_LATER = [
 	'tc_unit_list_copper', 'tc_total_list_copper', 'tc_sell_depth_status',
 	'tc_sell_covered_quantity', 'tc_sell_uncovered_quantity',
+	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
 ] as const;
 
 interface OwnedInventoryNote {
@@ -175,6 +194,38 @@ const INVENTORY_FOLDER = 'Inventory/Positions';
 const MARKER_PREFIX = '<!-- tyrian-companion-inventory';
 
 /**
+ * Live inputs `recommendPosition` needs but does not read itself: price-history settings can
+ * change between two captures of the same long-lived `InventoryVaultCaptureService`, so every
+ * value here is read fresh on each `capture()` rather than captured once at construction time.
+ * `readDaily` mirrors the reader `assemblePriceHistory`'s compaction port already exposes
+ * (`src/runtime/assemble-price-history.ts`): the local price-history store, read-only, and empty
+ * when price history has never been activated.
+ */
+export interface InventoryPositionRecommendationPort {
+	priceHistoryEnabled(): boolean;
+	capitalThresholdCopper(): number;
+	maxPriceAgeMs(): number;
+	priceHistoryWindowDays(): number;
+	readDaily(itemId: number, fromDayUtc: string): Promise<readonly PriceHistoryDailyV1[]>;
+}
+
+/**
+ * Used whenever a caller (or a test) does not inject a real port: price history is off by
+ * default, so this reproduces exactly the M1 outcome a fresh install gets — every position
+ * comes back `review`/`price_history_disabled` — without any of the four values it will never
+ * reach becoming a silent guess.
+ */
+const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
+	priceHistoryEnabled: () => false,
+	capitalThresholdCopper: () => 100_000,
+	maxPriceAgeMs: () => 900_000,
+	priceHistoryWindowDays: () => 180,
+	readDaily: async () => [],
+};
+
+const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
+
+/**
  * Captures a stable account-wide snapshot and resolves the same public catalog and
  * instant-sale quote model used by the Inventory Advisor. Construction is inert.
  */
@@ -184,6 +235,7 @@ export class InventoryVaultCaptureService {
 		private readonly snapshots: Pick<StorageSnapshotService, 'captureWithOperation'>,
 		private readonly catalog: Pick<PublicCatalogService, 'resolve'>,
 		private readonly publicGateway: PublicCatalogGateway,
+		private readonly recommendation: InventoryPositionRecommendationPort = DEFAULT_RECOMMENDATION_PORT,
 		private readonly now: () => number = Date.now,
 	) {}
 
@@ -192,20 +244,66 @@ export class InventoryVaultCaptureService {
 		const snapshot = await this.snapshots.captureWithOperation(operation);
 		if (!inventorySnapshotComplete(snapshot)) throw new Error('inventory_capture_incomplete');
 		const capturedAt = this.now();
-		const [catalog, prices, tradingPostAccess, marketDepth] = await Promise.all([
+		const priceHistoryEnabled = this.recommendation.priceHistoryEnabled();
+		const windowDays = this.recommendation.priceHistoryWindowDays();
+		const itemIds = [...new Set(
+			Object.entries(snapshot.availableByItem).filter(([, quantity]) => quantity > 0).map(([itemId]) => Number(itemId)),
+		)];
+		const [catalog, prices, tradingPostAccess, marketDepth, dailyByItem] = await Promise.all([
 			this.catalog.resolve(snapshot, locale),
 			captureInventoryPrices(snapshot, this.publicGateway, capturedAt),
 			captureInventoryTradingPostAccess(operation, snapshot.accountId),
-			captureInventoryMarketDepth(
-				Object.entries(snapshot.availableByItem).filter(([, quantity]) => quantity > 0)
-					.map(([itemId]) => Number(itemId)),
-				this.publicGateway,
-				capturedAt,
-			),
+			captureInventoryMarketDepth(itemIds, this.publicGateway, capturedAt),
+			// No point reading a store nothing writes to: price history is opt-in, and the rule
+			// this feeds short-circuits to `review`/`price_history_disabled` before it ever looks
+			// at a percentile when it is off.
+			priceHistoryEnabled ? this.readDailyByItem(itemIds, capturedAt, windowDays) : Promise.resolve(new Map<number, readonly PriceHistoryDailyV1[]>()),
 		]);
-		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth);
+		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth, {
+			priceHistoryEnabled,
+			capitalThresholdCopper: this.recommendation.capitalThresholdCopper(),
+			maxPriceAgeMs: this.recommendation.maxPriceAgeMs(),
+			priceHistoryWindowDays: windowDays,
+			priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
+			dailyByItem,
+			capturedAtMs: capturedAt,
+		});
+	}
+
+	private async readDailyByItem(
+		itemIds: readonly number[],
+		capturedAtMs: number,
+		windowDays: number,
+	): Promise<Map<number, readonly PriceHistoryDailyV1[]>> {
+		const fromDayUtc = new Date(Math.max(0, capturedAtMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
+		const entries = await Promise.all(
+			itemIds.map(async (itemId) => [itemId, await this.recommendation.readDaily(itemId, fromDayUtc)] as const),
+		);
+		return new Map(entries);
 	}
 }
+
+/** Everything `recommendPosition` needs, resolved once per capture rather than per position. */
+export interface InventoryPositionRecommendationInputs {
+	capturedAtMs: number;
+	priceHistoryEnabled: boolean;
+	capitalThresholdCopper: number;
+	maxPriceAgeMs: number;
+	priceHistoryWindowDays: number;
+	priceHistoryRequiredDays: number;
+	dailyByItem: ReadonlyMap<number, readonly PriceHistoryDailyV1[]>;
+}
+
+/** Matches `DEFAULT_RECOMMENDATION_PORT`: every position comes back `review`/`price_history_disabled`. */
+const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
+	capturedAtMs: 0,
+	priceHistoryEnabled: false,
+	capitalThresholdCopper: 100_000,
+	maxPriceAgeMs: 900_000,
+	priceHistoryWindowDays: 180,
+	priceHistoryRequiredDays: 42,
+	dailyByItem: new Map(),
+};
 
 /**
  * Converts account-bound evidence into the identity-free rows allowed in Vault.
@@ -218,6 +316,7 @@ export async function prepareInventoryVaultSyncInput(
 	tradingPostAccess: InventoryTradingPostAccess,
 	locale: CatalogLocale,
 	marketDepth?: InventoryMarketDepthEvidenceV1,
+	recommendationInputs: InventoryPositionRecommendationInputs = DEFAULT_RECOMMENDATION_INPUTS,
 ): Promise<InventoryVaultSyncInput> {
 	assertCaptureRelations(snapshot, catalog, prices, locale);
 	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
@@ -265,6 +364,17 @@ export async function prepareInventoryVaultSyncInput(
 		const sellDepthStatus = !eligible || depth === undefined ? 'unavailable'
 			: depth.coverage !== 'complete' ? depth.coverage === 'invalid' ? 'invalid' : 'unavailable'
 				: demonstrated?.status ?? 'invalid';
+		const totalSellCopper = demonstrated?.status === 'complete' ? demonstrated.netCopper : null;
+		const recommendation = recommendPosition({
+			capturedAtMs: recommendationInputs.capturedAtMs,
+			priceHistoryEnabled: recommendationInputs.priceHistoryEnabled,
+			totalSellCopper,
+			capitalThresholdCopper: recommendationInputs.capitalThresholdCopper,
+			maxPriceAgeMs: recommendationInputs.maxPriceAgeMs,
+			priceHistoryDaily: recommendationInputs.dailyByItem.get(group.itemId) ?? [],
+			priceHistoryWindowDays: recommendationInputs.priceHistoryWindowDays,
+			priceHistoryRequiredDays: recommendationInputs.priceHistoryRequiredDays,
+		});
 		positions.push({
 			positionId: await positionId(group.itemId, group.source, group.character),
 			itemId: group.itemId,
@@ -272,7 +382,7 @@ export async function prepareInventoryVaultSyncInput(
 			character: group.character,
 			quantity: group.quantity,
 			unitSellCopper,
-			totalSellCopper: demonstrated?.status === 'complete' ? demonstrated.netCopper : null,
+			totalSellCopper,
 			sellDepthStatus,
 			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
 			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
@@ -283,6 +393,10 @@ export async function prepareInventoryVaultSyncInput(
 			type: item?.type ? cleanText(item.type) : null,
 			rarity: item?.rarity ? cleanText(item.rarity) : null,
 			icon: item?.icon ?? null,
+			recommendation: recommendation.action,
+			recommendationReason: recommendation.reason,
+			recommendationUntil: recommendation.until,
+			recommendationMissing: recommendation.missing,
 		});
 	}
 	positions.sort(comparePositions);
@@ -560,6 +674,10 @@ function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): Inv
 		tc_item_type: position.type,
 		tc_item_rarity: position.rarity,
 		tc_icon: position.icon,
+		tc_recommendation: position.recommendation,
+		tc_recommendation_reason: position.recommendationReason,
+		tc_recommendation_until: position.recommendationUntil,
+		tc_recommendation_missing: position.recommendationMissing,
 		descripcion: locale === 'es' ? 'Existencia de inventario gestionada por Tyrian Companion.' : 'Inventory holding managed by Tyrian Companion.',
 	};
 }
@@ -644,7 +762,10 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		(value.type === null || nonEmptyText(value.type)) && (value.rarity === null || nonEmptyText(value.rarity)) &&
 		(value.icon === null || nonEmptyText(value.icon)) &&
 		(value.unitSellCopper !== null || value.totalSellCopper === null) &&
-		(value.unitListCopper !== null || value.totalListCopper === null);
+		(value.unitListCopper !== null || value.totalListCopper === null) &&
+		positionRecommendationAction(value.recommendation) && positionRecommendationReason(value.recommendationReason) &&
+		(value.recommendationUntil === null || iso(value.recommendationUntil)) &&
+		nullableNonNegative(value.recommendationMissing);
 }
 
 /**
@@ -668,9 +789,15 @@ function migrateInventoryNoteFields(value: unknown): unknown {
 		migrated.tc_total_sell_copper = null;
 	}
 	for (const key of INVENTORY_NOTE_KEYS_ADDED_LATER) if (!(key in migrated)) {
+		// A note this old never had a recommendation computed for it at all: `review` with
+		// `price_history_disabled` is the safe placeholder (docs/PRODUCT.md:28, never guess a
+		// sell), and this same sync pass immediately rewrites it with the real value from
+		// `fieldsFor`, so the placeholder is never actually shown to anyone.
 		migrated[key] = key === 'tc_sell_depth_status' ? 'unavailable'
 			: key === 'tc_sell_covered_quantity' ? 0
-				: key === 'tc_sell_uncovered_quantity' ? migrated.tc_quantity : null;
+				: key === 'tc_sell_uncovered_quantity' ? migrated.tc_quantity
+					: key === 'tc_recommendation' ? 'review'
+						: key === 'tc_recommendation_reason' ? 'price_history_disabled' : null;
 	}
 	return migrated;
 }
@@ -693,7 +820,19 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		value.tc_active === (value.tc_quantity > 0) &&
 		nonEmptyText(value.tc_item_name) && (value.tc_item_type === null || nonEmptyText(value.tc_item_type)) &&
 		(value.tc_item_rarity === null || nonEmptyText(value.tc_item_rarity)) &&
-		(value.tc_icon === null || nonEmptyText(value.tc_icon)) && nonEmptyText(value.descripcion);
+		(value.tc_icon === null || nonEmptyText(value.tc_icon)) &&
+		positionRecommendationAction(value.tc_recommendation) && positionRecommendationReason(value.tc_recommendation_reason) &&
+		(value.tc_recommendation_until === null || iso(value.tc_recommendation_until)) &&
+		nullableNonNegative(value.tc_recommendation_missing) &&
+		nonEmptyText(value.descripcion);
+}
+
+function positionRecommendationAction(value: unknown): value is PositionRecommendationAction {
+	return (POSITION_RECOMMENDATION_ACTIONS as readonly unknown[]).includes(value);
+}
+
+function positionRecommendationReason(value: unknown): value is PositionRecommendationReasonCode {
+	return (POSITION_RECOMMENDATION_REASON_CODES as readonly unknown[]).includes(value);
 }
 
 function isInventoryVaultSyncPlan(value: unknown, configDir: string): value is InventoryVaultSyncPlan {

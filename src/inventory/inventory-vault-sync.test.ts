@@ -115,6 +115,36 @@ describe('inventory Vault projection', () => {
 		expect(snapshots.captureWithOperation).toHaveBeenCalledOnce();
 	});
 
+	/**
+	 * M1 criterion of closure 3 (docs/SPEC-recomendacion-por-objeto.md §5): the pure function
+	 * verde alone never proves anyone calls it. `capitalThresholdCopper` is set unreachably high
+	 * so the outcome is deterministic (`hold`/`below_capital_threshold`) without needing a real
+	 * market-depth fixture: the point here is that `capture()` reads the port and writes the
+	 * result into the DTO at all, not which branch of `recommendPosition` fires.
+	 */
+	it('wires recommendPosition into the capture DTO', async () => {
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
+		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
+		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
+		const recommendation = {
+			priceHistoryEnabled: () => true,
+			capitalThresholdCopper: () => Number.MAX_SAFE_INTEGER,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			readDaily: async () => [],
+		};
+		const service = new InventoryVaultCaptureService(
+			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
+		);
+		const input = await service.capture('es');
+		expect(input.positions[0]).toMatchObject({
+			recommendation: 'hold', recommendationReason: 'below_capital_threshold',
+			recommendationUntil: new Date(Date.parse(CAPTURED_AT) + 900_000).toISOString(),
+			recommendationMissing: null,
+		});
+	});
+
 	it.each([
 		['the request does not answer', async () => ({ status: 503, body: null, headers: {} })],
 		['it answers for another account', async () => ({ status: 200, body: accountProfile('someone-else'), headers: {} })],
@@ -466,6 +496,30 @@ describe('inventory Vault preview and apply', () => {
 		const mutations = vault.mutations;
 		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
 		expect(vault.mutations).toBe(mutations);
+	});
+
+	/**
+	 * M1 criterion of closure 1 (docs/SPEC-recomendacion-por-objeto.md §5): a sync over a note
+	 * written before the four `tc_recommendation*` keys existed must migrate, never conflict.
+	 * The negative half of this (removing the registration and watching it go red) is done by
+	 * hand and reported, not committed as a second permanent test — see the implementation report.
+	 */
+	it('a sync over 0.1.33 frontmatter (no recommendation keys yet) produces zero conflict steps', async () => {
+		const input = await oneBankInput();
+		const created = (await new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR).preview(ROOT, input)).steps[0];
+		if (!created || created.status !== 'create' || created.after === null) throw new Error('Expected a rendered create step.');
+		const preM1 = await resign(created.after
+			.replace(/^tc_recommendation: .*\n/mu, '')
+			.replace(/^tc_recommendation_reason: .*\n/mu, '')
+			.replace(/^tc_recommendation_until: .*\n/mu, '')
+			.replace(/^tc_recommendation_missing: .*\n/mu, ''));
+		expect(frontmatter(preM1)).not.toHaveProperty('tc_recommendation');
+		const vault = new MemoryInventoryVault([[created.path, preM1]]);
+		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
+		// Counted, not merely absent from a spot-check: a single `conflict` anywhere in the plan
+		// means the whole sync writes nothing (docs/inventory-vault-sync.ts:151-163's landmine).
+		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
 	});
 
 	it('rejects non-portable roots before any mutation', async () => {
