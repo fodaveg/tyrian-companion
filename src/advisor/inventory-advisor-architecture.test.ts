@@ -5,10 +5,11 @@ import { isPlainJsonValue, moduleBoundaryFacts, moduleSpecifiers } from '../test
 import * as contractApi from './inventory-advisor-contract';
 import * as modelApi from './inventory-advisor-model';
 import * as resultApi from './inventory-advisor-result';
+import * as positionRecommendationApi from './inventory-position-recommendation';
 import * as envelopeApi from '../economy/inventory-recommendation-envelope';
 
 const BOUNDARY_FILES = [
-	...['inventory-advisor-contract.ts', 'inventory-advisor-model.ts', 'inventory-advisor-result.ts']
+	...['inventory-advisor-contract.ts', 'inventory-advisor-model.ts', 'inventory-advisor-result.ts', 'inventory-position-recommendation.ts']
 		.map((name) => `src/advisor/${name}`),
 	...readdirSync('src/economy').filter((name) => name.startsWith('inventory-recommendation')
 		&& name.endsWith('.ts') && !name.endsWith('.test.ts')).map((name) => `src/economy/${name}`),
@@ -17,6 +18,7 @@ const BOUNDARY_MODULES = new Map<string, Record<string, unknown>>([
 	['src/advisor/inventory-advisor-contract.ts', contractApi],
 	['src/advisor/inventory-advisor-model.ts', modelApi],
 	['src/advisor/inventory-advisor-result.ts', resultApi],
+	['src/advisor/inventory-position-recommendation.ts', positionRecommendationApi],
 	['src/economy/inventory-recommendation-envelope.ts', envelopeApi],
 ]);
 const FORBIDDEN_MODULE_TOKEN = /(?:^|[-_.])(client|operation|http|secret|store|executor|transport|gateway|request)(?:$|[-_.])/u;
