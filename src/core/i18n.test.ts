@@ -109,7 +109,7 @@ const H5_11_KEYS = [
 	'advisor.view.reason.economic_comparison_missing',
 	'advisor.view.reason.economic_activation_pending',
 	'advisor.view.reason.unlock_coverage_unknown', 'advisor.view.reason.collection_coverage_unknown',
-	'advisor.view.reason.already_unlocked', 'advisor.view.reason.seasonal_hold',
+	'advisor.view.reason.already_unlocked', 'advisor.view.reason.seasonal_sell_window', 'advisor.view.reason.seasonal_hold',
 	'advisor.view.reason.price_history_disabled', 'advisor.view.reason.below_capital_threshold',
 	'advisor.view.reason.price_history_insufficient', 'advisor.view.reason.bid_above_reference',
 	'advisor.view.reason.below_local_band',
