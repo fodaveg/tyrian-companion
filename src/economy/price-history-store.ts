@@ -138,10 +138,58 @@ export class IndexedDbPriceHistoryStore {
 					const existing = request.result.map(parseWatchItem);
 					const byId = new Map(existing.map((entry) => [entry.itemId, entry]));
 					for (const itemId of observed) {
+						const current = byId.get(itemId);
 						byId.set(itemId, {
 							version: 1, vaultId, itemId,
 							seed: PRICE_HISTORY_SEED_ITEM_IDS.includes(itemId),
+							// A row this session observation touches keeps whatever `derived` an earlier
+							// sync gave it (M2): observing an item this session never erases the separate
+							// reason a capital-threshold sync had for watching it.
+							derived: current?.derived ?? false,
 							lastObservedAtMs: nowMs,
+						});
+					}
+					const ordered = [...byId.values()].sort((left, right) =>
+						Number(right.seed) - Number(left.seed)
+						|| right.lastObservedAtMs - left.lastObservedAtMs
+						|| left.itemId - right.itemId,
+					).slice(0, PRICE_HISTORY_MAX_WATCH_ITEMS);
+					const retained = new Set(ordered.map(({ itemId }) => itemId));
+					for (const entry of existing) if (!retained.has(entry.itemId)) store.delete([vaultId, entry.itemId]);
+					for (const entry of ordered) store.put(entry);
+					transaction.oncomplete = () => resolve(undefined);
+				} catch (error) { reject(error); transaction.abort(); }
+			};
+		});
+	}
+
+	/**
+	 * Replaces the "derived from inventory capital" slice of the watch list (SPEC-recomendacion-
+	 * por-objeto.md, decision 3, M2). `itemIds` is already ranked and capped by
+	 * `selectDerivedWatchListItemIds`; this only ever removes a row IT once added for that reason
+	 * (`derived: true`) and that fell out of the new set, so a fixed seed and whatever the ordinary
+	 * session-observed watch (`observeItems`) already holds are never touched by a capital drop.
+	 */
+	applyDerivedWatchList(vaultId: string, itemIds: readonly number[], nowMs: number): Promise<void> {
+		const desired = new Set(itemIds.filter(positiveInteger));
+		return this.transaction([PRICE_HISTORY_WATCH_STORE], 'readwrite', (transaction, resolve, reject) => {
+			const store = transaction.objectStore(PRICE_HISTORY_WATCH_STORE);
+			const request = store.getAll(keyRangeForVault(vaultId));
+			request.onerror = () => reject(storeFailure(request.error));
+			request.onsuccess = () => {
+				try {
+					const existing = request.result.map(parseWatchItem);
+					const byId = new Map(existing.map((entry) => [entry.itemId, entry]));
+					for (const entry of existing) {
+						if (entry.derived && !entry.seed && !desired.has(entry.itemId)) byId.delete(entry.itemId);
+					}
+					for (const itemId of desired) {
+						const current = byId.get(itemId);
+						byId.set(itemId, {
+							version: 1, vaultId, itemId,
+							seed: PRICE_HISTORY_SEED_ITEM_IDS.includes(itemId),
+							derived: true,
+							lastObservedAtMs: current?.lastObservedAtMs ?? nowMs,
 						});
 					}
 					const ordered = [...byId.values()].sort((left, right) =>
@@ -572,8 +620,11 @@ function parseDaily(value: unknown): PriceHistoryDailyV1 {
 
 function parseWatchItem(value: unknown): PriceHistoryWatchItemV1 {
 	if (!record(value) || value.version !== 1 || !text(value.vaultId) || !positiveInteger(value.itemId)
-		|| typeof value.seed !== 'boolean' || !nonNegativeInteger(value.lastObservedAtMs)) throw new PriceHistoryStoreError('corrupt');
-	return structuredClone(value) as unknown as PriceHistoryWatchItemV1;
+		|| typeof value.seed !== 'boolean' || !nonNegativeInteger(value.lastObservedAtMs)
+		|| (value.derived !== undefined && typeof value.derived !== 'boolean')) throw new PriceHistoryStoreError('corrupt');
+	// A row written before M2 has no `derived` key at all: it is exactly a session-observed row,
+	// since the capital-driven slice did not exist yet to have written one, so the default is `false`.
+	return { ...structuredClone(value), derived: value.derived === true } as unknown as PriceHistoryWatchItemV1;
 }
 
 function dailySide(value: unknown): boolean {

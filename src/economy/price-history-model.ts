@@ -61,6 +61,13 @@ export interface PriceHistoryWatchItemV1 {
 	vaultId: string;
 	itemId: number;
 	seed: boolean;
+	/**
+	 * True while an inventory-driven sync (SPEC-recomendacion-por-objeto.md, decision 3, M2) is the
+	 * reason this item is watched. Absent on rows written before M2, which `parseWatchItem` reads as
+	 * `false`: an older row is exactly a session-observed one, since the derived slice did not exist
+	 * yet to have written it.
+	 */
+	derived: boolean;
 	lastObservedAtMs: number;
 }
 
@@ -102,4 +109,34 @@ export function normalizePriceHistoryItemIds(values: readonly number[], maximum 
 
 export function priceHistoryIntervalMs(minutes: PriceHistoryIntervalMinutes): number {
 	return minutes * 60_000;
+}
+
+/**
+ * The "derived from inventory capital" slice of the watch list (SPEC-recomendacion-por-objeto.md,
+ * decision 3, M2): every durable position whose demonstrated instant-sell value clears the
+ * recommendation capital threshold, capped at `maxItems` by capital descending. Several rows can
+ * share one item (different characters or containers), so their demonstrated capital is summed
+ * rather than the last row seen winning; ties break by item id so the result is deterministic.
+ *
+ * Pure and side-effect free on purpose: the ranking and the cap are testable without IndexedDB, and
+ * `IndexedDbPriceHistoryStore.applyDerivedWatchList` (price-history-store.ts) only ever writes what
+ * this returns.
+ */
+export function selectDerivedWatchListItemIds(
+	positions: readonly { itemId: number; totalSellCopper: number | null }[],
+	capitalThresholdCopper: number,
+	maxItems = PRICE_HISTORY_MAX_WATCH_ITEMS,
+): number[] {
+	if (!Number.isSafeInteger(maxItems) || maxItems <= 0) throw new RangeError('Derived watch list maximum is invalid.');
+	const capitalByItem = new Map<number, number>();
+	for (const position of positions) {
+		if (!Number.isSafeInteger(position.itemId) || position.itemId <= 0) continue;
+		if (position.totalSellCopper === null || !Number.isSafeInteger(position.totalSellCopper) || position.totalSellCopper < 0) continue;
+		capitalByItem.set(position.itemId, (capitalByItem.get(position.itemId) ?? 0) + position.totalSellCopper);
+	}
+	return [...capitalByItem.entries()]
+		.filter(([, capitalCopper]) => capitalCopper >= capitalThresholdCopper)
+		.sort(([leftId, leftCopper], [rightId, rightCopper]) => rightCopper - leftCopper || leftId - rightId)
+		.slice(0, maxItems)
+		.map(([itemId]) => itemId);
 }

@@ -30,6 +30,39 @@ describe('IndexedDbPriceHistoryStore', () => {
 		database.close();
 	});
 
+	it('replaces the derived slice on every call, keeps seeds, and preserves a plain session-observed row', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('derived'));
+		await store.ensureSeedWatchList('vault', 1);
+		// A plain session-observed id (not derived): must survive every later derived-list call.
+		await store.observeItems('vault', [999], 2);
+		await store.applyDerivedWatchList('vault', [10, 20, 30], 3);
+		let watch = await store.readWatchList('vault');
+		expect(watch.filter((entry) => entry.derived).map((entry) => entry.itemId)).toEqual([10, 20, 30]);
+		expect(watch.some((entry) => entry.itemId === 999 && !entry.derived)).toBe(true);
+		expect(PRICE_HISTORY_SEED_ITEM_IDS.every((id) => watch.some((entry) => entry.itemId === id && entry.seed))).toBe(true);
+
+		// Item 20 drops out of the derived set on the next sync: it must leave the watch list.
+		await store.applyDerivedWatchList('vault', [10, 30], 4);
+		watch = await store.readWatchList('vault');
+		expect(watch.some((entry) => entry.itemId === 20)).toBe(false);
+		expect(watch.filter((entry) => entry.derived).map((entry) => entry.itemId)).toEqual([10, 30]);
+		// The seeds and the session-observed id are untouched by the drop.
+		expect(watch.some((entry) => entry.itemId === 999)).toBe(true);
+		expect(PRICE_HISTORY_SEED_ITEM_IDS.every((id) => watch.some((entry) => entry.itemId === id && entry.seed))).toBe(true);
+		store.close();
+	});
+
+	// The store defensively re-enforces the 400 total cap even if a caller passed more; which
+	// 400 win by capital is `selectDerivedWatchListItemIds`'s own responsibility and is covered
+	// by price-history-model.test.ts, not here.
+	it('never exceeds 400 total watch entries even when handed more derived ids than that', async () => {
+		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('derived-cap'));
+		await store.applyDerivedWatchList('vault', Array.from({ length: 450 }, (_, index) => index + 1), 1);
+		const watch = await store.readWatchList('vault');
+		expect(watch).toHaveLength(400);
+		store.close();
+	});
+
 	it('allows one writer per vault and slot, then returns the committed snapshot idempotently', async () => {
 		const store = await IndexedDbPriceHistoryStore.open(new IDBFactory(), databaseName('lease'));
 		const first = await store.claimSlot('vault-a', 900_000, 'window-a', 1_000);
