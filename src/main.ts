@@ -89,7 +89,9 @@ import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
 import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
+import { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import { fetchPriceSeed } from './economy/price-seed-source';
+import type { PriceSeedV1 } from './economy/price-seed-model';
 import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
@@ -312,6 +314,14 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
 	private priceSeedBulkRefresh: PriceSeedBulkRefreshService | null = null;
+	/**
+	 * Read-only connection to the same `tyrian-companion-price-seed-cache` database
+	 * `priceSeedBulkRefresh` writes into, for `previewInventorySync`'s recommendation port
+	 * (decision 4, M2). Opened lazily on first read, same pattern as `priceHistoryPanelSeed`'s own
+	 * `ensureStore`; never opened from `onload`, and never used to write.
+	 */
+	private priceSeedCacheReader: IndexedDbPriceSeedCacheStore | null = null;
+	private priceSeedCacheReaderOpening: Promise<IndexedDbPriceSeedCacheStore | null> | null = null;
 	private halloween: HalloweenRuntime | null = null;
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
@@ -791,6 +801,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 						// after every compaction (src/runtime/assemble-price-history.ts); a second,
 						// independent reader that never touches the panel's own selected series.
 						readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
+						// Same cache `priceSeedBulkRefresh` (below) writes into, read-only: `capture()`
+						// merges this with `readDaily` above (decision 4) so a seed a prior "Sincronizar
+						// inventario" already cached — or one this very call's `refreshPriceSeeds` just
+						// downloaded — reaches `recommendPosition` without waiting on the plugin's own
+						// 42-day capture.
+						readCachedSeed: async (itemId) => await this.readCachedPriceSeed(vaultId, itemId),
 						// Decision 3 (SPEC-recomendacion-por-objeto.md §7): capital-derived watch list,
 						// recomputed on every sync so an item that drops below the threshold leaves it.
 						updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
@@ -1084,6 +1100,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.priceHistory?.dispose();
 		this.priceHistoryPanelSeed?.dispose();
 		this.priceSeedBulkRefresh?.dispose();
+		this.priceSeedCacheReader?.close();
+		this.priceSeedCacheReader = null;
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
@@ -2242,6 +2260,39 @@ export default class TyrianCompanionPlugin extends Plugin {
 				level: 'error', phase: 'failure', code: 'unknown_failure',
 				details: unmappedErrorLogDetails(error),
 			});
+		}
+	}
+
+	/**
+	 * Read-only lookup for `previewInventorySync`'s recommendation port (decision 4, M2): never
+	 * downloads a seed, only reads whatever `priceSeedBulkRefresh` already cached. `null` on any
+	 * storage failure, same fail-closed discipline `IndexedDbPriceSeedCacheStore` itself uses.
+	 */
+	private async readCachedPriceSeed(vaultId: string, itemId: number): Promise<PriceSeedV1 | null> {
+		const store = await this.ensurePriceSeedCacheReader();
+		if (store === null) return null;
+		try {
+			return (await store.get(vaultId, itemId))?.seed ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	private async ensurePriceSeedCacheReader(): Promise<IndexedDbPriceSeedCacheStore | null> {
+		if (this.priceSeedCacheReader !== null) return this.priceSeedCacheReader;
+		if (this.priceSeedCacheReaderOpening === null) this.priceSeedCacheReaderOpening = this.openPriceSeedCacheReader();
+		return await this.priceSeedCacheReaderOpening;
+	}
+
+	private async openPriceSeedCacheReader(): Promise<IndexedDbPriceSeedCacheStore | null> {
+		try {
+			const store = await IndexedDbPriceSeedCacheStore.open(window.indexedDB);
+			this.priceSeedCacheReader = store;
+			return store;
+		} catch {
+			return null;
+		} finally {
+			this.priceSeedCacheReaderOpening = null;
 		}
 	}
 
