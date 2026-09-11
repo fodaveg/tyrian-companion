@@ -2,7 +2,7 @@
 	"version": 4,
 	"policy": "Every production TypeScript file and every catch, Promise catch, detached void, and registered inline callback has an exact locator and an explicit observability decision. New boundaries are unreviewed. Observed decisions require a direct diagnostic call verified against the AST; allowlisted decisions require kind-specific semantic evidence verified against the AST.",
 	"totals": {
-		"catch_clause": 436,
+		"catch_clause": 438,
 		"promise_catch": 36,
 		"void_expression": 81,
 		"callback_registration": 158
@@ -6093,6 +6093,38 @@
 						"callee": "this.localDebugActions.event"
 					},
 					"reason": "Direct observability call \"this.localDebugActions.event\" is present inside this catch_clause boundary."
+				},
+				{
+					"id": "16b732ab9f0c483cb12b5d557a3834740ffd4cf4",
+					"kind": "catch_clause",
+					"line": 2276,
+					"column": 5,
+					"endLine": 2278,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "readCachedPriceSeed",
+						"justification": "The \"readCachedPriceSeed\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"readCachedPriceSeed\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"readCachedPriceSeed\"."
+				},
+				{
+					"id": "01135f1b3a03688c4c89df3637b92ff6fc25eaed",
+					"kind": "catch_clause",
+					"line": 2292,
+					"column": 5,
+					"endLine": 2294,
+					"endColumn": 4,
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_recovery",
+						"behavior": "fallback_return",
+						"scope": "openPriceSeedCacheReader",
+						"justification": "The \"openPriceSeedCacheReader\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics."
+					},
+					"reason": "Allowlisted catch_clause: The \"openPriceSeedCacheReader\" owner explicitly handles \"fallback_return\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"fallback_return\" in \"openPriceSeedCacheReader\"."
 				},
 				{
 					"id": "c4c2a37b294add8e9a3331c8b77e018311a92cbb",
@@ -12757,6 +12789,11 @@
 					"reason": "Allowlisted catch_clause: The \"ensureFolders\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"ensureFolders\"."
 				}
 			]
+		},
+		"src/economy/price-seed-history-merge.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		}
 	}
 }
