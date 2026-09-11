@@ -261,9 +261,10 @@ vender. Esto no es una limitación técnica, es la frase de David («alguna lege
 hacer**»).
 
 **De dónde sale la LISTA de legendarias que se le ofrece**: medido el 2026-09-11,
-`GET https://api.guildwars2.com/v2/legendaryarmory` devuelve **410 entradas** de la forma
-`{"id": 30704, "max_count": 2}`, sin clave. Los nombres e iconos salen de `/v2/items?ids=`, que el
-plugin ya consume (`src/core/http.ts:10`, `publicCatalogLogicalEndpoint` en
+`GET https://api.guildwars2.com/v2/legendaryarmory` devuelve **205 entradas** (la cifra de 410 que
+figuraba antes en este párrafo era errónea; la vuelve a medir M4 al implementarlo, misma fecha) de
+la forma `{"id": 30704, "max_count": 2}`, sin clave. Los nombres e iconos salen de `/v2/items?ids=`,
+que el plugin ya consume (`src/core/http.ts:10`, `publicCatalogLogicalEndpoint` en
 `src/catalog/public-catalog-client.ts:43`). **La lista de legendarias no se cura a mano y no se
 pudre**: es un endpoint público.
 
@@ -293,7 +294,7 @@ mano**: `node node_modules/jiti/lib/jiti-cli.mjs scripts/recompute-bundle-hashes
 
 **Coste de mantener esa tabla, sin adornos**: una legendaria de 3.ª generación son del orden de 8 a 12
 nudos de árbol y 20 a 30 materiales hoja. Curar **una** legendaria con sus fuentes congeladas y su
-hash es una tarde; curar las 410 no lo hace nadie y no hace falta. La tabla nace con las que David
+hash es una tarde; curar las 205 no lo hace nadie y no hace falta. La tabla nace con las que David
 nombre en la decisión 1 y crece publicando datos, que es justo lo que el formato del pack permite.
 `validUntil` obliga a revisarla; el precedente de H13.7
 (`src/advisor/inventory-advisor-builtin-bundle.ts:41-49`) es la prueba de que ese vencimiento se
@@ -531,7 +532,8 @@ más cara y ya está pagada. Si la respuesta es no, M1 a M3 se entregan igual y 
 ▸ **Mi recomendación: tabla curada**, por la medición del 2026-09-11:
 `/v2/recipes/search?output=30704` (Twilight) y `?output=19675` (Mystic Clover) devuelven ambos `[]`.
 La Forja Mística no está en la API y es justo donde vive el nudo. Coste: una tarde por legendaria, y
-la lista de legendarias en sí la da `/v2/legendaryarmory` (410 ids, sin clave) sin curar nada.
+la lista de legendarias en sí la da `/v2/legendaryarmory` (205 ids medidos 2026-09-11, sin clave)
+sin curar nada.
 
 **3. ¿Cuántos objetos llevan histórico propio, y quién los elige?** La watch list admite 400
 (`src/economy/price-history-model.ts:9`) y hoy lleva 5.

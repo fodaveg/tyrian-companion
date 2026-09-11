@@ -19,7 +19,7 @@ const NESTED_CONFIG_DIR = `config/.${'obsidian'}`;
 describe('migrateSettings', () => {
 	it('leaves diagnostics off for a pre-v11 install and preserves valid v11 preferences', () => {
 		expect(migrateSettings({ schemaVersion: 10, debugLoggingEnabled: false, debugLoggingLevel: 'error' }))
-			.toMatchObject({ schemaVersion: 13, debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
+			.toMatchObject({ schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
 		expect(migrateSettings({ schemaVersion: 11, debugLoggingEnabled: false, debugLoggingLevel: 'warn' }))
 			.toMatchObject({ debugLoggingEnabled: false, debugLoggingLevel: 'warn' });
 		expect(migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION, debugLoggingEnabled: true, debugLoggingLevel: 'trace' }))
@@ -242,6 +242,17 @@ describe('migrateSettings', () => {
 		expect(migrated.valuableLootThresholdCopper).toBe(25_000);
 		expect(migrateSettings({ recommendationCapitalThresholdCopper: 250_000 }).recommendationCapitalThresholdCopper).toBe(250_000);
 		expect(migrateSettings({ recommendationCapitalThresholdCopper: -1 }).recommendationCapitalThresholdCopper).toBe(100_000);
+	});
+
+	// v14, docs/SPEC-recomendacion-por-objeto.md M4. Empty by default: a fresh install (and every
+	// pre-v14 install with no explicit choice) reserves nothing for rule (a).
+	it('ships an empty legendary target list, sanitizing whatever a pre-v14 payload carried', () => {
+		expect(DEFAULT_SETTINGS.legendaryTargetItemIds).toEqual([]);
+		expect(migrateSettings({}).legendaryTargetItemIds).toEqual([]);
+		expect(migrateSettings({
+			schemaVersion: SETTINGS_SCHEMA_VERSION, legendaryTargetItemIds: [103_815, 30_704, 103_815, -1, 'x', 1.5],
+		}).legendaryTargetItemIds).toEqual([30_704, 103_815]);
+		expect(migrateSettings({ legendaryTargetItemIds: 'not-an-array' }).legendaryTargetItemIds).toEqual([]);
 	});
 
 	it('keeps every salvage preference optional and rejects hostile interactive updates', () => {

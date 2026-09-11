@@ -22,7 +22,10 @@ import type {
 } from '../economy/equipment-salvage-economy';
 import { LOCAL_DEBUG_LEVELS, type LocalDebugLevel } from './local-debug-contract';
 
-export const SETTINGS_SCHEMA_VERSION = 13 as const;
+export const SETTINGS_SCHEMA_VERSION = 14 as const;
+
+/** Highest number of legendary targets the settings panel keeps; well above anything the Legendary Armory lists today (205, measured 2026-09-11). */
+const MAX_LEGENDARY_TARGET_ITEM_IDS = 64;
 
 /** Lowest port the in-game bridge accepts. Below this range needs a privilege the plugin never asks for. */
 export const ALERT_INGAME_MIN_PORT = 1_024;
@@ -117,6 +120,12 @@ export interface TyrianSettings {
 	 * own `valuableLootThresholdCopper` comment already documents once.
 	 */
 	recommendationCapitalThresholdCopper: number;
+	/**
+	 * Legendaries the account wants to craft (SPEC-recomendacion-por-objeto.md M4, rule (a)).
+	 * Item ids from `GET /v2/legendaryarmory`. Empty by default: a fresh install reserves nothing
+	 * and rule (a) never fires, exactly matching the pre-M4 behaviour.
+	 */
+	legendaryTargetItemIds: readonly number[];
 	/** Optional off-device alert relay. Empty means off; only HTTPS destinations are used. */
 	alertWebhookUrl: string;
 	/** Optional in-game alert relay (H13.9/H13.15). Off by default: no port opens on a fresh install. */
@@ -161,6 +170,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenValueThresholdCopper: 10_000,
 	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
 	recommendationCapitalThresholdCopper: 100_000,
+	legendaryTargetItemIds: [],
 	alertWebhookUrl: '',
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
@@ -255,6 +265,10 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		// like `valuableLootThresholdCopper` above already does for its own older field.
 		recommendationCapitalThresholdCopper: safeNonNegativeInteger(data.recommendationCapitalThresholdCopper,
 			DEFAULT_SETTINGS.recommendationCapitalThresholdCopper),
+		// v14. Read defensively rather than gated by a schema-version check, same precedent as
+		// `recommendationCapitalThresholdCopper` above: an absent value on any pre-v14 install
+		// falls through to the empty default instead of losing an unrelated field to the bump.
+		legendaryTargetItemIds: legendaryTargetItemIds(data.legendaryTargetItemIds),
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
@@ -354,6 +368,13 @@ export function alertIngamePortValue(value: unknown): number {
 
 function safeNonNegativeInteger(value: unknown, fallback: number): number {
 	return Number.isSafeInteger(value) && (value as number) >= 0 ? value as number : fallback;
+}
+
+/** Deduped, sorted, capped positive item ids; anything else in the array is dropped rather than rejecting the whole list. */
+function legendaryTargetItemIds(value: unknown): number[] {
+	if (!Array.isArray(value)) return [...DEFAULT_SETTINGS.legendaryTargetItemIds];
+	const ids = value.filter((entry): entry is number => Number.isSafeInteger(entry) && entry > 0);
+	return [...new Set(ids)].sort((left, right) => left - right).slice(0, MAX_LEGENDARY_TARGET_ITEM_IDS);
 }
 
 function enumNumber(value: unknown, allowed: ReadonlySet<number>, fallback: number): number {
