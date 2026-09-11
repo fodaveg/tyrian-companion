@@ -20,7 +20,7 @@ import {
 import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from './commerce-listings';
 import { isContainerModel, type ContainerModelV1 } from './container-model';
 import { calculateTradingPostFees } from './gw2-fees';
-import type { ReservationGoal, ReservationPlan, SessionValuationReservationOverlay } from './reservation-model';
+import type { ReservationGoal, ReservationPlan, ReservationReason, SessionValuationReservationOverlay } from './reservation-model';
 import {
 	buildReservationBalance,
 	createReservationPlan,
@@ -157,7 +157,16 @@ export interface ContainerRecommendationReason {
 
 export interface ReservedContainerAllocation {
 	goalId: string;
-	reason: 'achievement' | 'purchase' | 'personal';
+	/**
+	 * `ReservationReason` in full, not a locally-narrowed copy: `reservationEvidence` below assigns
+	 * `allocation.reason` (`ReservationAllocation['reason']`, `ReservationReason`) straight through,
+	 * so a reason added there (M4's `legendary`) must widen here too or that assignment stops
+	 * type-checking. A session's own goals never carry `legendary` in practice (M4 computes those
+	 * goals fresh per inventory sync rather than persisting them into `InventoryPreferencesV1.goals`,
+	 * the only source this session flow reads), but the validator below still accepts it so a future
+	 * change here fails on a real mismatch instead of a stale allowlist.
+	 */
+	reason: ReservationReason;
 	intendedUse: 'hold' | 'open' | 'consume' | 'exchange';
 	quantity: number;
 }
@@ -573,7 +582,7 @@ function isRecommendationAllocations(value: unknown): value is ContainerDisposit
 	const held: unknown[] = value.held;
 	if (!reserved.every((entry): entry is ReservedContainerAllocation => isRecord(entry) && exactKeys(entry, [
 		'goalId', 'reason', 'intendedUse', 'quantity',
-	]) && trimmed(entry.goalId, 256) && ['achievement', 'purchase', 'personal'].includes(String(entry.reason)) &&
+	]) && trimmed(entry.goalId, 256) && ['achievement', 'purchase', 'personal', 'legendary'].includes(String(entry.reason)) &&
 		['hold', 'open', 'consume', 'exchange'].includes(String(entry.intendedUse)) && positive(entry.quantity))) return false;
 	if (!held.every((entry): entry is HeldContainerAllocation => isRecord(entry) && exactKeys(entry, [
 		'intentId', 'state', 'route', 'reason', 'quantity',

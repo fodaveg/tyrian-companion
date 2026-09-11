@@ -192,7 +192,7 @@ export function isReservationGoal(value: unknown): value is ReservationGoal {
 	if (!isRecord(value) || !exactKeys(value, ['schemaVersion', 'goalId', 'title', 'status', 'priority', 'reason', 'requirements']) ||
 		value.schemaVersion !== 1 || !trimmed(value.goalId, 128) || !trimmed(value.title, 256) ||
 		!['active', 'paused', 'completed'].includes(String(value.status)) || !safeNonNegative(value.priority) ||
-		(value.priority) > 1_000 || !['achievement', 'purchase', 'personal'].includes(String(value.reason)) ||
+		(value.priority) > 1_000 || !['achievement', 'purchase', 'personal', 'legendary'].includes(String(value.reason)) ||
 		!Array.isArray(value.requirements) || !value.requirements.every(isRequirement)) return false;
 	return unique(value.requirements.map((requirement) => requirement.key));
 }
@@ -310,7 +310,7 @@ function isPlanAsset(value: unknown): value is ReservationPlanAsset {
 function isAllocation(value: unknown): value is ReservationAllocation {
 	if (!(isRecord(value) && exactKeys(value, ['goalId', 'priority', 'reason', 'required', 'satisfied', 'protectedAvailable', 'shortfall', 'basis', 'intendedUse']) &&
 		trimmed(value.goalId, 128) && safeNonNegative(value.priority) && (value.priority) <= 1_000 &&
-		['achievement', 'purchase', 'personal'].includes(String(value.reason)) &&
+		['achievement', 'purchase', 'personal', 'legendary'].includes(String(value.reason)) &&
 		positive(value.required) && safeNonNegative(value.satisfied) && safeNonNegative(value.protectedAvailable) &&
 		safeNonNegative(value.shortfall) && (value.protectedAvailable) <= (value.satisfied) &&
 		(value.basis === 'owned' || value.basis === 'available') &&
