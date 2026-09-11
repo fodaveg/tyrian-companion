@@ -6,6 +6,7 @@ import type { LocalDebugStatus } from '../core/local-debug-contract';
 import type { ConnectionErrorCode } from '../account/account-service';
 import type { ConnectionState } from '../account/connection-service';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
+import type { LegendaryArmoryOptionsResult } from '../main';
 import {
 	CONNECTION_ERROR_KEYS,
 	projectConnectionDescription,
@@ -400,6 +401,58 @@ describe('output folder exclusion hint', () => {
 	});
 });
 
+/**
+ * M4 test 6 (docs/SPEC-recomendacion-por-objeto.md): the legendary targets list loads ONLY on the
+ * button click, never merely by rendering the row (which is what happens every time the settings
+ * panel opens). `plugin.loadLegendaryArmoryOptions` is the plugin's one network-touching boundary
+ * for this feature (`main.ts` wires it to the real `GET /v2/legendaryarmory` fetch); a spy on it
+ * standing at zero calls after render, and exactly one after the button fires, is the whole claim.
+ */
+describe('legendary targets setting (M4)', () => {
+	it('never calls loadLegendaryArmoryOptions merely by rendering the row', () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		definition.render(fakeLegendarySetting().setting as never);
+		expect(plugin.loadLegendaryArmoryOptions).not.toHaveBeenCalled();
+	});
+
+	it('calls loadLegendaryArmoryOptions exactly once when the load button is clicked, and renders its result', async () => {
+		const plugin = settingsPlugin();
+		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
+			status: 'ok' as const,
+			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true }],
+		}));
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		await fake.clickLoadButton();
+		expect(plugin.loadLegendaryArmoryOptions).toHaveBeenCalledOnce();
+		expect(fake.textContent()).toContain('Klobjarne Geirr');
+	});
+
+	it('shows the "no materials table" warning for a legendary with no curated entry', async () => {
+		const plugin = settingsPlugin();
+		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
+			status: 'ok' as const,
+			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false }],
+		}));
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		await fake.clickLoadButton();
+		expect(fake.textContent()).toContain('No materials table');
+	});
+});
+
 function settingsPlugin() {
 	const plugin = {
 		settings: { ...DEFAULT_SETTINGS, language: 'en' as const } as TyrianSettings,
@@ -411,8 +464,67 @@ function settingsPlugin() {
 		getSessionHistoryView: () => ({ status: 'idle' as const, sessions: 0 }),
 		getConnectionState: () => ({ status: 'idle' as const }),
 		hasManagedAssetsRoot: () => false,
+		loadLegendaryArmoryOptions: vi.fn<() => Promise<LegendaryArmoryOptionsResult>>(async () => ({ status: 'error' })),
 	};
 	return plugin;
+}
+
+/** Minimal fake DOM element covering only what the legendary targets row's render calls. */
+interface FakeLegendaryEl {
+	createDiv(opts?: { cls?: string }): FakeLegendaryEl;
+	createEl(tag: string, opts?: { text?: string; type?: string }): FakeLegendaryEl & { id: string; checked: boolean };
+	createSpan(opts?: { cls?: string; text?: string }): FakeLegendaryEl;
+	empty(): void;
+	setAttr(name: string, value: string): void;
+	setText(text: string): void;
+	addEventListener(type: string, handler: () => void): void;
+	allText(): string[];
+}
+
+function fakeLegendaryElement(): FakeLegendaryEl {
+	const children: FakeLegendaryEl[] = [];
+	let text = '';
+	let checked = false;
+	let id = '';
+	let changeHandler: (() => void) | null = null;
+	const element: FakeLegendaryEl & { id: string; checked: boolean } = {
+		createDiv: (_opts) => { const child = fakeLegendaryElement(); children.push(child); return child; },
+		createEl: (_tag, opts) => {
+			const child = fakeLegendaryElement() as FakeLegendaryEl & { id: string; checked: boolean };
+			if (opts?.text !== undefined) child.setText(opts.text);
+			children.push(child);
+			return child;
+		},
+		createSpan: (opts) => { const child = fakeLegendaryElement(); if (opts?.text !== undefined) child.setText(opts.text); children.push(child); return child; },
+		empty: () => { children.length = 0; },
+		setAttr: (_name, _value) => undefined,
+		setText: (value) => { text = value; },
+		addEventListener: (type, handler) => { if (type === 'change') changeHandler = handler; },
+		allText: () => [text, ...children.flatMap((child) => child.allText())].filter((value) => value.length > 0),
+		get id() { return id; },
+		set id(value: string) { id = value; },
+		get checked() { return checked; },
+		set checked(value: boolean) { checked = value; if (changeHandler) changeHandler(); },
+	};
+	return element;
+}
+
+function fakeLegendarySetting() {
+	const descEl = fakeLegendaryElement();
+	let loadClick: (() => Promise<void> | void) | null = null;
+	const buttonComponent = {
+		setButtonText: () => buttonComponent,
+		onClick: (handler: () => Promise<void> | void) => { loadClick = handler; return buttonComponent; },
+	};
+	const setting = {
+		descEl,
+		addButton: (render: (button: typeof buttonComponent) => unknown) => { render(buttonComponent); return setting; },
+	};
+	return {
+		setting,
+		textContent: () => descEl.allText().join(' | '),
+		clickLoadButton: async () => { await loadClick?.(); },
+	};
 }
 
 interface FakeControl {
