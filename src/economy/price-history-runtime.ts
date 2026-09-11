@@ -198,6 +198,19 @@ export class PriceHistoryRuntime {
 		}
 	}
 
+	/**
+	 * Read-only lookup for one item's daily aggregates, for a consumer (the inventory
+	 * recommender) that is not the panel's own selected series: unlike `loadSeries`, this never
+	 * touches `this.state`, so it cannot clobber whatever the UI currently has selected. Returns
+	 * an empty series rather than throwing when the store has never been opened, which is exactly
+	 * what "price history disabled" looks like from here.
+	 */
+	async readDaily(itemId: number, fromDayUtc: string): Promise<PriceHistoryDailyV1[]> {
+		const store = this.store;
+		if (store === null) return [];
+		return await store.readDaily(this.options.vaultId, itemId, fromDayUtc);
+	}
+
 	async loadSeries(
 		itemId: number,
 		side: PriceHistorySide,
