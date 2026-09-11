@@ -12,6 +12,7 @@ import type {
 import { classifyItemLiquidity } from '../economy/item-liquidity';
 import { valueCompetitiveListing, valueInstantSellDepth } from '../economy/commerce-listings';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
+import type { ReservationReason } from '../economy/reservation-model';
 import { evaluateInventoryContainerEconomy } from './inventory-container-economy';
 import { evaluateInventoryEquipmentEconomy } from './inventory-equipment-economy';
 import {
@@ -152,7 +153,7 @@ function protectionReasonsByDecision(
 		allocations: Array<{
 			goalId: string;
 			protectedAvailable: number;
-			reason: 'achievement' | 'purchase' | 'personal';
+			reason: ReservationReason;
 			basis: 'owned' | 'available';
 			intendedUse: 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
 		}>;

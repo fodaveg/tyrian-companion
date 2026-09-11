@@ -15,6 +15,7 @@ import type {
 	InventoryContainerPersonalEconomyV1,
 } from './inventory-container-economy';
 import type { ContainerDispositionKernelExplanation } from '../economy/container-disposition-kernel';
+import type { ReservationReason } from '../economy/reservation-model';
 
 export const INVENTORY_ADVISOR_PRESENTATION_VERSION = 1 as const;
 
@@ -52,7 +53,17 @@ export type InventoryAdvisorProtectionReason =
 		id: string;
 		title: string;
 		quantity: number;
-		reason: 'achievement' | 'purchase' | 'personal';
+		/**
+		 * `ReservationReason` in full, not a locally-narrowed copy: `protectionReasonsByDecision`
+		 * (`inventory-advisor-presentation.ts`) assigns `allocation.reason`
+		 * (`ReservationAllocation['reason']`) straight through, so a reason added there (M4's
+		 * `legendary`) must widen here too. This surface's own `input.goals` never carries
+		 * `legendary` in practice (M4 computes those goals fresh per inventory sync rather than
+		 * persisting them into `InventoryPreferencesV1.goals`, the only source this flow reads),
+		 * exactly the same reasoning `ReservedContainerAllocation['reason']`
+		 * (`src/economy/container-recommendation.ts`) already documents for its own copy.
+		 */
+		reason: ReservationReason;
 		basis: 'owned' | 'available';
 		intendedUse: 'hold' | 'open' | 'consume' | 'exchange' | 'spend';
 	}
