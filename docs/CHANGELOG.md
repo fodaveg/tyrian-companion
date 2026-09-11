@@ -1,7 +1,38 @@
 # Changelog
 
-## Sin publicar
+## Release beta 0.1.34 - recomendación de vender o mantener por objeto
 
+Cada nota de inventario dice ahora qué hacer con ese objeto y por qué, con una fecha a partir de la
+cual la recomendación deja de valer (`docs/SPEC-recomendacion-por-objeto.md`, M1 a M4). El plugin no
+compra ni vende: la recomendación es un campo de la nota. Las notas cambian al ejecutar «Sincronizar
+inventario», como siempre; una bóveda con notas de 0.1.33 sincroniza sin conflictos.
+
+- Campo nuevo en cada nota de posición: `tc_recommendation` (`sell`, `hold`, `sell_at_season`,
+  `hold_for_legendary` o `review`), `tc_recommendation_reason` (código traducido en la interfaz),
+  `tc_recommendation_until` y `tc_recommendation_missing`. `review` es la salida ante datos
+  insuficientes: nunca se recomienda vender por falta de datos. La Base `Inventory.base` gana las
+  columnas «Recomendación» y «Motivo» y la vista «Para vender» (`src/advisor/inventory-position-recommendation.ts`,
+  `src/inventory/inventory-vault-sync.ts`, `src/assets/inventory-bases.ts`, M1).
+- Regla de precio: con el histórico local de precios activado, un objeto cuyo capital supera el
+  umbral (ajuste nuevo, 10 oro por defecto, medido por objeto sumando todas sus notas) se recomienda
+  vender si la puja de hoy está en el percentil 90 o más de su año, y mantener si no. Sin histórico
+  suficiente la nota dice `review` y cuántos días hay (`tc_price_percentile`,
+  `tc_price_coverage_days`) (M1, M2).
+- Histórico de precios: los objetos que superan el umbral entran solos en la lista vigilada (tope 400)
+  y, tras «Sincronizar inventario», el plugin descarga su serie de datawars2 de uno en uno, con caché
+  de 24 h y un máximo de 25 por sincronización (`docs/PLATFORM_POLICY.md`, aprobado el 11 sep). Esa
+  serie se une a las capturas propias antes de calcular el percentil (`src/economy/price-seed-bulk-refresh.ts`,
+  `src/economy/price-seed-history-merge.ts`, M2).
+- Objetos de festival: el saco de Halloween, el trozo y la barra de caramelo, el Jorcamelo y los
+  colmillos de plástico de alta calidad llevan una ventana de venta medida sobre siete ediciones de
+  Halloween (`docs/audit/2026-09-11-festivales-datawars2.md`). Dentro de la ventana la nota dice
+  vender; fuera, «guardar hasta la temporada» con la fecha de apertura, salvo que el precio ya esté
+  cerca del máximo del año (M3).
+- Legendarias: ajuste nuevo con las legendarias que quieras fabricar (vacío por defecto; la lista se
+  carga con un botón del panel). Para las que tienen tabla de materiales, la parte de la pila que
+  necesitan se marca `hold_for_legendary` con cuántas faltan, y el excedente sigue las reglas de
+  precio. Las ya forjadas se descuentan con `/v2/account/legendaryarmory`. Primera tabla curada:
+  Klobjarne Geirr (`src/economy/legendary-materials.ts`, `src/economy/legendary-goals.ts`, M4).
 - Aviso in-game: `alertIngameContent` pintaba el valor en cobre crudo (`51000 copper`); ahora
   reutiliza el formato «5g 10s 0c» de `formatLootMoney`, extraído a un formateador puro
   compartido. `alertIngameContent`/`alertIngamePayload` siguen recibiendo solo `AlertV1`

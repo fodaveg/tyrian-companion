@@ -2,7 +2,7 @@
 
 ## Vertical activa
 
-**Estado a 10 sep 2026.** La 0.1.31 publicó los once lotes del audit del 8 sep; la 0.1.32 y la 0.1.33 llevan el H15
+**Estado a 11 sep 2026.** La 0.1.34 lleva la recomendación de vender o mantener por objeto (`docs/SPEC-recomendacion-por-objeto.md`, M1 a M4) y H16.1, H16.2 y H16.5. La 0.1.31 publicó los once lotes del audit del 8 sep; la 0.1.32 y la 0.1.33 llevan el H15
 (causa del fallo de sesión en el log, audit de funcionamiento con 22 arreglos hijos, tests
 ejecutables): la regla firmada de qué degrada una sesión, la tarjeta de sesión como componente único,
 un solo aviso por umbral, la captura en una pasada, el barrido de Halloween acotado, las notas de
