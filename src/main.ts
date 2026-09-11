@@ -327,8 +327,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private halloweenPriceAlert: HalloweenPriceAlertRuntime | null = null;
 	/** H13.2. Null when the curated pack is unavailable: the rule is the pack's, not the code's. */
 	private sellSignal: SellSignalRuntime | null = null;
-	/** M3: one runtime per festival calendar item other than the Halloween bag, keyed by itemId. */
-	private festivalSellSignals: ReadonlyMap<number, SellSignalRuntime> = new Map();
 	private halloweenAccountRef: string | null = null;
 	/** Single exit point for loot and price alerts. Null until `initializeRuntime` builds its channels. */
 	private alertEmitter: AlertEmitter | null = null;
@@ -711,19 +709,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 				}, port.nowMs, port.actionContext);
 			},
 			evaluateSellSignal: async (port) => { await this.evaluateSellSignal(port); },
-			evaluateFestivalSellSignals: async (port) => { await this.evaluateFestivalSellSignals(port); },
 			// No network without a session, the seed included.
 			sessionActive: () => this.sessions?.getState().status === 'active',
 			emittedAlerts: () => this.emittedAlerts,
 			cooldownHours: () => this.settings.halloweenPriceAlertCooldownHours,
 			heldQuantity: () => this.observedBagQuantity(),
 			itemName: () => translateRuntime(createTranslator(this.settings.language), 'alerts.bagName'),
-			festivalHeldQuantity: (itemId) => this.observedItemQuantity(itemId),
-			festivalItemName: (itemId) => FESTIVAL_ITEM_ALERT_NAMES.get(itemId) ?? '',
 			emitAlert: (alert) => { this.dispatchAlert(alert); },
 		});
 		this.sellSignal = priceServices.sellSignal;
-		this.festivalSellSignals = priceServices.festivalSellSignals;
 		this.priceHistory = priceServices.priceHistory;
 		// Construction opens no I/O; the datawars2 download only ever starts from `loadPriceHistorySeries`.
 		this.priceHistoryPanelSeed = new PriceHistoryPanelSeedService({
@@ -1128,7 +1122,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.halloween?.dispose();
 		this.halloweenPriceAlert?.dispose();
 		this.sellSignal?.dispose();
-		for (const runtime of this.festivalSellSignals?.values() ?? []) runtime.dispose();
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
@@ -2288,27 +2281,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 	}
 
 	/**
-	 * M3: the same seed-then-evaluate step as `evaluateSellSignal` above, run for every OTHER
-	 * festival calendar item. A failure on one item is logged and does not stop the rest: `state`
-	 * carries which item failed, unlike `evaluateSellSignal`'s single-item `'sell_signal'`.
-	 */
-	private async evaluateFestivalSellSignals(port: { nowMs: number; readDaily: PriceHistoryDailyReader }): Promise<void> {
-		for (const [itemId, runtime] of this.festivalSellSignals) {
-			try {
-				await runtime.ensureSeed();
-				const fromDayUtc = new Date(Math.max(0, port.nowMs - SELL_SIGNAL_SERIES_SPAN_MS)).toISOString().slice(0, 10);
-				runtime.evaluate(await port.readDaily(itemId, fromDayUtc), port.nowMs);
-			} catch (error) {
-				this.localDebugActions?.event({
-					component: 'price_history', action: 'price_history_compact', state: `festival_sell_signal_${String(itemId)}`,
-					level: 'error', phase: 'failure', code: 'unknown_failure',
-					details: unmappedErrorLogDetails(error),
-				});
-			}
-		}
-	}
-
-	/**
 	 * Read-only lookup for `previewInventorySync`'s recommendation port (decision 4, M2): never
 	 * downloads a seed, only reads whatever `priceSeedBulkRefresh` already cached. `null` on any
 	 * storage failure, same fail-closed discipline `IndexedDbPriceSeedCacheStore` itself uses.
@@ -2343,14 +2315,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	/** Bags this session has actually observed. The absolute gain is only meaningful on a real stack. */
 	private observedBagQuantity(): number {
-		return this.observedItemQuantity(HALLOWEEN_PRICE_ALERT_ITEM_ID);
-	}
-
-	/** M3: `observedBagQuantity`, generalized to any festival calendar item. */
-	private observedItemQuantity(itemId: number): number {
 		const state = this.liveSessionLoot?.getState();
 		if (state === undefined || state.status === 'idle') return 0;
-		return state.rows.find((row) => row.itemId === itemId)?.quantity ?? 0;
+		return state.rows.find((row) => row.itemId === HALLOWEEN_PRICE_ALERT_ITEM_ID)?.quantity ?? 0;
 	}
 
 	/**
@@ -3846,19 +3813,6 @@ export default class TyrianCompanionPlugin extends Plugin {
  * before midnight UTC still has the whole year behind it.
  */
 const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000;
-
-/**
- * M3: verified English catalog names for the festival calendar items that need one to alert
- * (36038 keeps its own translated `alerts.bagName`). Verified against
- * `https://api.guildwars2.com/v2/items?ids=36038,36041,47909,36059&lang=en` on 2026-09-04
- * (`src/inventory/price-history-note-block.ts`). 43320 and 48805 have no verified name here yet,
- * so `festivalItemName` returns `''` for them, which `SellSignalRuntime.buildAlert` already reads
- * as "no alert" rather than guessing an English name from a catalog id.
- */
-const FESTIVAL_ITEM_ALERT_NAMES: ReadonlyMap<number, string> = new Map([
-	[36_041, 'Piece of Candy Corn'],
-	[47_909, 'Candy Corn Cob'],
-]);
 
 /**
  * `recommendPosition`'s `maxPriceAgeMs` while the curated pack is unavailable or expired.
