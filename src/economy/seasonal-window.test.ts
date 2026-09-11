@@ -6,7 +6,11 @@ import {
 	seasonalWindowClosesAfterMs,
 	seasonalWindowStatusAt,
 	seasonalWindowStatusAtMs,
+	isFestivalCalendar,
+	sha256FestivalCalendar,
+	festivalCalendarEntryForItem,
 	type SeasonalWindowV1,
+	type FestivalCalendarV1,
 } from './seasonal-window';
 
 describe('seasonal window', () => {
@@ -93,5 +97,45 @@ describe('H13.7 end of the window', () => {
 		expect(seasonalWindowClosesAfterMs({ opensOn: '10-01' }, Date.parse('2026-10-16T00:00:00.000Z'))).toBeNull();
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, Number.NaN)).toBeNull();
 		expect(seasonalWindowClosesAfterMs(HALLOWEEN_SEASONAL_WINDOW, 'today')).toBeNull();
+	});
+});
+
+/** M3: the generic festival calendar type, independent of the built-in one the pack ships. */
+describe('festival calendar', () => {
+	function calendarWith(entries: FestivalCalendarV1['entries']): FestivalCalendarV1 {
+		const candidate = { version: 1 as const, entries, sha256: '' };
+		candidate.sha256 = sha256FestivalCalendar(candidate);
+		return candidate;
+	}
+
+	it('accepts a calendar of valid, distinct windows over distinct items', () => {
+		const calendar = calendarWith([
+			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'docs/audit/x.md#1' },
+			{ itemId: 2, window: { version: 1, seasonId: 'b', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'docs/audit/x.md#2' },
+		]);
+		expect(isFestivalCalendar(calendar)).toBe(true);
+		expect(festivalCalendarEntryForItem(calendar, 1)?.window.seasonId).toBe('a');
+		expect(festivalCalendarEntryForItem(calendar, 99)).toBeNull();
+	});
+
+	it('rejects a duplicate itemId, a duplicate seasonId, an invalid window and a tampered hash', () => {
+		const duplicateItem = calendarWith([
+			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
+			{ itemId: 1, window: { version: 1, seasonId: 'b', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'y' },
+		]);
+		expect(isFestivalCalendar(duplicateItem)).toBe(false);
+		const duplicateSeason = calendarWith([
+			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
+			{ itemId: 2, window: { version: 1, seasonId: 'a', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'y' },
+		]);
+		expect(isFestivalCalendar(duplicateSeason)).toBe(false);
+		const invalidWindow = calendarWith([
+			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '02-29', closesOn: '05-31', returnsInMonth: 2 }, auditRow: 'x' },
+		]);
+		expect(isFestivalCalendar(invalidWindow)).toBe(false);
+		const valid = calendarWith([
+			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
+		]);
+		expect(isFestivalCalendar({ ...valid, sha256: '0'.repeat(64) })).toBe(false);
 	});
 });

@@ -20,6 +20,21 @@ import {
 	seasonalWindowStatusAt,
 	type SeasonalWindowV1,
 } from '../economy/seasonal-window';
+
+/**
+ * M3 (SPEC-recomendacion-por-objeto.md) re-export: `inventory-advisor-builtin-bundle.ts`'s own
+ * H4.17 boundary pins it to an exact reviewed allowlist of five neighbours that does not include
+ * `../economy/seasonal-window` directly, so the festival calendar travels through this file's
+ * already-allowed specifier instead. This file's own H4.19 allowlist already permits the source.
+ */
+export {
+	isFestivalCalendar,
+	sha256FestivalCalendar,
+	festivalCalendarEntryForItem,
+	FESTIVAL_CALENDAR_VERSION,
+	type FestivalCalendarV1,
+	type FestivalCalendarEntryV1,
+} from '../economy/seasonal-window';
 import {
 	isContainerPersonalValuation,
 	resolveContainerPersonalValuation,

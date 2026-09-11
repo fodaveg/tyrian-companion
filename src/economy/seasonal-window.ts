@@ -1,3 +1,5 @@
+import { sha256CanonicalValue } from '../core/canonical-sha256';
+
 export const SEASONAL_WINDOW_VERSION = 1 as const;
 
 /**
@@ -128,4 +130,69 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 	const actual = Object.keys(value).sort();
 	const sorted = [...expected].sort();
 	return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
+}
+
+export const FESTIVAL_CALENDAR_VERSION = 1 as const;
+
+/**
+ * One festival item's selling window, pointing at the row of the audit that measured it
+ * (SPEC-recomendacion-por-objeto.md M3, `docs/audit/2026-09-11-festivales-datawars2.md`).
+ *
+ * A calendar entry is deliberately narrower than "the festival is open": five items measured
+ * against seven editions of Shadow of the Mad King gave three different answers (before the
+ * festival, at its start, or a month unrelated to it entirely), so each item gets its own
+ * `SeasonalWindowV1` rather than sharing `HALLOWEEN_SEASONAL_WINDOW`.
+ */
+export interface FestivalCalendarEntryV1 {
+	itemId: number;
+	window: SeasonalWindowV1;
+	/** `docs/audit/<file>.md#<anchor>` this window's numbers come from. Never invented. */
+	auditRow: string;
+}
+
+export interface FestivalCalendarV1 {
+	version: typeof FESTIVAL_CALENDAR_VERSION;
+	entries: readonly FestivalCalendarEntryV1[];
+	sha256: string;
+}
+
+export function isFestivalCalendarEntry(value: unknown): value is FestivalCalendarEntryV1 {
+	return record(value) && exactKeys(value, ['itemId', 'window', 'auditRow'])
+		&& positiveInteger(value.itemId) && isSeasonalWindow(value.window) && auditRowRef(value.auditRow);
+}
+
+export function isFestivalCalendar(value: unknown): value is FestivalCalendarV1 {
+	if (!record(value) || !exactKeys(value, ['version', 'entries', 'sha256'])
+		|| value.version !== FESTIVAL_CALENDAR_VERSION || !Array.isArray(value.entries)
+		|| !value.entries.every(isFestivalCalendarEntry) || !sha(value.sha256)) return false;
+	const calendar = value as unknown as FestivalCalendarV1;
+	const itemIds = calendar.entries.map((entry) => entry.itemId);
+	const seasonIds = calendar.entries.map((entry) => entry.window.seasonId);
+	return new Set(itemIds).size === itemIds.length
+		&& new Set(seasonIds).size === seasonIds.length
+		&& calendar.sha256 === sha256FestivalCalendar(calendar);
+}
+
+/** Content hash excluding `sha256` itself, same discipline as `sha256InventoryContainerEconomyPack`. */
+export function sha256FestivalCalendar(calendar: Pick<FestivalCalendarV1, 'version' | 'entries'>): string {
+	return sha256CanonicalValue({ version: calendar.version, entries: calendar.entries });
+}
+
+export function festivalCalendarEntryForItem(
+	calendar: FestivalCalendarV1,
+	itemId: number,
+): FestivalCalendarEntryV1 | null {
+	return calendar.entries.find((entry) => entry.itemId === itemId) ?? null;
+}
+
+function positiveInteger(value: unknown): value is number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function auditRowRef(value: unknown): value is string {
+	return typeof value === 'string' && value.length > 0 && value.length <= 256;
+}
+
+function sha(value: unknown): value is string {
+	return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 }
