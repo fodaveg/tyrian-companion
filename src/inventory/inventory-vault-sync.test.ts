@@ -6,6 +6,7 @@ import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import {
 	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
@@ -133,6 +134,8 @@ describe('inventory Vault projection', () => {
 			maxPriceAgeMs: () => 900_000,
 			priceHistoryWindowDays: () => 180,
 			readDaily: async () => [],
+			updateDerivedWatchList: async () => undefined,
+			refreshPriceSeeds: async () => undefined,
 		};
 		const service = new InventoryVaultCaptureService(
 			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
@@ -143,6 +146,107 @@ describe('inventory Vault projection', () => {
 			recommendationUntil: new Date(Date.parse(CAPTURED_AT) + 900_000).toISOString(),
 			recommendationMissing: null,
 		});
+	});
+
+	/**
+	 * M2 criterion of closure, test 5 (docs/SPEC-recomendacion-por-objeto.md §5): `capture()` over
+	 * two items with distinct series writes `tc_price_percentile`/`tc_price_coverage_days`
+	 * coherent with each item's own series, never a percentile with zero days behind it.
+	 */
+	it('writes pricePercentile/priceCoverageDays coherent with each item\'s own daily series', async () => {
+		const snapshot = snapshotWith([
+			holding(42, 5, { source: 'bank', slot: 0 }),
+			holding(99, 5, { source: 'bank', slot: 1 }),
+		]);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
+			{ itemId: 99, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
+		]);
+		const marketDepth: InventoryMarketDepthEvidenceV1 = {
+			version: 1, capturedAt: CAPTURED_AT, source: 'gw2-commerce-listings', requestedItemIds: [42, 99], status: 'complete',
+			items: [
+				{ itemId: 42, coverage: 'complete', buys: [{ unitCopper: 100, quantity: 10 }], sells: [] },
+				{ itemId: 99, coverage: 'complete', buys: [{ unitCopper: 100, quantity: 10 }], sells: [] },
+			],
+		};
+		const dailyByItem = new Map<number, PriceHistoryDailyV1[]>([
+			// Strictly increasing, 42 dense days: enough for `ready`, today at the top of the band.
+			[42, dailySeriesFor(42, 42, 100, 10, Date.parse(CAPTURED_AT))],
+			// Only 10 days: below the 42-day floor, so this one must stay `insufficient_history`.
+			[99, dailySeriesFor(99, 10, 100, 10, Date.parse(CAPTURED_AT))],
+		]);
+		const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es', marketDepth, {
+			priceHistoryEnabled: true,
+			capitalThresholdCopper: 1,
+			maxPriceAgeMs: 900_000,
+			priceHistoryWindowDays: 180,
+			priceHistoryRequiredDays: 42,
+			dailyByItem,
+			capturedAtMs: Date.parse(CAPTURED_AT),
+		});
+		const byItem = new Map(input.positions.map((position) => [position.itemId, position]));
+		const ready = byItem.get(42);
+		const insufficient = byItem.get(99);
+		expect(ready).toMatchObject({ recommendation: 'sell', pricePercentile: 100, priceCoverageDays: 42 });
+		expect(insufficient).toMatchObject({
+			recommendation: 'review', recommendationReason: 'price_history_insufficient',
+			pricePercentile: null, priceCoverageDays: 10,
+		});
+		expect(insufficient?.priceCoverageDays).toBeLessThan(42);
+		// Cierre medido: ninguna fila lleva percentil con cero días detrás.
+		for (const position of input.positions) {
+			if (position.pricePercentile !== null) expect(position.priceCoverageDays).toBeGreaterThan(0);
+		}
+	});
+
+	/**
+	 * M2 test 4 (docs/SPEC-recomendacion-por-objeto.md, `docs/PLATFORM_POLICY.md`): the decision-3
+	 * watch-list update and the decision-4 bulk seed refresh are both opt-in side effects of
+	 * `capture()`, gated on `priceHistoryEnabled`. A fresh install (the default port, feature off)
+	 * must never touch either, mirroring the H9.1 pattern of "off by default, nothing runs".
+	 */
+	it('never touches the derived watch list or the seed refresh port while price history is off', async () => {
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
+		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
+		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
+		const updateDerivedWatchList = vi.fn(async () => undefined);
+		const refreshPriceSeeds = vi.fn(async () => undefined);
+		const recommendation = {
+			priceHistoryEnabled: () => false,
+			capitalThresholdCopper: () => 100_000,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			readDaily: async () => [],
+			updateDerivedWatchList,
+			refreshPriceSeeds,
+		};
+		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
+		await service.capture('es');
+		expect(updateDerivedWatchList).not.toHaveBeenCalled();
+		expect(refreshPriceSeeds).not.toHaveBeenCalled();
+	});
+
+	it('calls the derived watch list and seed refresh ports exactly once per capture when price history is on', async () => {
+		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
+		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
+		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
+		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
+		const updateDerivedWatchList = vi.fn(async () => undefined);
+		const refreshPriceSeeds = vi.fn(async () => undefined);
+		const recommendation = {
+			priceHistoryEnabled: () => true,
+			capitalThresholdCopper: () => 100_000,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			readDaily: async () => [],
+			updateDerivedWatchList,
+			refreshPriceSeeds,
+		};
+		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
+		await service.capture('es');
+		expect(updateDerivedWatchList).toHaveBeenCalledOnce();
+		expect(refreshPriceSeeds).toHaveBeenCalledOnce();
 	});
 
 	it.each([
@@ -522,6 +626,33 @@ describe('inventory Vault preview and apply', () => {
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
 	});
 
+	/**
+	 * M2 test 1 (docs/SPEC-recomendacion-por-objeto.md §5): a sync over the frontmatter M1 writes
+	 * (with `tc_recommendation*` but WITHOUT `tc_price_percentile`/`tc_price_coverage_days`) must
+	 * migrate, never conflict. Same landmine as M1's own criterion 1, one commit later.
+	 *
+	 * Verified by hand, not committed as a second permanent test (same discipline as the M1 test
+	 * above): temporarily removing `tc_price_percentile`/`tc_price_coverage_days` from
+	 * `INVENTORY_NOTE_KEYS_ADDED_LATER` turns this test red on
+	 * `expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0)`, with
+	 * `AssertionError: expected [ {…(5)}, {…(5)} ] to have a length of +0 but got 2` — so the
+	 * assertion is the one that would catch the landmine, not a name in a list.
+	 */
+	it('a sync over 0.1.33 frontmatter (no price-percentile keys yet) produces zero conflict steps', async () => {
+		const input = await oneBankInput();
+		const created = (await new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR).preview(ROOT, input)).steps[0];
+		if (!created || created.status !== 'create' || created.after === null) throw new Error('Expected a rendered create step.');
+		const preM2 = await resign(created.after
+			.replace(/^tc_price_percentile: .*\n/mu, '')
+			.replace(/^tc_price_coverage_days: .*\n/mu, ''));
+		expect(frontmatter(preM2)).not.toHaveProperty('tc_price_percentile');
+		expect(frontmatter(preM2)).not.toHaveProperty('tc_price_coverage_days');
+		const vault = new MemoryInventoryVault([[created.path, preM2]]);
+		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
+		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
+	});
+
 	it('rejects non-portable roots before any mutation', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
@@ -610,6 +741,22 @@ function marketDepthFor(
 		status: 'complete',
 		items: [{ itemId, coverage: 'complete', buys, sells: [] }],
 	};
+}
+
+/** One daily row per day, closing bid rising by `step` from `startCopper`, ending on `endMs`'s own day. */
+function dailySeriesFor(itemId: number, days: number, startCopper: number, step: number, endMs: number): PriceHistoryDailyV1[] {
+	const out: PriceHistoryDailyV1[] = [];
+	for (let index = 0; index < days; index += 1) {
+		const dayUtc = new Date(endMs - (days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
+		out.push({
+			version: 1, vaultId: 'vault', itemId, dayUtc, snapshotCount: 1, partialSnapshotCount: 0, ask: null,
+			bid: {
+				count: 1, minCopper: startCopper + index * step, maxCopper: startCopper + index * step,
+				medianCopperX2: (startCopper + index * step) * 2, closeCopper: startCopper + index * step, closeCapturedAtMs: endMs,
+			},
+		});
+	}
+	return out;
 }
 
 /**

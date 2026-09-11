@@ -186,6 +186,7 @@ describe('inventory Base assets', () => {
 				name: 'Objeto 42', type: 'Material', rarity: 'Fine', icon: null,
 				recommendation: 'review', recommendationReason: 'price_history_disabled',
 				recommendationUntil: null, recommendationMissing: null,
+				pricePercentile: null, priceCoverageDays: null,
 			}],
 		});
 		const rendered = plan.steps[0]?.after;

@@ -25,7 +25,7 @@ import {
 } from '../economy/commerce-listings';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
-import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -69,6 +69,9 @@ export interface InventoryVaultPosition {
 	recommendationReason: PositionRecommendationReasonCode;
 	recommendationUntil: string | null;
 	recommendationMissing: number | null;
+	/** `recommendPosition`'s `pricePercentile`/`priceCoverageDays` (SPEC-recomendacion-por-objeto.md, M2). */
+	pricePercentile: number | null;
+	priceCoverageDays: number | null;
 }
 
 export interface InventoryVaultSyncInput {
@@ -146,6 +149,8 @@ interface InventoryNoteFields {
 	tc_recommendation_reason: PositionRecommendationReasonCode;
 	tc_recommendation_until: string | null;
 	tc_recommendation_missing: number | null;
+	tc_price_percentile: number | null;
+	tc_price_coverage_days: number | null;
 	descripcion: string;
 }
 
@@ -157,6 +162,7 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_item_name', 'tc_item_type',
 	'tc_item_rarity', 'tc_icon',
 	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
+	'tc_price_percentile', 'tc_price_coverage_days',
 	'descripcion',
 ] as const;
 
@@ -177,6 +183,7 @@ const INVENTORY_NOTE_KEYS_ADDED_LATER = [
 	'tc_unit_list_copper', 'tc_total_list_copper', 'tc_sell_depth_status',
 	'tc_sell_covered_quantity', 'tc_sell_uncovered_quantity',
 	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
+	'tc_price_percentile', 'tc_price_coverage_days',
 ] as const;
 
 interface OwnedInventoryNote {
@@ -207,6 +214,20 @@ export interface InventoryPositionRecommendationPort {
 	maxPriceAgeMs(): number;
 	priceHistoryWindowDays(): number;
 	readDaily(itemId: number, fromDayUtc: string): Promise<readonly PriceHistoryDailyV1[]>;
+	/**
+	 * Replaces the capital-derived slice of the local price-history watch list with `itemIds`
+	 * (already ranked and capped by `selectDerivedWatchListItemIds`). SPEC-recomendacion-por-
+	 * objeto.md, decision 3, M2: called once per `capture()`, only while price history is on, so a
+	 * fresh install and an install with the feature off never touch the watch list at all.
+	 */
+	updateDerivedWatchList(itemIds: readonly number[]): Promise<void>;
+	/**
+	 * Seeds datawars2 history, one item at a time, for whichever of `itemIds` lacks a fresh cache
+	 * entry, capped per call. Decision 4, M2: called once per `capture()` right after the watch
+	 * list update above, and only while price history is on, matching decision 4's "solo detrás del
+	 * botón «Sincronizar»".
+	 */
+	refreshPriceSeeds(itemIds: readonly number[]): Promise<void>;
 }
 
 /**
@@ -221,6 +242,8 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 	maxPriceAgeMs: () => 900_000,
 	priceHistoryWindowDays: () => 180,
 	readDaily: async () => [],
+	updateDerivedWatchList: async () => undefined,
+	refreshPriceSeeds: async () => undefined,
 };
 
 const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
@@ -259,15 +282,28 @@ export class InventoryVaultCaptureService {
 			// at a percentile when it is off.
 			priceHistoryEnabled ? this.readDailyByItem(itemIds, capturedAt, windowDays) : Promise.resolve(new Map<number, readonly PriceHistoryDailyV1[]>()),
 		]);
-		return await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth, {
+		const capitalThresholdCopper = this.recommendation.capitalThresholdCopper();
+		const input = await prepareInventoryVaultSyncInput(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth, {
 			priceHistoryEnabled,
-			capitalThresholdCopper: this.recommendation.capitalThresholdCopper(),
+			capitalThresholdCopper,
 			maxPriceAgeMs: this.recommendation.maxPriceAgeMs(),
 			priceHistoryWindowDays: windowDays,
 			priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
 			dailyByItem,
 			capturedAtMs: capturedAt,
 		});
+		// Decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2): both live behind the same
+		// "Sincronizar inventario" gate as the percentile itself, and both are pointless with the
+		// feature off, since nothing will ever read the watch list or a seed it produces.
+		if (priceHistoryEnabled) {
+			const derivedItemIds = selectDerivedWatchListItemIds(
+				input.positions.map((position) => ({ itemId: position.itemId, totalSellCopper: position.totalSellCopper })),
+				capitalThresholdCopper,
+			);
+			await this.recommendation.updateDerivedWatchList(derivedItemIds);
+			await this.recommendation.refreshPriceSeeds(derivedItemIds);
+		}
+		return input;
 	}
 
 	private async readDailyByItem(
@@ -397,6 +433,8 @@ export async function prepareInventoryVaultSyncInput(
 			recommendationReason: recommendation.reason,
 			recommendationUntil: recommendation.until,
 			recommendationMissing: recommendation.missing,
+			pricePercentile: recommendation.pricePercentile,
+			priceCoverageDays: recommendation.priceCoverageDays,
 		});
 	}
 	positions.sort(comparePositions);
@@ -678,6 +716,8 @@ function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): Inv
 		tc_recommendation_reason: position.recommendationReason,
 		tc_recommendation_until: position.recommendationUntil,
 		tc_recommendation_missing: position.recommendationMissing,
+		tc_price_percentile: position.pricePercentile,
+		tc_price_coverage_days: position.priceCoverageDays,
 		descripcion: locale === 'es' ? 'Existencia de inventario gestionada por Tyrian Companion.' : 'Inventory holding managed by Tyrian Companion.',
 	};
 }
@@ -765,7 +805,8 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		(value.unitListCopper !== null || value.totalListCopper === null) &&
 		positionRecommendationAction(value.recommendation) && positionRecommendationReason(value.recommendationReason) &&
 		(value.recommendationUntil === null || iso(value.recommendationUntil)) &&
-		nullableNonNegative(value.recommendationMissing);
+		nullableNonNegative(value.recommendationMissing) &&
+		nullablePercentile(value.pricePercentile) && nullableNonNegative(value.priceCoverageDays);
 }
 
 /**
@@ -824,6 +865,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		positionRecommendationAction(value.tc_recommendation) && positionRecommendationReason(value.tc_recommendation_reason) &&
 		(value.tc_recommendation_until === null || iso(value.tc_recommendation_until)) &&
 		nullableNonNegative(value.tc_recommendation_missing) &&
+		nullablePercentile(value.tc_price_percentile) && nullableNonNegative(value.tc_price_coverage_days) &&
 		nonEmptyText(value.descripcion);
 }
 
@@ -873,4 +915,7 @@ function nonEmptyText(value: unknown): value is string { return typeof value ===
 function positive(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0; }
 function nonNegative(value: unknown): value is number { return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0; }
 function nullableNonNegative(value: unknown): value is number | null { return value === null || nonNegative(value); }
+function nullablePercentile(value: unknown): value is number | null {
+	return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 100);
+}
 function iso(value: unknown): value is string { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
