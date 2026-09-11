@@ -5,6 +5,8 @@ import type { EmittedAlertRecordV1 } from '../alerts/alert-queue-record';
 import { HttpTransportError, type HttpRequest, type HttpResponse, type HttpTransport } from '../core/http';
 import { SellSignalRuntime, type SellSignalRuntimeOptions } from './sell-signal-runtime';
 import { SELL_SIGNAL_MINIMUM_REFERENCE_DAYS, SELL_SIGNAL_REFERENCE_DAYS } from './sell-signal';
+import { HALLOWEEN_SEASONAL_WINDOW } from './models/halloween-season';
+import type { SeasonalWindowV1 } from './seasonal-window';
 import { PRICE_SEED_BASE_URL, PRICE_SEED_FIELDS } from './price-seed-model';
 import type { PriceHistoryDailyV1 } from './price-history-model';
 import { trickOrTreatBagHistoryRecords, TRICK_OR_TREAT_BAG_ITEM_ID } from './__fixtures__/trick-or-treat-bag-history';
@@ -38,6 +40,7 @@ function harness(overrides: Partial<SellSignalRuntimeOptions> = {}, response?: (
 			referenceDays: SELL_SIGNAL_REFERENCE_DAYS,
 			minimumReferenceDays: SELL_SIGNAL_MINIMUM_REFERENCE_DAYS,
 		},
+		window: HALLOWEEN_SEASONAL_WINDOW,
 		transport,
 		now: () => TODAY_MS,
 		sessionActive: () => true,
@@ -237,6 +240,41 @@ describe('H13.2 disposal', () => {
 		await runtime.ensureSeed();
 
 		expect(requests).toHaveLength(0);
+	});
+});
+
+/**
+ * M3 (SPEC-recomendacion-por-objeto.md) control negativo: with the window plumbed through
+ * explicitly, an October date read against a WINTER window must not produce the seasonal
+ * (`hold`) outcome that a Halloween-shaped calendar would give it.
+ *
+ * Before `evaluate()` passed `this.options.window` to `evaluateSellSignal` (the "line 137" bug
+ * the spec names), this runtime always fell back to `evaluateSellSignal`'s own
+ * `HALLOWEEN_SEASONAL_WINDOW` default regardless of what a caller configured. Verified locally by
+ * reverting the fix (calling `evaluateSellSignal(series, nowMs, this.options.parameters)` without
+ * the window) and re-running this file: this exact test turns red with
+ * `{status: 'decided', signal: 'hold', inSeason: true}` instead of `{signal: 'none', inSeason:
+ * false}`, because 20 October falls inside `HALLOWEEN_SEASONAL_WINDOW` (10-01..11-15) but outside
+ * the winter window (12-15..01-10) configured here.
+ */
+describe('M3 seasonal window plumbing', () => {
+	it('reads the CONFIGURED window, not Halloween\'s, for an October date', () => {
+		const winterWindow: SeasonalWindowV1 = {
+			version: 1, seasonId: 'winter-test', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12,
+		};
+		const OCT_20_MS = Date.parse('2026-10-20T12:00:00.000Z');
+		// 39 flat reference days at 300 copper, today (Oct 20) at 250: today is below the
+		// reference minimum (so a Halloween-shaped `in_season` read would arm `hold`) but nowhere
+		// near 90 % of the reference maximum (so `sell` never fires regardless of season).
+		const referenceDays = Array.from({ length: 39 }, (_unused, index) => daily(
+			new Date(OCT_20_MS - (39 - index) * 86_400_000).toISOString().slice(0, 10), 300,
+		));
+		const today = daily(new Date(OCT_20_MS).toISOString().slice(0, 10), 250);
+		const { runtime } = harness({ window: winterWindow });
+
+		const projection = runtime.evaluate([...referenceDays, today], OCT_20_MS);
+
+		expect(projection).toMatchObject({ status: 'decided', signal: 'none', inSeason: false });
 	});
 });
 

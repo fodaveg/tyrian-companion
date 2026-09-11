@@ -10,6 +10,7 @@ import {
 import type { PriceHistoryDailyV1 } from './price-history-model';
 import { fetchPriceSeed } from './price-seed-source';
 import type { PriceSeedFailureReason, PriceSeedV1 } from './price-seed-model';
+import type { SeasonalWindowV1 } from './seasonal-window';
 import {
 	evaluateSellSignal,
 	mergeSellSignalSeries,
@@ -35,6 +36,14 @@ import {
 export interface SellSignalRuntimeOptions {
 	itemId: number;
 	parameters: SellSignalParameters;
+	/**
+	 * M3 (SPEC-recomendacion-por-objeto.md): explicit rather than `evaluateSellSignal`'s own
+	 * `HALLOWEEN_SEASONAL_WINDOW` default. Before this field existed, generalizing this runtime to
+	 * a non-Halloween item would have evaluated it against Halloween's calendar and produced the
+	 * right answer by accident for whichever item happens to overlap it, and the wrong one, silently,
+	 * for any item whose real window does not.
+	 */
+	window: SeasonalWindowV1;
 	transport: HttpTransport;
 	now: () => number;
 	/** No network without a session. The seed is not an exception to that rule. */
@@ -134,7 +143,7 @@ export class SellSignalRuntime {
 	 */
 	evaluate(daily: readonly PriceHistoryDailyV1[], nowMs: number): SellSignalProjection {
 		const series = mergeSellSignalSeries(this.seed, daily, this.options.itemId);
-		const projection = evaluateSellSignal(series, nowMs, this.options.parameters);
+		const projection = evaluateSellSignal(series, nowMs, this.options.parameters, this.options.window);
 		this.projection = projection;
 		if (projection.status !== 'decided' || projection.signal === 'none') {
 			this.lastGainCopper = null;
