@@ -11,6 +11,9 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	'material_categories', 'account_skins', 'account_minis', 'account_recipes',
 	'account_achievements', 'recipes_search',
 	'commerce_transactions_current', 'commerce_transactions_history', 'character_build',
+	// SPEC-recomendacion-por-objeto.md M4: the public legendary-id list (no key) and the
+	// account-bound owned-count lookup (`unlocks` scope) it is discounted against.
+	'legendaryarmory', 'account_legendaryarmory',
 	// The one endpoint that is not ArenaNet's: the once-per-session price-history
 	// seed. It is named here so diagnostics can count it without ever recording
 	// the URL, exactly like every official route above.

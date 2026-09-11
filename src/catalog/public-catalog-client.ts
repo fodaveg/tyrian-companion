@@ -39,7 +39,7 @@ export class GuildWars2PublicCatalogClient implements PublicCatalogGateway {
 	}
 }
 
-/** Maps the three reviewed public-catalog families without retaining IDs, locale or schema queries. */
+/** Maps the reviewed public-catalog families without retaining IDs, locale or schema queries. */
 export function publicCatalogLogicalEndpoint(path: string): HttpLogicalEndpoint {
 	const route = path.split('?', 1)[0]?.replace(/^\/+|\/+$/gu, '') ?? '';
 	if (route === 'items') return 'items';
@@ -48,5 +48,6 @@ export function publicCatalogLogicalEndpoint(path: string): HttpLogicalEndpoint 
 	if (route === 'commerce/prices') return 'commerce_prices';
 	if (route === 'commerce/listings') return 'commerce_listings';
 	if (route === 'recipes/search') return 'recipes_search';
+	if (route === 'legendaryarmory') return 'legendaryarmory';
 	return 'unknown';
 }

@@ -137,6 +137,7 @@ export function guildWars2LogicalEndpoint(path: string): HttpLogicalEndpoint {
 		case 'account/minis': return 'account_minis';
 		case 'account/recipes': return 'account_recipes';
 		case 'account/achievements': return 'account_achievements';
+		case 'account/legendaryarmory': return 'account_legendaryarmory';
 		default:
 			if (/^characters\/[^/]+\/inventory$/u.test(route)) return 'character_inventory';
 			if (/^characters\/[^/]+\/buildtabs\/active$/u.test(route)) return 'character_build';
