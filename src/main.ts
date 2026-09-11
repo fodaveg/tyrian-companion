@@ -653,6 +653,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			publicGateway: publicClient,
 			rateLimit: rateLimitCoordinator,
 			connectionScopes: () => connectionScopes(this.connection.getState()),
+			heldQuantity: () => this.observedBagQuantity(),
 			notes: {
 				// Only the session notes the plugin itself writes are a candidate source of
 				// evidence: a vault with thousands of unrelated notes must not pay a `vault.read`
@@ -1003,6 +1004,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.halloweenPriceAlert.configure(halloweenPriceAlertSettingsFrom(this.settings), this.settings.priceHistoryEnabled);
 		this.renderViews();
 		this.renderInventoryAdvisorViews();
+		// H16.5 (11 sep incident): after a plugin reload, the selected key can sit unread by
+		// Obsidian's own secret storage until something asks for it. The advisor's first refresh
+		// and the one-click inventory sync used to be that first ask, so they surfaced
+		// `missing_key`/`capture_unavailable` and stayed that way until the player pressed
+		// "Comprobar conexión" by hand. Warming the connection here, once and non-blocking, means
+		// the very first refresh after a reload already sees the key `checkConnection` would have.
+		if (this.hasConfiguredApiKey()) fireAndForgetLocal(this.localDebugActions,
+			{ component: 'connection', action: 'connection_check', state: 'startup_warmup' },
+			() => this.checkConnection());
 		// Heals a root left behind by a folder change made before this version shipped the
 		// auto-relocation above (David's own install: notes three folders deep, Bases still at
 		// the vault root). Non-blocking: boot never waits on a Vault-wide file move.

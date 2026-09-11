@@ -128,7 +128,7 @@ describe('policyAlertPriceOf', () => {
 		const knownAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: 1_921, priceStatus: 'quote', quantity: 1 }) }, 0);
 		const unquotedAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: null, priceStatus: 'no_quote', quantity: 1 }) }, 0);
 		const unavailableAlert = decideLootAlert({ ...base, ...policyAlertPriceOf({ netUnitCopper: null, priceStatus: 'unavailable', quantity: 1 }) }, 0);
-		expect(knownAlert && alertIngameContent(knownAlert)).toBe('Objeto de Halloween ×1 · 1921 copper');
+		expect(knownAlert && alertIngameContent(knownAlert)).toBe('Objeto de Halloween ×1 · 0g 19s 21c');
 		expect(unquotedAlert && alertIngameContent(unquotedAlert)).toBe('Objeto de Halloween ×1 · no quoted value');
 		expect(unavailableAlert && alertIngameContent(unavailableAlert)).toBe('Objeto de Halloween ×1 · price unavailable');
 		expect(new Set([knownAlert, unquotedAlert, unavailableAlert].map((alert) => alert && alertIngameContent(alert)))).toHaveProperty('size', 3);

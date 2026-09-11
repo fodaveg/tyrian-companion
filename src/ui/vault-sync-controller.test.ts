@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { MissingApiKeyError } from '../account/guild-wars-2-client';
 import type { InventoryVaultSyncPlan, InventoryVaultSyncResult } from '../inventory/inventory-vault-sync';
 import type { WalletVaultSyncPlan, WalletVaultSyncResult } from '../wallet/wallet-vault-sync';
 import { InventoryVaultSyncController } from './inventory-vault-sync-controller';
@@ -124,6 +125,22 @@ function describeSharedVaultSyncMachine<Plan extends VaultSyncPlanShape, Result 
 				apply: async () => binding.results.applied,
 			});
 			await expect(controller.preview()).resolves.toEqual({ status: 'error', reason: 'capture_unavailable', cause: 'Error' });
+		});
+
+		/**
+		 * H16.5 (11 sep incident): a reload can leave the selected key unread by Obsidian's own
+		 * secret storage, which surfaced as the SAME generic `capture_unavailable` a genuinely
+		 * broken capture gets, even though the two need different actions from the player.
+		 */
+		it('maps a missing API key to credential_unavailable instead of the generic capture_unavailable', async () => {
+			const controller = binding.create({
+				disabledReason: () => null,
+				preview: () => Promise.reject(new MissingApiKeyError()),
+				apply: async () => binding.results.applied,
+			});
+			await expect(controller.preview()).resolves.toEqual({
+				status: 'error', reason: 'credential_unavailable', cause: 'MissingApiKeyError',
+			});
 		});
 
 		it('maps an unavailable writer to write_unavailable and a thrown writer to unexpected_failure with its class as cause', async () => {

@@ -1,5 +1,23 @@
 # Changelog
 
+## Sin publicar
+
+- Aviso in-game: `alertIngameContent` pintaba el valor en cobre crudo (`51000 copper`); ahora
+  reutiliza el formato «5g 10s 0c» de `formatLootMoney`, extraído a un formateador puro
+  compartido. `alertIngameContent`/`alertIngamePayload` siguen recibiendo solo `AlertV1`
+  (`src/core/copper-format.ts`, `src/alerts/alert-ingame.ts`, H16.1).
+- Aviso p90 de la bolsa de Halloween: emitía `quantity: 1` y el precio de una sola bolsa sin
+  importar la pila que el jugador tuviera. Ahora lleva la pila real (la misma fuente que
+  `SellSignalRuntime`) y el valor neto de venderla entera a esa puja; una pila de cero no emite
+  aviso (`src/runtime/assemble-halloween.ts`, `src/main.ts`, H16.2).
+- Sincronización de inventario/cartera tras recargar el plugin: una clave recién cargada podía
+  quedar sin leer hasta pulsar «Comprobar conexión» a mano, y el fallo se anunciaba como el
+  genérico «no se pudo preparar una captura completa» en vez de señalar la clave. El arranque
+  ahora comprueba la conexión por su cuenta cuando hay una clave configurada, y la sincronización
+  distingue `credential_unavailable` de `capture_unavailable` (`src/main.ts`,
+  `src/ui/vault-sync-controller.ts`, `src/ui/inventory-vault-sync-run-controller.ts`,
+  `src/core/settings.ts`, H16.5).
+
 ## Release beta 0.1.33 - los nueve arreglos restantes del audit H15
 
 Cierra las tareas hijas del audit del 10 sep que quedaron fuera de la 0.1.32 (H15.10, 11, 14 a 19 y 23). Cada una lleva un test que ejecuta la función y falla sin el arreglo.

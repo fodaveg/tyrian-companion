@@ -33,6 +33,7 @@ import TyrianCompanionPlugin from './main';
 import { DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER } from './alerts/alert-contract';
 import type { EmittedAlertRecordV1 } from './alerts/alert-queue-record';
 import { DEFAULT_SETTINGS, type TyrianSettings } from './core/settings';
+import { createTradingPostValueWithPolicy } from './economy/gw2-fees';
 import { HALLOWEEN_PRICE_ALERT_ITEM_ID } from './halloween/halloween-price-alert';
 import type { HalloweenPriceAlertRuntime } from './halloween/halloween-price-alert-runtime';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
@@ -40,7 +41,7 @@ import { AssistedDetectionService } from './sessions/assisted-detection-service'
 import { LootPresentationCache } from './sessions/loot-presentation-cache';
 import type { LiveSessionLootTracker } from './sessions/live-session-loot';
 import { ManualSessionStartService } from './sessions/manual-session-start-service';
-import type { ActiveSessionState, SessionSnapshotReference } from './sessions/session';
+import type { ActiveSessionState, SessionSnapshotReference, SessionState } from './sessions/session';
 
 /**
  * Cabling of the four H13.10 assemblers, not their shape.
@@ -119,6 +120,8 @@ describe('H13.10 Halloween price alert cabling', () => {
 		const priceAlert = plugin.halloweenPriceAlert;
 		if (priceAlert === null) throw new Error('The composition must build the price alert runtime.');
 		await priceAlert.configure({ enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 }, true);
+		// H16.2: a zero pile earns no alert, so this crossing needs a held bag first.
+		await plugin.liveSessionLoot.observe('session-1', bagGain(1));
 
 		// A crossing needs a durable "below" first: one reading under the p90, then one over it.
 		await priceAlert.evaluate(readDaily(20), CROSSING_NOW);
@@ -143,13 +146,124 @@ describe('H13.10 Halloween price alert cabling', () => {
 		const priceAlert = plugin.halloweenPriceAlert;
 		if (priceAlert === null) throw new Error('The composition must build the price alert runtime.');
 		await priceAlert.configure({ enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 }, true);
+		await plugin.liveSessionLoot.observe('session-1', bagGain(1));
 
 		await priceAlert.evaluate(readDaily(20), CROSSING_NOW);
 		await priceAlert.evaluate(readDaily(21, CROSSING_NOW + 1), CROSSING_NOW + 1);
 
 		expect(plugin.getEmittedAlerts()).toHaveLength(0);
 	});
+
+	/**
+	 * H16.2 (11 sep): the p90 alert used to hardcode `quantity: 1` and price one bag no matter how
+	 * many the player actually held, while the OTHER `sell_signal` producer (`SellSignalRuntime`,
+	 * `sell-signal-runtime.ts:170-179`) already prices the whole pile. `totalCopper` is asserted
+	 * against `createTradingPostValueWithPolicy` itself rather than a hand-computed figure, so the
+	 * expectation cannot drift from the fee convention the fix actually reuses.
+	 */
+	it('prices the whole stack held, not one bag, when the p90 crosses', async () => {
+		const plugin = await bootedPlugin();
+		plugin.halloweenAccountRef = 'account';
+		const priceAlert = plugin.halloweenPriceAlert;
+		if (priceAlert === null) throw new Error('The composition must build the price alert runtime.');
+		await priceAlert.configure({ enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 }, true);
+		await plugin.liveSessionLoot.observe('session-1', bagGain(STACK_QUANTITY));
+
+		await priceAlert.evaluate(readDaily(20), CROSSING_NOW);
+		await priceAlert.evaluate(readDaily(STACK_BID_COPPER, CROSSING_NOW + 1), CROSSING_NOW + 1);
+
+		await vi.waitFor(() => {
+			expect(plugin.getEmittedAlerts()).toHaveLength(1);
+		});
+		const expected = createTradingPostValueWithPolicy('instant_sell', STACK_BID_COPPER, STACK_QUANTITY);
+		if (expected.status !== 'ok') throw new Error('Fixture bid/quantity must price.');
+		expect(plugin.getEmittedAlerts()[0]).toMatchObject({
+			kind: 'sell_signal',
+			itemId: HALLOWEEN_PRICE_ALERT_ITEM_ID,
+			quantity: STACK_QUANTITY,
+			totalCopper: expected.value.netCopper,
+			reason: 'bid_above_reference',
+		});
+	});
+
+	it('emits nothing when the p90 crosses but the account holds none of the bag', async () => {
+		const plugin = await bootedPlugin();
+		plugin.halloweenAccountRef = 'account';
+		const priceAlert = plugin.halloweenPriceAlert;
+		if (priceAlert === null) throw new Error('The composition must build the price alert runtime.');
+		await priceAlert.configure({ enabled: true, minimumAboveP90Bps: 0, cooldownHours: 24 }, true);
+		// No `liveSessionLoot.observe` call: the pile stays zero.
+
+		await priceAlert.evaluate(readDaily(20), CROSSING_NOW);
+		await priceAlert.evaluate(readDaily(STACK_BID_COPPER, CROSSING_NOW + 1), CROSSING_NOW + 1);
+
+		expect(plugin.getEmittedAlerts()).toHaveLength(0);
+	});
 });
+
+/**
+ * H16.5 (11 sep incident): a reload used to leave the selected key unread by Obsidian's own
+ * secret storage until the player pressed "Comprobar conexión" by hand; the advisor's first
+ * refresh and the one-click inventory sync saw `missing_key`/`capture_unavailable` in the
+ * meantime. `checkConnection` is mocked here rather than driven through a real account fetch:
+ * this asserts the CABLING (`initializeRuntime` reaches for it on its own) the same way the
+ * rest of this file asserts wiring, not the account gateway's own behaviour, which is covered
+ * elsewhere.
+ */
+describe('H16.5 connection warmup cabling', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	it('warms the connection at startup when a key is already configured, without a manual check', async () => {
+		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+			.mockResolvedValue({ status: 'idle' });
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue({
+			status: 'armed', armedAt: '2026-09-01T08:00:00.000Z', lastSnapshotAt: record.baselineSnapshot.completedAt,
+			scheduler: {
+				status: 'scheduled', intervalMs: 300_000, nextRunAt: Date.now() + 300_000,
+				lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+			},
+		});
+		const plugin = assembledRuntimePlugin(new IDBFactory());
+		plugin.settings.apiKeySecret = 'gw2-primary';
+
+		await plugin.initializeRuntime();
+
+		expect(checkConnection).toHaveBeenCalled();
+	});
+
+	it('never asks for a connection at startup when no key is configured', async () => {
+		const checkConnection = vi.spyOn(TyrianCompanionPlugin.prototype, 'checkConnection')
+			.mockResolvedValue({ status: 'idle' });
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue({
+			status: 'armed', armedAt: '2026-09-01T08:00:00.000Z', lastSnapshotAt: record.baselineSnapshot.completedAt,
+			scheduler: {
+				status: 'scheduled', intervalMs: 300_000, nextRunAt: Date.now() + 300_000,
+				lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+			},
+		});
+		const plugin = assembledRuntimePlugin(new IDBFactory());
+		// `settings.apiKeySecret` stays the default empty string.
+
+		await plugin.initializeRuntime();
+
+		expect(checkConnection).not.toHaveBeenCalled();
+	});
+});
+
+/** A bid comfortably above the fixture's p90 (27) at five hundred bags, the encargo's own numbers. */
+const STACK_QUANTITY = 500;
+const STACK_BID_COPPER = 359;
 
 const CROSSING_NOW = Date.parse('2026-10-31T12:00:00.000Z');
 
@@ -196,6 +310,20 @@ function valuableGain(): ReturnType<typeof compareStorageSnapshots> {
 	});
 	const delta = compareStorageSnapshots(baseline, final);
 	if (delta.status === 'invalid') throw new Error('Valuable-gain fixture is invalid.');
+	return delta;
+}
+
+/** A gain of the Halloween bag of an arbitrary size, for the p90 alert's own stack-quantity tests. */
+function bagGain(quantity: number): ReturnType<typeof compareStorageSnapshots> {
+	const baseline = storageDeltaSnapshot();
+	const final = afterSnapshot({
+		holdings: [
+			...baseline.holdings,
+			looseHolding(HALLOWEEN_PRICE_ALERT_ITEM_ID, quantity, { source: 'bank', slot: 1 }),
+		],
+	});
+	const delta = compareStorageSnapshots(baseline, final);
+	if (delta.status === 'invalid') throw new Error('Bag-gain fixture is invalid.');
 	return delta;
 }
 

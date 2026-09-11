@@ -81,7 +81,7 @@ Plugin → addon, una línea JSON por aviso, UTF-8, 512 bytes como máximo:
 ```json
 { "v": 1, "seq": 17, "kind": "valuable_loot",
   "name": "Mystic Coin", "quantity": 3, "totalCopper": 123456,
-  "content": "Mystic Coin ×3 · 123456 copper" }
+  "content": "Mystic Coin ×3 · 12g 34s 56c" }
 ```
 
 Addon → plugin, **exactamente una línea** al conectar, 128 bytes como máximo, y después el plugin
