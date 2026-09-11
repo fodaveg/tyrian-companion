@@ -392,6 +392,16 @@ objetivo de nada.
    lleva (`src/inventory/inventory-vault-sync.ts:122`) y que es venta instantánea **demostrada contra
    profundidad real de pujas** (`docs/PRODUCT.md:286-290`), no `precio × cantidad`. El umbral es la
    decisión 5.
+
+   > **11 sep 2026, David: el umbral se mide por objeto (suma de sus posiciones), no por nota.**
+   > Texto anterior (implícito hasta hoy): la comparación se hacía contra el `tc_total_sell_copper`
+   > de **cada nota por separado** — una nota = objeto × ubicación × personaje. Medido en la bóveda
+   > real: el Trozo de caramelo (36041) está en tres notas de 34 884, 140 350 y 59 500 cobre; con el
+   > umbral por nota, dos de las tres salían «por debajo del umbral» aunque el objeto suma más de 23
+   > oro. `InventoryVaultCaptureService.capture` (`src/inventory/inventory-vault-sync.ts`) suma
+   > `totalSellCopper` por `itemId` (`sumSellCopperByItem`) antes de pasarlo a `recommendPosition`
+   > (`src/advisor/inventory-position-recommendation.ts`): todas las notas del mismo objeto reciben
+   > la misma decisión de umbral.
 2. **El precio está en la banda alta de su propio histórico.** `calculatePriceHistoryPercentile(daily,
    'bid', windowDays, requiredDays)` (`src/economy/price-history-statistics.ts:68`) devuelve dónde
    está hoy dentro de su ventana. **«Banda alta» = percentil ≥ 90.** Es el p90 local que ya existe, no
@@ -570,3 +580,10 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    tope por ejecución. Pendiente de anotar en `docs/PLATFORM_POLICY.md` en M2.
 5. **Decidido el 11 sep 2026: ajuste nuevo, 10 oros (100 000 cobre).** No se reutiliza
    `valuableLootThresholdCopper`.
+
+   > **11 sep 2026, David (más tarde el mismo día): el umbral se mide por objeto (suma de sus
+   > posiciones), no por nota.** Este veredicto no fijaba explícitamente la unidad de medida y la
+   > implementación de M1/M2 comparaba el `tc_total_sell_copper` de cada nota por separado; queda
+   > corregido: la comparación es contra la suma de `totalSellCopper` de todas las posiciones que
+   > comparten `itemId`, vía `sumSellCopperByItem` (`src/inventory/inventory-vault-sync.ts`). Ver
+   > §3.c, condición 1, para el detalle y el caso medido.
