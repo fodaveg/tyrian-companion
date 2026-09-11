@@ -456,7 +456,7 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 };
 
 /** Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a recommendation. */
-type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
+export type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
 	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'
 	| 'reservedQuantity' | 'freeQuantity'>;
 
@@ -548,6 +548,32 @@ async function buildInventoryVaultPositionCores(
 }
 
 /**
+ * Sums `totalSellCopper` across every position of the same item (SPEC-recomendacion-por-objeto.md
+ * §3.c / §7 decision 5, 11 sep 2026): David's decision is that the capital-parked threshold is a
+ * property of the OBJECT, not of any one note — an object split across several notes (different
+ * characters or containers) must get the SAME threshold verdict on every one of them.
+ *
+ * A `null` position contributes nothing to its item's sum without turning an otherwise-known total
+ * into `null`; only an item whose EVERY position is `null` stays `null` here, exactly reproducing
+ * rule (c)'s pre-existing null handling for a single, undemonstrated position (`recommendPosition`,
+ * `src/advisor/inventory-position-recommendation.ts`).
+ */
+export function sumSellCopperByItem(
+	positions: readonly { itemId: number; totalSellCopper: number | null }[],
+): Map<number, number | null> {
+	const sums = new Map<number, number>();
+	const itemIds = new Set<number>();
+	for (const { itemId, totalSellCopper } of positions) {
+		itemIds.add(itemId);
+		if (totalSellCopper === null) continue;
+		sums.set(itemId, (sums.get(itemId) ?? 0) + totalSellCopper);
+	}
+	const result = new Map<number, number | null>();
+	for (const itemId of itemIds) result.set(itemId, sums.get(itemId) ?? null);
+	return result;
+}
+
+/**
  * Attaches `recommendPosition`'s verdict to every core row, in the same order it was given.
  *
  * `legendaryReservationByPositionId` is M4's rule (a): absent (the default) or missing an entry
@@ -555,20 +581,35 @@ async function buildInventoryVaultPositionCores(
  * exactly reproducing the pre-M4 output (M4 test 8). Present, `scaledSellCopper` values the FREE
  * share for rules (b)/(c) only once the shortfall is confirmed to be 0 — with a shortfall, the
  * scaled value is never read at all, since rule (a) short-circuits before it.
+ *
+ * The value `recommendPosition` compares against the capital threshold (rule (c)) is, since 11 sep
+ * 2026, `sumSellCopperByItem`'s per-`itemId` total of that same (possibly legendary-scaled) value,
+ * never one position's own — every position of one object gets the same threshold decision. The
+ * scaling happens BEFORE the sum (per position, using that position's own `freeQuantity`), not
+ * after: summing raw values first and scaling the sum by one position's share would double-count
+ * or under-count whenever positions of the same item carry different reservations.
  */
-function attachPositionRecommendations(
+export function attachPositionRecommendations(
 	cores: readonly InventoryVaultPositionCore[],
 	recommendationInputs: InventoryPositionRecommendationInputs,
 	legendaryReservationByPositionId: ReadonlyMap<string, LegendaryReservationSplit> = new Map(),
 ): InventoryVaultPosition[] {
+	const thresholdValueByPositionId = new Map<string, number | null>();
+	for (const core of cores) {
+		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
+		const value = reservation === null || reservation.shortfall > 0 ? core.totalSellCopper
+			: scaledSellCopper(core.totalSellCopper, reservation.freeQuantity, core.quantity);
+		thresholdValueByPositionId.set(core.positionId, value);
+	}
+	const itemThresholdTotals = sumSellCopperByItem(cores.map((core) => ({
+		itemId: core.itemId, totalSellCopper: thresholdValueByPositionId.get(core.positionId) ?? null,
+	})));
 	return cores.map((core) => {
 		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
-		const totalSellCopper = reservation === null || reservation.shortfall > 0 ? core.totalSellCopper
-			: scaledSellCopper(core.totalSellCopper, reservation.freeQuantity, core.quantity);
 		const recommendation = recommendPosition({
 			capturedAtMs: recommendationInputs.capturedAtMs,
 			priceHistoryEnabled: recommendationInputs.priceHistoryEnabled,
-			totalSellCopper,
+			totalSellCopper: itemThresholdTotals.get(core.itemId) ?? null,
 			capitalThresholdCopper: recommendationInputs.capitalThresholdCopper,
 			maxPriceAgeMs: recommendationInputs.maxPriceAgeMs,
 			priceHistoryDaily: recommendationInputs.dailyByItem.get(core.itemId) ?? [],
