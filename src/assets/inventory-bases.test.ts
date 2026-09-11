@@ -13,10 +13,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 5, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 5, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 5, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 5, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 6, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 6, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 6, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 6, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -64,6 +64,21 @@ describe('inventory Base assets', () => {
 		}
 	});
 
+	it('renders the item name as a link to its position note instead of plain text', async () => {
+		for (const asset of await inventoryManagedAssets()) {
+			const document = parse(asset.bytes) as BaseDocument;
+			expect(document.formulas.item_link).toBe('file.asLink(tc_item_name)');
+			expect(document.properties['formula.item_link']).toBeDefined();
+			expect(document.properties['note.tc_item_name']).toBeUndefined();
+			for (const view of document.views) {
+				expect(view.order).toContain('formula.item_link');
+				expect(view.order).not.toContain('tc_item_name');
+				// The item is still sortable by its raw name even though it no longer has its own column.
+				expect(view.sort.some((entry) => entry.property === 'tc_item_name')).toBe(true);
+			}
+		}
+	});
+
 	it('sorts by the raw copper note property, never by a divided formula', async () => {
 		for (const asset of await inventoryManagedAssets()) {
 			expect(asset.bytes).not.toMatch(/\/\s*10000/u);
@@ -82,14 +97,14 @@ describe('inventory Base assets', () => {
 			expect(keys.filter((key) => !/^(?:note|formula|file)\./u.test(key)), asset.relativePath).toEqual([]);
 			if (asset.id === 'inventory-base' || asset.id === 'materials-base') {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
-					'note.tc_item_name', 'note.tc_source', 'note.tc_character', 'note.tc_quantity',
+					'note.tc_source', 'note.tc_character', 'note.tc_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
-					'formula.item_icon', 'formula.source_label',
+					'formula.item_icon', 'formula.item_link', 'formula.source_label',
 				]);
 				// H14.21: the "last updated" column now reads the note's own mtime instead of a
 				// `tc_captured_at` field, which used to make every position's marker hash change
@@ -117,13 +132,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 5', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 6', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=5', 'version=1')
+				.replace('version=6', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -143,13 +158,14 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 5 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 5 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 6 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 6 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
-		expect(installed.properties['note.tc_item_name']).toBeDefined();
+		expect(installed.properties['formula.item_link']).toBeDefined();
 		expect(installed.properties.tc_item_name).toBeUndefined();
-		expect(installed.views[0]?.order).toContain('tc_item_name');
+		expect(installed.views[0]?.order).toContain('formula.item_link');
+		expect(installed.views[0]?.order).not.toContain('tc_item_name');
 		expect(installed.views[0]?.sort[1]).toEqual({ property: 'tc_item_name', direction: 'ASC' });
 	});
 

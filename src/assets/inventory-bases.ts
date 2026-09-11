@@ -32,11 +32,12 @@ function commonBody(locale: InventoryBaseLocale): string {
     - tc_active == true
 formulas:
   item_icon: 'if(tc_icon != null, image(tc_icon), null)'
+  item_link: 'file.asLink(tc_item_name)'
   source_label: 'if(tc_source == "character", "${copy.characterSource}", if(tc_source == "shared_inventory", "${copy.sharedSource}", if(tc_source == "bank", "${copy.bankSource}", "${copy.materialsSource}")))'
 properties:
   formula.item_icon:
     displayName: "${copy.icon}"
-  note.tc_item_name:
+  formula.item_link:
     displayName: "${copy.item}"
   note.tc_source:
     displayName: "${copy.source}"
@@ -71,7 +72,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, tc_item_name, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
+	const order = '[formula.item_icon, formula.item_link, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -133,7 +134,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, tc_item_name, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
+    order: [formula.item_icon, formula.item_link, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
     sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -157,8 +158,10 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 			// bumping this. `ManagedAssetsManager.validManifestRelations` treats an unchanged
 			// `contentVersion` whose semantic bytes moved as a corrupt manifest (`conflict`), not an
 			// `update` — the exact `managed_assets_conflict` regression this content change would
-			// have caused on every vault that already had 0.1.30 installed.
-			const draft = { id, kind: 'base', contentVersion: 5, locale, relativePath } as const;
+			// have caused on every vault that already had 0.1.30 installed. Same reasoning applies
+			// to the `note.tc_item_name` → `formula.item_link` swap below (bump to 6): the item name
+			// column now renders as a clickable link to the position note instead of plain text.
+			const draft = { id, kind: 'base', contentVersion: 6, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}
