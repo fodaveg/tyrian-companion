@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { managedAssetsBundle, sha256Text } from './generic-assets';
 import { inventoryManagedAssets } from './inventory-bases';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
-import { hasCompatibleMarker } from './managed-assets-model';
+import { hasCompatibleMarker, type PackagedAsset } from './managed-assets-model';
 import { InventoryVaultSyncService, type InventoryVaultFile, type InventoryVaultPort } from '../inventory/inventory-vault-sync';
 
 const CONFIG_DIR = 'vault-config';
@@ -13,10 +13,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 6, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 6, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 6, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 6, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 7, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 7, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 7, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 7, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -99,6 +99,7 @@ describe('inventory Base assets', () => {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
 					'note.tc_source', 'note.tc_character', 'note.tc_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity',
+					'note.tc_recommendation', 'note.tc_recommendation_reason',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
@@ -119,12 +120,14 @@ describe('inventory Base assets', () => {
 			const document = parse(asset.bytes) as BaseDocument;
 			const filters = document.views.flatMap((view) => flatFilters(view.filters));
 			if (asset.relativePath === 'Inventory.base') {
-				expect(document.views).toHaveLength(5);
+				expect(document.views).toHaveLength(6);
 				expect(filters).toEqual(expect.arrayContaining([
 					'tc_source == "character"',
 					'tc_source == "shared_inventory"',
 					'tc_source == "bank"',
 					'tc_source == "materials"',
+					'tc_recommendation == "sell"',
+					'tc_recommendation == "sell_at_season"',
 				]));
 			} else {
 				expect(flatFilters(document.filters)).toContain('tc_source == "materials"');
@@ -132,13 +135,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 6', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 7', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=6', 'version=1')
+				.replace('version=7', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -158,8 +161,8 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 6 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 6 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 7 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 7 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['formula.item_link']).toBeDefined();
@@ -181,6 +184,8 @@ describe('inventory Base assets', () => {
 				sellDepthStatus: 'complete', sellCoveredQuantity: 3, sellUncoveredQuantity: 0,
 				unitListCopper: 11, totalListCopper: null,
 				name: 'Objeto 42', type: 'Material', rarity: 'Fine', icon: null,
+				recommendation: 'review', recommendationReason: 'price_history_disabled',
+				recommendationUntil: null, recommendationMissing: null,
 			}],
 		});
 		const rendered = plan.steps[0]?.after;
@@ -192,6 +197,63 @@ describe('inventory Base assets', () => {
 		}
 	});
 });
+
+/**
+ * M1 criterion of closure 4 (docs/SPEC-recomendacion-por-objeto.md §5): the same H14.8 landmine
+ * documented in `inventory-bases.ts`, exercised as its own deliberate negative test rather than
+ * assumed from the comment. `validManifestRelations` (src/assets/managed-assets.ts) compares the
+ * MANIFEST's stored `installedSemanticHash` against the CURRENT bundle's semantic hash whenever
+ * `contentVersion` still matches: a real content change under an unchanged version number is a
+ * corrupt manifest (`conflict`), never a harmless `update`.
+ */
+describe('inventory Base contentVersion discipline (M1 criterion of closure 4)', () => {
+	it('a content change under an unbumped contentVersion is a conflict, not an update', async () => {
+		const vault = new MemoryBaseVault();
+		// Stands in for "a vault that already has some earlier release installed": today's real
+		// rendered content, labeled with whatever version that earlier release used.
+		const installed = await selfConsistentBundleAt(6, (bytes) => bytes);
+		const baseline = new ManagedAssetsManager(vault, CONFIG_DIR, { bundleVersion: 4, locale: 'es', assets: installed });
+		expect((await baseline.apply('Tyrian Companion')).status).toBe('applied');
+
+		// The bug: the Base's rendered content changes (a real column's label moves) but
+		// `contentVersion` is left at the value the installed manifest already recorded.
+		const buggy = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 5, locale: 'es', assets: await selfConsistentBundleAt(6, mutateRecommendationLabel),
+		});
+		const buggyPlan = await buggy.preview('Tyrian Companion', 'upgrade');
+		expect(buggyPlan.canApply).toBe(false);
+		expect(buggyPlan.reasons).toContain('conflict');
+		expect(buggyPlan.steps.filter((step) => step.status === 'update')).toEqual([]);
+		const buggyResult = await buggy.apply('Tyrian Companion', 'upgrade');
+		expect(buggyResult.status).toBe('conflict');
+
+		// Control: the exact same content change, with the version bump M1 actually ships.
+		// Proves the assertions above measure the version bump, not something else entirely.
+		const fixed = new ManagedAssetsManager(vault, CONFIG_DIR, {
+			bundleVersion: 5, locale: 'es', assets: await selfConsistentBundleAt(7, mutateRecommendationLabel),
+		});
+		const fixedPlan = await fixed.preview('Tyrian Companion', 'upgrade');
+		expect(fixedPlan.canApply).toBe(true);
+		expect(fixedPlan.steps).toContainEqual(expect.objectContaining({ id: 'inventory-base', status: 'update' }));
+		expect((await fixed.apply('Tyrian Companion', 'upgrade')).status).toBe('applied');
+	});
+});
+
+function mutateRecommendationLabel(bytes: string): string {
+	const mutated = bytes.replace('"Recomendación"', '"Recomendación (v2)"').replace('"Recommendation"', '"Recommendation (v2)"');
+	if (mutated === bytes) throw new Error('Expected the recommendation column label to be present and replaceable.');
+	return mutated;
+}
+
+/** Re-labels today's real inventory/materials bytes to `contentVersion`, applying `transform` first; every other asset in the bundle is untouched. */
+async function selfConsistentBundleAt(contentVersion: number, transform: (bytes: string) => string): Promise<PackagedAsset[]> {
+	const current = await managedAssetsBundle();
+	return await Promise.all(current.map(async (asset) => {
+		if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
+		const bytes = transform(asset.bytes).replace(`version=${String(asset.contentVersion)}`, `version=${String(contentVersion)}`);
+		return { ...asset, contentVersion, bytes, contentHash: await sha256Text(bytes) };
+	}));
+}
 
 function validateBaseDocument(document: BaseDocument): void {
 	expect(Object.keys(document).sort()).toEqual(['filters', 'formulas', 'properties', 'views']);
@@ -214,8 +276,9 @@ function validateBaseDocument(document: BaseDocument): void {
 }
 
 function flatFilters(filter: Filter | undefined): string[] {
+	if (filter === undefined) return [];
 	if (typeof filter === 'string') return [filter];
-	return filter?.and.flatMap(flatFilters) ?? [];
+	return ('and' in filter ? filter.and : filter.or).flatMap(flatFilters);
 }
 
 function baseShape(document: BaseDocument): unknown {
@@ -227,7 +290,7 @@ function baseShape(document: BaseDocument): unknown {
 	};
 }
 
-type Filter = string | { and: Filter[] };
+type Filter = string | { and: Filter[] } | { or: Filter[] };
 interface BaseDocument {
 	filters: Filter;
 	formulas: Record<string, string>;

@@ -11,6 +11,7 @@ const COPY = {
 		depthStatus: 'Cobertura de demanda', covered: 'Cantidad cubierta', uncovered: 'Cantidad sin cubrir',
 		unitListValue: 'Menor anuncio actual (bruto/u) 🟤', totalListValue: 'Publicación realizable (no demostrada) 🟤', captured: 'Actualizado',
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
+		recommendation: 'Recomendación', reason: 'Motivo', sellNow: 'Para vender',
 	},
 	en: {
 		all: 'All', characters: 'Characters', shared: 'Shared', bank: 'Bank', materials: 'Materials',
@@ -19,6 +20,7 @@ const COPY = {
 		depthStatus: 'Demand coverage', covered: 'Covered quantity', uncovered: 'Uncovered quantity',
 		unitListValue: 'Lowest current listing (gross/unit) 🟤', totalListValue: 'Realizable listing (not demonstrated) 🟤', captured: 'Updated',
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
+		recommendation: 'Recommendation', reason: 'Reason', sellNow: 'To sell',
 	},
 } as const;
 
@@ -49,6 +51,10 @@ properties:
     displayName: "${copy.type}"
   note.tc_item_rarity:
     displayName: "${copy.rarity}"
+  note.tc_recommendation:
+    displayName: "${copy.recommendation}"
+  note.tc_recommendation_reason:
+    displayName: "${copy.reason}"
   file.mtime:
     displayName: "${copy.captured}"
   note.tc_unit_sell_copper:
@@ -72,7 +78,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, formula.item_link, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
+	const order = '[formula.item_icon, formula.item_link, tc_recommendation, tc_recommendation_reason, formula.source_label, tc_character, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -126,6 +132,18 @@ function inventoryBody(locale: InventoryBaseLocale): string {
     rowHeight: medium
     columnSize:
       formula.item_icon: 52
+  - type: table
+    name: "${copy.sellNow}"
+    filters:
+      and:
+        - or:
+            - tc_recommendation == "sell"
+            - tc_recommendation == "sell_at_season"
+    order: ${order}
+    ${sorted}
+    rowHeight: medium
+    columnSize:
+      formula.item_icon: 52
 `;
 }
 
@@ -134,7 +152,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, formula.item_link, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
+    order: [formula.item_icon, formula.item_link, tc_recommendation, tc_recommendation_reason, tc_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
     sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -159,9 +177,11 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 			// `contentVersion` whose semantic bytes moved as a corrupt manifest (`conflict`), not an
 			// `update` — the exact `managed_assets_conflict` regression this content change would
 			// have caused on every vault that already had 0.1.30 installed. Same reasoning applies
-			// to the `note.tc_item_name` → `formula.item_link` swap below (bump to 6): the item name
-			// column now renders as a clickable link to the position note instead of plain text.
-			const draft = { id, kind: 'base', contentVersion: 6, locale, relativePath } as const;
+			// to the `note.tc_item_name` → `formula.item_link` swap that bumped this to 6, and again
+			// to M1 of docs/SPEC-recomendacion-por-objeto.md (bump to 7): the `tc_recommendation`/
+			// `tc_recommendation_reason` columns, the new "Para vender"/"To sell" view, and the
+			// `properties` entries are all semantic bytes moving under an unchanged version number.
+			const draft = { id, kind: 'base', contentVersion: 7, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}
