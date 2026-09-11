@@ -801,6 +801,33 @@ describe('inventory Vault preview and apply', () => {
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
 	});
 
+	/**
+	 * M4 test 4 (docs/SPEC-recomendacion-por-objeto.md, 85b8c96): a sync over the frontmatter M3
+	 * wrote (WITHOUT `tc_reserved_quantity`/`tc_free_quantity`) must migrate, never conflict. Same
+	 * landmine as the two tests above, one M later.
+	 *
+	 * Verified by hand, not committed as a second permanent test (same discipline as the two tests
+	 * above): temporarily removing `tc_reserved_quantity`/`tc_free_quantity` from
+	 * `INVENTORY_NOTE_KEYS_ADDED_LATER` turns this test red on
+	 * `expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0)`, with
+	 * `AssertionError: expected [ { …(5) }, { …(5) } ] to have a length of +0 but got 2` (measured
+	 * by hand, 2026-09-11: `oneBankInput()` fans out to two positions, both go conflict).
+	 */
+	it('a sync over 85b8c96 frontmatter (no legendary-reservation keys yet) produces zero conflict steps', async () => {
+		const input = await oneBankInput();
+		const created = (await new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR).preview(ROOT, input)).steps[0];
+		if (!created || created.status !== 'create' || created.after === null) throw new Error('Expected a rendered create step.');
+		const pre85b8c96 = await resign(created.after
+			.replace(/^tc_reserved_quantity: .*\n/mu, '')
+			.replace(/^tc_free_quantity: .*\n/mu, ''));
+		expect(frontmatter(pre85b8c96)).not.toHaveProperty('tc_reserved_quantity');
+		expect(frontmatter(pre85b8c96)).not.toHaveProperty('tc_free_quantity');
+		const vault = new MemoryInventoryVault([[created.path, pre85b8c96]]);
+		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
+		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
+	});
+
 	it('rejects non-portable roots before any mutation', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
