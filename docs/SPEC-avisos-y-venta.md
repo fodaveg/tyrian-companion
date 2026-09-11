@@ -33,8 +33,12 @@ el aviso tiene que saltar por encima de la ventana.» «Yo pondría todos los av
   gw2efficiency. datawars2 responde: `https://api.datawars2.ie/gw2/v1/history?itemID=36038`, 200,
   serie diaria desde 2012-10-24 con `buy_price_max/min`, `sell_price_max/min`, cantidades y `date`.
 - Ciclo anual del saco (mejor puja media mensual): suelo en noviembre (3,2 a 3,6 plata), techo en
-  abril y mayo (4,2 a 4,9) y en septiembre; deriva anual a la baja (2024: 5,8; 2025: 4,7; 2026:
-  4,0). Amplitud máximo/mínimo 1,35x: con 500 sacos la diferencia son unos 5 oros.
+  abril y mayo (4,2 a 4,9) y en septiembre; deriva anual a la baja. Amplitud máximo/mínimo 1,35x: con
+  500 sacos la diferencia son unos 5 oros. **Corrección 2026-09-11** (`docs/audit/2026-09-11-festivales-datawars2.md`,
+  §4.i): las cifras 5,8/4,7/4,0 medían el TECHO MENSUAL de cada año (2024 sep 5,81; 2025 may 4,82;
+  2026 may 4,00), no la media anual; la media anual medida sobre `buy_price_avg` es 4,78 (2024), 4,14
+  (2025) y 3,83 (2026). La dirección de la deriva a la baja se sostiene con cualquiera de las dos
+  lecturas.
 
 ## Alcance del lote de octubre, en orden
 
