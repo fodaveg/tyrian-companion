@@ -173,29 +173,39 @@ export function sellSignalGainCopper(decision: SellSignalDecision, quantity: num
 }
 
 /**
- * Merges the seed with what the plugin captured, captured days winning.
+ * Unions two day-keyed maps, `local` replacing `seed` for any day both define.
  *
- * The plugin's own observation is preferred wherever the two overlap: it is
- * this vault's measurement of this item, and the seed is a third party's
- * summary of the same day. Neither side invents a day the other is missing,
- * which is what leaves the holes in place for the rule above to absorb.
+ * The plugin's own observation is preferred wherever the two overlap: it is this vault's
+ * measurement of this item, and the seed is a third party's summary of the same day. Neither
+ * side invents a day the other is missing, which is what leaves the holes in place for
+ * `evaluateSellSignal` to absorb. `mergeSellSignalSeries` below and M2's price-history
+ * recommendation input (`price-seed-history-merge.ts`) both need exactly this precedence over
+ * two different day-series shapes, so it is written once here rather than once per shape.
  */
+export function unionByDayLocalWins<T>(seed: ReadonlyMap<string, T>, local: ReadonlyMap<string, T>): Map<string, T> {
+	const merged = new Map(seed);
+	for (const [dayUtc, value] of local) merged.set(dayUtc, value);
+	return merged;
+}
+
+/** Merges the seed with what the plugin captured, captured days winning (see `unionByDayLocalWins`). */
 export function mergeSellSignalSeries(
 	seed: PriceSeedV1 | null,
 	daily: readonly PriceHistoryDailyV1[],
 	itemId: number,
 ): SellSignalSeries {
-	const byDay = new Map<string, number>();
+	const seedByDay = new Map<string, number>();
 	if (seed !== null && seed.itemId === itemId) {
-		for (const day of seed.days) byDay.set(day.dayUtc, day.bidCopper);
+		for (const day of seed.days) seedByDay.set(day.dayUtc, day.bidCopper);
 	}
+	const capturedByDay = new Map<string, number>();
 	for (const entry of daily) {
 		if (entry.itemId !== itemId) continue;
 		const close = entry.bid?.closeCopper;
 		if (close === undefined || close === null || !Number.isSafeInteger(close) || close < 0) continue;
-		byDay.set(entry.dayUtc, close);
+		capturedByDay.set(entry.dayUtc, close);
 	}
-	const days = [...byDay.entries()]
+	const days = [...unionByDayLocalWins(seedByDay, capturedByDay).entries()]
 		.map(([dayUtc, bidCopper]) => ({ dayUtc, bidCopper }))
 		.sort((left, right) => (left.dayUtc < right.dayUtc ? -1 : left.dayUtc > right.dayUtc ? 1 : 0));
 	return { origin: seed === null ? 'unseeded' : 'seeded', days };
