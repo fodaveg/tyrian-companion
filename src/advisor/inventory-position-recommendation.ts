@@ -1,7 +1,7 @@
 import { priceHistoryDayUtc, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { calculatePriceHistoryPercentile } from '../economy/price-history-statistics';
 import { evaluateSellSignal, type SellSignalParameters, type SellSignalSeries } from '../economy/sell-signal';
-import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
+import { seasonalWindowClosesAfterMs, seasonalWindowOpensAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 
 /**
  * Per-position sell/hold recommendation (SPEC-recomendacion-por-objeto).
@@ -31,6 +31,7 @@ export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'price_history_insufficient',
 	'bid_above_reference',
 	'below_local_band',
+	'seasonal_sell_window',
 	'seasonal_hold',
 	'malformed_input',
 	'no_close_today',
@@ -111,11 +112,12 @@ const DAY_MS = 86_400_000;
  * 1. Price history off → `review`/`price_history_disabled`. Nothing below this line runs on
  *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell". This gates rule
  *    (b) too: a festival item's window has nothing to read against without the merged series.
- * 2. Rule (b): the item has a festival calendar entry → `evaluateSellSignal` decides.
- *    `sell` → `sell`/`bid_above_reference` (same reason rule (c) uses for the same statement: the
- *    price is above its reference). `hold` → `sell_at_season`/`seasonal_hold`, `until` = the
- *    window's own close (`seasonalWindowClosesAfterMs`), never Halloween's. `none` falls through
- *    to rule (c) below. `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave.
+ * 2. Rule (b): the item has a festival calendar entry → `evaluateSeasonalRule` decides, and its
+ *    verdict is final (never falls through to rule (c) below; only the absence of a calendar entry
+ *    does that). `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave. Today
+ *    inside the item's own selling window → `sell`/`seasonal_sell_window`, `until` = the window's
+ *    own close. Today outside it with a qualifying bid → `sell`/`bid_above_reference`. Today
+ *    outside it without one → `sell_at_season`/`seasonal_hold`, `until` = the window's NEXT open.
  * 3. Capital below the threshold → `hold`/`below_capital_threshold`. Too little is parked here to
  *    make the recommendation worth acting on either way.
  * 4. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
@@ -131,8 +133,7 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 		};
 	}
 	if (input.seasonal !== null) {
-		const seasonal = evaluateSeasonalRule(input.seasonal, input.priceHistoryDaily, input.capturedAtMs, input);
-		if (seasonal !== null) return seasonal;
+		return evaluateSeasonalRule(input.seasonal, input.priceHistoryDaily, input.capturedAtMs, input);
 	}
 	if (input.totalSellCopper === null || input.totalSellCopper < input.capitalThresholdCopper) {
 		return {
@@ -171,15 +172,29 @@ function priceUntil(input: PositionRecommendationInput): string {
 }
 
 /**
- * Rule (b). Returns `null` only for `evaluateSellSignal`'s `none` outcome, which is the one case
- * the spec says falls through to rule (c) rather than being a verdict of its own.
+ * Rule (b), corrected: the calendar window is when the item is worth SELLING (the measured peak),
+ * not when its price sits on the floor. `evaluateSellSignal`'s own `inSeason` flag and `sell` signal
+ * are read as-is rather than reinterpreted: `inSeason` is exactly "today is inside the item's
+ * selling window" now that the window passed in IS that window, and `signal === 'sell'` is exactly
+ * "today's bid clears `minimumOfMaxBps` of the trailing year's max" — the same comparison rule (c)'s
+ * sibling statement uses, reused rather than rewritten. A calendar entry always produces a verdict
+ * here; unlike before M3's fix, there is no case that falls through to rule (c).
+ *
+ * 1. `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave.
+ * 2. Inside the window → `sell`/`seasonal_sell_window`, `until` = this window's own close. This is
+ *    the measured best moment; no percentile is required on top of it.
+ * 3. Outside the window, bid clears the reference → `sell`/`bid_above_reference` (an out-of-season
+ *    opportunity, taken), `until` = the ordinary price-based expiry.
+ * 4. Outside the window, bid does not clear it → `sell_at_season`/`seasonal_hold`, `until` = the
+ *    window's NEXT open, not its close: the point is to wait for the next good moment to sell, not
+ *    to expire the recommendation at a date that already passed.
  */
 function evaluateSeasonalRule(
 	seasonal: PositionRecommendationSeasonalInput,
 	priceHistoryDaily: readonly PriceHistoryDailyV1[],
 	capturedAtMs: number,
 	input: PositionRecommendationInput,
-): PositionRecommendationV1 | null {
+): PositionRecommendationV1 {
 	const series = toSellSignalSeries(priceHistoryDaily);
 	const projection = evaluateSellSignal(series, capturedAtMs, seasonal.parameters, seasonal.window);
 	if (projection.status === 'undecidable') {
@@ -188,22 +203,34 @@ function evaluateSeasonalRule(
 			pricePercentile: null, priceCoverageDays: null,
 		};
 	}
-	if (projection.signal === 'none') return null;
+	if (projection.inSeason) {
+		const closesAfterMs = seasonalWindowClosesAfterMs(seasonal.window, capturedAtMs);
+		if (closesAfterMs === null) {
+			return {
+				action: 'review', reason: 'undecidable_calendar', until: null, missing: null,
+				pricePercentile: null, priceCoverageDays: null,
+			};
+		}
+		return {
+			action: 'sell', reason: 'seasonal_sell_window', until: new Date(closesAfterMs).toISOString(), missing: null,
+			pricePercentile: null, priceCoverageDays: null,
+		};
+	}
 	if (projection.signal === 'sell') {
 		return {
 			action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null,
 			pricePercentile: null, priceCoverageDays: null,
 		};
 	}
-	const closesAfterMs = seasonalWindowClosesAfterMs(seasonal.window, capturedAtMs);
-	if (closesAfterMs === null) {
+	const opensAfterMs = seasonalWindowOpensAfterMs(seasonal.window, capturedAtMs);
+	if (opensAfterMs === null) {
 		return {
 			action: 'review', reason: 'undecidable_calendar', until: null, missing: null,
 			pricePercentile: null, priceCoverageDays: null,
 		};
 	}
 	return {
-		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(closesAfterMs).toISOString(), missing: null,
+		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(opensAfterMs).toISOString(), missing: null,
 		pricePercentile: null, priceCoverageDays: null,
 	};
 }

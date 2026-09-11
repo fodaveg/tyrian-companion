@@ -210,12 +210,12 @@ describe('inventory Vault projection', () => {
 	});
 
 	/**
-	 * Test 3, M3 cierre (docs/SPEC-recomendacion-por-objeto.md §5): `capture()`'s cableado, not just
-	 * the pure `recommendPosition`. A festival item in season, at the floor of its own reference,
-	 * writes `sell_at_season` with `tc_recommendation_until` at the close of ITS OWN window, never
-	 * Halloween's; an item absent from `seasonalInputFor`'s table falls straight to rule (c).
+	 * Test 3, M3 fix cierre (docs/SPEC-recomendacion-por-objeto.md §3.b): `capture()`'s cableado, not
+	 * just the pure `recommendPosition`. A festival item inside its own selling window writes `sell`
+	 * with `tc_recommendation_until` at the close of ITS OWN window, never Halloween's; an item
+	 * absent from `seasonalInputFor`'s table falls straight to rule (c).
 	 */
-	it('a festival item writes sell_at_season with `until` at the close of ITS OWN window; a non-calendar item falls to rule (c)', async () => {
+	it('a festival item writes sell/seasonal_sell_window with `until` at the close of ITS OWN window; a non-calendar item falls to rule (c)', async () => {
 		const festivalItemId = 47_909;
 		const otherItemId = 99;
 		const capturedAtMs = Date.parse('2026-12-20T12:00:00.000Z');
@@ -237,7 +237,7 @@ describe('inventory Vault projection', () => {
 			],
 		};
 		// Flat 36-day series at 500 copper: today is at the reference floor for both items, but only
-		// the festival item has a calendar entry that reads it as `in_season`.
+		// the festival item has a calendar entry that reads it as inside its own selling window.
 		const dailyByItem = new Map<number, PriceHistoryDailyV1[]>([
 			[festivalItemId, dailySeriesFor(festivalItemId, 36, 500, 0, capturedAtMs)],
 			[otherItemId, dailySeriesFor(otherItemId, 36, 500, 0, capturedAtMs)],
@@ -258,7 +258,7 @@ describe('inventory Vault projection', () => {
 		const festival = byItem.get(festivalItemId);
 		const other = byItem.get(otherItemId);
 		const expectedUntil = new Date(seasonalWindowClosesAfterMs(window, capturedAtMs)!).toISOString();
-		expect(festival).toMatchObject({ recommendation: 'sell_at_season', recommendationReason: 'seasonal_hold', recommendationUntil: expectedUntil });
+		expect(festival).toMatchObject({ recommendation: 'sell', recommendationReason: 'seasonal_sell_window', recommendationUntil: expectedUntil });
 		// Never Halloween's close for the same instant.
 		expect(festival?.recommendationUntil).not.toBe(new Date(seasonalWindowClosesAfterMs(
 			{ version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 }, capturedAtMs,
