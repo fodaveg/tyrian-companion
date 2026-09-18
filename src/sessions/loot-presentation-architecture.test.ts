@@ -80,7 +80,7 @@ function completeRuntime(): SessionRuntimeRecord {
 		version: 1, status: 'complete', sessionId: 'session-1', authority,
 		requestedAt: '2026-08-13T07:59:59.000Z', baseline: reference(baseline),
 		startContext: {
-			characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual' },
+			characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1, name: 'Farm', profession: 'Revenant',
 				specializations: [

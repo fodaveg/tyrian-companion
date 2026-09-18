@@ -42,7 +42,7 @@ const captured: SessionStartCaptureResult = {
 	snapshot: storageDeltaSnapshot(),
 	context: {
 		characterName: 'Astra Uno',
-		magicFind: { value: 321, source: 'manual' },
+		magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 		build: {
 			tab: 1,
 			name: 'Farm',
@@ -123,7 +123,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions({ onStateChange: changed }),
 		);
 
-		const result = await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		const result = await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		expect(result).toMatchObject({
 			status: 'started',
@@ -131,7 +131,7 @@ describe('ManualSessionStartService', () => {
 				status: 'active',
 				sessionId: 'session-1',
 				baseline: { snapshotId: 'snapshot-before', quality: 'stable' },
-				startContext: { characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual' } },
+				startContext: { characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null } },
 			},
 		});
 		expect(leases.acquire).toHaveBeenCalledWith('session-1');
@@ -148,8 +148,8 @@ describe('ManualSessionStartService', () => {
 		const baseline = { capture: vi.fn(() => pending) };
 		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
 
-		const first = service.start({ characterName: 'Astra Uno', magicFind: 321 });
-		const second = service.start({ characterName: 'Another input', magicFind: 0 });
+		const first = service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		const second = service.start({ characterName: 'Another input', magicFind: 0, consumablesBonus: 0 });
 		expect(second).toBe(first);
 		resolveCapture(structuredClone(captured));
 		await expect(first).resolves.toMatchObject({ status: 'started' });
@@ -165,7 +165,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toEqual({
 				status: 'failed',
 				failure: { code: 'snapshot_failed', message: 'Moving account.' },
@@ -187,7 +187,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(() => capturePending) },
 			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
 		);
-		const start = service.start({ characterName: 'Astra Uno', magicFind: 1 });
+		const start = service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 });
 		await vi.waitFor(() => expect(tick).toBeTypeOf('function'));
 		tick?.();
 		rejectCapture(new SessionStartCaptureError('snapshot_not_stable', 'Moving account.'));
@@ -211,7 +211,7 @@ describe('ManualSessionStartService', () => {
 		const baseline = { capture: vi.fn(async () => captured) };
 		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
 		expect(baseline.capture).not.toHaveBeenCalled();
 		expect(leases.release).not.toHaveBeenCalled();
@@ -223,7 +223,7 @@ describe('ManualSessionStartService', () => {
 		const baseline = { capture: vi.fn(async () => captured) };
 		const service = new ManualSessionStartService(leases, baseline, serviceOptions());
 
-		await expect(service.start({ characterName: ' ', magicFind: -1 }))
+		await expect(service.start({ characterName: ' ', magicFind: -1, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'invalid_input' } });
 		expect(leases.acquire).not.toHaveBeenCalled();
 		expect(baseline.capture).not.toHaveBeenCalled();
@@ -237,7 +237,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
 		expect(leases.release).toHaveBeenCalled();
 		expect(service.getState().status).toBe('idle');
@@ -253,7 +253,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'coordination_unavailable' } });
 		expect(service.getState().status).toBe('idle');
 	});
@@ -266,7 +266,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => captured) },
 			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 });
 
 		tick?.();
 		await vi.waitFor(() => expect(leases.renew).toHaveBeenCalledTimes(1));
@@ -281,7 +281,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => captured) },
 			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick = callback; return 17; }) }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 });
 
 		tick?.();
 		await vi.waitFor(() => expect(service.getState().status).toBe('error'));
@@ -299,7 +299,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => captured) },
 			serviceOptions(),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 1 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 });
 
 		await service.dispose();
 		expect(leases.release).toHaveBeenCalledWith(handle);
@@ -351,7 +351,7 @@ describe('ManualSessionStartService', () => {
 			capture,
 			serviceOptions({ runtimeStore, priceCapture }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		const result = await stopAfterSettlement(service);
 
@@ -399,7 +399,7 @@ describe('ManualSessionStartService', () => {
 			capture,
 			serviceOptions({ runtimeStore, farmedLossItemTypeCapture }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(service);
 
 		const reviewed = await service.finalizeStoppedSession();
@@ -427,7 +427,7 @@ describe('ManualSessionStartService', () => {
 			capture,
 			serviceOptions({ runtimeStore, farmedLossItemTypeCapture }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(service);
 
 		const reviewed = await service.finalizeStoppedSession();
@@ -461,7 +461,7 @@ describe('ManualSessionStartService', () => {
 				} satisfies LocalDebugActionPort,
 			}),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toMatchObject({ status: 'stopped' });
 		expect(service.getPriceSnapshot()).toMatchObject({
@@ -492,7 +492,7 @@ describe('ManualSessionStartService', () => {
 			captureFinal: vi.fn(() => pending),
 		};
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		clock = Date.parse('2026-08-13T08:49:00.000Z');
 		await expect(service.stop()).resolves.toMatchObject({ status: 'awaiting_settlement' });
@@ -514,7 +514,7 @@ describe('ManualSessionStartService', () => {
 			captureFinal,
 		};
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
@@ -535,7 +535,7 @@ describe('ManualSessionStartService', () => {
 			captureFinal: vi.fn(async () => afterSnapshot({ accountId: 'another-account' })),
 		};
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toEqual({
 			status: 'failed',
@@ -558,7 +558,7 @@ describe('ManualSessionStartService', () => {
 			},
 			serviceOptions({ runtimeStore }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		const stopped = await stopAfterSettlement(service);
 
@@ -596,7 +596,7 @@ describe('ManualSessionStartService', () => {
 			captureFinal: vi.fn(async () => afterSnapshot()),
 		};
 		const service = new ManualSessionStartService(leases, capture, serviceOptions());
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
@@ -637,7 +637,7 @@ describe('ManualSessionStartService', () => {
 				} satisfies LocalDebugActionPort,
 			}),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
@@ -685,7 +685,7 @@ describe('ManualSessionStartService', () => {
 			},
 			serviceOptions({ runtimeStore }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(stopAfterSettlement(service)).resolves.toMatchObject({
 			status: 'failed',
@@ -715,7 +715,7 @@ describe('ManualSessionStartService', () => {
 			// shadow it, because this test drives the heartbeat by hand.
 			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick ??= callback; return 17; }) }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(service);
 		expect(service.getState().status).toBe('stopping');
 
@@ -740,7 +740,7 @@ describe('ManualSessionStartService', () => {
 			// Same as above: keep the heartbeat callback, not the settlement watcher registered later.
 			serviceOptions({ setInterval: vi.fn((callback: () => void) => { tick ??= callback; return 17; }) }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(service);
 		expect(service.getState().status).toBe('provisional');
 
@@ -767,7 +767,7 @@ describe('ManualSessionStartService', () => {
 			},
 			serviceOptions({ runtimeStore }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		const stopped = await stopAfterSettlement(service);
 		expect(stopped).toMatchObject({ status: 'stopped' });
 		expect(service.getState()).toMatchObject({ status: 'provisional' });
@@ -803,7 +803,7 @@ describe('ManualSessionStartService', () => {
 			},
 			serviceOptions({ runtimeStore }),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(service);
 		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({
 			status: 'finalized',
@@ -826,7 +826,7 @@ describe('ManualSessionStartService', () => {
 			},
 			serviceOptions({ runtimeStore }),
 		);
-		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await stopAfterSettlement(first);
 		await first.finalizeStoppedSession();
 
@@ -856,7 +856,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ runtimeStore }),
 		);
-		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await first.dispose();
 
 		const recoveredHandle = {
@@ -904,7 +904,7 @@ describe('ManualSessionStartService', () => {
 				firstCapture,
 				serviceOptions({ runtimeStore }),
 			);
-			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+			await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 			await stopAfterSettlement(first);
 			expect(first.getState().status).toBe('stopping');
 			await first.dispose();
@@ -952,7 +952,7 @@ describe('ManualSessionStartService', () => {
 				firstCapture,
 				serviceOptions({ runtimeStore }),
 			);
-			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+			await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 			await stopAfterSettlement(first);
 			expect(first.getState().status).toBe('provisional');
 			await first.dispose();
@@ -993,7 +993,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ runtimeStore }),
 		);
-		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		const second = new ManualSessionStartService(
 			coordinator({
 				acquire: vi.fn(async () => ({
@@ -1020,7 +1020,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ runtimeStore }),
 		);
-		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		const diagnosticsEvent: LocalDebugActionPort['event'] = vi.fn();
 		const second = new ManualSessionStartService(
 			coordinator({
@@ -1070,7 +1070,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'missing_capability' } });
 		expect(service.getLastFailure()?.code).toBe('missing_capability');
 	});
@@ -1083,7 +1083,7 @@ describe('ManualSessionStartService', () => {
 			serviceOptions(),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
 	});
 
@@ -1105,7 +1105,7 @@ describe('ManualSessionStartService', () => {
 			}),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'coordination_unavailable' } });
 
 		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -1133,7 +1133,7 @@ describe('ManualSessionStartService', () => {
 			}),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'unexpected' } });
 
 		expect(diagnosticsEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -1167,7 +1167,7 @@ describe('ManualSessionStartService', () => {
 				} satisfies LocalDebugActionPort,
 			}),
 		);
-		await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 
 		await expect(service.captureFinalNow())
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'snapshot_failed' } });
@@ -1193,7 +1193,7 @@ describe('ManualSessionStartService', () => {
 
 		await service.initialize();
 		expect(service.getRecoveryState()).toMatchObject({ status: 'error' });
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'failed', failure: { code: 'busy' } });
 		expect(leases.acquire).not.toHaveBeenCalled();
 		expect(capture.capture).not.toHaveBeenCalled();
@@ -1218,7 +1218,7 @@ describe('ManualSessionStartService', () => {
 		expect(leases.acquire).not.toHaveBeenCalled();
 
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'started' });
 	});
 
@@ -1229,7 +1229,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ runtimeStore }),
 		);
-		await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+		await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 		await first.dispose();
 		const recoveredHandle = {
 			...handle,
@@ -1293,7 +1293,7 @@ describe('ManualSessionStartService', () => {
 			},
 		);
 
-		await expect(serviceOne.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(serviceOne.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'started' });
 
 		// The renewer is genuinely alive before the "reload": a real tick renews the real lease.
@@ -1369,7 +1369,7 @@ describe('ManualSessionStartService', () => {
 			}),
 		);
 
-		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'started' });
 		expect(capturedDelayMs).toBe(leaseTtlMs / 3);
 
@@ -1403,7 +1403,7 @@ describe('ManualSessionStartService', () => {
 			{ capture: vi.fn(async () => structuredClone(captured)) },
 			serviceOptions({ setInterval: vi.fn(() => 17) }),
 		);
-		await expect(primaryService.start({ characterName: 'Astra Uno', magicFind: 321 }))
+		await expect(primaryService.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'started' });
 
 		const secondaryCoordinator = new ActiveSessionLeaseCoordinator({

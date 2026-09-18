@@ -359,7 +359,7 @@ function activeSession(): Extract<SessionState, { status: 'active' }> {
 		version: 1, status: 'active', sessionId: 'session-1', requestedAt: '2026-08-14T11:59:00.000Z',
 		authority: { machineId: 'machine', instanceId: 'instance', sessionId: 'session-1', fence: 1, acquiredAt: NOW - 60_000 },
 		baseline: { snapshotId: 'before', accountId: 'account', schemaVersion: '2024-07-20T01:00:00.000Z', startedAt: '2026-08-14T11:59:59.000Z', completedAt: new Date(NOW).toISOString(), quality: 'stable' },
-		startContext: { characterName: 'Ranger', magicFind: { value: 100, source: 'manual' }, capturedAt: new Date(NOW).toISOString(), build: {
+		startContext: { characterName: 'Ranger', magicFind: { value: 100, source: 'manual', consumablesBonus: 0, breakdown: null }, capturedAt: new Date(NOW).toISOString(), build: {
 			tab: 1, name: 'Open world', profession: 'Ranger', specializations: [],
 			skills: { heal: null, utilities: [], elite: null }, aquaticSkills: { heal: null, utilities: [], elite: null },
 		} },

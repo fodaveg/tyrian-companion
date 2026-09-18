@@ -44,7 +44,7 @@ describe('session contamination review', () => {
 		async () => {
 			const runtimeStore = new MemorySessionRuntimeStore();
 			const first = workflowService(runtimeStore);
-			await first.start({ characterName: 'Astra Uno', magicFind: 321 });
+			await first.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 			const stopped = await stopWorkflow(first);
 			const reviewed = await first.finalizeStoppedSession();
 
@@ -233,7 +233,7 @@ const workflowCapture: SessionStartCaptureResult = {
 	snapshot: storageDeltaSnapshot(),
 	context: {
 		characterName: 'Astra Uno',
-		magicFind: { value: 321, source: 'manual' },
+		magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 		build: {
 			tab: 1,
 			name: 'Farm',

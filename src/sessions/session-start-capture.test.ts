@@ -46,10 +46,11 @@ describe('SessionStartCaptureService', () => {
 		const service = new SessionStartCaptureService(
 			client,
 			snapshots,
+			undefined,
 			() => new Date('2026-08-13T08:00:02.000Z'),
 		);
 
-		const result = await service.capture({ characterName: ' Astra Uno ', magicFind: 321 });
+		const result = await service.capture({ characterName: ' Astra Uno ', magicFind: 321, consumablesBonus: 0 });
 
 		expect(client.beginOperation).toHaveBeenCalledTimes(1);
 		expect(snapshots.captureWithOperation).toHaveBeenCalledTimes(1);
@@ -60,7 +61,7 @@ describe('SessionStartCaptureService', () => {
 			snapshot: { snapshotId: snapshot.snapshotId },
 			context: {
 				characterName: 'Astra Uno',
-				magicFind: { value: 321, source: 'manual' },
+				magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 				build: { tab: 2, name: 'Lab farm', profession: 'Revenant' },
 				capturedAt: '2026-08-13T08:00:02.000Z',
 			},
@@ -74,7 +75,7 @@ describe('SessionStartCaptureService', () => {
 			{ captureWithOperation: async () => storageDeltaSnapshot() },
 		);
 
-		await expect(service.capture({ characterName: 'Unknown', magicFind: 0 }))
+		await expect(service.capture({ characterName: 'Unknown', magicFind: 0, consumablesBonus: 0 }))
 			.rejects.toMatchObject({ code: 'character_not_found' });
 		expect(operation.requestDetailed).not.toHaveBeenCalled();
 	});
@@ -85,7 +86,7 @@ describe('SessionStartCaptureService', () => {
 			{ beginOperation: () => operation },
 			{ captureWithOperation: async () => storageDeltaSnapshot({ quality }) },
 		);
-		await expect(service.capture({ characterName: 'Astra Uno', magicFind: 1 }))
+		await expect(service.capture({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 }))
 			.rejects.toMatchObject({ code: 'snapshot_not_stable' });
 	});
 
@@ -101,15 +102,15 @@ describe('SessionStartCaptureService', () => {
 			{ captureWithOperation: async () => storageDeltaSnapshot() },
 		);
 
-		await expect(service.capture({ characterName: 'Astra Uno', magicFind: 1 }))
+		await expect(service.capture({ characterName: 'Astra Uno', magicFind: 1, consumablesBonus: 0 }))
 			.rejects.toMatchObject({ code: 'build_scope_missing' });
 	});
 });
 
 describe('session start capture parsing', () => {
 	it('normalizes inputs and the active build without retaining unknown fields', () => {
-		expect(normalizeSessionStartInput({ characterName: ' Astra Uno ', magicFind: 0 }))
-			.toEqual({ characterName: 'Astra Uno', magicFind: 0 });
+		expect(normalizeSessionStartInput({ characterName: ' Astra Uno ', magicFind: 0, consumablesBonus: 0 }))
+			.toEqual({ characterName: 'Astra Uno', magicFind: 0, consumablesBonus: 0 });
 		expect(parseActiveBuild({ ...buildFixture, future: true })).toEqual({
 			tab: 2,
 			name: 'Lab farm',
@@ -121,9 +122,9 @@ describe('session start capture parsing', () => {
 	});
 
 	it.each([
-		['empty character', { characterName: ' ', magicFind: 1 }],
-		['fractional magic find', { characterName: 'Astra Uno', magicFind: 1.5 }],
-		['negative magic find', { characterName: 'Astra Uno', magicFind: -1 }],
+		['empty character', { characterName: ' ', magicFind: 1, consumablesBonus: 0 }],
+		['fractional magic find', { characterName: 'Astra Uno', magicFind: 1.5, consumablesBonus: 0 }],
+		['negative magic find', { characterName: 'Astra Uno', magicFind: -1, consumablesBonus: 0 }],
 	])('rejects %s', (_label, input) => {
 		expect(() => normalizeSessionStartInput(input)).toThrow(SessionStartCaptureError);
 	});

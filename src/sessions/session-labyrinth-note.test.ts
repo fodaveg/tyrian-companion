@@ -176,7 +176,7 @@ function completeState(
 		version: 1, status: 'complete', sessionId: SESSION_ID, authority,
 		requestedAt: '2026-09-07T09:59:58.000Z', baseline: reference(before),
 		startContext: {
-			characterName: 'Rinopopo', magicFind: { value: 321, source: 'manual' },
+			characterName: 'Rinopopo', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1, name: 'Farm', profession: 'Guardian',
 				specializations: [

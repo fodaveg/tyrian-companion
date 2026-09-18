@@ -98,7 +98,7 @@ async function legacyV2SessionRecord(): Promise<Record<string, unknown>> {
 		baseline: reference(baseline),
 		startContext: {
 			characterName: 'Legacy Toon',
-			magicFind: { value: 0, source: 'manual' },
+			magicFind: { value: 0, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1, name: 'Farm', profession: 'Revenant',
 				specializations: [{ id: 3, traits: [1, 2, 3] }, { id: 52, traits: [4, 5, 6] }, { id: 63, traits: [7, 8, 9] }],

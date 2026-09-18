@@ -613,7 +613,7 @@ function activeSession(): SessionState {
 		},
 		startContext: {
 			characterName: 'Astra Uno',
-			magicFind: { value: 0, source: 'manual' },
+			magicFind: { value: 0, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1,
 				name: 'Test build',
