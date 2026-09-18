@@ -1,5 +1,33 @@
 # Changelog
 
+## Release beta 0.1.35 - Hallazgo mágico calculado desde la API
+
+El Hallazgo mágico (Magic Find) se calcula automáticamente al capturar la línea base desde
+tres fuentes de la API de Guild Wars 2: la esencia de suerte acumulada, los puntos de logro
+totales y el enriquecimiento de magia del amuleto activo. El campo sigue siendo opcional: en
+blanco, Tyrian Companion deriva el valor; si escribes un número, gana el tuyo. Campo nuevo
+opcional (`tc_magic_find_consumables`) para sumar extra por consumibles, con 0 por defecto.
+
+- **Cálculo automático del Hallazgo mágico (H17.1).** Tres sumandos: esencia de suerte acumulada
+  (`/v2/account/luck`) convertida por la tabla acumulada de la wiki con tope en 300%; puntos de
+  logro totales, sumados de los tiers completados en `/v2/account/achievements` contra el
+  catálogo público más `daily_ap`; enriquecimiento de magia del amuleto de la pestaña de equipo
+  activa (`characters/:id/equipmenttabs/active`, item 39333). Medido contra una cuenta real el 17
+  sep 2026: 4.297.255 de esencia + 21.041 puntos + enriquecimiento = 333%, exacto con el panel
+  de héroe de GW2. Si falta el permiso `progression` en la clave o la API falla, la sesión
+  arranca igual y la nota queda con `source: unavailable` (`src/sessions/session-start-capture.ts`,
+  `src/sessions/session-note-renderer.ts`, H17.1).
+- **Lo que no entra y por qué.** Comida, utilidad, refuerzos, estandartes de gremio, Guild Item
+  Research y efectos de mapa: la API de GW2 no expone efectos activos (comprobado el 18 sep 2026
+  sobre 169 rutas activas). Para eso está el campo de consumibles.
+- **Esquema 4: frontera compatible.** El frontmatter gana `tc_magic_find_source` y
+  `tc_magic_find_consumables`. Las notas ya escritas en esquema 1, 2 y 3 se siguen leyendo igual;
+  `tc_magic_find` sigue siendo el total, y el lector lo valida igual que antes.
+- **Regresión corregida de paso.** El backfill de Halloween comparaba el esquema con igualdad
+  literal contra el 3, así que toda nota nueva habría quedado clasificada como cobertura
+  `partial` pese a llevar la misma evidencia de ganancias, degradando el resumen agregado del
+  vault. Ahora reconoce esquema 3 y 4 como equivalentes para Halloween (`src/halloween/halloween-note-backfill.ts`, H17.1).
+
 ## Release beta 0.1.34 - recomendación de vender o mantener por objeto
 
 Cada nota de inventario dice ahora qué hacer con ese objeto y por qué, con una fecha a partir de la
