@@ -32,6 +32,7 @@ export class ManualSessionStartModal extends Modal {
 
 		let characterName = this.preferredCharacter;
 		let magicFindText = '';
+		let consumablesBonusText = '';
 		let characterInput: HTMLInputElement | null = null;
 		let magicFindInput: HTMLInputElement | null = null;
 		const error = contentEl.createDiv({ cls: 'tyrian-companion-start-modal__error' });
@@ -62,12 +63,24 @@ export class ManualSessionStartModal extends Modal {
 			});
 
 		new Setting(contentEl)
+			.setName(t('manual.consumablesBonus.name'))
+			.setDesc(t('manual.consumablesBonus.desc'))
+			.addText((text) => {
+				text.inputEl.type = 'number';
+				text.inputEl.min = '0';
+				text.inputEl.max = String(MAX_MAGIC_FIND);
+				text.inputEl.step = '1';
+				text.setPlaceholder('0')
+					.onChange((value) => { consumablesBonusText = value; });
+			});
+
+		new Setting(contentEl)
 			.addButton((button) => {
 				button.setButtonText(t('manual.start'))
 					.setCta()
 					.onClick(() => {
 						try {
-							const input = parseManualSessionForm(characterName, magicFindText, translator);
+							const input = parseManualSessionForm(characterName, magicFindText, consumablesBonusText, translator);
 							this.onSubmit(input);
 							this.close();
 						} catch {
@@ -90,16 +103,28 @@ function focusInput(input: HTMLInputElement | null): void {
 	input?.focus();
 }
 
+/**
+ * An empty Magic Find field derives the total from the API (`magicFind: null`); a typed-in
+ * number always overrides it. An empty consumables field defaults to 0, since the API never
+ * sees food, utility, reinforcements, guild banners or map effects.
+ */
 export function parseManualSessionForm(
 	characterName: string,
 	magicFindText: string,
+	consumablesBonusText: string,
 	translator: Translator = createTranslator('es'),
 ): SessionStartInput {
-	if (!/^\d+$/u.test(magicFindText.trim())) {
+	const trimmedMagicFind = magicFindText.trim();
+	if (trimmedMagicFind !== '' && !/^\d+$/u.test(trimmedMagicFind)) {
 		throw new Error(translateRuntime(translator, 'manual.magicFindWholeNumber'));
+	}
+	const trimmedConsumablesBonus = consumablesBonusText.trim();
+	if (trimmedConsumablesBonus !== '' && !/^\d+$/u.test(trimmedConsumablesBonus)) {
+		throw new Error(translateRuntime(translator, 'manual.consumablesBonusWholeNumber'));
 	}
 	return normalizeSessionStartInput({
 		characterName,
-		magicFind: Number(magicFindText),
+		magicFind: trimmedMagicFind === '' ? null : Number(trimmedMagicFind),
+		consumablesBonus: trimmedConsumablesBonus === '' ? 0 : Number(trimmedConsumablesBonus),
 	});
 }

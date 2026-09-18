@@ -214,6 +214,8 @@ function createFrontmatter(
 		tc_profession: state.startContext.build.profession,
 		tc_build: state.startContext.build.name || null,
 		tc_magic_find: state.startContext.magicFind.value,
+		tc_magic_find_source: state.startContext.magicFind.source,
+		tc_magic_find_consumables: state.startContext.magicFind.consumablesBonus,
 		tc_detection_mode: null,
 		tc_classification: classification.status,
 		tc_confidence: classification.confidence,
