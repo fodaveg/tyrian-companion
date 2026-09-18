@@ -70,7 +70,7 @@ describe('H13.3 loot poll cabling', () => {
 		expect(plugin.getLiveSessionLoot()).toMatchObject({ status: 'idle' });
 
 		sessionState.mockReturnValue(record.state);
-		await plugin.startManualSession({ characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual' } });
+		await plugin.startManualSession({ characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null } });
 
 		expect(arm).toHaveBeenCalledWith(
 			expect.objectContaining({ snapshotId: record.baselineSnapshot.snapshotId }),
@@ -352,7 +352,7 @@ function activeSessionRecord() {
 		baseline: reference(baselineSnapshot),
 		startContext: {
 			characterName: 'Astra Uno',
-			magicFind: { value: 321, source: 'manual' },
+			magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1, name: 'Farm', profession: 'Revenant',
 				specializations: [

@@ -56,7 +56,7 @@ describe('session note model and renderer', () => {
 		if (first.status !== 'ok') return;
 		expect(first.note.preferredPath).toMatch(/^Tyrian Companion\/sessions\/2026\/2026-08-13 080001Z - [a-f0-9]{16}\.md$/u);
 		expect(first.note.frontmatter).toMatchObject({
-			tc_schema: 3, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_schema: 4, tc_kind: 'gw2_farming_session', tc_locale: 'es',
 			tc_positive_item_deltas_json: '[[100,3]]',
 			tc_event: null,
 			tc_scope: 'observed_storage_net', tc_execution: 'manual_in_game', tc_side_effects: 'none',
@@ -516,7 +516,7 @@ function completeRuntime(classification: 'exact' | 'contaminated'): SessionRunti
 		version: 1, status: 'complete', sessionId: 'session-sensitive-id', authority,
 		requestedAt: '2026-08-13T07:59:59.000Z', baseline: reference(baseline),
 		startContext: {
-			characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual' },
+			characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 			build: {
 				tab: 1, name: 'Farm', profession: 'Revenant',
 				specializations: [

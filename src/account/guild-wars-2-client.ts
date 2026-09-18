@@ -14,6 +14,7 @@ export const OFFICIAL_GW2_API_URL = 'https://api.guildwars2.com/v2';
 export const GW2_CHARACTER_OPERATION_POLICIES = Object.freeze({
 	character_inventory: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
 	character_build: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
+	character_equipmenttabs: Object.freeze({ timeoutMs: 30_000, maxRetries: 0 }),
 }) satisfies HttpOperationPolicies;
 
 export class MissingApiKeyError extends Error {
@@ -138,9 +139,12 @@ export function guildWars2LogicalEndpoint(path: string): HttpLogicalEndpoint {
 		case 'account/recipes': return 'account_recipes';
 		case 'account/achievements': return 'account_achievements';
 		case 'account/legendaryarmory': return 'account_legendaryarmory';
+		case 'account/luck': return 'account_luck';
+		case 'achievements': return 'achievements';
 		default:
 			if (/^characters\/[^/]+\/inventory$/u.test(route)) return 'character_inventory';
 			if (/^characters\/[^/]+\/buildtabs\/active$/u.test(route)) return 'character_build';
+			if (/^characters\/[^/]+\/equipmenttabs\/active$/u.test(route)) return 'character_equipmenttabs';
 			if (/^commerce\/transactions\/current\/(?:buys|sells)$/u.test(route)) return 'commerce_transactions_current';
 			if (/^commerce\/transactions\/history\/(?:buys|sells)$/u.test(route)) return 'commerce_transactions_history';
 			return 'unknown';

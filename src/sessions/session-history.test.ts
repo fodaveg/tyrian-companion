@@ -243,12 +243,47 @@ describe('durable session history', () => {
 		});
 	});
 
+	it('scans schema v4 notes carrying the magic find source and its manual consumables part', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note({
+			tc_schema: 4, tc_magic_find: 333, tc_magic_find_source: 'derived', tc_magic_find_consumables: 0,
+		}));
+		await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({
+			status: 'ok', sessions: [{ sessionRef: 'a'.repeat(64) }],
+		});
+	});
+
+	it('keeps reading the schema v3 notes already written to the vault after the v4 bump', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/v3.md', await note({ tc_schema: 3, tc_magic_find: 250 }));
+		vault.contents.set('Sessions/v2.md', await note({ tc_session_ref: 'c'.repeat(64) }));
+		vault.contents.set('Sessions/v1.md', await note({ tc_schema: 1, tc_session_ref: 'd'.repeat(64) }));
+		await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({ status: 'ok' });
+		const scan = await new SessionHistoryService(vault).scan();
+		expect(scan.status).toBe('ok');
+		expect(scan.status === 'ok' ? scan.sessions.length : 0).toBe(3);
+	});
+
+	it('rejects a v4 note whose magic find provenance is missing or contradicts the total', async () => {
+		for (const content of [
+			// The two v4 keys are mandatory: a note claiming schema 4 without them is not a v4 note.
+			(await note({ tc_schema: 4 })).replace(/^tc_magic_find_source: .*$/mu, ''),
+			(await note({ tc_schema: 4 })).replace('tc_magic_find_source: "derived"', 'tc_magic_find_source: "guessed"'),
+			// The declared consumables part is inside the total, never larger than it.
+			await note({ tc_schema: 4, tc_magic_find: 10, tc_magic_find_consumables: 11 }),
+		]) {
+			const vault = new MemoryVault();
+			vault.contents.set('Sessions/bad.md', content);
+			await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({ status: 'conflict', invalid: 1 });
+		}
+	});
+
 	it('fails closed for corrupt blocks, future schemas, and duplicate session refs', async () => {
 		const corrupt = new MemoryVault();
 		corrupt.contents.set('Sessions/one.md', (await note()).replace('summary content', 'edited summary'));
 		await expect(new SessionHistoryService(corrupt).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const future = new MemoryVault();
-		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 4'));
+		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 5'));
 		await expect(new SessionHistoryService(future).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const duplicate = new MemoryVault();
 		duplicate.contents.set('Sessions/one.md', await note());
@@ -510,6 +545,13 @@ async function note(overrides: Record<string, string | number | null> = {}): Pro
 		tc_event: null, tc_event_source: null, tc_recommendation_action: null, tc_recommendation_quantity: null,
 		tc_recommendation_route: null, ...overrides,
 	};
+	if (frontmatter.tc_schema === 3 || frontmatter.tc_schema === 4) {
+		frontmatter.tc_positive_item_deltas_json ??= '[]';
+	}
+	if (frontmatter.tc_schema === 4) {
+		frontmatter.tc_magic_find_source ??= 'derived';
+		frontmatter.tc_magic_find_consumables ??= 0;
+	}
 	if (frontmatter.tc_schema === 1) {
 		delete frontmatter.tc_event; delete frontmatter.tc_event_source; delete frontmatter.tc_recommendation_action;
 		delete frontmatter.tc_recommendation_quantity; delete frontmatter.tc_recommendation_route;

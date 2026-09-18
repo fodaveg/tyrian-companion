@@ -29,7 +29,7 @@ const captured: SessionStartCaptureResult = {
 	snapshot: storageDeltaSnapshot(),
 	context: {
 		characterName: 'Astra Uno',
-		magicFind: { value: 321, source: 'manual' },
+		magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 		build: {
 			tab: 1,
 			name: 'Farm',
@@ -98,7 +98,7 @@ async function startedService(
 		{ capture: vi.fn(async () => structuredClone(captured)), captureFinal: finalCapture },
 		serviceOptions({ runtimeStore }),
 	);
-	await service.start({ characterName: 'Astra Uno', magicFind: 321 });
+	await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
 	return { service, captureFinal: finalCapture };
 }
 

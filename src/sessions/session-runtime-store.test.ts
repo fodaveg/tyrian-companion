@@ -33,7 +33,7 @@ const authority: SessionAuthority = {
 };
 const startContext: SessionStartContext = {
 	characterName: 'Astra Uno',
-	magicFind: { value: 321, source: 'manual' },
+	magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 	build: {
 		tab: 1,
 		name: 'Farm',

@@ -52,7 +52,7 @@ const finalSnapshot: SessionSnapshotReference = {
 
 const startContext: SessionStartContext = {
 	characterName: 'Fixture Character',
-	magicFind: { value: 321, source: 'manual' },
+	magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
 	build: {
 		tab: 1,
 		name: 'Farm',
@@ -274,10 +274,40 @@ describe('session state machine', () => {
 		})).toMatchObject({ status: 'rejected', reason: 'invalid_event' });
 	});
 
+	it('accepts a derived magic find whose breakdown and consumables bonus sum to value', () => {
+		const derivedContext: SessionStartContext = {
+			...startContext,
+			magicFind: {
+				value: 333, source: 'derived', consumablesBonus: 0,
+				breakdown: { luck: 300, achievements: 13, enrichment: 20 },
+			},
+		};
+		expect(transitionSession(stateAt('starting'), {
+			type: 'confirm_start', authority, baseline, startContext: derivedContext,
+		})).toMatchObject({ status: 'applied' });
+	});
+
 	it.each([
 		['missing character', { ...startContext, characterName: '' }],
-		['invalid magic find', { ...startContext, magicFind: { value: -1, source: 'manual' } }],
-		['future source', { ...startContext, magicFind: { value: 321, source: 'api' } }],
+		['negative magic find', { ...startContext, magicFind: { ...startContext.magicFind, value: -1 } }],
+		['unknown source', { ...startContext, magicFind: { ...startContext.magicFind, source: 'api' } }],
+		['derived without a breakdown', {
+			...startContext, magicFind: { value: 321, source: 'derived', consumablesBonus: 0, breakdown: null },
+		}],
+		['manual carrying a breakdown', {
+			...startContext,
+			magicFind: {
+				value: 321, source: 'manual', consumablesBonus: 0,
+				breakdown: { luck: 300, achievements: 13, enrichment: 20 },
+			},
+		}],
+		['derived breakdown that does not sum to value', {
+			...startContext,
+			magicFind: {
+				value: 321, source: 'derived', consumablesBonus: 0,
+				breakdown: { luck: 300, achievements: 13, enrichment: 0 },
+			},
+		}],
 		['invalid build', { ...startContext, build: { ...startContext.build, specializations: [] } }],
 		['capture before baseline', { ...startContext, capturedAt: BASELINE_STARTED_AT }],
 	])('rejects start context with %s', (_label, invalidContext) => {

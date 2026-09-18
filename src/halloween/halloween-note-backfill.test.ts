@@ -26,6 +26,18 @@ describe('Halloween session-note backfill', () => {
 		expect(result[1]?.observationId).toMatch(new RegExp(`^note:${'c'.repeat(64)}:[a-f0-9]{64}$`, 'u'));
 	});
 
+	it('gives complete coverage to a schema-4 note, which carries the same gains evidence as schema 3', async () => {
+		const account = 'b'.repeat(64);
+		const files = new Map([
+			['v4.md', await note({ tc_schema: 4, tc_event: 'halloween', tc_event_source: 'manual_explicit',
+				tc_account_ref: account, tc_session_ref: 'a'.repeat(64), tc_positive_item_deltas_json: '[[1,2]]',
+				tc_magic_find_source: 'unavailable', tc_magic_find_consumables: 0 })],
+		]);
+
+		const result = await scanHalloweenSessionNotes(vault(files), account);
+		expect(result).toMatchObject([{ coverage: 'complete', gains: [{ itemId: 1, quantity: 2 }] }]);
+	});
+
 	it('fails closed for minimal candidates and invalid managed hashes but ignores prose lookalikes', async () => {
 		const account = 'b'.repeat(64);
 		await expect(scanHalloweenSessionNotes(vault(new Map([
