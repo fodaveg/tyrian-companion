@@ -360,8 +360,8 @@ function isStartMagicFind(value: unknown): boolean {
 	if (!isRecord(value)
 		|| !exactKeys(value, ['value', 'source', 'consumablesBonus', 'breakdown'])
 		|| (value.source !== 'derived' && value.source !== 'manual' && value.source !== 'unavailable')
-		|| !nonNegativeInteger(value.value) || (value.value as number) > MAX_MAGIC_FIND
-		|| !nonNegativeInteger(value.consumablesBonus) || (value.consumablesBonus as number) > MAX_MAGIC_FIND) {
+		|| !nonNegativeInteger(value.value) || value.value > MAX_MAGIC_FIND
+		|| !nonNegativeInteger(value.consumablesBonus) || value.consumablesBonus > MAX_MAGIC_FIND) {
 		return false;
 	}
 	if (value.source !== 'derived') return value.breakdown === null;
@@ -372,8 +372,8 @@ function isStartMagicFind(value: unknown): boolean {
 		|| !nonNegativeInteger(value.breakdown.enrichment)) {
 		return false;
 	}
-	const total = (value.breakdown.luck as number) + (value.breakdown.achievements as number)
-		+ (value.breakdown.enrichment as number) + (value.consumablesBonus as number);
+	const total = value.breakdown.luck + value.breakdown.achievements
+		+ value.breakdown.enrichment + value.consumablesBonus;
 	return total === value.value;
 }
 
