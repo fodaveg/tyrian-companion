@@ -51,6 +51,7 @@ const REVIEWED_NET_IMPORT_FILES = ['src/alerts/alert-ingame-server.ts'];
 const REVIEWED_HTTP_IMPORT_FILES = [
 	'src/account/account-service.ts',
 	'src/account/guild-wars-2-client.ts',
+	'src/account/magic-find-service.ts',
 	'src/account/rate-limited-storage-snapshot-service.ts',
 	'src/account/storage-snapshot-service.ts',
 	'src/advisor/inventory-advisor-evidence.ts',
