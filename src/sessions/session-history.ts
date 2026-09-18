@@ -499,7 +499,7 @@ function isV4MagicFindMetadata(fm: Readonly<Record<string, string | number | nul
 	if (fm.tc_schema !== 4) return true;
 	return enumValue(fm.tc_magic_find_source, ['derived', 'manual', 'unavailable']) &&
 		safeNonNegative(fm.tc_magic_find_consumables) &&
-		(fm.tc_magic_find_consumables as number) <= (fm.tc_magic_find as number);
+		fm.tc_magic_find_consumables <= (fm.tc_magic_find as number);
 }
 
 /** The exact key set a note of this schema must carry, no more and no less. */

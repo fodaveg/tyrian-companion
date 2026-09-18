@@ -73,7 +73,7 @@ export class MagicFindService {
 
 	private async fetchLuck(operation: MagicFindOperation): Promise<number> {
 		const body = await operation.request(`account/luck?v=${encodeURIComponent(PINNED_SCHEMA)}`);
-		if (!Array.isArray(body)) throw new MagicFindResponseError('invalid_response');
+		if (!isUnknownArray(body)) throw new MagicFindResponseError('invalid_response');
 		if (body.length === 0) return magicFindFromLuck(0);
 		const entry = body[0];
 		if (body.length !== 1 || !isRecord(entry) || entry.id !== 'luck' || !nonNegativeInteger(entry.value)) {
@@ -206,6 +206,15 @@ function parseAccountAchievementEntry(value: unknown): AccountAchievementEntry |
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * `Array.isArray` narrows to `any[]` (a lib.es5 quirk), so indexing straight off an
+ * `Array.isArray`-checked `unknown` would assign `any` to `entry` below. This narrows to
+ * `unknown[]` instead, keeping the element itself unnamed until `isRecord` checks it.
+ */
+function isUnknownArray(value: unknown): value is unknown[] {
+	return Array.isArray(value);
 }
 
 function positiveInteger(value: unknown): value is number {
