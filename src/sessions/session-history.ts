@@ -54,7 +54,7 @@ export interface DurableSessionHistoryRecord {
 }
 
 export interface DurableSessionNoteEvidence {
-	schema: 1 | 2 | 3;
+	schema: 1 | 2 | 3 | 4;
 	event: 'halloween' | null;
 	sessionRef: string;
 	accountRef: string;
@@ -161,6 +161,9 @@ const V2_SESSION_KEYS = [
 	'tc_recommendation_route',
 ] as const;
 const V3_SESSION_KEYS = [...V2_SESSION_KEYS, 'tc_positive_item_deltas_json'] as const;
+// H17.1 derives magic find from the API instead of asking for it, so the total alone no longer
+// says where it came from: the source and the manually declared consumables part travel with it.
+const V4_SESSION_KEYS = [...V3_SESSION_KEYS, 'tc_magic_find_source', 'tc_magic_find_consumables'] as const;
 const CSV_COLUMNS = [
 	'session_ref', 'account_ref', 'started_at', 'ended_at', 'duration_ms', 'classification', 'confidence', 'scope',
 	'valuation_coverage', 'observed_immediate_copper', 'observed_listing_copper', 'sacks', 'sacks_per_hour_milli',
@@ -432,8 +435,9 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	if (note === null) return { status: hasTcHint(content) ? 'invalid' : 'non_candidate' };
 	const fm = note.frontmatter;
 	if (Object.keys(fm).length === 0) return { status: 'non_candidate' };
-	if (fm.tc_kind !== 'gw2_farming_session' || (fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3) ||
-		!hasExactKeys(fm, fm.tc_schema === 1 ? V1_SESSION_KEYS : fm.tc_schema === 2 ? V2_SESSION_KEYS : V3_SESSION_KEYS) ||
+	if (fm.tc_kind !== 'gw2_farming_session' ||
+		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4) ||
+		!hasExactKeys(fm, sessionKeysFor(fm.tc_schema)) ||
 		!note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
 	const sessionRef = fm.tc_session_ref;
 	const accountRef = fm.tc_account_ref;
@@ -447,8 +451,9 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 		Date.parse(endedAt) - Date.parse(startedAt) !== durationMs ||
 		!enumValue(classification, ['exact', 'estimated', 'contaminated']) || !enumValue(confidence, ['high', 'medium', 'low']) ||
 		scope !== 'observed_storage_net' || !isSessionMetadata(fm)) return { status: 'invalid' };
-	const positiveItemDeltas = fm.tc_schema === 3 ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
-	if (fm.tc_schema === 3 && positiveItemDeltas === null) return { status: 'invalid' };
+	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4;
+	const positiveItemDeltas = carriesItemDeltas ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
+	if (carriesItemDeltas && positiveItemDeltas === null) return { status: 'invalid' };
 	return { status: 'ok', session: {
 		sessionRef, accountRef,
 		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
@@ -482,7 +487,26 @@ function isSessionMetadata(fm: Readonly<Record<string, string | number | null>>)
 		validValuationMetadata(fm) && validReservationMetadata(fm) && validHoldMetadata(fm) &&
 		enumValue(fm.tc_recommendation_status, ['not_evaluated', 'invalid', 'blocked', 'ready', 'reserved_only']) &&
 		fm.tc_execution === 'manual_in_game' && fm.tc_side_effects === 'none' &&
-		isV2Metadata(fm);
+		isV2Metadata(fm) && isV4MagicFindMetadata(fm);
+}
+
+/**
+ * Schema 4 records where the magic find total came from and how much of it the player declared
+ * by hand. Notes written before it carry neither key, and `hasExactKeys` already rejected any
+ * that did, so there is nothing to validate for them.
+ */
+function isV4MagicFindMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
+	if (fm.tc_schema !== 4) return true;
+	return enumValue(fm.tc_magic_find_source, ['derived', 'manual', 'unavailable']) &&
+		safeNonNegative(fm.tc_magic_find_consumables) &&
+		(fm.tc_magic_find_consumables as number) <= (fm.tc_magic_find as number);
+}
+
+/** The exact key set a note of this schema must carry, no more and no less. */
+function sessionKeysFor(schema: 1 | 2 | 3 | 4): readonly string[] {
+	if (schema === 1) return V1_SESSION_KEYS;
+	if (schema === 2) return V2_SESSION_KEYS;
+	return schema === 3 ? V3_SESSION_KEYS : V4_SESSION_KEYS;
 }
 
 /** The renderer derives confidence from classification; no other pair is durable. */
@@ -533,7 +557,7 @@ function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boo
 }
 
 function validPositiveItemDeltas(fm: Readonly<Record<string, string | number | null>>): boolean {
-	if (fm.tc_schema !== 3) return true;
+	if (fm.tc_schema !== 3 && fm.tc_schema !== 4) return true;
 	return parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) !== null;
 }
 
