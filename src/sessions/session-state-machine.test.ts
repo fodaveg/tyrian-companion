@@ -284,7 +284,7 @@ describe('session state machine', () => {
 		};
 		expect(transitionSession(stateAt('starting'), {
 			type: 'confirm_start', authority, baseline, startContext: derivedContext,
-		})).toMatchObject({ status: 'ok' });
+		})).toMatchObject({ status: 'applied' });
 	});
 
 	it.each([
