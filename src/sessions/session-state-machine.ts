@@ -336,12 +336,7 @@ function isStartContext(value: unknown): value is SessionStartContext {
 		|| !exactKeys(value, ['characterName', 'magicFind', 'build', 'capturedAt'])
 		|| !validId(value.characterName)
 		|| !isIsoTimestamp(value.capturedAt)
-		|| !isRecord(value.magicFind)
-		|| !exactKeys(value.magicFind, ['value', 'source'])
-		|| value.magicFind.source !== 'manual'
-		|| !Number.isSafeInteger(value.magicFind.value)
-		|| (value.magicFind.value as number) < 0
-		|| (value.magicFind.value as number) > MAX_MAGIC_FIND
+		|| !isStartMagicFind(value.magicFind)
 		|| !isRecord(value.build)
 		|| !exactKeys(value.build, ['tab', 'name', 'profession', 'specializations', 'skills', 'aquaticSkills'])
 		|| !positiveInteger(value.build.tab)
@@ -354,6 +349,32 @@ function isStartContext(value: unknown): value is SessionStartContext {
 		|| !isBuildSkills(value.build.skills)
 		|| !isBuildSkills(value.build.aquaticSkills)) return false;
 	return true;
+}
+
+/**
+ * `breakdown` is present, and its three parts plus `consumablesBonus` must sum exactly to
+ * `value`, only for `source: 'derived'`; a `manual` or `unavailable` total has no per-component
+ * evidence, so `breakdown` must be `null` there instead (H17.1).
+ */
+function isStartMagicFind(value: unknown): boolean {
+	if (!isRecord(value)
+		|| !exactKeys(value, ['value', 'source', 'consumablesBonus', 'breakdown'])
+		|| (value.source !== 'derived' && value.source !== 'manual' && value.source !== 'unavailable')
+		|| !nonNegativeInteger(value.value) || (value.value as number) > MAX_MAGIC_FIND
+		|| !nonNegativeInteger(value.consumablesBonus) || (value.consumablesBonus as number) > MAX_MAGIC_FIND) {
+		return false;
+	}
+	if (value.source !== 'derived') return value.breakdown === null;
+	if (!isRecord(value.breakdown)
+		|| !exactKeys(value.breakdown, ['luck', 'achievements', 'enrichment'])
+		|| !nonNegativeInteger(value.breakdown.luck)
+		|| !nonNegativeInteger(value.breakdown.achievements)
+		|| !nonNegativeInteger(value.breakdown.enrichment)) {
+		return false;
+	}
+	const total = (value.breakdown.luck as number) + (value.breakdown.achievements as number)
+		+ (value.breakdown.enrichment as number) + (value.consumablesBonus as number);
+	return total === value.value;
 }
 
 function isBuildSpecialization(value: unknown): boolean {
@@ -380,6 +401,10 @@ function positiveInteger(value: unknown): value is number {
 
 function nullablePositiveInteger(value: unknown): value is number | null {
 	return value === null || positiveInteger(value);
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function stateAnchor(state: SessionInProgressState): string {

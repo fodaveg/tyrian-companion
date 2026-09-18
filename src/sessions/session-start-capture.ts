@@ -1,5 +1,6 @@
 import { HttpTransportError } from '../core/http';
 import type { GuildWars2Client, GuildWars2Operation } from '../account/guild-wars-2-client';
+import { composeMagicFind, MagicFindService, type MagicFindBreakdown } from '../account/magic-find-service';
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import type { StorageSnapshotService } from '../account/storage-snapshot-service';
 
@@ -7,7 +8,10 @@ export const MAX_MAGIC_FIND = 100_000;
 
 export interface SessionStartInput {
 	characterName: string;
-	magicFind: number;
+	/** `null` derives it from the Guild Wars 2 API instead of trusting a typed-in total. */
+	magicFind: number | null;
+	/** Food, utility, reinforcements, and other effects the API never exposes. Defaults to 0. */
+	consumablesBonus: number;
 }
 
 export interface BuildSkillSet {
@@ -30,12 +34,21 @@ export interface ActiveBuildReference {
 	aquaticSkills: BuildSkillSet;
 }
 
+/**
+ * `value` always includes `consumablesBonus`. `breakdown` is the API-derived split and is only
+ * ever present for `source: 'derived'`; every other source carries `null` because it has no
+ * per-component evidence to show.
+ */
+export interface SessionStartMagicFind {
+	value: number;
+	source: 'derived' | 'manual' | 'unavailable';
+	consumablesBonus: number;
+	breakdown: MagicFindBreakdown | null;
+}
+
 export interface SessionStartContext {
 	characterName: string;
-	magicFind: {
-		value: number;
-		source: 'manual';
-	};
+	magicFind: SessionStartMagicFind;
 	build: ActiveBuildReference;
 	capturedAt: string;
 }
@@ -68,13 +81,32 @@ export function normalizeSessionStartInput(value: SessionStartInput): SessionSta
 	if (!characterName || characterName.length > 64) {
 		throw new SessionStartCaptureError('invalid_input', 'Choose a valid character name.');
 	}
-	if (!Number.isSafeInteger(value.magicFind) || value.magicFind < 0 || value.magicFind > MAX_MAGIC_FIND) {
+	if (value.magicFind !== null && !validMagicFindComponent(value.magicFind)) {
 		throw new SessionStartCaptureError(
 			'invalid_input',
 			`Magic Find must be a whole number between 0 and ${MAX_MAGIC_FIND}.`,
 		);
 	}
-	return { characterName, magicFind: value.magicFind };
+	if (!validMagicFindComponent(value.consumablesBonus)) {
+		throw new SessionStartCaptureError(
+			'invalid_input',
+			`The consumables bonus must be a whole number between 0 and ${MAX_MAGIC_FIND}.`,
+		);
+	}
+	// A manual total and its consumables bonus are added together (`captureMagicFind` below); an
+	// account for which both happen to sit at their individual caps must still fail loudly here,
+	// not silently downstream when the state machine rejects the combined `SessionStartContext`.
+	if (value.magicFind !== null && value.magicFind + value.consumablesBonus > MAX_MAGIC_FIND) {
+		throw new SessionStartCaptureError(
+			'invalid_input',
+			`Magic Find must be a whole number between 0 and ${MAX_MAGIC_FIND}.`,
+		);
+	}
+	return { characterName, magicFind: value.magicFind, consumablesBonus: value.consumablesBonus };
+}
+
+function validMagicFindComponent(value: number): boolean {
+	return Number.isSafeInteger(value) && value >= 0 && value <= MAX_MAGIC_FIND;
 }
 
 /** Captures a stable baseline and the selected character's active build with one pinned key. */
@@ -82,6 +114,7 @@ export class SessionStartCaptureService {
 	constructor(
 		private readonly client: Pick<GuildWars2Client, 'beginOperation'>,
 		private readonly snapshots: Pick<StorageSnapshotService, 'captureWithOperation'>,
+		private readonly magicFind: Pick<MagicFindService, 'deriveMagicFind'> = new MagicFindService(),
 		private readonly now: () => Date = () => new Date(),
 	) {}
 
@@ -108,7 +141,11 @@ export class SessionStartCaptureService {
 			);
 		}
 
-		const build = await captureActiveBuild(operation, input.characterName);
+		// One operation, two independent reads: the pinned API key never opens a second one.
+		const [build, magicFind] = await Promise.all([
+			captureActiveBuild(operation, input.characterName),
+			this.captureMagicFind(operation, input),
+		]);
 		const capturedAt = this.now().toISOString();
 		if (Date.parse(capturedAt) < Date.parse(snapshot.completedAt)) {
 			throw new SessionStartCaptureError('invalid_build', 'The local clock moved backwards.');
@@ -117,7 +154,7 @@ export class SessionStartCaptureService {
 			snapshot,
 			context: {
 				characterName: input.characterName,
-				magicFind: { value: input.magicFind, source: 'manual' },
+				magicFind,
 				build,
 				capturedAt,
 			},
@@ -127,6 +164,42 @@ export class SessionStartCaptureService {
 	/** Captures the stable account boundary used to close a manual session. */
 	async captureFinal(): Promise<StorageSnapshot> {
 		return this.snapshots.captureWithOperation(this.client.beginOperation());
+	}
+
+	/**
+	 * A typed-in total always wins (`source: 'manual'`). Otherwise this derives Luck, achievement
+	 * points, and amulet enrichment from the API; a failed derivation (missing scope, timeout,
+	 * malformed response) never blocks the session, it just starts with `source: 'unavailable'`
+	 * and only the consumables bonus counted — H17.1's signed rule that nothing here asks the
+	 * player for approval or throws their session away.
+	 */
+	private async captureMagicFind(
+		operation: Pick<GuildWars2Operation, 'request'>,
+		input: SessionStartInput,
+	): Promise<SessionStartMagicFind> {
+		if (input.magicFind !== null) {
+			return {
+				value: input.magicFind + input.consumablesBonus,
+				source: 'manual',
+				consumablesBonus: input.consumablesBonus,
+				breakdown: null,
+			};
+		}
+		const derivation = await this.magicFind.deriveMagicFind(operation, input.characterName);
+		if (derivation.status === 'ok') {
+			return {
+				value: composeMagicFind(derivation.breakdown, input.consumablesBonus),
+				source: 'derived',
+				consumablesBonus: input.consumablesBonus,
+				breakdown: derivation.breakdown,
+			};
+		}
+		return {
+			value: input.consumablesBonus,
+			source: 'unavailable',
+			consumablesBonus: input.consumablesBonus,
+			breakdown: null,
+		};
 	}
 }
 

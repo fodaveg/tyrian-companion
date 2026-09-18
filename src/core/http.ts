@@ -14,6 +14,10 @@ export const HTTP_LOGICAL_ENDPOINTS = [
 	// SPEC-recomendacion-por-objeto.md M4: the public legendary-id list (no key) and the
 	// account-bound owned-count lookup (`unlocks` scope) it is discounted against.
 	'legendaryarmory', 'account_legendaryarmory',
+	// H17.1 Magic Find derivation: the account's consumed Luck, the character's active PvE
+	// equipment tab (read for the amulet's enrichment slot), and the public achievement catalog
+	// batches used to convert account/achievements progress into achievement points.
+	'account_luck', 'character_equipmenttabs', 'achievements',
 	// The one endpoint that is not ArenaNet's: the once-per-session price-history
 	// seed. It is named here so diagnostics can count it without ever recording
 	// the URL, exactly like every official route above.
