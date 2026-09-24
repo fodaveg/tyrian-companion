@@ -15,6 +15,7 @@ import {
 } from '../advisor/inventory-position-recommendation';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { ReservationRequirement } from '../economy/reservation-model';
+import { prioritizeSpaceFreeingActions } from '../inventory/storage-space';
 import type {
 	InventoryAdvisorViewModel,
 	InventoryAdvisorViewModelGroup,
@@ -149,6 +150,111 @@ export function filterInventoryAdvisorRows(
 		&& (filters.showKeep === true || row.action !== 'keep')
 		&& (filters.showReview === true || (row.action !== 'review' && row.action !== 'discard_review'))
 		&& (query.length === 0 || row.name.toLowerCase().includes(query) || String(row.itemId).includes(query)));
+}
+
+/** Why an object is left out of the visible list, in the order the scope line names them. */
+export type InventoryAdvisorOutsideReason =
+	| 'bank' | 'materials' | 'delivery' | 'other_characters' | 'keep' | 'review' | 'filters';
+
+const OUTSIDE_REASONS: readonly InventoryAdvisorOutsideReason[] = [
+	'bank', 'materials', 'delivery', 'other_characters', 'keep', 'review', 'filters',
+];
+
+/** What the list is showing and how many objects it leaves out, so the default view never hides them silently. */
+export interface InventoryAdvisorScopeSummary {
+	/** The stores the list reads, or null when it is scoped to one character's bags. */
+	readonly sources: ReadonlyArray<'bags' | 'bank' | 'materials' | 'delivery'> | null;
+	readonly character: string | null;
+	/** Distinct objects in the analysis with no visible row at all. */
+	readonly outsideItems: number;
+	readonly outsideReasons: readonly InventoryAdvisorOutsideReason[];
+}
+
+/**
+ * H18.18: the scope line. An object counts as "outside the filter" only when none of its rows is
+ * visible, so a stack split between bags and bank is never counted twice; the reasons say which
+ * switches (bank, materials, keep, review…) would bring the hidden ones back.
+ */
+export function inventoryAdvisorScopeSummary(
+	rows: readonly InventoryAdvisorViewRow[],
+	filters: InventoryAdvisorViewFilters,
+): InventoryAdvisorScopeSummary {
+	const character = filters.character !== undefined && filters.character !== ALL_CHARACTERS ? filters.character : null;
+	const visibleItemIds = new Set(filterInventoryAdvisorRows(rows, filters).map((row) => row.itemId));
+	const outside = new Set<number>();
+	const reasons = new Set<InventoryAdvisorOutsideReason>();
+	for (const row of rows) {
+		if (visibleItemIds.has(row.itemId)) continue;
+		outside.add(row.itemId);
+		for (const { location } of row.allocations) {
+			const reason = outsideLocationReason(location, character);
+			if (reason !== null && !inScope(location, filters, character)) reasons.add(reason);
+		}
+		if (scopeRow(row, filters) === null) continue;
+		if (row.action === 'keep' && filters.showKeep !== true) reasons.add('keep');
+		else if ((row.action === 'review' || row.action === 'discard_review') && filters.showReview !== true) reasons.add('review');
+		else reasons.add('filters');
+	}
+	return {
+		sources: character !== null ? null : [
+			'bags' as const,
+			...(filters.includeBank === true ? ['bank' as const] : []),
+			...(filters.includeMaterials === true ? ['materials' as const] : []),
+			...(filters.includeDelivery === true ? ['delivery' as const] : []),
+		],
+		character,
+		outsideItems: outside.size,
+		outsideReasons: OUTSIDE_REASONS.filter((reason) => reasons.has(reason)),
+	};
+}
+
+function inScope(
+	location: InventoryAdvisorViewRow['allocations'][number]['location'],
+	filters: InventoryAdvisorViewFilters,
+	character: string | null,
+): boolean {
+	return scopeRow({ ...EMPTY_SCOPE_PROBE, allocations: [{ positionRef: '#', quantity: 1, location }] }, {
+		...filters, character: character ?? ALL_CHARACTERS,
+	}) !== null;
+}
+
+function outsideLocationReason(
+	location: InventoryAdvisorViewRow['allocations'][number]['location'],
+	character: string | null,
+): InventoryAdvisorOutsideReason | null {
+	switch (location.source) {
+		case 'bank': return 'bank';
+		case 'materials': return 'materials';
+		case 'commerce_delivery': return 'delivery';
+		case 'character':
+		case 'shared_inventory': return character === null ? null : 'other_characters';
+		default: return null;
+	}
+}
+
+/** A neutral one-unit row used only to ask `scopeRow` whether one location is inside the scope. */
+const EMPTY_SCOPE_PROBE: InventoryAdvisorViewRow = {
+	id: '#', itemId: 0, name: '', icon: null, ownedQuantity: 1, availableQuantity: 1, action: 'review', quantity: 1,
+	allocations: [], reasonCodes: [], protectionReasons: [], value: { status: 'unavailable', route: null },
+	marketComparison: null, burden: null,
+	coverage: { snapshot: 'complete', inventory: 'complete', catalog: 'complete', prices: 'complete', reservations: 'complete', accountSignals: 'complete', rules: 'complete' },
+	irreversibleReviewOnly: false, discardProof: null,
+};
+
+/**
+ * H18.15 (David, 24 sep 2026): with little free space, the rows that empty whole slots go first
+ * (most slots first, then gold); with plenty of space, or while the space is unknown, the value
+ * order the list already uses stands. Ties keep that order.
+ */
+export function prioritizeInventoryAdvisorRowsBySpace(
+	rows: readonly InventoryAdvisorViewRow[],
+	lowSpace: { isLow: boolean } | null | undefined,
+): InventoryAdvisorViewRow[] {
+	if (lowSpace?.isLow !== true) return [...rows];
+	return prioritizeSpaceFreeingActions(
+		rows.map((row) => ({ row, slotsFreed: row.slotsFreed ?? 0, goldValue: rowCopper(row) })),
+		lowSpace,
+	).map((entry) => entry.row);
 }
 
 /** Lists the exact characters observed in the model, without inventing an empty roster entry. */
@@ -533,7 +639,10 @@ function mountInventoryAdvisorView(
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const allRows = visible ? flattenInventoryAdvisorRows(model.groups) : [];
 		const order = filters.sort ?? 'value_desc';
-		const rows = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, filters), order, translator.locale) : [];
+		const lowSpace = model.storageSpace?.lowSpace ?? null;
+		const sorted = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, filters), order, translator.locale) : [];
+		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
+		const rows = order === 'value_desc' ? prioritizeInventoryAdvisorRowsBySpace(sorted, lowSpace) : sorted;
 		const directRows = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, {
 			...filters, action: 'all', showKeep: false, showReview: false,
 		}), order, translator.locale) : [];
@@ -547,6 +656,10 @@ function mountInventoryAdvisorView(
 				advancedFilters.open = true;
 				updateFilters();
 				action.focus();
+			},
+			{
+				scope: inventoryAdvisorScopeSummary(allRows, filters),
+				storageSpace: model.storageSpace ?? null,
 			},
 		));
 		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
@@ -751,9 +864,13 @@ function renderResults(
 	showEmptyMessage: boolean,
 	characterScope: string | null,
 	onSelectAction: (action: DirectInventoryAdvisorAction) => void,
+	context: { scope: InventoryAdvisorScopeSummary; storageSpace: InventoryAdvisorStorageSpaceView | null },
 ): HTMLElement {
 	const content = createDiv();
 	content.className = 'tyrian-inventory-advisor__results-content';
+	if (context.storageSpace !== null) content.append(renderStorageSpace(context.storageSpace, translator));
+	content.append(renderScopeSummary(context.scope, translator));
+	const showSlotsFreed = context.storageSpace?.lowSpace?.isLow === true;
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
 		scopeNote.className = 'tyrian-inventory-advisor__scope-note';
@@ -772,9 +889,82 @@ function renderResults(
 	}
 	const groups = groupInventoryAdvisorRows(rows, groupBy);
 	const concentration = inventoryAdvisorValueConcentration(rows);
-	content.append(renderTable(groups, groupBy, translator, concentration));
-	content.append(renderCards(groups, groupBy, translator, concentration));
+	content.append(renderTable(groups, groupBy, translator, concentration, showSlotsFreed));
+	content.append(renderCards(groups, groupBy, translator, concentration, showSlotsFreed));
 	return content;
+}
+
+type InventoryAdvisorStorageSpaceView = NonNullable<InventoryAdvisorViewModel['storageSpace']>;
+
+/**
+ * H18.15: free bag and bank slots, the low-space verdict with the order it implies, and the
+ * material capacity. A store the capture did not read says so instead of showing a number.
+ */
+function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceView, translator: Translator): HTMLElement {
+	const section = createEl('section');
+	section.className = 'tyrian-inventory-advisor__storage-space';
+	section.setAttribute('aria-label', translator.t('advisor.view.storage.title'));
+	const stores = createEl('p');
+	stores.className = 'tyrian-inventory-advisor__storage-stores';
+	stores.textContent = translator.t('advisor.view.storage.freeSlots', {
+		stores: ([['bags', storageSpace.bags], ['bank', storageSpace.bank], ['sharedInventory', storageSpace.sharedInventory]] as const)
+			.map(([store, count]) => count === null
+				? translator.t('advisor.view.storage.unknown', { store: translator.t(`advisor.view.storage.name.${store}`) })
+				: translator.t('advisor.view.storage.count', {
+					store: translator.t(`advisor.view.storage.name.${store}`), free: count.free, total: count.total,
+				}))
+			.join(' · '),
+	});
+	section.append(stores);
+	const lowSpace = storageSpace.lowSpace;
+	const verdict = createEl('p');
+	verdict.className = 'tyrian-inventory-advisor__storage-verdict';
+	if (lowSpace === null) verdict.textContent = translator.t('advisor.view.storage.lowUnknown');
+	else {
+		verdict.setAttribute('data-low-space', String(lowSpace.isLow));
+		verdict.textContent = translator.t(lowSpace.isLow ? 'advisor.view.storage.low' : 'advisor.view.storage.plenty', {
+			free: lowSpace.freeSlots, threshold: lowSpace.thresholdFreeSlots,
+		});
+		const meter = createEl('meter');
+		meter.className = 'tyrian-inventory-advisor__storage-meter';
+		meter.setAttribute('min', '0');
+		meter.setAttribute('max', String(lowSpace.totalSlots));
+		meter.setAttribute('value', String(lowSpace.totalSlots - lowSpace.freeSlots));
+		meter.setAttribute('high', String(Math.max(0, lowSpace.totalSlots - lowSpace.thresholdFreeSlots)));
+		meter.setAttribute('aria-label', translator.t('advisor.view.storage.meter'));
+		section.append(meter);
+	}
+	section.append(verdict);
+	const capacity = storageSpace.materialCapacity;
+	if (capacity !== null) {
+		const materials = createEl('p');
+		materials.className = 'tyrian-inventory-advisor__storage-materials';
+		materials.textContent = translator.t('advisor.view.storage.materials', {
+			capacity: capacity.source === 'observed_minimum'
+				? translator.t('advisor.view.materialStorage.atLeast', { capacity: capacity.quantity }) : capacity.quantity,
+			source: translator.t(`advisor.view.materialStorage.source.${capacity.source}`),
+		});
+		section.append(materials);
+	}
+	return section;
+}
+
+/** H18.18: "Mostrando: … · N objetos fuera del filtro (…)", so the default scope never hides objects silently. */
+function renderScopeSummary(scope: InventoryAdvisorScopeSummary, translator: Translator): HTMLElement {
+	const line = createEl('p');
+	line.className = 'tyrian-inventory-advisor__scope-summary';
+	const list = new Intl.ListFormat(translator.locale, { style: 'long', type: 'conjunction' });
+	const showing = translator.t('advisor.view.scope.showing', {
+		scope: scope.character !== null
+			? translator.t('advisor.view.scope.character', { character: scope.character })
+			: list.format((scope.sources ?? []).map((source) => translator.t(`advisor.view.scope.source.${source}`))),
+	});
+	line.textContent = scope.outsideItems === 0 ? showing : `${showing} · ${translator.t(
+		scope.outsideItems === 1 ? 'advisor.view.scope.outsideOne' : 'advisor.view.scope.outsideMany', {
+			count: scope.outsideItems,
+			reasons: scope.outsideReasons.map((reason) => translator.t(`advisor.view.scope.reason.${reason}`)).join(', '),
+		})}`;
+	return line;
 }
 
 type DirectInventoryAdvisorAction = Exclude<InventoryAdvisorViewFilterAction, 'keep' | 'review'>;
@@ -850,6 +1040,7 @@ function renderTable(
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
 	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
+	showSlotsFreed = false,
 ): HTMLTableElement {
 	const table = createEl('table');
 	table.className = 'tyrian-inventory-advisor__table';
@@ -877,7 +1068,7 @@ function renderTable(
 		groupCell.textContent = groupLabel(group.key, groupBy, translator);
 		groupRow.append(groupCell);
 		body.append(groupRow);
-		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null));
+		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null, showSlotsFreed));
 		body.append(renderSubtotalRow(group.rows, translator));
 		table.append(body);
 	}
@@ -903,6 +1094,7 @@ function renderTableRow(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
 	concentration: InventoryAdvisorValueConcentration | null,
+	showSlotsFreed: boolean,
 ): HTMLTableRowElement {
 	const tableRow = createEl('tr');
 	const item = createEl('th');
@@ -916,7 +1108,7 @@ function renderTableRow(
 	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
 	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
 	tableRow.append(evidenceCell(row.coverage, translator));
-	tableRow.append(explanationCell(row, translator));
+	tableRow.append(explanationCell(row, translator, showSlotsFreed));
 	return tableRow;
 }
 
@@ -968,7 +1160,7 @@ function evidenceCell(coverage: InventoryAdvisorViewCoverage, translator: Transl
 	return cell;
 }
 
-function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): HTMLTableCellElement {
+function explanationCell(row: InventoryAdvisorViewRow, translator: Translator, showSlotsFreed: boolean): HTMLTableCellElement {
 	const cell = createEl('td');
 	cell.className = tableColumnClass('explanation');
 	const explanation = createEl('p');
@@ -981,7 +1173,7 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 		momentLine.textContent = moment;
 		cell.append(momentLine);
 	}
-	const context = rowContextDetails(row, translator);
+	const context = rowContextDetails(row, translator, showSlotsFreed);
 	if (context !== null) cell.append(context);
 	const season = containerSeasonNotice(row, translator);
 	if (season !== null) cell.append(season);
@@ -999,6 +1191,7 @@ function renderCards(
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
 	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
+	showSlotsFreed = false,
 ): HTMLElement {
 	const cards = createDiv();
 	cards.className = 'tyrian-inventory-advisor__cards';
@@ -1026,7 +1219,7 @@ function renderCards(
 			addDefinition(list, translator.t('advisor.view.explanation'),
 				moment === null ? explanationLabel(row, translator) : `${explanationLabel(row, translator)} · ${moment}`);
 			article.append(list);
-			const context = rowContextDetails(row, translator);
+			const context = rowContextDetails(row, translator, showSlotsFreed);
 			if (context !== null) article.append(context);
 			const advanced = advancedEvidenceDetails(row.coverage, translator);
 			if (advanced !== null) article.append(advanced);
@@ -1283,11 +1476,22 @@ function explanationLabel(row: InventoryAdvisorViewRow, translator: Translator):
 		: row.reasonCodes.map((code) => translator.t(`advisor.view.reason.${code}`)).join(' · ');
 }
 
-function rowContextDetails(row: InventoryAdvisorViewRow, translator: Translator): HTMLDListElement | null {
+function rowContextDetails(
+	row: InventoryAdvisorViewRow,
+	translator: Translator,
+	showSlotsFreed = false,
+): HTMLDListElement | null {
+	// H18.15: with little free space the list is ordered by it, so each row says what it frees.
+	const slotsFreed = showSlotsFreed && (row.slotsFreed ?? 0) > 0 ? row.slotsFreed ?? 0 : 0;
 	if (row.burden === null && row.protectionReasons.length === 0 && row.marketComparison === null
-		&& row.materialStorage == null) return null;
+		&& row.materialStorage == null && slotsFreed === 0) return null;
 	const list = createEl('dl');
 	list.className = 'tyrian-inventory-advisor__row-context';
+	if (slotsFreed > 0) addDefinition(
+		list,
+		translator.t('advisor.view.slotsFreed.label'),
+		translator.t(slotsFreed === 1 ? 'advisor.view.slotsFreed.one' : 'advisor.view.slotsFreed.many', { count: slotsFreed }),
+	);
 	if (row.materialStorage != null) addDefinition(
 		list,
 		translator.t('advisor.view.materialStorage.capacity'),

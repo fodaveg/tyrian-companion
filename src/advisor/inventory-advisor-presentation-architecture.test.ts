@@ -93,7 +93,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../advisor/inventory-position-recommendation',
 			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
-			'./sell-signal-line'],
+			'./sell-signal-line',
+			// H18.15: the pure "free space first when low, gold first otherwise" ordering; no I/O.
+			'../inventory/storage-space'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {
