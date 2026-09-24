@@ -3413,11 +3413,6 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": []
 		},
-		"src/economy/models/halloween-festival-anchors.ts": {
-			"classification": "production_source",
-			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
-			"boundaries": []
-		},
 		"src/economy/models/halloween-season.ts": {
 			"classification": "production_source",
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
