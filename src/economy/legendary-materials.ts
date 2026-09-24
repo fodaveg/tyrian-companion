@@ -139,6 +139,16 @@ export function legendaryResolvableRequirements(
 		.map((leaf) => ({ itemId: leaf.itemId, quantity: leaf.quantity }));
 }
 
+/**
+ * H18.1 (audit 2026-09-24 §3.A): every leaf item id ANY curated entry lists, resolvable or not.
+ * A chosen legendary without its own entry has an unknown bill of materials; the materials the
+ * curated legendaries share are the best available statement of what it probably needs too, so
+ * their positions are shown as uncertain rather than free (`InventoryVaultCaptureService`).
+ */
+export function legendaryMaterialsTableItemIds(table: LegendaryMaterialsTableV1): ReadonlySet<number> {
+	return new Set(table.entries.flatMap((entry) => entry.materials.map((leaf) => leaf.itemId)));
+}
+
 function record(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

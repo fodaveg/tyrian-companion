@@ -11,9 +11,17 @@ import { seasonalWindowClosesAfterMs, seasonalWindowOpensAfterMs, type SeasonalW
 const CAPTURED_AT_MS = Date.parse('2026-09-11T12:00:00.000Z');
 const MAX_PRICE_AGE_MS = 900_000;
 
+/**
+ * `todayBidCopper` defaults to the series' own close for the capture's day (500 when it has none),
+ * so the scenarios written before H18.2, which put "today" at the end of the series, keep ranking
+ * the same value. The H18.2 tests below set it explicitly to separate the two.
+ */
 function baseInput(overrides: Partial<PositionRecommendationInput> = {}): PositionRecommendationInput {
+	const capturedAtMs = overrides.capturedAtMs ?? CAPTURED_AT_MS;
+	const today = new Date(capturedAtMs).toISOString().slice(0, 10);
+	const todayClose = (overrides.priceHistoryDaily ?? []).find((entry) => entry.dayUtc === today)?.bid?.closeCopper;
 	return {
-		capturedAtMs: CAPTURED_AT_MS,
+		capturedAtMs,
 		priceHistoryEnabled: true,
 		totalSellCopper: 200_000,
 		capitalThresholdCopper: 100_000,
@@ -23,9 +31,16 @@ function baseInput(overrides: Partial<PositionRecommendationInput> = {}): Positi
 		priceHistoryRequiredDays: 42,
 		seasonal: null,
 		legendaryShortfall: null,
+		freeQuantity: 1,
+		todayBidCopper: todayClose ?? 500,
+		untradeable: false,
 		...overrides,
 	};
 }
+
+const NO_EVIDENCE = {
+	missing: null, pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+} as const;
 
 const WINTER_WINDOW: SeasonalWindowV1 = {
 	version: 1, seasonId: 'winter-test', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12,
@@ -91,10 +106,7 @@ function dailySeries(days: number, startCopper: number, step: number, endMs = CA
 describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () => {
 	it('rule 1: price history disabled always reviews, regardless of capital or price data', () => {
 		const result = recommendPosition(baseInput({ priceHistoryEnabled: false, totalSellCopper: 999_999_999 }));
-		expect(result).toEqual({
-			action: 'review', reason: 'price_history_disabled', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		});
+		expect(result).toEqual({ action: 'review', reason: 'price_history_disabled', until: null, ...NO_EVIDENCE });
 	});
 
 	it('rule 2: capital below the threshold holds, even with price history enabled', () => {
@@ -105,9 +117,17 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 		expect(result.missing).toBeNull();
 	});
 
-	it('rule 2: a null totalSellCopper (undemonstrated) is treated as below threshold, not as "unknown but fine"', () => {
-		const result = recommendPosition(baseInput({ totalSellCopper: null }));
-		expect(result).toMatchObject({ action: 'hold', reason: 'below_capital_threshold' });
+	/**
+	 * H18.2 (audit 2026-09-24 §3.A, `inventory-position-recommendation.ts:172` at a2584af): before
+	 * the fix this read `hold`/`below_capital_threshold`, "I don't know what it's worth" passing for
+	 * "it's worth little". Unknown now has its own reason, and it is a `review`, never a `hold`.
+	 */
+	it('rule 2: a null totalSellCopper (undemonstrated) is price_unknown, never below_capital_threshold', () => {
+		const result = recommendPosition(baseInput({ totalSellCopper: null, priceHistoryDaily: dailySeries(42, 100, 10) }));
+		expect(result).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+		// And a KNOWN small value keeps the capital reason: the two never share an outcome.
+		const small = recommendPosition(baseInput({ totalSellCopper: 1 }));
+		expect(small).toMatchObject({ action: 'hold', reason: 'below_capital_threshold' });
 	});
 
 	it('rule 3: insufficient history reviews, and NEVER holds — "unknown" and "cheap" must never share an outcome', () => {
@@ -125,9 +145,9 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 
 	it('an item with no history at all is insufficient_history, not a crash or a silent sell', () => {
 		const result = recommendPosition(baseInput({ priceHistoryDaily: [] }));
+		// H18.2: today's quote is the one covered day; no history day exists to date.
 		expect(result).toEqual({
-			action: 'review', reason: 'price_history_insufficient', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: 0,
+			action: 'review', reason: 'price_history_insufficient', until: null, ...NO_EVIDENCE, priceCoverageDays: 1,
 		});
 	});
 
@@ -268,21 +288,22 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, regla b)', (
 			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
 		}));
 		expect(result).toEqual({
-			action: 'review', reason: 'insufficient_reference', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
+			action: 'review', reason: 'insufficient_reference', until: null, ...NO_EVIDENCE,
+			priceHistoryLastDay: '2026-12-19',
 		});
 	});
 
-	it('undecidable (no_close_today) -> review, never a silent fall-through to rule (c)', () => {
-		// The series ends 5 days before `capturedAtMs`: there is no entry for today at all.
+	/**
+	 * H18.2 replaced this case's old outcome (`review`/`no_close_today`, read off the history): the
+	 * history no longer supplies today's price, the live quote does. Without one, the rule never
+	 * runs at all, and it is still a `review`, never a silent fall-through to rule (c).
+	 */
+	it('no quote today -> review/price_unknown, never a silent fall-through to rule (c)', () => {
 		const daily = bidSeries(30, WINTER_CAPTURED_AT_MS - 5 * 86_400_000, () => 500);
 		const result = recommendPosition(baseInput({
-			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(), todayBidCopper: null,
 		}));
-		expect(result).toEqual({
-			action: 'review', reason: 'no_close_today', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		});
+		expect(result).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
 	});
 
 	it('an item with no festival calendar entry (seasonal: null) is unaffected by this rule', () => {
@@ -346,10 +367,7 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, real festiva
 describe('rule (a): hold_for_legendary (M4)', () => {
 	it('a positive legendaryShortfall wins over everything, including price history disabled', () => {
 		const result = recommendPosition(baseInput({ priceHistoryEnabled: false, legendaryShortfall: 40 }));
-		expect(result).toEqual({
-			action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null,
-			missing: 40, pricePercentile: null, priceCoverageDays: null,
-		});
+		expect(result).toEqual({ action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null, ...NO_EVIDENCE, missing: 40 });
 	});
 
 	it('a positive legendaryShortfall wins over an in-season sell window too', () => {
@@ -367,5 +385,96 @@ describe('rule (a): hold_for_legendary (M4)', () => {
 	it('null legendaryShortfall never triggers rule (a)', () => {
 		const result = recommendPosition(baseInput({ legendaryShortfall: null }));
 		expect(result.action).not.toBe('hold_for_legendary');
+	});
+});
+
+/**
+ * H18.1 (audit 2026-09-24 §3.A). At a2584af a position with every unit reserved and no shortfall
+ * fell through to rules (b)/(c): inside its selling window it read `sell`/`seasonal_sell_window`,
+ * with 100 reserved and 0 free (Codex's probe, repeated by Claude).
+ */
+describe('recommendPosition: free quantity (H18.1)', () => {
+	it('a fully reserved position (free 0, no shortfall) never reads sell, inside its selling window or at the top of its band', () => {
+		const inSeason = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500),
+			seasonal: seasonalInput(), legendaryShortfall: 0, freeQuantity: 0,
+		}));
+		expect(inSeason).toEqual({ action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null, ...NO_EVIDENCE, missing: 0 });
+		const topOfBand = recommendPosition(baseInput({
+			priceHistoryDaily: dailySeries(42, 100, 10), legendaryShortfall: 0, freeQuantity: 0,
+		}));
+		expect(topOfBand).toMatchObject({ action: 'hold_for_legendary', reason: 'reserved_for_goal' });
+	});
+
+	it('an uncertain free share (a goal without a materials table) is review/reservation_uncertain, never sell', () => {
+		const result = recommendPosition(baseInput({ priceHistoryDaily: dailySeries(42, 100, 10), freeQuantity: null }));
+		expect(result).toEqual({ action: 'review', reason: 'reservation_uncertain', until: null, ...NO_EVIDENCE });
+	});
+
+	it('a position with free units left still gets the ordinary rules', () => {
+		const result = recommendPosition(baseInput({ priceHistoryDaily: dailySeries(42, 100, 10), legendaryShortfall: 0, freeQuantity: 5 }));
+		expect(result).toMatchObject({ action: 'sell', reason: 'bid_above_reference' });
+	});
+});
+
+/**
+ * H18.2 (audit 2026-09-24 §3.A, `price-history-statistics.ts:77-91` at a2584af): the last close of
+ * the history was ranked as today's price, so a history that ended 60 days ago renewed a 15-minute
+ * recommendation as if it were fresh.
+ */
+describe('recommendPosition: today\'s price separated from the history (H18.2)', () => {
+	const DAY_MS = 86_400_000;
+	/** 60 rising closes (100..690) that end 60 days before the capture: stale, but inside the 180-day window. */
+	const staleHistory = dailySeries(60, 100, 10, CAPTURED_AT_MS - 60 * DAY_MS);
+	const staleLastDay = new Date(CAPTURED_AT_MS - 60 * DAY_MS).toISOString().slice(0, 10);
+
+	it('with an old history and a fresh quote, today\'s quote decides: cheap today holds, dear today sells', () => {
+		const cheap = recommendPosition(baseInput({ priceHistoryDaily: staleHistory, todayBidCopper: 150 }));
+		// Before the fix: `sell`/`bid_above_reference` at percentile 100, the stale 690 read as today.
+		expect(cheap).toMatchObject({ action: 'hold', reason: 'below_local_band', pricePercentile: 11, priceCoverageDays: 61 });
+		const dear = recommendPosition(baseInput({ priceHistoryDaily: staleHistory, todayBidCopper: 1_000 }));
+		expect(dear).toMatchObject({ action: 'sell', reason: 'bid_above_reference', pricePercentile: 100 });
+	});
+
+	it('today\'s quote and the history carry their own dates, neither of them in `until`', () => {
+		const result = recommendPosition(baseInput({ priceHistoryDaily: staleHistory, todayBidCopper: 1_000 }));
+		expect(result.priceQuotedAt).toBe(new Date(CAPTURED_AT_MS).toISOString());
+		expect(result.priceHistoryLastDay).toBe(staleLastDay);
+		expect(result.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
+	});
+
+	it('without a quote today no time-bound recommendation is emitted, even over a dense history that ends today', () => {
+		const dense = recommendPosition(baseInput({ priceHistoryDaily: dailySeries(42, 100, 10), todayBidCopper: null }));
+		expect(dense).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+		const inSeason = recommendPosition(baseInput({
+			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500),
+			seasonal: seasonalInput(), todayBidCopper: null,
+		}));
+		expect(inSeason).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+	});
+
+	it('an item the trading post will never quote is hold/not_tradeable, not a doubt, even with price history off', () => {
+		for (const priceHistoryEnabled of [true, false]) {
+			const result = recommendPosition(baseInput({ priceHistoryEnabled, untradeable: true, todayBidCopper: null, totalSellCopper: null }));
+			expect(result).toEqual({ action: 'hold', reason: 'not_tradeable', until: null, ...NO_EVIDENCE });
+		}
+		// A tradeable item without a quote today stays the doubt it is.
+		const tradeable = recommendPosition(baseInput({ untradeable: false, todayBidCopper: null, totalSellCopper: null }));
+		expect(tradeable).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+		// A reservation still decides first: an untradeable stack held for a goal says so.
+		const reserved = recommendPosition(baseInput({ untradeable: true, legendaryShortfall: 0, freeQuantity: 0 }));
+		expect(reserved).toMatchObject({ action: 'hold_for_legendary', reason: 'reserved_for_goal' });
+	});
+
+	it('rule (b) reads today\'s quote, not a local close already recorded for today', () => {
+		// 41 flat days at 500 then a local close of 100 for today; out of the winter window.
+		const daily = bidSeries(42, CAPTURED_AT_MS, (index) => (index === 41 ? 100 : 500));
+		const quoteClears = recommendPosition(baseInput({ priceHistoryDaily: daily, seasonal: seasonalInput(), todayBidCopper: 480 }));
+		expect(quoteClears).toMatchObject({ action: 'sell', reason: 'bid_above_reference' });
+		const flatLocal = bidSeries(42, CAPTURED_AT_MS, () => 500);
+		const quoteFloor = recommendPosition(baseInput({ priceHistoryDaily: flatLocal, seasonal: seasonalInput(), todayBidCopper: 100 }));
+		expect(quoteFloor).toMatchObject({ action: 'sell_at_season', reason: 'seasonal_hold' });
+		expect(quoteFloor.priceQuotedAt).toBe(new Date(CAPTURED_AT_MS).toISOString());
+		expect(quoteFloor.priceHistoryLastDay).toBe(new Date(CAPTURED_AT_MS - DAY_MS).toISOString().slice(0, 10));
 	});
 });

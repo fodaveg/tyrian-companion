@@ -25,11 +25,15 @@ import {
 	type InventoryMarketDepthEvidenceV1,
 } from '../economy/commerce-listings';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
-import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
+import { classifyItemLiquidity, isTradingPostAccessible, type TradingPostEligibility } from '../economy/item-liquidity';
 import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
-import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
+import {
+	LEGENDARY_MATERIALS_TABLE,
+	legendaryMaterialsTableItemIds,
+	type LegendaryMaterialsTableV1,
+} from '../economy/legendary-materials';
 import {
 	buildLegendaryReservationGoals,
 	scaledSellCopper,
@@ -84,10 +88,18 @@ export interface InventoryVaultPosition {
 	pricePercentile: number | null;
 	priceCoverageDays: number | null;
 	/**
-	 * This position's share of an active legendary reservation (M4), or both `null` when the item
-	 * is not part of any legendary requirement this sync. When non-null they always sum to
-	 * `quantity`: `reservedQuantity` is held back for the chosen legendary(ies), `freeQuantity` is
-	 * everything rules (b)/(c) are still allowed to recommend selling.
+	 * `recommendPosition`'s `priceQuotedAt`/`priceHistoryLastDay` (H18.2): today's quote and the
+	 * history it was compared against carry their dates separately, never through `until`.
+	 */
+	priceQuotedAt: string | null;
+	priceHistoryLastDay: string | null;
+	/**
+	 * How much of this position a reservation holds back, and how much is free to act on. When
+	 * non-null they always sum to `quantity`: `reservedQuantity` is held back for the chosen
+	 * legendary(ies), `freeQuantity` is everything rules (b)/(c) are still allowed to recommend
+	 * selling. H18.1: a position no goal touches reads 0 reserved and its whole quantity free (the
+	 * Base filters "sell now" on `freeQuantity`); both `null` means UNCERTAIN (a chosen legendary
+	 * has no materials table, or its reservation plan could not be built), never "free".
 	 */
 	reservedQuantity: number | null;
 	freeQuantity: number | null;
@@ -170,7 +182,10 @@ interface InventoryNoteFields {
 	tc_recommendation_missing: number | null;
 	tc_price_percentile: number | null;
 	tc_price_coverage_days: number | null;
-	/** `InventoryVaultPosition.reservedQuantity`/`freeQuantity` (M4), both `null` outside any legendary requirement. */
+	/** `InventoryVaultPosition.priceQuotedAt`/`priceHistoryLastDay` (H18.2). */
+	tc_price_quoted_at: string | null;
+	tc_price_history_last_day: string | null;
+	/** `InventoryVaultPosition.reservedQuantity`/`freeQuantity` (M4, H18.1): both `null` means uncertain. */
 	tc_reserved_quantity: number | null;
 	tc_free_quantity: number | null;
 	descripcion: string;
@@ -185,6 +200,7 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_item_rarity', 'tc_icon',
 	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
 	'tc_price_percentile', 'tc_price_coverage_days',
+	'tc_price_quoted_at', 'tc_price_history_last_day',
 	'tc_reserved_quantity', 'tc_free_quantity',
 	'descripcion',
 ] as const;
@@ -211,6 +227,8 @@ const INVENTORY_NOTE_KEYS_ADDED_LATER = [
 	// file's own doc comment warns about (a key added to one list but not the other turning every
 	// existing note into a conflict) is exactly what M4's own encargo measured once already.
 	'tc_reserved_quantity', 'tc_free_quantity',
+	// H18.2, same discipline: added to INVENTORY_NOTE_KEYS in the same commit.
+	'tc_price_quoted_at', 'tc_price_history_last_day',
 ] as const;
 
 interface OwnedInventoryNote {
@@ -368,7 +386,7 @@ export class InventoryVaultCaptureService {
 		const dailyByItem = priceHistoryEnabled
 			? await this.readDailyByItem(itemIds, capturedAt, windowDays)
 			: new Map<number, readonly PriceHistoryDailyV1[]>();
-		const legendaryReservationByPositionId = await this.buildLegendaryReservations(snapshot, cores);
+		const reservations = await this.buildLegendaryReservations(snapshot, cores);
 		const positions = attachPositionRecommendations(cores, {
 			priceHistoryEnabled,
 			capitalThresholdCopper,
@@ -378,7 +396,7 @@ export class InventoryVaultCaptureService {
 			dailyByItem,
 			capturedAtMs: capturedAt,
 			seasonalInputFor: (itemId) => this.recommendation.seasonalInputFor(itemId),
-		}, legendaryReservationByPositionId);
+		}, reservations.byPositionId, reservations.uncertainItemIds);
 		positions.sort(comparePositions);
 		return { schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: snapshot.completedAt, locale, positions };
 	}
@@ -406,28 +424,57 @@ export class InventoryVaultCaptureService {
 	 * Rule (a), M4. `GET /v2/account/legendaryarmory` is called ONLY here, once per "Sincronizar
 	 * inventario", never at settings-panel open or plugin load (`docs/SPEC-recomendacion-por-
 	 * objeto.md` M4, decision 1's own scoping). Returns an empty map (rule (a) never fires) when
-	 * there is nothing to reserve: no target chosen, no curated table, or every chosen target
-	 * already forged with no resolvable requirement left.
+	 * there is nothing to reserve: no target chosen, or every chosen target already forged with no
+	 * resolvable requirement left.
+	 *
+	 * H18.1 (audit 2026-09-24 §3.A): a chosen target that is NOT covered is never silently read as
+	 * "nothing reserved". `uncertainItemIds` carries the items whose free share is unknown:
+	 * - a chosen, unforged target without a table entry → every item any curated entry lists
+	 *   (`legendaryMaterialsTableItemIds`), the best available guess at what it needs;
+	 * - no curated table at all (unavailable or expired) with an unforged target → every item the
+	 *   SHIPPED table (`LEGENDARY_MATERIALS_TABLE`) lists, for the same reason;
+	 * - goals that exist but whose balance or plan cannot be built → every item those goals require.
 	 */
 	private async buildLegendaryReservations(
 		snapshot: StorageSnapshot,
 		cores: readonly InventoryVaultPositionCore[],
-	): Promise<ReadonlyMap<string, LegendaryReservationSplit>> {
+	): Promise<LegendaryReservations> {
+		const none: LegendaryReservations = { byPositionId: new Map(), uncertainItemIds: new Set() };
 		const targetLegendaryItemIds = this.recommendation.legendaryTargetItemIds();
-		if (targetLegendaryItemIds.length === 0) return new Map();
+		if (targetLegendaryItemIds.length === 0) return none;
 		const table = this.recommendation.legendaryMaterialsTable();
-		if (table === null) return new Map();
 		// A read failure is treated as "assume none of the targets are forged yet" (see the port's
 		// own doc comment): the safer of the two guesses, never a silent skip of rule (a).
 		const owned = (await this.recommendation.readLegendaryArmoryCounts()) ?? new Map<number, number>();
-		const { goals } = buildLegendaryReservationGoals(targetLegendaryItemIds, owned, table);
-		if (goals.length === 0) return new Map();
+		if (table === null) {
+			// The curated table is unavailable (expired, say): the goals' quantities cannot be trusted,
+			// but the chosen, unforged targets still need SOMETHING. The item ids the shipped table
+			// lists stay the best statement of which materials, so they turn uncertain, never free.
+			const unforged = targetLegendaryItemIds.some((itemId) => (owned.get(itemId) ?? 0) < 1);
+			return unforged
+				? { byPositionId: new Map(), uncertainItemIds: new Set(legendaryMaterialsTableItemIds(LEGENDARY_MATERIALS_TABLE)) }
+				: none;
+		}
+		const { goals, withoutTable } = buildLegendaryReservationGoals(targetLegendaryItemIds, owned, table);
+		const uncertainItemIds = new Set(withoutTable.length > 0 ? legendaryMaterialsTableItemIds(table) : []);
+		if (goals.length === 0) return { byPositionId: new Map(), uncertainItemIds };
+		const goalItemIds = goals.flatMap((goal) => goal.requirements.map((requirement) => requirement.id));
 		const balanceResult = buildInventoryAdvisorReservationBalance(snapshot);
-		if (balanceResult.status !== 'ok') return new Map();
-		const planResult = createReservationPlan({ goals, balance: balanceResult.balance });
-		if (planResult.status !== 'ok') return new Map();
-		return splitLegendaryReservationsByPosition(cores, planResult.plan);
+		const planResult = balanceResult.status === 'ok'
+			? createReservationPlan({ goals, balance: balanceResult.balance })
+			: null;
+		if (planResult === null || planResult.status !== 'ok') {
+			for (const itemId of goalItemIds) uncertainItemIds.add(itemId);
+			return { byPositionId: new Map(), uncertainItemIds };
+		}
+		return { byPositionId: splitLegendaryReservationsByPosition(cores, planResult.plan), uncertainItemIds };
 	}
+}
+
+/** What `buildLegendaryReservations` settled for one capture (M4 split plus H18.1 uncertainty). */
+interface LegendaryReservations {
+	byPositionId: ReadonlyMap<string, LegendaryReservationSplit>;
+	uncertainItemIds: ReadonlySet<number>;
 }
 
 /** Everything `recommendPosition` needs, resolved once per capture rather than per position. */
@@ -455,10 +502,34 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 	dailyByItem: new Map(),
 };
 
-/** Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a recommendation. */
+/**
+ * Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a
+ * recommendation, plus `untradeable` (`recommendPosition`'s input of the same name), which only
+ * feeds the verdict and never reaches the note.
+ */
 export type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
 	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'
-	| 'reservedQuantity' | 'freeQuantity'>;
+	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity'> & { untradeable: boolean };
+
+/**
+ * True only when this account can definitely not sell the item on the trading post, read from
+ * `classifyItemLiquidity`'s own trading-post eligibility (its binding rule reads the holding's
+ * binding, then the catalog's `AccountBound`/`SoulbindOnAcquire`) and `isTradingPostAccessible`'s
+ * whitelist rule. `NoSell` is deliberately not read: it forbids VENDOR sales (`gw2-fees.ts`), not
+ * trading-post ones. An unknown binding, a missing catalog entry, a missing quote or an unknown
+ * account tier are doubts, not answers, and stay false here.
+ */
+function definitelyUntradeable(
+	tradingPost: TradingPostEligibility,
+	tradingPostAccess: InventoryTradingPostAccess,
+	price: InventoryPriceSnapshotV1['items'][number] | undefined,
+): boolean {
+	if (tradingPost.status === 'excluded') {
+		return tradingPost.reason === 'account_bound' || tradingPost.reason === 'character_bound';
+	}
+	return tradingPostAccess === 'free_to_play' && price !== undefined
+		&& !isTradingPostAccessible(tradingPost, tradingPostAccess, price.whitelisted);
+}
 
 /**
  * Groups holdings into rows and values them, stopping short of `recommendPosition`.
@@ -510,6 +581,8 @@ async function buildInventoryVaultPositionCores(
 		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
 		const eligible = liquidity.status === 'ok'
 			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
+		const untradeable = liquidity.status === 'ok'
+			&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price);
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
 		const depth = eligible && unitSellCopper !== null ? depthById.get(group.itemId) : undefined;
@@ -535,6 +608,7 @@ async function buildInventoryVaultPositionCores(
 			sellDepthStatus,
 			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
 			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
+			untradeable,
 			unitListCopper,
 			// The best ask is a competing listing, not demonstrated buyer capacity.
 			totalListCopper: null,
@@ -588,11 +662,19 @@ export function sumSellCopperByItem(
  * scaling happens BEFORE the sum (per position, using that position's own `freeQuantity`), not
  * after: summing raw values first and scaling the sum by one position's share would double-count
  * or under-count whenever positions of the same item carry different reservations.
+ *
+ * H18.1: every position gets a free quantity. Outside any reservation it is the whole stack; with
+ * one it is the split's own share (0 for a fully reserved position, which `recommendPosition` then
+ * holds for the goal whatever its price or season); for an item in `uncertainReservationItemIds`
+ * whose free share is not already known to be 0 it is `null` (uncertain), never the whole stack.
+ * H18.2: `todayBidCopper` is the position's own live quote (`unitSellCopper`), taken at
+ * `capturedAtMs` in the same capture.
  */
 export function attachPositionRecommendations(
 	cores: readonly InventoryVaultPositionCore[],
 	recommendationInputs: InventoryPositionRecommendationInputs,
 	legendaryReservationByPositionId: ReadonlyMap<string, LegendaryReservationSplit> = new Map(),
+	uncertainReservationItemIds: ReadonlySet<number> = new Set(),
 ): InventoryVaultPosition[] {
 	const thresholdValueByPositionId = new Map<string, number | null>();
 	for (const core of cores) {
@@ -604,8 +686,14 @@ export function attachPositionRecommendations(
 	const itemThresholdTotals = sumSellCopperByItem(cores.map((core) => ({
 		itemId: core.itemId, totalSellCopper: thresholdValueByPositionId.get(core.positionId) ?? null,
 	})));
-	return cores.map((core) => {
+	return cores.map(({ untradeable, ...core }) => {
 		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
+		const knownFree = reservation?.freeQuantity ?? core.quantity;
+		const nothingFree = knownFree === 0 || (reservation !== null && reservation.shortfall > 0);
+		const uncertain = uncertainReservationItemIds.has(core.itemId) && !nothingFree;
+		const split = uncertain
+			? { reservedQuantity: null, freeQuantity: null }
+			: { reservedQuantity: reservation?.reservedQuantity ?? 0, freeQuantity: knownFree };
 		const recommendation = recommendPosition({
 			capturedAtMs: recommendationInputs.capturedAtMs,
 			priceHistoryEnabled: recommendationInputs.priceHistoryEnabled,
@@ -617,6 +705,9 @@ export function attachPositionRecommendations(
 			priceHistoryRequiredDays: recommendationInputs.priceHistoryRequiredDays,
 			seasonal: recommendationInputs.seasonalInputFor(core.itemId),
 			legendaryShortfall: reservation?.shortfall ?? null,
+			freeQuantity: split.freeQuantity,
+			todayBidCopper: core.unitSellCopper,
+			untradeable,
 		});
 		return {
 			...core,
@@ -626,8 +717,9 @@ export function attachPositionRecommendations(
 			recommendationMissing: recommendation.missing,
 			pricePercentile: recommendation.pricePercentile,
 			priceCoverageDays: recommendation.priceCoverageDays,
-			reservedQuantity: reservation?.reservedQuantity ?? null,
-			freeQuantity: reservation?.freeQuantity ?? null,
+			priceQuotedAt: recommendation.priceQuotedAt,
+			priceHistoryLastDay: recommendation.priceHistoryLastDay,
+			...split,
 		};
 	});
 }
@@ -928,6 +1020,8 @@ function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): Inv
 		tc_recommendation_missing: position.recommendationMissing,
 		tc_price_percentile: position.pricePercentile,
 		tc_price_coverage_days: position.priceCoverageDays,
+		tc_price_quoted_at: position.priceQuotedAt,
+		tc_price_history_last_day: position.priceHistoryLastDay,
 		tc_reserved_quantity: position.reservedQuantity,
 		tc_free_quantity: position.freeQuantity,
 		descripcion: locale === 'es' ? 'Existencia de inventario gestionada por Tyrian Companion.' : 'Inventory holding managed by Tyrian Companion.',
@@ -1019,6 +1113,7 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		(value.recommendationUntil === null || iso(value.recommendationUntil)) &&
 		nullableNonNegative(value.recommendationMissing) &&
 		nullablePercentile(value.pricePercentile) && nullableNonNegative(value.priceCoverageDays) &&
+		(value.priceQuotedAt === null || iso(value.priceQuotedAt)) && nullableDayUtc(value.priceHistoryLastDay) &&
 		legendarySplit(value.reservedQuantity, value.freeQuantity, value.quantity);
 }
 
@@ -1054,8 +1149,9 @@ function migrateInventoryNoteFields(value: unknown): unknown {
 		// sell), and this same sync pass immediately rewrites it with the real value from
 		// `fieldsFor`, so the placeholder is never actually shown to anyone.
 		// tc_reserved_quantity/tc_free_quantity (M4) fall through to the trailing `null`: a note
-		// this old predates the legendary-reservation feature entirely, so "outside any legendary
-		// requirement" is the accurate migrated state, not a guessed split.
+		// this old predates the legendary-reservation feature entirely. Since H18.1 null/null reads
+		// "uncertain", the safe placeholder for the same reason as above, never a guessed split; the
+		// same pass rewrites it. tc_price_quoted_at/tc_price_history_last_day (H18.2) likewise.
 		migrated[key] = key === 'tc_sell_depth_status' ? 'unavailable'
 			: key === 'tc_sell_covered_quantity' ? 0
 				: key === 'tc_sell_uncovered_quantity' ? migrated.tc_quantity
@@ -1088,6 +1184,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		(value.tc_recommendation_until === null || iso(value.tc_recommendation_until)) &&
 		nullableNonNegative(value.tc_recommendation_missing) &&
 		nullablePercentile(value.tc_price_percentile) && nullableNonNegative(value.tc_price_coverage_days) &&
+		(value.tc_price_quoted_at === null || iso(value.tc_price_quoted_at)) && nullableDayUtc(value.tc_price_history_last_day) &&
 		legendarySplit(value.tc_reserved_quantity, value.tc_free_quantity, value.tc_quantity) &&
 		nonEmptyText(value.descripcion);
 }
@@ -1142,3 +1239,8 @@ function nullablePercentile(value: unknown): value is number | null {
 	return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 100);
 }
 function iso(value: unknown): value is string { return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value; }
+/** A real UTC calendar day in `YYYY-MM-DD`, or null. */
+function nullableDayUtc(value: unknown): value is string | null {
+	return value === null || (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+		&& Number.isFinite(Date.parse(`${value}T00:00:00.000Z`)) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value);
+}
