@@ -53,6 +53,11 @@ import type { EquipmentSalvageKit, EquipmentSalvageSaleStrategy } from '../econo
  * unchanged flat single-level tablist over native `Setting` rows: only the
  * category DATA collapsed from six values to two, not the tablist mechanism
  * (kept flat on purpose, see the settings-tab.test.ts case that pins it).
+ *
+ * The one exception to "exactly four" is the in-game bridge's "Addon token" row: it sits in
+ * `essentials` but only renders while the bridge is on, so a new install (bridge off by default)
+ * still sees four rows, and a player who turned the bridge on finds the token on the first screen
+ * instead of at the bottom of `advanced`, where it could not be found (0.2.1).
  */
 export type SettingsCategory = 'essentials' | 'advanced';
 type SettingSaveState = 'saving' | 'saved' | 'error';
@@ -191,9 +196,7 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				this.renderSettings();
 			},
 		);
-		for (const [index, definition] of definitions.entries()) {
-			if (!isActiveSettingsCategory(definition.category, this.activeCategory)) continue;
-			if (definition.visible !== undefined && !definition.visible()) continue;
+		for (const [index, definition] of mountedSettingDefinitions(definitions, this.activeCategory)) {
 			const setting = new Setting(section).setName(definition.name).setDesc(definition.desc);
 			if (definition.tooltip !== undefined) setting.setTooltip(definition.tooltip);
 			setting.settingEl.dataset.tyrianSettingRow = String(index);
@@ -219,6 +222,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 
 	getSettingCategoryAssignments(): Array<{ name: string; category: SettingsCategory }> {
 		return this.definitions().map(({ name, category }) => ({ name, category }));
+	}
+
+	/** Names of the rows the tab mounts for `category` with the current settings, in render order. */
+	getMountedSettingNames(category: SettingsCategory): string[] {
+		return mountedSettingDefinitions(this.definitions(), category).map(([, { name }]) => name);
 	}
 
 	hide(): void {
@@ -913,7 +921,8 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 				},
 			},
 			{
-				category: 'advanced',
+				// 0.2.1: on the first tab, not under the toggle in `advanced`, see `SettingsCategory`.
+				category: 'essentials',
 				visible: () => this.plugin.settings.alertIngameEnabled,
 				name: this.t('settings.alerts.ingame.secret.name'), desc: this.t('settings.alerts.ingame.secret.desc'),
 				render: (setting, save) => {
@@ -938,7 +947,9 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 								// that would wipe the confirmation below.
 								selector?.setValue(this.plugin.settings.alertIngameSecret);
 								feedback.setAttr('role', 'status');
-								feedback.setText(this.t(outcome === 'generated'
+								// `shown`: the clipboard refused and the fallback modal holds the value, so
+								// this row claims nothing was copied.
+								feedback.setText(outcome === 'shown' ? '' : this.t(outcome === 'generated'
 									? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'));
 							} catch {
 								feedback.setAttr('role', 'alert');
@@ -1372,6 +1383,19 @@ function restoreSettingsFocus(container: HTMLElement, token: SettingsFocusToken 
 	const row = container.querySelector<HTMLElement>(`[data-tyrian-setting-row="${token.row}"]`);
 	const control = row?.querySelectorAll<HTMLElement>(SETTINGS_FOCUSABLE)[token.control];
 	if (control !== undefined && !control.matches(':disabled')) control.focus({ preventScroll: true });
+}
+
+/**
+ * The rows `renderSettings` mounts for one category, keeping each row's index in the full list
+ * (its stable save-state key): the category must match and a row with `visible` needs it true.
+ */
+function mountedSettingDefinitions(
+	definitions: readonly CategorizedSettingDefinition[],
+	category: SettingsCategory,
+): Array<[number, CategorizedSettingDefinition]> {
+	return [...definitions.entries()].filter(([, definition]) =>
+		isActiveSettingsCategory(definition.category, category)
+		&& (definition.visible === undefined || definition.visible()));
 }
 
 function isCoolingDown(retryAt: number | null): retryAt is number {

@@ -200,20 +200,40 @@ describe('settings information architecture', () => {
 	// capital threshold as a new "Advanced" row, back up to 28/32. M4 adds the legendary targets
 	// row, another "Advanced" row, to 29/33. H18.23 adds the in-game bridge secret, an "Advanced"
 	// row shown only while the bridge is on, to 30/34. H18.15 adds the low-storage-space threshold,
-	// another "Advanced" row, to 31/35.
+	// another "Advanced" row, to 31/35. 0.2.1 moves the bridge secret to "Essentials", still shown
+	// only while the bridge is on: 5 assigned there, 30 under "Advanced".
 	it('assigns all 35 existing rows to explicit intent categories', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
 		expect(assignments).toHaveLength(35);
-		// H14.20: the first screen is exactly the four rows a new install needs;
-		// every other row (31) lives under the single "Advanced" tab.
+		// H14.20: the first screen of a new install is exactly the four rows it needs; the fifth
+		// "Essentials" row, the bridge token, only mounts once the bridge is on (next test). Every
+		// other row (30) lives under the single "Advanced" tab.
 		const essentials = assignments.filter(({ category }) => category === 'essentials');
-		expect(essentials).toHaveLength(4);
+		expect(essentials).toHaveLength(5);
 		expect(essentials.map(({ name }) => name).sort()).toEqual(
+			['API key', 'Addon token', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
+		);
+		expect(tab.getMountedSettingNames('essentials').sort()).toEqual(
 			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
 		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(31);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(30);
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
+	});
+
+	// 0.2.1: with the bridge on, the token row sat at the bottom of "Advanced" and could not be
+	// found; it now mounts on the first tab the settings open to, and never under "Advanced".
+	it('mounts the bridge token row on the first tab only while the bridge is on', () => {
+		const plugin = settingsPlugin();
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		expect(tab.getMountedSettingNames('essentials')).not.toContain('Addon token');
+		expect(tab.getMountedSettingNames('advanced')).not.toContain('Addon token');
+
+		plugin.settings.alertIngameEnabled = true;
+
+		expect(tab.getMountedSettingNames('essentials')).toContain('Addon token');
+		expect(tab.getMountedSettingNames('advanced')).not.toContain('Addon token');
+		expect(tab.getMountedSettingNames('advanced')).toEqual(expect.arrayContaining(['In-game alert (optional)', 'In-game alert port']));
 	});
 
 	it('keeps exactly one category mounted and provides a wrapping keyboard tab order', () => {
