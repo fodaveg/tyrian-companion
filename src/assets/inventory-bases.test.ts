@@ -6,6 +6,10 @@ import { inventoryManagedAssets } from './inventory-bases';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { hasCompatibleMarker, type PackagedAsset } from './managed-assets-model';
 import { InventoryVaultSyncService, type InventoryVaultFile, type InventoryVaultPort } from '../inventory/inventory-vault-sync';
+import {
+	POSITION_RECOMMENDATION_ACTIONS,
+	POSITION_RECOMMENDATION_REASON_CODES,
+} from '../advisor/inventory-position-recommendation';
 
 const CONFIG_DIR = 'vault-config';
 
@@ -13,10 +17,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 7, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 7, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 7, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 7, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 8, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 8, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 8, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 8, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -97,15 +101,16 @@ describe('inventory Base assets', () => {
 			expect(keys.filter((key) => !/^(?:note|formula|file)\./u.test(key)), asset.relativePath).toEqual([]);
 			if (asset.id === 'inventory-base' || asset.id === 'materials-base') {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
-					'note.tc_source', 'note.tc_character', 'note.tc_quantity',
+					'note.tc_source', 'note.tc_character', 'note.tc_quantity', 'note.tc_free_quantity',
 					'note.tc_item_type', 'note.tc_item_rarity',
-					'note.tc_recommendation', 'note.tc_recommendation_reason',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
-					'formula.item_icon', 'formula.item_link', 'formula.source_label',
+					'formula.item_icon', 'formula.item_link',
+					'formula.recommendation_label', 'formula.reason_label', 'formula.valid_until', 'formula.wait_until',
+					'formula.source_label',
 				]);
 				// H14.21: the "last updated" column now reads the note's own mtime instead of a
 				// `tc_captured_at` field, which used to make every position's marker hash change
@@ -120,13 +125,14 @@ describe('inventory Base assets', () => {
 			const document = parse(asset.bytes) as BaseDocument;
 			const filters = document.views.flatMap((view) => flatFilters(view.filters));
 			if (asset.relativePath === 'Inventory.base') {
-				expect(document.views).toHaveLength(6);
+				expect(document.views).toHaveLength(7);
 				expect(filters).toEqual(expect.arrayContaining([
 					'tc_source == "character"',
 					'tc_source == "shared_inventory"',
 					'tc_source == "bank"',
 					'tc_source == "materials"',
 					'tc_recommendation == "sell"',
+					'tc_free_quantity > 0',
 					'tc_recommendation == "sell_at_season"',
 				]));
 			} else {
@@ -135,13 +141,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 7', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 8', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=7', 'version=1')
+				.replace('version=8', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -161,8 +167,8 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 7 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 7 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 8 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 8 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['formula.item_link']).toBeDefined();
@@ -200,6 +206,139 @@ describe('inventory Base assets', () => {
 		}
 	});
 });
+
+/**
+ * H18.3 (audit 2026-09-24 §3.A): at a2584af the "Para vender" view filtered `sell` OR
+ * `sell_at_season`, showed the whole quantity, never showed `tc_recommendation_until`, and printed
+ * the reason as a raw code. These evaluate the Base's own filters and formulas against note rows,
+ * with the minimal expression grammar the managed Bases use (`==`, `!=`, `>`, `if`, literals).
+ */
+describe('inventory Base: sell now, wait and translated reasons (H18.3)', () => {
+	async function inventoryDocuments(): Promise<Array<{ locale: string; document: BaseDocument }>> {
+		return (await inventoryManagedAssets())
+			.filter((asset) => asset.relativePath === 'Inventory.base')
+			.map((asset) => ({ locale: asset.locale ?? '', document: parse(asset.bytes) as BaseDocument }));
+	}
+	const sellNowView = (document: BaseDocument) => document.views.find((view) => flatFilters(view.filters).includes('tc_recommendation == "sell"'));
+	const waitView = (document: BaseDocument) => document.views.find((view) => {
+		const filters = flatFilters(view.filters);
+		return filters.includes('tc_recommendation == "sell_at_season"') && !filters.includes('tc_recommendation == "sell"');
+	});
+
+	it('«Vender ahora» keeps only sell verdicts with free units: never a wait, a reserved stack or an uncertain one', async () => {
+		for (const { document } of await inventoryDocuments()) {
+			const view = sellNowView(document);
+			if (view === undefined) throw new Error('Expected a sell-now view.');
+			const shown = (row: NoteRow) => matchesFilter(document.filters, { ...ACTIVE_NOTE, ...row }) && matchesFilter(view.filters, { ...ACTIVE_NOTE, ...row });
+			expect(shown({ tc_recommendation: 'sell', tc_free_quantity: 5 })).toBe(true);
+			expect(shown({ tc_recommendation: 'sell_at_season', tc_free_quantity: 5 })).toBe(false);
+			expect(shown({ tc_recommendation: 'sell', tc_free_quantity: 0 })).toBe(false);
+			expect(shown({ tc_recommendation: 'sell', tc_free_quantity: null })).toBe(false);
+			expect(shown({ tc_recommendation: 'hold', tc_free_quantity: 5 })).toBe(false);
+			expect(view.order).toContain('tc_free_quantity');
+		}
+	});
+
+	it('the waiting view shows where the wait ends; the sell verdicts show how long they hold, in separate columns', async () => {
+		for (const { document } of await inventoryDocuments()) {
+			const view = waitView(document);
+			if (view === undefined) throw new Error('Expected a wait-to-sell view.');
+			expect(matchesFilter(view.filters, { tc_recommendation: 'sell_at_season' })).toBe(true);
+			expect(matchesFilter(view.filters, { tc_recommendation: 'sell' })).toBe(false);
+			expect(view.order).toEqual(expect.arrayContaining(['formula.wait_until', 'formula.reason_label']));
+			const waiting = { tc_recommendation: 'sell_at_season', tc_recommendation_until: '2027-05-01T00:00:00.000Z' };
+			expect(evaluateFormula(document.formulas.wait_until!, waiting)).toBe('2027-05-01T00:00:00.000Z');
+			expect(evaluateFormula(document.formulas.valid_until!, waiting)).toBeNull();
+			const selling = { tc_recommendation: 'sell', tc_recommendation_until: '2026-09-24T10:15:00.000Z' };
+			expect(evaluateFormula(document.formulas.valid_until!, selling)).toBe('2026-09-24T10:15:00.000Z');
+			expect(evaluateFormula(document.formulas.wait_until!, selling)).toBeNull();
+		}
+	});
+
+	it('every action and reason code reaches the table translated, never as its raw code', async () => {
+		for (const { locale, document } of await inventoryDocuments()) {
+			for (const view of document.views) {
+				expect(view.order).toEqual(expect.arrayContaining(['formula.recommendation_label', 'formula.reason_label']));
+				expect(view.order).not.toContain('tc_recommendation');
+				expect(view.order).not.toContain('tc_recommendation_reason');
+			}
+			const reasons = POSITION_RECOMMENDATION_REASON_CODES.map((code) => evaluateFormula(document.formulas.reason_label!, { tc_recommendation_reason: code }));
+			for (const [index, label] of reasons.entries()) {
+				expect(typeof label, `${locale}:${POSITION_RECOMMENDATION_REASON_CODES[index]!}`).toBe('string');
+				expect(label).not.toBe(POSITION_RECOMMENDATION_REASON_CODES[index]);
+			}
+			expect(new Set(reasons).size).toBe(reasons.length);
+			for (const code of POSITION_RECOMMENDATION_ACTIONS) {
+				const label = evaluateFormula(document.formulas.recommendation_label!, { tc_recommendation: code });
+				expect(typeof label).toBe('string');
+				expect(label).not.toBe(code);
+			}
+		}
+		const [spanish] = (await inventoryDocuments()).filter(({ locale }) => locale === 'es');
+		expect(evaluateFormula(spanish!.document.formulas.reason_label!, { tc_recommendation_reason: 'seasonal_hold' }))
+			.toBe('Fuera de temporada: esperar a su próxima ventana de venta');
+		expect(evaluateFormula(spanish!.document.formulas.recommendation_label!, { tc_recommendation: 'sell_at_season' }))
+			.toBe('Esperar a temporada');
+	});
+});
+
+type NoteValue = string | number | boolean | null;
+type NoteRow = Record<string, NoteValue>;
+
+const ACTIVE_NOTE: NoteRow = {
+	tc_schema: 1, tc_kind: 'gw2_inventory_position', tc_marker: 'tyrian_companion_inventory_position', tc_active: true,
+};
+
+/** `field OP literal` with `==`, `!=` and `>`; a missing or null field never compares greater. */
+function matchesFilter(filter: Filter | undefined, row: NoteRow): boolean {
+	if (filter === undefined) return true;
+	if (typeof filter !== 'string') {
+		return 'and' in filter ? filter.and.every((entry) => matchesFilter(entry, row)) : filter.or.some((entry) => matchesFilter(entry, row));
+	}
+	const match = filter.match(/^([a-z_]+) (==|!=|>) (.+)$/u);
+	if (!match) throw new Error(`Unsupported filter in test evaluator: ${filter}`);
+	const left = row[match[1]!] ?? null;
+	const right = JSON.parse(match[3]!) as NoteValue;
+	if (match[2] === '==') return left === right;
+	if (match[2] === '!=') return left !== right;
+	return typeof left === 'number' && typeof right === 'number' && left > right;
+}
+
+/** `if(cond, then, else)`, string/null literals and bare note fields: the shapes the managed formulas use. */
+function evaluateFormula(formula: string, row: NoteRow): NoteValue {
+	const text = formula.trim();
+	if (text === 'null') return null;
+	if (text.startsWith('"')) return JSON.parse(text) as string;
+	if (/^[a-z_]+$/u.test(text)) return row[text] ?? null;
+	if (text.startsWith('if(') && text.endsWith(')')) {
+		const [condition, then, otherwise] = splitArguments(text.slice(3, -1));
+		if (condition === undefined || then === undefined || otherwise === undefined) throw new Error(`Malformed if(): ${text}`);
+		return evaluateFormula(matchesFilter(condition, row) ? then : otherwise, row);
+	}
+	throw new Error(`Unsupported formula in test evaluator: ${text}`);
+}
+
+function splitArguments(text: string): string[] {
+	const parts: string[] = [];
+	let depth = 0;
+	let quoted = false;
+	let start = 0;
+	for (let index = 0; index < text.length; index += 1) {
+		const character = text[index];
+		if (quoted) {
+			if (character === '\\') index += 1;
+			else if (character === '"') quoted = false;
+		} else if (character === '"') quoted = true;
+		else if (character === '(') depth += 1;
+		else if (character === ')') depth -= 1;
+		else if (character === ',' && depth === 0) {
+			parts.push(text.slice(start, index).trim());
+			start = index + 1;
+		}
+	}
+	parts.push(text.slice(start).trim());
+	return parts;
+}
 
 /**
  * M1 criterion of closure 4 (docs/SPEC-recomendacion-por-objeto.md §5): the same H14.8 landmine
@@ -287,7 +426,10 @@ function flatFilters(filter: Filter | undefined): string[] {
 function baseShape(document: BaseDocument): unknown {
 	return {
 		filters: document.filters,
-		formulas: { ...document.formulas, source_label: '$localized' },
+		formulas: {
+			...document.formulas,
+			source_label: '$localized', recommendation_label: '$localized', reason_label: '$localized',
+		},
 		propertyKeys: Object.keys(document.properties),
 		views: document.views.map((view) => ({ ...view, name: '$localized' })),
 	};
