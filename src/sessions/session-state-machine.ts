@@ -3,6 +3,7 @@ import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { MAX_MAGIC_FIND, type SessionStartContext } from './session-start-capture';
 import {
 	SESSION_STATE_VERSION,
+	SESSION_UNOBSERVED_GAPS_MAX,
 	type ActiveSessionState,
 	type CompleteSessionState,
 	type ErrorSessionState,
@@ -20,6 +21,7 @@ import {
 	type SessionTransitionResult,
 	type StartingSessionState,
 	type StoppingSessionState,
+	type SessionUnobservedGap,
 } from './session';
 
 const IDS_MAX_LENGTH = 256;
@@ -121,6 +123,12 @@ export function isSessionEvent(value: unknown): value is SessionEvent {
 				&& Date.parse(value.recoveredAt) >= value.authority.acquiredAt;
 		case 'reset':
 			return exactKeys(value, ['type']);
+		case 'record_unobserved_gap':
+			return exactKeys(value, ['type', 'authority', 'from', 'to'])
+				&& isAuthority(value.authority)
+				&& isIsoTimestamp(value.from)
+				&& isIsoTimestamp(value.to)
+				&& Date.parse(value.to) > Date.parse(value.from);
 		default:
 			return false;
 	}
@@ -154,12 +162,29 @@ function transitionValidated(state: SessionState, event: SessionEvent): SessionT
 			if (containsStopRequest(state, event.authority, event.requestedAt)) return unchanged(state);
 			if (state.status !== 'active') return rejected(state, 'illegal_transition');
 			if (!sameAuthority(state.authority, event.authority)) return rejected(state, 'authority_mismatch');
-			return applied({
-				...clone(state),
-				status: 'stopping',
-				stopRequestedAt: event.requestedAt,
-				...(event.stopBoundary === undefined ? {} : { stopBoundary: event.stopBoundary }),
-			});
+			{
+				// A stop requested earlier than a recorded gap (H18.4's last saved evidence) keeps only
+				// the part of each gap before that end.
+				const { unobservedGaps, ...rest } = clone(state);
+				const kept = gapsUntil(unobservedGaps, event.requestedAt);
+				return applied({
+					...rest,
+					...(kept.length === 0 ? {} : { unobservedGaps: kept }),
+					status: 'stopping',
+					stopRequestedAt: event.requestedAt,
+					...(event.stopBoundary === undefined ? {} : { stopBoundary: event.stopBoundary }),
+				});
+			}
+
+		case 'record_unobserved_gap': {
+			if (state.status !== 'active') return rejected(state, 'illegal_transition');
+			if (!sameAuthority(state.authority, event.authority)) return rejected(state, 'authority_mismatch');
+			const gaps = state.unobservedGaps ?? [];
+			const last = gaps.at(-1);
+			if (last?.from === event.from && last.to === event.to) return unchanged(state);
+			if (gaps.length >= SESSION_UNOBSERVED_GAPS_MAX) return rejected(state, 'invariant_violation');
+			return applied({ ...clone(state), unobservedGaps: [...clone(gaps), { from: event.from, to: event.to }] });
+		}
 
 		case 'confirm_stop':
 			if (containsFinalSnapshot(state, event.authority, event.stoppedAt, event.finalSnapshot)) return unchanged(state);
@@ -226,7 +251,8 @@ function isStartingState(value: Record<string, unknown>): value is Record<string
 }
 
 function isActiveState(value: Record<string, unknown>): value is Record<string, unknown> & ActiveSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext'])
+	return exactKeys(value, withUnobservedGaps(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext']))
+		&& validUnobservedGaps(value, null)
 		&& validSessionBase(value)
 		&& isSnapshotReference(value.baseline)
 		&& isStartContext(value.startContext)
@@ -235,7 +261,8 @@ function isActiveState(value: Record<string, unknown>): value is Record<string, 
 }
 
 function isStoppingState(value: Record<string, unknown>): value is Record<string, unknown> & StoppingSessionState {
-	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt']))
+	return exactKeys(value, withUnobservedGaps(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt'])))
+		&& validUnobservedGaps(value, value.stopRequestedAt)
 		&& validStopBoundary(value)
 		&& validSessionBase(value)
 		&& isSnapshotReference(value.baseline)
@@ -247,13 +274,15 @@ function isStoppingState(value: Record<string, unknown>): value is Record<string
 }
 
 function isProvisionalState(value: Record<string, unknown>): value is Record<string, unknown> & ProvisionalSessionState {
-	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot']))
+	return exactKeys(value, withUnobservedGaps(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot'])))
+		&& validUnobservedGaps(value, value.stopRequestedAt)
 		&& validStopBoundary(value)
 		&& validProvisionalFields(value);
 }
 
 function isCompleteState(value: Record<string, unknown>): value is Record<string, unknown> & CompleteSessionState {
-	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification']))
+	return exactKeys(value, withUnobservedGaps(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification'])))
+		&& validUnobservedGaps(value, value.stopRequestedAt)
 		&& validStopBoundary(value)
 		&& validProvisionalFields(value)
 		&& isIsoTimestamp(value.finalizedAt)
@@ -507,6 +536,45 @@ function withStopBoundary(value: Record<string, unknown>, keys: string[]): strin
 
 function validStopBoundary(value: Record<string, unknown>): boolean {
 	return !Object.prototype.hasOwnProperty.call(value, 'stopBoundary') || value.stopBoundary === 'last_saved_evidence';
+}
+
+/** `unobservedGaps` is optional (H18.11): an uninterrupted session never carries it, so older records stay valid. */
+function withUnobservedGaps(value: Record<string, unknown>, keys: string[]): string[] {
+	return Object.prototype.hasOwnProperty.call(value, 'unobservedGaps') ? [...keys, 'unobservedGaps'] : keys;
+}
+
+/**
+ * The gaps are ordered, never overlap, never start before the baseline, never end after the stop
+ * request (`ceiling`, once there is one), and there are at most `SESSION_UNOBSERVED_GAPS_MAX`.
+ */
+function validUnobservedGaps(value: Record<string, unknown>, ceiling: unknown): boolean {
+	if (!Object.prototype.hasOwnProperty.call(value, 'unobservedGaps')) return true;
+	const gaps = value.unobservedGaps;
+	const baseline = value.baseline;
+	if (!Array.isArray(gaps) || gaps.length === 0 || gaps.length > SESSION_UNOBSERVED_GAPS_MAX
+		|| !isRecord(baseline) || !isIsoTimestamp(baseline.completedAt)) return false;
+	let floor = Date.parse(baseline.completedAt);
+	const limit = ceiling === null ? Number.POSITIVE_INFINITY : isIsoTimestamp(ceiling) ? Date.parse(ceiling) : Number.NaN;
+	for (const gap of gaps) {
+		if (!isUnobservedGap(gap)) return false;
+		const from = Date.parse(gap.from);
+		const to = Date.parse(gap.to);
+		if (from < floor || to <= from || !(to <= limit)) return false;
+		floor = to;
+	}
+	return true;
+}
+
+function isUnobservedGap(value: unknown): value is SessionUnobservedGap {
+	return isRecord(value) && exactKeys(value, ['from', 'to']) && isIsoTimestamp(value.from) && isIsoTimestamp(value.to);
+}
+
+/** H18.11: the gaps a stop request at `requestedAt` keeps, cut at that instant. */
+function gapsUntil(gaps: SessionUnobservedGap[] | undefined, requestedAt: string): SessionUnobservedGap[] {
+	const end = Date.parse(requestedAt);
+	return (gaps ?? [])
+		.filter((gap) => Date.parse(gap.from) < end)
+		.map((gap) => (Date.parse(gap.to) > end ? { from: gap.from, to: requestedAt } : { ...gap }));
 }
 
 function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {

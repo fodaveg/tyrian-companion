@@ -46,6 +46,30 @@ export interface StartingSessionState {
 	requestedAt: string;
 }
 
+/**
+ * H18.11: a stretch the session was not observed at all, from the last evidence saved before an
+ * interruption (a suspend that outlived the lease, Obsidian closed) to the instant the session came
+ * back. It is subtracted from the played duration; the end stays the player's own stop. Nothing
+ * says whether the game ran meanwhile, so a session carrying one is declared uncertain.
+ */
+export interface SessionUnobservedGap {
+	from: string;
+	to: string;
+}
+
+/** Bound on the recorded gaps: a session interrupted more often than this is not worth a finer count. */
+export const SESSION_UNOBSERVED_GAPS_MAX = 16;
+
+/**
+ * H18.11: milliseconds of the session nobody observed, to subtract from its played duration. Zero
+ * for every state without gaps, which is every session recorded before this existed.
+ */
+export function sessionUnobservedMs(state: { unobservedGaps?: SessionUnobservedGap[] }): number {
+	let total = 0;
+	for (const gap of state.unobservedGaps ?? []) total += Math.max(0, Date.parse(gap.to) - Date.parse(gap.from));
+	return Number.isSafeInteger(total) ? total : 0;
+}
+
 export interface ActiveSessionState {
 	version: typeof SESSION_STATE_VERSION;
 	status: 'active';
@@ -54,6 +78,8 @@ export interface ActiveSessionState {
 	requestedAt: string;
 	baseline: SessionSnapshotReference;
 	startContext: SessionStartContext;
+	/** Optional (H18.11): absent on every session that was never interrupted, and on older records. */
+	unobservedGaps?: SessionUnobservedGap[];
 }
 
 /**
@@ -74,6 +100,7 @@ export interface StoppingSessionState {
 	startContext: SessionStartContext;
 	stopRequestedAt: string;
 	stopBoundary?: SessionStopBoundary;
+	unobservedGaps?: SessionUnobservedGap[];
 }
 
 export interface ProvisionalSessionState {
@@ -86,6 +113,7 @@ export interface ProvisionalSessionState {
 	startContext: SessionStartContext;
 	stopRequestedAt: string;
 	stopBoundary?: SessionStopBoundary;
+	unobservedGaps?: SessionUnobservedGap[];
 	stoppedAt: string;
 	finalSnapshot: SessionSnapshotReference;
 }
@@ -155,6 +183,8 @@ export type SessionEvent =
 	  }
 	| { type: 'fail'; authority: SessionAuthority; failedAt: string; code: SessionFailureCode }
 	| { type: 'recover'; authority: SessionAuthority; recoveredAt: string }
+	/** H18.11: appends one unobserved gap to an active session. */
+	| { type: 'record_unobserved_gap'; authority: SessionAuthority; from: string; to: string }
 	| { type: 'reset' };
 
 export type SessionTransitionRejection =
