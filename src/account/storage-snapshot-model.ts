@@ -83,6 +83,36 @@ export interface CurrencyTotal {
 	delivery: number;
 }
 
+/** A flat account store's real capacity: `account/inventory` and `account/bank` always answer
+ * every slot, `null` included, so their array length already IS the total (H18.15). */
+export interface ContainerFreeSlots {
+	total: number;
+	free: number;
+}
+
+/** One equipped bag's free-slot count. Unlike the flat stores above, `bag.inventory` can omit
+ * trailing empty slots, so the real capacity is `bag.size`, never the array length (H18.15). */
+export interface CharacterBagFreeSlots {
+	character: string;
+	bagIndex: number;
+	bagItemId: number;
+	total: number;
+	free: number;
+}
+
+/**
+ * Free-slot counts the pre-H18.15 parsers threw away when they dropped every `null` hole. `null`
+ * on `bank`/`sharedInventory` means that store was not part of this capture (missing scope, a
+ * restricted URL, or a failed optional request) — the same "unknown, not zero" contract the rest
+ * of the snapshot already uses. A character whose own request failed simply contributes no
+ * entries to `characterBags`, exactly like its `holdings` already do.
+ */
+export interface StorageFreeSlots {
+	bank: ContainerFreeSlots | null;
+	sharedInventory: ContainerFreeSlots | null;
+	characterBags: CharacterBagFreeSlots[];
+}
+
 export interface StorageSnapshotPass {
 	holdings: ItemHolding[];
 	currencies: CurrencyHolding[];
@@ -91,6 +121,11 @@ export interface StorageSnapshotPass {
 	currencyById: Record<string, CurrencyTotal>;
 	coverage: SnapshotCoverage;
 	roster: string[];
+	/**
+	 * Optional so every pre-H18.15 fixture and test-built pass keeps typechecking unchanged; the
+	 * real `StorageSnapshotService` always supplies it (`storage-snapshot-pure.ts`).
+	 */
+	freeSlots?: StorageFreeSlots;
 }
 
 export interface StorageSnapshot extends StorageSnapshotPass {

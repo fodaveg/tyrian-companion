@@ -33,6 +33,13 @@ export const ALERT_INGAME_MAX_PORT = 65_535;
 /** Arbitrary and unregistered; chosen once so an addon's default matches without discovery. */
 export const DEFAULT_ALERT_INGAME_PORT = 47_823;
 /**
+ * H18.15/H18.31: all characters' bags plus the bank, per the interface boceto's decision 9. Not a
+ * measured line, just a round number David can retune once real usage is measured.
+ */
+export const DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS = 20;
+/** Comfortably above any account's realistic total slot count, just a defensive input ceiling. */
+export const MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS = 2_000;
+/**
  * H18.23: the `SecretStorage` entry the plugin creates when it generates the bridge secret. Only
  * this NAME is ever persisted in settings; the value stays in Obsidian's per-device keychain.
  */
@@ -147,6 +154,12 @@ export interface TyrianSettings {
 	halloweenPersonalValuation: ContainerPersonalValuationV1;
 	/** Manual account-wide per-material cap. Null means unknown; the advisor may rely only on the guaranteed 250 floor. */
 	materialStorageCapacity: MaterialStorageCapacity | null;
+	/**
+	 * H18.15: free bag/bank slots at or below this count count as "low space" (David, 24 sep 2026:
+	 * with little free space, free it first; with plenty, maximize gold). Default and definition
+	 * ("all characters' bags plus the bank") from the H18.31 interface boceto, decision 9.
+	 */
+	lowStorageSpaceThresholdFreeSlots: number;
 	/** Optional H9.3 inputs. Null values stay visibly outside the salvage model. */
 	salvageKit: EquipmentSalvageKit | null;
 	salvageSaleStrategy: EquipmentSalvageSaleStrategy | null;
@@ -187,6 +200,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	halloweenPriceAlertCooldownHours: 24,
 	halloweenPersonalValuation: { version: 1 as const, values: [] },
 	materialStorageCapacity: null,
+	lowStorageSpaceThresholdFreeSlots: DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 	salvageKit: null,
 	salvageSaleStrategy: null,
 	salvageSecondsPerItem: null,
@@ -290,6 +304,14 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		halloweenPersonalValuation: halloweenPersonalValuation(data.halloweenPersonalValuation)
 			?? { version: 1, values: [] },
 		materialStorageCapacity: materialStorageCapacity(data.materialStorageCapacity),
+		// v14+. Read defensively rather than gated by a schema-version check, same precedent as
+		// `recommendationCapitalThresholdCopper` above: an absent value on any pre-H18.15 install
+		// falls through to the default instead of losing an unrelated field to a future bump.
+		lowStorageSpaceThresholdFreeSlots: boundedNonNegativeInteger(
+			data.lowStorageSpaceThresholdFreeSlots,
+			DEFAULT_SETTINGS.lowStorageSpaceThresholdFreeSlots,
+			MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
+		),
 		salvageKit: salvageKit(data.salvageKit),
 		salvageSaleStrategy: salvageSaleStrategy(data.salvageSaleStrategy),
 		salvageSecondsPerItem: optionalBoundedNonNegativeInteger(data.salvageSecondsPerItem, 3_600),
