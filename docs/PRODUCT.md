@@ -290,9 +290,16 @@ La versión `0.1.0` valida la base técnica:
   la captura los lee como fuentes opcionales que nunca invalidan el inventario básico. Un filtro de personaje
   acota la vista a las bolsas de un personaje observado y declara ese alcance; el orden visible se aplica
   después de acotar, y los objetos sin precio demostrado se cuentan aparte en vez de sumarse como cero.
+  Desde H18.18 una línea dice qué alcance se muestra y cuántos objetos quedan fuera del filtro y por qué
+  (banco, materiales, conservar, revisar…), y cada fila ofrece «Conservar», que escribe la excepción de
+  conservación del objeto entero sin teclear su id. Desde H18.15 la vista muestra los huecos libres de
+  bolsas, banco y almacén compartido, el estado de poco espacio contra el umbral de ajustes (bolsas + banco;
+  sin banco leído no se declara) y la capacidad de materiales como «al menos N» cuando ninguna está
+  configurada y alguna pila supera 250 (N es el siguiente múltiplo de 250 que la contiene, fuente
+  `observed_minimum`). Con poco espacio, lo que vacía huecos enteros va primero; con espacio de sobra, el oro.
   H5.12 ya aporta edición local explícita con CAS. David aprobó el 2026-08-16 la regla y comparación económica
   built-in de 36038: puede recomendar manualmente abrir, vender o llevar al mercader con evidencia completa.
-- H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas.
+- H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas. H18.18: tras una «Sincronizar inventario» correcta, las Bases ya instaladas en la carpeta de salida siguen solas a una versión nueva del plugin por la misma vía que Apply, siempre que la vista previa no encuentre conflicto; una Base editada o borrada a mano deja la actualización en la vista previa manual y se avisa una vez por carga. Nunca instala por sí sola.
 - El inventario durable añade Preview y Apply dentro del Inventory Advisor. Produce una fila por
   objeto, ubicación y personaje, con cantidad y precio de venta instantánea propios. Las Bases
   `Inventory.base` y `Materials.base` son assets ES/EN del mismo bundle y filtran claves estables.
