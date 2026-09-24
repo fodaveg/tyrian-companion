@@ -1,0 +1,1454 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>H18.31 · Boceto de interfaz · Sesiones, Inventario y Venta</title>
+<style>
+/* ==========================================================================
+ * CAPA 1 · Imitación de Obsidian. NO se implementa: en el plugin estas
+ * variables las pone Obsidian (o el tema de David). Valores aproximados del
+ * tema por defecto 1.x, solo para que el boceto se vea en un navegador.
+ * ========================================================================== */
+:root {
+	color-scheme: light;
+	--background-primary: #ffffff;
+	--background-secondary: #f6f6f6;
+	--background-modifier-border: #e0e0e0;
+	--background-modifier-hover: rgba(0, 0, 0, .075);
+	--background-modifier-form-field: #ffffff;
+	--text-normal: #222222;
+	--text-muted: #5c5c5c;
+	--text-faint: #ababab;
+	--text-on-accent: #ffffff;
+	--interactive-normal: #ffffff;
+	--interactive-hover: #f2f2f2;
+	--interactive-accent: #8a6cef;
+	--text-accent: #7a5ce0;
+	--text-error: #e93147;
+	--text-warning: #ec7500;
+	--text-success: #08b94e;
+	--color-orange: #ec7500;
+	--color-yellow: #e0ac00;
+	--color-green: #08b94e;
+	--color-red-rgb: 233, 49, 71;
+	--color-orange-rgb: 236, 117, 0;
+	--color-blue-rgb: 8, 109, 221;
+	--input-shadow: 0 0 0 1px rgba(0, 0, 0, .14), 0 2px 3px rgba(0, 0, 0, .05);
+	--font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", Roboto, sans-serif;
+	--font-monospace: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", monospace;
+	--font-ui-smaller: 12px;
+	--font-ui-small: 13px;
+	--font-ui-medium: 15px;
+	--font-ui-large: 20px;
+	--font-smallest: .8em;
+	--font-small: .933em;
+	--font-normal: 400;
+	--font-medium: 500;
+	--font-semibold: 600;
+	--line-height-normal: 1.5;
+	--line-height-tight: 1.3;
+	--size-2-1: 2px; --size-2-2: 4px; --size-2-3: 6px;
+	--size-4-1: 4px; --size-4-2: 8px; --size-4-3: 12px; --size-4-4: 16px; --size-4-5: 20px; --size-4-6: 24px; --size-4-8: 32px;
+	--radius-s: 4px; --radius-m: 8px; --radius-l: 12px;
+	--input-height: 30px;
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--background-primary: #1e1e1e;
+	--background-secondary: #262626;
+	--background-modifier-border: #363636;
+	--background-modifier-hover: rgba(255, 255, 255, .075);
+	--background-modifier-form-field: #2a2a2a;
+	--text-normal: #dadada;
+	--text-muted: #b3b3b3;
+	--text-faint: #666666;
+	--interactive-normal: #3f3f3f;
+	--interactive-hover: #4a4a4a;
+	--text-accent: #a68af9;
+	--text-error: #fb464c;
+	--text-warning: #e9973f;
+	--text-success: #44cf6e;
+	--color-orange: #e9973f;
+	--color-yellow: #e0de71;
+	--color-green: #44cf6e;
+	--color-red-rgb: 251, 70, 76;
+	--color-orange-rgb: 233, 151, 63;
+	--color-blue-rgb: 2, 122, 255;
+	--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--background-primary: #1e1e1e;
+		--background-secondary: #262626;
+		--background-modifier-border: #363636;
+		--background-modifier-hover: rgba(255, 255, 255, .075);
+		--background-modifier-form-field: #2a2a2a;
+		--text-normal: #dadada;
+		--text-muted: #b3b3b3;
+		--text-faint: #666666;
+		--interactive-normal: #3f3f3f;
+		--interactive-hover: #4a4a4a;
+		--text-accent: #a68af9;
+		--text-error: #fb464c;
+		--text-warning: #e9973f;
+		--text-success: #44cf6e;
+		--color-orange: #e9973f;
+		--color-yellow: #e0de71;
+		--color-green: #44cf6e;
+		--color-red-rgb: 251, 70, 76;
+		--color-orange-rgb: 233, 151, 63;
+		--color-blue-rgb: 2, 122, 255;
+		--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+	}
+}
+
+.leaf button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-1);
+	height: var(--input-height);
+	padding: 0 var(--size-4-3);
+	border: 0;
+	border-radius: var(--radius-s);
+	background: var(--interactive-normal);
+	box-shadow: var(--input-shadow);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+	cursor: pointer;
+}
+.leaf button:hover { background: var(--interactive-hover); }
+.leaf button.mod-cta { background: var(--interactive-accent); color: var(--text-on-accent); }
+.leaf button.clickable-icon {
+	padding: 0 var(--size-2-3);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+}
+.leaf button.clickable-icon:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.leaf button.mod-link {
+	height: auto;
+	padding: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--text-accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+.leaf input[type="search"] {
+	height: var(--input-height);
+	padding: 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: var(--font-ui-small);
+}
+.leaf :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.leaf progress, .leaf meter { accent-color: var(--interactive-accent); }
+
+/* Callout nativo de Obsidian (imitación). */
+.leaf .callout {
+	--callout-color: var(--color-blue-rgb);
+	margin: 0;
+	padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-6);
+	border-radius: var(--radius-s);
+	background: rgba(var(--callout-color), .1);
+}
+.leaf .callout[data-callout="warning"] { --callout-color: var(--color-orange-rgb); }
+.leaf .callout[data-callout="error"] { --callout-color: var(--color-red-rgb); }
+.leaf .callout-title {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	font-weight: var(--font-semibold);
+	color: rgb(var(--callout-color));
+}
+.leaf .callout-content { margin-top: var(--size-4-1); color: var(--text-normal); }
+.leaf .callout-content p { margin: 0; }
+
+.leaf .svg-icon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.leaf .svg-icon.is-small { width: 14px; height: 14px; }
+
+/* ==========================================================================
+ * CAPA 2 · Componentes propuestos. Esto SÍ es lo que va a styles.css.
+ * Solo variables de Obsidian. Los bloques marcados NUEVO no existen hoy; el
+ * resto reproduce reglas vivas de styles.css@a2584af (se cita la línea).
+ * ========================================================================== */
+
+.tyrian-product-surface {            /* styles.css:1 */
+	container-type: inline-size;
+	padding: var(--size-4-4);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
+	overflow-x: hidden;
+}
+
+.sr-only {
+	position: absolute !important;
+	width: 1px; height: 1px;
+	margin: -1px; padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* --- Barra de pestañas (NUEVO: role=tablist; hereda el trazo de .tyrian-product-shell__nav, styles.css:332) --- */
+.tyrian-product-shell__tabs {
+	display: flex;
+	align-items: flex-end;
+	gap: var(--size-4-1);
+	margin-block-end: var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+.tyrian-product-shell__tabs [role="tab"] {
+	height: auto;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 0;
+	border-block-end: 3px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-weight: var(--font-medium);
+}
+.tyrian-product-shell__tabs [role="tab"]:hover { background: transparent; color: var(--text-normal); }
+.tyrian-product-shell__tabs [role="tab"][aria-selected="true"] {
+	border-block-end-color: var(--interactive-accent);
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+}
+.tyrian-product-shell__tabs .tyrian-product-shell__settings { margin-inline-start: auto; margin-block-end: var(--size-4-1); }
+
+/* --- Línea de estado del sistema (NUEVO): una sola, bajo las pestañas, role=status --- */
+.tyrian-product-shell__status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 var(--size-4-2);
+	margin: 0 0 var(--size-4-4);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+.tyrian-product-shell__status > span + span::before { content: "·"; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+.tyrian-product-shell__status [data-tone="attention"] { color: var(--text-normal); font-weight: var(--font-medium); }
+
+/* --- Tarjeta de sesión: reglas vivas de styles.css:16-320 --- */
+.tyrian-companion-session { container-type: inline-size; display: grid; gap: var(--size-4-4); }
+.tyrian-companion-session__header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--size-4-3) var(--size-4-4); }
+.tyrian-companion-session__state { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--size-4-2); margin: 0; font-size: var(--font-ui-large); font-weight: var(--font-semibold); line-height: var(--line-height-tight); }
+.tyrian-companion-session__meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--size-4-2); margin: var(--size-4-1) 0 0; color: var(--text-muted); font-size: var(--font-ui-small); }
+.tyrian-companion-session__clock { font-variant-numeric: tabular-nums; font-weight: var(--font-medium); color: var(--text-normal); }
+.tyrian-companion-session__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: var(--size-4-2); }
+.tyrian-companion-session__badge { display: inline-block; padding: 0 var(--size-4-2); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); line-height: 1.6; }
+.tyrian-companion-session__figures { display: grid; grid-template-columns: repeat(var(--tyrian-figures, 3), minmax(0, 1fr)); gap: var(--size-4-4); margin: 0; }
+.tyrian-companion-session__figure { min-width: 0; margin: 0; }
+.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: var(--size-4-4); border-inline-start: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__figure dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .06em; text-transform: uppercase; }
+.tyrian-companion-session__figure dd { margin: var(--size-4-1) 0 0; font-size: var(--font-ui-large); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tyrian-companion-session__figure small { display: block; margin-top: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); }
+.tyrian-companion-session__figure[data-pending="true"] dd { color: var(--text-muted); font-weight: var(--font-medium); }
+.tyrian-companion-session__drawers { display: grid; }
+.tyrian-companion-session__drawer { border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__drawer > summary { display: flex; align-items: center; gap: var(--size-4-2); padding: var(--size-4-3) 0; list-style: none; cursor: pointer; font-weight: var(--font-medium); }
+.tyrian-companion-session__drawer > summary::-webkit-details-marker { display: none; }
+.tyrian-companion-session__drawer > summary::before { flex: 0 0 auto; width: .6em; color: var(--text-muted); content: "\25B8"; }
+.tyrian-companion-session__drawer[open] > summary::before { transform: rotate(90deg); }
+.tyrian-companion-session__drawer > summary > small { margin-inline-start: auto; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); text-align: end; }
+.tyrian-companion-session__drawer-body { display: grid; gap: var(--size-4-3); padding: 0 0 var(--size-4-4); }
+.tyrian-companion-session__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.tyrian-companion-session__list li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--size-4-3); padding: var(--size-4-2) 0; border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__list li:first-child { border-top: 0; }
+.tyrian-companion-session__list strong { font-weight: var(--font-medium); }
+.tyrian-companion-session__list span { color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: end; }
+/* Regla viva styles.css:258 ampliada de la tarjeta de sesión a toda la superficie. */
+.tyrian-product-surface .callout-title button { flex: 0 0 auto; margin-inline-start: auto; }
+
+/* NUEVO · título del callout en color de texto: el naranja de Obsidian da 2,95:1 sobre
+   blanco (no pasa AA). El color se queda en el icono y en el fondo teñido. */
+.tyrian-product-surface .callout-title { color: var(--text-normal); }
+.tyrian-product-surface .callout-title-inner { flex: 1 1 0; min-width: 0; }
+.tyrian-product-surface .callout-title .svg-icon { color: rgb(var(--callout-color)); }
+.tyrian-product-surface .callout-content { color: var(--text-muted); }
+.tyrian-product-surface .callout-actions { display: flex; flex-wrap: wrap; gap: var(--size-4-2); margin-top: var(--size-4-2); }
+
+/* --- Recorrido de una operación (NUEVO): pedido · recibido · leído · guardado --- */
+.tyrian-receipt {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: var(--size-4-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+.tyrian-receipt li {
+	display: grid;
+	grid-template-columns: 16px minmax(0, 1fr);
+	gap: 0 var(--size-4-1);
+	align-content: start;
+	padding-block-start: var(--size-4-2);
+	border-block-start: 2px solid var(--background-modifier-border);
+	color: var(--text-muted);
+}
+.tyrian-receipt li > .svg-icon { grid-row: span 2; margin-top: 1px; }
+.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 2; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-receipt li[data-step="done"] { border-block-start-color: var(--text-muted); color: var(--text-normal); }
+.tyrian-receipt li[data-step="done"] > .svg-icon { color: var(--text-success); }
+.tyrian-receipt li[data-step="current"] { border-block-start-color: var(--interactive-accent); color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-receipt li[data-step="failed"] { border-block-start-color: var(--text-error); color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-receipt li[data-step="failed"] > .svg-icon { color: var(--text-error); }
+.tyrian-receipt li[data-step="unconfirmed"] { border-block-start-style: dashed; color: var(--text-normal); }
+
+/* --- Avisos con su recorrido (NUEVO; lista propia para no heredar el flex de __list) --- */
+.tyrian-companion-session__alerts { display: grid; margin: 0; padding: 0; list-style: none; }
+.tyrian-companion-session__alerts > li { display: grid; gap: var(--size-4-2); padding: var(--size-4-3) 0; border-top: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__alerts > li:first-child { border-top: 0; padding-top: 0; }
+.tyrian-companion-session__alert-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--size-4-3); }
+.tyrian-companion-session__alert-head strong { font-weight: var(--font-medium); }
+.tyrian-companion-session__alert-head span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* --- Espera de cierre (NUEVO) --- */
+.tyrian-companion-session__wait { display: grid; gap: var(--size-4-2); }
+.tyrian-companion-session__wait progress { width: 100%; height: var(--size-4-2); }
+.tyrian-companion-session__wait p { margin: 0; color: var(--text-muted); }
+.tyrian-companion-session__wait strong { color: var(--text-normal); font-variant-numeric: tabular-nums; }
+
+/* --- Historial: reglas vivas de styles.css:891-1000, más la comparación por calidad (NUEVO) --- */
+.tyrian-session-history { display: grid; gap: var(--size-4-3); container-type: inline-size; }
+.tyrian-session-history__summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-block: 1px solid var(--background-modifier-border); }
+.tyrian-session-history__metric { display: grid; align-content: start; gap: var(--size-4-1); min-width: 0; margin: 0; padding: var(--size-4-3); border-inline-end: 1px solid var(--background-modifier-border); }
+.tyrian-session-history__metric:last-child { border-inline-end: 0; }
+.tyrian-session-history__metric dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .04em; text-transform: uppercase; }
+.tyrian-session-history__metric dd { margin: 0; font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tyrian-session-history__metric small { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-session-history h3 { margin: var(--size-4-2) 0 0; font-size: var(--font-ui-medium); }
+.tyrian-session-history table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tyrian-session-history caption { padding-block: var(--size-4-2); color: var(--text-muted); text-align: start; font-size: var(--font-ui-smaller); }
+.tyrian-session-history th, .tyrian-session-history td { padding: var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); text-align: start; vertical-align: top; }
+.tyrian-session-history thead th { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-session-history td.is-num, .tyrian-session-history th.is-num { text-align: end; }
+.tyrian-session-history tbody th { font-weight: var(--font-medium); }
+.tyrian-session-history td small, .tyrian-session-history th small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-normal); }
+.tyrian-session-history__quality { display: inline-flex; align-items: center; gap: var(--size-4-1); }
+.tyrian-session-history__quality::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; }
+.tyrian-session-history__quality[data-quality="exact"]::before { background: currentColor; }
+.tyrian-session-history__quality[data-quality="estimated"]::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+.tyrian-session-history__quality[data-quality="incomplete"]::before { border-style: dashed; }
+.tyrian-session-history__filters { display: flex; flex-wrap: wrap; gap: var(--size-4-2); align-items: center; }
+
+/* --- Selector de filtro (reutiliza el patrón aria-pressed de .tyrian-inventory-advisor__recommendation-action, styles.css:1891) --- */
+.tyrian-chips { display: flex; flex-wrap: wrap; gap: var(--size-4-1); margin: 0; padding: 0; list-style: none; }
+.leaf .tyrian-chips button { height: 26px; padding: 0 var(--size-4-2); border-radius: var(--radius-m); font-size: var(--font-ui-smaller); }
+.leaf .tyrian-chips button[aria-pressed="true"] { box-shadow: 0 0 0 1.5px var(--interactive-accent); font-weight: var(--font-semibold); }
+.tyrian-chips button span { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* --- Inventario (NUEVO): espacio, una sola lista por objeto --- */
+.tyrian-inventory { display: grid; gap: var(--size-4-4); container-type: inline-size; }
+.tyrian-inventory__space { display: grid; gap: var(--size-4-3); padding: var(--size-4-3) var(--size-4-4); border-inline-start: 3px solid var(--interactive-accent); border-radius: var(--radius-s); background: var(--background-secondary); }
+.tyrian-inventory__space[data-mode="free"] { border-inline-start-color: var(--color-orange); }
+.tyrian-inventory__space-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--size-4-1) var(--size-4-3); }
+.tyrian-inventory__space-head strong { font-size: var(--font-ui-medium); }
+.tyrian-inventory__space-head small { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__stores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--size-4-3); margin: 0; }
+.tyrian-inventory__store { display: grid; gap: var(--size-2-2); min-width: 0; margin: 0; }
+.tyrian-inventory__store dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .04em; text-transform: uppercase; }
+.tyrian-inventory__store dd { margin: 0; font-variant-numeric: tabular-nums; }
+/* <meter> nativo (accesible, con min/max/high/optimum), pintado con variables del tema:
+   ocupación normal en texto atenuado, casi lleno en naranja. Chromium/Electron. */
+.tyrian-inventory__store meter { width: 100%; height: var(--size-4-2); }
+.tyrian-inventory__store meter::-webkit-meter-bar { height: var(--size-4-2); border: 0; border-radius: var(--radius-s); background: var(--background-modifier-border); }
+.tyrian-inventory__store meter::-webkit-meter-optimum-value,
+.tyrian-inventory__store meter::-webkit-meter-suboptimum-value { border-radius: var(--radius-s); background: var(--text-muted); }
+.tyrian-inventory__store meter::-webkit-meter-even-less-good-value { border-radius: var(--radius-s); background: var(--color-orange); }
+.tyrian-inventory__store small { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.tyrian-inventory__bar input[type="search"] { flex: 1 1 12rem; min-width: 0; }
+
+.tyrian-inventory__list {
+	display: grid;
+	grid-template-columns: minmax(9rem, 1.5fr) minmax(6.5rem, .9fr) minmax(7rem, 1fr) minmax(6.5rem, .9fr) minmax(9rem, 2fr) auto;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border-block-start: 1px solid var(--background-modifier-border);
+	font-variant-numeric: tabular-nums;
+}
+.tyrian-inventory__head, .tyrian-inventory__row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: var(--size-4-3); align-items: start; }
+.tyrian-inventory__head { padding: var(--size-4-2) var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-inventory__head .is-num { text-align: end; }
+.tyrian-inventory__row { grid-template-rows: auto 1fr; padding: var(--size-4-3) var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); }
+.tyrian-inventory__row:hover { background: var(--background-modifier-hover); }
+.tyrian-inventory__row[hidden] { display: none; }
+/* Ancho: 6 columnas; «Datos» va debajo de «Por qué» en la misma columna. */
+.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-action { grid-column: 3; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-money { grid-column: 4; grid-row: 1 / span 2; }
+.tyrian-inventory__row > .c-why { grid-column: 5; grid-row: 1; }
+.tyrian-inventory__row > .c-data { grid-column: 5; grid-row: 2; margin-top: var(--size-4-1); }
+.tyrian-inventory__row > .c-keep { grid-column: 6; grid-row: 1 / span 2; }
+.tyrian-inventory__cell { min-width: 0; overflow-wrap: anywhere; }
+.tyrian-inventory__item { display: flex; align-items: flex-start; gap: var(--size-4-2); }
+.tyrian-inventory__item strong { display: block; font-weight: var(--font-semibold); }
+.tyrian-inventory__item small, .tyrian-inventory__cell small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-s); background: var(--background-secondary); border: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-inventory__icon[data-fallback="true"] { border-style: dashed; }
+.tyrian-inventory__qty { display: grid; gap: 0; }
+.tyrian-inventory__qty b { font-weight: var(--font-semibold); }
+.tyrian-inventory__qty span { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__money { text-align: end; font-weight: var(--font-semibold); }
+.tyrian-inventory__money[data-unknown="true"] { color: var(--text-muted); font-weight: var(--font-normal); }
+.tyrian-inventory__why { color: var(--text-muted); }
+.tyrian-inventory__data { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__data [data-stale="true"] { color: var(--text-normal); }
+.tyrian-inventory__data [data-stale="true"]::before { content: "\25CB\00a0"; }
+.tyrian-inventory__keep { display: grid; justify-items: end; gap: var(--size-2-2); }
+.leaf .tyrian-inventory__keep button[aria-pressed="true"] { box-shadow: 0 0 0 1.5px var(--interactive-accent); font-weight: var(--font-semibold); }
+.tyrian-inventory__keep small { min-height: 1.3em; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-inventory__foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--size-4-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+/* Acción: texto + marca lateral. El color NUNCA va en el texto (verde 2,6:1, amarillo 2,1:1 sobre blanco). */
+.tyrian-action { display: inline-flex; align-items: center; gap: var(--size-4-1); padding: 0 var(--size-4-2) 0 var(--size-4-1); border: 1px solid var(--background-modifier-border); border-inline-start: 3px solid var(--tyrian-action-mark, var(--text-faint)); border-radius: var(--radius-s); color: var(--text-normal); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); line-height: 1.7; white-space: nowrap; }
+.tyrian-action[data-action="sell"], .tyrian-action[data-action="list"] { --tyrian-action-mark: var(--color-green); }
+.tyrian-action[data-action="wait"] { --tyrian-action-mark: var(--interactive-accent); }
+.tyrian-action[data-action="keep"] { --tyrian-action-mark: var(--text-muted); }
+.tyrian-action[data-action="none"] { --tyrian-action-mark: var(--background-modifier-border); border-inline-start-style: dashed; color: var(--text-muted); }
+.tyrian-action-when { display: block; margin-top: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+/* --- Venta (NUEVO) --- */
+.tyrian-sale { display: grid; gap: var(--size-4-4); container-type: inline-size; }
+.tyrian-sale__card { display: grid; gap: var(--size-4-3); padding-block: var(--size-4-4); border-block-start: 1px solid var(--background-modifier-border); }
+.tyrian-sale__card:first-of-type { border-block-start: 0; padding-block-start: 0; }
+.tyrian-sale__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--size-4-1) var(--size-4-3); }
+.tyrian-sale__head h3 { display: flex; align-items: center; gap: var(--size-4-2); margin: 0; font-size: var(--font-ui-medium); }
+.tyrian-sale__head small { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-sale__verdict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin: 0; font-size: var(--font-ui-medium); font-weight: var(--font-semibold); }
+.tyrian-sale__verdict > span:not(.tyrian-action) { font-weight: var(--font-normal); color: var(--text-muted); font-size: var(--font-ui-small); }
+.tyrian-sale__clocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--size-4-3); margin: 0; padding: var(--size-4-2) 0; border-block: 1px dashed var(--background-modifier-border); font-size: var(--font-ui-smaller); }
+.tyrian-sale__clocks div { display: grid; gap: var(--size-2-1); min-width: 0; }
+.tyrian-sale__clocks dt { display: flex; align-items: center; gap: var(--size-4-1); color: var(--text-muted); }
+.tyrian-sale__clocks dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tyrian-sale__strip { display: grid; gap: var(--size-4-2); padding: var(--size-4-2); border-radius: var(--radius-s); }
+.tyrian-sale__strip:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.tyrian-sale__strip svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tyrian-sale__strip .axis { stroke: var(--background-modifier-border); stroke-width: 1; }
+.tyrian-sale__strip .zero { stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.tyrian-sale__strip .band { fill: var(--background-secondary); }
+.tyrian-sale__strip .dot { stroke: var(--text-normal); stroke-width: 1.5; fill: var(--background-primary); }
+.tyrian-sale__strip .dot.is-better { fill: var(--text-normal); }
+.tyrian-sale__strip .median { stroke: var(--interactive-accent); stroke-width: 3; }
+.tyrian-sale__strip .focus-ring { fill: none; stroke: var(--interactive-accent); stroke-width: 2.5; opacity: 0; }
+.tyrian-sale__strip:focus-within .focus-ring.is-active, .tyrian-sale__strip:hover .focus-ring.is-active { opacity: 1; }
+.tyrian-sale__strip text { fill: var(--text-muted); font-size: var(--font-ui-smaller); font-family: var(--font-interface); }
+.tyrian-sale__strip text.row-label { fill: var(--text-normal); font-size: var(--font-ui-small); font-weight: var(--font-semibold); }
+.tyrian-sale__readout { min-height: 1.5em; margin: 0; font-size: var(--font-ui-small); font-variant-numeric: tabular-nums; }
+.tyrian-sale__legend { display: flex; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-3); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__card details { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__card details summary { cursor: pointer; color: var(--text-normal); font-size: var(--font-ui-small); }
+.tyrian-sale__card details p { margin: var(--size-4-2) 0 0; }
+.tyrian-sale__card table { width: 100%; margin-top: var(--size-4-2); border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tyrian-sale__card th, .tyrian-sale__card td { padding: var(--size-4-1) var(--size-4-2); border-block-end: 1px solid var(--background-modifier-border); text-align: end; color: var(--text-normal); }
+.tyrian-sale__card th:first-child, .tyrian-sale__card td:first-child { text-align: start; }
+
+/* --- Responsive por contenedor (mismos cortes que styles.css: 759 / 520 / 479 / 400) --- */
+@container (max-width: 759px) {
+	.tyrian-inventory__list { grid-template-columns: minmax(0, 1fr) auto; }
+	.tyrian-inventory__head { display: none; }
+	.tyrian-inventory__row { grid-template-columns: subgrid; grid-template-rows: none; row-gap: var(--size-4-1); padding-inline: 0; }
+	.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1; }
+	.tyrian-inventory__row > .c-money { grid-column: 2; grid-row: 1; }
+	.tyrian-inventory__row > .c-action { grid-column: 1 / -1; grid-row: 2; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-qty { grid-column: 1 / -1; grid-row: 3; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-why { grid-column: 1 / -1; grid-row: 4; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-data { grid-column: 1; grid-row: 5; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-keep { grid-column: 2; grid-row: 5; align-self: end; }
+	.tyrian-inventory__qty { display: flex; flex-wrap: wrap; gap: 0 var(--size-4-2); }
+	.tyrian-inventory__qty > * + *::before { content: "·"; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+	.tyrian-action-when { display: inline; margin: 0 0 0 var(--size-4-2); }
+	.tyrian-sale__clocks { grid-template-columns: minmax(0, 1fr); gap: var(--size-4-2); }
+}
+@container (max-width: 520px) {
+	.tyrian-companion-session__figures { grid-template-columns: minmax(0, 1fr); gap: var(--size-4-3); }
+	.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: 0; padding-block-start: var(--size-4-3); border-inline-start: 0; border-block-start: 1px solid var(--background-modifier-border); }
+	.tyrian-receipt { grid-template-columns: minmax(0, 1fr); gap: 0; }
+	.tyrian-receipt li { grid-template-columns: 16px minmax(0, 1fr) auto; padding-block: var(--size-4-1); border-block-start: 0; border-inline-start: 2px solid var(--background-modifier-border); padding-inline-start: var(--size-4-2); }
+	.tyrian-receipt li[data-step="done"] { border-inline-start-color: var(--text-muted); }
+	.tyrian-receipt li[data-step="current"] { border-inline-start-color: var(--interactive-accent); }
+	.tyrian-receipt li[data-step="failed"] { border-inline-start-color: var(--text-error); }
+	.tyrian-receipt li > .svg-icon { grid-row: auto; }
+	.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 3; text-align: end; }
+	.tyrian-session-history__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.tyrian-session-history__metric:nth-child(2) { border-inline-end: 0; }
+	.tyrian-session-history__metric:nth-child(-n + 2) { border-block-end: 1px solid var(--background-modifier-border); }
+	.tyrian-session-history .is-wide { display: none; }
+	.tyrian-inventory__stores { grid-template-columns: minmax(0, 1fr); gap: var(--size-4-2); }
+}
+@container (max-width: 400px) {
+	.tyrian-product-shell__status { display: grid; }
+	.tyrian-product-shell__status > span + span::before { content: none; }
+	.tyrian-companion-session__header { grid-template-columns: minmax(0, 1fr); }
+	.tyrian-companion-session__actions { justify-content: stretch; }
+	.tyrian-companion-session__actions button { flex: 1 1 auto; }
+	.tyrian-product-surface .callout-title { flex-wrap: wrap; }
+	.tyrian-product-surface .callout-title button { order: 3; width: 100%; margin-inline-start: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-product-surface *, .tyrian-product-surface *::before { transition: none !important; animation: none !important; }
+}
+
+/* ==========================================================================
+ * CAPA 0 · Marco del boceto (láminas, notas, conmutadores). No se implementa.
+ * ========================================================================== */
+html { background: var(--background-secondary); }
+body.bx { margin: 0; padding: 24px 28px 80px; color: var(--text-normal); font-family: var(--font-interface); font-size: 14px; line-height: 1.5; }
+.bx-top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: -24px -28px 24px; padding: 10px 28px; background: var(--background-secondary); border-bottom: 1px solid var(--background-modifier-border); font-size: 13px; }
+.bx-top b { font-weight: 600; }
+.bx-top fieldset { display: flex; gap: 6px; align-items: center; margin: 0; padding: 0; border: 0; }
+.bx-top legend { float: left; margin-right: 6px; color: var(--text-muted); }
+.bx-top label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.bx h1 { margin: 0 0 4px; font-size: 22px; }
+.bx h2 { margin: 48px 0 6px; padding-top: 16px; border-top: 2px solid var(--text-normal); font-size: 18px; }
+.bx-lede { max-width: 72ch; margin: 0 0 12px; color: var(--text-muted); }
+.bx-spec { margin: 28px 0 0; }
+.bx-spec > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 8px; }
+.bx-spec > header h4 { margin: 0; font-size: 15px; }
+.bx-axes { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.bx-axes li { padding: 0 6px; border: 1px solid var(--background-modifier-border); border-radius: 3px; color: var(--text-muted); font-size: 11px; letter-spacing: .02em; }
+.bx-pair { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 20px; }
+.leaf { flex: 0 0 auto; width: 860px; max-width: 100%; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); overflow: hidden; }
+.leaf.is-narrow { width: 320px; }
+.leaf-title { display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid var(--background-modifier-border); color: var(--text-muted); font-size: 12px; font-family: var(--font-interface); }
+body[data-width="narrow"] .leaf:not(.is-narrow) { display: none; }
+body[data-width="wide"] .leaf.is-narrow { display: none; }
+.bx-notes { max-width: 860px; margin: 10px 0 0; padding: 0 0 0 16px; color: var(--text-muted); font-size: 13px; }
+.bx-notes li { margin: 2px 0; }
+.bx-notes b { color: var(--text-normal); font-weight: 600; }
+.bx-mine { padding: 0 4px; border-radius: 3px; background: rgba(var(--color-blue-rgb), .12); color: var(--text-normal); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.bx-src { padding: 0 4px; border-radius: 3px; background: var(--background-modifier-hover); color: var(--text-normal); font-size: 11px; white-space: nowrap; }
+body[data-examples="on"] .ej { text-decoration: underline dotted rgba(var(--color-blue-rgb), .9) 2px; text-underline-offset: 3px; }
+.bx-before { max-width: 980px; border-collapse: collapse; font-size: 13px; }
+.bx-before th, .bx-before td { padding: 6px 10px; border-bottom: 1px solid var(--background-modifier-border); text-align: left; vertical-align: top; }
+.bx-before th { color: var(--text-muted); font-weight: 600; }
+.bx-before code, .bx code { font-family: var(--font-monospace); font-size: 12px; }
+</style>
+</head>
+<body class="bx" data-width="both" data-examples="on">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+	<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+	<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+	<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+	<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+	<symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></symbol>
+	<symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+	<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+	<symbol id="i-unplug" viewBox="0 0 24 24"><path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol>
+	<symbol id="i-pending" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3.5 3"/></symbol>
+	<symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+	<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol>
+	<symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+</svg>
+
+<div class="bx-top" role="region" aria-label="Controles del boceto">
+	<b>H18.31 · boceto</b>
+	<fieldset><legend>Tema</legend>
+		<label><input type="radio" name="bx-theme" value="auto" checked> Sistema</label>
+		<label><input type="radio" name="bx-theme" value="light"> Claro</label>
+		<label><input type="radio" name="bx-theme" value="dark"> Oscuro</label>
+	</fieldset>
+	<fieldset><legend>Panel</legend>
+		<label><input type="radio" name="bx-width" value="both" checked> Los dos</label>
+		<label><input type="radio" name="bx-width" value="narrow"> Lateral (320 px)</label>
+		<label><input type="radio" name="bx-width" value="wide"> Ancho (860 px)</label>
+	</fieldset>
+	<label><input type="checkbox" id="bx-examples" checked> Subrayar cifras de ejemplo</label>
+</div>
+
+<h1>Tyrian Companion · Sesiones, Inventario y Venta</h1>
+<p class="bx-lede">Boceto para aprobar antes de implementar (H18.31, Lote U). Modo componente: todo sale de variables de Obsidian y de las piezas que ya tiene <code>styles.css</code>. Cada lámina es un panel de Obsidian en el lateral (320 px) y en el centro (860 px), con el mismo HTML: nada se pinta dos veces.</p>
+<p class="bx-lede">Escenario: jueves 24 sep 2026, 21:46. Halloween empieza el 13 oct. Nombres e IDs de objeto son reales (API y <code>docs/audit/2026-09-11-festivales-datawars2.md</code>); las cifras de la comparación del saco son las medidas de la auditoría del 24 sep. <span class="ej">Lo subrayado así</span> es cifra de ejemplo en el orden de magnitud real, no un dato.</p>
+<p class="bx-lede">Etiquetas de las notas: <span class="bx-src">David 24 sep</span> decisión suya · <span class="bx-src">Auditoría §x</span> exigencia de la auditoría final · <span class="bx-mine">Decisión mía</span> propuesta mía, se puede tumbar.</p>
+
+<!-- ======================================================================= -->
+<h2 id="antes">0 · Antes: lo que pinta la 0.1.35 (medido en <code>a2584af</code>)</h2>
+<table class="bx-before">
+	<thead><tr><th>Dónde</th><th>Hoy</th><th>En este boceto</th></tr></thead>
+	<tbody>
+		<tr><td>Pestañas<br><code>product-shell.ts:44-47,192</code></td><td><code>&lt;nav&gt;</code> con botones <code>aria-current="page"</code>: Sesión · Inventario · Ajustes. Sin <code>tablist</code>, sin flechas. Ajustes abre un modal.</td><td><code>role="tablist"</code> con Sesiones · Inventario · Venta, flechas, Inicio/Fin y tabindex itinerante. Ajustes pasa a botón de icono: no es una pestaña, abre un modal.</td></tr>
+		<tr><td>Asesor<br><code>inventory-advisor-view.ts:771-772</code></td><td><code>renderTable</code> y <code>renderCards</code> se pintan siempre los dos; el CSS esconde uno por ancho (<code>styles.css:2208</code>).</td><td>Una sola lista por objeto con <code>subgrid</code>: columnas en ancho, bloque apilado en estrecho.</td></tr>
+		<tr><td>Columnas del asesor<br><code>:873-876</code></td><td>Objeto · Cantidad · Qué hacer · Valor por unidad · Valor neto · En propiedad · Ubicación · Evidencia · Explicación. Sin reservada ni libre, sin fecha del precio.</td><td>Objeto · Cantidad (total, reservada, libre) · Qué hacer y cuándo · Oro neto · Por qué · Datos (fecha de cada uno) · Conservar.</td></tr>
+		<tr><td>Textos que piden revisión<br><code>i18n-runtime-catalog.ts:414,467,470</code></td><td>«Revisar», «Requiere revisión», «Confirmar cambios antes de escribir».</td><td>Ninguno. Lo que no se puede decidir dice por qué («precio desconocido») y no pide nada.</td></tr>
+		<tr><td>Códigos crudos<br><code>:349</code> y 12 más</td><td>«Código seguro: snapshot_invalid», etc.</td><td>Frase llana; el código va a «Copiar detalle técnico» (portapapeles), no a la pantalla.</td></tr>
+		<tr><td>«En vivo»<br><code>:28,937</code></td><td>«la observación en vivo se ha detenido».</td><td>«Última lectura de la cuenta hace 4 min», con la hora de la siguiente.</td></tr>
+		<tr><td>Historial<br><code>:896,920</code></td><td>«Los totales solo aparecen cuando todas las sesiones aportan ese dato»; si falta una, «Desconocido».</td><td>«Valor conocido» con «de 12 sesiones» y una cifra aparte, «2 sin valorar».</td></tr>
+		<tr><td>Línea del saco<br><code>sell-signal-line.ts:26-33</code></td><td>«Saco de Halloween: 3s 91c · Vende · La puja actual supera el umbral de este año». Sin fecha del precio ni comparación.</td><td>Tarjeta de venta con los tres relojes y las 7 temporadas.</td></tr>
+		<tr><td>Color como texto<br><code>styles.css:2030,2072,2077</code></td><td>Acciones en <code>--color-green</code> (2,61:1 sobre blanco) y <code>--color-yellow</code> (2,09:1); «Limitada» en <code>--text-warning</code> (2,95:1).</td><td>El texto va siempre en <code>--text-normal</code>; el color solo en una marca lateral de 3 px, con el texto delante.</td></tr>
+		<tr><td>Gráfico<br><code>price-history-chart-view.ts:175,345</code></td><td>SVG <code>aria-hidden</code>; zoom arrastrando con el puntero.</td><td>Gráfico que se recorre con las flechas, con lectura en voz alta y tabla alternativa.</td></tr>
+	</tbody>
+</table>
+
+<!-- ======================================================================= -->
+<h2 id="recorrido">1 · Recorrido: las tres pestañas en su estado normal</h2>
+<p class="bx-lede">Esta lámina es interactiva: flechas izquierda/derecha, Inicio y Fin mueven la pestaña. Las láminas de estados de abajo repiten la barra sin interacción.</p>
+
+<section class="bx-spec" aria-label="Lámina recorrido">
+	<header><h4>Panel completo</h4><ul class="bx-axes"><li>accesibilidad</li><li>responsive</li><li>feedback</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>panel</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" data-tabs>
+				<button role="tab" id="rt-ses" aria-selected="true" aria-controls="rp-ses" tabindex="0">Sesiones</button>
+				<button role="tab" id="rt-inv" aria-selected="false" aria-controls="rp-inv" tabindex="-1">Inventario</button>
+				<button role="tab" id="rt-sale" aria-selected="false" aria-controls="rp-sale" tabindex="-1">Venta</button>
+				<button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes de Tyrian Companion" title="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button>
+			</div>
+
+			<div role="tabpanel" id="rp-ses" aria-labelledby="rt-ses" tabindex="0">
+				<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>Cuenta leída a las 21:36</span></p>
+				<section class="tyrian-companion-session" aria-label="Sesión en curso">
+					<div class="tyrian-companion-session__header">
+						<div>
+							<p class="tyrian-companion-session__state">Sesión en curso</p>
+							<p class="tyrian-companion-session__meta"><span>Desde las 20:28</span><span class="tyrian-companion-session__clock">1 h 18 min</span><span>· la marcó Nexus</span></p>
+						</div>
+						<div class="tyrian-companion-session__actions"><button>Terminar</button></div>
+					</div>
+					<dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+						<div class="tyrian-companion-session__figure"><dt>Ganado</dt><dd class="ej">3g 12s 40c</dd><small>vendiendo ya · <span class="ej">3g 58s 10c</span> publicando</small></div>
+						<div class="tyrian-companion-session__figure"><dt>Oro en la cartera</dt><dd class="ej">+48s 20c</dd><small>ya incluido en «Ganado»</small></div>
+						<div class="tyrian-companion-session__figure" title="La API de la cuenta se actualiza cada 5 a 10 minutos."><dt>Lectura de la cuenta</dt><dd>hace 10 min</dd><small>21:36 · siguiente hacia las 21:47</small></div>
+					</dl>
+					<div class="tyrian-companion-session__drawers">
+						<details class="tyrian-companion-session__drawer" open><summary>Botín <small>6 objetos · 1 sin precio</small></summary>
+							<div class="tyrian-companion-session__drawer-body">
+								<ul class="tyrian-companion-session__list">
+									<li><strong>Moneda mística ×2</strong><span class="ej">1g 02s 00c</span></li>
+									<li><strong>Esquirla de Janthir Syntri ×12</strong><span class="ej">84s 60c</span></li>
+									<li><strong>Colmillos de plástico ×4</strong><span>sin precio</span></li>
+								</ul>
+							</div>
+						</details>
+						<details class="tyrian-companion-session__drawer"><summary>Avisos <small>ninguno</small></summary></details>
+						<details class="tyrian-companion-session__drawer"><summary>Detalle <small>calidad, lecturas, hora</small></summary></details>
+					</div>
+				</section>
+			</div>
+
+			<div role="tabpanel" id="rp-inv" aria-labelledby="rt-inv" tabindex="0" hidden>
+				<p class="tyrian-product-shell__status" role="status"><span>Analizado hoy a las 21:02</span><span>Notas guardadas 21:03</span></p>
+				<div class="tyrian-inventory">
+					<section class="tyrian-inventory__space" data-mode="free" aria-label="Espacio">
+						<div class="tyrian-inventory__space-head"><strong>Poco espacio: primero liberar</strong><small><span class="ej">9</span> huecos libres en bolsas · umbral 20</small></div>
+					</section>
+					<p class="bx-lede" style="margin:0">(El inventario completo está en la sección 3.)</p>
+				</div>
+			</div>
+
+			<div role="tabpanel" id="rp-sale" aria-labelledby="rt-sale" tabindex="0" hidden>
+				<p class="tyrian-product-shell__status" role="status"><span>Precios de hoy 21:02</span><span>Halloween desde el 13 oct</span></p>
+				<p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> Saco de Halloween <span>sin ventaja demostrada para esperar</span></p>
+				<p class="tyrian-sale__verdict" style="margin-top:8px"><span class="tyrian-action" data-action="wait">Esperar</span> Barra de caramelo <span>ventana 13–19 oct</span></p>
+				<p class="bx-lede" style="margin:12px 0 0">(Las tarjetas completas están en la sección 4.)</p>
+			</div>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>Tres pestañas, un motor.</b> Sesiones · Inventario · Venta. «Venta» en la pestaña porque «Oportunidades de venta» no cabe en 320 px junto a las otras dos; el nombre largo va en <code>aria-label</code> del panel. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>Ajustes sale de la fila de pestañas</b> y queda como icono al final: una pestaña tiene que controlar un panel de la misma vista, y Ajustes abre un modal. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>Una línea de estado bajo las pestañas</b> (<code>role="status"</code>): es el único sitio donde el panel dice qué ha leído y cuándo. Sustituye a los párrafos que retiró SPEC-paneles-sin-prosa. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>«Ganado» es la cifra principal</b> de la sesión; la cartera se enseña aparte pero está incluida, para no contar dos veces. <span class="bx-src">David 24 sep</span> <span class="bx-src">Auditoría §3.C</span></li>
+		<li><b>Nunca «en vivo».</b> La tercera cifra dice cuándo se leyó la cuenta y cuándo toca la siguiente; el porqué (caché de 5 a 10 min) va en el <code>title</code>. <span class="bx-src">David 24 sep</span></li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="sesiones">2 · Sesiones</h2>
+<p class="bx-lede">La sesión sirve para ver cuánto has ganado. La marca el complemento (inicio y fin) y la hora se corrige después. Nada pide confirmación.</p>
+
+<!-- 2.1 En curso, Laberinto (festival) -->
+<section class="bx-spec" aria-label="Sesión en curso en el Laberinto">
+	<header><h4>2.1 · En curso en el Laberinto, con avisos enviados al juego</h4><ul class="bx-axes"><li>contenido real</li><li>feedback: enviado / recibido</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>escenario: sáb 17 oct 2026, 22:05</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="true">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>Mapa del Laberinto</span><span>Cuenta leída a las 22:01</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión en curso">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Sesión en curso <span class="tyrian-companion-session__badge">Laberinto</span></p>
+						<p class="tyrian-companion-session__meta"><span>Desde las 21:10</span><span class="tyrian-companion-session__clock">55 min</span><span>· la marcó Nexus</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button>Terminar</button></div>
+				</div>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+					<div class="tyrian-companion-session__figure"><dt>Ganado</dt><dd class="ej">14g 22s 10c</dd><small>vendiendo ya · <span class="ej">16g 80s 45c</span> publicando</small></div>
+					<div class="tyrian-companion-session__figure"><dt>Sacos</dt><dd class="ej">212</dd><small><span class="ej">231</span> por hora · al menos, por la caché</small></div>
+					<div class="tyrian-companion-session__figure" title="La API de la cuenta se actualiza cada 5 a 10 minutos."><dt>Lectura de la cuenta</dt><dd>hace 4 min</dd><small>22:01 · siguiente hacia las 22:07</small></div>
+				</dl>
+				<div class="tyrian-companion-session__drawers">
+					<details class="tyrian-companion-session__drawer" open><summary>Avisos <small>2 · 1 sin confirmar</small></summary>
+						<div class="tyrian-companion-session__drawer-body">
+							<ul class="tyrian-companion-session__alerts">
+								<li><div class="tyrian-companion-session__alert-head"><strong>Barra de caramelo ×3</strong><span class="ej">12g 24s 00c</span></div>
+									<ol class="tyrian-receipt" aria-label="Recorrido del aviso">
+										<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Visto en la cuenta<time>21:58</time></li>
+										<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Enviado a Nexus<time>21:58</time></li>
+										<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Recibido en el juego<time>21:58</time></li>
+										<li data-step="skip"><svg class="svg-icon is-small"><use href="#i-minus"/></svg>Guardado en la nota<small>al cerrar</small></li>
+									</ol>
+								</li>
+								<li><div class="tyrian-companion-session__alert-head"><strong>Barra de caramelo ×2</strong><span class="ej">8g 16s 00c</span></div>
+									<ol class="tyrian-receipt" aria-label="Recorrido del aviso">
+										<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Visto en la cuenta<time>22:04</time></li>
+										<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Enviado a Nexus<time>22:04</time></li>
+										<li data-step="unconfirmed"><svg class="svg-icon is-small"><use href="#i-pending"/></svg>Sin confirmación del juego<small>puede no haberse visto</small></li>
+										<li data-step="skip"><svg class="svg-icon is-small"><use href="#i-minus"/></svg>Guardado en la nota<small>al cerrar</small></li>
+									</ol>
+								</li>
+							</ul>
+						</div>
+					</details>
+					<details class="tyrian-companion-session__drawer"><summary>Botín <small>9 objetos</small></summary></details>
+					<details class="tyrian-companion-session__drawer"><summary>Detalle <small>calidad, lecturas, hora</small></summary></details>
+				</div>
+			</section>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>«Sacos» solo aparece en el Laberinto.</b> Fuera del festival la segunda cifra es «Oro en la cartera» (lámina 1). La sesión es toda la conexión al juego; el mapa 866 solo la etiqueta. <span class="bx-src">David 24 sep</span></li>
+		<li><b>Un aviso no es «entregado» hasta que el juego lo confirma.</b> «Enviado» y «Recibido» son dos pasos; si el addon no contesta, se dice. <span class="bx-src">Auditoría §3.F</span></li>
+		<li><b>Avisos pasa a primer cajón en el Laberinto</b> y Botín en el resto del año: el cajón abierto es lo que David mira en ese momento. El orden fijo de los tres cajones de FICHA §1 cambia. <span class="bx-mine">Decisión mía</span></li>
+	</ul>
+</section>
+
+<!-- 2.2 Espera de cierre -->
+<section class="bx-spec" aria-label="Espera de cierre">
+	<header><h4>2.2 · Cerrando: espera de 10 minutos</h4><ul class="bx-axes"><li>estados</li><li>feedback: pedido / recibido / leído / guardado</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 21:46</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="true">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span data-tone="attention">Cerrando la sesión</span></p>
+			<section class="tyrian-companion-session" aria-label="Cerrando la sesión">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Cerrando la sesión <span class="tyrian-companion-session__badge">Provisional</span></p>
+						<p class="tyrian-companion-session__meta"><span>20:28 – 21:43</span><span class="tyrian-companion-session__clock">1 h 15 min</span><span>· fin marcado por Nexus</span></p>
+					</div>
+				</div>
+				<div class="tyrian-companion-session__wait">
+					<progress max="600" value="180" aria-label="Espera de cierre: 3 de 10 minutos"></progress>
+					<p><strong>Cierre hacia las 21:53</strong> · faltan 7 min. La cuenta tarda en reflejar los últimos minutos.</p>
+					<p>Lo que consigas mientras tanto puede sumarse a esta sesión.</p>
+				</div>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Fin pedido por Nexus<time>21:43</time></li>
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Recibido<time>21:43</time></li>
+					<li data-step="current"><svg class="svg-icon is-small"><use href="#i-hourglass"/></svg>Lectura final<time>hacia 21:53</time></li>
+					<li data-step="pending"><svg class="svg-icon is-small"><use href="#i-pending"/></svg>Nota guardada<small>después</small></li>
+				</ol>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:2">
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Ganado hasta ahora</dt><dd class="ej">3g 12s 40c</dd><small>provisional · vendiendo ya</small></div>
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Oro en la cartera</dt><dd class="ej">+48s 20c</dd><small>provisional</small></div>
+				</dl>
+			</section>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>La espera se ve y dice por qué</b>, en una frase: hoy la espera de 10 min no está documentada ni en pantalla. <span class="bx-src">Auditoría §3.C, §3.G</span></li>
+		<li><b>«Puede sumarse»</b> declara la atribución incierta sin pedir nada: si terminas y sigues jugando, lo de después puede entrar. <span class="bx-src">Auditoría §3.C</span></li>
+		<li><b>El recorrido de 4 pasos</b> es el mismo componente para cerrar sesión, avisos e inventario: pedido · recibido · leído · guardado. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>Sin botón «Cerrar ya».</b> Añadirlo daría a David una decisión que hoy no tiene. <span class="bx-mine">Decisión mía</span></li>
+	</ul>
+</section>
+
+<!-- 2.3 Fallo tras la espera -->
+<section class="bx-spec" aria-label="Fallo tras la espera">
+	<header><h4>2.3 · Fallo tras la espera, con reintento solo y a mano</h4><ul class="bx-axes"><li>estados</li><li>feedback</li><li>sin códigos crudos</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 21:54</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="true">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span data-tone="attention">Cierre sin terminar</span></p>
+			<section class="tyrian-companion-session" aria-label="Cierre sin terminar">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Cierre sin terminar <span class="tyrian-companion-session__badge">Provisional</span></p>
+						<p class="tyrian-companion-session__meta"><span>20:28 – 21:43</span><span class="tyrian-companion-session__clock">1 h 15 min</span></p>
+					</div>
+				</div>
+				<div class="callout" data-callout="error" role="alert">
+					<div class="callout-title"><svg class="svg-icon"><use href="#i-alert"/></svg><span class="callout-title-inner">No se pudo leer la cuenta al cerrar</span><button><svg class="svg-icon is-small"><use href="#i-refresh"/></svg>Reintentar ahora</button></div>
+					<div class="callout-content"><p>El resultado provisional se conserva. Se vuelve a intentar sola a las 21:58.</p></div>
+				</div>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Fin pedido por Nexus<time>21:43</time></li>
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Recibido<time>21:43</time></li>
+					<li data-step="failed"><svg class="svg-icon is-small"><use href="#i-x"/></svg>Lectura final<time>falló 21:53</time></li>
+					<li data-step="pending"><svg class="svg-icon is-small"><use href="#i-pending"/></svg>Nota guardada<small>pendiente</small></li>
+				</ol>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:2">
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Ganado hasta 21:43</dt><dd class="ej">3g 12s 40c</dd><small>provisional · vendiendo ya</small></div>
+					<div class="tyrian-companion-session__figure" data-pending="true"><dt>Oro en la cartera</dt><dd class="ej">+48s 20c</dd><small>provisional</small></div>
+				</dl>
+				<div class="tyrian-companion-session__drawers">
+					<details class="tyrian-companion-session__drawer"><summary>Detalle <small>para soporte</small></summary>
+						<div class="tyrian-companion-session__drawer-body"><button><svg class="svg-icon is-small"><use href="#i-copy"/></svg>Copiar detalle técnico</button></div>
+					</details>
+				</div>
+			</section>
+		</div>
+	</div>
+	</div>
+
+	<div class="bx-pair" style="margin-top:20px">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>variante: falla la nota</span></div>
+		<div class="tyrian-product-surface">
+			<section class="tyrian-companion-session" aria-label="Resumen sin nota">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Sesión cerrada <span class="tyrian-companion-session__badge">Exacta</span></p>
+						<p class="tyrian-companion-session__meta"><span>20:28 – 21:43</span><span class="tyrian-companion-session__clock">1 h 15 min</span></p>
+					</div>
+				</div>
+				<div class="callout" data-callout="warning" role="alert">
+					<div class="callout-title"><svg class="svg-icon"><use href="#i-alert"/></svg><span class="callout-title-inner">La nota no se pudo guardar</span><button>Reintentar guardado</button></div>
+					<div class="callout-content"><p>El resultado está a salvo y no se pierde al empezar otra sesión.</p></div>
+				</div>
+				<ol class="tyrian-receipt" aria-label="Recorrido del cierre">
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Fin pedido por Nexus<time>21:43</time></li>
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Recibido<time>21:43</time></li>
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Lectura final<time>21:53</time></li>
+					<li data-step="failed"><svg class="svg-icon is-small"><use href="#i-x"/></svg>Nota guardada<time>falló 21:53</time></li>
+				</ol>
+			</section>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>Reintento automático, más «Reintentar ahora».</b> Hoy el reintento desde error no funciona nunca y un fallo de la captura final no deja ningún botón. <span class="bx-src">Auditoría §3.B</span></li>
+		<li><b>Las cifras se quedan</b> en gris (<code>data-pending</code>, regla viva <code>styles.css:129</code>), no se borran. «Ganado hasta 21:43» dice de qué momento son.</li>
+		<li><b>El código de error no se pinta.</b> Va al portapapeles con «Copiar detalle técnico», dentro de Detalle. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>«No se pierde al empezar otra sesión»</b> recoge el criterio de §3.B: la sesión siguiente empieza sin limpiar a mano y el resultado pendiente no se borra.</li>
+	</ul>
+</section>
+
+<!-- 2.4 Desconexión del juego -->
+<section class="bx-spec" aria-label="Sin señal del juego">
+	<header><h4>2.4 · Sin señal del juego</h4><ul class="bx-axes"><li>estados</li><li>desconexión</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 22:44</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="true">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span data-tone="attention">Nexus sin señal desde las 22:40</span><span>Cuenta leída a las 22:38</span></p>
+			<section class="tyrian-companion-session" aria-label="Sesión en curso sin señal">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Sesión en curso <span class="tyrian-companion-session__badge">Sin señal</span></p>
+						<p class="tyrian-companion-session__meta"><span>Desde las 22:05</span><span class="tyrian-companion-session__clock">39 min</span></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button>Terminar</button></div>
+				</div>
+				<div class="callout" data-callout="warning" role="status">
+					<div class="callout-title"><svg class="svg-icon"><use href="#i-unplug"/></svg><span class="callout-title-inner">Nexus no responde desde las 22:40</span></div>
+					<div class="callout-content"><p>Si no vuelve antes de las 22:50, la sesión se cerrará con fin a las 22:40. Podrás corregir la hora después.</p></div>
+				</div>
+				<dl class="tyrian-companion-session__figures" style="--tyrian-figures:2">
+					<div class="tyrian-companion-session__figure"><dt>Ganado</dt><dd class="ej">1g 04s 90c</dd><small>vendiendo ya</small></div>
+					<div class="tyrian-companion-session__figure" title="La API de la cuenta se actualiza cada 5 a 10 minutos."><dt>Lectura de la cuenta</dt><dd>hace 6 min</dd><small>22:38 · siguiente hacia las 22:45</small></div>
+				</dl>
+			</section>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>«Sin señal», no «juego cerrado».</b> Que el addon deje de contestar puede ser un fallo del addon o del puente. <span class="bx-src">Auditoría §3.F</span></li>
+		<li><b>Regla de 10 minutos a la vista</b>, con la hora exacta a la que actúa y la hora de fin que pondrá. <span class="bx-src">David 24 sep</span></li>
+		<li><b>Aviso en <code>role="status"</code>, no <code>alert</code>:</b> no hay nada que hacer, solo se informa. <span class="bx-mine">Decisión mía</span></li>
+	</ul>
+</section>
+
+<!-- 2.5 Sin sesión + historial -->
+<section class="bx-spec" aria-label="Sin sesión e historial">
+	<header><h4>2.5 · Sin sesión, con historial y comparación por calidad</h4><ul class="bx-axes"><li>contenido real</li><li>subtotal conocido</li><li>N sin valorar</li><li>responsive: tabla</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 22:10</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="true">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Nexus conectado</span><span>La sesión empieza sola al entrar al juego</span></p>
+			<section class="tyrian-companion-session" aria-label="Sin sesión">
+				<div class="tyrian-companion-session__header">
+					<div>
+						<p class="tyrian-companion-session__state">Sin sesión</p>
+						<p class="tyrian-companion-session__meta"><span>Última: hoy 20:28 – 21:43 · 1 h 15 min · <b class="ej">3g 12s 40c</b></span><button class="mod-link">Abrir la nota</button><button class="mod-link">Corregir hora</button></p>
+					</div>
+					<div class="tyrian-companion-session__actions"><button>Nueva sesión</button></div>
+				</div>
+			</section>
+
+			<section class="tyrian-session-history" aria-label="Historial" style="margin-top:20px">
+				<dl class="tyrian-session-history__summary">
+					<div class="tyrian-session-history__metric"><dt>Sesiones</dt><dd>14</dd></div>
+					<div class="tyrian-session-history__metric"><dt>Tiempo</dt><dd class="ej">19 h 40 min</dd></div>
+					<div class="tyrian-session-history__metric"><dt>Valor conocido</dt><dd class="ej">98g 12s 40c</dd><small>de 12 sesiones</small></div>
+					<div class="tyrian-session-history__metric"><dt>Sin valorar</dt><dd>2</dd><small>falta el precio de algún objeto</small></div>
+				</dl>
+
+				<h3>Oro por hora, por calidad</h3>
+				<div class="tyrian-session-history__filters">
+					<ul class="tyrian-chips" aria-label="Actividad">
+						<li><button aria-pressed="true">Todas <span>14</span></button></li>
+						<li><button aria-pressed="false">Laberinto <span>7</span></button></li>
+						<li><button aria-pressed="false">Resto del juego <span>7</span></button></li>
+					</ul>
+				</div>
+				<table>
+					<caption>Mediana de oro por hora vendiendo ya. Las calidades no se mezclan en una media.</caption>
+					<thead><tr><th scope="col">Grupo</th><th scope="col" class="is-num">Sesiones</th><th scope="col" class="is-num">Oro por hora</th><th scope="col" class="is-num is-wide">Rango</th></tr></thead>
+					<tbody>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="exact">Exactas · Laberinto</span></th><td class="is-num">4</td><td class="is-num ej">10g 94s</td><td class="is-num is-wide ej">8g 10s – 13g 05s</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="estimated">Estimadas · Laberinto</span><small>siguió jugando al cerrar</small></th><td class="is-num">2</td><td class="is-num ej">≈ 10g 02s</td><td class="is-num is-wide ej">9g 40s – 10g 64s</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="exact">Exactas · resto del juego</span></th><td class="is-num">5</td><td class="is-num ej">2g 41s</td><td class="is-num is-wide ej">1g 20s – 3g 05s</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="estimated">Estimadas · resto del juego</span><small>cerrada por desconexión</small></th><td class="is-num">1</td><td class="is-num ej">≈ 1g 96s</td><td class="is-num is-wide">—</td></tr>
+						<tr><th scope="row"><span class="tyrian-session-history__quality" data-quality="incomplete">Sin valorar</span><small>no entran en la media</small></th><td class="is-num">2</td><td class="is-num">—</td><td class="is-num is-wide">—</td></tr>
+					</tbody>
+				</table>
+
+				<h3>Sesiones</h3>
+				<table>
+					<caption>De la más reciente a la más antigua</caption>
+					<thead><tr><th scope="col">Cuándo</th><th scope="col" class="is-wide">Actividad</th><th scope="col" class="is-num is-wide">Duración</th><th scope="col" class="is-num">Ganado</th></tr></thead>
+					<tbody>
+						<tr><th scope="row">Hoy 20:28<small><span class="tyrian-session-history__quality" data-quality="exact">Exacta</span></small></th><td class="is-wide">Resto del juego</td><td class="is-num is-wide">1 h 15 min</td><td class="is-num ej">3g 12s 40c</td></tr>
+						<tr><th scope="row">23 sep 18:05<small><span class="tyrian-session-history__quality" data-quality="incomplete">Sin valorar</span></small></th><td class="is-wide">Resto del juego · manual</td><td class="is-num is-wide">2 h 40 min</td><td class="is-num">sin valorar<small>2 objetos sin precio</small></td></tr>
+						<tr><th scope="row">21 sep 19:12<small><span class="tyrian-session-history__quality" data-quality="estimated">Estimada</span></small></th><td class="is-wide">Resto del juego</td><td class="is-num is-wide">55 min</td><td class="is-num ej">≈ 1g 80s 00c<small>cerrada por desconexión</small></td></tr>
+						<tr><th scope="row">2 nov 2025 21:00<small><span class="tyrian-session-history__quality" data-quality="exact">Exacta</span></small></th><td class="is-wide">Laberinto</td><td class="is-num is-wide">1 h 30 min</td><td class="is-num ej">16g 40s 10c</td></tr>
+						<tr><th scope="row">1 nov 2025 22:10<small><span class="tyrian-session-history__quality" data-quality="estimated">Estimada</span></small></th><td class="is-wide">Laberinto</td><td class="is-num is-wide">48 min</td><td class="is-num ej">≈ 8g 02s 00c<small>siguió jugando al cerrar</small></td></tr>
+					</tbody>
+				</table>
+				<p class="tyrian-product-shell__status" style="margin:0"><span>Mostrando 5 de 14</span><span><button class="mod-link">Ver todas</button></span></p>
+			</section>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>Nunca «total».</b> «Valor conocido de 12 sesiones» y, al lado, «2 sin valorar». Hoy una sola sesión sin valor convierte el total en «Desconocido». <span class="bx-src">Auditoría §3.C</span></li>
+		<li><b>Todas las sesiones entran, ninguna se mezcla.</b> Exactas y estimadas por separado, y por actividad; las sin valorar se cuentan y dicen por qué no entran. <span class="bx-src">Auditoría §3.C, anexo 2</span></li>
+		<li><b>La calidad se ve con forma</b> (círculo lleno, medio, discontinuo) y con palabra, no con color. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>El historial sale del cajón</b> y va debajo de la tarjeta, visible sin sesión: es para lo que sirve la pestaña. Hoy la lectura del historial es a mano porque recorre el vault; aquí se da por hecho que se lee al abrir. <span class="bx-mine">Decisión mía, con coste: ver pregunta 3</span></li>
+		<li><b>Estrecho:</b> la tabla pierde Actividad, Duración y Rango (<code>.is-wide</code>) y la calidad baja bajo la fecha. Sin tarjetas paralelas.</li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="inventario">3 · Inventario</h2>
+<p class="bx-lede">Un resultado por objeto, el mismo en la pestaña, las notas y la Base. Las decisiones viven aquí y se miran cuando David quiere, sin sesión. Con poco espacio, primero liberar; con espacio de sobra, maximizar oro y admitir esperas.</p>
+
+<section class="bx-spec" aria-label="Inventario con poco espacio">
+	<header><h4>3.1 · Poco espacio: lista por objeto</h4><ul class="bx-axes"><li>contenido real: reservas, sin precio, materiales &gt;250</li><li>responsive: una sola lista</li><li>conservar por fila</li><li>antigüedad del dato</li><li>assets: icono caído</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 21:46</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false">Sesiones</button><button role="tab" aria-selected="true">Inventario</button><button role="tab" aria-selected="false">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Analizado hoy a las 21:02</span><span>Notas guardadas 21:03</span><span>Reglas de festival hasta el 1 dic</span></p>
+			<div class="tyrian-inventory">
+				<section class="tyrian-inventory__space" data-mode="free" aria-labelledby="inv-space-h">
+					<div class="tyrian-inventory__space-head"><strong id="inv-space-h">Poco espacio: primero liberar</strong><small>umbral 20 huecos · se cambia en Ajustes</small></div>
+					<dl class="tyrian-inventory__stores">
+						<div class="tyrian-inventory__store"><dt>Bolsas</dt><dd><span class="ej">9</span> libres de <span class="ej">180</span></dd><meter min="0" max="180" low="120" high="160" optimum="0" value="171" aria-label="Bolsas ocupadas: 171 de 180"></meter></div>
+						<div class="tyrian-inventory__store"><dt>Banco</dt><dd><span class="ej">3</span> libres de <span class="ej">330</span></dd><meter min="0" max="330" low="270" high="310" optimum="0" value="327" aria-label="Banco ocupado: 327 de 330"></meter></div>
+						<div class="tyrian-inventory__store"><dt>Almacén de materiales</dt><dd>al menos 1.250 por material</dd><small>mínimo observado: la API no da la capacidad</small></div>
+					</dl>
+				</section>
+
+				<div class="tyrian-inventory__bar">
+					<input type="search" placeholder="Buscar objeto" aria-label="Buscar objeto">
+					<button><svg class="svg-icon is-small"><use href="#i-refresh"/></svg>Analizar</button>
+				</div>
+				<ul class="tyrian-chips" aria-label="Filtrar por acción" data-filter>
+					<li><button aria-pressed="true" data-f="all">Todo <span>9</span></button></li>
+					<li><button aria-pressed="false" data-f="sell">Vender ahora <span>2</span></button></li>
+					<li><button aria-pressed="false" data-f="list">Publicar <span>2</span></button></li>
+					<li><button aria-pressed="false" data-f="wait">Esperar <span>1</span></button></li>
+					<li><button aria-pressed="false" data-f="keep">Conservar <span>2</span></button></li>
+					<li><button aria-pressed="false" data-f="none">Sin precio <span>2</span></button></li>
+				</ul>
+
+				<ul class="tyrian-inventory__list" aria-label="Objetos, primero lo que más espacio libera">
+					<li class="tyrian-inventory__head" aria-hidden="true"><span>Objeto</span><span>Cantidad</span><span>Qué hacer</span><span class="is-num">Oro neto</span><span>Por qué · datos</span><span></span></li>
+
+					<li class="tyrian-inventory__row" data-a="sell" aria-labelledby="it-36038">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">SH</span><div><strong id="it-36038">Saco de Halloween</strong><small>Bolsas <span class="ej">412</span> · Banco <span class="ej">1.000</span></small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b><span class="ej">1.412</span></b><span>0 reservados</span><span><span class="ej">1.412</span> libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="sell">Vender ahora</span><span class="tyrian-action-when">libera <span class="ej">6</span> huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Oro neto: </span><span class="ej">46g 92s 78c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Esperar no tiene ventaja demostrada y tienes poco espacio.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Precio de hoy, 21:02<br><button class="mod-link">Ver en Venta</button></div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-36038"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="sell" aria-labelledby="it-coast">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">EC</span><div><strong id="it-coast">Esquirla de las Costas Bajas</strong><small>Banco 200 · personajes 73</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>273</b><span>150 reservadas</span><span>123 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="sell">Vender ahora 73</span><span class="tyrian-action-when">libera 1 hueco</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Oro neto: </span><span class="ej">5g 11s 00c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">La reserva está en el banco; lo que llevan tus personajes sobra y ocupa bolsa.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Precio de hoy, 21:02<br>Reservas, 21:02</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-coast"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="list" aria-labelledby="it-amber">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">PA</span><div><strong id="it-amber">Pedazo de ámbar gris antiguo</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>313</b><span>0 reservados</span><span>313 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="list">Publicar</span><span class="tyrian-action-when">no libera huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Oro neto: </span><span class="ej">374g 00s 00c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Sin reserva. Publicar rinde más que vender a la puja.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Precio de hoy, 21:02</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-amber"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="list" aria-labelledby="it-coin">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">MM</span><div><strong id="it-coin">Moneda mística</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>243</b><span>100 reservadas</span><span>143 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="list">Publicar 143</span><span class="tyrian-action-when">no libera huecos</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Oro neto: </span><span class="ej">182g 32s 50c</span></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">100 para tu objetivo de legendaria; el resto no hace falta.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Precio de hoy, 21:02<br>Reservas, 21:02</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-coin"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="wait" aria-labelledby="it-47909">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">BC</span><div><strong id="it-47909">Barra de caramelo</strong><small>Banco</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>71</b><span>0 reservadas</span><span>71 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="wait">Esperar</span><span class="tyrian-action-when">13 – 19 oct</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money"><span class="sr-only">Oro neto si vendes ya: </span><span class="ej">246g 22s 80c</span><small>si vendes ya</small></div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">La primera semana del festival suele pagar más. Ocupa 1 hueco.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Precio de hoy, 21:02<br>Festival: 13 oct</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-47909"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="none" aria-labelledby="it-36059">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">CP</span><div><strong id="it-36059">Colmillos de plástico</strong><small>Bolsas</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b><span class="ej">57</span></b><span>0 reservados</span><span><span class="ej">57</span> libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="none">Nada por ahora</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Oro neto: </span>desconocido</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Precio desconocido: nadie compra este objeto en el bazar.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Sin compradores desde 2019</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-36059"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="none" aria-labelledby="it-janthir">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" data-fallback="true" aria-hidden="true">EJ</span><div><strong id="it-janthir">Esquirla de Janthir Syntri</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>273</b><span>0 reservadas</span><span>273 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="none">Nada por ahora</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Oro neto: </span>desconocido</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">No se pudo leer el precio de hoy. El histórico acaba hace 60 días y no vale como precio de hoy.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span><span data-stale="true">Precio de hoy: sin leer</span><br>Histórico hasta el 26 jul</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-janthir"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="keep" aria-labelledby="it-gem">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">GA</span><div><strong id="it-gem">Gema amalgamada</strong><small>Almacén de materiales</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>389</b><span>389 reservadas</span><span>0 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="keep">Conservar</span><span class="tyrian-action-when">reservada entera</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Oro neto: </span>—</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Toda la cantidad es para tu objetivo de legendaria.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Reservas, 21:02</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-gem"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+
+					<li class="tyrian-inventory__row" data-a="keep" aria-labelledby="it-43320">
+						<div class="tyrian-inventory__cell c-item"><div class="tyrian-inventory__item"><span class="tyrian-inventory__icon" aria-hidden="true">JO</span><div><strong id="it-43320">Jorcamelo</strong><small>Banco</small></div></div></div>
+						<div class="tyrian-inventory__cell c-qty tyrian-inventory__qty"><b>31</b><span>31 reservados · incierto</span><span>0 libres</span></div>
+						<div class="tyrian-inventory__cell c-action"><span class="tyrian-action" data-action="keep">Conservar</span><span class="tyrian-action-when">reserva incierta</span></div>
+						<div class="tyrian-inventory__cell c-money tyrian-inventory__money" data-unknown="true"><span class="sr-only">Oro neto: </span>—</div>
+						<div class="tyrian-inventory__cell c-why tyrian-inventory__why">Tu objetivo no está en la tabla de legendarias: no se sabe cuántos hacen falta y se conservan todos.</div>
+						<div class="tyrian-inventory__cell c-data tyrian-inventory__data"><span class="sr-only">Datos: </span>Tabla de legendarias hasta el 10 dic</div>
+						<div class="tyrian-inventory__cell c-keep tyrian-inventory__keep"><button aria-pressed="false" data-keep aria-describedby="it-43320"><svg class="svg-icon is-small"><use href="#i-pin"/></svg>Conservar</button><small aria-live="polite"></small></div>
+					</li>
+				</ul>
+				<p class="tyrian-inventory__foot"><span><span class="ej">9</span> con algo que hacer de <span class="ej">1.718</span> objetos. El resto está ligado a la cuenta o en uso.</span><button class="mod-link">Ver todos</button></p>
+			</div>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>Una sola lista, un solo DOM.</b> <code>subgrid</code> alinea columnas en ancho; bajo 760 px cada fila se apila (objeto y oro arriba, luego acción, cantidades, motivo, datos y Conservar). Sin tabla y tarjetas a la vez. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>Cantidad total, reservada y libre</b> en cada fila; la acción dice sobre cuántas actúa («Vender ahora 73», «Publicar 143») cuando no es sobre todas. Nada reservado ni conservado sale para vender. <span class="bx-src">Auditoría §3.A</span></li>
+		<li><b>«Esperar» es un filtro propio</b> y nunca cae dentro de «Vender ahora». <span class="bx-src">Auditoría §3.A</span></li>
+		<li><b>Precio desconocido se dice como tal</b>: «desconocido» en oro y «Nada por ahora» con el motivo; no «mantener» ni un 0. <span class="bx-src">Auditoría §3.A</span></li>
+		<li><b>Precio de hoy e histórico, cada uno con su fecha</b> en «Datos». El dato caducado lleva un círculo y va en color de texto, no en naranja. <span class="bx-src">Auditoría §3.A</span></li>
+		<li><b>Orden por huecos que libera</b> cuando hay poco espacio; con espacio de sobra, por oro (3.2). <span class="bx-src">David 24 sep</span></li>
+		<li><b>Qué es «poco espacio»:</b> bolsas de todos los personajes y banco sumados, con umbral por defecto de 20 huecos libres. La cifra y la suma son mías; ver pregunta 3. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>La ventaja se da en % y en oro</b> para tu cantidad libre, con el rango de las 7 temporadas (lámina 4.1). <span class="bx-src">Auditoría §3.D</span></li>
+		<li><b>Almacén: «al menos 1.250 por material», mínimo observado</b>, nunca una capacidad inventada. Los 250 por defecto de <code>settings.ts:470</code> dejan de enseñarse como límite. <span class="bx-src">Auditoría §3.E</span></li>
+		<li><b>«Conservar» es un botón por fila</b> (<code>aria-pressed</code>), sin teclear IDs. Al pulsarlo la fila no salta de sitio: confirma «Guardado» y se recoloca en el siguiente análisis. Pruébalo. <span class="bx-mine">Decisión mía: que no salte</span></li>
+		<li><b>Icono caído:</b> las iniciales en un cuadro discontinuo (fila «Esquirla de Janthir Syntri»). En el resto de filas el cuadro con iniciales sustituye al icono del CDN de ArenaNet porque el boceto no carga red. <span class="bx-mine">Decisión mía</span></li>
+		<li><b>Nombre del 47909:</b> la API en español lo llama «Barra de caramelo» (David dice «la mazorca»). Se enseña el nombre de la API.</li>
+	</ul>
+</section>
+
+<section class="bx-spec" aria-label="Estados del análisis">
+	<header><h4>3.2 · Estados del análisis: espacio de sobra, antiguo, analizando, fallo</h4><ul class="bx-axes"><li>estados: antigüedad del análisis</li><li>feedback: analizado / guardado</li><li>sin códigos crudos</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>cuatro cabeceras de la misma pestaña</span></div>
+		<div class="tyrian-product-surface" style="display:grid;gap:24px">
+			<div class="tyrian-inventory">
+				<p class="tyrian-product-shell__status" role="status" style="margin:0"><span>Analizado hoy a las 21:02</span><span>Notas guardadas 21:03</span></p>
+				<section class="tyrian-inventory__space" data-mode="gold" aria-label="Espacio">
+					<div class="tyrian-inventory__space-head"><strong>Espacio de sobra: maximizar oro</strong><small><span class="ej">64</span> huecos libres · umbral 20</small></div>
+				</section>
+				<p class="tyrian-product-shell__status" style="margin:0"><span>Orden: más oro primero</span><span>Se admiten esperas</span></p>
+			</div>
+
+			<div class="callout" data-callout="warning" role="status">
+				<div class="callout-title"><svg class="svg-icon"><use href="#i-clock"/></svg><span class="callout-title-inner">Este análisis es del 22 sep</span><button>Analizar ahora</button></div>
+				<div class="callout-content"><p>Hace 2 días. Precios y cantidades pueden haber cambiado.</p></div>
+			</div>
+
+			<div class="tyrian-inventory">
+				<p class="tyrian-product-shell__status" role="status" style="margin:0"><span data-tone="attention">Analizando</span><span>personajes 3 de 5</span></p>
+				<progress max="5" value="3" style="width:100%;height:8px" aria-label="Analizando: 3 de 5 personajes"></progress>
+				<ol class="tyrian-receipt" aria-label="Recorrido del análisis">
+					<li data-step="done"><svg class="svg-icon is-small"><use href="#i-check"/></svg>Pedido<time>21:44</time></li>
+					<li data-step="current"><svg class="svg-icon is-small"><use href="#i-hourglass"/></svg>Leyendo la cuenta<small>3 de 5</small></li>
+					<li data-step="pending"><svg class="svg-icon is-small"><use href="#i-pending"/></svg>Analizado<small>—</small></li>
+					<li data-step="pending"><svg class="svg-icon is-small"><use href="#i-pending"/></svg>Notas guardadas<small>—</small></li>
+				</ol>
+			</div>
+
+			<div class="callout" data-callout="error" role="alert">
+				<div class="callout-title"><svg class="svg-icon"><use href="#i-alert"/></svg><span class="callout-title-inner">No se pudo leer el inventario de 2 personajes</span><button><svg class="svg-icon is-small"><use href="#i-refresh"/></svg>Reintentar</button></div>
+				<div class="callout-content"><p>Se sigue mostrando el análisis de hoy a las 21:02.</p>
+					<div class="callout-actions"><button class="clickable-icon"><svg class="svg-icon is-small"><use href="#i-copy"/></svg>Copiar detalle técnico</button></div></div>
+			</div>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>El modo lo decide el espacio libre</b> contra un umbral por defecto que se cambia en Ajustes. La cabecera dice en qué modo estás y por qué. <span class="bx-src">David 24 sep</span></li>
+		<li><b>Un análisis viejo no se esconde</b>: se sigue enseñando con su fecha y un aviso llano; «Analizar ahora» es opcional. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>Fallo sin código</b>: dice qué falló en palabras y que se conserva el resultado anterior. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>Sin «Confirmar cambios antes de escribir»</b>: las notas se escriben solas. Si alguna nota la editaste tú, los campos gestionados se actualizan sin tocar tu texto. <span class="bx-src">David 24 sep</span> <span class="bx-src">Auditoría §3.E</span></li>
+	</ul>
+</section>
+
+<!-- ======================================================================= -->
+<h2 id="venta">4 · Venta</h2>
+<p class="bx-lede">Vender ahora frente a esperar, para la cantidad libre real. Tres relojes separados: la fecha del último precio, hasta cuándo vale el análisis y la ventana sugerida. Si esperar no tiene ventaja demostrada, se dice y no se inventa una fecha.</p>
+
+<section class="bx-spec" aria-label="Venta">
+	<header><h4>4.1 · Tarjetas de venta con la comparación de 7 temporadas</h4><ul class="bx-axes"><li>contenido real: backtest del 24 sep</li><li>accesibilidad: gráfico con teclado</li><li>estados: caducidad del conocimiento</li><li>sin ventaja demostrada</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>24 sep, 21:46</span></div>
+		<div class="tyrian-product-surface">
+			<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false">Sesiones</button><button role="tab" aria-selected="false">Inventario</button><button role="tab" aria-selected="true">Venta</button><button class="clickable-icon tyrian-product-shell__settings" aria-label="Ajustes"><svg class="svg-icon"><use href="#i-settings"/></svg></button></div>
+			<p class="tyrian-product-shell__status" role="status"><span>Precios de hoy 21:02</span><span>Histórico de datawars2, 23 sep</span><span>Halloween desde el 13 oct</span></p>
+			<div class="tyrian-sale" aria-label="Oportunidades de venta">
+				<div class="callout" data-callout="warning" role="status">
+					<div class="callout-title"><svg class="svg-icon"><use href="#i-clock"/></svg><span class="callout-title-inner">Las reglas de festival caducan el 1 dic</span></div>
+					<div class="callout-content"><p>Desde el 12 nov el inventario deja de usar reglas de temporada. Después del 1 dic solo se compara con precios hasta que se renueven.</p></div>
+				</div>
+
+				<!-- Saco -->
+				<article class="tyrian-sale__card" aria-labelledby="sale-36038">
+					<div class="tyrian-sale__head"><h3 id="sale-36038"><span class="tyrian-inventory__icon" aria-hidden="true">SH</span>Saco de Halloween</h3><small><span class="ej">1.412</span> libres · 0 reservados</small></div>
+					<p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> <span>Sin ventaja demostrada para esperar.</span></p>
+					<dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+						<div class="tyrian-companion-session__figure"><dt>Vender ahora</dt><dd class="ej">46g 92s 78c</dd><small><span class="ej">1.412</span> × puja <span class="ej">3s 91c</span>, menos el 15 %</small></div>
+						<div class="tyrian-companion-session__figure"><dt>Vender del 25 sep al 12 oct</dt><dd>+2 %</dd><small>≈ <span class="ej">+93s 86c</span> · mediana · mejor en 4 de 7 temporadas (−8 % a +5 %)</small></div>
+						<div class="tyrian-companion-session__figure"><dt>Vender en mayo de 2027</dt><dd>−9 %</dd><small>≈ <span class="ej">−4g 17s 66c</span> · mediana · mejor en 2 de 7 temporadas (−29 % a +35 %)</small></div>
+					</dl>
+
+					<div class="tyrian-sale__strip" tabindex="0" role="group" aria-roledescription="gráfico de puntos" aria-label="Qué habría pasado en 7 temporadas si hubieras esperado. Flechas izquierda y derecha para cambiar de año, arriba y abajo para cambiar de opción." aria-describedby="ro-36038" data-strip='{"rows":[{"label":"Vender del 25 sep al 12 oct","short":"vender en las 3 semanas antes del festival","v":[1.039,1.028,0.916,1.051,1.020,0.968,0.971],"median":1.020},{"label":"Vender en mayo de 2027","short":"esperar al mayo siguiente","v":[0.911,0.870,0.711,1.121,1.347,0.809,0.934],"median":0.911}],"years":[2019,2020,2021,2022,2023,2024,2025]}' data-readout="ro-36038"></div>
+					<p class="tyrian-sale__readout" id="ro-36038" aria-live="polite">Pulsa en el gráfico o entra con Tab y usa las flechas.</p>
+					<p class="tyrian-sale__legend"><span>● mejor que vender ese día</span><span>○ peor</span><span>┆ vender el día de la decisión</span><span>▮ mediana</span></p>
+
+					<dl class="tyrian-sale__clocks">
+						<div><dt><svg class="svg-icon is-small"><use href="#i-clock"/></svg>Último precio</dt><dd>Hoy 21:02 · puja <span class="ej">3s 91c</span></dd></div>
+						<div><dt><svg class="svg-icon is-small"><use href="#i-refresh"/></svg>Análisis válido hasta</dt><dd>Mañana 21:02, o antes si cambian precio, cantidad o reservas</dd></div>
+						<div><dt><svg class="svg-icon is-small"><use href="#i-hourglass"/></svg>Ventana sugerida</dt><dd>Ninguna</dd></div>
+					</dl>
+					<details><summary>Ver como tabla</summary>
+						<table><caption class="sr-only">Precio medio de compra de cada opción entre la puja del día de la decisión (19 días antes del festival)</caption>
+							<thead><tr><th scope="col">Temporada</th><th scope="col">Vender del 25 sep al 12 oct</th><th scope="col">Mayo de 2027</th></tr></thead>
+							<tbody>
+								<tr><th scope="row">2019</th><td>+3,9 %</td><td>−8,9 %</td></tr>
+								<tr><th scope="row">2020</th><td>+2,8 %</td><td>−13,0 %</td></tr>
+								<tr><th scope="row">2021</th><td>−8,4 %</td><td>−28,9 %</td></tr>
+								<tr><th scope="row">2022</th><td>+5,1 %</td><td>+12,1 %</td></tr>
+								<tr><th scope="row">2023</th><td>+2,0 %</td><td>+34,7 %</td></tr>
+								<tr><th scope="row">2024</th><td>−3,2 %</td><td>−19,1 %</td></tr>
+								<tr><th scope="row">2025</th><td>−2,9 %</td><td>−6,6 %</td></tr>
+							</tbody>
+						</table>
+					</details>
+					<details><summary>Cómo se calcula</summary>
+						<p>Precio medio diario de compra, decidiendo 19 días antes del festival, en 7 temporadas (2019–2025). No es un precio garantizado de venta ni mide cuánto se puede vender. Describe el pasado; no promete nada.</p>
+					</details>
+				</article>
+
+				<!-- Barra de caramelo -->
+				<article class="tyrian-sale__card" aria-labelledby="sale-47909">
+					<div class="tyrian-sale__head"><h3 id="sale-47909"><span class="tyrian-inventory__icon" aria-hidden="true">BC</span>Barra de caramelo</h3><small>71 libres · 0 reservadas</small></div>
+					<p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="wait">Esperar</span> <span>Ventana sugerida: 13 – 19 oct, la primera semana del festival.</span></p>
+					<dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+						<div class="tyrian-companion-session__figure"><dt>Vender ahora</dt><dd class="ej">246g 22s 80c</dd><small>71 × puja <span class="ej">4g 08s 00c</span>, menos el 15 %</small></div>
+						<div class="tyrian-companion-session__figure"><dt>Esperar a la ventana</dt><dd class="ej">+9 %</dd><small>≈ <span class="ej">+22g 16s 05c</span> · mediana · mejor en <span class="ej">6</span> de 7 temporadas</small></div>
+						<div class="tyrian-companion-session__figure" data-pending="true"><dt>Riesgo de no vender</dt><dd>sin medir</dd><small>no hay datos de profundidad</small></div>
+					</dl>
+					<dl class="tyrian-sale__clocks">
+						<div><dt><svg class="svg-icon is-small"><use href="#i-clock"/></svg>Último precio</dt><dd>Hoy 21:02 · puja <span class="ej">4g 08s 00c</span></dd></div>
+						<div><dt><svg class="svg-icon is-small"><use href="#i-refresh"/></svg>Análisis válido hasta</dt><dd>13 oct, o antes si cambian precio, cantidad o reservas</dd></div>
+						<div><dt><svg class="svg-icon is-small"><use href="#i-hourglass"/></svg>Ventana sugerida</dt><dd>13 – 19 oct 2026 · se mueve si el festival cambia de fecha</dd></div>
+					</dl>
+				</article>
+
+				<!-- Colmillos -->
+				<article class="tyrian-sale__card" aria-labelledby="sale-36059">
+					<div class="tyrian-sale__head"><h3 id="sale-36059"><span class="tyrian-inventory__icon" aria-hidden="true">CP</span>Colmillos de plástico</h3><small><span class="ej">57</span> libres</small></div>
+					<p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="none">No se puede comparar</span> <span>Nadie compra este objeto en el bazar desde 2019.</span></p>
+				</article>
+			</div>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>La comparación del saco es la medida de la auditoría</b> (§3.D, datawars2, 24 sep), convertida a porcentaje sobre vender el día de la decisión: 1,020 → +2 %, 0,911 → −9 %. Con esos datos, «sin ventaja demostrada» es la salida honesta. <span class="bx-src">Auditoría §3.D</span></li>
+		<li><b>Los años perdedores se ven</b> uno a uno: punto lleno = mejor que vender ese día, punto hueco = peor. Forma y posición, no color. <span class="bx-src">Auditoría §7, entrega 4</span></li>
+		<li><b>El gráfico se usa sin puntero</b>: Tab lo enfoca, las flechas recorren años y opciones, la lectura se anuncia (<code>aria-live</code>) y hay tabla alternativa. Es el mismo patrón que tendría el histórico de precios, que hoy es <code>aria-hidden</code> y hace zoom arrastrando. <span class="bx-src">Auditoría §6</span></li>
+		<li><b>Tres relojes</b>, cada uno con su icono y su fecha; «Ventana sugerida: Ninguna» cuando no hay ventaja. <span class="bx-src">Auditoría §3.D</span></li>
+		<li><b>Barra de caramelo: todas sus cifras de ventaja son de ejemplo.</b> La auditoría solo midió el saco desde la fecha de decisión; la ventana 13 – 19 oct sale del tramo «+0..+6» de <code>docs/audit/2026-09-11-festivales-datawars2.md</code>, que es un índice anual, no una comparación con vender hoy.</li>
+		<li><b>«Riesgo de no vender: sin medir»</b> en vez de omitirlo: la auditoría lo pide y hoy no hay dato. <span class="bx-src">Auditoría §3.D</span></li>
+		<li><b>Colmillos de plástico (36059)</b>: puja 0 en todos los días con dato; la tarjeta dice que no hay comparación posible y no ofrece fecha.</li>
+	</ul>
+</section>
+
+<section class="bx-spec" aria-label="Estados de venta">
+	<header><h4>4.2 · Estados: histórico caído y conocimiento caducado</h4><ul class="bx-axes"><li>estados: caducidad</li><li>estados: datawars2 caído</li></ul></header>
+	<div class="bx-pair">
+	<div class="leaf" data-leaf>
+		<div class="leaf-title"><span>Tyrian Companion</span><span>dos cabeceras de la pestaña Venta</span></div>
+		<div class="tyrian-product-surface" style="display:grid;gap:24px">
+			<div class="callout" data-callout="warning" role="status">
+				<div class="callout-title"><svg class="svg-icon"><use href="#i-alert"/></svg><span class="callout-title-inner">No se pudo leer el histórico de precios</span></div>
+				<div class="callout-content"><p>datawars2 no responde. Las comparaciones son del 23 sep; los precios de hoy sí están al día.</p></div>
+			</div>
+			<div>
+				<p class="tyrian-product-shell__status" role="status" style="margin-bottom:12px"><span>Precios de hoy, 2 dic 10:15</span><span data-tone="attention">Reglas de festival caducadas</span></p>
+				<div class="callout" data-callout="error" role="status">
+					<div class="callout-title"><svg class="svg-icon"><use href="#i-clock"/></svg><span class="callout-title-inner">Las reglas de festival caducaron el 1 dic</span></div>
+					<div class="callout-content"><p>Solo se compara con precios de hoy: no se sugieren esperas hasta renovarlas con una versión nueva del plugin.</p></div>
+				</div>
+				<article class="tyrian-sale__card" style="padding-top:16px;border:0" aria-labelledby="sale-exp">
+					<div class="tyrian-sale__head"><h3 id="sale-exp"><span class="tyrian-inventory__icon" aria-hidden="true">BC</span>Barra de caramelo</h3><small>71 libres</small></div>
+					<p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> <span>Sin reglas de temporada no hay motivo para esperar.</span></p>
+				</article>
+			</div>
+		</div>
+	</div>
+	</div>
+	<ul class="bx-notes">
+		<li><b>Caducidades con fecha a la vista</b>: 12 nov (el asesor se degrada), 1 dic (reglas), 10 dic (tabla de legendarias, en la fila del Jorcamelo). No se alargan ni se borran. <span class="bx-src">Auditoría §3.G</span></li>
+		<li><b>datawars2 caído</b> (prueba 10 de la auditoría): se dice qué fuente falló y de cuándo es lo que se ve.</li>
+		<li><b>«Renovarlas con una versión nueva del plugin»</b> supone que el conocimiento curado viaja con el plugin. Si se decide otra vía, cambia la frase. <span class="bx-mine">Supuesto mío</span></li>
+	</ul>
+</section>
+
+<script>
+(() => {
+	const root = document.documentElement;
+	const body = document.body;
+
+	// Conmutadores del boceto.
+	document.querySelectorAll('input[name="bx-theme"]').forEach((input) => input.addEventListener('change', () => {
+		if (input.value === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', input.value);
+	}));
+	document.querySelectorAll('input[name="bx-width"]').forEach((input) => input.addEventListener('change', () => { body.dataset.width = input.value; }));
+	document.getElementById('bx-examples').addEventListener('change', (event) => { body.dataset.examples = event.target.checked ? 'on' : 'off'; });
+	const params = new URLSearchParams(location.search);
+	if (params.get('theme')) { root.setAttribute('data-theme', params.get('theme')); const r = document.querySelector(`input[name="bx-theme"][value="${params.get('theme')}"]`); if (r) r.checked = true; }
+	if (params.get('width')) { body.dataset.width = params.get('width'); const r = document.querySelector(`input[name="bx-width"][value="${params.get('width')}"]`); if (r) r.checked = true; }
+
+	// Cada lámina se pinta en estrecho y en ancho con el MISMO HTML (clon con ids sufijados).
+	document.querySelectorAll('[data-leaf]').forEach((leaf) => {
+		const clone = leaf.cloneNode(true);
+		clone.classList.add('is-narrow');
+		clone.querySelectorAll('[id]').forEach((el) => { el.id += '--n'; });
+		for (const attr of ['aria-controls', 'aria-labelledby', 'aria-describedby', 'data-readout']) {
+			clone.querySelectorAll(`[${attr}]`).forEach((el) => el.setAttribute(attr, el.getAttribute(attr).split(' ').map((id) => `${id}--n`).join(' ')));
+		}
+		leaf.parentNode.insertBefore(clone, leaf);
+	});
+
+	// Pestañas: patrón tablist con activación automática y tabindex itinerante.
+	document.querySelectorAll('[data-tabs]').forEach((list) => {
+		const tabs = [...list.querySelectorAll('[role="tab"]')];
+		const select = (tab) => {
+			for (const t of tabs) {
+				const on = t === tab;
+				t.setAttribute('aria-selected', String(on));
+				t.tabIndex = on ? 0 : -1;
+				const panel = document.getElementById(t.getAttribute('aria-controls'));
+				if (panel) panel.hidden = !on;
+			}
+			tab.focus();
+		};
+		list.addEventListener('click', (event) => { const tab = event.target.closest('[role="tab"]'); if (tab) select(tab); });
+		list.addEventListener('keydown', (event) => {
+			const i = tabs.indexOf(document.activeElement);
+			if (i < 0) return;
+			const next = { ArrowRight: (i + 1) % tabs.length, ArrowLeft: (i - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
+			if (next === undefined) return;
+			event.preventDefault();
+			select(tabs[next]);
+		});
+	});
+
+	// Filtro por acción del inventario.
+	document.querySelectorAll('[data-filter]').forEach((filter) => {
+		filter.addEventListener('click', (event) => {
+			const button = event.target.closest('button[data-f]');
+			if (!button) return;
+			filter.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
+			const list = filter.parentElement.querySelector('.tyrian-inventory__list');
+			list.querySelectorAll('.tyrian-inventory__row').forEach((row) => { row.hidden = button.dataset.f !== 'all' && row.dataset.a !== button.dataset.f; });
+		});
+	});
+
+	// Conservar por fila: no salta de sitio; confirma «Guardado».
+	document.addEventListener('click', (event) => {
+		const button = event.target.closest('button[data-keep]');
+		if (!button) return;
+		const on = button.getAttribute('aria-pressed') !== 'true';
+		button.setAttribute('aria-pressed', String(on));
+		button.lastChild.textContent = on ? 'Conservado' : 'Conservar';
+		const note = button.parentElement.querySelector('small');
+		note.textContent = 'Guardando…';
+		setTimeout(() => { note.textContent = on ? 'Guardado · no se venderá' : 'Guardado'; }, 450);
+	});
+
+	// Gráfico de puntos con teclado.
+	const pct = (v) => { const p = Math.round((v - 1) * 1000) / 10; return `${p > 0 ? '+' : p < 0 ? '−' : ''}${Math.abs(p).toLocaleString('es-ES')} %`; };
+	document.querySelectorAll('[data-strip]').forEach((host) => {
+		const data = JSON.parse(host.dataset.strip);
+		const ns = 'http://www.w3.org/2000/svg';
+		const readout = document.getElementById(host.dataset.readout);
+		let active = [0, 0];
+		let dots = [];
+		let focused = false;
+		const paint = () => {
+			dots.flat().forEach((ring) => ring.classList.remove('is-active'));
+			const [r, i] = active;
+			if (dots[r]) dots[r][i].classList.add('is-active');
+			const v = data.rows[r].v[i];
+			readout.textContent = `Temporada ${data.years[i]}, ${data.rows[r].short}: ${pct(v)} frente a vender el día de la decisión (${v > 1 ? "mejor" : "peor"}).`;
+		};
+		// Se dibuja a la anchura real en píxeles (no con viewBox escalado): el texto queda a 11-12 px
+		// en el lateral y en el centro, y se redibuja si el panel cambia de ancho.
+		const draw = (W) => {
+			host.querySelector('svg')?.remove();
+			const left = 4, right = 4, rowH = 78, top = 4, radius = 5.5, step = 10;
+			const min = 0.65, max = 1.4;
+			const x = (v) => left + (v - min) / (max - min) * (W - left - right);
+			const H = top + data.rows.length * rowH + 18;
+			const svg = document.createElementNS(ns, 'svg');
+			svg.setAttribute('width', W);
+			svg.setAttribute('height', H);
+			svg.setAttribute('aria-hidden', 'true');
+			const el = (name, attrs) => { const n = document.createElementNS(ns, name); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); svg.append(n); return n; };
+			dots = [];
+			data.rows.forEach((row, r) => {
+				const y = top + r * rowH + 42;
+				el('text', { x: left, y: y - 30, class: 'row-label' }).textContent = row.label;
+				el('line', { x1: left, x2: W - right, y1: y, y2: y, class: 'axis' });
+				el('line', { x1: x(row.median), x2: x(row.median), y1: y + 18, y2: y + 30, class: 'median' });
+				// Enjambre: si dos puntos se pisan, el segundo sube o baja un nivel.
+				const placed = [];
+				const levels = [0, -1, 1, -2, 2];
+				const cy = new Array(row.v.length);
+				[...row.v.keys()].sort((a, b) => row.v[a] - row.v[b]).forEach((i) => {
+					const cx = x(row.v[i]);
+					const level = levels.find((l) => placed.every((p) => p.l !== l || Math.abs(p.cx - cx) > radius * 2 + 1)) ?? 0;
+					placed.push({ cx, l: level });
+					cy[i] = y + level * step;
+				});
+				dots[r] = row.v.map((v, i) => {
+					const ring = el('circle', { cx: x(v), cy: cy[i], r: 9.5, class: 'focus-ring' });
+					const dot = el('circle', { cx: x(v), cy: cy[i], r: radius, class: `dot${v > 1 ? ' is-better' : ''}` });
+					dot.addEventListener('pointerenter', () => { active = [r, i]; paint(); });
+					return ring;
+				});
+			});
+			el('line', { x1: x(1), x2: x(1), y1: top + 20, y2: top + data.rows.length * rowH - 4, class: 'zero' });
+			const ticks = W < 420 ? [0.7, 1, 1.3] : [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3];
+			for (const t of ticks) {
+				const anchor = t === ticks[0] ? 'start' : t === ticks[ticks.length - 1] ? 'end' : 'middle';
+				el('text', { x: x(t), y: H - 4, 'text-anchor': anchor }).textContent = t === 1 ? 'vender hoy' : pct(t).replace(' %', '%');
+			}
+			host.prepend(svg);
+			if (focused) paint();
+		};
+		let lastWidth = 0;
+		new ResizeObserver(([entry]) => {
+			const width = Math.floor(entry.contentRect.width);
+			if (width === lastWidth || width === 0) return;
+			lastWidth = width;
+			requestAnimationFrame(() => draw(width));
+		}).observe(host);
+		host.addEventListener('focus', () => { focused = true; paint(); });
+		host.addEventListener('keydown', (event) => {
+			let [r, i] = active;
+			const n = data.years.length;
+			if (event.key === 'ArrowRight') i = (i + 1) % n;
+			else if (event.key === 'ArrowLeft') i = (i - 1 + n) % n;
+			else if (event.key === 'ArrowDown') r = (r + 1) % data.rows.length;
+			else if (event.key === 'ArrowUp') r = (r - 1 + data.rows.length) % data.rows.length;
+			else if (event.key === 'Home') i = 0;
+			else if (event.key === 'End') i = n - 1;
+			else return;
+			event.preventDefault();
+			active = [r, i];
+			paint();
+		});
+	});
+
+	// ?demo=1 deja el boceto en un estado de interacción para las capturas.
+	if (params.get('demo') === '1') {
+		const strip = document.querySelector('.leaf:not(.is-narrow) [data-strip]');
+		strip.focus();
+		for (const key of ['ArrowDown', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight']) strip.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+		document.querySelectorAll('.leaf [data-keep]')[4].click();
+		document.querySelectorAll('.leaf:not(.is-narrow) [data-keep]')[4].click();
+	}
+})();
+</script>
+</body>
+</html>
