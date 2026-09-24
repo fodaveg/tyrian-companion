@@ -2,7 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { SmokeLiveError, defaultPluginDir, parseSmokeLiveArguments, readErrorsSinceReload, runSmokeLive } from '../smoke-live.mjs';
+import {
+	SmokeLiveError,
+	defaultPluginDir,
+	parseSmokeLiveArguments,
+	readErrorsSinceReload,
+	readInstalledManifestVersion,
+	runSmokeLive,
+} from '../smoke-live.mjs';
 
 const testRoot = mkdtempSync(join(tmpdir(), 'tyrian-smoke-live-'));
 const failures = [];
@@ -19,6 +26,10 @@ try {
 	testCliUnavailableFailsClosed();
 	testMalformedEvidenceFailsClosed();
 	testArgumentParsing();
+	testVersionMismatchIsDetected();
+	testMatchingVersionsAreNotAMismatch();
+	testMissingManifestIsNotAMismatch();
+	testReadInstalledManifestVersionReadsTheFile();
 } finally {
 	rmSync(testRoot, { recursive: true, force: true });
 }
@@ -138,6 +149,46 @@ function testArgumentParsing() {
 
 	assertThrowsCode(() => parseSmokeLiveArguments(['--unknown']), 'usage', 'an unknown flag was silently accepted');
 	assertThrowsCode(() => parseSmokeLiveArguments(['--plugin-dir']), 'usage', 'a --plugin-dir without a value was accepted');
+}
+
+/**
+ * H15.27: the case `dev-install.mjs`'s missing `loadManifests()` caused — the just-copied
+ * `manifest.json` says one version, but the running plugin (`loadedVersion`, from the CLI
+ * evidence) still reports the old one. Before this lote, `smoke:live` only printed both numbers
+ * side by side and stayed green regardless.
+ */
+function testVersionMismatchIsDetected() {
+	const pluginDir = freshPluginDir('version-mismatch');
+	writeManifest(pluginDir, '0.1.35');
+	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.34' }) });
+	assert(result.versionMismatch === true, 'a manifest/loaded version divergence was not flagged');
+	assert(result.manifestVersion === '0.1.35', 'the installed manifest version was not surfaced');
+}
+
+function testMatchingVersionsAreNotAMismatch() {
+	const pluginDir = freshPluginDir('version-match');
+	writeManifest(pluginDir, '0.1.35');
+	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.35' }) });
+	assert(result.versionMismatch === false, 'matching manifest and loaded versions were flagged as a mismatch');
+}
+
+/** No manifest on disk (or a CLI that could not read `loadedVersion`) fails open: nothing to compare against. */
+function testMissingManifestIsNotAMismatch() {
+	const pluginDir = freshPluginDir('version-no-manifest');
+	const result = runSmokeLive({ pluginDir, runCli: fakeCli({ loadedVersion: '0.1.35' }) });
+	assert(result.manifestVersion === null, 'a missing manifest.json reported a version');
+	assert(result.versionMismatch === false, 'a missing manifest.json was treated as a version mismatch');
+}
+
+function testReadInstalledManifestVersionReadsTheFile() {
+	const pluginDir = freshPluginDir('read-manifest-version');
+	writeManifest(pluginDir, '0.1.36');
+	assert(readInstalledManifestVersion(pluginDir) === '0.1.36', 'readInstalledManifestVersion did not read the version field');
+	assert(readInstalledManifestVersion(join(testRoot, 'does-not-exist')) === null, 'a missing plugin directory did not return null');
+}
+
+function writeManifest(pluginDir, version) {
+	writeFileSync(resolve(pluginDir, 'manifest.json'), JSON.stringify({ id: 'tyrian-companion', version }));
 }
 
 function fakeCli(evidenceOverrides) {
