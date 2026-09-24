@@ -159,21 +159,194 @@ function exactKeys(value: Record<string, unknown>, expected: string[]): boolean 
 }
 
 export const FESTIVAL_CALENDAR_VERSION = 1 as const;
+export const FESTIVAL_ANCHORS_VERSION = 1 as const;
+
+/** One source citation, same shape every curated pack in this plugin already uses. */
+export interface FestivalAnchorSourceV1 {
+	id: string;
+	url: string;
+	retrievedAt: string;
+}
+
+/** One festival edition's real, first UTC calendar day, as `YYYY-MM-DD`. Never a guess: an entry
+ * exists only for a year the cited source actually announced. */
+export interface FestivalAnchorEntryV1 {
+	year: number;
+	startsOn: string;
+	sourceId: string;
+}
 
 /**
- * One festival item's selling window, pointing at the row of the audit that measured it
+ * H18.20's curated replacement for a fixed calendar day: the real, per-year start of one named
+ * festival (`festivalId`), reviewed like every other curated pack in this plugin. Declaring a new
+ * festival here (not just Halloween) is exactly what makes the calendar mechanism generic instead
+ * of Halloween-specific.
+ */
+export interface FestivalAnchorsTableV1 {
+	version: typeof FESTIVAL_ANCHORS_VERSION;
+	festivalId: string;
+	publishedAt: string;
+	reviewedAt: string;
+	sources: readonly FestivalAnchorSourceV1[];
+	entries: readonly FestivalAnchorEntryV1[];
+	sha256: string;
+}
+
+export function isFestivalAnchorSource(value: unknown): value is FestivalAnchorSourceV1 {
+	return record(value) && exactKeys(value, ['id', 'url', 'retrievedAt'])
+		&& identifier(value.id) && isHttpsUrl(value.url) && isoDay(value.retrievedAt);
+}
+
+export function isFestivalAnchorEntry(value: unknown): value is FestivalAnchorEntryV1 {
+	return record(value) && exactKeys(value, ['year', 'startsOn', 'sourceId'])
+		&& festivalYear(value.year) && fullDate(value.startsOn) && identifier(value.sourceId);
+}
+
+export function isFestivalAnchorsTable(value: unknown): value is FestivalAnchorsTableV1 {
+	if (!record(value) || !exactKeys(value, ['version', 'festivalId', 'publishedAt', 'reviewedAt', 'sources', 'entries', 'sha256'])
+		|| value.version !== FESTIVAL_ANCHORS_VERSION || !identifier(value.festivalId)
+		|| !isoDay(value.publishedAt) || !isoDay(value.reviewedAt) || Date.parse(value.publishedAt) > Date.parse(value.reviewedAt)
+		|| !Array.isArray(value.sources) || !value.sources.every(isFestivalAnchorSource)
+		|| !Array.isArray(value.entries) || !value.entries.every(isFestivalAnchorEntry)
+		|| !sha(value.sha256)) return false;
+	const table = value as unknown as FestivalAnchorsTableV1;
+	const sourceIds = table.sources.map((source) => source.id);
+	const years = table.entries.map((entry) => entry.year);
+	return new Set(sourceIds).size === sourceIds.length
+		&& new Set(years).size === years.length
+		&& table.entries.every((entry) => sourceIds.includes(entry.sourceId))
+		&& table.sha256 === sha256FestivalAnchorsTable(table);
+}
+
+/** Content hash excluding `sha256` itself, same discipline as `sha256FestivalCalendar`. */
+export function sha256FestivalAnchorsTable(
+	table: Pick<FestivalAnchorsTableV1, 'version' | 'festivalId' | 'publishedAt' | 'reviewedAt' | 'sources' | 'entries'>,
+): string {
+	return sha256CanonicalValue({
+		version: table.version, festivalId: table.festivalId, publishedAt: table.publishedAt,
+		reviewedAt: table.reviewedAt, sources: table.sources, entries: table.entries,
+	});
+}
+
+/** UTC midnight epoch ms for one festival's real start in `year`, or `null` when that year is not
+ * in the curated table: H18.20's "declare lack of coverage" for a year, not just for an item. */
+export function festivalAnchorStartMs(table: FestivalAnchorsTableV1, year: number): number | null {
+	const entry = table.entries.find((candidate) => candidate.year === year);
+	if (entry === undefined) return null;
+	const parsed = Date.parse(`${entry.startsOn}T00:00:00.000Z`);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+function festivalYear(value: unknown): value is number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value >= 2000 && value <= 3000;
+}
+
+function isHttpsUrl(value: unknown): value is string {
+	return typeof value === 'string' && value.length <= 512 && /^https:\/\//u.test(value);
+}
+
+function isoDay(value: unknown): value is string {
+	return typeof value === 'string' && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+}
+
+function fullDate(value: unknown): value is string {
+	return typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/u.test(value)
+		&& Number.isFinite(Date.parse(`${value}T00:00:00.000Z`));
+}
+
+/**
+ * H18.20. A festival's real, per-year start date, as ArenaNet announced it and the wiki recorded
+ * it. `opensOffsetDays`/`closesOffsetDays` below are counted from THIS instant, which is what lets
+ * a window move with the festival instead of sitting on a fixed calendar day: Shadow of the Mad
+ * King alone has opened anywhere from 5 to 18 October across its editions.
+ *
+ * `version` matches `SEASONAL_WINDOW_VERSION` deliberately: a `FestivalRelativeWindowV1` is the
+ * same schema generation as `SeasonalWindowV1`, just expressed relative to an anchor instead of
+ * as its own `MM-DD` pair.
+ */
+export interface FestivalRelativeWindowV1 {
+	version: typeof SEASONAL_WINDOW_VERSION;
+	seasonId: string;
+	/** Key into a `FestivalAnchorsTableV1` (e.g. `'halloween'`); never a hardcoded date itself. */
+	festivalId: string;
+	/** Days from the festival's real start day; negative opens before the festival does. */
+	opensOffsetDays: number;
+	/** Days from the festival's real start day; must be `>= opensOffsetDays`. */
+	closesOffsetDays: number;
+}
+
+export function isFestivalRelativeWindow(value: unknown): value is FestivalRelativeWindowV1 {
+	if (!record(value) || !exactKeys(value, ['version', 'seasonId', 'festivalId', 'opensOffsetDays', 'closesOffsetDays'])
+		|| value.version !== SEASONAL_WINDOW_VERSION || !identifier(value.seasonId) || !identifier(value.festivalId)
+		|| !dayOffset(value.opensOffsetDays) || !dayOffset(value.closesOffsetDays)) return false;
+	return value.opensOffsetDays <= value.closesOffsetDays;
+}
+
+function dayOffset(value: unknown): value is number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && Math.abs(value) <= 366;
+}
+
+/**
+ * Resolves a festival-relative candidate into the concrete `MM-DD` window ONE specific real start
+ * (epoch ms, UTC midnight) implies. Never invents a date: an offset pair that would have the
+ * resolved window straddle a year boundary (a `MM-DD` pair cannot express that) returns `null`
+ * rather than a guess, same discipline as `seasonalWindowClosesAfterMs`.
+ *
+ * The result is NOT meant to be cached across years: call it again next year against that year's
+ * own anchor, which is exactly what `resolveFestivalCalendarWindow` below does.
+ */
+export function resolveFestivalRelativeWindow(
+	candidate: unknown,
+	festivalStartMs: unknown,
+): SeasonalWindowV1 | null {
+	if (!isFestivalRelativeWindow(candidate) || typeof festivalStartMs !== 'number'
+		|| !Number.isSafeInteger(festivalStartMs)) return null;
+	const opensMs = festivalStartMs + candidate.opensOffsetDays * 86_400_000;
+	const closesMs = festivalStartMs + candidate.closesOffsetDays * 86_400_000;
+	const opens = new Date(opensMs);
+	const closes = new Date(closesMs);
+	if (!Number.isFinite(opens.getTime()) || !Number.isFinite(closes.getTime())
+		|| opens.getUTCFullYear() !== closes.getUTCFullYear()) return null;
+	const opensOn = utcMonthDay(opensMs);
+	const closesOn = utcMonthDay(closesMs);
+	if (opensOn === null || closesOn === null || opensOn > closesOn) return null;
+	const window: SeasonalWindowV1 = {
+		version: SEASONAL_WINDOW_VERSION, seasonId: candidate.seasonId,
+		opensOn, closesOn, returnsInMonth: monthOf(opensOn),
+	};
+	return isSeasonalWindow(window) ? window : null;
+}
+
+/**
+ * One item's selling-window CANDIDATE, pointing at the row of the audit that measured it
  * (SPEC-recomendacion-por-objeto.md M3, `docs/audit/2026-09-11-festivales-datawars2.md`).
  *
- * A calendar entry is deliberately narrower than "the festival is open": five items measured
- * against seven editions of Shadow of the Mad King gave three different answers (before the
- * festival, at its start, or a month unrelated to it entirely), so each item gets its own
- * `SeasonalWindowV1` rather than sharing `HALLOWEEN_SEASONAL_WINDOW`.
+ * H18.20 replaces "one window per item" with a set of candidates an item can carry at once: the
+ * saco (36038) legitimately has both "before the festival" (anchored to the real start) and "May"
+ * (a plain annual window unrelated to any festival), and `resolveFestivalCalendarWindow` is what
+ * later picks whichever of them actually governs a given instant.
  */
+export type FestivalCalendarCandidateV1 =
+	| { kind: 'annual'; window: SeasonalWindowV1; auditRow: string }
+	| { kind: 'festival_relative'; window: FestivalRelativeWindowV1; auditRow: string };
+
+export function isFestivalCalendarCandidate(value: unknown): value is FestivalCalendarCandidateV1 {
+	if (!record(value)) return false;
+	if (value.kind === 'annual') {
+		return exactKeys(value, ['kind', 'window', 'auditRow'])
+			&& isSeasonalWindow(value.window) && auditRowRef(value.auditRow);
+	}
+	if (value.kind === 'festival_relative') {
+		return exactKeys(value, ['kind', 'window', 'auditRow'])
+			&& isFestivalRelativeWindow(value.window) && auditRowRef(value.auditRow);
+	}
+	return false;
+}
+
 export interface FestivalCalendarEntryV1 {
 	itemId: number;
-	window: SeasonalWindowV1;
-	/** `docs/audit/<file>.md#<anchor>` this window's numbers come from. Never invented. */
-	auditRow: string;
+	/** At least one candidate; never empty (an item with nothing curated has no entry at all). */
+	candidates: readonly FestivalCalendarCandidateV1[];
 }
 
 export interface FestivalCalendarV1 {
@@ -183,8 +356,12 @@ export interface FestivalCalendarV1 {
 }
 
 export function isFestivalCalendarEntry(value: unknown): value is FestivalCalendarEntryV1 {
-	return record(value) && exactKeys(value, ['itemId', 'window', 'auditRow'])
-		&& positiveInteger(value.itemId) && isSeasonalWindow(value.window) && auditRowRef(value.auditRow);
+	if (!record(value) || !exactKeys(value, ['itemId', 'candidates'])
+		|| !positiveInteger(value.itemId) || !Array.isArray(value.candidates) || value.candidates.length === 0
+		|| !value.candidates.every(isFestivalCalendarCandidate)) return false;
+	const entry = value as unknown as FestivalCalendarEntryV1;
+	const seasonIds = entry.candidates.map((candidate) => candidate.window.seasonId);
+	return new Set(seasonIds).size === seasonIds.length;
 }
 
 export function isFestivalCalendar(value: unknown): value is FestivalCalendarV1 {
@@ -193,7 +370,7 @@ export function isFestivalCalendar(value: unknown): value is FestivalCalendarV1 
 		|| !value.entries.every(isFestivalCalendarEntry) || !sha(value.sha256)) return false;
 	const calendar = value as unknown as FestivalCalendarV1;
 	const itemIds = calendar.entries.map((entry) => entry.itemId);
-	const seasonIds = calendar.entries.map((entry) => entry.window.seasonId);
+	const seasonIds = calendar.entries.flatMap((entry) => entry.candidates.map((candidate) => candidate.window.seasonId));
 	return new Set(itemIds).size === itemIds.length
 		&& new Set(seasonIds).size === seasonIds.length
 		&& calendar.sha256 === sha256FestivalCalendar(calendar);
@@ -209,6 +386,47 @@ export function festivalCalendarEntryForItem(
 	itemId: number,
 ): FestivalCalendarEntryV1 | null {
 	return calendar.entries.find((entry) => entry.itemId === itemId) ?? null;
+}
+
+/**
+ * Resolves an item's calendar entry into the ONE concrete window that currently governs it: the
+ * first candidate that is `in_season` right now, or — when none is — whichever candidate opens
+ * soonest. A `festival_relative` candidate whose year has no entry in `anchors` simply does not
+ * resolve (`resolveCandidateWindow` returns `null` for it): that is H18.20's declared lack of
+ * coverage, never a guessed date. `null` here means exactly what "no calendar entry" already means
+ * to every caller: fall through to the item's non-seasonal route.
+ */
+export function resolveFestivalCalendarWindow(
+	entry: FestivalCalendarEntryV1,
+	anchors: ReadonlyMap<string, FestivalAnchorsTableV1>,
+	asOfEpochMs: number,
+): SeasonalWindowV1 | null {
+	const resolved = entry.candidates
+		.map((candidate) => resolveCandidateWindow(candidate, anchors, asOfEpochMs))
+		.filter((window): window is SeasonalWindowV1 => window !== null);
+	if (resolved.length === 0) return null;
+	const active = resolved.find((window) => seasonalWindowStatusAtMs(window, asOfEpochMs) === 'in_season');
+	if (active !== undefined) return active;
+	let soonest: { window: SeasonalWindowV1; opensAt: number } | null = null;
+	for (const window of resolved) {
+		const opensAt = seasonalWindowOpensAfterMs(window, asOfEpochMs);
+		if (opensAt !== null && (soonest === null || opensAt < soonest.opensAt)) soonest = { window, opensAt };
+	}
+	return soonest?.window ?? resolved[0]!;
+}
+
+function resolveCandidateWindow(
+	candidate: FestivalCalendarCandidateV1,
+	anchors: ReadonlyMap<string, FestivalAnchorsTableV1>,
+	asOfEpochMs: number,
+): SeasonalWindowV1 | null {
+	if (candidate.kind === 'annual') return candidate.window;
+	const table = anchors.get(candidate.window.festivalId);
+	if (table === undefined) return null;
+	const year = new Date(asOfEpochMs).getUTCFullYear();
+	const startMs = festivalAnchorStartMs(table, year);
+	if (startMs === null) return null;
+	return resolveFestivalRelativeWindow(candidate.window, startMs);
 }
 
 function positiveInteger(value: unknown): value is number {

@@ -8,11 +8,38 @@ import {
 	seasonalWindowStatusAt,
 	seasonalWindowStatusAtMs,
 	isFestivalCalendar,
+	isFestivalAnchorsTable,
+	festivalAnchorStartMs,
+	resolveFestivalRelativeWindow,
+	resolveFestivalCalendarWindow,
 	sha256FestivalCalendar,
+	sha256FestivalAnchorsTable,
 	festivalCalendarEntryForItem,
 	type SeasonalWindowV1,
 	type FestivalCalendarV1,
+	type FestivalCalendarCandidateV1,
+	type FestivalCalendarEntryV1,
+	type FestivalAnchorEntryV1,
+	type FestivalAnchorsTableV1,
+	type FestivalRelativeWindowV1,
 } from './seasonal-window';
+
+function annualCandidate(
+	seasonId: string, opensOn: string, closesOn: string, returnsInMonth: number, auditRow = 'docs/audit/x.md#1',
+): FestivalCalendarCandidateV1 {
+	return { kind: 'annual', window: { version: 1, seasonId, opensOn, closesOn, returnsInMonth }, auditRow };
+}
+
+function halloweenAnchorsWith(entries: FestivalAnchorEntryV1[]): FestivalAnchorsTableV1 {
+	const candidate = {
+		version: 1 as const, festivalId: 'halloween',
+		publishedAt: '2026-09-24T00:00:00.000Z', reviewedAt: '2026-09-24T05:00:00.000Z',
+		sources: [{ id: 'src', url: 'https://wiki.guildwars2.com/index.php?title=Halloween', retrievedAt: '2026-09-24T00:00:00.000Z' }],
+		entries, sha256: '',
+	};
+	candidate.sha256 = sha256FestivalAnchorsTable(candidate);
+	return candidate;
+}
 
 describe('seasonal window', () => {
 	it('opens and closes the declared Halloween window on its exact boundary days', () => {
@@ -142,32 +169,118 @@ describe('festival calendar', () => {
 
 	it('accepts a calendar of valid, distinct windows over distinct items', () => {
 		const calendar = calendarWith([
-			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'docs/audit/x.md#1' },
-			{ itemId: 2, window: { version: 1, seasonId: 'b', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'docs/audit/x.md#2' },
+			{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5)] },
+			{ itemId: 2, candidates: [annualCandidate('b', '06-01', '06-30', 6, 'docs/audit/x.md#2')] },
 		]);
 		expect(isFestivalCalendar(calendar)).toBe(true);
-		expect(festivalCalendarEntryForItem(calendar, 1)?.window.seasonId).toBe('a');
+		expect(festivalCalendarEntryForItem(calendar, 1)?.candidates[0]?.window.seasonId).toBe('a');
 		expect(festivalCalendarEntryForItem(calendar, 99)).toBeNull();
 	});
 
-	it('rejects a duplicate itemId, a duplicate seasonId, an invalid window and a tampered hash', () => {
+	/** H18.20: "one window per item" is replaced by a set of candidates the resolver picks from. */
+	it('accepts an item that carries MULTIPLE candidate windows', () => {
+		const calendar = calendarWith([
+			{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5), annualCandidate('a2', '09-01', '09-30', 9)] },
+		]);
+		expect(isFestivalCalendar(calendar)).toBe(true);
+		expect(festivalCalendarEntryForItem(calendar, 1)?.candidates.length).toBe(2);
+	});
+
+	it('rejects a duplicate itemId, a duplicate seasonId (across items or within one item), an invalid window, an empty candidate list and a tampered hash', () => {
 		const duplicateItem = calendarWith([
-			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
-			{ itemId: 1, window: { version: 1, seasonId: 'b', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'y' },
+			{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5)] },
+			{ itemId: 1, candidates: [annualCandidate('b', '06-01', '06-30', 6)] },
 		]);
 		expect(isFestivalCalendar(duplicateItem)).toBe(false);
 		const duplicateSeason = calendarWith([
-			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
-			{ itemId: 2, window: { version: 1, seasonId: 'a', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 }, auditRow: 'y' },
+			{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5)] },
+			{ itemId: 2, candidates: [annualCandidate('a', '06-01', '06-30', 6)] },
 		]);
 		expect(isFestivalCalendar(duplicateSeason)).toBe(false);
+		const duplicateSeasonSameItem = calendarWith([
+			{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5), annualCandidate('a', '06-01', '06-30', 6)] },
+		]);
+		expect(isFestivalCalendar(duplicateSeasonSameItem)).toBe(false);
 		const invalidWindow = calendarWith([
-			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '02-29', closesOn: '05-31', returnsInMonth: 2 }, auditRow: 'x' },
+			{ itemId: 1, candidates: [annualCandidate('a', '02-29', '05-31', 2)] },
 		]);
 		expect(isFestivalCalendar(invalidWindow)).toBe(false);
-		const valid = calendarWith([
-			{ itemId: 1, window: { version: 1, seasonId: 'a', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 }, auditRow: 'x' },
-		]);
+		const emptyCandidates = calendarWith([{ itemId: 1, candidates: [] }]);
+		expect(isFestivalCalendar(emptyCandidates)).toBe(false);
+		const valid = calendarWith([{ itemId: 1, candidates: [annualCandidate('a', '05-01', '05-31', 5)] }]);
 		expect(isFestivalCalendar({ ...valid, sha256: '0'.repeat(64) })).toBe(false);
+	});
+});
+
+/** H18.20: the real, per-year festival start a `festival_relative` candidate anchors against. */
+describe('festival anchors table', () => {
+	it('accepts a valid table and rejects a tampered hash, a duplicate year and a reference to a missing source', () => {
+		const table = halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }]);
+		expect(isFestivalAnchorsTable(table)).toBe(true);
+		expect(isFestivalAnchorsTable({ ...table, sha256: '0'.repeat(64) })).toBe(false);
+		const duplicateYear = halloweenAnchorsWith([
+			{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' },
+			{ year: 2026, startsOn: '2026-10-14', sourceId: 'src' },
+		]);
+		expect(isFestivalAnchorsTable(duplicateYear)).toBe(false);
+		const missingSource = halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'ghost' }]);
+		expect(isFestivalAnchorsTable(missingSource)).toBe(false);
+	});
+
+	it('reads a covered year and declares an uncovered one null, rather than guessing', () => {
+		const table = halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }]);
+		expect(festivalAnchorStartMs(table, 2026)).toBe(Date.parse('2026-10-13T00:00:00.000Z'));
+		expect(festivalAnchorStartMs(table, 2027)).toBeNull();
+	});
+});
+
+/** H18.20: resolving a candidate anchored to the real festival start, and picking among several. */
+describe('festival-relative windows and candidate resolution', () => {
+	const BEFORE: FestivalRelativeWindowV1 = {
+		version: 1, seasonId: 'before', festivalId: 'halloween', opensOffsetDays: -7, closesOffsetDays: -1,
+	};
+
+	it('resolves the same offsets to a DIFFERENT window when the real festival start moves a week', () => {
+		const earlierYear = resolveFestivalRelativeWindow(BEFORE, Date.parse('2026-10-13T00:00:00.000Z'));
+		const laterYear = resolveFestivalRelativeWindow(BEFORE, Date.parse('2026-10-20T00:00:00.000Z'));
+		if (earlierYear === null || laterYear === null) throw new Error('expected both instants to resolve');
+		expect(earlierYear).not.toEqual(laterYear);
+		expect(earlierYear).toMatchObject({ opensOn: '10-06', closesOn: '10-12' });
+		expect(laterYear).toMatchObject({ opensOn: '10-13', closesOn: '10-19' });
+	});
+
+	it('declines to resolve a candidate whose window would straddle a year boundary, rather than guessing', () => {
+		const spansNewYear: FestivalRelativeWindowV1 = {
+			version: 1, seasonId: 'wrap', festivalId: 'halloween', opensOffsetDays: -10, closesOffsetDays: 10,
+		};
+		expect(resolveFestivalRelativeWindow(spansNewYear, Date.parse('2026-01-03T00:00:00.000Z'))).toBeNull();
+	});
+
+	it('picks the currently in-season candidate over a closed one', () => {
+		const anchors = new Map([['halloween', halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }])]]);
+		const entry: FestivalCalendarEntryV1 = {
+			itemId: 1,
+			candidates: [
+				{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' },
+				annualCandidate('may', '05-01', '05-31', 5),
+			],
+		};
+		const duringBefore = resolveFestivalCalendarWindow(entry, anchors, Date.parse('2026-10-10T00:00:00.000Z'));
+		expect(duringBefore?.seasonId).toBe('before');
+		const afterFestivalNothingOpen = resolveFestivalCalendarWindow(entry, anchors, Date.parse('2026-11-01T00:00:00.000Z'));
+		expect(afterFestivalNothingOpen?.seasonId).toBe('may');
+	});
+
+	it('declares lack of coverage rather than guessing when the only candidate needs an uncovered festival year', () => {
+		const anchorsFor2026 = new Map([['halloween', halloweenAnchorsWith([{ year: 2026, startsOn: '2026-10-13', sourceId: 'src' }])]]);
+		const onlyAnchored: FestivalCalendarEntryV1 = {
+			itemId: 1, candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }],
+		};
+		expect(resolveFestivalCalendarWindow(onlyAnchored, anchorsFor2026, Date.parse('2029-10-10T00:00:00.000Z'))).toBeNull();
+		const withAnnualFallback: FestivalCalendarEntryV1 = {
+			itemId: 2,
+			candidates: [{ kind: 'festival_relative', window: BEFORE, auditRow: 'x' }, annualCandidate('may2', '05-01', '05-31', 5)],
+		};
+		expect(resolveFestivalCalendarWindow(withAnnualFallback, anchorsFor2026, Date.parse('2029-10-10T00:00:00.000Z'))?.seasonId).toBe('may2');
 	});
 });

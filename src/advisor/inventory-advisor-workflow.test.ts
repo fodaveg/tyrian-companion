@@ -60,9 +60,24 @@ describe('H5.11 inventory advisor workflow', () => {
 		const workflow = new InventoryAdvisorWorkflow({
 			capture: { capture },
 			preferences: { load: preferences },
-			rules: { current: () => ({ status: 'unavailable' }) },
+			rules: { current: () => ({ status: 'unavailable', reason: 'invalid' }) },
 		});
 		await expect(workflow.refresh('es')).resolves.toEqual({ status: 'blocked', reason: 'missing_rules' });
+		expect(capture).not.toHaveBeenCalled();
+		expect(preferences).not.toHaveBeenCalled();
+	});
+
+	/** H18.5: an EXPIRED bundle (not merely invalid) surfaces its own distinct blocked reason, so
+	 * the caducity has a visible, specific message instead of collapsing into "missing rules". */
+	it('blocks with a distinct reason when the reviewed rules bundle has expired', async () => {
+		const capture = vi.fn();
+		const preferences = vi.fn();
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture },
+			preferences: { load: preferences },
+			rules: { current: () => ({ status: 'unavailable', reason: 'expired' }) },
+		});
+		await expect(workflow.refresh('es')).resolves.toEqual({ status: 'blocked', reason: 'rules_expired' });
 		expect(capture).not.toHaveBeenCalled();
 		expect(preferences).not.toHaveBeenCalled();
 	});
@@ -172,7 +187,9 @@ describe('H5.11 inventory advisor workflow', () => {
 		// instant that must fail closed moved with it.
 		now: () => Date.parse('2026-12-01T00:00:00.000Z'),
 		});
-		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'missing_rules' });
+		// H18.5: an expired bundle now surfaces its OWN blocked reason instead of the generic
+		// "missing rules" — this is the built-in bundle's real `validUntil`, reached, not a fixture.
+		await expect(workflow.refresh('en')).resolves.toEqual({ status: 'blocked', reason: 'rules_expired' });
 		expect(capture).not.toHaveBeenCalled();
 		expect(preferences).not.toHaveBeenCalled();
 	});

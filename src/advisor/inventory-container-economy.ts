@@ -31,9 +31,13 @@ export {
 	isFestivalCalendar,
 	sha256FestivalCalendar,
 	festivalCalendarEntryForItem,
+	resolveFestivalCalendarWindow,
 	FESTIVAL_CALENDAR_VERSION,
 	type FestivalCalendarV1,
 	type FestivalCalendarEntryV1,
+	type FestivalCalendarCandidateV1,
+	type FestivalRelativeWindowV1,
+	type FestivalAnchorsTableV1,
 } from '../economy/seasonal-window';
 import {
 	isContainerPersonalValuation,

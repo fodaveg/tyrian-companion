@@ -97,7 +97,8 @@ import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-histor
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
-import { festivalCalendarEntryForItem } from './economy/seasonal-window';
+import { festivalCalendarEntryForItem, resolveFestivalCalendarWindow, type FestivalAnchorsTableV1 } from './economy/seasonal-window';
+import { HALLOWEEN_FESTIVAL_ANCHORS } from './economy/models/halloween-festival-anchors';
 import {
 	assembleAdvisor,
 	type InventoryAdvisorCaptureProgressListenerRef,
@@ -262,6 +263,10 @@ export interface LegendaryArmoryOptionV1 {
 	icon: string | null;
 	/** `false` when `LEGENDARY_MATERIALS_TABLE` has no curated entry for this legendary yet. */
 	hasTable: boolean;
+	/** H18.5: `true` once `LEGENDARY_MATERIALS_TABLE.validUntil` is past, whether or not `hasTable`
+	 * is also true — a stale table is still read and used (`buildLegendaryReservationGoals` has no
+	 * `asOf` gate of its own), so this is what makes that caducity visible instead of silent. */
+	tableStale: boolean;
 }
 
 export type LegendaryArmoryOptionsResult =
@@ -702,6 +707,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 							name: item?.name ?? `#${String(itemId)}`,
 							icon: item?.icon ?? null,
 							hasTable: legendaryMaterialsEntryFor(LEGENDARY_MATERIALS_TABLE, itemId) !== null,
+							tableStale: Date.now() >= Date.parse(LEGENDARY_MATERIALS_TABLE.validUntil),
 						};
 					}).sort((left, right) => left.name.localeCompare(right.name));
 					this.legendaryArmoryOptionsCache = options;
@@ -882,12 +888,20 @@ export default class TyrianCompanionPlugin extends Plugin {
 						// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 						// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
 						seasonalInputFor: (itemId) => {
-							const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+							const asOf = new Date();
+							const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
 							if (loaded.status !== 'available') return null;
 							const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
 							if (entry === null) return null;
+							// H18.20: an item can carry several candidate windows (e.g. "before the
+							// festival" anchored to its real start, plus a plain annual one); this
+							// picks whichever governs `asOf`, or returns null when the only
+							// applicable candidate needs a festival year this build has no anchor
+							// for (declared lack of coverage, never a guessed date).
+							const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOf.getTime());
+							if (window === null) return null;
 							return {
-								window: entry.window,
+								window,
 								parameters: {
 									minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
 									referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
@@ -3910,6 +3924,14 @@ const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000
  * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
  */
 const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
+
+/**
+ * H18.20: every curated festival this plugin anchors a selling window to, keyed by `festivalId`.
+ * Only Halloween is curated today; a second festival is a second entry here, not a new mechanism.
+ */
+const FESTIVAL_ANCHORS: ReadonlyMap<string, FestivalAnchorsTableV1> = new Map([
+	[HALLOWEEN_FESTIVAL_ANCHORS.festivalId, HALLOWEEN_FESTIVAL_ANCHORS],
+]);
 
 type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
 

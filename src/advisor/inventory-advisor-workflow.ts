@@ -52,7 +52,11 @@ export type InventoryAdvisorRules = {
 	materialStorageCapacity?: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>;
 	equipmentSalvage?: Omit<NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>, 'prices' | 'marketDepth'>;
 };
-export type InventoryAdvisorRulesAvailability = { status: 'available'; value: InventoryAdvisorRules } | { status: 'unavailable' };
+export type InventoryAdvisorRulesAvailability =
+	| { status: 'available'; value: InventoryAdvisorRules }
+	/** H18.5: `reason` distinguishes a genuinely invalid pack from one that expired on schedule, so
+	 * the workflow can surface a caducity-specific blocked reason instead of a generic one. */
+	| { status: 'unavailable'; reason: 'invalid' | 'expired' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
 export type InventoryAdvisorWorkflowResult =
 	| { status: 'ready'; source: InventoryAdvisorPresentationSource }
@@ -60,6 +64,10 @@ export type InventoryAdvisorWorkflowResult =
 
 export type InventoryAdvisorWorkflowBlockedReason =
 	| 'missing_rules'
+	/** H18.5: the curated bundle is past `validUntil` (rule pack or knowledge pack, whichever is
+	 * earlier) — distinct from `missing_rules` so a caducity has a visible, specific message
+	 * instead of collapsing into "rules unavailable". */
+	| 'rules_expired'
 	| 'credential_unavailable'
 	| 'capture_rate_limited'
 	| 'capture_unavailable'
@@ -114,7 +122,9 @@ export class InventoryAdvisorWorkflow {
 		this.last = null;
 		const asOf = new Date(this.ports.now?.() ?? Date.now()).toISOString();
 		const rules = this.ports.rules.current(asOf);
-		if (rules.status === 'unavailable') return { status: 'blocked', reason: 'missing_rules' };
+		if (rules.status === 'unavailable') {
+			return { status: 'blocked', reason: rules.reason === 'expired' ? 'rules_expired' : 'missing_rules' };
+		}
 		const expectedPriceItemIds = [
 			...(rules.value.containerEconomyPack?.expectedPriceItemIds ?? []),
 			...(rules.value.equipmentSalvage === undefined ? [] : [rules.value.equipmentSalvage.policy.outputItemId]),
@@ -171,7 +181,7 @@ export class InventoryAdvisorWorkflow {
 		const rules = this.ports.rules.current(asOf);
 		if (rules.status === 'unavailable') {
 			this.last = null;
-			return { status: 'blocked', reason: 'missing_rules' };
+			return { status: 'blocked', reason: rules.reason === 'expired' ? 'rules_expired' : 'missing_rules' };
 		}
 		if (last.capture.evidence === null || !fresh(last.capture.evidence, asOf, rules.value.policy)) {
 			this.last = null;
@@ -220,7 +230,7 @@ export function createInventoryAdvisorBuiltinRulesProvider(
 						},
 					}),
 				} }
-				: { status: 'unavailable' };
+				: { status: 'unavailable', reason: loaded.reason };
 		},
 	});
 }
@@ -357,7 +367,7 @@ function finishWorkflowSpan(span: LocalDebugActionSpan, result: InventoryAdvisor
 		span.retry(result.reason);
 	} else if (result.reason === 'credential_unavailable') {
 		span.failure(new Error('inventory_advisor_permission_denied'), 'permission_denied', result.reason);
-	} else if (result.reason === 'missing_rules' || result.reason.startsWith('capture_')) {
+	} else if (result.reason === 'missing_rules' || result.reason === 'rules_expired' || result.reason.startsWith('capture_')) {
 		span.failure(new Error('inventory_advisor_validation_failed'), 'validation_failed', result.reason);
 	} else {
 		span.failure(new Error('inventory_advisor_unavailable'), 'storage_failure', result.reason);

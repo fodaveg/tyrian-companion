@@ -38,6 +38,10 @@ export type InventoryAdvisorReasonCode =
 	| 'user_keep_exception'
 	| 'rule_missing'
 	| 'rule_stale'
+	/** H18.5: the curated knowledge pack (not the rule pack) is past its 90-day review window; a
+	 * curated route is withheld for the same reason `rule_stale` withholds one, but distinctly, so
+	 * the item does not surface as a generic price problem. */
+	| 'knowledge_stale'
 	| 'rule_conflict'
 	| 'economic_comparison_missing'
 	| 'economic_activation_pending'
