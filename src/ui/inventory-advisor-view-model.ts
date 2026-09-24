@@ -11,6 +11,8 @@ export interface InventoryAdvisorViewRow {
 	ownedQuantity: number;
 	availableQuantity: number;
 	action: InventoryAdvisorPresentationRow['action'];
+	/** H18.14: the row's decision in the one result per object; see `InventoryAdvisorPresentationRow`. */
+	decision?: InventoryAdvisorPresentationRow['decision'];
 	quantity: number;
 	allocations: InventoryAdvisorPresentationRow['allocations'];
 	reasonCodes: InventoryAdvisorPresentationRow['reasonCodes'];
@@ -65,7 +67,9 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 			rows: group.rows.map((row) => ({
 				id: row.id,
 				itemId: row.itemId, name: row.name, icon: row.icon, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
-				action: row.action, quantity: row.quantity, allocations: structuredClone(row.allocations),
+				action: row.action,
+				...(row.decision === undefined ? {} : { decision: row.decision === null ? null : { ...row.decision } }),
+				quantity: row.quantity, allocations: structuredClone(row.allocations),
 				reasonCodes: [...row.reasonCodes], protectionReasons: structuredClone(row.protectionReasons),
 				value: { ...row.value }, marketComparison: row.marketComparison === null ? null : { ...row.marketComparison },
 				burden: row.burden === null ? null : { ...row.burden }, coverage: { ...row.coverage },

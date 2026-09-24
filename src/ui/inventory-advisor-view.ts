@@ -9,6 +9,10 @@ import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type { InventoryPreferencesEditorState } from '../advisor/inventory-preferences-runtime';
 import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryContainerEconomyDecisionV1 } from '../advisor/inventory-container-economy';
+import {
+	POSITION_RECOMMENDATION_REASON_CODES,
+	type PositionRecommendationReasonCode,
+} from '../advisor/inventory-position-recommendation';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { ReservationRequirement } from '../economy/reservation-model';
 import type {
@@ -970,6 +974,13 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 	const explanation = createEl('p');
 	explanation.textContent = explanationLabel(row, translator);
 	cell.append(explanation);
+	const moment = decisionMomentLabel(row, translator);
+	if (moment !== null) {
+		const momentLine = createEl('p');
+		momentLine.className = 'tyrian-inventory-advisor__decision-moment';
+		momentLine.textContent = moment;
+		cell.append(momentLine);
+	}
 	const context = rowContextDetails(row, translator);
 	if (context !== null) cell.append(context);
 	const season = containerSeasonNotice(row, translator);
@@ -1011,7 +1022,9 @@ function renderCards(
 			addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
-			addDefinition(list, translator.t('advisor.view.explanation'), explanationLabel(row, translator));
+			const moment = decisionMomentLabel(row, translator);
+			addDefinition(list, translator.t('advisor.view.explanation'),
+				moment === null ? explanationLabel(row, translator) : `${explanationLabel(row, translator)} · ${moment}`);
 			article.append(list);
 			const context = rowContextDetails(row, translator);
 			if (context !== null) article.append(context);
@@ -1142,9 +1155,33 @@ function economyActionLabel(action: InventoryContainerEconomyDecisionV1['action'
 	return action === 'hold' ? 'keep' : action;
 }
 
+/**
+ * H18.14: the row reads its decision in the one result per object, the same one its notes and the
+ * Base carry. The advisor's route label stays when the decision agrees with it; when the moment or
+ * a protection changes it (wait for the season, keep for a goal, uncertain reservation), the
+ * decision's own label replaces it so the view never says "sell" where the note says "wait".
+ */
 function decisionLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
-	if (row.action !== 'discard_review') return actionLabelFor(row.action, translator);
-	return `⚠ ${translator.t('advisor.view.irreversibleReview')}`;
+	if (row.action === 'discard_review') return `⚠ ${translator.t('advisor.view.irreversibleReview')}`;
+	const decision = row.decision ?? null;
+	if (decision === null || decision.action === row.action) return actionLabelFor(row.action, translator);
+	return translator.t(`inventory.decision.action.${decision.action}`);
+}
+
+/**
+ * The moment behind a row's decision, when the moment stage set it: why now or why wait, and until
+ * when. Null for a route with no timing model, whose explanation already says everything.
+ */
+function decisionMomentLabel(row: InventoryAdvisorViewRow, translator: Translator): string | null {
+	const decision = row.decision ?? null;
+	if (decision === null || !isPositionReasonCode(decision.reason)) return null;
+	const reason = translator.t(`inventory.decision.reason.${decision.reason}`);
+	return decision.until === null ? reason
+		: `${reason} · ${translator.t('advisor.view.decisionUntil', { date: decision.until.slice(0, 10) })}`;
+}
+
+function isPositionReasonCode(value: string): value is PositionRecommendationReasonCode {
+	return (POSITION_RECOMMENDATION_REASON_CODES as readonly string[]).includes(value);
 }
 
 function allocationLabel(row: InventoryAdvisorViewRow, translator: Translator): string {

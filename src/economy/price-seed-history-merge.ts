@@ -6,7 +6,8 @@ import { unionByDayLocalWins } from './sell-signal';
  * Combines this item's own captured daily series with its cached datawars2 seed, for
  * `recommendPosition`'s sake (SPEC-recomendacion-por-objeto.md, decision 4, M2).
  *
- * Before this existed, `InventoryVaultCaptureService.capture` fed `recommendPosition` only the
+ * Before this existed, the notes' own capture (`InventoryVaultCaptureService.capture`, replaced by
+ * `InventoryAnalysisService` in H18.16) fed `recommendPosition` only the
  * plugin's own capture: a seed cached by `PriceSeedBulkRefreshService` for a brand-new watch-list
  * item sat in `tyrian-companion-price-seed-cache` and was never read, so the item stayed
  * `review`/`price_history_insufficient` until 42 days of the plugin's OWN captures accumulated —

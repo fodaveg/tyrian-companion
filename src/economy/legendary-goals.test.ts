@@ -5,7 +5,6 @@ import type { ReservationBalance } from './reservation-model';
 import {
 	buildLegendaryReservationGoals,
 	scaledSellCopper,
-	splitLegendaryReservationsByPosition,
 } from './legendary-goals';
 import { LEGENDARY_MATERIALS_TABLE, LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR } from './legendary-materials';
 
@@ -58,50 +57,31 @@ describe('buildLegendaryReservationGoals', () => {
 	});
 });
 
-describe('splitLegendaryReservationsByPosition + recommendation shortfall (test 1)', () => {
-	it('60 owned of a 100-target shard: fully reserved, missing 40', () => {
+/**
+ * The legendary goals' reservation (test 1: 60 owned of a 100-target shard is fully reserved and
+ * 40 short; 273 owned leaves 173 free), laid onto the plan the advisor classifies with. Since
+ * H18.14 the per-position split is the advisor's own (`splitLegendaryReservationsByPosition` is
+ * gone); `inventory-analysis.test.ts` checks it position by position, in the view and the notes.
+ */
+describe('legendary goals in the reservation plan (test 1)', () => {
+	it('60 owned of a 100-target shard: all 60 protected, 40 short', () => {
 		const { goals } = buildLegendaryReservationGoals(
 			[LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR], new Map(), LEGENDARY_MATERIALS_TABLE,
 		);
 		const planResult = createReservationPlan({ goals, balance: balanceFor(SHARD_OF_JANTHIR_SYNTRI, 60) });
 		if (planResult.status !== 'ok') throw new Error('plan should be valid');
-		const positions = [{ positionId: 'pos-1', itemId: SHARD_OF_JANTHIR_SYNTRI, quantity: 60 }];
-		const split = splitLegendaryReservationsByPosition(positions, planResult.plan);
-		expect(split.get('pos-1')).toEqual({ reservedQuantity: 60, freeQuantity: 0, shortfall: 40 });
+		expect(planResult.plan.assets.find((asset) => asset.id === SHARD_OF_JANTHIR_SYNTRI))
+			.toMatchObject({ protectedAvailable: 60, unprotectedAvailable: 0, shortfall: 40 });
 	});
 
-	it('273 owned of a 100-target shard: 100 reserved, 173 free, no shortfall', () => {
+	it('273 owned of a 100-target shard: 100 protected, 173 free, no shortfall', () => {
 		const { goals } = buildLegendaryReservationGoals(
 			[LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR], new Map(), LEGENDARY_MATERIALS_TABLE,
 		);
 		const planResult = createReservationPlan({ goals, balance: balanceFor(SHARD_OF_JANTHIR_SYNTRI, 273) });
 		if (planResult.status !== 'ok') throw new Error('plan should be valid');
-		const positions = [{ positionId: 'pos-1', itemId: SHARD_OF_JANTHIR_SYNTRI, quantity: 273 }];
-		const split = splitLegendaryReservationsByPosition(positions, planResult.plan);
-		expect(split.get('pos-1')).toEqual({ reservedQuantity: 100, freeQuantity: 173, shortfall: 0 });
-	});
-
-	it('test 7: the same target split across three positions sums to 100 reserved / 173 free', () => {
-		const { goals } = buildLegendaryReservationGoals(
-			[LEGENDARY_ARMORY_ITEM_ID_KLOBJARNE_GEIRR], new Map(), LEGENDARY_MATERIALS_TABLE,
-		);
-		const planResult = createReservationPlan({ goals, balance: balanceFor(SHARD_OF_JANTHIR_SYNTRI, 273) });
-		if (planResult.status !== 'ok') throw new Error('plan should be valid');
-		const positions = [
-			{ positionId: 'pos-a', itemId: SHARD_OF_JANTHIR_SYNTRI, quantity: 50 },
-			{ positionId: 'pos-b', itemId: SHARD_OF_JANTHIR_SYNTRI, quantity: 200 },
-			{ positionId: 'pos-c', itemId: SHARD_OF_JANTHIR_SYNTRI, quantity: 23 },
-		];
-		const split = splitLegendaryReservationsByPosition(positions, planResult.plan);
-		const totalReserved = [...split.values()].reduce((sum, entry) => sum + entry.reservedQuantity, 0);
-		const totalFree = [...split.values()].reduce((sum, entry) => sum + entry.freeQuantity, 0);
-		expect(totalReserved).toBe(100);
-		expect(totalFree).toBe(173);
-		// Deterministic fill order: pos-a first (50), then pos-b takes the remaining 50 of the
-		// reservation, pos-c gets none reserved.
-		expect(split.get('pos-a')).toEqual({ reservedQuantity: 50, freeQuantity: 0, shortfall: 0 });
-		expect(split.get('pos-b')).toEqual({ reservedQuantity: 50, freeQuantity: 150, shortfall: 0 });
-		expect(split.get('pos-c')).toEqual({ reservedQuantity: 0, freeQuantity: 23, shortfall: 0 });
+		expect(planResult.plan.assets.find((asset) => asset.id === SHARD_OF_JANTHIR_SYNTRI))
+			.toMatchObject({ protectedAvailable: 100, unprotectedAvailable: 173, shortfall: 0 });
 	});
 });
 

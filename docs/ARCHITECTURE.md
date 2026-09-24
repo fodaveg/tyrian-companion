@@ -600,11 +600,15 @@ ni adapter que deposite en la cuenta.
 
 ## Inventario durable en Vault
 
-`InventoryVaultCaptureService` reutiliza una `GuildWars2Operation` obtenida de `GuildWars2Client`, la
-captura estable completa de `StorageSnapshotService`, `PublicCatalogService` y el batch público de
-precios del Inventory Advisor. Solo se construye y ejecuta tras **Previsualizar sincronización**. Exige
-calidad `stable` y cobertura completa de personajes, inventario compartido, banco y materiales antes
-de permitir que una ausencia convierta una fila previa en inactiva.
+Las notas no capturan nada propio (H18.16). Se escriben desde el análisis que ya muestra el Inventory
+Advisor: su evidencia (instantánea, catálogo, precios, profundidad del bazar y nivel de acceso al
+bazar) y su resultado por objeto (`InventoryObjectResultsV1`, H18.14), que el flujo del asesor calcula
+en la misma pasada con `InventoryAnalysisService` (`src/inventory/inventory-analysis.ts`). El asesor
+decide la ruta y lo que protegen tus preferencias; `recommendPosition` añade el momento; la vista, las
+notas y la Base leen esa misma decisión. Antes de reescribir notas se exige calidad `stable`, cobertura
+completa de personajes, inventario compartido, banco y materiales, catálogo disponible y una captura de
+menos de 15 minutos (`inventoryAnalysisReadyForNotes`); si no, se hace un análisis más, compartido con
+la vista, antes de permitir que una ausencia convierta una fila previa en inactiva.
 
 `prepareInventoryVaultSyncInput` elimina `accountId`, `snapshotId`, token y payloads antes de cruzar la
 frontera del writer. Conserva únicamente una fila por `itemId + source + character`; agrega pilas del
@@ -614,13 +618,21 @@ un prefijo SHA-256 del personaje, nunca su nombre ni la cuenta.
 
 `InventoryVaultSyncService` recibe solo un port de Vault. Preview enumera las notas dinámicas bajo la
 raíz portable derivada de `outputFolder` —la única raíz de notas, nunca `managedAssetsRoot`—, verifica
-marker, schema, relación de ruta y hash de bytes, y produce pasos create/update/unchanged/deactivate/conflict sin escribir. Apply
-relee todos los bytes esperados antes de la primera mutación y usa `Vault.process` como CAS por nota.
-Una nota ajena, modificada, duplicada o futura dentro de la carpeta técnica bloquea el plan completo.
-Una posición ausente se **borra** (`vault.trashFile`, paso `deactivate`), no se conserva con
-`tc_active:false` (H14.21: 24 notas así en una bóveda real, sin volver a converger nunca solas). Ninguna
-nota de posición lleva `tc_captured_at`: entraba en el hash del marker y reescribía las 1.402 en cada
-captura aunque el inventario no cambiara; la Base lee la fecha de actualización con `file.mtime`.
+marker, schema, relación de ruta y el hash del bloque gestionado, y produce pasos
+create/update/unchanged/deactivate/conflict sin escribir. Desde H18.16 una nota se divide en partes
+gestionadas (claves `tc_*` y `descripcion`, y el bloque entre la línea de marca y
+`<!-- /tyrian-companion-inventory -->`) y partes del usuario (cualquier otra clave del frontmatter y el
+texto fuera del bloque), que cada reescritura conserva byte a byte. `unchanged` compara solo lo
+gestionado y no cuenta como cambio la fecha de la cotización ni la vigencia de un veredicto de precio,
+que salen del instante de la captura: sin cambio de datos, 0 escrituras. Apply relee cada nota que va
+a escribir y usa `Vault.process` como CAS por nota. Una nota ajena, duplicada, futura, editada dentro
+de su bloque gestionado o cambiada entre preview y apply es un conflicto de esa nota: no se escribe y
+se cuenta, pero no bloquea el resto del plan. Una posición ausente se **borra** (`vault.trashFile`,
+paso `deactivate`), no se conserva con `tc_active:false` (H14.21: 24 notas así en una bóveda real, sin
+volver a converger nunca solas), salvo que la nota lleve texto o propiedades del usuario: entonces se
+reescribe inactiva con ese texto intacto. Ninguna nota de posición lleva `tc_captured_at`: entraba en
+el hash del marker y reescribía las 1.402 en cada captura aunque el inventario no cambiara; la Base lee
+la fecha de actualización con `file.mtime`.
 
 `InventoryVaultSyncController` conserva plan y estado solo en memoria. Expone idle, disabled, loading,
 preview, applying, success, error y conflict en el Inventory Advisor y en dos comandos estables. Abrir
