@@ -54,7 +54,10 @@ export type InventoryVaultSyncRunState =
 	| ({ status: 'running' } & InventoryVaultSyncRunProgress)
 	/** A destructive but appliable plan (deactivate > 0). Nothing is written yet. */
 	| { status: 'confirm'; summary: InventoryVaultSyncPlanSummary }
-	/** conflicts > 0 or `plan.canApply === false`; writing is not possible. */
+	/**
+	 * `plan.canApply === false` or an invalid apply; writing is not possible. H18.16: per-note
+	 * conflicts no longer land here. They are skipped, counted in the summary, and the rest applies.
+	 */
 	| { status: 'conflict'; summary: InventoryVaultSyncPlanSummary | null };
 
 export interface InventoryVaultSyncRunPorts {
@@ -197,7 +200,9 @@ export class InventoryVaultOneClickSyncController {
 
 	private async afterPreview(plan: InventoryVaultSyncPlan, startedAt: number, generation: number): Promise<void> {
 		const summary = summarizeInventoryVaultSyncPlan(plan);
-		if (summary.conflicts > 0 || !plan.canApply) {
+		// H18.16: a note the user edited inside its managed block (or a foreign file in the folder)
+		// is that note's conflict alone; it no longer holds back every other note.
+		if (!plan.canApply) {
 			this.plan = null;
 			this.enter({ status: 'conflict', summary }, generation);
 			return;

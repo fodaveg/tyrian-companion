@@ -235,10 +235,16 @@ import {
 	InventoryAdvisorItemView,
 } from './ui/inventory-advisor-item-view';
 import {
-	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
 	type InventoryVaultSyncPlan,
 } from './inventory/inventory-vault-sync';
+import {
+	InventoryAnalysisService,
+	inventoryAnalysisReadyForNotes,
+	inventoryVaultSyncInputFromAnalysis,
+} from './inventory/inventory-analysis';
+import type { InventoryAdvisorContextualPresentationSource } from './advisor/inventory-advisor-presentation';
+import type { InventoryObjectResultsV1 } from './advisor/inventory-object-result';
 import {
 	InventoryVaultSyncController,
 	type InventoryVaultSyncDisabledReason,
@@ -335,8 +341,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Deferred so the catalog database is only opened when a session actually has to be valued. */
 	private sessionCatalogFactory: (() => Promise<PublicCatalogService>) | null = null;
 	private sessionCatalog: PublicCatalogService | null = null;
-	/** The catalog `previewInventorySync`'s memoized capture service resolves through; disposed alongside it. */
-	private inventoryVaultCaptureCatalog: PublicCatalogService | null = null;
+	/**
+	 * True only while the advisor analyses on behalf of an inventory sync. It scopes the datawars2
+	 * seed download and the watch-list update to "Sincronizar inventario" (decision 4, M2), even
+	 * though every analysis, sync or not, now runs the same timing stage (H18.14).
+	 */
+	private inventoryAnalysisForSync = false;
 	/**
 	 * M4: `GET /v2/legendaryarmory` plus its names/icons, resolved and cached for the plugin's
 	 * lifetime the FIRST time the settings panel's own button is pressed. `null` before that: never
@@ -888,101 +898,91 @@ export default class TyrianCompanionPlugin extends Plugin {
 				await this.app.fileManager.trashFile(target);
 			},
 		}, this.app.vault.configDir);
-		let inventoryVaultCapture: InventoryVaultCaptureService | null = null;
-		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
-			if (inventoryVaultCapture === null) {
-				const catalog = new PublicCatalogService(
-					inventoryPublicClient, await createCatalogCacheAdapter({ diagnostics: catalogDiagnostics }),
-				);
-				this.inventoryVaultCaptureCatalog = catalog;
-				inventoryVaultCapture = new InventoryVaultCaptureService(
-					inventoryClient,
-					inventorySnapshots,
-					catalog,
-					inventoryPublicClient,
-					{
-						priceHistoryEnabled: () => this.settings.priceHistoryEnabled,
-						capitalThresholdCopper: () => this.settings.recommendationCapitalThresholdCopper,
-						// The curated pack's own age policy, not a constant here: same discipline as
-						// `assembleSellSignal`'s `minimumOfMaxBps`. Falls back to the bundle's shipped
-						// value only while the pack itself is unavailable or expired.
-						maxPriceAgeMs: () => {
-							const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
-							return loaded.status === 'available' ? loaded.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
-						},
-						priceHistoryWindowDays: () => this.settings.priceHistoryDailyRetentionDays,
-						// The same read-only store lookup the H13.2 sell-signal detector already uses
-						// after every compaction (src/runtime/assemble-price-history.ts); a second,
-						// independent reader that never touches the panel's own selected series.
-						readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
-						// Same cache `priceSeedBulkRefresh` (below) writes into, read-only: `capture()`
-						// merges this with `readDaily` above (decision 4) so a seed a prior "Sincronizar
-						// inventario" already cached — or one this very call's `refreshPriceSeeds` just
-						// downloaded — reaches `recommendPosition` without waiting on the plugin's own
-						// 42-day capture.
-						readCachedSeed: async (itemId) => await this.readCachedPriceSeed(vaultId, itemId),
-						// Decision 3 (SPEC-recomendacion-por-objeto.md §7): capital-derived watch list,
-						// recomputed on every sync so an item that drops below the threshold leaves it.
-						updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
-						// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
-						// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
-						// schedule nor the queue's coverage ever reached anything past this call.
-						refreshPriceSeeds: async (itemIds) => {
-							const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
-							if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
-						},
-						// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
-						// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
-						seasonalInputFor: (itemId) => {
-							const asOf = new Date();
-							const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
-							if (loaded.status !== 'available') return null;
-							const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
-							if (entry === null) return null;
-							// H18.20: an item can carry several candidate windows (e.g. "before the
-							// festival" anchored to its real start, plus a plain annual one); this
-							// picks whichever governs `asOf`, or returns null when the only
-							// applicable candidate needs a festival year this build has no anchor
-							// for (declared lack of coverage, never a guessed date).
-							const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOf.getTime());
-							if (window === null) return null;
-							return {
-								window,
-								parameters: {
-									minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
-									referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
-									minimumReferenceDays: loaded.bundle.economyPack.sellSignal.minimumReferenceDays,
-								},
-							};
-						},
-						// Rule (a), M4: the settings' target list, empty by default.
-						legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
-						legendaryMaterialsTable: () => LEGENDARY_MATERIALS_TABLE,
-						// GET /v2/account/legendaryarmory, called ONLY from inside capture() (decision 1's
-						// own scoping): never from the settings panel or plugin load. A rejected or
-						// malformed response becomes null, which buildLegendaryReservations treats as
-						// "assume none of the targets are forged yet" rather than skipping rule (a).
-						readLegendaryArmoryCounts: async () => {
-							try {
-								const operation = inventoryClient.beginOperation();
-								const response = await operation.request('account/legendaryarmory');
-								if (!Array.isArray(response)) return null;
-								const counts = new Map<number, number>();
-								for (const entry of response) {
-									if (typeof entry !== 'object' || entry === null) return null;
-									const { id, count } = entry as Record<string, unknown>;
-									if (!Number.isSafeInteger(id) || !Number.isSafeInteger(count) || (count as number) < 0) return null;
-									counts.set(id as number, count as number);
-								}
-								return counts;
-							} catch {
-								return null;
-							}
-						},
+		// H18.14/H18.16: the timing stage of every advisor analysis. It captures nothing: the notes
+		// and the view both stand on the advisor's own capture.
+		const inventoryAnalysis = new InventoryAnalysisService({
+			priceHistoryEnabled: () => this.settings.priceHistoryEnabled,
+			capitalThresholdCopper: () => this.settings.recommendationCapitalThresholdCopper,
+			// The curated pack's own age policy, not a constant here: same discipline as
+			// `assembleSellSignal`'s `minimumOfMaxBps`. Falls back to the bundle's shipped
+			// value only while the pack itself is unavailable or expired.
+			maxPriceAgeMs: () => {
+				const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+				return loaded.status === 'available' ? loaded.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
+			},
+			priceHistoryWindowDays: () => this.settings.priceHistoryDailyRetentionDays,
+			// The same read-only store lookup the H13.2 sell-signal detector already uses
+			// after every compaction (src/runtime/assemble-price-history.ts); a second,
+			// independent reader that never touches the panel's own selected series.
+			readDaily: async (itemId, fromDayUtc) => await this.priceHistory?.readDaily(itemId, fromDayUtc) ?? [],
+			// Same cache `priceSeedBulkRefresh` (below) writes into, read-only: the analysis
+			// merges this with `readDaily` above (decision 4) so a seed a prior "Sincronizar
+			// inventario" already cached — or one this very sync's `refreshPriceSeeds` just
+			// downloaded — reaches `recommendPosition` without waiting on the plugin's own
+			// 42-day capture.
+			readCachedSeed: async (itemId) => await this.readCachedPriceSeed(vaultId, itemId),
+			// Decision 3 (SPEC-recomendacion-por-objeto.md §7): capital-derived watch list,
+			// recomputed on every sync so an item that drops below the threshold leaves it.
+			updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
+			// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
+			// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
+			// schedule nor the queue's coverage ever reached anything past this call.
+			refreshPriceSeeds: async (itemIds) => {
+				const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
+				if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+			},
+			// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
+			// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
+			seasonalInputFor: (itemId) => {
+				const asOf = new Date();
+				const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
+				if (loaded.status !== 'available') return null;
+				const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
+				if (entry === null) return null;
+				// H18.20: an item can carry several candidate windows (e.g. "before the
+				// festival" anchored to its real start, plus a plain annual one); this
+				// picks whichever governs `asOf`, or returns null when the only
+				// applicable candidate needs a festival year this build has no anchor
+				// for (declared lack of coverage, never a guessed date).
+				const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOf.getTime());
+				if (window === null) return null;
+				return {
+					window,
+					parameters: {
+						minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
+						referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
+						minimumReferenceDays: loaded.bundle.economyPack.sellSignal.minimumReferenceDays,
 					},
-				);
-			}
-			const input = await inventoryVaultCapture.capture(this.settings.language);
+				};
+			},
+			// Rule (a), M4: the settings' target list, empty by default.
+			legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
+			legendaryMaterialsTable: () => LEGENDARY_MATERIALS_TABLE,
+			// GET /v2/account/legendaryarmory, called only from an explicit advisor analysis while a
+			// target is chosen (decision 1's own scoping): never from the settings panel or plugin
+			// load. A rejected or malformed response becomes null, which the analysis treats as
+			// "assume none of the targets are forged yet" rather than skipping rule (a).
+			readLegendaryArmoryCounts: async () => {
+				try {
+					const operation = inventoryClient.beginOperation();
+					const response = await operation.request('account/legendaryarmory');
+					if (!Array.isArray(response)) return null;
+					const counts = new Map<number, number>();
+					for (const entry of response) {
+						if (typeof entry !== 'object' || entry === null) return null;
+						const { id, count } = entry as Record<string, unknown>;
+						if (!Number.isSafeInteger(id) || !Number.isSafeInteger(count) || (count as number) < 0) return null;
+						counts.set(id as number, count as number);
+					}
+					return counts;
+				} catch {
+					return null;
+				}
+			},
+		});
+		const previewInventorySync = async (): Promise<InventoryVaultSyncPlan> => {
+			const analysis = await this.inventoryAnalysisForNotes();
+			const input = await inventoryVaultSyncInputFromAnalysis(analysis.source, analysis.objects);
 			return await inventoryVaultWriter.preview(this.configuredNotesRoot(), input);
 		};
 		const inventorySyncDisabledReason = (): InventoryVaultSyncDisabledReason | null => {
@@ -1055,6 +1055,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 			preferencesReadPersistence: this.persistenceDiagnostics('advisor', 'inventory_preferences_read'),
 			preferencesWritePersistence: this.persistenceDiagnostics('advisor', 'inventory_preferences_write'),
 			diagnostics: this.localDebugActions,
+			objects: {
+				derivedGoals: async () => await inventoryAnalysis.derivedGoals(),
+				evaluate: async (source, uncertainItemIds) => await inventoryAnalysis.evaluate(
+					source, uncertainItemIds, { refreshSeeds: this.inventoryAnalysisForSync },
+				),
+			},
 		});
 		this.inventoryPreferences = advisorServices.preferences;
 		this.inventoryAdvisor = advisorServices.controller;
@@ -1282,8 +1288,6 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.alertQueue?.dispose();
 		this.sessionCatalog?.dispose();
 		this.sessionCatalog = null;
-		this.inventoryVaultCaptureCatalog?.dispose();
-		this.inventoryVaultCaptureCatalog = null;
 		// Awaited, not fire-and-forget: `dispose`'s own promise is already what `onunload` hands
 		// `localDebugShutdown` (see below), so this rides that same wait for free. A reload with
 		// the in-game channel enabled builds a fresh plugin instance right after this one's
@@ -1692,6 +1696,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * Runs the ordinary advisor refresh while reporting its real capture/preferences/
 	 * classification phases, plus the real request counters inside the capture phase.
 	 * Both listeners are purely in-memory and cleared as soon as the refresh settles.
+	 * It is also the one analysis the inventory notes are then written from (H18.16).
 	 */
 	private async refreshInventoryAdvisorForSync(
 		onPhase: (phase: 'capture' | 'preferences' | 'classification') => void,
@@ -1699,11 +1704,40 @@ export default class TyrianCompanionPlugin extends Plugin {
 	): Promise<void> {
 		this.inventoryAdvisorPhaseListener.current = onPhase;
 		this.inventoryAdvisorCaptureProgressListener.current = onCaptureProgress;
+		this.inventoryAnalysisForSync = true;
 		try { await this.refreshInventoryAdvisor(); }
 		finally {
+			this.inventoryAnalysisForSync = false;
 			this.inventoryAdvisorPhaseListener.current = null;
 			this.inventoryAdvisorCaptureProgressListener.current = null;
 		}
+	}
+
+	/**
+	 * H18.16: the analysis the inventory notes are written from, which is always the one the
+	 * advisor view is showing. When that analysis cannot rewrite the notes (no analysis yet, a
+	 * snapshot that is not stable and complete in every store, or one older than the advisor's
+	 * snapshot policy), ONE more analysis runs, and the view shows that one too: a recovery read,
+	 * never a second private capture that could contradict what the view says.
+	 */
+	private async inventoryAnalysisForNotes(): Promise<{
+		source: InventoryAdvisorContextualPresentationSource;
+		objects: InventoryObjectResultsV1;
+	}> {
+		const ready = (): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 } | null => {
+			const analysis = this.inventoryAdvisor.analysis();
+			if (analysis === null || analysis.objects === null) return null;
+			return inventoryAnalysisReadyForNotes(analysis.source, analysis.objects, Date.now())
+				? { source: analysis.source, objects: analysis.objects } : null;
+		};
+		const current = ready();
+		if (current !== null) return current;
+		this.inventoryAnalysisForSync = true;
+		try { await this.refreshInventoryAdvisor(); }
+		finally { this.inventoryAnalysisForSync = false; }
+		const recovered = ready();
+		if (recovered === null) throw new Error('inventory_capture_incomplete');
+		return recovered;
 	}
 
 	/** Live/persisted state of the single-button view sync. It never starts work by itself. */

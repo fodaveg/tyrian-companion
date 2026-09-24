@@ -1,26 +1,18 @@
-import 'fake-indexeddb/auto';
-import { IDBFactory } from 'fake-indexeddb';
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type ItemHolding, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { sha256Text } from '../assets/managed-asset-hash';
 import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
-import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
-import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
-import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
 import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
-import type { PriceSeedDayV1, PriceSeedV1 } from '../economy/price-seed-model';
 import {
 	attachPositionRecommendations,
 	sumSellCopperByItem,
-	InventoryVaultCaptureService,
 	InventoryVaultSyncService,
 	prepareInventoryVaultSyncInput,
-	type InventoryPositionRecommendationPort,
 	type InventoryPositionRecommendationInputs,
 	type InventoryVaultFile,
 	type InventoryVaultPort,
@@ -30,13 +22,6 @@ import {
 const ROOT = 'Tyrian Companion';
 const CONFIG_DIR = 'vault-config';
 const CAPTURED_AT = '2026-08-25T08:00:01.000Z';
-
-/** Rule (a), M4: every port fixture in this file that predates it opts out entirely, matching M4 test 8. */
-const LEGENDARY_DISABLED_PORT_FIELDS = {
-	legendaryTargetItemIds: () => [],
-	legendaryMaterialsTable: () => null,
-	readLegendaryArmoryCounts: async () => null,
-} as const;
 
 describe('inventory Vault projection', () => {
 	it('aggregates piles by item and location without extrapolating one buy quote to every pile', async () => {
@@ -123,93 +108,11 @@ describe('inventory Vault projection', () => {
 		}
 	});
 
-	it('does no account capture until the explicit capture action is invoked', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([])) };
-		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway);
-		expect(client.beginOperation).not.toHaveBeenCalled();
-		await service.capture('es');
-		expect(client.beginOperation).toHaveBeenCalledOnce();
-		expect(snapshots.captureWithOperation).toHaveBeenCalledOnce();
-	});
-
-	/**
-	 * M1 criterion of closure 3 (docs/SPEC-recomendacion-por-objeto.md §5): the pure function
-	 * verde alone never proves anyone calls it. `capitalThresholdCopper` is set unreachably high
-	 * so the outcome is deterministic (`hold`/`below_capital_threshold`) without needing a real
-	 * market-depth fixture: the point here is that `capture()` reads the port and writes the
-	 * result into the DTO at all, not which branch of `recommendPosition` fires.
-	 */
-	it('wires recommendPosition into the capture DTO', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
-		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const recommendation = {
-			priceHistoryEnabled: () => true,
-			capitalThresholdCopper: () => Number.MAX_SAFE_INTEGER,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			readDaily: async () => [],
-			readCachedSeed: async () => null,
-			updateDerivedWatchList: async () => undefined,
-			refreshPriceSeeds: async () => undefined,
-			seasonalInputFor: () => null,
-			...LEGENDARY_DISABLED_PORT_FIELDS,
-		};
-		const service = new InventoryVaultCaptureService(
-			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
-		);
-		const input = await service.capture('es');
-		// H18.2: the gateway answers no quote at all, so the verdict is `price_unknown` (it was
-		// `hold`/`below_capital_threshold` before, "unknown" read as "worth little").
-		expect(input.positions[0]).toMatchObject({
-			recommendation: 'review', recommendationReason: 'price_unknown',
-			recommendationUntil: null, recommendationMissing: null, priceQuotedAt: null,
-		});
-	});
-
-	/**
-	 * M4 test 8 (docs/SPEC-recomendacion-por-objeto.md): with the legendary-target setting empty
-	 * (`DEFAULT_RECOMMENDATION_PORT`'s own `legendaryTargetItemIds: () => []`), `capture()`'s
-	 * recommendation is the pre-M4 one and `GET /v2/account/legendaryarmory` is never called at all
-	 * (`readLegendaryArmoryCounts` is a spy here specifically to prove that, not just that its
-	 * RESULT is unused). H18.1 changed one thing on purpose: nothing reserved now reads 0 reserved
-	 * and the whole stack free (it used to read null/null, which now means "uncertain").
-	 */
-	it('an empty legendary-target setting reproduces the exact pre-M4 capture DTO', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
-		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const readLegendaryArmoryCounts = vi.fn(async (): Promise<ReadonlyMap<number, number> | null> => null);
-		const recommendation = {
-			priceHistoryEnabled: () => false,
-			capitalThresholdCopper: () => 100_000,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			readDaily: async () => [],
-			readCachedSeed: async () => null,
-			updateDerivedWatchList: async () => undefined,
-			refreshPriceSeeds: async () => undefined,
-			seasonalInputFor: () => null,
-			legendaryTargetItemIds: () => [],
-			legendaryMaterialsTable: () => null,
-			readLegendaryArmoryCounts,
-		};
-		const service = new InventoryVaultCaptureService(
-			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
-		);
-		const input = await service.capture('es');
-		expect(readLegendaryArmoryCounts).not.toHaveBeenCalled();
-		expect(input.positions).toHaveLength(1);
-		expect(input.positions[0]).toMatchObject({
-			reservedQuantity: 0, freeQuantity: 5,
-			recommendation: 'review', recommendationReason: 'price_history_disabled',
-		});
-	});
+	// H18.16: the notes no longer capture anything of their own. The cases that exercised that private
+	// capture (the capture-on-demand guard, M1 closure 3, M4 test 8, the seed merge, the watch-list
+	// gating and H18.1's legendary reservations) now run through the advisor's analysis in
+	// `inventory-analysis.test.ts`. The trading-post tier guard lives where the tier is now read: the
+	// advisor evidence capture refuses to produce evidence when `account` does not answer.
 
 	/**
 	 * M2 criterion of closure, test 5 (docs/SPEC-recomendacion-por-objeto.md §5): `capture()` over
@@ -322,143 +225,6 @@ describe('inventory Vault projection', () => {
 		// The non-calendar item falls to rule (c): flat series at its own reference floor sells or
 		// holds on the percentile, never `sell_at_season`.
 		expect(other?.recommendation).not.toBe('sell_at_season');
-	});
-
-	/**
-	 * H15.x (2026-09-11, measured against 3292cd9): `capture()` fed `recommendPosition` only the
-	 * plugin's own capture, never the datawars2 seed `PriceSeedBulkRefreshService` already cached in
-	 * `tyrian-companion-price-seed-cache`. An item with zero of its own captures but 60 cached seed
-	 * days stayed `review`/`price_history_insufficient` forever, defeating decision 4's whole point
-	 * (never wait 42 days per item). This exercises the REAL `IndexedDbPriceSeedCacheStore` (the
-	 * same fake IndexedDB `price-seed-cache-store.test.ts` and `price-seed-bulk-refresh.test.ts` use)
-	 * and a `recommendation` port built the same way `main.ts` wires it (`readCachedSeed` reading
-	 * that same cache, read-only), not a stub of `readDaily`.
-	 */
-	it('merges a cached datawars2 seed into the recommendation even with zero of the plugin\'s own captures', async () => {
-		const itemId = 42;
-		const capturedAtMs = Date.parse(CAPTURED_AT);
-		const vaultId = 'vault-h15';
-		const factory = new IDBFactory();
-		const writeStore = await IndexedDbPriceSeedCacheStore.open(factory);
-		await writeStore.put(vaultId, itemId, seedWith(seedDaysFor(60, 100, 1, capturedAtMs)), capturedAtMs);
-		writeStore.close();
-		// A second, independent connection to the same database: `main.ts` opens
-		// `priceSeedBulkRefresh`'s writer and the recommendation port's reader separately too.
-		const readStore = await IndexedDbPriceSeedCacheStore.open(factory);
-
-		const snapshot: StorageSnapshot = { ...snapshotWith([holding(itemId, 5, { source: 'bank', slot: 0 })]), availableByItem: { [String(itemId)]: 5 } };
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshot) };
-		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
-		const gateway: PublicCatalogGateway = {
-			requestDetailed: async (path) => {
-				// H18.2: today's quote (200) sits above every seed day (100..159), the case the
-				// assertions below were written for: today at the top of its band.
-				if (path.startsWith('commerce/listings?')) {
-					return { status: 200, headers: {}, body: [{ id: itemId, buys: [{ listings: 1, unit_price: 200, quantity: 15 }], sells: [] }] };
-				}
-				if (path.startsWith('commerce/prices?')) {
-					return { status: 200, headers: {}, body: [{ id: itemId, whitelisted: true, buys: { quantity: 1, unit_price: 200 }, sells: { quantity: 1, unit_price: 210 } }] };
-				}
-				throw new Error(`unexpected path in test gateway: ${path}`);
-			},
-		};
-		const recommendation: InventoryPositionRecommendationPort = {
-			priceHistoryEnabled: () => true,
-			capitalThresholdCopper: () => 1,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			// Zero of the plugin's own captures: exactly the fresh-watch-list-item case decision 4 exists for.
-			readDaily: async () => [],
-			readCachedSeed: async (id) => (await readStore.get(vaultId, id))?.seed ?? null,
-			updateDerivedWatchList: async () => undefined,
-			refreshPriceSeeds: async () => undefined,
-			seasonalInputFor: () => null,
-			...LEGENDARY_DISABLED_PORT_FIELDS,
-		};
-		const service = new InventoryVaultCaptureService(
-			client as never, snapshots, catalog, gateway, recommendation, () => capturedAtMs,
-		);
-		const input = await service.capture('es');
-		const position = input.positions.find((entry) => entry.itemId === itemId);
-		// Measured failing on 3292cd9 (no `readCachedSeed` in the port, `readDailyByItem` reading
-		// only `readDaily`): `toMatchObject({ priceCoverageDays: 60, pricePercentile: 100 })` fails
-		// with `object.priceCoverageDays: expected 60, received 0` and `object.pricePercentile:
-		// expected 100, received null` (recommendationReason `price_history_insufficient`).
-		expect(position?.priceCoverageDays).toBeGreaterThanOrEqual(42);
-		expect(typeof position?.pricePercentile).toBe('number');
-		expect(position).toMatchObject({ recommendation: 'sell', recommendationReason: 'bid_above_reference', priceCoverageDays: 60, pricePercentile: 100 });
-		readStore.close();
-	});
-
-	/**
-	 * M2 test 4 (docs/SPEC-recomendacion-por-objeto.md, `docs/PLATFORM_POLICY.md`): the decision-3
-	 * watch-list update and the decision-4 bulk seed refresh are both opt-in side effects of
-	 * `capture()`, gated on `priceHistoryEnabled`. A fresh install (the default port, feature off)
-	 * must never touch either, mirroring the H9.1 pattern of "off by default, nothing runs".
-	 */
-	it('never touches the derived watch list or the seed refresh port while price history is off', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
-		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const updateDerivedWatchList = vi.fn(async () => undefined);
-		const refreshPriceSeeds = vi.fn(async () => undefined);
-		const recommendation = {
-			priceHistoryEnabled: () => false,
-			capitalThresholdCopper: () => 100_000,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			readDaily: async () => [],
-			readCachedSeed: async () => null,
-			updateDerivedWatchList,
-			refreshPriceSeeds,
-			seasonalInputFor: () => null,
-			...LEGENDARY_DISABLED_PORT_FIELDS,
-		};
-		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
-		await service.capture('es');
-		expect(updateDerivedWatchList).not.toHaveBeenCalled();
-		expect(refreshPriceSeeds).not.toHaveBeenCalled();
-	});
-
-	it('calls the derived watch list and seed refresh ports exactly once per capture when price history is on', async () => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
-		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const updateDerivedWatchList = vi.fn(async () => undefined);
-		const refreshPriceSeeds = vi.fn(async () => undefined);
-		const recommendation = {
-			priceHistoryEnabled: () => true,
-			capitalThresholdCopper: () => 100_000,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			readDaily: async () => [],
-			readCachedSeed: async () => null,
-			updateDerivedWatchList,
-			refreshPriceSeeds,
-			seasonalInputFor: () => null,
-			...LEGENDARY_DISABLED_PORT_FIELDS,
-		};
-		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway, recommendation);
-		await service.capture('es');
-		expect(updateDerivedWatchList).toHaveBeenCalledOnce();
-		expect(refreshPriceSeeds).toHaveBeenCalledOnce();
-	});
-
-	it.each([
-		['the request does not answer', async () => ({ status: 503, body: null, headers: {} })],
-		['it answers for another account', async () => ({ status: 200, body: accountProfile('someone-else'), headers: {} })],
-	])('aborts the capture when the account trading-post tier cannot be read because %s', async (_label, respond) => {
-		const client = { beginOperation: vi.fn(() => ({ requestDetailed: vi.fn(respond) })) };
-		const snapshots = { captureWithOperation: vi.fn(async () => snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })])) };
-		const catalog = { resolve: vi.fn(async (snapshot: StorageSnapshot) => catalogFor(snapshot)) };
-		const gateway = { requestDetailed: vi.fn(async () => ({ status: 200, body: [], headers: {} })) };
-		const service = new InventoryVaultCaptureService(client as never, snapshots, catalog, gateway);
-		// Degrading to 'unknown' here would price every position at null and write that
-		// to Vault without a word, so the capture stops and the caller reports it.
-		await expect(service.capture('es')).rejects.toThrow('inventory_trading_post_access_unavailable');
 	});
 
 	it('gives a full account the instant-sell value of an item the free-to-play whitelist excludes', async () => {
@@ -711,185 +477,6 @@ describe('attachPositionRecommendations: capital threshold measured per object (
 	});
 });
 
-/**
- * H18.1 (audit 2026-09-24 §3.A), through `capture()`'s real wiring: legendary goals, the reservation
- * plan and its per-position split. Every item here sits inside a festival selling window with a
- * quote today, so without a reservation it reads `sell`/`seasonal_sell_window` (the `OTHER` item is
- * that control in every case). At a2584af a fully reserved position read exactly that too.
- */
-describe('capture(): free quantity under legendary reservations (H18.1)', () => {
-	const MATERIAL = 42;
-	const OTHER = 99;
-	const LEGENDARY_A = 900_001;
-	const LEGENDARY_B = 900_002;
-	const UNTABLED = 900_009;
-	const CAPTURED_AT_MS = Date.parse('2026-12-20T12:00:00.000Z');
-	const WINDOW: SeasonalWindowV1 = { version: 1, seasonId: 'h18-1-window', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12 };
-
-	function tableWith(requirements: ReadonlyArray<readonly [legendaryItemId: number, quantity: number]>): LegendaryMaterialsTableV1 {
-		return {
-			version: 1, publishedAt: '2026-09-01T00:00:00.000Z', reviewedAt: '2026-09-02T00:00:00.000Z',
-			validUntil: '2027-09-01T00:00:00.000Z', sources: [], sha256: '0'.repeat(64),
-			entries: requirements.map(([legendaryItemId, quantity]) => ({
-				legendaryItemId, currencyIds: [],
-				materials: [{ itemId: MATERIAL, quantity, resolvable: true, sourceId: null }],
-			})),
-		};
-	}
-
-	async function captureWith(
-		holdings: ItemHolding[],
-		targets: number[],
-		table: LegendaryMaterialsTableV1 | null,
-		options: { omitRoster?: boolean; owned?: ReadonlyMap<number, number> } = {},
-	) {
-		const base = snapshotWith(holdings);
-		const totals: Record<string, number> = {};
-		for (const entry of holdings) totals[String(entry.itemId)] = (totals[String(entry.itemId)] ?? 0) + entry.quantity;
-		// The reservation balance validates the snapshot like the Inventory Advisor does: every
-		// character holding needs its character in the roster with complete coverage.
-		// `omitRoster` breaks exactly that, so the balance (and the plan) cannot be built.
-		const roster = options.omitRoster === true ? []
-			: [...new Set(holdings.flatMap((entry) => entry.location.source === 'character' ? [entry.location.character] : []))];
-		const snapshot: StorageSnapshot = {
-			...base, availableByItem: totals, ownedByItem: { ...totals }, roster,
-			coverage: { ...base.coverage, characters: Object.fromEntries(roster.map((name) => [name, { status: 'complete' as const }])) },
-		};
-		const itemIds = Object.keys(totals).map(Number).sort((left, right) => left - right);
-		const gateway: PublicCatalogGateway = {
-			requestDetailed: async (path) => {
-				if (path.startsWith('commerce/listings?')) {
-					return { status: 200, headers: {}, body: itemIds.map((id) => ({ id, buys: [{ listings: 1, unit_price: 500, quantity: 10_000 }], sells: [] })) };
-				}
-				if (path.startsWith('commerce/prices?')) {
-					return { status: 200, headers: {}, body: itemIds.map((id) => ({ id, whitelisted: true, buys: { quantity: 1, unit_price: 500 }, sells: { quantity: 1, unit_price: 510 } })) };
-				}
-				throw new Error(`unexpected path in test gateway: ${path}`);
-			},
-		};
-		const recommendation: InventoryPositionRecommendationPort = {
-			priceHistoryEnabled: () => true,
-			capitalThresholdCopper: () => 1,
-			maxPriceAgeMs: () => 900_000,
-			priceHistoryWindowDays: () => 180,
-			readDaily: async (itemId) => dailySeriesFor(itemId, 36, 500, 0, CAPTURED_AT_MS),
-			readCachedSeed: async () => null,
-			updateDerivedWatchList: async () => undefined,
-			refreshPriceSeeds: async () => undefined,
-			seasonalInputFor: () => ({ window: WINDOW, parameters: { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 } }),
-			legendaryTargetItemIds: () => targets,
-			legendaryMaterialsTable: () => table,
-			readLegendaryArmoryCounts: async () => options.owned ?? new Map(),
-		};
-		const service = new InventoryVaultCaptureService(
-			{ beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) } as never,
-			{ captureWithOperation: vi.fn(async () => snapshot) },
-			{ resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) },
-			gateway, recommendation, () => CAPTURED_AT_MS,
-		);
-		const input = await service.capture('es');
-		const at = (itemId: number, source: string) => input.positions.find((entry) => entry.itemId === itemId && entry.source === source);
-		return { input, at };
-	}
-
-	const SELLS = { recommendation: 'sell', recommendationReason: 'seasonal_sell_window' } as const;
-
-	it('a reservation exactly covered by one bank stack: 100 reserved, 0 free, held for the goal, never sold', async () => {
-		const { at } = await captureWith(
-			[holding(MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })],
-			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]),
-		);
-		// At a2584af: `recommendation: 'sell'`, `recommendationReason: 'seasonal_sell_window'`.
-		expect(at(MATERIAL, 'bank')).toMatchObject({
-			reservedQuantity: 100, freeQuantity: 0,
-			recommendation: 'hold_for_legendary', recommendationReason: 'reserved_for_goal', recommendationMissing: 0,
-		});
-		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
-	});
-
-	it('a reservation split between bank and a character: the fully reserved stack holds, the rest sells only its free share', async () => {
-		const { input, at } = await captureWith(
-			[holding(MATERIAL, 60, { source: 'bank', slot: 0 }), holding(MATERIAL, 60, characterBag('Alfa')), holding(OTHER, 5, { source: 'bank', slot: 1 })],
-			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]),
-		);
-		expect(at(MATERIAL, 'bank')).toMatchObject({
-			reservedQuantity: 60, freeQuantity: 0, recommendation: 'hold_for_legendary', recommendationReason: 'reserved_for_goal',
-		});
-		expect(at(MATERIAL, 'character')).toMatchObject({ ...SELLS, reservedQuantity: 40, freeQuantity: 20 });
-		const material = input.positions.filter((entry) => entry.itemId === MATERIAL);
-		expect(material.reduce((sum, entry) => sum + (entry.reservedQuantity ?? 0), 0)).toBe(100);
-		expect(material.reduce((sum, entry) => sum + (entry.freeQuantity ?? 0), 0)).toBe(20);
-	});
-
-	it('overlapping goals add up on the shared material: short of it everything holds, above it only the surplus is free', async () => {
-		const table = tableWith([[LEGENDARY_A, 60], [LEGENDARY_B, 50]]);
-		const short = await captureWith(
-			[holding(MATERIAL, 100, { source: 'bank', slot: 0 })], [LEGENDARY_A, LEGENDARY_B], table,
-		);
-		expect(short.at(MATERIAL, 'bank')).toMatchObject({
-			reservedQuantity: 100, freeQuantity: 0, recommendation: 'hold_for_legendary', recommendationMissing: 10,
-		});
-		const surplus = await captureWith(
-			[holding(MATERIAL, 80, { source: 'bank', slot: 0 }), holding(MATERIAL, 40, characterBag('Alfa'))],
-			[LEGENDARY_A, LEGENDARY_B], table,
-		);
-		expect(surplus.at(MATERIAL, 'bank')).toMatchObject({ reservedQuantity: 80, freeQuantity: 0, recommendation: 'hold_for_legendary' });
-		expect(surplus.at(MATERIAL, 'character')).toMatchObject({ ...SELLS, reservedQuantity: 30, freeQuantity: 10 });
-	});
-
-	it('a chosen legendary without a materials table makes the known legendary materials uncertain, never free', async () => {
-		const { at } = await captureWith(
-			[holding(MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })],
-			[UNTABLED], tableWith([[LEGENDARY_A, 100]]),
-		);
-		// At a2584af: 0 goals, no reservation at all, so MATERIAL read `sell` with its whole stack free.
-		expect(at(MATERIAL, 'bank')).toMatchObject({
-			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
-		});
-		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
-		// With a tabled goal next to it, a stack already fully reserved stays a known hold; only a
-		// free share the untabled goal might also need turns uncertain.
-		const mixed = await captureWith(
-			[holding(MATERIAL, 60, { source: 'bank', slot: 0 }), holding(MATERIAL, 60, characterBag('Alfa'))],
-			[LEGENDARY_A, UNTABLED], tableWith([[LEGENDARY_A, 100]]),
-		);
-		expect(mixed.at(MATERIAL, 'bank')).toMatchObject({ reservedQuantity: 60, freeQuantity: 0, recommendation: 'hold_for_legendary' });
-		expect(mixed.at(MATERIAL, 'character')).toMatchObject({
-			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
-		});
-	});
-
-	it('goals whose reservation plan cannot be built make their materials uncertain, never free', async () => {
-		const { at } = await captureWith(
-			[holding(MATERIAL, 60, characterBag('Alfa')), holding(OTHER, 5, { source: 'bank', slot: 1 })],
-			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]), { omitRoster: true },
-		);
-		// At e469781 (and a2584af) the failed plan returned an empty split: MATERIAL read `sell`, all 60 free.
-		expect(at(MATERIAL, 'character')).toMatchObject({
-			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
-		});
-		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
-	});
-
-	/**
-	 * The curated table can become unavailable (the knowledge-expiry lot makes it expire on 10 dec
-	 * 2026). With a chosen, unforged legendary the materials the SHIPPED table lists turn uncertain;
-	 * at e469781 `legendaryMaterialsTable() === null` returned "nothing reserved" and they read sell.
-	 */
-	it('with the materials table forced to null, a chosen legendary makes the shipped table\'s materials uncertain, never free', async () => {
-		const SHIPPED_MATERIAL = 103_316; // Shard of Janthir Syntri, a leaf of the shipped Klobjarne Geirr entry.
-		const holdings = [holding(SHIPPED_MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })];
-		const { at } = await captureWith(holdings, [LEGENDARY_A], null);
-		expect(at(SHIPPED_MATERIAL, 'bank')).toMatchObject({
-			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
-		});
-		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
-		// Every chosen target already forged: nothing is needed, so nothing turns uncertain.
-		const forged = await captureWith(holdings, [LEGENDARY_A], null, { owned: new Map([[LEGENDARY_A, 1]]) });
-		expect(forged.at(SHIPPED_MATERIAL, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 100 });
-	});
-});
-
 describe('inventory Vault preview and apply', () => {
 	it('rejects a distinct plan while another apply is in flight instead of borrowing its result', async () => {
 		const vault = new PausingInventoryVault();
@@ -915,11 +502,11 @@ describe('inventory Vault preview and apply', () => {
 		expect(preview.steps).toHaveLength(5);
 		expect(preview.steps.every((entry) => entry.status === 'create')).toBe(true);
 		expect(vault.mutations).toBe(0);
-		expect(await service.apply(preview)).toEqual({ status: 'applied', created: 5, updated: 0, deactivated: 0 });
+		expect(await service.apply(preview)).toEqual({ status: 'applied', created: 5, updated: 0, deactivated: 0, conflicts: 0 });
 		const second = await service.preview(ROOT, input);
 		expect(second.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
 		const writes = vault.mutations;
-		expect(await service.apply(second)).toEqual({ status: 'unchanged', created: 0, updated: 0, deactivated: 0 });
+		expect(await service.apply(second)).toEqual({ status: 'unchanged', created: 0, updated: 0, deactivated: 0, conflicts: 0 });
 		expect(vault.mutations).toBe(writes);
 	});
 
@@ -1032,11 +619,16 @@ describe('inventory Vault preview and apply', () => {
 		expect(frontmatter(vault.contents.get(path!)!)).not.toHaveProperty('tc_captured_at');
 	});
 
+	/**
+	 * H18.16: a note the plugin cannot safely rewrite is a conflict for that note alone. It is never
+	 * written, and it no longer blocks the plan (`canApply` stays true): at e693eba any of these
+	 * turned the whole sync into `invalid` and wrote nothing at all.
+	 */
 	it.each([
 		['foreign target', (_content: string) => '# foreign\n'],
-		['human modification', (content: string) => `${content}\nhuman edit\n`],
+		['edit inside the managed block', (content: string) => content.replace('\n# Objeto 42\n', '\n# Objeto 42 (mío)\n')],
 		['future schema', (content: string) => content.replace('schema=1', 'schema=2')],
-	])('blocks %s without mutating Vault', async (_label, corrupt) => {
+	])('keeps a %s as its own conflict, untouched, without blocking the plan', async (_label, corrupt) => {
 		const input = await oneBankInput();
 		const cleanVault = new MemoryInventoryVault();
 		const cleanService = new InventoryVaultSyncService(cleanVault, CONFIG_DIR);
@@ -1045,30 +637,34 @@ describe('inventory Vault preview and apply', () => {
 		if (_label === 'foreign target') cleanVault.contents.set(path, corrupt(''));
 		else {
 			await cleanService.apply(cleanPlan);
-			cleanVault.contents.set(path, corrupt(cleanVault.contents.get(path)!));
+			const corrupted = corrupt(cleanVault.contents.get(path)!);
+			expect(corrupted).not.toBe(cleanVault.contents.get(path));
+			cleanVault.contents.set(path, corrupted);
 		}
+		const kept = cleanVault.contents.get(path);
 		const mutations = cleanVault.mutations;
-		const blocked = await cleanService.preview(ROOT, input);
-		expect(blocked.canApply).toBe(false);
-		expect(blocked.steps.some((entry) => entry.status === 'conflict')).toBe(true);
-		expect(await cleanService.apply(blocked)).toMatchObject({ status: 'invalid' });
+		const plan = await cleanService.preview(ROOT, input);
+		expect(plan.canApply).toBe(true);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path, status: 'conflict' }));
+		expect(await cleanService.apply(plan)).toMatchObject({ status: 'unchanged', conflicts: 1 });
 		expect(cleanVault.mutations).toBe(mutations);
+		expect(cleanVault.contents.get(path)).toBe(kept);
 	});
 
-	it('blocks an unrelated foreign note inside the owned positions folder', async () => {
+	it('leaves an unrelated foreign note inside the owned positions folder alone and writes every other note', async () => {
 		const foreignPath = `${ROOT}/Inventory/Positions/manual.md`;
 		const foreign = '# Manual note\n';
 		const vault = new MemoryInventoryVault([[foreignPath, foreign]]);
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const plan = await service.preview(ROOT, await oneBankInput());
-		expect(plan.canApply).toBe(false);
+		expect(plan.canApply).toBe(true);
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: foreignPath, status: 'conflict' }));
-		const mutations = vault.mutations;
-		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
-		expect(vault.mutations).toBe(mutations);
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', created: 1, conflicts: 1 });
+		expect(vault.contents.get(foreignPath)).toBe(foreign);
+		expect(vault.markdownFiles()).toHaveLength(2);
 	});
 
-	it('blocks duplicate owned identity without changing either collision', async () => {
+	it('keeps a duplicate owned identity as a conflict without changing either collision', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const input = await oneBankInput();
@@ -1078,12 +674,12 @@ describe('inventory Vault preview and apply', () => {
 		vault.contents.set(duplicatePath, vault.contents.get(originalPath)!);
 		const before = new Map(vault.contents);
 		const plan = await service.preview(ROOT, input);
-		expect(plan.canApply).toBe(false);
-		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: duplicatePath, status: 'conflict' }));
+		expect(await service.apply(plan)).toMatchObject({ status: 'unchanged', conflicts: 1 });
 		expect(vault.contents).toEqual(before);
 	});
 
-	it('preflights every CAS before writing when a file changes after preview', async () => {
+	it('skips a note that changed after preview and still writes every other planned note', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const initial = await inputWithAllSources();
@@ -1103,10 +699,12 @@ describe('inventory Vault preview and apply', () => {
 		};
 		const plan = await service.preview(ROOT, changed);
 		const last = plan.steps.at(-1)!;
-		vault.contents.set(last.path, `${vault.contents.get(last.path)!}\nraced\n`);
-		const before = new Map(vault.contents);
-		expect(await service.apply(plan)).toMatchObject({ status: 'conflict' });
-		expect(vault.contents).toEqual(before);
+		const raced = `${vault.contents.get(last.path)!}\nraced\n`;
+		vault.contents.set(last.path, raced);
+		// The raced note keeps what was typed into it; the other four are rewritten.
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 4, conflicts: 1 });
+		expect(vault.contents.get(last.path)).toBe(raced);
+		for (const entry of plan.steps.slice(0, -1)) expect(vault.contents.get(entry.path)).toBe(entry.after);
 	});
 
 	it('leaves legacy gw2 notes untouched and creates separate owned notes', async () => {
@@ -1152,25 +750,47 @@ describe('inventory Vault preview and apply', () => {
 		expect(fields).not.toHaveProperty('tc_captured_at');
 	});
 
-	it.each([
-		['appended by hand', async (content: string) => `${content}\nnota mia\n`],
-		['carrying an unknown key, re-signed', async (content: string) =>
-			await resign(content.replace('descripcion:', 'tc_nota_mia: recordar\ndescripcion:'))],
-		['claiming a position the marker does not', async (content: string) =>
-			await resign(content.replace('tc_position_id: 100063-c-', 'tc_position_id: 100064-c-'))],
-	])('still blocks a note in that older format %s', async (_label, corrupt) => {
+	it('still refuses a note in that older format that claims a position its marker does not', async () => {
 		const notePath = `${ROOT}/Inventory/Positions/${LEGACY_NOTE_POSITION_ID}.md`;
-		const vault = new MemoryInventoryVault([[notePath, await corrupt(NOTE_WRITTEN_BY_0_1_11)]]);
+		const claiming = await resign(NOTE_WRITTEN_BY_0_1_11.replace('tc_position_id: 100063-c-', 'tc_position_id: 100064-c-'));
+		const vault = new MemoryInventoryVault([[notePath, claiming]]);
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
 		const snapshot = snapshotWith([holding(LEGACY_NOTE_ITEM_ID, 1, characterBag(LEGACY_NOTE_CHARACTER))]);
 		const input = await prepareInventoryVaultSyncInput(
 			snapshot, legacyNoteCatalog(snapshot), pricesFor(snapshot, LEGACY_NOTE_ITEM_ID, 10), 'full', 'es');
 		const plan = await service.preview(ROOT, input);
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: notePath, status: 'conflict' }));
-		expect(plan.canApply).toBe(false);
 		const mutations = vault.mutations;
-		expect(await service.apply(plan)).toMatchObject({ status: 'invalid' });
+		expect(await service.apply(plan)).toMatchObject({ status: 'unchanged', conflicts: 1 });
 		expect(vault.mutations).toBe(mutations);
+		expect(vault.contents.get(notePath)).toBe(claiming);
+	});
+
+	/**
+	 * H18.16: text a user appended to a note in that older format, or a property the user added to
+	 * it, is the user's, not a corruption. At e693eba both blocked the whole sync; now the note is
+	 * migrated and what the user wrote survives the rewrite.
+	 */
+	it.each([
+		['text appended by hand', async (content: string) => `${content}\nnota mia\n`, (after: string) => after.endsWith('\nnota mia\n')],
+		['a property of its own, re-signed', async (content: string) =>
+			await resign(content.replace('descripcion:', 'tc_nota_mia: recordar\ndescripcion:')),
+		(after: string) => frontmatter(after).tc_nota_mia === 'recordar'],
+	])('migrates a note in that older format carrying %s and keeps it', async (_label, edit, kept) => {
+		const notePath = `${ROOT}/Inventory/Positions/${LEGACY_NOTE_POSITION_ID}.md`;
+		const vault = new MemoryInventoryVault([[notePath, await edit(NOTE_WRITTEN_BY_0_1_11)]]);
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const snapshot = snapshotWith([holding(LEGACY_NOTE_ITEM_ID, 1, characterBag(LEGACY_NOTE_CHARACTER))]);
+		const input = await prepareInventoryVaultSyncInput(
+			snapshot, legacyNoteCatalog(snapshot), pricesFor(snapshot, LEGACY_NOTE_ITEM_ID, 10), 'full', 'es');
+		const plan = await service.preview(ROOT, input);
+		expect(plan.steps).toEqual([expect.objectContaining({ path: notePath, status: 'update' })]);
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1, conflicts: 0 });
+		const after = vault.contents.get(notePath)!;
+		expect(kept(after)).toBe(true);
+		expect(frontmatter(after)).toMatchObject({ tc_unit_sell_copper: 10, tc_quantity: 1 });
+		// Written once, it is stable: the next sync with the same data writes nothing.
+		expect((await service.preview(ROOT, input)).steps.map((entry) => entry.status)).toEqual(['unchanged']);
 	});
 
 	/**
@@ -1191,8 +811,8 @@ describe('inventory Vault preview and apply', () => {
 		expect(frontmatter(preM1)).not.toHaveProperty('tc_recommendation');
 		const vault = new MemoryInventoryVault([[created.path, preM1]]);
 		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
-		// Counted, not merely absent from a spot-check: a single `conflict` anywhere in the plan
-		// means the whole sync writes nothing (docs/inventory-vault-sync.ts:151-163's landmine).
+		// Counted, not merely absent from a spot-check: a `conflict` here would leave this note
+		// unwritten forever (before H18.16 it even stopped the whole sync; that was the landmine).
 		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
 	});
@@ -1300,6 +920,135 @@ describe('inventory Vault preview and apply', () => {
 	});
 });
 
+/**
+ * H18.16 (audit 2026-09-24 §3.E, prueba 9): resync without a data change against resync with a new
+ * price, with the user's own text and properties in the notes. At e693eba the price verdict's
+ * `until` and the quote date (the capture instant) rewrote every note on every sync, and any byte
+ * the user added to a note turned the whole sync into a conflict that wrote nothing.
+ */
+describe('resync: no rewrite by the clock, managed fields only, the user\'s text kept (H18.16)', () => {
+	const T1 = '2026-08-25T08:00:01.000Z';
+	const T2 = '2026-08-25T09:30:07.000Z';
+
+	/** One bank note whose price verdict carries the capture instant, as every real sync does. */
+	async function pricedAt(capturedAt: string, unitSellCopper = 10) {
+		const input = await oneBankInput();
+		const plus15 = new Date(Date.parse(capturedAt) + 900_000).toISOString();
+		return {
+			...input,
+			capturedAt,
+			positions: input.positions.map((position) => ({
+				...position, unitSellCopper,
+				recommendation: 'sell' as const, recommendationReason: 'bid_above_reference' as const,
+				recommendationUntil: plus15, pricePercentile: 95, priceCoverageDays: 60,
+				priceQuotedAt: capturedAt, priceHistoryLastDay: '2026-08-24', actionableQuantity: position.quantity,
+			})),
+		};
+	}
+
+	/** What a user does in Obsidian: a property of their own, and their own text after the note. */
+	function editedByUser(content: string): string {
+		return `${content.replace('\n---\n', '\ntags:\n  - gw2\n  - vender\n---\n')}\n## Mis notas\n\nVender en Halloween.\n`;
+	}
+
+	/** Every line of a note except the managed ones: the user's part, byte for byte. */
+	function userLines(content: string): string[] {
+		return content.split('\n').filter((line) => !/^(?:tc_[a-z_]+|descripcion):/u.test(line)
+			&& !line.startsWith('<!-- tyrian-companion-inventory '));
+	}
+
+	it('a resync with the same data writes nothing, even when the capture clock moved', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, await pricedAt(T1)));
+		const written = new Map(vault.contents);
+		const mutations = vault.mutations;
+		const plan = await service.preview(ROOT, await pricedAt(T2));
+		expect(plan.steps.map((entry) => entry.status)).toEqual(['unchanged']);
+		expect(await service.apply(plan)).toMatchObject({ status: 'unchanged', created: 0, updated: 0 });
+		expect(vault.mutations).toBe(mutations);
+		expect(vault.contents).toEqual(written);
+	});
+
+	it('a real date still counts: a seasonal wait whose next window moves is rewritten', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const waiting = async (capturedAt: string, until: string) => {
+			const input = await pricedAt(capturedAt);
+			return { ...input, positions: input.positions.map((position) => ({
+				...position, recommendation: 'sell_at_season' as const, recommendationReason: 'seasonal_hold' as const,
+				recommendationUntil: until, actionableQuantity: 0,
+			})) };
+		};
+		await service.apply(await service.preview(ROOT, await waiting(T1, '2026-10-01T00:00:00.000Z')));
+		expect((await service.preview(ROOT, await waiting(T2, '2026-10-01T00:00:00.000Z'))).steps.map((entry) => entry.status))
+			.toEqual(['unchanged']);
+		expect((await service.preview(ROOT, await waiting(T2, '2027-10-01T00:00:00.000Z'))).steps.map((entry) => entry.status))
+			.toEqual(['update']);
+	});
+
+	it('a new price rewrites only the managed fields and keeps the user\'s properties and text', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		await service.apply(await service.preview(ROOT, await pricedAt(T1)));
+		const [path] = vault.markdownFiles().map((file) => file.path);
+		vault.contents.set(path!, editedByUser(vault.contents.get(path!)!));
+		const before = vault.contents.get(path!)!;
+		const plan = await service.preview(ROOT, await pricedAt(T2, 12));
+		expect(plan.canApply).toBe(true);
+		expect(plan.steps).toEqual([expect.objectContaining({ path, status: 'update' })]);
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 1, conflicts: 0 });
+		const after = vault.contents.get(path!)!;
+		expect(frontmatter(after)).toMatchObject({ tc_unit_sell_copper: 12, tags: ['gw2', 'vender'], tc_price_quoted_at: T2 });
+		expect(after.endsWith('\n## Mis notas\n\nVender en Halloween.\n')).toBe(true);
+		// Only managed lines differ; everything the user wrote is byte for byte where it was.
+		expect(userLines(after)).toEqual(userLines(before));
+		// And the next sync with that same price writes nothing again.
+		expect((await service.preview(ROOT, await pricedAt(T2, 12))).steps.map((entry) => entry.status)).toEqual(['unchanged']);
+	});
+
+	it('a note the user edited outside its managed parts, with the same data, is not rewritten and blocks nothing', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const input = await inputWithAllSources();
+		await service.apply(await service.preview(ROOT, input));
+		const [edited, ...others] = vault.markdownFiles().map((file) => file.path);
+		// Obsidian's property editor writes a null as an empty value: the same data, other bytes.
+		vault.contents.set(edited!, editedByUser(vault.contents.get(edited!)!).replace('tc_icon: null', 'tc_icon:'));
+		const mutations = vault.mutations;
+		const same = await service.preview(ROOT, input);
+		expect(same.steps.every((entry) => entry.status === 'unchanged')).toBe(true);
+		expect(await service.apply(same)).toMatchObject({ status: 'unchanged' });
+		expect(vault.mutations).toBe(mutations);
+		// A change on the other notes still lands; the edited note keeps its text.
+		const moved = { ...input, positions: input.positions.map((position) => ({ ...position, unitSellCopper: 11 })) };
+		const plan = await service.preview(ROOT, moved);
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', updated: 5, conflicts: 0 });
+		expect(vault.contents.get(edited!)!.endsWith('Vender en Halloween.\n')).toBe(true);
+		for (const path of others) expect(frontmatter(vault.contents.get(path)!).tc_unit_sell_copper).toBe(11);
+	});
+
+	it('keeps a note the user wrote in, inactive, when its position leaves the account, instead of trashing it', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const current = await inputWithAllSources();
+		await service.apply(await service.preview(ROOT, current));
+		const bankPath = (await service.preview(ROOT, current)).steps.find((entry) => entry.positionId.includes('-b-'))!.path;
+		vault.contents.set(bankPath, editedByUser(vault.contents.get(bankPath)!));
+		const reduced = { ...current, positions: current.positions.filter((position) => position.source !== 'bank') };
+		const plan = await service.preview(ROOT, reduced);
+		const step = plan.steps.find((entry) => entry.path === bankPath);
+		expect(step).toMatchObject({ status: 'deactivate' });
+		expect(step?.after).not.toBeNull();
+		expect(await service.apply(plan)).toMatchObject({ status: 'applied', deactivated: 1 });
+		const after = vault.contents.get(bankPath)!;
+		expect(frontmatter(after)).toMatchObject({ tc_active: false, tc_quantity: 0, tc_free_quantity: 0, tags: ['gw2', 'vender'] });
+		expect(after.endsWith('Vender en Halloween.\n')).toBe(true);
+		// Already inactive: the next sync neither rewrites it nor asks to deactivate it again.
+		expect((await service.preview(ROOT, reduced)).steps.find((entry) => entry.path === bankPath)).toMatchObject({ status: 'unchanged' });
+	});
+});
+
 function snapshotWith(
 	holdings: ItemHolding[],
 	identity: { accountId?: string; snapshotId?: string } = {},
@@ -1321,14 +1070,6 @@ function snapshotWith(
 		},
 		roster: [],
 	};
-}
-
-function accountProfile(accountId: string): Record<string, unknown> {
-	return { id: accountId, name: 'Cuenta.1234', world: 1001, created: '2015-08-28T10:00:00Z', access: ['GuildWars2'], commander: false };
-}
-
-function accountRequest(): ReturnType<typeof vi.fn> {
-	return vi.fn(async () => ({ status: 200, body: accountProfile('account-a'), headers: {} }));
 }
 
 function holding(itemId: number, quantity: number, location: ItemHolding['location']): ItemHolding {
@@ -1396,20 +1137,6 @@ function dailySeriesFor(itemId: number, days: number, startCopper: number, step:
 	return out;
 }
 
-function seedWith(days: PriceSeedDayV1[]): PriceSeedV1 {
-	return { version: 1, itemId: 42, source: 'datawars2', retrievedAt: CAPTURED_AT, days };
-}
-
-/** One seed day per day, bid rising by `step` from `startCopper`, ending on `endMs`'s own day. */
-function seedDaysFor(days: number, startCopper: number, step: number, endMs: number): PriceSeedDayV1[] {
-	const out: PriceSeedDayV1[] = [];
-	for (let index = 0; index < days; index += 1) {
-		const dayUtc = new Date(endMs - (days - 1 - index) * 86_400_000).toISOString().slice(0, 10);
-		out.push({ dayUtc, bidCopper: startCopper + index * step, askCopper: null });
-	}
-	return out;
-}
-
 /**
  * A note copied verbatim out of a real Vault, written by 0.1.11 before
  * `tc_unit_list_copper`/`tc_total_list_copper` existed. Its marker hash is the real one
@@ -1444,11 +1171,22 @@ const LEGACY_NOTE_POSITION_ID = '100063-c-54a014e68376be0c2fa8f7ca';
 const LEGACY_NOTE_ITEM_ID = 100063;
 const LEGACY_NOTE_CHARACTER = 'Rinorrata';
 
-/** Re-signs an edited note so it fails validation on its fields, not on a stale hash. */
+/**
+ * Re-signs an edited note so it fails validation on its fields, not on a stale hash. A note with the
+ * H18.16 end marker signs its managed block only; an older one signed the whole note.
+ */
 async function resign(content: string): Promise<string> {
+	const endAt = content.indexOf(`\n${END_MARKER}`);
+	if (endAt >= 0) {
+		const blockAt = content.indexOf(' -->\n', content.indexOf('<!-- tyrian-companion-inventory ')) + ' -->\n'.length;
+		const block = content.slice(blockAt, endAt + 1);
+		return content.replace(/ hash=[a-f0-9]{64} -->/u, ` hash=${await sha256Text(block)} -->`);
+	}
 	const unsigned = content.replace(/ hash=[a-f0-9]{64} -->/u, ' -->');
 	return unsigned.replace(' -->', ` hash=${await sha256Text(unsigned)} -->`);
 }
+
+const END_MARKER = '<!-- /tyrian-companion-inventory -->';
 
 function legacyNoteCatalog(snapshot: StorageSnapshot): CatalogResolution {
 	return {

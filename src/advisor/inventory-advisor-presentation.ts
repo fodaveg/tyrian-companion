@@ -4,6 +4,7 @@ import { isInventoryDiscardAllowlistResultForInput } from './inventory-advisor-d
 import type { InventoryAdvisorEngineInputV1 } from './inventory-advisor-classifier-model';
 import type { InventoryDiscardAllowlistResultV1 } from './inventory-advisor-discard-model';
 import type { InventoryAdvisorInputV1, InventoryAdvisorResultV1 } from './inventory-advisor-model';
+import type { InventoryObjectResultsV1 } from './inventory-object-result';
 import type {
 	InventoryAdvisorLineV1,
 	InventoryAdvisorReasonCode,
@@ -45,16 +46,25 @@ export interface InventoryAdvisorContextualPresentationSource {
 	};
 }
 
-/** Projects one validated H4.15 report into a data-only, manually actionable presentation. */
+/**
+ * Projects one validated H4.15 report into a data-only, manually actionable presentation.
+ *
+ * `objects` (H18.14) is the same analysis's one result per object: each row carries its decision
+ * from there, so the view shows exactly what the notes and the Base carry. A result that belongs
+ * to another snapshot is ignored rather than shown against the wrong rows.
+ */
 export function buildInventoryAdvisorPresentation(
 	source: InventoryAdvisorPresentationSource,
 	options: InventoryAdvisorPresentationOptions = {},
+	objects: InventoryObjectResultsV1 | null = null,
 ): InventoryAdvisorPresentation {
 	try {
-		if (!isPlainData(source) || !isPlainData(options)
+		if (!isPlainData(source) || !isPlainData(options) || !isPlainData(objects)
 			|| !isPresentationSource(source) || !isPresentationOptions(options)) {
 			return invalidInventoryAdvisorPresentation();
 		}
+		const decisionByRef = objects !== null && objects.snapshotId === source.input.snapshot.snapshotId
+			? objects.decisions : null;
 		const result = source.result;
 		if (result.status === 'invalid' || result.report === null) return invalidInventoryAdvisorPresentation();
 		const contextual = 'discardContext' in source;
@@ -95,6 +105,9 @@ export function buildInventoryAdvisorPresentation(
 				ownedQuantity: line.ownedQuantity,
 				availableQuantity: line.availableQuantity,
 				action: presentationAction,
+				...(decisionByRef === null ? {} : {
+					decision: structuredClone(decisionByRef[decision.explanationRef] ?? null),
+				}),
 				quantity: decision.quantity,
 				allocations,
 				reasonCodes: [...reasonCodes],

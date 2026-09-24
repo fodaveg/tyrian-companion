@@ -41,7 +41,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'./inventory-advisor-classifier-model', './inventory-advisor-discard-model', './inventory-advisor-model',
 			'./inventory-advisor-presentation-model', '../economy/item-liquidity', '../economy/reservation',
 			'../economy/reservation-model',
-			'./inventory-container-economy', '../economy/commerce-listings', './inventory-equipment-economy'],
+			'./inventory-container-economy', '../economy/commerce-listings', './inventory-equipment-economy',
+			// H18.14: type-only, the one result per object a row carries its decision from.
+			'./inventory-object-result'],
 		portCalls: [],
 	}],
 	['src/advisor/inventory-equipment-economy.ts', {
@@ -55,8 +57,11 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../economy/reservation-model', './inventory-advisor-presentation', '../catalog/public-catalog-model',
 			'./inventory-advisor-builtin-bundle', './inventory-container-economy', '../economy/container-personal-valuation',
 			'../economy/equipment-salvage-economy', '../economy/models/equipment-salvage-policy',
-			'../economy/commerce-listings', '../core/local-debug-action-runner'],
-		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load'],
+			'../economy/commerce-listings', '../core/local-debug-action-runner',
+			// H18.14: pure goal merge plus the object-result types; the analysis itself is a port.
+			'./inventory-object-result'],
+		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load',
+			'ports.objects.derivedGoals', 'ports.objects.evaluate'],
 	}],
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
@@ -82,6 +87,8 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			// H13.2: type-only, for the decision union the economy layer owns. The
 			// view maps its `hold` onto the existing `keep` label and calls nothing.
 			'../advisor/inventory-container-economy',
+			// H18.14: the moment stage's closed reason list, to label a row's decision; pure data.
+			'../advisor/inventory-position-recommendation',
 			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
 			'./sell-signal-line'],

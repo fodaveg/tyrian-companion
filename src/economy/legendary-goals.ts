@@ -1,4 +1,4 @@
-import type { ReservationGoal, ReservationPlan, ReservationRequirement } from './reservation-model';
+import type { ReservationGoal, ReservationRequirement } from './reservation-model';
 import {
 	legendaryMaterialsEntryFor,
 	legendaryResolvableRequirements,
@@ -9,9 +9,10 @@ import {
  * M4 (`docs/SPEC-recomendacion-por-objeto.md`): a fresh, per-sync computation, never persisted
  * into `InventoryPreferencesV1.goals` (the reason `container-recommendation.ts` and
  * `inventory-advisor-presentation-model.ts` both document why `'legendary'` never shows up in
- * THEIR goal lists). `InventoryVaultCaptureService.capture` calls this once per "Sincronizar
- * inventario" with the settings' target list and the freshly-read `GET
- * /v2/account/legendaryarmory` counts, and feeds the result straight into `createReservationPlan`.
+ * THEIR goal lists). `InventoryAnalysisService.derivedGoals` calls this once per advisor analysis
+ * with the settings' target list and the freshly-read `GET /v2/account/legendaryarmory` counts; the
+ * advisor workflow joins the result to the user's own goals (`mergeDerivedReservationGoals`) before
+ * classifying, so the advisor reserves them like any other goal (H18.14).
  */
 export interface LegendaryGoalsResult {
 	goals: ReservationGoal[];
@@ -72,56 +73,18 @@ export function buildLegendaryReservationGoals(
 	return { goals, withoutTable };
 }
 
+/**
+ * One position's protected share and the item's goal shortfall. Since H18.14 the split is not
+ * computed here any more: the advisor's classification allocates every goal reservation and keep
+ * exception to the exact stacks it protects, and `InventoryAnalysisService.evaluate` reads that
+ * allocation back per note position (the former `splitLegendaryReservationsByPosition` filled note
+ * positions in their own order, which could disagree with the advisor's rows).
+ */
 export interface LegendaryReservationSplit {
 	reservedQuantity: number;
 	freeQuantity: number;
 	/** The item-level (account-wide) shortfall; identical for every position holding this item. */
 	shortfall: number;
-}
-
-/**
- * Distributes each legendary-reserved item's account-wide reservation across the positions that
- * hold it, in the exact order `positions` is given (M4 test 7): the caller must pass the same
- * canonical order `buildInventoryVaultPositionCores` already sorts by (itemId, source,
- * character), never a re-sort here, so the split stays reproducible run to run.
- *
- * Reservation fills positions in that order, one at a time, up to each position's own quantity,
- * until the item-level reserved total (`quantityAcrossPositions - asset.unprotectedAvailable`) is
- * exhausted; whatever is left over on a position is free. `plan` must be the one
- * `createReservationPlan` returned for THIS sync's legendary-only goal set (never a plan that also
- * carries achievement/purchase/personal goals): every `item:` asset in it is assumed to exist
- * solely because of a legendary requirement.
- */
-export function splitLegendaryReservationsByPosition(
-	positions: readonly { positionId: string; itemId: number; quantity: number }[],
-	plan: ReservationPlan,
-): Map<string, LegendaryReservationSplit> {
-	const totalByItemId = new Map<number, number>();
-	for (const position of positions) {
-		totalByItemId.set(position.itemId, (totalByItemId.get(position.itemId) ?? 0) + position.quantity);
-	}
-	const remainingByItemId = new Map<number, number>();
-	const shortfallByItemId = new Map<number, number>();
-	for (const asset of plan.assets) {
-		if (asset.namespace !== 'item') continue;
-		const total = totalByItemId.get(asset.id);
-		if (total === undefined) continue;
-		remainingByItemId.set(asset.id, Math.max(0, total - asset.unprotectedAvailable));
-		shortfallByItemId.set(asset.id, asset.shortfall);
-	}
-	const result = new Map<string, LegendaryReservationSplit>();
-	for (const position of positions) {
-		const remaining = remainingByItemId.get(position.itemId);
-		if (remaining === undefined) continue;
-		const reservedQuantity = Math.min(remaining, position.quantity);
-		remainingByItemId.set(position.itemId, remaining - reservedQuantity);
-		result.set(position.positionId, {
-			reservedQuantity,
-			freeQuantity: position.quantity - reservedQuantity,
-			shortfall: shortfallByItemId.get(position.itemId) ?? 0,
-		});
-	}
-	return result;
 }
 
 /**

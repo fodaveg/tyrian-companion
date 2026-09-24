@@ -13,6 +13,7 @@ import type { ContainerPersonalValuationV1 } from '../economy/container-personal
 import type { EquipmentSalvagePreferencesV1 } from '../economy/equipment-salvage-economy';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import { mergeDerivedReservationGoals, type InventoryObjectResultsV1 } from './inventory-object-result';
 import {
 	startLocalDebugAction,
 	type LocalDebugActionPort,
@@ -41,7 +42,34 @@ export interface InventoryAdvisorWorkflowPorts {
 	rules: InventoryAdvisorRulesProvider;
 	now?: () => number;
 	diagnostics?: LocalDebugActionPort;
+	/**
+	 * H18.14: the one result per object, computed inside the same analysis so the view, the notes
+	 * and the Base read one decision. Absent, the workflow classifies exactly as before and its
+	 * ready result carries `objects: null`.
+	 */
+	objects?: InventoryObjectAnalysisPort;
 }
+
+/** Goals the plugin derives on its own (the legendary targets in settings), never persisted. */
+export interface InventoryAdvisorDerivedGoals {
+	goals: ReservationGoal[];
+	uncertainItemIds: number[];
+}
+
+/**
+ * The analysis stage after classification. `derivedGoals` runs once per capture, before the
+ * advisor classifies; `evaluate` times the classified result into the object result and runs
+ * again on every reclassification, never recapturing the account.
+ */
+export interface InventoryObjectAnalysisPort {
+	derivedGoals(): Promise<InventoryAdvisorDerivedGoals>;
+	evaluate(
+		source: InventoryAdvisorContextualPresentationSource,
+		uncertainItemIds: readonly number[],
+	): Promise<InventoryObjectResultsV1>;
+}
+
+const NO_DERIVED_GOALS: InventoryAdvisorDerivedGoals = Object.freeze({ goals: [], uncertainItemIds: [] });
 
 export type InventoryAdvisorRules = {
 	rulePack: InventoryAdvisorRulePack;
@@ -59,7 +87,8 @@ export type InventoryAdvisorRulesAvailability =
 	| { status: 'unavailable'; reason: 'invalid' | 'expired' };
 export interface InventoryAdvisorRulesProvider { current(asOf: string): InventoryAdvisorRulesAvailability }
 export type InventoryAdvisorWorkflowResult =
-	| { status: 'ready'; source: InventoryAdvisorPresentationSource }
+	/** `objects`: the analysis's one result per object (H18.14), null without an analysis port. */
+	| { status: 'ready'; source: InventoryAdvisorPresentationSource; objects?: InventoryObjectResultsV1 | null }
 	| { status: 'blocked'; reason: InventoryAdvisorWorkflowBlockedReason };
 
 export type InventoryAdvisorWorkflowBlockedReason =
@@ -92,7 +121,7 @@ export type InventoryAdvisorWorkflowBlockedReason =
 
 /** Explicit capture-to-presentation composition. Construction and reads perform no I/O. */
 export class InventoryAdvisorWorkflow {
-	private last: { capture: InventoryAdvisorEvidenceCaptureResultV1 } | null = null;
+	private last: { capture: InventoryAdvisorEvidenceCaptureResultV1; derived: InventoryAdvisorDerivedGoals } | null = null;
 	private epoch = 0;
 
 	constructor(private readonly ports: InventoryAdvisorWorkflowPorts) {}
@@ -147,13 +176,33 @@ export class InventoryAdvisorWorkflow {
 		const preferences = await this.ports.preferences.load(capture, context);
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
 		if (preferences.status === 'blocked') return preferences;
-		const source = composeInventoryAdvisorRefresh(capture, preferences.value, rules.value, asOf);
+		const derived = this.ports.objects === undefined ? NO_DERIVED_GOALS : await this.ports.objects.derivedGoals();
 		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
-		this.last = { capture: structuredClone(capture) };
-		return {
-			status: 'ready',
-			source,
-		};
+		const analysis = await this.analyse(capture, preferences.value, derived, rules.value, asOf);
+		if (!this.active(epoch)) return { status: 'blocked', reason: 'stale_evidence' };
+		this.last = { capture: structuredClone(capture), derived: structuredClone(derived) };
+		return { status: 'ready', ...analysis };
+	}
+
+	/**
+	 * Classification plus the object result, on one capture. The derived goals join the user's
+	 * own before the advisor classifies, so what they reserve is reserved in every surface.
+	 */
+	private async analyse(
+		capture: InventoryAdvisorEvidenceCaptureResultV1,
+		preferences: InventoryAdvisorPreferencesSnapshot,
+		derived: InventoryAdvisorDerivedGoals,
+		rules: InventoryAdvisorRules,
+		asOf: string,
+	): Promise<{ source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null }> {
+		if (capture.evidence === null) throw new Error(`inventory_advisor_capture_${capture.status}`);
+		const merged = mergeDerivedReservationGoals(capture.evidence.snapshot, preferences.goals, derived);
+		const source = composeInventoryAdvisorRefresh(
+			capture, { goals: merged.goals, keepExceptions: preferences.keepExceptions }, rules, asOf,
+		);
+		const objects = this.ports.objects === undefined ? null
+			: await this.ports.objects.evaluate(source, merged.uncertainItemIds);
+		return { source, objects };
 	}
 
 	/** Rebuilds the local presentation after a preference write, never recapturing the account. */
@@ -190,9 +239,9 @@ export class InventoryAdvisorWorkflow {
 		const preferences = await this.ports.preferences.load(structuredClone(last.capture), context);
 		if (!this.active(epoch) || this.last !== last) return { status: 'blocked', reason: 'stale_evidence' };
 		if (preferences.status === 'blocked') return preferences;
-		const source = composeInventoryAdvisorRefresh(last.capture, preferences.value, rules.value, asOf);
+		const analysis = await this.analyse(last.capture, preferences.value, last.derived, rules.value, asOf);
 		if (!this.active(epoch) || this.last !== last) return { status: 'blocked', reason: 'stale_evidence' };
-		return { status: 'ready', source };
+		return { status: 'ready', ...analysis };
 	}
 
 	/** Invalidates retained evidence after account/locale changes without opening a persistence boundary. */

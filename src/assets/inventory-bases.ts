@@ -1,7 +1,14 @@
-import type {
-	PositionRecommendationAction,
-	PositionRecommendationReasonCode,
+import {
+	INVENTORY_OBJECT_DECISION_ACTIONS,
+	INVENTORY_OBJECT_DECISION_REASON_CODES,
+	type InventoryObjectDecisionAction,
+	type InventoryObjectDecisionReasonCode,
+} from '../advisor/inventory-object-result';
+import {
+	POSITION_RECOMMENDATION_REASON_CODES,
+	type PositionRecommendationReasonCode,
 } from '../advisor/inventory-position-recommendation';
+import { RUNTIME_CATALOG } from '../core/i18n-runtime-catalog';
 import { sha256Text } from './managed-asset-hash';
 import { managedAssetMarker, type PackagedAsset } from './managed-assets-model';
 
@@ -17,6 +24,7 @@ const COPY = {
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
 		recommendation: 'Recomendación', reason: 'Motivo', sellNow: 'Vender ahora', waitToSell: 'Esperar para vender',
 		freeQuantity: 'Cantidad libre', validUntil: 'Vigente hasta', waitUntil: 'Esperar hasta',
+		actionableQuantity: 'Cantidad accionable',
 	},
 	en: {
 		all: 'All', characters: 'Characters', shared: 'Shared', bank: 'Bank', materials: 'Materials',
@@ -27,61 +35,43 @@ const COPY = {
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
 		recommendation: 'Recommendation', reason: 'Reason', sellNow: 'Sell now', waitToSell: 'Wait to sell',
 		freeQuantity: 'Free quantity', validUntil: 'Valid until', waitUntil: 'Wait until',
+		actionableQuantity: 'Actionable quantity',
 	},
 } as const;
 
 /**
  * H18.3 (audit 2026-09-24 §3.A): the Base used to show `tc_recommendation`/`tc_recommendation_reason`
- * as raw codes. Typed as complete records so a new action or reason code fails the type check
- * until it has a label in both locales, instead of reaching the table raw.
+ * as raw codes. H18.14: the labels now come from the same runtime catalog the advisor view reads,
+ * so a decision reads the same words in both. The catalog keys are typed from the closed decision
+ * vocabulary, so a new action or reason code fails the type check until it has a label in both
+ * locales, instead of reaching the table raw.
  */
-const ACTION_LABELS: Record<InventoryBaseLocale, Record<PositionRecommendationAction, string>> = {
-	es: {
-		sell: 'Vender ahora', hold: 'Conservar', hold_for_legendary: 'Conservar para legendaria',
-		sell_at_season: 'Esperar a temporada', review: 'Revisar',
-	},
-	en: {
-		sell: 'Sell now', hold: 'Keep', hold_for_legendary: 'Keep for legendary',
-		sell_at_season: 'Wait for the season', review: 'Review',
-	},
-};
+function actionLabels(locale: InventoryBaseLocale): Record<InventoryObjectDecisionAction, string> {
+	return Object.fromEntries(INVENTORY_OBJECT_DECISION_ACTIONS.map((action) => [action, actionLabel(locale, action)])) as
+		Record<InventoryObjectDecisionAction, string>;
+}
 
-const REASON_LABELS: Record<InventoryBaseLocale, Record<PositionRecommendationReasonCode, string>> = {
-	es: {
-		reserved_for_goal: 'Reservado para un objetivo legendario',
-		reservation_uncertain: 'Reserva incierta: no se sabe cuánto necesita un legendario elegido',
-		price_unknown: 'Precio desconocido: no hay precio de venta demostrado hoy',
-		not_tradeable: 'No se puede vender en el bazar',
-		price_history_disabled: 'Histórico de precios apagado',
-		below_capital_threshold: 'Poco capital parado en este objeto',
-		price_history_insufficient: 'Histórico insuficiente para decidir',
-		bid_above_reference: 'Precio en la parte alta de su historial',
-		below_local_band: 'Precio por debajo de la parte alta de su historial',
-		seasonal_sell_window: 'Ventana de venta de temporada',
-		seasonal_hold: 'Fuera de temporada: esperar a su próxima ventana de venta',
-		malformed_input: 'Datos de temporada no válidos',
-		no_close_today: 'Sin puja registrada hoy',
-		insufficient_reference: 'Histórico insuficiente para la señal de temporada',
-		undecidable_calendar: 'No se puede leer el calendario de temporada',
-	},
-	en: {
-		reserved_for_goal: 'Reserved for a legendary goal',
-		reservation_uncertain: 'Uncertain reservation: how much a chosen legendary needs is unknown',
-		price_unknown: 'Unknown price: no demonstrated sale price today',
-		not_tradeable: 'Cannot be sold on the Trading Post',
-		price_history_disabled: 'Price history is off',
-		below_capital_threshold: 'Little capital parked in this item',
-		price_history_insufficient: 'Not enough history to decide',
-		bid_above_reference: 'Price in the high band of its history',
-		below_local_band: 'Price below the high band of its history',
-		seasonal_sell_window: 'Seasonal selling window',
-		seasonal_hold: 'Out of season: wait for its next selling window',
-		malformed_input: 'Invalid seasonal data',
-		no_close_today: 'No bid recorded today',
-		insufficient_reference: 'Not enough history for the seasonal signal',
-		undecidable_calendar: 'The seasonal calendar cannot be read',
-	},
-};
+function actionLabel(locale: InventoryBaseLocale, action: InventoryObjectDecisionAction): string {
+	const key: `inventory.decision.action.${InventoryObjectDecisionAction}` = `inventory.decision.action.${action}`;
+	return RUNTIME_CATALOG[locale][key];
+}
+
+/** The moment stage's own reasons keep their inventory wording; every other one is the advisor's. */
+function reasonLabels(locale: InventoryBaseLocale): Record<InventoryObjectDecisionReasonCode, string> {
+	return Object.fromEntries(INVENTORY_OBJECT_DECISION_REASON_CODES.map((code) => [code, reasonLabel(locale, code)])) as
+		Record<InventoryObjectDecisionReasonCode, string>;
+}
+
+function reasonLabel(locale: InventoryBaseLocale, code: InventoryObjectDecisionReasonCode): string {
+	if ((POSITION_RECOMMENDATION_REASON_CODES as readonly string[]).includes(code)) {
+		const key: `inventory.decision.reason.${PositionRecommendationReasonCode}` =
+			`inventory.decision.reason.${code as PositionRecommendationReasonCode}`;
+		return RUNTIME_CATALOG[locale][key];
+	}
+	const key: `advisor.view.reason.${Exclude<InventoryObjectDecisionReasonCode, PositionRecommendationReasonCode>}` =
+		`advisor.view.reason.${code as Exclude<InventoryObjectDecisionReasonCode, PositionRecommendationReasonCode>}`;
+	return RUNTIME_CATALOG[locale][key];
+}
 
 /**
  * `if(field == "code", "label", ...)` over every entry, falling back to the raw value so a code
@@ -111,8 +101,8 @@ formulas:
   item_icon: 'if(tc_icon != null, image(tc_icon), null)'
   item_link: 'file.asLink(tc_item_name)'
   source_label: 'if(tc_source == "character", "${copy.characterSource}", if(tc_source == "shared_inventory", "${copy.sharedSource}", if(tc_source == "bank", "${copy.bankSource}", "${copy.materialsSource}")))'
-  recommendation_label: ${labelFormula('tc_recommendation', ACTION_LABELS[locale])}
-  reason_label: ${labelFormula('tc_recommendation_reason', REASON_LABELS[locale])}
+  recommendation_label: ${labelFormula('tc_recommendation', actionLabels(locale))}
+  reason_label: ${labelFormula('tc_recommendation_reason', reasonLabels(locale))}
   valid_until: 'if(tc_recommendation != "sell_at_season", tc_recommendation_until, null)'
   wait_until: 'if(tc_recommendation == "sell_at_season", tc_recommendation_until, null)'
 properties:
@@ -128,6 +118,8 @@ properties:
     displayName: "${copy.quantity}"
   note.tc_free_quantity:
     displayName: "${copy.freeQuantity}"
+  note.tc_actionable_quantity:
+    displayName: "${copy.actionableQuantity}"
   note.tc_item_type:
     displayName: "${copy.type}"
   note.tc_item_rarity:
@@ -163,7 +155,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, formula.source_label, tc_character, tc_quantity, tc_free_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
+	const order = '[formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, formula.source_label, tc_character, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -221,8 +213,10 @@ function inventoryBody(locale: InventoryBaseLocale): string {
     name: "${copy.sellNow}"
     filters:
       and:
-        - tc_recommendation == "sell"
-        - tc_free_quantity > 0
+        - or:
+            - tc_recommendation == "sell"
+            - tc_recommendation == "list"
+        - tc_actionable_quantity > 0
     order: ${order}
     ${sorted}
     rowHeight: medium
@@ -246,7 +240,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, tc_quantity, tc_free_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
+    order: [formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
     sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -277,7 +271,10 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 			// `properties` entries are all semantic bytes moving under an unchanged version number.
 			// Bumped to 8 by H18.3 (audit 2026-09-24): translated action/reason formulas, the
 			// valid/wait-until and free-quantity columns, and "Vender ahora" split from "Esperar".
-			const draft = { id, kind: 'base', contentVersion: 8, locale, relativePath } as const;
+			// Bumped to 9 by H18.14: the advisor's routes and reasons in the label formulas, the
+			// actionable-quantity column, and "Vender ahora" filtering sell/list on what can be acted
+			// on now instead of on the free quantity.
+			const draft = { id, kind: 'base', contentVersion: 9, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}
