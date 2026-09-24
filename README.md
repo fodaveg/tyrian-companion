@@ -234,11 +234,14 @@ The current published vertical provides:
 - H3.4 crash/restart recovery backed by a second fail-closed IndexedDB store that preserves the
   full baseline, optional final snapshot, canonical delta, and fenced runtime state.
 - H3.8 assisted detection with an explicit arm/disarm control, a stable baseline before polling,
-  and visible start/stop proposals that always require a user action. Character inventory/build reads
-  use one 30-second attempt; the first transient partial pass stops the account-wide fan-out and lets
-  the single scheduler own the bounded backoff and recovery.
-- H3.9 contamination review for provisional sessions, with explicit activity declarations,
-  conservative H2.7 classification, crash-safe local persistence, and a completed-session state.
+  and visible start/stop proposals that always require a user action from API-derived evidence.
+  Character inventory/build reads use one 30-second attempt; the first transient partial pass stops
+  the account-wide fan-out and lets the single scheduler own the bounded backoff and recovery. The
+  authenticated in-game bridge is a separate, narrower exception (H18.26, David's decision of
+  2026-09-24): it marks start and stop straight from addon presence with no confirmation.
+- H3.9 classifies provisional sessions automatically from the API's own evidence, with no activity
+  declarations or human review step (retired 2026-09-09; see docs/PRODUCT.md), conservative H2.7
+  classification, crash-safe local persistence, and a completed-session state.
 - H3.10 local detection-quality measurement: each accepted boundary keeps its manual or assisted
   mode, uncertainty and cause, while dismissed proposals keep a structured correction cause.
 - A pure H4.1 copper contract for gross, instant-sale, listing, vendor and non-liquid values,
