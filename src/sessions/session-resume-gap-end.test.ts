@@ -87,7 +87,7 @@ function openWindow(factory: IDBFactory, instanceId: string, options: {
 	const tick = (periodMs: number): void => {
 		for (const entry of intervals.filter((candidate) => candidate.periodMs === periodMs)) entry.callback();
 	};
-	return { service, tick, runtimeStore };
+	return { service, tick, runtimeStore, coordinator };
 }
 
 async function start(service: ManualSessionStartService): Promise<void> {
@@ -132,10 +132,16 @@ describe('end time after a gap (H18.11)', () => {
 
 		await playUntilLastHeartbeat(window);
 
-		// Throttled: a heartbeat sooner than the interval does not write again.
-		clock = LAST_HEARTBEAT + SESSION_EVIDENCE_SAVE_INTERVAL_MS - 1;
+		// Throttled: a heartbeat sooner than the interval renews the lease but does not write again.
+		const renew = vi.spyOn(window.coordinator, 'renew');
+		const save = vi.spyOn(window.runtimeStore, 'save');
+		expect(SESSION_EVIDENCE_SAVE_INTERVAL_MS).toBe(60_000);
+		clock = LAST_HEARTBEAT + 30_000;
 		window.tick(HEARTBEAT_MS);
-		await new Promise((resolve) => { setTimeout(resolve, 20); });
+		await vi.waitFor(() => expect(renew).toHaveBeenCalledOnce());
+		await renew.mock.results[0]?.value;
+		await Promise.resolve();
+		expect(save).not.toHaveBeenCalled();
 		await expect(window.runtimeStore.load()).resolves.toMatchObject({ record: { persistedAt: LAST_HEARTBEAT } });
 	});
 
