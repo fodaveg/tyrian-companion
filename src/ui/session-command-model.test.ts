@@ -36,6 +36,18 @@ describe('projectSessionCommands', () => {
 		expect(available(context('stopping', { stopFailure: failure() }))).toEqual(['finish-farming-session']);
 	});
 
+	it('offers abandoning only a stop no retry can fix, and starting again after it', () => {
+		for (const code of ['account_changed', 'delta_invalid'] as const) {
+			expect(available(context('stopping', { stopFailure: { code, message: 'cannot finish' } })))
+				.toEqual(['finish-farming-session', 'abandon-farming-session']);
+		}
+		for (const code of ['snapshot_failed', 'rate_limited', 'lease_lost', 'coordination_unavailable', 'unexpected'] as const) {
+			expect(available(context('stopping', { stopFailure: { code, message: 'retries on its own' } })))
+				.not.toContain('abandon-farming-session');
+		}
+		expect(available(context('abandoned'))).toEqual(['start-farming-session']);
+	});
+
 	/**
 	 * H15.8 (2026-09-10 audit): a live authority failure (heartbeat `lease_lost`, stop
 	 * `clock_anomaly`) leaves `state.status === 'error'` with a recorded `stopFailure`, and no

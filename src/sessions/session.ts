@@ -11,7 +11,8 @@ export type SessionStatus =
 	| 'stopping'
 	| 'provisional'
 	| 'complete'
-	| 'error';
+	| 'error'
+	| 'abandoned';
 
 export type ComparableSnapshotQuality = Extract<
 	StorageSnapshot['quality'],
@@ -154,11 +155,40 @@ export interface ErrorSessionState {
 	failedState: SessionInProgressState;
 }
 
+/**
+ * Why the player abandoned a stopping session. Only failures a retry cannot fix by itself: the final
+ * snapshot belongs to another account (`account_changed`, H18.12) or cannot be compared with the
+ * baseline at all (`delta_invalid`).
+ */
+export type SessionAbandonReason = 'account_changed' | 'delta_invalid';
+
+export const SESSION_ABANDON_REASONS: readonly SessionAbandonReason[] = Object.freeze(['account_changed', 'delta_invalid']);
+
+/**
+ * Terminal state of a session the player abandoned by hand from a stop it could not finish. No
+ * final snapshot, no delta, no loot: only what the session knew when it stopped, and why it ended.
+ * Never persisted as a runtime record (the record is cleared); the note is its durable trace.
+ */
+export interface AbandonedSessionState {
+	version: typeof SESSION_STATE_VERSION;
+	status: 'abandoned';
+	sessionId: string;
+	authority: SessionAuthority;
+	requestedAt: string;
+	baseline: SessionSnapshotReference;
+	startContext: SessionStartContext;
+	stopRequestedAt: string;
+	unobservedGaps?: SessionUnobservedGap[];
+	abandonedAt: string;
+	reason: SessionAbandonReason;
+}
+
 export type SessionState =
 	| IdleSessionState
 	| SessionInProgressState
 	| CompleteSessionState
-	| ErrorSessionState;
+	| ErrorSessionState
+	| AbandonedSessionState;
 
 export type SessionEvent =
 	| { type: 'request_start'; authority: SessionAuthority; requestedAt: string }
@@ -185,7 +215,9 @@ export type SessionEvent =
 	| { type: 'recover'; authority: SessionAuthority; recoveredAt: string }
 	/** H18.11: appends one unobserved gap to an active session. */
 	| { type: 'record_unobserved_gap'; authority: SessionAuthority; from: string; to: string }
-	| { type: 'reset' };
+	| { type: 'reset' }
+	/** Ends a stopping session the player gave up on; see `AbandonedSessionState`. */
+	| { type: 'abandon'; authority: SessionAuthority; abandonedAt: string; reason: SessionAbandonReason };
 
 export type SessionTransitionRejection =
 	| 'invalid_state'

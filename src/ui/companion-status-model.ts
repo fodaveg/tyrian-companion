@@ -235,6 +235,13 @@ function sessionStatus(
 			live: false,
 		};
 	}
+	if (state.status === 'abandoned') {
+		// Abandoned by hand (H18.12's key change): nothing was measured, so no duration is claimed.
+		return {
+			item: item('session', t('status.session'), t('status.abandoned'), t(`status.abandonedDetail.${state.reason}`), 'quiet'),
+			live: false,
+		};
+	}
 	// A stopping session keeps ticking even though its duration below is already frozen: the
 	// settlement countdown beside it is what the second still repaints.
 	const live = state.status === 'active' || state.status === 'stopping';
@@ -517,7 +524,7 @@ function elapsedOrNull(start: number, end: number): number | null {
  * can never show up as a silent «—» with no warning beside it.
  */
 function sessionHasClockIncident(state: SessionState, now: number): boolean {
-	if (state.status === 'idle' || state.status === 'starting') return false;
+	if (state.status === 'idle' || state.status === 'starting' || state.status === 'abandoned') return false;
 	if (state.status !== 'error') {
 		return elapsedOrNull(Date.parse(state.baseline.completedAt), playedUntil(state, now)) === null;
 	}
