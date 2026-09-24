@@ -299,6 +299,12 @@ La versión `0.1.0` valida la base técnica:
   `observed_minimum`). Con poco espacio, lo que vacía huecos enteros va primero; con espacio de sobra, el oro.
   H5.12 ya aporta edición local explícita con CAS. David aprobó el 2026-08-16 la regla y comparación económica
   built-in de 36038: puede recomendar manualmente abrir, vender o llevar al mercader con evidencia completa.
+- El histórico de precios sigue desactivado por defecto: es opt-in (decisión de David del 24 sep 2026).
+  Mientras está apagado, el Inventory Advisor muestra un aviso compacto que explica que sin él vender o
+  esperar sale «sin ventaja demostrada» o «datos insuficientes», y que activarlo consulta
+  `/v2/commerce/prices` periódicamente y siembra desde datawars2; el botón «Activar histórico de precios»
+  es el consentimiento y escribe el mismo ajuste que la pestaña de Ajustes. «Ahora no» lo oculta hasta la
+  siguiente versión del plugin (`priceHistoryNoticeDismissedVersion`). Mostrar el aviso no hace peticiones.
 - H5.6 ofrece Preview, Apply, Repair, Move y Remove para assets gestionados. H5.7 añade una Base Halloween ES/EN al mismo bundle: cinco vistas consumen notas schema v2 con evento explícito y mantienen fuera de mejor g/h cualquier sesión estimada, contaminada, parcial o no evaluada. H5.8 mantiene esos outputs portables entre macOS, Linux y Windows mediante rutas NFC relativas, sin rutas personales ni nombres incompatibles; la reescritura canónica de settings elimina propiedades desconocidas y conserva solo las rutas legacy autorizadas para reubicar o retirar explícitamente. No se escribe al cargar en el Vault ni se sobrescriben modificaciones humanas. H18.18: tras una «Sincronizar inventario» correcta, las Bases ya instaladas en la carpeta de salida siguen solas a una versión nueva del plugin por la misma vía que Apply, siempre que la vista previa no encuentre conflicto; una Base editada o borrada a mano deja la actualización en la vista previa manual y se avisa una vez por carga. Nunca instala por sí sola.
 - El inventario durable añade Preview y Apply dentro del Inventory Advisor. Produce una fila por
   objeto, ubicación y personaje, con cantidad y precio de venta instantánea propios. Las Bases
