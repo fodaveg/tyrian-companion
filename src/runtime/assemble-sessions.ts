@@ -68,6 +68,8 @@ export interface SessionsAssemblyInput {
 	onSettlementDue: () => void;
 	/** The session service took a session back on its own (lost lease, startup busy); see H18.7. */
 	onSessionAutoRecovered: () => void;
+	/** H18.11: the latest instant the game was seen being played (in-game presence), or null. */
+	lastPlayEvidenceAt?: () => number | null;
 	onProposalQueueStateChange: () => void;
 	onProposalExcluded: (
 		proposalId: string,
@@ -117,6 +119,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			onStateChange: input.onSessionStateChange,
 			onSettlementDue: input.onSettlementDue,
 			onAutoRecovered: input.onSessionAutoRecovered,
+			...(input.lastPlayEvidenceAt === undefined ? {} : { lastPlayEvidenceAt: input.lastPlayEvidenceAt }),
 			runtimeStore: new IndexedDbSessionRuntimeStore(
 				input.factory, async () => await input.sessionStorage.runtimeDatabaseName(), input.sessionRecoverPersistence,
 			),

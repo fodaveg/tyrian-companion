@@ -47,7 +47,8 @@ export interface IngameSessionMarkerPort {
 	start(character: string | null): Promise<string | null>;
 	/** Stops the session through the host's own stop pipeline, ending it at `endedAtMs`. */
 	stopAt(sessionId: string, endedAtMs: number): Promise<void>;
-	loadLink(): IngameSessionLink | null;
+	/** Whatever was stored; the marker keeps it only if it has the exact shape it writes. */
+	loadLink(): unknown;
 	saveLink(link: IngameSessionLink | null): void;
 	/** Receives what a start, a stop or a link write threw; the marker itself never throws. */
 	recordFailure(error: unknown): void;

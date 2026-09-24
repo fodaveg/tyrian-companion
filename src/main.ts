@@ -1,6 +1,6 @@
 import {
 	apiVersion, Menu, Notice, Platform, Plugin, TFile,
-	type MarkdownPostProcessorContext, type ViewCreator,
+	type App, type MarkdownPostProcessorContext, type ViewCreator,
 } from 'obsidian';
 // @ts-expect-error Electron is provided by Obsidian desktop and externalized by the bundle.
 import { shell } from 'electron';
@@ -164,6 +164,7 @@ import {
 import {
 	prepareSessionNote,
 	sessionNoteEventDeclarationFromDetectionSummary,
+	type SessionNoteEventDeclaration,
 	type SessionNoteInput,
 } from './sessions/session-note-model';
 import {
@@ -189,6 +190,11 @@ import type {
 	SessionStopFailure,
 } from './sessions/manual-session-start-service';
 import type { SessionSettlementWait } from './sessions/session-api-settlement';
+import {
+	IngameSessionMarker,
+	type IngameSessionLink,
+	type IngameSessionView,
+} from './sessions/ingame-session-marker';
 import type { SessionRuntimeRecord } from './sessions/session-runtime-store';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
 import type { SessionStartInput } from './sessions/session-start-capture';
@@ -395,6 +401,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * use by `ingamePresenceTracker`, and dropped on unload.
 	 */
 	private alertIngamePresence: IngamePresenceTracker | null = null;
+	/** H18.26: turns that presence into the session lifecycle; built once the runtime is ready. */
+	private ingameSessionMarker: IngameSessionMarker | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -1116,6 +1124,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 				if (recoveryId) void this.ensurePilotRecoveryPresented(recoveryId).then(() => this.renderViews());
 				if (session.status !== 'complete') this.lootPresentation.invalidate();
 				this.renderViews();
+				// H18.26: a presence that could not open its session yet (the previous one was still
+				// finishing) opens it as soon as the session side allows, without another game event.
+				if (this.ingameSessionMarker) void this.ingameSessionMarker.reconcile();
 				if (session.status === 'complete' && this.runtimeReady) consumeRecorded(this.refreshLootPresentation());
 				if (this.pendingProposals) fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_proposal', state: 'reconcile' },
@@ -1129,6 +1140,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					() => this.performStopManualSession());
 			},
 			onSessionAutoRecovered: () => this.resumeAutoRecoveredSession(),
+			lastPlayEvidenceAt: () => this.ingameSessionMarker?.lastPlayEvidenceAt() ?? null,
 			onProposalQueueStateChange: () => this.refreshBackgroundIndicators(),
 			onProposalExcluded: (proposalId, reason, resolvedAt) => {
 				void this.pilotMetrics.proposalExcluded(proposalId, reason, resolvedAt);
@@ -1205,6 +1217,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 		if (this.unloaded) return;
 		this.runtimeReady = true;
+		this.startIngameSessionMarking();
 		if (this.settings.priceHistoryEnabled) {
 			await this.priceHistory.activate(priceHistorySettingsFrom(this.settings));
 			this.priceHistory.setOnline(navigator.onLine);
@@ -1278,6 +1291,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// socket's actual release and land in the port-occupied retry table.
 		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
+		this.ingameSessionMarker?.dispose();
+		this.ingameSessionMarker = null;
 		this.alertIngamePresence?.dispose();
 		this.alertIngamePresence = null;
 		this.startModal?.close();
@@ -2742,6 +2757,112 @@ export default class TyrianCompanionPlugin extends Plugin {
 		) ?? run());
 	}
 
+	/**
+	 * H18.26: the in-game presence marks the session. Built once the session runtime is ready, it
+	 * catches up with a presence that started earlier (`reconcile`) and then follows every event.
+	 * It does nothing unless the bridge is enabled and an API key is configured.
+	 */
+	private startIngameSessionMarking(): void {
+		if (this.ingameSessionMarker !== null) return;
+		const marker = new IngameSessionMarker({
+			presence: () => this.getIngamePresence(),
+			now: () => Date.now(),
+			port: {
+				enabled: () => this.settings.alertIngameEnabled && this.hasConfiguredApiKey(),
+				session: () => this.ingameSessionView(),
+				start: async (character) => await this.startIngameSession(character),
+				stopAt: async (_sessionId, endedAtMs) => {
+					const stop = async () => { await this.performStopManualSession(undefined, null, false, endedAtMs); };
+					await (this.localDebugActions?.run(
+						{ component: 'session', action: 'session_finish', state: 'ingame_presence' }, stop,
+					) ?? stop());
+				},
+				loadLink: () => this.readIngameSessionLink(),
+				saveLink: (link) => { this.writeIngameSessionLink(link); },
+				recordFailure: (error) => { this.recordIngameSessionFailure(error); },
+			},
+		});
+		this.ingameSessionMarker = marker;
+		this.onIngamePresence((event) => { void marker.handle(event); });
+		void marker.reconcile();
+	}
+
+	/** What the marker needs to know about the session; `canStart` mirrors what `start()` accepts. */
+	private ingameSessionView(): IngameSessionView {
+		const state = this.sessions.getState();
+		const sessionId = state.status === 'idle' ? null
+			: state.status === 'error' ? state.failedState.sessionId : state.sessionId;
+		const released = state.status === 'idle'
+			|| (state.status === 'complete' && this.sessions.getCompletedSummaryReceipt() !== null);
+		return {
+			status: state.status,
+			sessionId,
+			canStart: this.runtimeReady && released && this.sessions.getRecoveryState().status === 'none'
+				&& this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed(),
+		};
+	}
+
+	/**
+	 * H18.26: starts a session for the game the addon reported, through the same pipeline as the
+	 * start button (lease, baseline, detection bookkeeping). The character is the one the game
+	 * reported, or the preferred one; the magic find is derived from the API.
+	 */
+	private async startIngameSession(character: string | null): Promise<string | null> {
+		const characterName = (character ?? this.settings.preferredCharacter).trim();
+		if (characterName.length === 0) return null;
+		const start = async () => {
+			await this.startManualSession({ characterName, magicFind: null, consumablesBonus: 0 });
+		};
+		await (this.localDebugActions?.run(
+			{ component: 'session', action: 'session_start', state: 'ingame_presence' }, start,
+		) ?? start());
+		const state = this.sessions.getState();
+		return state.status === 'active' ? state.sessionId : null;
+	}
+
+	/** The Labyrinth tag the presence saw for this session, as the note's event declaration. */
+	private ingameLabyrinthDeclaration(runtime: SessionRuntimeRecord): SessionNoteEventDeclaration | null {
+		if (runtime.state.status !== 'complete') return null;
+		const observedAt = this.ingameSessionMarker?.labyrinthObservedAt(runtime.state.sessionId) ?? null;
+		if (observedAt === null || Date.parse(observedAt) > Date.parse(runtime.state.stoppedAt)) return null;
+		return { event: 'halloween', source: 'ingame_presence', observedAt };
+	}
+
+	/**
+	 * The link lives in Obsidian's per-vault local storage, never in `data.json`: it names a session
+	 * of THIS vault on THIS machine and must not sync. A host without that API keeps no link, which
+	 * only means an automatic session found after a reload is treated as one started by hand.
+	 */
+	private readIngameSessionLink(): unknown {
+		const storage = this.app as Partial<Pick<App, 'loadLocalStorage'>>;
+		if (typeof storage.loadLocalStorage !== 'function') return null;
+		try {
+			return storage.loadLocalStorage.call(this.app, INGAME_SESSION_LINK_KEY) as unknown;
+		} catch (error) {
+			this.recordIngameSessionFailure(error);
+			return null;
+		}
+	}
+
+	private writeIngameSessionLink(link: IngameSessionLink | null): void {
+		const storage = this.app as Partial<Pick<App, 'saveLocalStorage'>>;
+		if (typeof storage.saveLocalStorage !== 'function') return;
+		try {
+			storage.saveLocalStorage.call(this.app, INGAME_SESSION_LINK_KEY, link);
+		} catch (error) {
+			this.recordIngameSessionFailure(error);
+		}
+	}
+
+	private recordIngameSessionFailure(error: unknown): void {
+		const mapped = unmappedErrorLogDetails(error);
+		this.localDebugActions?.event({
+			component: 'session', action: 'session_start', state: 'ingame_presence',
+			level: 'error', phase: 'failure', code: 'internal_failure',
+			details: { errorName: mapped.reason },
+		});
+	}
+
 	private recordAlertIngamePresenceFailure(error: unknown): void {
 		const mapped = unmappedErrorLogDetails(error);
 		this.localDebugActions?.event({
@@ -3139,6 +3260,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		intent?: PendingProposalIntent,
 		humanBoundaryAt: string | null = null,
 		captureNow = false,
+		/** H18.26: the end the in-game presence observed; null is the ordinary stop at this call. */
+		observedEndAtMs: number | null = null,
 	): Promise<void> {
 		if (!this.sessionHistoryRuntimeAuthority.runtimeMutationAllowed()) throw new Error('Session history scrub is active.');
 		const pendingClaim = intent ? await this.acquirePendingIntent(intent) : null;
@@ -3150,7 +3273,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.renderViews();
 		try {
 			const runtimeLease = this.requireRuntimeMutationLease();
-			const result = await (captureNow ? this.sessions.captureFinalNow() : this.sessions.stop())
+			const result = await (captureNow ? this.sessions.captureFinalNow()
+				: observedEndAtMs !== null ? this.sessions.stopAt(observedEndAtMs) : this.sessions.stop())
 				.finally(() => runtimeLease.release());
 			// The stop itself is decided the moment the session leaves `active`, even when the final
 			// snapshot still waits out the API cache window: the detector must not keep proposing and
@@ -3999,7 +4123,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// needs a reviewed `ContainerModelReview`, and nothing in the tree builds one. Declaring
 			// them measured here would be an invention rather than an omission.
 			recommendation: null, envelope: null,
-			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId)),
+			eventDeclaration: sessionNoteEventDeclarationFromDetectionSummary(sessionId, this.detectionQuality.getSessionSummary(sessionId))
+				?? this.ingameLabyrinthDeclaration(runtime),
 			displayNames: this.liveSessionLoot.displayNames(), firstSeenItemIds, rareUnpricedOrBoundItemIds,
 			locale: this.settings.language, outputFolder: this.settings.outputFolder,
 		};
@@ -4145,6 +4270,9 @@ const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000
  * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
  */
 const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
+
+/** H18.26: per-vault local storage key of the link between the in-game presence and its session. */
+const INGAME_SESSION_LINK_KEY = 'tyrian-companion:ingame-session-link';
 
 /**
  * H18.20: every curated festival this plugin anchors a selling window to, keyed by `festivalId`.
