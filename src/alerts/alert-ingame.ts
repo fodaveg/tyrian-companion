@@ -1,12 +1,13 @@
 import { formatCopperVisual } from '../core/copper-format';
 import type { AlertKind, AlertV1 } from './alert-contract';
+import { INGAME_BRIDGE_MAX_LINE_BYTES, INGAME_BRIDGE_PROTOCOL_VERSION } from './alert-ingame-protocol';
 
 /**
  * The sixth channel, and the only one that leaves the machine over a socket instead of HTTPS.
  *
  * `docs/SPEC-puente-ingame.md` fixes the wire contract: an addon running inside Nexus or beside
  * Blish HUD connects to a loopback TCP server this plugin opens, and every alert becomes one JSON
- * line. What crosses is `v`, `seq`, `kind`, `name`, `quantity`, `totalCopper` and `content` — the
+ * line. What crosses is `v`, `type`, `seq`, `kind`, `name`, `quantity`, `totalCopper` and `content` — the
  * same three declared fields the webhook channel already carries, plus the sequence number an
  * addon uses to deduplicate a reconnect. Not the API key, not `accountId`, not `accountRef`, not
  * `alertId`, not `itemId`, not `reason`, not a snapshot, not the vault id, not the locale, and not
@@ -21,16 +22,18 @@ import type { AlertKind, AlertV1 } from './alert-contract';
  * channel used to accept an already-composed `summary` string, and `main.ts` handed it the toast
  * copy. Giving either function here a string parameter would reopen the same hole for the addon.
  */
-export const ALERT_INGAME_PAYLOAD_VERSION = 1 as const;
+export const ALERT_INGAME_PAYLOAD_VERSION = INGAME_BRIDGE_PROTOCOL_VERSION;
 
 /** Hard cap from the spec's wire contract: one JSON line, UTF-8, 512 bytes at most. */
-export const ALERT_INGAME_MAX_MESSAGE_BYTES = 512;
+export const ALERT_INGAME_MAX_MESSAGE_BYTES = INGAME_BRIDGE_MAX_LINE_BYTES;
 
-/** The addon's own `hello` line is capped separately and far tighter: 128 bytes. */
-export const ALERT_INGAME_MAX_HELLO_BYTES = 128;
-
+/**
+ * H18.23: protocol v2 tags every plugin → addon line with `type`, because the same connection now
+ * also carries `welcome` and `error`. The alert fields themselves are unchanged from v1.
+ */
 export interface AlertIngamePayload {
 	readonly v: typeof ALERT_INGAME_PAYLOAD_VERSION;
+	readonly type: 'alert';
 	/** A per-process counter the wiring layer assigns at broadcast time, not part of `AlertV1`. */
 	readonly seq?: number;
 	readonly kind: AlertKind;
@@ -79,6 +82,7 @@ export function alertIngameContent(alert: AlertV1): string {
 export function alertIngamePayload(alert: AlertV1, seq?: number): AlertIngamePayload {
 	return {
 		v: ALERT_INGAME_PAYLOAD_VERSION,
+		type: 'alert',
 		...(seq === undefined ? {} : { seq }),
 		kind: alert.kind,
 		name: alert.name,

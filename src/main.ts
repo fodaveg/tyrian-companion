@@ -23,6 +23,17 @@ import {
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
 import { alertIngamePayload } from './alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from './alerts/alert-ingame-server';
+import {
+	IngamePresenceTracker,
+	type IngamePresenceEvent,
+	type IngamePresenceSnapshot,
+} from './alerts/alert-ingame-presence';
+import {
+	createIngameBridgeNonce,
+	createIngameBridgeSecret,
+	ingameBridgeSecretMatches,
+	isUsableIngameBridgeSecret,
+} from './alerts/alert-ingame-protocol';
 import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from './alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import {
@@ -112,6 +123,7 @@ import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from './economy/legendary-materials';
 import {
+	ALERT_INGAME_SECRET_ID,
 	mergeSettingsUpdate,
 	migrateSettings,
 	resolveEquipmentSalvagePreferences,
@@ -365,6 +377,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngameServerErrorCode: string | null = null;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
+	/**
+	 * H18.23: game presence reported by the authenticated addons. Outlives any one server (a port
+	 * change is a loss with grace, not a new game) and is what H18.26 subscribes to. Built on first
+	 * use by `ingamePresenceTracker`, and dropped on unload.
+	 */
+	private alertIngamePresence: IngamePresenceTracker | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -1224,6 +1242,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// socket's actual release and land in the port-occupied retry table.
 		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
+		this.alertIngamePresence?.dispose();
+		this.alertIngamePresence = null;
 		this.startModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
@@ -2564,7 +2584,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 			void stale.close();
 		}
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
-		const flight = startAlertIngameServer(port, { schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds) })
+		const flight = startAlertIngameServer(
+			port,
+			{
+				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+				cancel: (handle) => { window.clearTimeout(handle as number); },
+			},
+			{
+				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.readAlertIngameSecret()),
+				now: () => Date.now(),
+				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
+				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
+			},
+		)
 			.then((server) => {
 				this.alertIngameServer = server;
 				this.alertIngameServerPort = port;
@@ -2599,6 +2631,75 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private nextAlertIngameSeq(): number {
 		this.alertIngameSeq += 1;
 		return this.alertIngameSeq;
+	}
+
+	/** H18.23: what the authenticated addons say about the game right now. H18.26 reads this. */
+	getIngamePresence(): IngamePresenceSnapshot {
+		return this.ingamePresenceTracker().snapshot();
+	}
+
+	/** H18.23: every presence transition (`started`, `context`, `lost`, `restored`, `ended`). */
+	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void {
+		return this.ingamePresenceTracker().subscribe(listener);
+	}
+
+	private ingamePresenceTracker(): IngamePresenceTracker {
+		this.alertIngamePresence ??= new IngamePresenceTracker({
+			timer: {
+				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+				cancel: (handle) => { window.clearTimeout(handle as number); },
+			},
+			now: () => Date.now(),
+			createPresenceId: () => createIngameBridgeNonce((bytes) => { crypto.getRandomValues(bytes); }),
+			recordObserverFailure: (error) => { this.recordAlertIngamePresenceFailure(error); },
+		});
+		return this.alertIngamePresence;
+	}
+
+	/**
+	 * Reads the bridge secret from `SecretStorage` for one comparison and keeps nothing. Like the
+	 * API key, `data.json` holds only the entry's name, so the value never syncs with the vault.
+	 */
+	private readAlertIngameSecret(): string | null {
+		const name = this.settings.alertIngameSecret;
+		if (name.length === 0 || !this.app.secretStorage.listSecrets().includes(name)) return null;
+		return this.app.secretStorage.getSecret(name);
+	}
+
+	/**
+	 * Copies the bridge secret to the clipboard so the user can paste it into the addon's settings,
+	 * generating one first when the selected entry is missing or too weak to accept (32 CSPRNG
+	 * bytes, stored under `ALERT_INGAME_SECRET_ID`). The value goes to the clipboard and to
+	 * `SecretStorage`, never to settings, a log or the vault.
+	 */
+	async copyAlertIngameSecret(): Promise<'copied' | 'generated'> {
+		const run = async (): Promise<'copied' | 'generated'> => {
+			const current = this.readAlertIngameSecret();
+			if (isUsableIngameBridgeSecret(current)) {
+				await navigator.clipboard.writeText(current);
+				return 'copied';
+			}
+			const stored = this.app.secretStorage.listSecrets().includes(ALERT_INGAME_SECRET_ID)
+				? this.app.secretStorage.getSecret(ALERT_INGAME_SECRET_ID) : null;
+			const secret = isUsableIngameBridgeSecret(stored)
+				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
+			if (secret !== stored) this.app.secretStorage.setSecret(ALERT_INGAME_SECRET_ID, secret);
+			await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
+			await navigator.clipboard.writeText(secret);
+			return 'generated';
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'notification', action: 'command_execute', state: 'ingame_secret_copy' }, run,
+		) ?? run());
+	}
+
+	private recordAlertIngamePresenceFailure(error: unknown): void {
+		const mapped = unmappedErrorLogDetails(error);
+		this.localDebugActions?.event({
+			component: 'notification', action: 'notification_emit', state: 'ingame_presence_listener',
+			level: 'error', phase: 'failure', code: 'internal_failure',
+			details: { errorName: mapped.reason },
+		});
 	}
 
 	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */

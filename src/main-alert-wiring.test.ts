@@ -194,13 +194,81 @@ describe('H13.4 alert channel cabling', () => {
 			if (handle === null) throw new Error('unreachable: waited for a non-null handle above');
 
 			// The listener is real and reachable from outside the process, exactly the way the
-			// Nexus addon reaches it; this is not just a truthy internal field.
+			// Nexus addon reaches it; this is not just a truthy internal field. Since H18.23 the
+			// addon counts only once it presents the secret the plugin stored in SecretStorage.
 			const client = await connectLoopback(handle.port);
+			client.write(ingameHello(await pluginBridgeSecret(plugin)));
 			await vi.waitFor(() => { expect(handle.clientCount()).toBe(1); });
 			client.destroy();
 
 			await plugin.updateSettings({ alertIngameEnabled: false });
 			await vi.waitFor(() => { expect(server()).toBeNull(); });
+		} finally {
+			await server()?.close();
+		}
+	});
+
+	it('H18.22: a connected addon that never said hello does not make the in-game channel delivered', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const plugin = alertWiringPlugin(new IDBFactory());
+		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		await plugin.initializeRuntime();
+		const port = await freeLoopbackPort();
+		try {
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+			await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+			const mute = await connectLoopback(port);
+			// A token that is not the configured one is just another connection that never
+			// authenticated: it must not count either.
+			const intruder = await connectLoopback(port);
+			const refused = new Promise((resolve) => { intruder.once('close', resolve); });
+			// Flowing mode: a paused socket never reads the server's FIN, so it would never close.
+			intruder.resume();
+			intruder.write(ingameHello('y'.repeat(43)));
+			// The plugin closes it for the wrong secret; waiting for that makes the report below
+			// observe a settled handshake instead of racing the hello.
+			await refused;
+
+			const report = await plugin.emitAlert(VALUABLE);
+
+			expect(report.failed.map((entry) => entry.id)).toContain('ingame');
+			expect(report.delivered).not.toContain('ingame');
+			mute.destroy();
+			intruder.destroy();
+		} finally {
+			await server()?.close();
+		}
+	});
+
+	it('H18.23: an authenticated addon context reaches the plugin presence store', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const plugin = alertWiringPlugin(new IDBFactory()) as AlertWiringHarness & {
+			getIngamePresence(): { status: string; context: unknown };
+			onIngamePresence(listener: (event: { kind: string }) => void): () => void;
+		};
+		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		const heard: string[] = [];
+		plugin.onIngamePresence((event) => { heard.push(event.kind); });
+		await plugin.initializeRuntime();
+		const port = await freeLoopbackPort();
+		try {
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+			await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+			const addon = await connectLoopback(port);
+			addon.setEncoding('utf8');
+			const welcome = new Promise<string>((resolve) => { addon.once('data', (chunk: string) => { resolve(chunk); }); });
+			addon.write(ingameHello(await pluginBridgeSecret(plugin)));
+			const { nonce } = JSON.parse(await welcome) as { nonce: string };
+			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 0, state: 'gameplay', mapId: 866, character: 'Astra Uno' })}\n`);
+
+			await vi.waitFor(() => { expect(plugin.getIngamePresence().status).toBe('present'); });
+			expect(plugin.getIngamePresence().context).toMatchObject({ mapId: 866, labyrinth: true, source: 'nexus' });
+			expect(heard).toEqual(['started']);
+			addon.destroy();
 		} finally {
 			await server()?.close();
 		}
@@ -239,8 +307,14 @@ function alertWiringPlugin(factory: IDBFactory, hostApis: Record<string, unknown
 		}),
 		fileManager: { trashFile: vi.fn(async () => undefined) },
 	};
+	const secrets = new Map<string, string>();
 	const app = {
 		vault, workspace: { getLeavesOfType: vi.fn(() => []) }, fileManager: vault.fileManager,
+		secretStorage: {
+			listSecrets: () => [...secrets.keys()],
+			getSecret: (id: string) => secrets.get(id) ?? null,
+			setSecret: (id: string, value: string) => { secrets.set(id, value); },
+		},
 	} as unknown as App;
 	const manifest = { id: 'tyrian-companion', version: 'test' } as PluginManifest;
 	const plugin = new TyrianCompanionPlugin(app, manifest);
@@ -309,6 +383,25 @@ function connectLoopback(port: number): Promise<Socket> {
 		socket.once('error', reject);
 		socket.connect(port, '127.0.0.1');
 	});
+}
+
+/** A v2 hello as a Nexus addon sends it, carrying whatever secret the test hands in. */
+function ingameHello(secret: string): string {
+	return `${JSON.stringify({
+		v: 2, type: 'hello', client: 'nexus', clientVersion: '0.2.0', instance: 'AAAAAAAAAAAAAAAAAAAAAA', token: secret,
+	})}\n`;
+}
+
+/**
+ * Goes through the plugin's own "Copy token" action, the one the settings button calls: it
+ * generates the secret into the harness `SecretStorage`, selects it, and hands it to the clipboard,
+ * which is where the user would take it from to paste into the addon.
+ */
+async function pluginBridgeSecret(plugin: object): Promise<string> {
+	let copied = '';
+	vi.stubGlobal('navigator', { onLine: true, clipboard: { writeText: async (text: string) => { copied = text; } } });
+	await (plugin as { copyAlertIngameSecret(): Promise<string> }).copyAlertIngameSecret();
+	return copied;
 }
 
 function fakeAudioContext() {

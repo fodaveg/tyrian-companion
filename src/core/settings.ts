@@ -32,6 +32,11 @@ export const ALERT_INGAME_MIN_PORT = 1_024;
 export const ALERT_INGAME_MAX_PORT = 65_535;
 /** Arbitrary and unregistered; chosen once so an addon's default matches without discovery. */
 export const DEFAULT_ALERT_INGAME_PORT = 47_823;
+/**
+ * H18.23: the `SecretStorage` entry the plugin creates when it generates the bridge secret. Only
+ * this NAME is ever persisted in settings; the value stays in Obsidian's per-device keychain.
+ */
+export const ALERT_INGAME_SECRET_ID = 'tyrian-companion-ingame';
 
 export type Language = 'es' | 'en';
 export type MaterialStorageCapacity = 250 | 500 | 750 | 1000 | 1250 | 1500 | 1750 | 2000 | 2250 | 2500 | 2750 | 3000;
@@ -132,6 +137,8 @@ export interface TyrianSettings {
 	alertIngameEnabled: boolean;
 	/** Loopback TCP port the in-game bridge listens on when `alertIngameEnabled` is true. */
 	alertIngamePort: number;
+	/** H18.23: name of the `SecretStorage` entry every addon must present in its `hello`, never the value. */
+	alertIngameSecret: string;
 	/** Local bid-vs-p90 alert. It cannot activate price history. */
 	halloweenPriceAlertEnabled: boolean;
 	halloweenPriceAlertMinimumAboveP90Bps: number;
@@ -174,6 +181,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	alertWebhookUrl: '',
 	alertIngameEnabled: false,
 	alertIngamePort: DEFAULT_ALERT_INGAME_PORT,
+	alertIngameSecret: '',
 	halloweenPriceAlertEnabled: false,
 	halloweenPriceAlertMinimumAboveP90Bps: 0,
 	halloweenPriceAlertCooldownHours: 24,
@@ -272,6 +280,7 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 		alertWebhookUrl: alertWebhookDestination(data.alertWebhookUrl),
 		alertIngameEnabled: data.alertIngameEnabled === true,
 		alertIngamePort: alertIngamePortValue(data.alertIngamePort),
+		alertIngameSecret: stringOrDefault(data.alertIngameSecret, DEFAULT_SETTINGS.alertIngameSecret),
 		halloweenPriceAlertEnabled: data.halloweenPriceAlertEnabled === true,
 		halloweenPriceAlertMinimumAboveP90Bps: boundedNonNegativeInteger(
 			data.halloweenPriceAlertMinimumAboveP90Bps, DEFAULT_SETTINGS.halloweenPriceAlertMinimumAboveP90Bps, 100_000,
