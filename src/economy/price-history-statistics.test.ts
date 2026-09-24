@@ -51,17 +51,38 @@ describe('price-history statistics', () => {
 		expect(daily[399]?.ask).toMatchObject({ count: 20, minCopper: 400, maxCopper: 419, medianCopperX2: 819, closeCopper: 419 });
 	});
 
-	it('requires 42 observed days without filling a missing day', () => {
-		const fortyOne = Array.from({ length: 41 }, (_, index) => daily(index, index + 1));
-		expect(calculatePriceHistoryPercentile(fortyOne, 'ask', 42)).toEqual({
+	it('requires 42 observed days, today\'s quote included, without filling a missing day', () => {
+		const forty = Array.from({ length: 40 }, (_, index) => daily(index, index + 1));
+		expect(calculatePriceHistoryPercentile(forty, 'ask', 42, 42, 41)).toEqual({
 			status: 'insufficient_history', coveredDays: 41, requiredDays: 42,
 		});
-		const fortyTwo = [...fortyOne, daily(42, 42)];
-		expect(calculatePriceHistoryPercentile(fortyTwo, 'ask', 42)).toEqual({
+		const fortyOne = [...forty, daily(40, 41)];
+		expect(calculatePriceHistoryPercentile(fortyOne, 'ask', 42, 42, 42)).toEqual({
 			status: 'ready', percentile: 100, coveredDays: 42, valueCopper: 42,
 		});
-		fortyTwo[20] = { ...fortyTwo[20]!, ask: null };
-		expect(calculatePriceHistoryPercentile(fortyTwo, 'ask', 42).status).toBe('insufficient_history');
+		fortyOne[20] = { ...fortyOne[20]!, ask: null };
+		expect(calculatePriceHistoryPercentile(fortyOne, 'ask', 42, 42, 42).status).toBe('insufficient_history');
+	});
+
+	/**
+	 * H18.2 (audit 2026-09-24 §3.A): the observation is today's quote, never the history's last
+	 * close. Before the fix the fifth argument did not exist and the last close (410, the series'
+	 * maximum, dated 60+ days before any "today") was ranked as today's price: percentile 100.
+	 */
+	it('ranks today\'s quote against the history, never the history\'s own last close', () => {
+		const rising = Array.from({ length: 41 }, (_, index) => daily(index, 10 + index * 10));
+		const cheapToday = calculatePriceHistoryPercentile(rising, 'ask', 180, 42, 15);
+		expect(cheapToday).toMatchObject({ status: 'ready', valueCopper: 15, coveredDays: 42 });
+		// 10 and 15 itself are at or below 15: rank 2 of 42.
+		expect(cheapToday.status === 'ready' ? cheapToday.percentile : null).toBe(4.76);
+		const dearToday = calculatePriceHistoryPercentile(rising, 'ask', 180, 42, 1_000);
+		expect(dearToday).toMatchObject({ status: 'ready', percentile: 100, valueCopper: 1_000 });
+	});
+
+	it('rejects an observation that is not a non-negative integer amount of copper', () => {
+		const history = Array.from({ length: 41 }, (_, index) => daily(index, index + 1));
+		expect(() => calculatePriceHistoryPercentile(history, 'ask', 42, 42, -1)).toThrow(RangeError);
+		expect(() => calculatePriceHistoryPercentile(history, 'ask', 42, 42, 1.5)).toThrow(RangeError);
 	});
 });
 

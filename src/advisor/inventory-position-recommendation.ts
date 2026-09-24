@@ -24,9 +24,16 @@ export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTION
  * (`src/economy/sell-signal.ts`), carried through verbatim rather than re-coded: a `review` that
  * hides which of the four things went wrong is exactly the ambiguity §3.b's precedence exists to
  * avoid.
+ *
+ * H18.1/H18.2 (audit 2026-09-24 §3.A) add two codes, appended so every earlier value keeps its
+ * meaning: `reservation_uncertain` (a chosen goal has no materials table, so how much of this
+ * position is free is unknown, never assumed free) and `price_unknown` (no quote today, or no
+ * demonstrated value: "I don't know what it's worth" is not "it's worth little").
  */
 export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'reserved_for_goal',
+	'reservation_uncertain',
+	'price_unknown',
 	'price_history_disabled',
 	'below_capital_threshold',
 	'price_history_insufficient',
@@ -72,6 +79,19 @@ export interface PositionRecommendationV1 {
 	 * itself still says `review`. Null only when the percentile was never computed at all.
 	 */
 	priceCoverageDays: number | null;
+	/**
+	 * H18.2: when the live quote this verdict read as TODAY's price was taken (ISO-8601), or null
+	 * when the verdict does not rest on today's price (reservations, `review` of any kind). Its own
+	 * field on purpose: `until` already alternates between a price expiry and a seasonal window's
+	 * open or close (audit 2026-09-24, Anexo 3), and the quote's date is a third clock, not either.
+	 */
+	priceQuotedAt: string | null;
+	/**
+	 * H18.2: the last UTC day (`YYYY-MM-DD`) of the price HISTORY the verdict compared today's quote
+	 * against, strictly before today, or null when no history was read (or none exists). A history
+	 * that ends 60 days ago says so here instead of passing for today's price.
+	 */
+	priceHistoryLastDay: string | null;
 }
 
 export interface PositionRecommendationInput {
@@ -120,9 +140,27 @@ export interface PositionRecommendationInput {
 	 * `src/economy/legendary-goals.ts`) before rules (b)/(c) below ever see it.
 	 */
 	legendaryShortfall: number | null;
+	/**
+	 * H18.1: how much of THIS position no reservation holds back. The whole quantity when no goal
+	 * touches the item; 0 when a goal reserves every unit of it (the position must never read
+	 * `sell`, whatever its price or season); null when a chosen goal has no materials table (or the
+	 * reservation plan could not be built), so the free share is unknown and never assumed free.
+	 */
+	freeQuantity: number | null;
+	/**
+	 * H18.2: today's instant-sell quote per unit (the best buy order), taken at `capturedAtMs` in
+	 * the same capture, or null when there is none. This, never the last historical close, is
+	 * "today's price": without it no time-bound recommendation is emitted at all.
+	 */
+	todayBidCopper: number | null;
 }
 
 const DAY_MS = 86_400_000;
+
+/** Every evidence field a verdict carries, all empty: each branch fills only what it measured. */
+const NO_EVIDENCE = {
+	missing: null, pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+} as const satisfies Partial<PositionRecommendationV1>;
 
 /**
  * Rules (b) and (c) of the recommendation spec, in precedence order. (a) is not implemented here
@@ -136,43 +174,69 @@ const DAY_MS = 86_400_000;
  *    hold ends when the account has enough, not when a price quote goes stale). This precedes
  *    EVERY rule below, including rule 1: whether the account owns enough of a legendary's material
  *    has nothing to do with whether price history is on.
+ *    H18.1: `freeQuantity` 0 (a goal reserves every unit of this position, shortfall or not) →
+ *    `hold_for_legendary`/`reserved_for_goal` too: a reserved stack has nothing to sell, so no
+ *    season, price or capital can turn it into `sell`. `freeQuantity` null (a chosen goal without
+ *    a materials table) → `review`/`reservation_uncertain`: unknown is shown as unknown, not free.
  * 1. Price history off → `review`/`price_history_disabled`. Nothing below this line runs on
  *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell". This gates rule
  *    (b) too: a festival item's window has nothing to read against without the merged series.
+ *    H18.2: no quote today (`todayBidCopper` null) → `review`/`price_unknown`, before rule (b):
+ *    without today's price there is no time-bound recommendation to make, seasonal or not. From
+ *    here on today's quote is the observation both rules compare, never the last historical close.
  * 2. Rule (b): the item has a festival calendar entry → `evaluateSeasonalRule` decides, and its
  *    verdict is final (never falls through to rule (c) below; only the absence of a calendar entry
  *    does that). `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave. Today
  *    inside the item's own selling window → `sell`/`seasonal_sell_window`, `until` = the window's
  *    own close. Today outside it with a qualifying bid → `sell`/`bid_above_reference`. Today
  *    outside it without one → `sell_at_season`/`seasonal_hold`, `until` = the window's NEXT open.
- * 3. Capital below the threshold → `hold`/`below_capital_threshold`. Too little is parked here to
- *    make the recommendation worth acting on either way. Since 11 sep 2026, `totalSellCopper` is
- *    the caller's per-item sum (see the field's own doc comment), not this one position's value.
+ * 3. No demonstrated value (`totalSellCopper` null) → `review`/`price_unknown` (H18.2): "I don't
+ *    know what it's worth" is never "it's worth little". Capital below the threshold →
+ *    `hold`/`below_capital_threshold`. Too little is parked here to make the recommendation worth
+ *    acting on either way. Since 11 sep 2026, `totalSellCopper` is the caller's per-item sum (see
+ *    the field's own doc comment), not this one position's value.
  * 4. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
  *    and "it's cheap" are opposite recommendations that must never share an outcome.
- * 5. Percentile at or above the local p90 → `sell`/`bid_above_reference`; otherwise
- *    `hold`/`below_local_band`.
+ * 5. Today's quote at or above the local p90 of the history → `sell`/`bid_above_reference`;
+ *    otherwise `hold`/`below_local_band`.
  */
 export function recommendPosition(input: PositionRecommendationInput): PositionRecommendationV1 {
 	if (input.legendaryShortfall !== null && input.legendaryShortfall > 0) {
 		return {
 			action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null,
-			missing: input.legendaryShortfall, pricePercentile: null, priceCoverageDays: null,
+			...NO_EVIDENCE, missing: input.legendaryShortfall,
 		};
+	}
+	if (input.freeQuantity === 0) {
+		return {
+			action: 'hold_for_legendary', reason: 'reserved_for_goal', until: null,
+			...NO_EVIDENCE, missing: input.legendaryShortfall ?? 0,
+		};
+	}
+	if (input.freeQuantity === null) {
+		return { action: 'review', reason: 'reservation_uncertain', until: null, ...NO_EVIDENCE };
 	}
 	if (!input.priceHistoryEnabled) {
-		return {
-			action: 'review', reason: 'price_history_disabled', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		};
+		return { action: 'review', reason: 'price_history_disabled', until: null, ...NO_EVIDENCE };
 	}
+	if (input.todayBidCopper === null) {
+		return { action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE };
+	}
+	const todayBidCopper = input.todayBidCopper;
+	// Today's own day is dropped from the history: today's quote is the observation, and a close
+	// the local capture already recorded for today must not also sit in its own reference.
+	const history = historyBeforeToday(input.priceHistoryDaily, input.capturedAtMs);
+	const priceHistoryLastDay = lastBidDay(history);
+	const priceQuotedAt = new Date(input.capturedAtMs).toISOString();
 	if (input.seasonal !== null) {
-		return evaluateSeasonalRule(input.seasonal, input.priceHistoryDaily, input.capturedAtMs, input);
+		return evaluateSeasonalRule(input.seasonal, history, todayBidCopper, priceHistoryLastDay, input);
 	}
-	if (input.totalSellCopper === null || input.totalSellCopper < input.capitalThresholdCopper) {
+	if (input.totalSellCopper === null) {
+		return { action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE };
+	}
+	if (input.totalSellCopper < input.capitalThresholdCopper) {
 		return {
-			action: 'hold', reason: 'below_capital_threshold', until: priceUntil(input), missing: null,
-			pricePercentile: null, priceCoverageDays: null,
+			action: 'hold', reason: 'below_capital_threshold', until: priceUntil(input), ...NO_EVIDENCE, priceQuotedAt,
 		};
 	}
 	// `calculatePriceHistoryPercentile` slices the last `windowDays` ENTRIES, not calendar days: a
@@ -180,29 +244,44 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 	// silently describe a longer span than the window's name promises. Filtering by `dayUtc` first
 	// (the same discipline `evaluateSellSignal` already applies) guarantees the entries that reach
 	// the statistic never fall outside the actual calendar window, holes and all.
-	const windowed = filterByCalendarWindow(input.priceHistoryDaily, input.capturedAtMs, input.priceHistoryWindowDays);
+	const windowed = filterByCalendarWindow(history, input.capturedAtMs, input.priceHistoryWindowDays);
 	const percentile = calculatePriceHistoryPercentile(
-		windowed, 'bid', input.priceHistoryWindowDays, input.priceHistoryRequiredDays,
+		windowed, 'bid', input.priceHistoryWindowDays, input.priceHistoryRequiredDays, todayBidCopper,
 	);
 	if (percentile.status === 'insufficient_history') {
 		return {
-			action: 'review', reason: 'price_history_insufficient', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: percentile.coveredDays,
+			action: 'review', reason: 'price_history_insufficient', until: null,
+			...NO_EVIDENCE, priceCoverageDays: percentile.coveredDays, priceHistoryLastDay,
 		};
 	}
+	const measured = {
+		missing: null, pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
+		priceQuotedAt, priceHistoryLastDay,
+	};
 	return percentile.percentile >= 90
-		? {
-			action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null,
-			pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
-		}
-		: {
-			action: 'hold', reason: 'below_local_band', until: priceUntil(input), missing: null,
-			pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
-		};
+		? { action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), ...measured }
+		: { action: 'hold', reason: 'below_local_band', until: priceUntil(input), ...measured };
 }
 
 function priceUntil(input: PositionRecommendationInput): string {
 	return new Date(input.capturedAtMs + input.maxPriceAgeMs).toISOString();
+}
+
+/** The entries strictly before `nowMs`'s own UTC day: the history today's quote is compared against. */
+function historyBeforeToday(daily: readonly PriceHistoryDailyV1[], nowMs: number): PriceHistoryDailyV1[] {
+	const today = priceHistoryDayUtc(nowMs);
+	return daily.filter((entry) => entry.dayUtc < today);
+}
+
+/** The latest `dayUtc` carrying a usable bid close, or null when the history has none. */
+function lastBidDay(history: readonly PriceHistoryDailyV1[]): string | null {
+	let last: string | null = null;
+	for (const entry of history) {
+		const close = entry.bid?.closeCopper;
+		if (close === undefined || close === null) continue;
+		if (last === null || entry.dayUtc > last) last = entry.dayUtc;
+	}
+	return last;
 }
 
 /**
@@ -222,50 +301,43 @@ function priceUntil(input: PositionRecommendationInput): string {
  * 4. Outside the window, bid does not clear it → `sell_at_season`/`seasonal_hold`, `until` = the
  *    window's NEXT open, not its close: the point is to wait for the next good moment to sell, not
  *    to expire the recommendation at a date that already passed.
+ *
+ * H18.2: `history` holds only days before today, and today's close handed to `evaluateSellSignal`
+ * is `todayBidCopper`, the live quote, never a historical close that happens to be the latest.
  */
 function evaluateSeasonalRule(
 	seasonal: PositionRecommendationSeasonalInput,
-	priceHistoryDaily: readonly PriceHistoryDailyV1[],
-	capturedAtMs: number,
+	history: readonly PriceHistoryDailyV1[],
+	todayBidCopper: number,
+	priceHistoryLastDay: string | null,
 	input: PositionRecommendationInput,
 ): PositionRecommendationV1 {
-	const series = toSellSignalSeries(priceHistoryDaily);
+	const capturedAtMs = input.capturedAtMs;
+	const historySeries = toSellSignalSeries(history);
+	const series: SellSignalSeries = {
+		...historySeries,
+		days: [...historySeries.days, { dayUtc: priceHistoryDayUtc(capturedAtMs), bidCopper: todayBidCopper }],
+	};
 	const projection = evaluateSellSignal(series, capturedAtMs, seasonal.parameters, seasonal.window);
+	const undecided = { until: null, ...NO_EVIDENCE, priceHistoryLastDay } as const;
+	const decided = { ...NO_EVIDENCE, priceQuotedAt: new Date(capturedAtMs).toISOString(), priceHistoryLastDay };
 	if (projection.status === 'undecidable') {
-		return {
-			action: 'review', reason: projection.reason, until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		};
+		return { action: 'review', reason: projection.reason, ...undecided };
 	}
 	if (projection.inSeason) {
 		const closesAfterMs = seasonalWindowClosesAfterMs(seasonal.window, capturedAtMs);
-		if (closesAfterMs === null) {
-			return {
-				action: 'review', reason: 'undecidable_calendar', until: null, missing: null,
-				pricePercentile: null, priceCoverageDays: null,
-			};
-		}
+		if (closesAfterMs === null) return { action: 'review', reason: 'undecidable_calendar', ...undecided };
 		return {
-			action: 'sell', reason: 'seasonal_sell_window', until: new Date(closesAfterMs).toISOString(), missing: null,
-			pricePercentile: null, priceCoverageDays: null,
+			action: 'sell', reason: 'seasonal_sell_window', until: new Date(closesAfterMs).toISOString(), ...decided,
 		};
 	}
 	if (projection.signal === 'sell') {
-		return {
-			action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		};
+		return { action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), ...decided };
 	}
 	const opensAfterMs = seasonalWindowOpensAfterMs(seasonal.window, capturedAtMs);
-	if (opensAfterMs === null) {
-		return {
-			action: 'review', reason: 'undecidable_calendar', until: null, missing: null,
-			pricePercentile: null, priceCoverageDays: null,
-		};
-	}
+	if (opensAfterMs === null) return { action: 'review', reason: 'undecidable_calendar', ...undecided };
 	return {
-		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(opensAfterMs).toISOString(), missing: null,
-		pricePercentile: null, priceCoverageDays: null,
+		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(opensAfterMs).toISOString(), ...decided,
 	};
 }
 

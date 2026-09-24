@@ -187,7 +187,8 @@ describe('inventory Base assets', () => {
 				recommendation: 'review', recommendationReason: 'price_history_disabled',
 				recommendationUntil: null, recommendationMissing: null,
 				pricePercentile: null, priceCoverageDays: null,
-				reservedQuantity: null, freeQuantity: null,
+				priceQuotedAt: null, priceHistoryLastDay: null,
+				reservedQuantity: 0, freeQuantity: 3,
 			}],
 		});
 		const rendered = plan.steps[0]?.after;

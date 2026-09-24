@@ -9,6 +9,7 @@ import type { InventoryItemPriceV1, InventoryPriceSnapshotV1 } from '../advisor/
 import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import type { LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { IndexedDbPriceSeedCacheStore } from '../economy/price-seed-cache-store';
 import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
@@ -162,19 +163,21 @@ describe('inventory Vault projection', () => {
 			client as never, snapshots, catalog, gateway, recommendation, () => Date.parse(CAPTURED_AT),
 		);
 		const input = await service.capture('es');
+		// H18.2: the gateway answers no quote at all, so the verdict is `price_unknown` (it was
+		// `hold`/`below_capital_threshold` before, "unknown" read as "worth little").
 		expect(input.positions[0]).toMatchObject({
-			recommendation: 'hold', recommendationReason: 'below_capital_threshold',
-			recommendationUntil: new Date(Date.parse(CAPTURED_AT) + 900_000).toISOString(),
-			recommendationMissing: null,
+			recommendation: 'review', recommendationReason: 'price_unknown',
+			recommendationUntil: null, recommendationMissing: null, priceQuotedAt: null,
 		});
 	});
 
 	/**
 	 * M4 test 8 (docs/SPEC-recomendacion-por-objeto.md): with the legendary-target setting empty
 	 * (`DEFAULT_RECOMMENDATION_PORT`'s own `legendaryTargetItemIds: () => []`), `capture()`'s
-	 * output is byte-identical to 85b8c96: `reservedQuantity`/`freeQuantity` are always null and
-	 * `GET /v2/account/legendaryarmory` is never called at all (`readLegendaryArmoryCounts` is a
-	 * spy here specifically to prove that, not just that its RESULT is unused).
+	 * recommendation is the pre-M4 one and `GET /v2/account/legendaryarmory` is never called at all
+	 * (`readLegendaryArmoryCounts` is a spy here specifically to prove that, not just that its
+	 * RESULT is unused). H18.1 changed one thing on purpose: nothing reserved now reads 0 reserved
+	 * and the whole stack free (it used to read null/null, which now means "uncertain").
 	 */
 	it('an empty legendary-target setting reproduces the exact pre-M4 capture DTO', async () => {
 		const client = { beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) };
@@ -203,7 +206,7 @@ describe('inventory Vault projection', () => {
 		expect(readLegendaryArmoryCounts).not.toHaveBeenCalled();
 		expect(input.positions).toHaveLength(1);
 		expect(input.positions[0]).toMatchObject({
-			reservedQuantity: null, freeQuantity: null,
+			reservedQuantity: 0, freeQuantity: 5,
 			recommendation: 'review', recommendationReason: 'price_history_disabled',
 		});
 	});
@@ -218,8 +221,10 @@ describe('inventory Vault projection', () => {
 			holding(42, 5, { source: 'bank', slot: 0 }),
 			holding(99, 5, { source: 'bank', slot: 1 }),
 		]);
+		// H18.2: today's quote is what gets ranked; item 42's (510) matches its series' own close for
+		// today, so "today at the top of the band" still holds for the reason this test was written.
 		const prices = priceSnapshotWith(snapshot, [
-			{ itemId: 42, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
+			{ itemId: 42, whitelisted: true, bid: { unitCopper: 510, quantity: 100 }, ask: { unitCopper: 520, quantity: 100 } },
 			{ itemId: 99, whitelisted: true, bid: { unitCopper: 100, quantity: 100 }, ask: { unitCopper: 110, quantity: 100 } },
 		]);
 		const marketDepth: InventoryMarketDepthEvidenceV1 = {
@@ -347,11 +352,13 @@ describe('inventory Vault projection', () => {
 		const catalog = { resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) };
 		const gateway: PublicCatalogGateway = {
 			requestDetailed: async (path) => {
+				// H18.2: today's quote (200) sits above every seed day (100..159), the case the
+				// assertions below were written for: today at the top of its band.
 				if (path.startsWith('commerce/listings?')) {
-					return { status: 200, headers: {}, body: [{ id: itemId, buys: [{ listings: 1, unit_price: 100, quantity: 15 }], sells: [] }] };
+					return { status: 200, headers: {}, body: [{ id: itemId, buys: [{ listings: 1, unit_price: 200, quantity: 15 }], sells: [] }] };
 				}
 				if (path.startsWith('commerce/prices?')) {
-					return { status: 200, headers: {}, body: [{ id: itemId, whitelisted: true, buys: { quantity: 1, unit_price: 100 }, sells: { quantity: 1, unit_price: 110 } }] };
+					return { status: 200, headers: {}, body: [{ id: itemId, whitelisted: true, buys: { quantity: 1, unit_price: 200 }, sells: { quantity: 1, unit_price: 210 } }] };
 				}
 				throw new Error(`unexpected path in test gateway: ${path}`);
 			},
@@ -548,9 +555,11 @@ describe('sumSellCopperByItem (SPEC-recomendacion-por-objeto.md §3.c / §7 deci
  */
 describe('attachPositionRecommendations: capital threshold measured per object (11 sep 2026)', () => {
 	function coreFixture(overrides: Partial<InventoryVaultPositionCore> & { positionId: string; itemId: number }): InventoryVaultPositionCore {
+		// H18.2: every fixture has a quote today (`unitSellCopper`), so these cases measure the
+		// capital threshold, not the "no price today" gate that now precedes it.
 		return {
 			source: 'bank', character: null, quantity: 1,
-			unitSellCopper: null, sellDepthStatus: 'unavailable', sellCoveredQuantity: 0, sellUncoveredQuantity: 1,
+			unitSellCopper: 100, sellDepthStatus: 'unavailable', sellCoveredQuantity: 0, sellUncoveredQuantity: 1,
 			unitListCopper: null, totalListCopper: null, totalSellCopper: null,
 			name: `Objeto ${String(overrides.itemId)}`, type: null, rarity: null, icon: null,
 			...overrides,
@@ -646,6 +655,167 @@ describe('attachPositionRecommendations: capital threshold measured per object (
 		for (const position of atTheFreeSum) {
 			expect(position.recommendationReason).not.toBe('below_capital_threshold');
 		}
+	});
+});
+
+/**
+ * H18.1 (audit 2026-09-24 §3.A), through `capture()`'s real wiring: legendary goals, the reservation
+ * plan and its per-position split. Every item here sits inside a festival selling window with a
+ * quote today, so without a reservation it reads `sell`/`seasonal_sell_window` (the `OTHER` item is
+ * that control in every case). At a2584af a fully reserved position read exactly that too.
+ */
+describe('capture(): free quantity under legendary reservations (H18.1)', () => {
+	const MATERIAL = 42;
+	const OTHER = 99;
+	const LEGENDARY_A = 900_001;
+	const LEGENDARY_B = 900_002;
+	const UNTABLED = 900_009;
+	const CAPTURED_AT_MS = Date.parse('2026-12-20T12:00:00.000Z');
+	const WINDOW: SeasonalWindowV1 = { version: 1, seasonId: 'h18-1-window', opensOn: '12-15', closesOn: '01-10', returnsInMonth: 12 };
+
+	function tableWith(requirements: ReadonlyArray<readonly [legendaryItemId: number, quantity: number]>): LegendaryMaterialsTableV1 {
+		return {
+			version: 1, publishedAt: '2026-09-01T00:00:00.000Z', reviewedAt: '2026-09-02T00:00:00.000Z',
+			validUntil: '2027-09-01T00:00:00.000Z', sources: [], sha256: '0'.repeat(64),
+			entries: requirements.map(([legendaryItemId, quantity]) => ({
+				legendaryItemId, currencyIds: [],
+				materials: [{ itemId: MATERIAL, quantity, resolvable: true, sourceId: null }],
+			})),
+		};
+	}
+
+	async function captureWith(
+		holdings: ItemHolding[],
+		targets: number[],
+		table: LegendaryMaterialsTableV1,
+		options: { omitRoster?: boolean } = {},
+	) {
+		const base = snapshotWith(holdings);
+		const totals: Record<string, number> = {};
+		for (const entry of holdings) totals[String(entry.itemId)] = (totals[String(entry.itemId)] ?? 0) + entry.quantity;
+		// The reservation balance validates the snapshot like the Inventory Advisor does: every
+		// character holding needs its character in the roster with complete coverage.
+		// `omitRoster` breaks exactly that, so the balance (and the plan) cannot be built.
+		const roster = options.omitRoster === true ? []
+			: [...new Set(holdings.flatMap((entry) => entry.location.source === 'character' ? [entry.location.character] : []))];
+		const snapshot: StorageSnapshot = {
+			...base, availableByItem: totals, ownedByItem: { ...totals }, roster,
+			coverage: { ...base.coverage, characters: Object.fromEntries(roster.map((name) => [name, { status: 'complete' as const }])) },
+		};
+		const itemIds = Object.keys(totals).map(Number).sort((left, right) => left - right);
+		const gateway: PublicCatalogGateway = {
+			requestDetailed: async (path) => {
+				if (path.startsWith('commerce/listings?')) {
+					return { status: 200, headers: {}, body: itemIds.map((id) => ({ id, buys: [{ listings: 1, unit_price: 500, quantity: 10_000 }], sells: [] })) };
+				}
+				if (path.startsWith('commerce/prices?')) {
+					return { status: 200, headers: {}, body: itemIds.map((id) => ({ id, whitelisted: true, buys: { quantity: 1, unit_price: 500 }, sells: { quantity: 1, unit_price: 510 } })) };
+				}
+				throw new Error(`unexpected path in test gateway: ${path}`);
+			},
+		};
+		const recommendation: InventoryPositionRecommendationPort = {
+			priceHistoryEnabled: () => true,
+			capitalThresholdCopper: () => 1,
+			maxPriceAgeMs: () => 900_000,
+			priceHistoryWindowDays: () => 180,
+			readDaily: async (itemId) => dailySeriesFor(itemId, 36, 500, 0, CAPTURED_AT_MS),
+			readCachedSeed: async () => null,
+			updateDerivedWatchList: async () => undefined,
+			refreshPriceSeeds: async () => undefined,
+			seasonalInputFor: () => ({ window: WINDOW, parameters: { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 } }),
+			legendaryTargetItemIds: () => targets,
+			legendaryMaterialsTable: () => table,
+			readLegendaryArmoryCounts: async () => new Map(),
+		};
+		const service = new InventoryVaultCaptureService(
+			{ beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) } as never,
+			{ captureWithOperation: vi.fn(async () => snapshot) },
+			{ resolve: vi.fn(async (input: StorageSnapshot) => catalogFor(input)) },
+			gateway, recommendation, () => CAPTURED_AT_MS,
+		);
+		const input = await service.capture('es');
+		const at = (itemId: number, source: string) => input.positions.find((entry) => entry.itemId === itemId && entry.source === source);
+		return { input, at };
+	}
+
+	const SELLS = { recommendation: 'sell', recommendationReason: 'seasonal_sell_window' } as const;
+
+	it('a reservation exactly covered by one bank stack: 100 reserved, 0 free, held for the goal, never sold', async () => {
+		const { at } = await captureWith(
+			[holding(MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })],
+			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]),
+		);
+		// At a2584af: `recommendation: 'sell'`, `recommendationReason: 'seasonal_sell_window'`.
+		expect(at(MATERIAL, 'bank')).toMatchObject({
+			reservedQuantity: 100, freeQuantity: 0,
+			recommendation: 'hold_for_legendary', recommendationReason: 'reserved_for_goal', recommendationMissing: 0,
+		});
+		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
+	});
+
+	it('a reservation split between bank and a character: the fully reserved stack holds, the rest sells only its free share', async () => {
+		const { input, at } = await captureWith(
+			[holding(MATERIAL, 60, { source: 'bank', slot: 0 }), holding(MATERIAL, 60, characterBag('Alfa')), holding(OTHER, 5, { source: 'bank', slot: 1 })],
+			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]),
+		);
+		expect(at(MATERIAL, 'bank')).toMatchObject({
+			reservedQuantity: 60, freeQuantity: 0, recommendation: 'hold_for_legendary', recommendationReason: 'reserved_for_goal',
+		});
+		expect(at(MATERIAL, 'character')).toMatchObject({ ...SELLS, reservedQuantity: 40, freeQuantity: 20 });
+		const material = input.positions.filter((entry) => entry.itemId === MATERIAL);
+		expect(material.reduce((sum, entry) => sum + (entry.reservedQuantity ?? 0), 0)).toBe(100);
+		expect(material.reduce((sum, entry) => sum + (entry.freeQuantity ?? 0), 0)).toBe(20);
+	});
+
+	it('overlapping goals add up on the shared material: short of it everything holds, above it only the surplus is free', async () => {
+		const table = tableWith([[LEGENDARY_A, 60], [LEGENDARY_B, 50]]);
+		const short = await captureWith(
+			[holding(MATERIAL, 100, { source: 'bank', slot: 0 })], [LEGENDARY_A, LEGENDARY_B], table,
+		);
+		expect(short.at(MATERIAL, 'bank')).toMatchObject({
+			reservedQuantity: 100, freeQuantity: 0, recommendation: 'hold_for_legendary', recommendationMissing: 10,
+		});
+		const surplus = await captureWith(
+			[holding(MATERIAL, 80, { source: 'bank', slot: 0 }), holding(MATERIAL, 40, characterBag('Alfa'))],
+			[LEGENDARY_A, LEGENDARY_B], table,
+		);
+		expect(surplus.at(MATERIAL, 'bank')).toMatchObject({ reservedQuantity: 80, freeQuantity: 0, recommendation: 'hold_for_legendary' });
+		expect(surplus.at(MATERIAL, 'character')).toMatchObject({ ...SELLS, reservedQuantity: 30, freeQuantity: 10 });
+	});
+
+	it('a chosen legendary without a materials table makes the known legendary materials uncertain, never free', async () => {
+		const { at } = await captureWith(
+			[holding(MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })],
+			[UNTABLED], tableWith([[LEGENDARY_A, 100]]),
+		);
+		// At a2584af: 0 goals, no reservation at all, so MATERIAL read `sell` with its whole stack free.
+		expect(at(MATERIAL, 'bank')).toMatchObject({
+			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
+		});
+		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
+		// With a tabled goal next to it, a stack already fully reserved stays a known hold; only a
+		// free share the untabled goal might also need turns uncertain.
+		const mixed = await captureWith(
+			[holding(MATERIAL, 60, { source: 'bank', slot: 0 }), holding(MATERIAL, 60, characterBag('Alfa'))],
+			[LEGENDARY_A, UNTABLED], tableWith([[LEGENDARY_A, 100]]),
+		);
+		expect(mixed.at(MATERIAL, 'bank')).toMatchObject({ reservedQuantity: 60, freeQuantity: 0, recommendation: 'hold_for_legendary' });
+		expect(mixed.at(MATERIAL, 'character')).toMatchObject({
+			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
+		});
+	});
+
+	it('goals whose reservation plan cannot be built make their materials uncertain, never free', async () => {
+		const { at } = await captureWith(
+			[holding(MATERIAL, 60, characterBag('Alfa')), holding(OTHER, 5, { source: 'bank', slot: 1 })],
+			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]), { omitRoster: true },
+		);
+		// At a2584af the failed plan returned an empty split: MATERIAL read `sell`, all 60 free.
+		expect(at(MATERIAL, 'character')).toMatchObject({
+			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
+		});
+		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
 	});
 });
 
@@ -852,6 +1022,8 @@ describe('inventory Vault preview and apply', () => {
 			capturedAt: '2026-08-25T08:02:00.000Z',
 			positions: initial.positions.map((position) => ({
 				...position, quantity: position.quantity + 1,
+				// H18.1: an untouched position's free share is its whole stack, so it grows with it.
+				freeQuantity: position.quantity + 1,
 				totalSellCopper: null,
 				sellDepthStatus: 'unavailable' as const,
 				sellUncoveredQuantity: position.sellUncoveredQuantity + 1,
@@ -1006,6 +1178,45 @@ describe('inventory Vault preview and apply', () => {
 		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
 		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
 		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
+	});
+
+	it('a sync over a2584af frontmatter (no H18.2 price-date keys yet) produces zero conflict steps', async () => {
+		const input = await oneBankInput();
+		const created = (await new InventoryVaultSyncService(new MemoryInventoryVault(), CONFIG_DIR).preview(ROOT, input)).steps[0];
+		if (!created || created.status !== 'create' || created.after === null) throw new Error('Expected a rendered create step.');
+		const preH18 = await resign(created.after
+			.replace(/^tc_price_quoted_at: .*\n/mu, '')
+			.replace(/^tc_price_history_last_day: .*\n/mu, ''));
+		expect(frontmatter(preH18)).not.toHaveProperty('tc_price_quoted_at');
+		expect(frontmatter(preH18)).not.toHaveProperty('tc_price_history_last_day');
+		const vault = new MemoryInventoryVault([[created.path, preH18]]);
+		const plan = await new InventoryVaultSyncService(vault, CONFIG_DIR).preview(ROOT, input);
+		expect(plan.steps.filter((step) => step.status === 'conflict')).toHaveLength(0);
+		expect(plan.steps).toContainEqual(expect.objectContaining({ path: created.path, status: 'update' }));
+	});
+
+	it('writes today\'s quote date and the history\'s last day as their own note fields, and reads them back unchanged', async () => {
+		const input = await oneBankInput();
+		const dated = {
+			...input,
+			positions: input.positions.map((position) => ({
+				...position, recommendation: 'hold' as const, recommendationReason: 'below_local_band' as const,
+				recommendationUntil: '2026-08-25T08:15:01.000Z', pricePercentile: 40, priceCoverageDays: 61,
+				priceQuotedAt: '2026-08-25T08:00:01.000Z', priceHistoryLastDay: '2026-06-26',
+			})),
+		};
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const created = (await service.preview(ROOT, dated)).steps[0];
+		if (!created?.after) throw new Error('Expected a rendered create step.');
+		expect(frontmatter(created.after)).toMatchObject({
+			tc_recommendation_until: '2026-08-25T08:15:01.000Z',
+			tc_price_quoted_at: '2026-08-25T08:00:01.000Z',
+			tc_price_history_last_day: '2026-06-26',
+		});
+		await service.apply(await service.preview(ROOT, dated));
+		const again = await service.preview(ROOT, dated);
+		expect(again.steps.map((step) => step.status)).toEqual(dated.positions.map(() => 'unchanged'));
 	});
 
 	it('rejects non-portable roots before any mutation', async () => {
