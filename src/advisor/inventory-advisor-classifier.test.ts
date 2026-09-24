@@ -615,7 +615,88 @@ describe('H4.15 inventory advisor classifier', () => {
 			decisions: [{ action: 'review' }], reasons: [{ code: 'salvage_item_evidence_uncertain' }],
 		});
 	});
+
+	/* H18.13: measured on 24 Sep 2026, `/commerce/prices` bid 1,703 against a
+	 * first `/commerce/listings` level of 1,697 sent the whole inventory to
+	 * `review / rule_stale`. Ids and catalog shapes are the three measured cases. */
+	it('keeps disagreeing ectoplasm quotes from turning unrelated items into rule_stale', () => {
+		const coherent = measuredEctoplasmFixture(1_697);
+		const divergent = measuredEctoplasmFixture(1_703);
+		const coherentResult = classifyInventoryAdvisor(coherent);
+		const divergentResult = classifyInventoryAdvisor(divergent);
+		expect(divergentResult.status).toBe('ready');
+		const line = (itemId: number) => divergentResult.report?.lines.find((entry) => entry.itemId === itemId);
+
+		expect(line(100_063)).toMatchObject({
+			decisions: [{ action: 'list' }], reasons: [{ code: 'alternative_route_exists' }],
+		});
+		expect(line(101_540)).toMatchObject({
+			decisions: [{ action: 'sell' }], reasons: [{ code: 'alternative_route_exists' }],
+		});
+		expect(line(103_643)).toMatchObject({
+			decisions: [{ action: 'review' }], reasons: [{ code: 'salvage_exotic_rate_unverified' }],
+		});
+		expect(divergentResult.report?.lines.flatMap((entry) => entry.reasons).map((reason) => reason.code))
+			.not.toContain('rule_stale');
+		expect(divergentResult.report?.lines).toEqual(coherentResult.report?.lines);
+	});
+
+	it('reports disagreeing ectoplasm quotes as price uncertainty for Rare salvage, not as a stale rule', () => {
+		const input = equipmentSalvageFixture('Rare');
+		input.equipmentSalvage!.prices!.items[0]!.bid = { unitCopper: 1_006, quantity: 10_000 };
+		expect(classifyInventoryAdvisor(input).report?.lines[0]).toMatchObject({
+			decisions: [{ action: 'review' }], reasons: [{ code: 'price_partial' }],
+		});
+	});
+
+	it('still rejects malformed ectoplasm depth as a whole invalid input', () => {
+		const input = measuredEctoplasmFixture(1_697);
+		input.equipmentSalvage!.marketDepth!.items[0]!.buys = [
+			{ unitCopper: 1_697, quantity: 10 }, { unitCopper: 1_698, quantity: 10 },
+		];
+		expect(classifyInventoryAdvisor(input)).toMatchObject({ status: 'invalid', report: null });
+	});
 });
+
+/**
+ * Three measured account items (relic, material, Exotic weapon) with complete
+ * ectoplasm evidence whose listings top level is 1,697 and whose prices bid is
+ * the given value, so only the agreement between both readings varies.
+ */
+function measuredEctoplasmFixture(ectoplasmBid: number): InventoryAdvisorEngineInputV1 {
+	const value = equipmentSalvageFixture('Rare');
+	const items = [
+		{ id: 100_063, name: 'Relic of the Overload', type: 'Relic', rarity: 'Exotic', level: 60, flags: [] },
+		{ id: 101_540, name: 'Mystic Facet', type: 'CraftingMaterial', rarity: 'Rare', level: 0, flags: ['NoSalvage'] },
+		{ id: 103_643, name: 'Sanguine Staff', type: 'Weapon', rarity: 'Exotic', level: 80,
+			flags: ['AccountBound', 'NoSell'] },
+	];
+	value.input.snapshot.holdings = items.map((item, slot) => ({
+		kind: 'item' as const, itemId: item.id, quantity: 1, state: 'loose' as const,
+		location: { source: 'shared_inventory' as const, slot }, metadata: {},
+	}));
+	value.input.snapshot.availableByItem = Object.fromEntries(items.map((item) => [String(item.id), 1]));
+	value.input.snapshot.ownedByItem = Object.fromEntries(items.map((item) => [String(item.id), 1]));
+	value.input.catalog.items = Object.fromEntries(items.map((item) => [String(item.id), {
+		kind: 'item' as const, ...item, vendorValue: 10, gameTypes: [], restrictions: [],
+	}]));
+	value.input.catalog.coverage.items = Object.fromEntries(items.map((item) => [
+		String(item.id), { status: 'resolved' as const, source: 'network' as const },
+	]));
+	value.input.prices.requestedItemIds = items.map((item) => item.id);
+	value.input.prices.items = [
+		{ itemId: 100_063, whitelisted: true, bid: { unitCopper: 1_000, quantity: 5 }, ask: { unitCopper: 2_000, quantity: 5 } },
+		{ itemId: 101_540, whitelisted: true, bid: { unitCopper: 900, quantity: 5 }, ask: { unitCopper: 920, quantity: 5 } },
+	];
+	value.input.prices.status = 'partial';
+	value.input.prices.missingItemIds = [103_643];
+	value.knowledgePack.entries = [];
+	value.knowledgePack.sha256 = sha256InventoryKnowledgePack(value.knowledgePack);
+	const salvage = value.equipmentSalvage!;
+	salvage.marketDepth!.items[0]!.buys = [{ unitCopper: 1_697, quantity: 10_000 }];
+	salvage.prices!.items[0]!.bid = { unitCopper: ectoplasmBid, quantity: 10_000 };
+	return value;
+}
 
 function transferSalvageReport(report: InventoryAdvisorReportV1, itemId: number): InventoryAdvisorReportV1 {
 	const transferred = structuredClone(report);
