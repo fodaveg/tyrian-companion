@@ -44,6 +44,15 @@ describe('sell-timing-experiment: date arithmetic against the real GW2 wiki date
 		expect(preFestivalWindowFor(festivalYear(2019))).toEqual({ fromUtc: '2019-09-27', toUtc: '2019-10-14' });
 	});
 
+	it('H18.19: decided closer to the start, the pre-festival window keeps only the days still ahead, and none from day -1', () => {
+		expect(decisionDayFor(festivalYear(2026), 5)).toBe('2026-10-08');
+		expect(preFestivalWindowFor(festivalYear(2026), 5)).toEqual({ fromUtc: '2026-10-09', toUtc: '2026-10-12' });
+		expect(preFestivalWindowFor(festivalYear(2026), 60)).toEqual({ fromUtc: '2026-09-25', toUtc: '2026-10-12' });
+		const empty = preFestivalWindowFor(festivalYear(2026), 1);
+		expect(empty.fromUtc > empty.toUtc).toBe(true);
+		expect(windowExecutionPriceCopper([{ dayUtc: '2026-10-12', bidCopper: 1 }], empty)).toBeUndefined();
+	});
+
 	it('derives the following May window from the edition\'s calendar year, not the decision day\'s', () => {
 		expect(nextMayWindowFor(festivalYear(2025))).toEqual({ fromUtc: '2026-05-01', toUtc: '2026-05-31' });
 	});

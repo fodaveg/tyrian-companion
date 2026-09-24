@@ -17,9 +17,10 @@
  *
  * This module is deliberately data-in, data-out: it takes an in-memory price
  * series and never fetches anything, so `sell-timing-experiment.test.ts` can
- * run it against the frozen fixtures with no network. It does not touch, and
- * is not imported by, any recommendation code under `src/economy` that
- * another lote is changing concurrently.
+ * run it against the frozen fixtures with no network. H18.19: the runtime
+ * "sell now or wait" comparison (`sell-or-wait.ts`) runs this same pipeline and
+ * reads this same out-of-sample verdict, so the advice and the published
+ * experiment can never grade waiting by two different criteria.
  *
  * What is fixed to remove the "not out-of-sample" objection:
  * - `SELL_TIMING_TRAIN_YEARS` picks the recommended strategy from training
@@ -121,15 +122,34 @@ export function addUtcDays(dayUtc: string, deltaDays: number): string {
 	return new Date(ms + deltaDays * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The decision day for a given edition: its real start minus `SELL_TIMING_DECISION_OFFSET_DAYS`. */
-export function decisionDayFor(festival: SellTimingFestivalYear): string {
-	return addUtcDays(festival.startsOnUtc, -SELL_TIMING_DECISION_OFFSET_DAYS);
+/**
+ * The decision day for a given edition: its real start minus `decisionOffsetDays`
+ * (`SELL_TIMING_DECISION_OFFSET_DAYS`, the audit's "día -19", unless a caller
+ * decides on another day). H18.19: the runtime comparison (`sell-or-wait.ts`)
+ * passes TODAY's own distance to the next edition, so every past year is graded
+ * from the same point of its calendar the player is deciding from.
+ */
+export function decisionDayFor(
+	festival: SellTimingFestivalYear,
+	decisionOffsetDays: number = SELL_TIMING_DECISION_OFFSET_DAYS,
+): string {
+	return addUtcDays(festival.startsOnUtc, -decisionOffsetDays);
 }
 
-/** The 18-day pre-festival wait window: `-18` through `-1`, the day before the real start. */
-export function preFestivalWindowFor(festival: SellTimingFestivalYear): SellTimingWindow {
+/**
+ * The pre-festival wait window: `-18` through `-1`, the day before the real
+ * start. It never reaches back to the decision day or before it: decided at
+ * `-5`, only `-4..-1` are still ahead, and decided at `-1` nothing is (the
+ * window comes back empty, `fromUtc` after `toUtc`, so it holds no day at all
+ * and `windowExecutionPriceCopper` reports it as having no data).
+ */
+export function preFestivalWindowFor(
+	festival: SellTimingFestivalYear,
+	decisionOffsetDays: number = SELL_TIMING_DECISION_OFFSET_DAYS,
+): SellTimingWindow {
+	const width = Math.max(0, Math.min(SELL_TIMING_PRE_FESTIVAL_WINDOW_DAYS, decisionOffsetDays - 1));
 	return {
-		fromUtc: addUtcDays(festival.startsOnUtc, -SELL_TIMING_PRE_FESTIVAL_WINDOW_DAYS),
+		fromUtc: addUtcDays(festival.startsOnUtc, -width),
 		toUtc: addUtcDays(festival.startsOnUtc, -1),
 	};
 }
@@ -179,12 +199,13 @@ export function windowExecutionPriceCopper(
 export function evaluateFestivalYear(
 	days: readonly SellTimingPriceDay[],
 	festival: SellTimingFestivalYear,
+	decisionOffsetDays: number = SELL_TIMING_DECISION_OFFSET_DAYS,
 ): SellTimingYearEvaluation {
-	const decisionDayUtc = decisionDayFor(festival);
+	const decisionDayUtc = decisionDayFor(festival, decisionOffsetDays);
 	const decisionBidCopper = lookupDecisionDayPrice(days, decisionDayUtc);
 	if (decisionBidCopper === undefined) return { status: 'no_decision_price', year: festival.year, decisionDayUtc };
 
-	const preFestival = windowExecutionPriceCopper(days, preFestivalWindowFor(festival));
+	const preFestival = windowExecutionPriceCopper(days, preFestivalWindowFor(festival, decisionOffsetDays));
 	const nextMay = windowExecutionPriceCopper(days, nextMayWindowFor(festival));
 	const ratios: Partial<Record<SellTimingStrategy, number>> = {};
 	const dayCounts: Partial<Record<SellTimingStrategy, number>> = {};
@@ -335,7 +356,8 @@ export interface SellTimingExperimentResult {
  * function itself does not know or enforce disjointness beyond using
  * whatever two lists it is given, which is exactly what the differential
  * test in `sell-timing-experiment.test.ts` exploits to prove the recommended
- * strategy never used a test-year price.
+ * strategy never used a test-year price. `decisionOffsetDays` defaults to the
+ * audit's day -19; H18.19's runtime comparison passes today's own offset.
  */
 export function runSellTimingExperiment(
 	itemId: number,
@@ -344,17 +366,19 @@ export function runSellTimingExperiment(
 		trainYears = SELL_TIMING_TRAIN_YEARS,
 		testYears = SELL_TIMING_TEST_YEARS,
 		festivals = HALLOWEEN_FESTIVAL_STARTS,
+		decisionOffsetDays = SELL_TIMING_DECISION_OFFSET_DAYS,
 	}: {
 		trainYears?: readonly number[];
 		testYears?: readonly number[];
 		festivals?: readonly SellTimingFestivalYear[];
+		decisionOffsetDays?: number;
 	} = {},
 ): SellTimingExperimentResult {
 	const byYear = new Map(festivals.map((festival) => [festival.year, festival]));
 	const evaluationsFor = (years: readonly number[]): SellTimingYearEvaluation[] => years.map((year) => {
 		const festival = byYear.get(year);
 		if (festival === undefined) throw new RangeError(`no festival start recorded for ${String(year)}`);
-		return evaluateFestivalYear(days, festival);
+		return evaluateFestivalYear(days, festival, decisionOffsetDays);
 	});
 
 	const trainEvaluations = evaluationsFor(trainYears);
