@@ -16,6 +16,7 @@ import type {
 } from './inventory-container-economy';
 import type { ContainerDispositionKernelExplanation } from '../economy/container-disposition-kernel';
 import type { ReservationReason } from '../economy/reservation-model';
+import type { InventoryObjectDecisionV1 } from './inventory-object-result';
 
 export const INVENTORY_ADVISOR_PRESENTATION_VERSION = 1 as const;
 
@@ -99,6 +100,13 @@ export interface InventoryAdvisorPresentationRow {
 	ownedQuantity: number;
 	availableQuantity: number;
 	action: InventoryAdvisorPresentationAction;
+	/**
+	 * H18.14: this row's decision in the analysis's one result per object, the same one the notes
+	 * and the Base carry: `action` above is the advisor's route, this adds its moment (sell now,
+	 * wait for the season, hold for a better price) and the protections and doubts every surface
+	 * shares. Null only when the presentation was built without an analysis.
+	 */
+	decision?: InventoryObjectDecisionV1 | null;
 	quantity: number;
 	allocations: InventoryAdvisorPresentationAllocation[];
 	reasonCodes: InventoryAdvisorReasonCode[];

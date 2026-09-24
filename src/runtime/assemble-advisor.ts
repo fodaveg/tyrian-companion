@@ -23,6 +23,7 @@ import {
 	createInventoryAdvisorBuiltinRulesProvider,
 	InventoryAdvisorWorkflow,
 	type InventoryAdvisorWorkflowResult,
+	type InventoryObjectAnalysisPort,
 } from '../advisor/inventory-advisor-workflow';
 import { InventoryPreferencesRuntime } from '../advisor/inventory-preferences-runtime';
 import { InventoryPreferencesService } from '../advisor/inventory-preferences-service';
@@ -75,6 +76,11 @@ export interface AdvisorAssemblyInput {
 	preferencesReadPersistence: LocalDebugPersistenceProbe;
 	preferencesWritePersistence: LocalDebugPersistenceProbe;
 	diagnostics: LocalDebugActionRunner | null;
+	/**
+	 * H18.14: the analysis stage that turns each classification into the one result per object the
+	 * view, the inventory notes and the Base all read. Omitted, the advisor classifies as before.
+	 */
+	objects?: InventoryObjectAnalysisPort;
 }
 
 export interface AdvisorAssembly {
@@ -169,6 +175,7 @@ function createInventoryAdvisorRuntime(
 			inventoryAdvisorBuiltinBundleProvider, personalValuation, materialStorageCapacity,
 			equipmentSalvagePreferences,
 		),
+		...(input.objects === undefined ? {} : { objects: input.objects }),
 	});
 	return new InventoryAdvisorPresentationController({
 		load: async (parent) => {

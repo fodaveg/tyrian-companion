@@ -47,7 +47,7 @@ import {
 const ACTIONS: InventoryRecommendationAction[] = [
 	'sell', 'list', 'vendor', 'salvage', 'use', 'open', 'deposit_material', 'keep', 'review', 'discard_candidate',
 ];
-const REASONS: InventoryAdvisorReasonCode[] = [
+const REASONS: readonly InventoryAdvisorReasonCode[] = Object.freeze([
 	'snapshot_invalid', 'snapshot_scope_limited', 'identity_mismatch', 'catalog_missing',
 	'catalog_invalid', 'catalog_stale', 'price_missing', 'price_stale', 'price_partial',
 	'binding_unknown', 'tp_access_unknown', 'position_not_actionable', 'reserved_for_goal',
@@ -57,7 +57,14 @@ const REASONS: InventoryAdvisorReasonCode[] = [
 	'no_salvage', 'salvage_value_unknown', 'salvage_exotic_rate_unverified',
 	'salvage_mystic_cost_unmodeled', 'salvage_item_evidence_uncertain', 'delete_warning', 'alternative_route_exists',
 	'material_storage_space_available', 'discard_not_allowlisted', 'arithmetic_overflow',
-];
+] as const);
+
+/**
+ * Every public reason code the advisor can explain a decision with. H18.14: the one result per
+ * object (`inventory-object-result.ts`) carries the advisor's own reason into the notes and the
+ * Base, which need the closed list to validate and label it.
+ */
+export const INVENTORY_ADVISOR_REASON_CODES: readonly InventoryAdvisorReasonCode[] = REASONS;
 
 export function isInventoryAdvisorInput(value: unknown): value is InventoryAdvisorInputV1 {
 	return safeGuard(() => isInventoryAdvisorInputUnsafe(value));

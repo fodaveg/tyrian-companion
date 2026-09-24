@@ -6,7 +6,7 @@ export type AssetNamespace = 'item' | 'currency';
  * `legendary` (SPEC-recomendacion-por-objeto.md M4): a target from the plugin's own legendary-goal
  * setting, never inferred from a session drop. Added alongside the three pre-existing reasons
  * rather than folded into `achievement` (owning the item IS an achievement in-game, but the goal
- * here is created by `InventoryVaultCaptureService.capture`, not by the H4.10 container-session
+ * here is created by `InventoryAnalysisService.derivedGoals`, not by the H4.10 container-session
  * flow that emits `achievement`/`purchase`/`personal`): keeping it distinct is what lets a future
  * change to one reason's semantics not silently reinterpret the other's persisted goals.
  */

@@ -75,7 +75,7 @@ const H5_11_KEYS = [
 	'advisor.view.advancedDetails', 'advisor.view.ownershipDifference',
 	'advisor.view.coverage.snapshot', 'advisor.view.coverage.inventory', 'advisor.view.coverage.catalog',
 	'advisor.view.coverage.prices', 'advisor.view.coverage.reservations', 'advisor.view.coverage.accountSignals',
-	'advisor.view.coverage.rules',
+	'advisor.view.coverage.rules', 'advisor.view.decisionUntil',
 	'advisor.view.location', 'advisor.view.value', 'advisor.view.explanation', 'advisor.view.action',
 	'advisor.view.evidence', 'advisor.view.refreshWarning',
 	'advisor.view.action.sell', 'advisor.view.action.list', 'advisor.view.action.vendor',

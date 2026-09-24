@@ -2,8 +2,10 @@ import {
 	buildInventoryAdvisorPresentation,
 	invalidInventoryAdvisorPresentation,
 } from '../advisor/inventory-advisor-presentation';
+import type { InventoryAdvisorContextualPresentationSource } from '../advisor/inventory-advisor-presentation';
 import type { InventoryAdvisorPresentationOptions } from '../advisor/inventory-advisor-presentation-model';
 import type { InventoryAdvisorWorkflowResult } from '../advisor/inventory-advisor-workflow';
+import type { InventoryObjectResultsV1 } from '../advisor/inventory-object-result';
 import type { ResolvedLocalDebugActionContext } from '../core/local-debug-action-runner';
 import { buildInventoryAdvisorViewModel, type InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 
@@ -50,6 +52,17 @@ export class InventoryAdvisorPresentationController {
 		return this.current(options);
 	}
 
+	/**
+	 * H18.16: the analysis the view is showing right now, for the inventory notes to write from
+	 * (one evidence per analysis, never a second capture). A detached copy; null while there is no
+	 * ready analysis with its contextual source.
+	 */
+	analysis(): { source: InventoryAdvisorContextualPresentationSource; objects: InventoryObjectResultsV1 | null } | null {
+		if (this.disposed || this.cached === null || this.cached.status !== 'ready'
+			|| !('discardContext' in this.cached.source)) return null;
+		return clone({ source: this.cached.source, objects: this.cached.objects ?? null });
+	}
+
 	/** Projects the current memory snapshot. It never performs I/O. */
 	current(options: InventoryAdvisorPresentationOptions = {}): InventoryAdvisorViewModel {
 		const optionsKey = JSON.stringify(options);
@@ -75,7 +88,9 @@ export class InventoryAdvisorPresentationController {
 				blockedReason: this.cached.reason,
 			};
 			return {
-				...buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(clone(this.cached.source), options)),
+				...buildInventoryAdvisorViewModel(buildInventoryAdvisorPresentation(
+					clone(this.cached.source), options, clone(this.cached.objects ?? null),
+				)),
 				...(this.refreshWarning === undefined ? {} : { refreshWarning: this.refreshWarning }),
 			};
 		}

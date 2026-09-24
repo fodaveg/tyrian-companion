@@ -1,22 +1,20 @@
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { parseDocument, stringify as stringifyYaml } from 'yaml';
 
-import type { GuildWars2Client } from '../account/guild-wars-2-client';
 import type { ItemHolding, StorageSnapshot } from '../account/storage-snapshot-model';
-import type { StorageSnapshotService } from '../account/storage-snapshot-service';
-import { captureInventoryPrices, captureInventoryTradingPostAccess } from '../advisor/inventory-advisor-evidence';
 import type { AccountSignalsV1, InventoryPriceSnapshotV1 } from '../advisor/inventory-advisor-model';
 import {
+	INVENTORY_OBJECT_DECISION_ACTIONS,
+	INVENTORY_OBJECT_DECISION_REASON_CODES,
+	type InventoryObjectDecisionAction,
+	type InventoryObjectDecisionReasonCode,
+} from '../advisor/inventory-object-result';
+import {
 	recommendPosition,
-	POSITION_RECOMMENDATION_ACTIONS,
-	POSITION_RECOMMENDATION_REASON_CODES,
-	type PositionRecommendationAction,
-	type PositionRecommendationReasonCode,
 	type PositionRecommendationSeasonalInput,
+	type PositionRecommendationV1,
 } from '../advisor/inventory-position-recommendation';
 import { sha256Text } from '../assets/managed-asset-hash';
-import type { PublicCatalogGateway } from '../catalog/public-catalog-client';
 import type { CatalogLocale, CatalogResolution } from '../catalog/public-catalog-model';
-import type { PublicCatalogService } from '../catalog/public-catalog-service';
 import { errorClassName } from '../core/local-debug-error-details';
 import { normalizeVaultRelativePath } from '../core/vault-path';
 import {
@@ -24,23 +22,9 @@ import {
 	valueInstantSellDepth,
 	type InventoryMarketDepthEvidenceV1,
 } from '../economy/commerce-listings';
-import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
 import { classifyItemLiquidity, isTradingPostAccessible, type TradingPostEligibility } from '../economy/item-liquidity';
-import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
-import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
-import type { PriceSeedV1 } from '../economy/price-seed-model';
-import {
-	LEGENDARY_MATERIALS_TABLE,
-	legendaryMaterialsTableItemIds,
-	type LegendaryMaterialsTableV1,
-} from '../economy/legendary-materials';
-import {
-	buildLegendaryReservationGoals,
-	scaledSellCopper,
-	splitLegendaryReservationsByPosition,
-	type LegendaryReservationSplit,
-} from '../economy/legendary-goals';
-import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
+import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { scaledSellCopper, type LegendaryReservationSplit } from '../economy/legendary-goals';
 import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -80,8 +64,13 @@ export interface InventoryVaultPosition {
 	type: string | null;
 	rarity: string | null;
 	icon: string | null;
-	recommendation: PositionRecommendationAction;
-	recommendationReason: PositionRecommendationReasonCode;
+	/**
+	 * H18.14: the object's one decision (`InventoryObjectResultsV1`), the same one the advisor view
+	 * shows for the row that covers this position: the advisor's route, timed by
+	 * `recommendPosition` when the route is a market one.
+	 */
+	recommendation: InventoryObjectDecisionAction;
+	recommendationReason: InventoryObjectDecisionReasonCode;
 	recommendationUntil: string | null;
 	recommendationMissing: number | null;
 	/** `recommendPosition`'s `pricePercentile`/`priceCoverageDays` (SPEC-recomendacion-por-objeto.md, M2). */
@@ -103,6 +92,13 @@ export interface InventoryVaultPosition {
 	 */
 	reservedQuantity: number | null;
 	freeQuantity: number | null;
+	/**
+	 * H18.14: how much of the position the decision lets the player act on right now (sell, list,
+	 * vendor, salvage, use, open, deposit). 0 while it waits, holds, keeps or asks for a review.
+	 * Since the object result, `reservedQuantity` also counts the user's keep exceptions, not only
+	 * goal reservations.
+	 */
+	actionableQuantity: number;
 }
 
 export interface InventoryVaultSyncInput {
@@ -137,7 +133,13 @@ export interface InventoryVaultSyncPlan {
 }
 
 export type InventoryVaultSyncResult =
-	| { status: 'applied' | 'unchanged'; created: number; updated: number; deactivated: number }
+	/**
+	 * H18.16: `conflicts` counts the notes this apply skipped (edited inside their managed block, or
+	 * changed between preview and write). They no longer abort the plan: every other note lands.
+	 * `InventoryVaultSyncService.apply` always sets it; it is optional only for callers that stub
+	 * a result.
+	 */
+	| { status: 'applied' | 'unchanged'; created: number; updated: number; deactivated: number; conflicts?: number }
 	| { status: 'conflict' | 'invalid' | 'unavailable'; message: string }
 	/**
 	 * A real storage rejection (e.g. `EACCES`) hit mid-apply, distinct from `conflict` (another
@@ -176,8 +178,8 @@ interface InventoryNoteFields {
 	tc_item_type: string | null;
 	tc_item_rarity: string | null;
 	tc_icon: string | null;
-	tc_recommendation: PositionRecommendationAction;
-	tc_recommendation_reason: PositionRecommendationReasonCode;
+	tc_recommendation: InventoryObjectDecisionAction;
+	tc_recommendation_reason: InventoryObjectDecisionReasonCode;
 	tc_recommendation_until: string | null;
 	tc_recommendation_missing: number | null;
 	tc_price_percentile: number | null;
@@ -188,9 +190,15 @@ interface InventoryNoteFields {
 	/** `InventoryVaultPosition.reservedQuantity`/`freeQuantity` (M4, H18.1): both `null` means uncertain. */
 	tc_reserved_quantity: number | null;
 	tc_free_quantity: number | null;
+	/** `InventoryVaultPosition.actionableQuantity` (H18.14). */
+	tc_actionable_quantity: number;
 	descripcion: string;
 }
 
+/**
+ * The managed frontmatter keys: the plugin owns their values and rewrites them. H18.16: any other
+ * key in a note's frontmatter belongs to the user and is carried through every rewrite untouched.
+ */
 const INVENTORY_NOTE_KEYS = [
 	'tc_schema', 'tc_kind', 'tc_marker', 'tc_position_id',
 	'tc_item_id', 'tc_source', 'tc_character', 'tc_quantity',
@@ -201,17 +209,22 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
 	'tc_price_percentile', 'tc_price_coverage_days',
 	'tc_price_quoted_at', 'tc_price_history_last_day',
-	'tc_reserved_quantity', 'tc_free_quantity',
+	'tc_reserved_quantity', 'tc_free_quantity', 'tc_actionable_quantity',
 	'descripcion',
 ] as const;
+
+/** Managed keys an older build wrote and the current one drops (H14.21); never a user key. */
+const RETIRED_INVENTORY_NOTE_KEYS = ['tc_captured_at'] as const;
+const MANAGED_OR_RETIRED_KEYS: ReadonlySet<string> = new Set([...INVENTORY_NOTE_KEYS, ...RETIRED_INVENTORY_NOTE_KEYS]);
 
 /**
  * Keys that joined `INVENTORY_NOTE_KEYS` after notes were already being written into
  * real Vaults. A note that lacks one of them was written by an older build, not edited
  * by a person, so it is migrated in place (classified `owned`, replanned as `update`)
- * instead of being rejected. Everything else stays a conflict, which is the whole point
- * of the validation: an unknown extra key, a wrong type, a position id or a marker hash
- * that does not match are all still refused rather than overwritten.
+ * instead of being rejected. A managed key with a wrong type, a position id that does not
+ * match or a managed block whose hash does not match are still refused rather than
+ * overwritten. Since H18.16 an unknown extra key is not one of them: it is the user's own
+ * frontmatter and is carried through every rewrite.
  *
  * THIS IS THE ONLY LIST OF ITS KIND. Adding a frontmatter key without listing it here
  * turns every note already in the Vault into a conflict on the next sync, which writes
@@ -229,12 +242,37 @@ const INVENTORY_NOTE_KEYS_ADDED_LATER = [
 	'tc_reserved_quantity', 'tc_free_quantity',
 	// H18.2, same discipline: added to INVENTORY_NOTE_KEYS in the same commit.
 	'tc_price_quoted_at', 'tc_price_history_last_day',
+	// H18.14, same discipline.
+	'tc_actionable_quantity',
 ] as const;
 
+/**
+ * An owned note split into what the plugin manages and what belongs to the user (H18.16).
+ *
+ * - `fields`: the managed frontmatter values, migrated to the current key set.
+ * - `block`: the managed body between the marker line and `END_MARKER` (heading, description and,
+ *   for the piloto items, the price-history block).
+ * - `userFrontmatter`: every other frontmatter key, serialized, or null when there is none.
+ * - `prefix`/`suffix`: the user's text before the marker line and after the managed block.
+ */
 interface OwnedInventoryNote {
 	fields: InventoryNoteFields;
-	content: string;
+	/** False when `fields` needed a migration (a key added later, or a retired one): rewrite it. */
+	currentKeys: boolean;
+	block: string;
+	userFrontmatter: string | null;
+	prefix: string;
+	suffix: string;
 }
+
+/** The parts of a note that belong to the user; empty for a note the plugin creates. */
+interface InventoryNoteUserParts {
+	userFrontmatter: string | null;
+	prefix: string;
+	suffix: string;
+}
+
+const NO_USER_PARTS: InventoryNoteUserParts = { userFrontmatter: null, prefix: '', suffix: '' };
 
 const SOURCE_CODES: Record<InventoryPositionSource, string> = {
 	character: 'c',
@@ -244,238 +282,14 @@ const SOURCE_CODES: Record<InventoryPositionSource, string> = {
 };
 const INVENTORY_FOLDER = 'Inventory/Positions';
 const MARKER_PREFIX = '<!-- tyrian-companion-inventory';
-
 /**
- * Live inputs `recommendPosition` needs but does not read itself: price-history settings can
- * change between two captures of the same long-lived `InventoryVaultCaptureService`, so every
- * value here is read fresh on each `capture()` rather than captured once at construction time.
- * `readDaily` mirrors the reader `assemblePriceHistory`'s compaction port already exposes
- * (`src/runtime/assemble-price-history.ts`): the local price-history store, read-only, and empty
- * when price history has never been activated.
+ * H18.16: closes the managed body. Everything after this line is the user's text. The marker
+ * line's `hash` covers only the managed body between the two lines, so text the user adds around
+ * it (or frontmatter keys the user adds) never reads as a tampered note. A note written before
+ * this line existed has no end marker; its managed body is recognised as described in
+ * `classifyInventoryNote`.
  */
-export interface InventoryPositionRecommendationPort {
-	priceHistoryEnabled(): boolean;
-	capitalThresholdCopper(): number;
-	maxPriceAgeMs(): number;
-	priceHistoryWindowDays(): number;
-	readDaily(itemId: number, fromDayUtc: string): Promise<readonly PriceHistoryDailyV1[]>;
-	/**
-	 * Read-only lookup of the datawars2 seed `PriceSeedBulkRefreshService` already cached for
-	 * `itemId` (decision 4, M2, `price-seed-cache-store.ts`), or null when nothing has been cached
-	 * for it yet. Never triggers a download itself: `refreshPriceSeeds` below is the only member of
-	 * this port that reaches the network. Read fresh per `capture()`, same as `readDaily`, and
-	 * AFTER `refreshPriceSeeds` runs (see the ordering note on `capture()` itself): a seed this same
-	 * call just cached for a newly-derived item must be visible to this read, or decision 4's whole
-	 * point (never wait 42 days per item) fails on exactly the sync that downloaded it.
-	 */
-	readCachedSeed(itemId: number): Promise<PriceSeedV1 | null>;
-	/**
-	 * Replaces the capital-derived slice of the local price-history watch list with `itemIds`
-	 * (already ranked and capped by `selectDerivedWatchListItemIds`). SPEC-recomendacion-por-
-	 * objeto.md, decision 3, M2: called once per `capture()`, only while price history is on, so a
-	 * fresh install and an install with the feature off never touch the watch list at all.
-	 */
-	updateDerivedWatchList(itemIds: readonly number[]): Promise<void>;
-	/**
-	 * Seeds datawars2 history, one item at a time, for whichever of `itemIds` lacks a fresh cache
-	 * entry, capped per call. Decision 4, M2: called once per `capture()` right after the watch
-	 * list update above, and only while price history is on, matching decision 4's "solo detrás del
-	 * botón «Sincronizar»".
-	 */
-	refreshPriceSeeds(itemIds: readonly number[]): Promise<void>;
-	/**
-	 * Rule (b), M3: this item's entry in the curated festival calendar (its window and the pack's
-	 * shared `sellSignal` parameters), or `null` when the item has none, which routes it straight
-	 * to rule (c) exactly as before M3. Synchronous and pure (the calendar lives in the same
-	 * in-memory curated bundle `maxPriceAgeMs` above already reads), but still read fresh per
-	 * `capture()`: the bundle can expire between two captures like any of its other fields.
-	 */
-	seasonalInputFor(itemId: number): PositionRecommendationSeasonalInput | null;
-	/** Rule (a), M4: settings' current target list. Read fresh per `capture()`, empty by default. */
-	legendaryTargetItemIds(): readonly number[];
-	/** The curated table `legendaryTargetItemIds` are checked against, or `null` while unavailable. */
-	legendaryMaterialsTable(): LegendaryMaterialsTableV1 | null;
-	/**
-	 * `GET /v2/account/legendaryarmory`'s per-id `count`, or `null` on any failure. `capture()`
-	 * calls this ONLY here ("Sincronizar inventario"), never from settings or plugin load.
-	 * `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell": a `null` here is treated
-	 * as "assume none of the targets are forged yet" (every target still gets a goal), the SAFER
-	 * of the two guesses, rather than silently dropping rule (a) for the whole sync.
-	 */
-	readLegendaryArmoryCounts(): Promise<ReadonlyMap<number, number> | null>;
-}
-
-/**
- * Used whenever a caller (or a test) does not inject a real port: price history is off by
- * default, so this reproduces exactly the M1 outcome a fresh install gets — every position
- * comes back `review`/`price_history_disabled` — without any of the four values it will never
- * reach becoming a silent guess.
- */
-const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
-	priceHistoryEnabled: () => false,
-	capitalThresholdCopper: () => 100_000,
-	maxPriceAgeMs: () => 900_000,
-	priceHistoryWindowDays: () => 180,
-	readDaily: async () => [],
-	readCachedSeed: async () => null,
-	updateDerivedWatchList: async () => undefined,
-	refreshPriceSeeds: async () => undefined,
-	seasonalInputFor: () => null,
-	legendaryTargetItemIds: () => [],
-	legendaryMaterialsTable: () => null,
-	readLegendaryArmoryCounts: async () => null,
-};
-
-const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
-
-/**
- * Captures a stable account-wide snapshot and resolves the same public catalog and
- * instant-sale quote model used by the Inventory Advisor. Construction is inert.
- */
-export class InventoryVaultCaptureService {
-	constructor(
-		private readonly client: Pick<GuildWars2Client, 'beginOperation'>,
-		private readonly snapshots: Pick<StorageSnapshotService, 'captureWithOperation'>,
-		private readonly catalog: Pick<PublicCatalogService, 'resolve'>,
-		private readonly publicGateway: PublicCatalogGateway,
-		private readonly recommendation: InventoryPositionRecommendationPort = DEFAULT_RECOMMENDATION_PORT,
-		private readonly now: () => number = Date.now,
-	) {}
-
-	async capture(locale: CatalogLocale): Promise<InventoryVaultSyncInput> {
-		const operation = this.client.beginOperation();
-		const snapshot = await this.snapshots.captureWithOperation(operation);
-		if (!inventorySnapshotComplete(snapshot)) throw new Error('inventory_capture_incomplete');
-		const capturedAt = this.now();
-		const priceHistoryEnabled = this.recommendation.priceHistoryEnabled();
-		const windowDays = this.recommendation.priceHistoryWindowDays();
-		const itemIds = [...new Set(
-			Object.entries(snapshot.availableByItem).filter(([, quantity]) => quantity > 0).map(([itemId]) => Number(itemId)),
-		)];
-		const [catalog, prices, tradingPostAccess, marketDepth] = await Promise.all([
-			this.catalog.resolve(snapshot, locale),
-			captureInventoryPrices(snapshot, this.publicGateway, capturedAt),
-			captureInventoryTradingPostAccess(operation, snapshot.accountId),
-			captureInventoryMarketDepth(itemIds, this.publicGateway, capturedAt),
-		]);
-		const cores = await buildInventoryVaultPositionCores(snapshot, catalog, prices, tradingPostAccess, locale, marketDepth);
-		const capitalThresholdCopper = this.recommendation.capitalThresholdCopper();
-		/**
-		 * Decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2) run BEFORE `dailyByItem` is
-		 * read below, not after it as an earlier build had it. `totalSellCopper` (what
-		 * `selectDerivedWatchListItemIds` needs) never depended on price history, so this ordering
-		 * was always free to make; it matters because `refreshPriceSeeds` writes into
-		 * `tyrian-companion-price-seed-cache` and `readDailyByItem` below now also reads it
-		 * (`readCachedSeed`, decision 4): reading first meant a seed THIS SAME capture just
-		 * downloaded for a newly-derived item was invisible to `recommendPosition` until the NEXT
-		 * "Sincronizar inventario" — the item stayed `review`/`price_history_insufficient` on the
-		 * one run David was actually going to look at, defeating decision 4's entire point (never
-		 * wait 42 days per item).
-		 */
-		if (priceHistoryEnabled) {
-			const derivedItemIds = selectDerivedWatchListItemIds(
-				cores.map((core) => ({ itemId: core.itemId, totalSellCopper: core.totalSellCopper })),
-				capitalThresholdCopper,
-			);
-			await this.recommendation.updateDerivedWatchList(derivedItemIds);
-			await this.recommendation.refreshPriceSeeds(derivedItemIds);
-		}
-		// No point reading a store nothing writes to: price history is opt-in, and the rule this
-		// feeds short-circuits to `review`/`price_history_disabled` before it ever looks at a
-		// percentile when it is off.
-		const dailyByItem = priceHistoryEnabled
-			? await this.readDailyByItem(itemIds, capturedAt, windowDays)
-			: new Map<number, readonly PriceHistoryDailyV1[]>();
-		const reservations = await this.buildLegendaryReservations(snapshot, cores);
-		const positions = attachPositionRecommendations(cores, {
-			priceHistoryEnabled,
-			capitalThresholdCopper,
-			maxPriceAgeMs: this.recommendation.maxPriceAgeMs(),
-			priceHistoryWindowDays: windowDays,
-			priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
-			dailyByItem,
-			capturedAtMs: capturedAt,
-			seasonalInputFor: (itemId) => this.recommendation.seasonalInputFor(itemId),
-		}, reservations.byPositionId, reservations.uncertainItemIds);
-		positions.sort(comparePositions);
-		return { schemaVersion: INVENTORY_NOTE_SCHEMA_VERSION, capturedAt: snapshot.completedAt, locale, positions };
-	}
-
-	/** Own capture merged with whatever seed is already cached for the item (decision 4, M2). */
-	private async readDailyByItem(
-		itemIds: readonly number[],
-		capturedAtMs: number,
-		windowDays: number,
-	): Promise<Map<number, readonly PriceHistoryDailyV1[]>> {
-		const fromDayUtc = new Date(Math.max(0, capturedAtMs - windowDays * 86_400_000)).toISOString().slice(0, 10);
-		const entries = await Promise.all(
-			itemIds.map(async (itemId) => {
-				const [daily, seed] = await Promise.all([
-					this.recommendation.readDaily(itemId, fromDayUtc),
-					this.recommendation.readCachedSeed(itemId),
-				]);
-				return [itemId, mergePriceHistoryWithSeed(itemId, daily, seed)] as const;
-			}),
-		);
-		return new Map(entries);
-	}
-
-	/**
-	 * Rule (a), M4. `GET /v2/account/legendaryarmory` is called ONLY here, once per "Sincronizar
-	 * inventario", never at settings-panel open or plugin load (`docs/SPEC-recomendacion-por-
-	 * objeto.md` M4, decision 1's own scoping). Returns an empty map (rule (a) never fires) when
-	 * there is nothing to reserve: no target chosen, or every chosen target already forged with no
-	 * resolvable requirement left.
-	 *
-	 * H18.1 (audit 2026-09-24 §3.A): a chosen target that is NOT covered is never silently read as
-	 * "nothing reserved". `uncertainItemIds` carries the items whose free share is unknown:
-	 * - a chosen, unforged target without a table entry → every item any curated entry lists
-	 *   (`legendaryMaterialsTableItemIds`), the best available guess at what it needs;
-	 * - no curated table at all (unavailable or expired) with an unforged target → every item the
-	 *   SHIPPED table (`LEGENDARY_MATERIALS_TABLE`) lists, for the same reason;
-	 * - goals that exist but whose balance or plan cannot be built → every item those goals require.
-	 */
-	private async buildLegendaryReservations(
-		snapshot: StorageSnapshot,
-		cores: readonly InventoryVaultPositionCore[],
-	): Promise<LegendaryReservations> {
-		const none: LegendaryReservations = { byPositionId: new Map(), uncertainItemIds: new Set() };
-		const targetLegendaryItemIds = this.recommendation.legendaryTargetItemIds();
-		if (targetLegendaryItemIds.length === 0) return none;
-		const table = this.recommendation.legendaryMaterialsTable();
-		// A read failure is treated as "assume none of the targets are forged yet" (see the port's
-		// own doc comment): the safer of the two guesses, never a silent skip of rule (a).
-		const owned = (await this.recommendation.readLegendaryArmoryCounts()) ?? new Map<number, number>();
-		if (table === null) {
-			// The curated table is unavailable (expired, say): the goals' quantities cannot be trusted,
-			// but the chosen, unforged targets still need SOMETHING. The item ids the shipped table
-			// lists stay the best statement of which materials, so they turn uncertain, never free.
-			const unforged = targetLegendaryItemIds.some((itemId) => (owned.get(itemId) ?? 0) < 1);
-			return unforged
-				? { byPositionId: new Map(), uncertainItemIds: new Set(legendaryMaterialsTableItemIds(LEGENDARY_MATERIALS_TABLE)) }
-				: none;
-		}
-		const { goals, withoutTable } = buildLegendaryReservationGoals(targetLegendaryItemIds, owned, table);
-		const uncertainItemIds = new Set(withoutTable.length > 0 ? legendaryMaterialsTableItemIds(table) : []);
-		if (goals.length === 0) return { byPositionId: new Map(), uncertainItemIds };
-		const goalItemIds = goals.flatMap((goal) => goal.requirements.map((requirement) => requirement.id));
-		const balanceResult = buildInventoryAdvisorReservationBalance(snapshot);
-		const planResult = balanceResult.status === 'ok'
-			? createReservationPlan({ goals, balance: balanceResult.balance })
-			: null;
-		if (planResult === null || planResult.status !== 'ok') {
-			for (const itemId of goalItemIds) uncertainItemIds.add(itemId);
-			return { byPositionId: new Map(), uncertainItemIds };
-		}
-		return { byPositionId: splitLegendaryReservationsByPosition(cores, planResult.plan), uncertainItemIds };
-	}
-}
-
-/** What `buildLegendaryReservations` settled for one capture (M4 split plus H18.1 uncertainty). */
-interface LegendaryReservations {
-	byPositionId: ReadonlyMap<string, LegendaryReservationSplit>;
-	uncertainItemIds: ReadonlySet<number>;
-}
+const END_MARKER = '<!-- /tyrian-companion-inventory -->';
 
 /** Everything `recommendPosition` needs, resolved once per capture rather than per position. */
 export interface InventoryPositionRecommendationInputs {
@@ -490,7 +304,7 @@ export interface InventoryPositionRecommendationInputs {
 	seasonalInputFor(itemId: number): PositionRecommendationSeasonalInput | null;
 }
 
-/** Matches `DEFAULT_RECOMMENDATION_PORT`: every position comes back `review`/`price_history_disabled`. */
+/** Price history off (the default): every position comes back `review`/`price_history_disabled`. */
 const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 	capturedAtMs: 0,
 	priceHistoryEnabled: false,
@@ -509,7 +323,7 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
  */
 export type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
 	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'
-	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity'> & { untradeable: boolean };
+	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity' | 'actionableQuantity'> & { untradeable: boolean };
 
 /**
  * True only when this account can definitely not sell the item on the trading post, read from
@@ -534,13 +348,14 @@ function definitelyUntradeable(
 /**
  * Groups holdings into rows and values them, stopping short of `recommendPosition`.
  *
- * Split out of `prepareInventoryVaultSyncInput` so `capture()` can read `totalSellCopper` (what
+ * Split out of `prepareInventoryVaultSyncInput` so the analysis can read `totalSellCopper` (what
  * `selectDerivedWatchListItemIds` needs) BEFORE it has any price-history series to feed
  * `recommendPosition` with, letting decisions 3 and 4 (SPEC-recomendacion-por-objeto.md §7, M2)
  * run ahead of that read instead of after it. Only loose holdings from the four supported
- * inventory locations are retained.
+ * inventory locations are retained. H18.16: every input is the advisor analysis's own evidence
+ * (`inventory-analysis.ts`); this function never captures anything.
  */
-async function buildInventoryVaultPositionCores(
+export async function buildInventoryVaultPositionCores(
 	snapshot: StorageSnapshot,
 	catalog: CatalogResolution,
 	prices: InventoryPriceSnapshotV1,
@@ -676,6 +491,53 @@ export function attachPositionRecommendations(
 	legendaryReservationByPositionId: ReadonlyMap<string, LegendaryReservationSplit> = new Map(),
 	uncertainReservationItemIds: ReadonlySet<number> = new Set(),
 ): InventoryVaultPosition[] {
+	return evaluatePositionTimings(
+		cores, recommendationInputs, legendaryReservationByPositionId, uncertainReservationItemIds,
+	).map(positionFromTiming);
+}
+
+/** `recommendPosition`'s verdict for one core row, with the free/reserved split it was given. */
+export interface InventoryPositionTiming {
+	core: InventoryVaultPositionCore;
+	timing: PositionRecommendationV1;
+	reservedQuantity: number | null;
+	freeQuantity: number | null;
+}
+
+/**
+ * Without an advisor analysis the moment stage IS the whole decision (`prepareInventoryVaultSyncInput`,
+ * `attachPositionRecommendations`): only its `sell` is something to act on now.
+ */
+function positionFromTiming({ core: { untradeable: _untradeable, ...core }, timing, reservedQuantity, freeQuantity }:
+	InventoryPositionTiming): InventoryVaultPosition {
+	return {
+		...core,
+		recommendation: timing.action,
+		recommendationReason: timing.reason,
+		recommendationUntil: timing.until,
+		recommendationMissing: timing.missing,
+		pricePercentile: timing.pricePercentile,
+		priceCoverageDays: timing.priceCoverageDays,
+		priceQuotedAt: timing.priceQuotedAt,
+		priceHistoryLastDay: timing.priceHistoryLastDay,
+		reservedQuantity,
+		freeQuantity,
+		actionableQuantity: timing.action === 'sell' ? freeQuantity ?? 0 : 0,
+	};
+}
+
+/**
+ * The moment stage for every core row: the capital threshold measured per object, the H18.1
+ * free/reserved split, and `recommendPosition`'s verdict. `attachPositionRecommendations` turns it
+ * straight into notes; the object result (`inventory-analysis.ts`) combines it with the advisor's
+ * route first.
+ */
+export function evaluatePositionTimings(
+	cores: readonly InventoryVaultPositionCore[],
+	recommendationInputs: InventoryPositionRecommendationInputs,
+	legendaryReservationByPositionId: ReadonlyMap<string, LegendaryReservationSplit> = new Map(),
+	uncertainReservationItemIds: ReadonlySet<number> = new Set(),
+): InventoryPositionTiming[] {
 	const thresholdValueByPositionId = new Map<string, number | null>();
 	for (const core of cores) {
 		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
@@ -686,7 +548,8 @@ export function attachPositionRecommendations(
 	const itemThresholdTotals = sumSellCopperByItem(cores.map((core) => ({
 		itemId: core.itemId, totalSellCopper: thresholdValueByPositionId.get(core.positionId) ?? null,
 	})));
-	return cores.map(({ untradeable, ...core }) => {
+	return cores.map((core) => {
+		const { untradeable } = core;
 		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
 		const knownFree = reservation?.freeQuantity ?? core.quantity;
 		const nothingFree = knownFree === 0 || (reservation !== null && reservation.shortfall > 0);
@@ -709,18 +572,7 @@ export function attachPositionRecommendations(
 			todayBidCopper: core.unitSellCopper,
 			untradeable,
 		});
-		return {
-			...core,
-			recommendation: recommendation.action,
-			recommendationReason: recommendation.reason,
-			recommendationUntil: recommendation.until,
-			recommendationMissing: recommendation.missing,
-			pricePercentile: recommendation.pricePercentile,
-			priceCoverageDays: recommendation.priceCoverageDays,
-			priceQuotedAt: recommendation.priceQuotedAt,
-			priceHistoryLastDay: recommendation.priceHistoryLastDay,
-			...split,
-		};
+		return { core, timing: recommendation, ...split };
 	});
 }
 
@@ -758,61 +610,91 @@ export class InventoryVaultSyncService {
 		private readonly configDir: string,
 	) {}
 
+	/**
+	 * H18.16 (audit 2026-09-24 §3.E, prueba 9):
+	 * - A note is `unchanged`, and never rewritten, when its managed values and managed block already
+	 *   say what this analysis says. The two clock fields (`tc_price_quoted_at` and a price
+	 *   verdict's `tc_recommendation_until`, both derived from the capture instant) do not count as
+	 *   a change on their own: a resync with the same data writes nothing, whatever the time.
+	 * - A rewrite replaces the managed values and block only. The user's frontmatter keys and the
+	 *   text around the managed block are carried through byte for byte.
+	 * - A note the plugin cannot safely rewrite (edited inside its managed block, a foreign note in
+	 *   the folder, a duplicate identity) is a `conflict` step for THAT note alone; the rest of the
+	 *   plan still applies (`canApply` stays true).
+	 */
 	async preview(root: string, input: InventoryVaultSyncInput): Promise<InventoryVaultSyncPlan> {
 		const normalizedRoot = normalizeInventoryRoot(root, this.configDir);
 		if (normalizedRoot === null || !isInventoryVaultSyncInput(input)) throw new Error('invalid_inventory_sync_input');
 		const folder = inventoryFolder(normalizedRoot);
-		const desired = new Map<string, { position: InventoryVaultPosition; path: string; content: string }>();
+		const desired = new Map<string, { position: InventoryVaultPosition; path: string; fields: InventoryNoteFields; block: string }>();
 		for (const position of input.positions) {
 			if (position.positionId !== await positionId(position.itemId, position.source, position.character)) {
 				throw new Error('invalid_inventory_sync_input');
 			}
 			const path = `${folder}/${position.positionId}.md`;
-			const content = await renderInventoryNote(position, input.locale);
-			desired.set(position.positionId, { position, path, content });
+			const fields = fieldsFor(position, input.locale);
+			desired.set(position.positionId, { position, path, fields, block: renderInventoryBlock(fields) });
 		}
 
 		const steps: InventoryVaultSyncStep[] = [];
 		const seenOwned = new Set<string>();
+		const conflictPaths = new Set<string>();
 		for (const file of this.inventoryFiles(folder)) {
 			const content = normalizeLf(await this.vault.read(file));
 			const classified = await classifyInventoryNote(content);
 			if (classified.status === 'foreign') {
 				steps.push(step(file.path, file.path, 'conflict', content, null));
+				conflictPaths.add(file.path);
 				continue;
 			}
 			if (classified.status === 'conflict') {
 				steps.push(step(classified.positionId ?? file.path, file.path, 'conflict', content, null));
+				conflictPaths.add(file.path);
 				continue;
 			}
 			const owned = classified.note;
 			const expectedPath = `${folder}/${owned.fields.tc_position_id}.md`;
 			if (file.path !== expectedPath || seenOwned.has(owned.fields.tc_position_id)) {
 				steps.push(step(owned.fields.tc_position_id, file.path, 'conflict', content, null));
+				conflictPaths.add(file.path);
 				continue;
 			}
 			seenOwned.add(owned.fields.tc_position_id);
 			const target = desired.get(owned.fields.tc_position_id);
 			if (target) {
-				steps.push(step(target.position.positionId, file.path,
-					content === target.content ? 'unchanged' : 'update', content, target.content));
+				steps.push(sameManagedContent(owned, target.fields, target.block)
+					? step(target.position.positionId, file.path, 'unchanged', content, content)
+					: step(target.position.positionId, file.path, 'update', content,
+						await renderInventoryNote(target.fields, target.block, owned)));
 				continue;
 			}
 			// The position no longer appears on the account: the note is removed rather than
 			// rewritten with `tc_active: false`, including one already left in that stale state
 			// by an earlier build, so the Vault converges to zero deactivated notes instead of
-			// accumulating them.
-			steps.push(step(owned.fields.tc_position_id, file.path, 'deactivate', content, null));
+			// accumulating them. H18.16: a note that carries the user's own text is the exception.
+			// Trashing it would delete what the user wrote, so it is rewritten inactive instead
+			// (`tc_active: false`, quantity 0, out of every Base view) with that text intact.
+			if (!hasUserParts(owned)) {
+				steps.push(step(owned.fields.tc_position_id, file.path, 'deactivate', content, null));
+				continue;
+			}
+			const inactive = inactiveInventoryNoteFields(owned.fields);
+			steps.push(sameManagedContent(owned, inactive, owned.block)
+				? step(owned.fields.tc_position_id, file.path, 'unchanged', content, content)
+				: step(owned.fields.tc_position_id, file.path, 'deactivate', content,
+					await renderInventoryNote(inactive, owned.block, owned)));
 		}
 
 		for (const target of desired.values()) {
-			if (seenOwned.has(target.position.positionId)) continue;
+			// A path the loop above already reported as a conflict is one note, counted once.
+			if (seenOwned.has(target.position.positionId) || conflictPaths.has(target.path)) continue;
 			const occupied = this.vault.file(target.path);
 			if (occupied) {
 				const content = normalizeLf(await this.vault.read(occupied));
 				steps.push(step(target.position.positionId, target.path, 'conflict', content, null));
 			} else {
-				steps.push(step(target.position.positionId, target.path, 'create', null, target.content));
+				steps.push(step(target.position.positionId, target.path, 'create', null,
+					await renderInventoryNote(target.fields, target.block, NO_USER_PARTS)));
 			}
 		}
 		steps.sort((left, right) => left.path.localeCompare(right.path) || left.status.localeCompare(right.status));
@@ -821,7 +703,7 @@ export class InventoryVaultSyncService {
 			root: normalizedRoot,
 			capturedAt: input.capturedAt,
 			positions: input.positions.length,
-			canApply: steps.every((entry) => entry.status !== 'conflict'),
+			canApply: true,
 			steps,
 		};
 	}
@@ -858,21 +740,32 @@ export class InventoryVaultSyncService {
 		}
 		const total = plan.steps.length;
 		let completed = 0;
+		// H18.16: a conflict belongs to its own note. A step the preview already marked as one, or a
+		// note that changed between preview and write (the user typing in it), is skipped and
+		// counted; every other planned write still lands.
+		let conflicts = 0;
 		try {
+			const skipped = new Set<InventoryVaultSyncStep>();
 			for (const entry of plan.steps) {
+				if (entry.status === 'conflict') {
+					skipped.add(entry);
+					conflicts += 1;
+					continue;
+				}
+				if (entry.status === 'unchanged') continue;
 				const file = this.vault.file(entry.path);
-				if (entry.before === null) {
-					if (file !== null) return { status: 'conflict', message: 'An inventory note appeared after preview.' };
-				} else {
-					if (file === null || normalizeLf(await this.vault.read(file)) !== entry.before) {
-						return { status: 'conflict', message: 'An inventory note changed after preview.' };
-					}
+				const moved = entry.before === null
+					? file !== null
+					: file === null || normalizeLf(await this.vault.read(file)) !== entry.before;
+				if (moved) {
+					skipped.add(entry);
+					conflicts += 1;
 				}
 			}
-			const writes = plan.steps.filter((entry) => entry.status !== 'unchanged');
+			const writes = plan.steps.filter((entry) => entry.status !== 'unchanged' && !skipped.has(entry));
 			completed = total - writes.length;
 			onStep?.(completed, total);
-			if (writes.length === 0) return { status: 'unchanged', created: 0, updated: 0, deactivated: 0 };
+			if (writes.length === 0) return { status: 'unchanged', created: 0, updated: 0, deactivated: 0, conflicts };
 			await ensureFolders(this.vault, inventoryFolder(plan.root));
 			let created = 0;
 			let updated = 0;
@@ -880,6 +773,7 @@ export class InventoryVaultSyncService {
 			for (const entry of writes) {
 				if (entry.status === 'create') {
 					if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
+					let landed = true;
 					try { await this.vault.create(entry.path, entry.after); }
 					catch (error) {
 						const raced = this.vault.file(entry.path);
@@ -891,42 +785,45 @@ export class InventoryVaultSyncService {
 								written: completed, errorName: errorClassName(error),
 							};
 						}
-						if (normalizeLf(await this.vault.read(raced)) !== entry.after) {
-							return { status: 'conflict', message: 'An inventory note occupied a planned path.' };
-						}
+						landed = normalizeLf(await this.vault.read(raced)) === entry.after;
 					}
-					created += 1;
+					if (landed) created += 1;
+					else conflicts += 1;
 					completed += 1;
 					onStep?.(completed, total);
 					continue;
 				}
-				if (entry.status === 'deactivate') {
+				if (entry.status === 'deactivate' && entry.after === null) {
 					const file = this.vault.file(entry.path);
-					if (!file || entry.before === null) return { status: 'conflict', message: 'An inventory note disappeared during apply.' };
-					await this.vault.trashFile(file);
-					deactivated += 1;
+					if (!file || entry.before === null) conflicts += 1;
+					else {
+						await this.vault.trashFile(file);
+						deactivated += 1;
+					}
 					completed += 1;
 					onStep?.(completed, total);
 					continue;
 				}
 				if (entry.after === null) return { status: 'invalid', message: 'The inventory plan contains an empty write.' };
 				const file = this.vault.file(entry.path);
-				if (!file || entry.before === null) return { status: 'conflict', message: 'An inventory note disappeared during apply.' };
 				let applied = false;
-				await this.vault.process(file, (current) => {
-					if (normalizeLf(current) !== entry.before) return current;
-					applied = true;
-					return entry.after!;
-				});
-				const verified = this.vault.file(entry.path);
-				if (!applied || !verified || normalizeLf(await this.vault.read(verified)) !== entry.after) {
-					return { status: 'conflict', message: 'An inventory note changed during apply.' };
+				if (file && entry.before !== null) {
+					await this.vault.process(file, (current) => {
+						if (normalizeLf(current) !== entry.before) return current;
+						applied = true;
+						return entry.after!;
+					});
 				}
-				updated += 1;
+				const verified = this.vault.file(entry.path);
+				if (!applied || !verified || normalizeLf(await this.vault.read(verified)) !== entry.after) conflicts += 1;
+				else if (entry.status === 'deactivate') deactivated += 1;
+				else updated += 1;
 				completed += 1;
 				onStep?.(completed, total);
 			}
-			return { status: 'applied', created, updated, deactivated };
+			return created + updated + deactivated === 0
+				? { status: 'unchanged', created, updated, deactivated, conflicts }
+				: { status: 'applied', created, updated, deactivated, conflicts };
 		} catch (error) {
 			return {
 				status: 'storage_failure', message: 'Inventory notes could not be written safely.',
@@ -942,7 +839,11 @@ export class InventoryVaultSyncService {
 	}
 }
 
-function inventoryLocation(holding: ItemHolding): { source: InventoryPositionSource; character: string | null } | null {
+/**
+ * Which note a holding belongs to: a character's bag, the shared inventory, the bank or the
+ * material storage, or null for any other place (equipped, delivery box), which no note covers.
+ */
+export function inventoryLocation(holding: ItemHolding): { source: InventoryPositionSource; character: string | null } | null {
 	if (holding.location.source === 'character' && holding.location.container === 'bag') {
 		return { source: 'character', character: holding.location.character.normalize('NFC') };
 	}
@@ -975,22 +876,27 @@ function assertCaptureRelations(
 		!Number.isFinite(Date.parse(snapshot.completedAt))) throw new Error('inventory_capture_identity_mismatch');
 }
 
-function inventorySnapshotComplete(snapshot: StorageSnapshot): boolean {
+/**
+ * Notes describe every supported store, so only a stable snapshot with all four stores and every
+ * character complete may rewrite them. The advisor tolerates less; a notes sync does not.
+ */
+export function inventorySnapshotComplete(snapshot: StorageSnapshot): boolean {
 	return snapshot.quality === 'stable' &&
 		(['characters', 'shared_inventory', 'bank', 'materials'] as const)
 			.every((source) => snapshot.coverage.sources[source].status === 'complete') &&
 		Object.values(snapshot.coverage.characters).every((coverage) => coverage.status === 'complete');
 }
 
-function comparePositions(left: InventoryVaultPosition, right: InventoryVaultPosition): number {
+/** The canonical note order: item, store, character, then the opaque position id. */
+export function comparePositions(left: InventoryVaultPosition, right: InventoryVaultPosition): number {
 	return left.itemId - right.itemId || left.source.localeCompare(right.source) ||
 		(left.character ?? '').localeCompare(right.character ?? '') || left.positionId.localeCompare(right.positionId);
 }
 
 /**
- * A stale position is deleted rather than rewritten as inactive (H14.21), so every note
- * this builds describes a position that is still on the account: `tc_active` stays in the
- * schema for the Base filter's sake, but it is always `true` here.
+ * Every note this builds describes a position that is still on the account (`tc_active: true`).
+ * A stale position is deleted (H14.21) unless its note carries the user's own text (H18.16), in
+ * which case `inactiveInventoryNoteFields` rewrites it inactive instead.
  */
 function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): InventoryNoteFields {
 	return {
@@ -1024,29 +930,96 @@ function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): Inv
 		tc_price_history_last_day: position.priceHistoryLastDay,
 		tc_reserved_quantity: position.reservedQuantity,
 		tc_free_quantity: position.freeQuantity,
+		tc_actionable_quantity: position.actionableQuantity,
 		descripcion: locale === 'es' ? 'Existencia de inventario gestionada por Tyrian Companion.' : 'Inventory holding managed by Tyrian Companion.',
 	};
+}
+
+/**
+ * H18.16: a position gone from the account whose note holds the user's text. Nothing is left to
+ * act on, so every quantity and demonstrated value drops to 0/null and `tc_active` turns false,
+ * which takes the note out of every Base view; the item's identity and last quotes stay as they
+ * were, next to what the user wrote.
+ */
+function inactiveInventoryNoteFields(fields: InventoryNoteFields): InventoryNoteFields {
+	return {
+		...fields,
+		tc_quantity: 0,
+		tc_active: false,
+		tc_total_sell_copper: null,
+		tc_sell_depth_status: 'unavailable',
+		tc_sell_covered_quantity: 0,
+		tc_sell_uncovered_quantity: 0,
+		tc_total_list_copper: null,
+		tc_recommendation_until: null,
+		tc_recommendation_missing: null,
+		tc_reserved_quantity: 0,
+		tc_free_quantity: 0,
+		tc_actionable_quantity: 0,
+	};
+}
+
+/**
+ * The managed body: heading, description and, for the piloto H9.2 allowlist, the managed
+ * price-history code block. Every other position keeps the exact body it always had. Built from
+ * the managed fields alone, so the same values always render the same bytes.
+ */
+function renderInventoryBlock(fields: InventoryNoteFields): string {
+	const heading = cleanText(fields.tc_item_name).replace(/^[#]/u, '\\$&');
+	const priceHistoryBlock = priceHistoryNoteBlockMarkdown(fields.tc_item_id, fields.tc_item_name);
+	return priceHistoryBlock === null
+		? `# ${heading}\n\n${fields.descripcion}\n`
+		: `# ${heading}\n\n${fields.descripcion}\n\n${priceHistoryBlock}\n`;
 }
 
 /**
  * `tc_captured_at` deliberately never lands here (H14.21): it used to make every position's
  * marker hash change on every capture, rewriting all of them even when nothing about the
  * holding itself moved. The Base column that showed it now reads `file.mtime` instead.
+ *
+ * H18.16: the managed values come first, then the user's own frontmatter keys; the user's text
+ * before the marker line and after `END_MARKER` is written back unchanged. The marker's hash
+ * covers the managed block only.
  */
-async function renderInventoryNote(position: InventoryVaultPosition, locale: CatalogLocale): Promise<string> {
-	const fields = fieldsFor(position, locale);
-	const frontmatter = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
-	const heading = cleanText(position.name).replace(/^[#]/u, '\\$&');
-	// Piloto H9.2: a fixed, tiny allowlist of items also gets a managed price-history
-	// code block. Every other position keeps the exact body it always had.
-	const priceHistoryBlock = priceHistoryNoteBlockMarkdown(position.itemId, fields.tc_item_name);
-	const body = priceHistoryBlock === null
-		? `# ${heading}\n\n${fields.descripcion}\n`
-		: `# ${heading}\n\n${fields.descripcion}\n\n${priceHistoryBlock}\n`;
-	const markerBase = markerLine(position.positionId, null);
-	const unsigned = `---\n${frontmatter}\n---\n${markerBase}\n${body}`;
-	const hash = await sha256Text(unsigned);
-	return `---\n${frontmatter}\n---\n${markerLine(position.positionId, hash)}\n${body}`;
+async function renderInventoryNote(
+	fields: InventoryNoteFields,
+	block: string,
+	user: InventoryNoteUserParts,
+): Promise<string> {
+	const managed = stringifyYaml(fields, { lineWidth: 0 }).trimEnd();
+	const frontmatter = user.userFrontmatter === null ? managed : `${managed}\n${user.userFrontmatter}`;
+	const hash = await sha256Text(block);
+	return `---\n${frontmatter}\n---\n${user.prefix}${markerLine(fields.tc_position_id, hash)}\n${block}${END_MARKER}\n${user.suffix}`;
+}
+
+/** True when the note carries anything the user wrote: frontmatter keys or text of their own. */
+function hasUserParts(note: InventoryNoteUserParts): boolean {
+	return note.userFrontmatter !== null || note.prefix.trim().length > 0 || note.suffix.trim().length > 0;
+}
+
+/**
+ * Whether a rewrite would change anything the plugin manages. `tc_price_quoted_at` and a price
+ * verdict's `tc_recommendation_until` are the capture instant plus a constant; comparing them
+ * would rewrite every note on every sync (audit 2026-09-24 §3.E, "la vigencia de 15 minutos entra
+ * en el hash"). So the quote date only counts by its presence, and a price expiry by its distance
+ * from the quote; a seasonal window's open or close is a real date and is compared as such. A note
+ * an older build wrote (a managed key missing or retired) is never "the same": its migrated values
+ * may coincide, but the note itself still lacks the column, so it is rewritten once.
+ */
+function sameManagedContent(note: OwnedInventoryNote, fields: InventoryNoteFields, block: string): boolean {
+	return note.currentKeys && note.block === block
+		&& comparableManagedFields(note.fields) === comparableManagedFields(fields);
+}
+
+function comparableManagedFields(fields: InventoryNoteFields): string {
+	const quotedAt = fields.tc_price_quoted_at;
+	const until = fields.tc_recommendation_until;
+	const seasonal = fields.tc_recommendation_reason === 'seasonal_sell_window' || fields.tc_recommendation_reason === 'seasonal_hold';
+	const comparableUntil = until === null || seasonal || quotedAt === null
+		? until
+		: `+${String(Date.parse(until) - Date.parse(quotedAt))}ms`;
+	return JSON.stringify(INVENTORY_NOTE_KEYS.map((key) => key === 'tc_price_quoted_at' ? quotedAt !== null
+		: key === 'tc_recommendation_until' ? comparableUntil : fields[key]));
 }
 
 function markerLine(position: string, hash: string | null): string {
@@ -1054,6 +1027,19 @@ function markerLine(position: string, hash: string | null): string {
 	return hash === null ? `${base} -->` : `${base} hash=${hash} -->`;
 }
 
+/**
+ * Recognises an owned note and splits it into managed and user parts (H18.16).
+ *
+ * The managed block is the text between the marker line and `END_MARKER`, and the marker's hash
+ * must match it: an edit inside it is the one edit that still makes the note a conflict, since
+ * rewriting it would delete what the user typed there. Frontmatter keys the plugin does not manage
+ * and any text outside the block are the user's and never block anything.
+ *
+ * A note written before `END_MARKER` existed is recognised two ways: byte for byte by its old
+ * whole-note hash (nothing added yet), or by its managed block rendered from its own managed
+ * values followed by whatever the user appended. It stays in that older shape until its data
+ * changes; the next rewrite adds the end marker.
+ */
 async function classifyInventoryNote(content: string): Promise<
 	| { status: 'owned'; note: OwnedInventoryNote }
 	| { status: 'foreign' }
@@ -1065,17 +1051,73 @@ async function classifyInventoryNote(content: string): Promise<
 	if (marker[1] !== String(INVENTORY_NOTE_SCHEMA_VERSION) || marker[2] !== INVENTORY_NOTE_MARKER || !positionId || !marker[4]) {
 		return { status: 'conflict', positionId };
 	}
-	const markerWithHash = marker[0];
-	const unsigned = content.replace(markerWithHash, markerLine(positionId, null));
-	if (await sha256Text(unsigned) !== marker[4]) return { status: 'conflict', positionId };
 	const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n/u);
 	if (!frontmatter) return { status: 'conflict', positionId };
-	let parsed: unknown;
-	try { parsed = parseYaml(frontmatter[1]!); }
+	const rest = content.slice(frontmatter[0].length);
+	const markerAt = rest.indexOf(marker[0]);
+	if (markerAt < 0 || (markerAt > 0 && rest[markerAt - 1] !== '\n') || rest[markerAt + marker[0].length] !== '\n') {
+		return { status: 'conflict', positionId };
+	}
+	let parsed: { managed: Record<string, unknown>; userFrontmatter: string | null } | null;
+	try { parsed = splitInventoryFrontmatter(frontmatter[1]!); }
 	catch { return { status: 'conflict', positionId }; }
-	const fields = migrateInventoryNoteFields(parsed);
+	if (parsed === null) return { status: 'conflict', positionId };
+	const fields = migrateInventoryNoteFields(parsed.managed);
 	if (!isInventoryNoteFields(fields) || fields.tc_position_id !== positionId) return { status: 'conflict', positionId };
-	return { status: 'owned', note: { fields, content } };
+	const prefix = rest.slice(0, markerAt);
+	const afterMarker = rest.slice(markerAt + marker[0].length + 1);
+	const endAt = endMarkerAt(afterMarker);
+	let block: string;
+	let suffix: string;
+	if (endAt >= 0) {
+		block = afterMarker.slice(0, endAt);
+		suffix = afterMarker.slice(endAt + END_MARKER.length).replace(/^\n/u, '');
+		if (await sha256Text(block) !== marker[4]) return { status: 'conflict', positionId };
+	} else if (await sha256Text(content.replace(marker[0], markerLine(positionId, null))) === marker[4]) {
+		block = afterMarker;
+		suffix = '';
+	} else {
+		const expected = renderInventoryBlock(fields);
+		if (!afterMarker.startsWith(expected)) return { status: 'conflict', positionId };
+		block = expected;
+		suffix = afterMarker.slice(expected.length);
+	}
+	const currentKeys = INVENTORY_NOTE_KEYS.every((key) => key in parsed.managed)
+		&& RETIRED_INVENTORY_NOTE_KEYS.every((key) => !(key in parsed.managed));
+	return { status: 'owned', note: { fields, currentKeys, block, userFrontmatter: parsed.userFrontmatter, prefix, suffix } };
+}
+
+/** Where `END_MARKER` starts as a whole line of `text`, or -1. */
+function endMarkerAt(text: string): number {
+	let from = 0;
+	for (;;) {
+		const at = text.indexOf(END_MARKER, from);
+		if (at < 0) return -1;
+		const next = text[at + END_MARKER.length];
+		if ((at === 0 || text[at - 1] === '\n') && (next === undefined || next === '\n')) return at;
+		from = at + 1;
+	}
+}
+
+/**
+ * Separates the managed keys (current or retired) from the user's own, keeping the user's part as
+ * YAML that round-trips the user's own formatting as far as the parser allows. Null when the
+ * frontmatter is not a valid YAML mapping.
+ */
+function splitInventoryFrontmatter(text: string): { managed: Record<string, unknown>; userFrontmatter: string | null } | null {
+	const document = parseDocument(text);
+	if (document.errors.length > 0) return null;
+	const value: unknown = document.toJS();
+	if (!record(value)) return null;
+	const managed: Record<string, unknown> = {};
+	let userKeys = 0;
+	for (const [key, entry] of Object.entries(value)) {
+		if (MANAGED_OR_RETIRED_KEYS.has(key)) managed[key] = entry;
+		else userKeys += 1;
+	}
+	if (userKeys === 0) return { managed, userFrontmatter: null };
+	for (const key of MANAGED_OR_RETIRED_KEYS) document.delete(key);
+	return { managed, userFrontmatter: document.toString({ lineWidth: 0 }).trimEnd() };
 }
 
 function step(
@@ -1109,12 +1151,13 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		(value.icon === null || nonEmptyText(value.icon)) &&
 		(value.unitSellCopper !== null || value.totalSellCopper === null) &&
 		(value.unitListCopper !== null || value.totalListCopper === null) &&
-		positionRecommendationAction(value.recommendation) && positionRecommendationReason(value.recommendationReason) &&
+		objectDecisionAction(value.recommendation) && objectDecisionReason(value.recommendationReason) &&
 		(value.recommendationUntil === null || iso(value.recommendationUntil)) &&
 		nullableNonNegative(value.recommendationMissing) &&
 		nullablePercentile(value.pricePercentile) && nullableNonNegative(value.priceCoverageDays) &&
 		(value.priceQuotedAt === null || iso(value.priceQuotedAt)) && nullableDayUtc(value.priceHistoryLastDay) &&
-		legendarySplit(value.reservedQuantity, value.freeQuantity, value.quantity);
+		legendarySplit(value.reservedQuantity, value.freeQuantity, value.quantity) &&
+		nonNegative(value.actionableQuantity) && value.actionableQuantity <= value.quantity;
 }
 
 /** Both null (outside any legendary requirement), or both non-negative integers summing to `quantity`. */
@@ -1126,9 +1169,9 @@ function legendarySplit(reserved: unknown, free: unknown, quantity: number): boo
 /**
  * Brings frontmatter written by an older build up to the current key set by defaulting
  * the absent `INVENTORY_NOTE_KEYS_ADDED_LATER` to `null`, so the note validates and the
- * plan rewrites it with the missing columns. It only ever ADDS known keys: a key we
- * never wrote is left in place so that `isInventoryNoteFields` still rejects it, which
- * is what keeps a hand-edited note a conflict.
+ * plan rewrites it with the missing columns. It only ever ADDS known keys. It only ever
+ * sees managed keys: since H18.16 `splitInventoryFrontmatter` sets every other key aside
+ * as the user's own before this runs, so a user's property never reads as a corrupt note.
  *
  * `tc_captured_at` is the one key this REMOVES (H14.21): every note written before that
  * migration carries it, and dropping it here is what lets `isInventoryNoteFields` accept
@@ -1152,8 +1195,9 @@ function migrateInventoryNoteFields(value: unknown): unknown {
 		// this old predates the legendary-reservation feature entirely. Since H18.1 null/null reads
 		// "uncertain", the safe placeholder for the same reason as above, never a guessed split; the
 		// same pass rewrites it. tc_price_quoted_at/tc_price_history_last_day (H18.2) likewise.
+		// tc_actionable_quantity (H18.14) defaults to 0, "nothing to act on", for the same reason.
 		migrated[key] = key === 'tc_sell_depth_status' ? 'unavailable'
-			: key === 'tc_sell_covered_quantity' ? 0
+			: key === 'tc_sell_covered_quantity' || key === 'tc_actionable_quantity' ? 0
 				: key === 'tc_sell_uncovered_quantity' ? migrated.tc_quantity
 					: key === 'tc_recommendation' ? 'review'
 						: key === 'tc_recommendation_reason' ? 'price_history_disabled' : null;
@@ -1180,21 +1224,22 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		nonEmptyText(value.tc_item_name) && (value.tc_item_type === null || nonEmptyText(value.tc_item_type)) &&
 		(value.tc_item_rarity === null || nonEmptyText(value.tc_item_rarity)) &&
 		(value.tc_icon === null || nonEmptyText(value.tc_icon)) &&
-		positionRecommendationAction(value.tc_recommendation) && positionRecommendationReason(value.tc_recommendation_reason) &&
+		objectDecisionAction(value.tc_recommendation) && objectDecisionReason(value.tc_recommendation_reason) &&
 		(value.tc_recommendation_until === null || iso(value.tc_recommendation_until)) &&
 		nullableNonNegative(value.tc_recommendation_missing) &&
 		nullablePercentile(value.tc_price_percentile) && nullableNonNegative(value.tc_price_coverage_days) &&
 		(value.tc_price_quoted_at === null || iso(value.tc_price_quoted_at)) && nullableDayUtc(value.tc_price_history_last_day) &&
 		legendarySplit(value.tc_reserved_quantity, value.tc_free_quantity, value.tc_quantity) &&
+		nonNegative(value.tc_actionable_quantity) && value.tc_actionable_quantity <= value.tc_quantity &&
 		nonEmptyText(value.descripcion);
 }
 
-function positionRecommendationAction(value: unknown): value is PositionRecommendationAction {
-	return (POSITION_RECOMMENDATION_ACTIONS as readonly unknown[]).includes(value);
+function objectDecisionAction(value: unknown): value is InventoryObjectDecisionAction {
+	return (INVENTORY_OBJECT_DECISION_ACTIONS as readonly unknown[]).includes(value);
 }
 
-function positionRecommendationReason(value: unknown): value is PositionRecommendationReasonCode {
-	return (POSITION_RECOMMENDATION_REASON_CODES as readonly unknown[]).includes(value);
+function objectDecisionReason(value: unknown): value is InventoryObjectDecisionReasonCode {
+	return (INVENTORY_OBJECT_DECISION_REASON_CODES as readonly unknown[]).includes(value);
 }
 
 function isInventoryVaultSyncPlan(value: unknown, configDir: string): value is InventoryVaultSyncPlan {
@@ -1202,7 +1247,7 @@ function isInventoryVaultSyncPlan(value: unknown, configDir: string): value is I
 		iso(value.capturedAt) && nonNegative(value.positions) && typeof value.canApply === 'boolean' && value.canApply && Array.isArray(value.steps) &&
 		value.steps.every((entry) => record(entry) && exactKeys(entry, ['positionId', 'path', 'status', 'before', 'after']) &&
 			typeof entry.positionId === 'string' && typeof entry.path === 'string' && normalizeVaultRelativePath(entry.path, { forbiddenPathPrefixes: [configDir] }) === entry.path &&
-			['create', 'update', 'unchanged', 'deactivate'].includes(String(entry.status)) &&
+			['create', 'update', 'unchanged', 'deactivate', 'conflict'].includes(String(entry.status)) &&
 			(entry.before === null || typeof entry.before === 'string') && (entry.after === null || typeof entry.after === 'string'));
 }
 

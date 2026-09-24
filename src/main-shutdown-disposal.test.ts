@@ -10,13 +10,16 @@ import TyrianCompanionPlugin from './main';
  * through `InventoryAdvisorPresentationController.dispose()`'s new `ports.dispose` call) and never
  * closed `ProductActionController`'s cooldown timer. This exercises the real private
  * `shutdownRuntime`, not a copy of it.
+ *
+ * H18.16: the inventory notes no longer capture anything of their own (they are written from the
+ * advisor's analysis), so their private catalog is gone; the advisor's is still closed through
+ * its controller's `dispose`.
  */
 describe('H14.14 shutdownRuntime disposal', () => {
 	afterEach(() => { vi.restoreAllMocks(); });
 
-	it('disposes the session catalog, the inventory-vault capture catalog, and the product actions, and awaits the in-game server close', async () => {
+	it('disposes the session catalog and the product actions, and awaits the in-game server close', async () => {
 		const sessionCatalogDispose = vi.fn();
-		const inventoryVaultCaptureCatalogDispose = vi.fn();
 		const productActionsDispose = vi.fn();
 		let closeResolved = false;
 		const alertIngameServerClose = vi.fn(() => new Promise<void>((resolve) => {
@@ -24,7 +27,6 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		}));
 		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
 			sessionCatalog: { dispose: sessionCatalogDispose },
-			inventoryVaultCaptureCatalog: { dispose: inventoryVaultCaptureCatalogDispose },
 			productActions: { dispose: productActionsDispose },
 			alertIngameServer: { close: alertIngameServerClose },
 		});
@@ -39,12 +41,10 @@ describe('H14.14 shutdownRuntime disposal', () => {
 		await result;
 
 		expect(sessionCatalogDispose).toHaveBeenCalledOnce();
-		expect(inventoryVaultCaptureCatalogDispose).toHaveBeenCalledOnce();
 		expect(productActionsDispose).toHaveBeenCalledOnce();
 		expect(alertIngameServerClose).toHaveBeenCalledOnce();
 		expect(closeResolved).toBe(true);
 		expect((harness as { sessionCatalog: unknown }).sessionCatalog).toBeNull();
-		expect((harness as { inventoryVaultCaptureCatalog: unknown }).inventoryVaultCaptureCatalog).toBeNull();
 		expect((harness as { alertIngameServer: unknown }).alertIngameServer).toBeNull();
 	});
 });
