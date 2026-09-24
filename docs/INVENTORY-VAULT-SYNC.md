@@ -73,11 +73,37 @@ Desde H18.16 cada nota separa lo que gestiona el plugin de lo que escribes tú:
   línea de marca o después de la línea de cierre. Se conserva byte a byte en cada reescritura.
 
 Si los datos no cambian, sincronizar no reescribe ninguna nota (0 escrituras). La fecha de la
-cotización (`tc_price_quoted_at`) y la vigencia de un veredicto de precio (`tc_recommendation_until`
-cuando no es una ventana de temporada) nacen del instante de la captura; por sí solas no cuentan como
-cambio, así que en una nota sin cambios de datos indican cuándo se estableció el veredicto actual,
-no cuándo se comprobó por última vez (eso lo dice el resumen de la última sincronización). Un precio,
-una cantidad o una decisión nuevos sí reescriben la nota, y con ellos esas dos fechas.
+cotización (`tc_price_quoted_at`) y la vigencia del análisis (`tc_recommendation_until`) nacen del
+instante de la captura; por sí solas no cuentan como cambio, así que en una nota sin cambios de datos
+indican cuándo se estableció el veredicto actual, no cuándo se comprobó por última vez (eso lo dice
+el resumen de la última sincronización). Un precio, una cantidad o una decisión nuevos sí reescriben
+la nota, y con ellos esas dos fechas.
+
+## Vender ahora o esperar: tres relojes y una comparación (H18.19)
+
+Cada nota lleva tres fechas distintas, y la Base las muestra en tres columnas:
+
+- **Precio del** (`tc_price_quoted_at`): cuándo se tomó la cotización de hoy. El histórico con el que
+  se comparó termina en `tc_price_history_last_day`.
+- **Análisis vigente hasta** (`tc_recommendation_until`): la captura más la edad máxima del precio.
+  Desde H18.19 no guarda nunca la fecha de una ventana de temporada.
+- **Vender desde / Vender hasta** (`tc_sell_window_from`, `tc_sell_window_to`): la ventana sugerida,
+  en días UTC inclusivos. Solo existe si algo la respalda: la ventana del calendario cuando el precio
+  de hoy la confirma, o la ventana a la que apunta una espera con ventaja demostrada.
+
+Para los objetos del calendario de festival, la nota lleva además la comparación entre vender ahora y
+esperar (`tc_wait_*`): veredicto (`wait`, `no_demonstrated_advantage` o `insufficient_data`), modo de
+venta, espera comparada, ventaja neta en cobre (mediana, peor y mejor temporada, con comisiones),
+temporadas evaluadas y cuántas perdió esperar. Se calcula con el mismo criterio fuera de muestra del
+experimento publicado (`src/economy/sell-timing-experiment.ts`), sobre la cantidad libre y el precio
+de hoy, y se rehace en cada análisis: si cambian el precio, la cantidad o las reservas, cambia la
+comparación y la nota se reescribe.
+
+Qué manda: solo una ventaja demostrada hace esperar. El calendario por sí solo no manda vender si el
+precio lo contradice (hundido, en el suelo del año o en una serie plana), y tampoco manda esperar.
+Sin ventaja demostrada, o con datos insuficientes, la recomendación es vender ahora y el motivo lo
+dice. Para tener temporadas que comparar, la semilla de datawars2 de un objeto del calendario guarda
+todo su histórico publicado, no solo el último año.
 
 ## Migrar desde los scripts `gw2_*`
 

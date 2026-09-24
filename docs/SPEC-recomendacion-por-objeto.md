@@ -212,6 +212,10 @@ Reglas de forma, todas heredadas de contratos que ya existen en el repo:
   `seasonalWindowClosesAfterMs` (`src/economy/seasonal-window.ts:80`); para `sell`/`hold` es
   `capturedAt + policy.maxPriceAgeMs` (`src/advisor/inventory-advisor-builtin-bundle.ts:86`, hoy
   900.000 ms). Que caduque es el punto: una recomendación de precio de hace tres semanas es ruido.
+  **Sustituido por H18.19** (auditoría final del 24 sep 2026, §3.D y Anexo 3): `tc_recommendation_until`
+  es solo la vigencia del análisis (`capturedAt + maxPriceAgeMs`) para todo motivo; la ventana
+  sugerida va en `tc_sell_window_from`/`tc_sell_window_to` y la fecha de la cotización en
+  `tc_price_quoted_at`. Detalle en `docs/INVENTORY-VAULT-SYNC.md`, «Vender ahora o esperar».
 - Ningún campo lleva account id, clave, ruta ni snapshot (`docs/PRODUCT.md:13`).
 
 ### 2.2 Dónde se calcula
@@ -347,6 +351,16 @@ haya medido.
 - `undecidable` produce `tc_recommendation: review` con el motivo exacto
   (`malformed_input`, `no_close_today`, `insufficient_reference` o `undecidable_calendar`,
   `src/economy/sell-signal.ts:93`).
+
+> **Sustituido por H18.19** (auditoría final del 24 sep 2026, §3.D, prueba 2 de §8). El calendario
+> ya no decide solo en ningún sentido. Solo espera (`sell_at_season`, motivo
+> `wait_advantage_demonstrated`) un objeto para el que la comparación vender ahora frente a esperar
+> (`src/economy/sell-or-wait.ts`, mismo criterio fuera de muestra que
+> `src/economy/sell-timing-experiment.ts`) demuestra ventaja. `seasonal_sell_window` y
+> `bid_above_reference` exigen que el precio de hoy confirme la oportunidad (supera la fracción
+> `minimumOfMaxBps` del máximo del año y está por encima de su mínimo). Todo lo demás vende ahora
+> con `no_demonstrated_wait_advantage` o `wait_evidence_insufficient`. `seasonal_hold` sigue en la
+> lista cerrada para que las notas ya escritas validen, pero ninguna regla lo emite.
 
 #### Qué hay que MEDIR con datawars2 para que la ventana sea un dato y no una suposición
 
