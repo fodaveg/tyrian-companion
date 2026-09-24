@@ -8,7 +8,7 @@ import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
-import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
+import type { PriceSeedQueueCoverage } from '../economy/price-seed-model';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';

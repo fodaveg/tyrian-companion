@@ -61,6 +61,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 	['src/ui/inventory-advisor-item-view.ts', {
 		imports: ['obsidian', '../core/i18n', '../advisor/inventory-advisor-model', '../advisor/inventory-preferences-runtime',
 			'../economy/reservation-model', '../economy/price-history-model', '../economy/price-history-runtime',
+			// H18.17: type-only, for the queue-coverage shape a pure model owns (`PriceSeedQueueCoverage`).
+			// The view calls nothing on it; it only reads the count fields H18.17 added to the panel.
+			'../economy/price-seed-model',
 			'../economy/price-seed-panel-service', '../economy/sell-signal-runtime',
 			'./inventory-advisor-view-model', './inventory-advisor-view', './price-history-panel-view',
 			'./inventory-vault-sync-run-controller', './product-action-controller', './product-shell'],
@@ -71,6 +74,7 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 				'actions.runInventoryVaultSync', 'actions.confirmInventoryVaultSync', 'actions.cancelInventoryVaultSync',
 				'actions.getPriceHistoryState', 'actions.enablePriceHistory', 'actions.loadPriceHistorySeries',
 				'actions.resolvePriceHistoryItemCatalog', 'actions.getPriceHistorySeedState', 'actions.getSellSignalState',
+				'actions.getPriceSeedQueueCoverage',
 				'actions.getProductActionController', 'actions.hasConfiguredApiKey', 'actions.openProductSettings'],
 	}],
 	['src/ui/inventory-advisor-view.ts', {

@@ -81,6 +81,25 @@ export type PriceSeedResult =
 	| { status: 'seeded'; seed: PriceSeedV1 }
 	| { status: 'no_seed'; reason: PriceSeedFailureReason };
 
+/**
+ * Coverage across the WHOLE watch list passed to `PriceSeedBulkRefreshService.run`
+ * (`price-seed-bulk-refresh.ts`), not just the slice one run reached.
+ *
+ * Lives in this pure, side-effect-free model (moved here from `price-seed-bulk-refresh.ts` for
+ * H5.11, 24 sep 2026) so a presentation-layer consumer — `inventory-advisor-item-view.ts`,
+ * `price-history-panel-view.ts` — can read its *shape* with `import type` without pulling in the
+ * bulk-refresh module's IndexedDB and network capability.
+ */
+export interface PriceSeedQueueCoverage {
+	total: number;
+	/** Has a cached seed (any freshness): "con histórico". */
+	seeded: number;
+	/** Last answer was `no_seed`, still on file: "sin datos". */
+	noData: number;
+	/** Neither yet: waiting its turn on a future sync: "pendiente". */
+	pending: number;
+}
+
 const DAY_UTC = /^\d{4}-\d{2}-\d{2}$/u;
 
 /**
