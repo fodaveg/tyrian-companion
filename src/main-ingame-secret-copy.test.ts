@@ -95,6 +95,42 @@ describe('0.2.1 "Copy in-game bridge token" command', () => {
 		expect(surfaces.notices).toEqual(['The token could not be copied.']);
 	});
 
+	// Before the runtime is ready `updateSettings` answers `blocked`: the generated token is in
+	// SecretStorage but not selected, so the bridge would reject it. Neither "created and copied"
+	// nor the clipboard, and the next attempt reuses that same token instead of minting another.
+	it('reports a failure and copies nothing when the token selection is not saved, then reuses the stored token', async () => {
+		const { plugin, secrets, clipboard, saved, records } = secretCopyPlugin({ alertIngameEnabled: true });
+		const target = plugin as unknown as { updateSettings: (update: Partial<TyrianSettings>) => Promise<unknown> };
+		const save = target.updateSettings;
+		target.updateSettings = async (update) => {
+			saved.push(update);
+			return { status: 'blocked', reason: 'runtime_starting' };
+		};
+
+		await plugin.copyAlertIngameSecretFromCommand();
+
+		expect(surfaces.notices).toEqual(['The token could not be copied.']);
+		expect(clipboard.writes).toEqual([]);
+		expect(surfaces.modals).toEqual([]);
+		expect(plugin.settings.alertIngameSecret).toBe('');
+		expect(records.find((record) => record.phase === 'failure')).toMatchObject({
+			component: 'notification', action: 'command_execute', state: 'ingame_secret_copy',
+		});
+		const stored = secrets.get(ALERT_INGAME_SECRET_ID);
+		expect(stored).toMatch(/^[\w-]{43}$/u);
+		await expect(plugin.copyAlertIngameSecret()).rejects.toThrow();
+		expect(clipboard.writes).toEqual([]);
+
+		target.updateSettings = save;
+		surfaces.notices.length = 0;
+		await plugin.copyAlertIngameSecretFromCommand();
+
+		expect(secrets.get(ALERT_INGAME_SECRET_ID)).toBe(stored);
+		expect(clipboard.writes).toEqual([stored]);
+		expect(surfaces.notices).toEqual(['New token created and copied.']);
+		expect(JSON.stringify(records)).not.toContain(stored!);
+	});
+
 	it('registers the command on load, named from the catalog', () => {
 		const commands: Array<{ id: string; name: string; callback?: () => void }> = [];
 		const plugin = new TyrianCompanionPlugin({} as App, { id: 'tyrian-companion' } as PluginManifest);

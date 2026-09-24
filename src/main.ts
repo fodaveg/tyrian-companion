@@ -2870,7 +2870,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * 0.2.1: when the clipboard refuses the write, the value goes to `AlertIngameSecretModal`
 	 * instead (`shown`), the one other place it may appear. The refusal is logged by error class
 	 * only, never with the error's message, and the call still resolves: the settings button and the
-	 * palette command share this path, so both get the same fallback.
+	 * palette command share this path, so both get the same fallback. When the selection of a
+	 * generated or recovered token cannot be saved, it rejects before the clipboard or the modal:
+	 * both callers then show their existing failure copy.
 	 */
 	async copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
 		const deliver = async (secret: string, outcome: 'copied' | 'generated'): Promise<AlertIngameSecretCopyOutcome> => {
@@ -2899,7 +2901,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const secret = isUsableIngameBridgeSecret(stored)
 				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
 			if (secret !== stored) this.app.secretStorage.setSecret(ALERT_INGAME_SECRET_ID, secret);
-			await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
+			// Unsaved (`blocked` while the runtime starts) means the entry is not selected and the
+			// bridge would reject this token: fail instead of handing it out. The value stays in
+			// SecretStorage, so the next attempt reuses it rather than minting another.
+			const selection = await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
+			if (selection.status !== 'saved') throw new Error('The in-game bridge token selection was not saved.');
 			return await deliver(secret, 'generated');
 		};
 		return await (this.localDebugActions?.run(
