@@ -210,8 +210,12 @@ function classifyLine(input: InventoryAdvisorInputV1, pack: InventoryKnowledgePa
 	const route = chooseRoute(input, knowledge, itemId);
 	const routeEvidenceReady = evidenceReady && (route.action === 'market' || curatedKnowledgeReady);
 	if (route.action === 'review' || !routeEvidenceReady) {
-		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0,
-			route.action === 'review' ? route.reason : 'evidence_incomplete');
+		// H18.5: `evidenceReady` false is a genuine evidence gap; `curatedKnowledgeReady` false
+		// (with evidence otherwise ready) is the knowledge pack's OWN 90-day caducity — reported
+		// distinctly so it never surfaces indistinguishable from a price problem.
+		const reason = route.action === 'review' ? route.reason
+			: !evidenceReady ? 'evidence_incomplete' : 'knowledge_stale';
+		for (const position of freePositions) add('review', position, remaining.get(position.ref) ?? 0, reason);
 		return { itemId, name: input.catalog.items[String(itemId)]?.name ?? `Item ${itemId}`,
 			ownedQuantity: input.snapshot.ownedByItem[String(itemId)] ?? 0, positions, decisions };
 	}
@@ -361,7 +365,8 @@ function reasonFor(value: string): InventoryAdvisorReasonCode {
 	const reasons: Record<string, InventoryAdvisorReasonCode> = {
 		alternative_route_exists: 'alternative_route_exists', no_sell: 'no_sell',
 		reserved_for_goal: 'reserved_for_goal', user_keep_exception: 'user_keep_exception', position_not_actionable: 'position_not_actionable',
-		knowledge_missing: 'rule_missing', rule_missing: 'rule_missing', rule_conflict: 'rule_conflict', rule_stale: 'rule_stale', evidence_incomplete: 'price_partial', no_salvage: 'no_salvage',
+		knowledge_missing: 'rule_missing', rule_missing: 'rule_missing', rule_conflict: 'rule_conflict', rule_stale: 'rule_stale',
+		knowledge_stale: 'knowledge_stale', evidence_incomplete: 'price_partial', no_salvage: 'no_salvage',
 		economic_comparison_missing: 'economic_comparison_missing',
 		economic_activation_pending: 'economic_activation_pending',
 		price_partial: 'price_partial', price_stale: 'price_stale', price_missing: 'price_missing',

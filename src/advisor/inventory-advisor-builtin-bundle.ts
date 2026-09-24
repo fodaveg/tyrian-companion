@@ -19,6 +19,7 @@ import {
 	type InventoryContainerEconomyPackV1,
 	type FestivalCalendarV1,
 	type FestivalCalendarEntryV1,
+	type FestivalCalendarCandidateV1,
 } from './inventory-container-economy';
 
 export const INVENTORY_ADVISOR_BUILTIN_BUNDLE_VERSION = 3 as const;
@@ -86,40 +87,94 @@ const BUILTIN_RULE_PACK: InventoryAdvisorRulePackV2 = {
 };
 
 /**
- * M3: measured per-item selling windows (`docs/audit/2026-09-11-festivales-datawars2.md`), 7
- * editions (2019-2025) of Shadow of the Mad King against datawars2's `buy_price_avg`. Distinct
- * from `HALLOWEEN_SEASONAL_WINDOW`/`economyPack.season`: none of these five windows coincide with
- * the festival's own 10-01..11-15 span, so each carries its own `seasonId`.
+ * M3 / H18.20: measured per-item selling windows (`docs/audit/2026-09-11-festivales-datawars2.md`),
+ * 7 editions (2019-2025) of Shadow of the Mad King against datawars2's `buy_price_avg`. Distinct
+ * from `HALLOWEEN_SEASONAL_WINDOW`/`economyPack.season`: none of these windows coincide with the
+ * festival's own 10-01..11-15 span, so each carries its own `seasonId`.
+ *
+ * H18.20 replaces the fixed `MM-DD` pair every Halloween-dependent entry used to carry with a
+ * `festival_relative` candidate, anchored to `HALLOWEEN_FESTIVAL_ANCHORS`'s real per-year start
+ * instead: the old `10-05..10-24` for 47909/48805 was already an attempt to cover the 5-18 October
+ * range the festival's start actually moves inside, and a fixed guess is exactly the bug this
+ * exists to fix. Offsets below are the audit's own measured windows (§5's per-item verdict), not
+ * re-derived here.
+ *
+ * 36038 (Saco) keeps its "mayo" candidate (`saco-halloween-primavera`, unrelated to the festival's
+ * start) alongside the new anchored "antes del festival" one, which is the H18.20 acceptance case:
+ * an item with two live candidates, one seasonal-annual and one festival-anchored.
+ *
+ * 47909's item name is "Candy Corn Cob" (`GET /v2/items/47909`, verified 24 sep 2026); the audit's
+ * own label ("Barra de caramelo") was wrong — David's actual term is "mazorca de caramelo"
+ * (auditoría final consolidada 2026-09-24, §9 pregunta 6). `seasonId` below uses the corrected
+ * name; nothing reads the old string.
  *
  * 36059 (Plastic Fangs) has NO entry: its `buy_price_avg` is 0 or null across its whole measured
  * history (the audit's resumen table, id 36059), so it falls to rule (c) rather than a guessed
  * window. It stays in `PRICE_HISTORY_NOTE_PILOT_ITEMS` regardless (its sell-side series is fine).
+ *
+ * Any other item — including every legendary crafting ingredient never measured against a
+ * festival — has no entry at all: `festivalCalendarEntryForItem` returns `null` for it, which
+ * every consumer already treats as "not covered", never as a guessed window.
  */
+const HALLOWEEN_FESTIVAL_ID = 'halloween';
+const FESTIVAL_AUDIT_ANCHOR = 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4';
+
+function festivalRelative(
+	seasonId: string, opensOffsetDays: number, closesOffsetDays: number, auditRow: string,
+): FestivalCalendarCandidateV1 {
+	return {
+		kind: 'festival_relative',
+		window: { version: 1, seasonId, festivalId: HALLOWEEN_FESTIVAL_ID, opensOffsetDays, closesOffsetDays },
+		auditRow,
+	};
+}
+
 const FESTIVAL_CALENDAR_ENTRIES: FestivalCalendarEntryV1[] = [
 	{
 		itemId: 36_038,
-		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (36038 Saco de Halloween)',
-		window: { version: 1, seasonId: 'saco-halloween-primavera', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 },
+		candidates: [
+			// §5 verdict: "vender en mayo o en las 4 semanas ANTES del festival (-28..-1)".
+			festivalRelative('saco-halloween-antes-festival', -28, -1, `${FESTIVAL_AUDIT_ANCHOR} (36038 Saco de Halloween)`),
+			{
+				kind: 'annual',
+				window: { version: 1, seasonId: 'saco-halloween-primavera', opensOn: '05-01', closesOn: '05-31', returnsInMonth: 5 },
+				auditRow: `${FESTIVAL_AUDIT_ANCHOR} (36038 Saco de Halloween)`,
+			},
+		],
 	},
 	{
 		itemId: 36_041,
-		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (36041 Trozo de caramelo)',
-		window: { version: 1, seasonId: 'trozo-caramelo-semana-previa', opensOn: '09-28', closesOn: '10-17', returnsInMonth: 9 },
+		// §5 verdict: "vender la semana anterior al inicio (-7..-1)".
+		candidates: [
+			festivalRelative('trozo-caramelo-semana-previa', -7, -1, `${FESTIVAL_AUDIT_ANCHOR} (36041 Trozo de caramelo)`),
+		],
 	},
 	{
 		itemId: 47_909,
-		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (47909 Barra de caramelo)',
-		window: { version: 1, seasonId: 'barra-caramelo-inicio-festival', opensOn: '10-05', closesOn: '10-24', returnsInMonth: 10 },
+		// §5 verdict: "vender al EMPEZAR el festival (+0..+6) o la semana anterior".
+		candidates: [
+			festivalRelative('mazorca-caramelo-antes-festival', -7, -1, `${FESTIVAL_AUDIT_ANCHOR} (47909 Barra de caramelo)`),
+			festivalRelative('mazorca-caramelo-inicio-festival', 0, 6, `${FESTIVAL_AUDIT_ANCHOR} (47909 Barra de caramelo)`),
+		],
 	},
 	{
 		itemId: 43_320,
-		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (43320 Jorcamelo)',
-		window: { version: 1, seasonId: 'jorcamelo-junio', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 },
+		// §5 verdict: the festival is NOT this item's window (all four phases below the annual
+		// mean); it keeps its plain annual June window, unrelated to any festival anchor.
+		candidates: [{
+			kind: 'annual',
+			window: { version: 1, seasonId: 'jorcamelo-junio', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 },
+			auditRow: `${FESTIVAL_AUDIT_ANCHOR} (43320 Jorcamelo)`,
+		}],
 	},
 	{
 		itemId: 48_805,
-		auditRow: 'docs/audit/2026-09-11-festivales-datawars2.md#5-resultado-por-ítem-paso-4 (48805 Colmillos de plástico de alta calidad)',
-		window: { version: 1, seasonId: 'colmillos-alta-calidad-inicio-festival', opensOn: '10-05', closesOn: '10-24', returnsInMonth: 10 },
+		// §5 verdict: "vender en la PRIMERA SEMANA del festival (+0..+6); antes del festival
+		// también está alto (-21..-1)".
+		candidates: [
+			festivalRelative('colmillos-alta-calidad-antes-festival', -21, -1, `${FESTIVAL_AUDIT_ANCHOR} (48805 Colmillos de plástico de alta calidad)`),
+			festivalRelative('colmillos-alta-calidad-inicio-festival', 0, 6, `${FESTIVAL_AUDIT_ANCHOR} (48805 Colmillos de plástico de alta calidad)`),
+		],
 	},
 ];
 

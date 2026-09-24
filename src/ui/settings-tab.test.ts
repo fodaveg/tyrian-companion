@@ -423,7 +423,7 @@ describe('legendary targets setting (M4)', () => {
 		const plugin = settingsPlugin();
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
-			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true }],
+			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: false }],
 		}));
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
@@ -440,7 +440,7 @@ describe('legendary targets setting (M4)', () => {
 		const plugin = settingsPlugin();
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
-			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false }],
+			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false, tableStale: false }],
 		}));
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
@@ -450,6 +450,24 @@ describe('legendary targets setting (M4)', () => {
 		definition.render(fake.setting as never);
 		await fake.clickLoadButton();
 		expect(fake.textContent()).toContain('No materials table');
+	});
+
+	/** H18.5: a curated table that HAS an entry but is past its own `validUntil` must still say so —
+	 * `hasTable: true` alone used to look identical to a freshly reviewed table. */
+	it('shows the "table expired" warning for a legendary with a stale curated entry', async () => {
+		const plugin = settingsPlugin();
+		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
+			status: 'ok' as const,
+			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: true }],
+		}));
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		await fake.clickLoadButton();
+		expect(fake.textContent()).toContain('Materials table expired');
 	});
 });
 

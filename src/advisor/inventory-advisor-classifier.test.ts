@@ -291,6 +291,37 @@ describe('H4.15 inventory advisor classifier', () => {
 			.toContainEqual(expect.objectContaining({ code: 'rule_stale' }));
 	});
 
+	/**
+	 * H18.5: the KNOWLEDGE pack's own 90-day review window (`knowledgeFresh`) can expire before
+	 * the rule pack does — the built-in bundle's real timeline has this ~19 days before its full
+	 * `validUntil`. Before this fix that fell back to the generic `evidence_incomplete` ->
+	 * `price_partial` mapping, indistinguishable from an actual price gap.
+	 */
+	it('reports a curated route withheld by knowledge-pack caducity as knowledge_stale, not price_partial', () => {
+		const staleKnowledge = fixture();
+		const stalePack = staleKnowledge.input.rulePack;
+		if (stalePack.schemaVersion !== 1) throw new Error('expected V1 fixture');
+		stalePack.rules = [rule('use-10', 'approved')];
+		stalePack.sha256 = sha256InventoryRulePack(stalePack);
+		staleKnowledge.knowledgePack.entries[0]!.use = {
+			status: 'applicable', ruleId: 'use-10', sourceIds: ['source'],
+		};
+		// The rule pack itself stays fresh (published/reviewed 2026-08); only the knowledge
+		// pack's OWN review date moves far enough back to cross its 90-day-equivalent window.
+		staleKnowledge.knowledgePack.publishedAt = '2025-11-01T00:00:00.000Z';
+		staleKnowledge.knowledgePack.reviewedAt = '2025-12-01T00:00:00.000Z';
+		staleKnowledge.knowledgePack.sources = [{ id: 'source', url: 'https://wiki.guildwars2.com', retrievedAt: '2025-11-15T00:00:00.000Z' }];
+		staleKnowledge.knowledgePack.sha256 = sha256InventoryKnowledgePack(staleKnowledge.knowledgePack);
+		expect(isInventoryKnowledgePack(staleKnowledge.knowledgePack)).toBe(true);
+
+		const result = classifyInventoryAdvisor(staleKnowledge);
+		expect(result.report?.lines[0]?.decisions[0]).toMatchObject({ action: 'review' });
+		expect(result.report?.lines[0]?.reasons)
+			.toContainEqual(expect.objectContaining({ code: 'knowledge_stale' }));
+		expect(result.report?.lines[0]?.reasons)
+			.not.toContainEqual(expect.objectContaining({ code: 'price_partial' }));
+	});
+
 	it('suppresses only the market recommendation corresponding to an active order side', () => {
 		const selling = fixture();
 		selling.activeOrders = activeOrders([

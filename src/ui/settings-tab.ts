@@ -535,6 +535,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 									cls: 'tyrian-companion-settings__legendary-target-warning',
 									text: this.t('settings.legendary.targets.noTable'),
 								});
+							} else if (option.tableStale) {
+								row.createSpan({
+									cls: 'tyrian-companion-settings__legendary-target-warning',
+									text: this.t('settings.legendary.targets.tableStale'),
+								});
 							}
 							checkbox.addEventListener('change', () => {
 								void applyLegendaryTargetChange(checkbox, option.itemId);
