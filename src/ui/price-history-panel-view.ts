@@ -1,5 +1,6 @@
 import type { Translator } from '../core/i18n';
 import { formatRelativeDay } from './format-time';
+import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1, PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
@@ -20,6 +21,12 @@ export interface PriceHistoryPanelInteractions {
 	itemIcons?: Readonly<Record<number, string>>;
 	/** The datawars2 seed for the selected item. Stale for a different id is treated as absent. */
 	seed?: PriceHistoryPanelSeedState;
+	/**
+	 * H18.17: the bulk seed queue's coverage across the WHOLE watch list, from the last
+	 * "Sincronizar inventario" pass. `null`/absent until that first pass completes; a stale read,
+	 * never a trigger — this panel never starts a sync by itself.
+	 */
+	queueCoverage?: PriceSeedQueueCoverage | null;
 	busy?: boolean;
 	onEnable: () => void | Promise<void>;
 	onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) => void | Promise<void>;
@@ -107,6 +114,20 @@ export function renderPriceHistoryPanel(
 	retention.className = 'tyrian-price-history__retention';
 	retention.textContent = translator.t('priceHistory.retentionWarning');
 	container.append(retention);
+	// H18.17: visible progress for the WHOLE watch list, not only the selected item's own seed —
+	// "cuántos con histórico, cuántos pendientes, cuántos sin datos", where the user already is.
+	if (interactions.queueCoverage != null) {
+		const queue = createEl('p');
+		queue.className = 'tyrian-price-history__queue-coverage';
+		queue.setAttribute('aria-live', 'polite');
+		queue.textContent = translator.t('priceHistory.queue.coverage', {
+			seeded: interactions.queueCoverage.seeded,
+			pending: interactions.queueCoverage.pending,
+			noData: interactions.queueCoverage.noData,
+			total: interactions.queueCoverage.total,
+		});
+		container.append(queue);
+	}
 	// A seed cached for a DIFFERENT item than the one on screen is stale evidence, not this item's
 	// history; it is treated as absent rather than drawn under the wrong id.
 	const seed = interactions.seed?.itemId === selectedItemId ? interactions.seed : undefined;

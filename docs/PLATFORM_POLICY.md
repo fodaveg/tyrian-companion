@@ -23,9 +23,13 @@ desde el servicio de terceros datawars2, mediante el endpoint público
 `https://api.datawars2.ie/gw2/v2/history/json?itemID=36038&fields=date,buy_price_avg,buy_price_max,
 buy_price_min,sell_price_avg,sell_price_max,sell_price_min` (migrado desde `v1/history` el 4 de
 septiembre de 2026: mismos campos, mismos valores, 3,2 veces menos bytes). Esta descarga es única,
-sin clave, ocurre únicamente durante una sesión activa a la primera petición de histórico, y siembra
-la IndexedDB local con los datos antecedentes. Si la descarga falla, el plugin declara «sin semilla»
-y construye su serie desde las capturas propias realizadas después; nunca inventa valores ausentes.
+sin clave, y siembra la IndexedDB local con los datos antecedentes. Corregido el 24 de septiembre de
+2026 (H18.17, auditoría §3.D): ya no exige una sesión activa —eso hacía que la oportunidad de venta
+del saco dependiera de estar jugando ese mismo día—; ocurre tras la primera compactación del
+histórico local, ella misma solo alcanzable mientras el histórico de precios está activado y su
+propio programador ya configurado por la persona está corriendo. Si la descarga falla, el plugin
+declara «sin semilla» y construye su serie desde las capturas propias realizadas después; nunca
+inventa valores ausentes.
 
 ## Histórico de terceros y icono en el panel del histórico local de precios (H9.1)
 
@@ -52,7 +56,8 @@ datawars2; nunca se mezclan en una sola serie indistinguible.
 
 Sigue sin relajarse la regla de «ninguna llamada de red durante la carga del plugin ni la apertura de
 una vista»: las dos peticiones de esta sección viven exclusivamente detrás de la acción explícita de
-cargar un histórico, igual que la semilla H13.2 vive detrás de una sesión activa.
+cargar un histórico; la semilla H13.2 vive detrás de la sincronización del histórico local ya
+configurada por la persona (ver arriba), no de abrir ninguna vista.
 
 ## Piloto de histórico dentro de la nota de inventario (H9.2)
 
@@ -79,6 +84,14 @@ anterior termina. Un tope por ejecución (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER
 `src/economy/price-seed-bulk-refresh.ts`) limita cuántas peticiones nuevas dispara una sola
 sincronización; lo que queda fuera del tope se siembra en la sincronización siguiente. Un fallo de
 datawars2 en un ítem se registra y la siembra continúa con el siguiente; ninguno detiene el resto.
+Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta «sin semilla» se
+recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas
+antes de volver a intentarla (`PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS`); antes de esto, un ítem sin
+semilla volvía a gastar uno de los 25 huecos en cada sincronización y, con más de 25 ítems en la
+lista, los últimos podían no atenderse nunca. El progreso de la cola completa (cuántos ítems tienen
+histórico, cuántos siguen pendientes de su turno y cuántos respondieron sin datos) se muestra en el
+panel de «Histórico local de precios» del asesor, como una lectura que nunca dispara trabajo por sí
+misma.
 
 La nota que el plugin escribe embebe únicamente un bloque de código Markdown mínimo con el id del
 objeto (`\`\`\`tyrian-price-history` / `itemId: <id>`), nunca una serie de precios ni ningún dato
