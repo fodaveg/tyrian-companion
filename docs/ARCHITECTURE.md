@@ -498,20 +498,34 @@ escucha solo en `127.0.0.1`; el host no es un parámetro, así que ningún llama
 interfaz, y además verifica tras `listen` que la dirección resuelta sea loopback antes de devolver
 el handle, para que un `net` inyectado que ignore el host no pase silenciosamente. Reintenta un
 puerto ocupado con el mismo backoff `[250, 500, 1000, 2000, 5000]` ms de H8, sobre el mismo servidor.
-De cada cliente se lee como máximo una línea, el `hello`, hasta 128 bytes; en cuanto llega el salto
-de línea el socket deja de leerse, y cualquier byte posterior —en la misma escritura o en una
-posterior— cierra la conexión. El broadcast hacia los clientes conectados lanza en vez de truncar si
-la línea compuesta supera 512 bytes, y no reutiliza el framer incremental de H8 (`src/platform/`):
-es una implementación nueva de unas 60 líneas, para no arrastrar este canal al censo ni al modelo de
-amenazas de Mumble.
+
+Desde H18.22/H18.23 el canal es bidireccional y autenticado (protocolo v2, contrato en
+[SPEC del puente](SPEC-puente-ingame.md)). `alert-ingame-protocol.ts` es el contrato ejecutable y
+puro: decodifica cada línea (UTF-8 exacto, sin BOM, un objeto, sin claves repetidas, 512 bytes),
+valida el `hello` y los mensajes con nonce y secuencia con claves exactas, y genera y compara en
+tiempo constante el secreto compartido. `alert-ingame-server.ts` guarda cada conexión como
+**pendiente** hasta un `hello` válido y autenticado en 5 s: una pendiente no cuenta en
+`clientCount()`, no recibe avisos y se cierra con `hello_timeout` si calla (H18.22). Autenticada,
+recibe `welcome` con un nonce propio, y cada `context`/`heartbeat`/`bye` válido renueva un plazo de
+vida de 15 s; toda violación escribe una línea `error` con solo el código y cierra. Los eventos de
+conexión salen por un único callback hacia `alert-ingame-presence.ts`, un reductor puro que funde
+todas las conexiones en una sola presencia (inicio al primer gameplay, pérdida con 10 minutos de
+gracia, restauración con el mismo `presenceId`, fin por gracia vencida o `bye game_exit`) más un
+envoltorio que arma el temporizador de gracia y aísla a los suscriptores. El broadcast lanza en vez
+de truncar si la línea compuesta supera 512 bytes. Nada de esto importa `src/platform/`: se repite
+la disciplina de H8.4, no sus módulos, para no arrastrar este canal al censo ni al modelo de
+amenazas de H8.
 
 El cableado en `main.ts` no abre el servidor al cargar el plugin: `ensureAlertIngameServer` lo
 arranca de forma perezosa en la primera entrega tras activarse, y lo reabre si el puerto configurado
 cambia, leyendo `this.settings.alertIngameEnabled`/`alertIngamePort` en el momento de entregar, igual
 que el webhook lee su URL. Con el canal apagado, `deliver` es un no-op que cuenta como entregado, el
 mismo patrón que una URL de webhook vacía. Con el canal encendido, `deliver` lanza si hay cero
-clientes conectados, para que el informe del emisor marque `failed` y el usuario sepa que el juego
-no estaba escuchando; no hay cola ni reintento aquí, la cola durable de Obsidian ya conserva el
+clientes autenticados, para que el informe del emisor marque `failed` y el usuario sepa que el juego
+no estaba escuchando; el secreto se lee del SecretStorage en cada `hello` (`data.json` solo guarda
+el nombre de la entrada) y la presencia vive en `main.ts` fuera de cualquier servidor concreto, de
+modo que un cambio de puerto es una pérdida con gracia y no un juego nuevo; H18.26 la consume por
+`getIngamePresence()`/`onIngamePresence()`; no hay cola ni reintento aquí, la cola durable de Obsidian ya conserva el
 histórico. `ALERT_CHANNEL_IDS` pasa a seis y el test de cableado en `main-alert-wiring.test.ts` cubre
 tanto el canal apagado por defecto como el caso de cero clientes, del mismo estilo que los otros
 cinco canales: son las dos pruebas que hacen falta, porque la del módulo puro no ve el cableado.

@@ -137,22 +137,36 @@ precios públicos desde `https://api.datawars2.ie` de hasta 25 objetos, sin clav
 solo para inicializar el histórico local; si falla, el plugin declara «sin semilla» y captura a
 partir de ese momento. El webhook es una salida al destino que elige el usuario en ajustes (vacía
 por defecto); si se proporciona, el plugin envía solo nombre del objeto, cantidad y valor en cobre
-cuando detecta un drop valioso. El puente dentro del juego (H13.9/H13.15) es un servidor TCP en
-`127.0.0.1`, apagado por defecto, al que se conectan addons de Nexus o Blish HUD instalados aparte
-para pintar el mismo aviso encima de la ventana del juego; envía los mismos tres campos que el
-webhook, es de una sola dirección y falla en el informe del emisor si ningún addon está conectado.
+cuando detecta un drop valioso. El puente con los addons del juego (H13.9/H13.15, protocolo v2 de
+H18.23) es un servidor TCP en `127.0.0.1`, apagado por defecto, al que se conectan addons de Nexus o
+Blish HUD instalados aparte. Es bidireccional y autenticado: cada addon presenta un secreto
+compartido que el usuario copia desde los ajustes; el plugin le envía los mismos tres campos del
+aviso que el webhook, para pintarlo encima de la ventana del juego, y el addon le devuelve solo el
+contexto de juego (mapa, personaje y si está en gameplay, en carga o en la selección de personaje).
+Una conexión que no se autentica no cuenta ni recibe avisos, y el canal falla en el informe del
+emisor si no hay ningún addon autenticado. Contrato completo en
+[SPEC del puente](SPEC-puente-ingame.md).
 Linux con Steam/Proton es la plataforma primaria, macOS con CrossOver la secundaria y Windows
-permanece en beta. La matriz de soporte, los gates y las métricas del piloto se fijan en
+permanece en beta, salvo el puente con Blish HUD: en Windows tiene que funcionar, con su propia QA,
+porque es la plataforma de los compañeros del clan (decisión del 24 sep 2026). La matriz de soporte, los gates y las métricas del piloto se fijan en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un
-backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato
+Queda fuera de v1 que el plugin lea Mumble Link por sí mismo (el helper H8 sigue en el árbol y no es
+la vía viva), y también cualquier automatización del juego, operaciones sobre el bazar, un backend
+compartido y recomendaciones destructivas automáticas. El contexto de juego entra solo por los
+addons de Nexus y Blish HUD, que lo leen de su anfitrión y lo envían por el puente autenticado
+(decisión de David del 24 sep 2026). H8.1 fija para v2 solo el contrato
 previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el
 runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
-El aviso dentro del juego (H13.9/H13.15) se ve por un addon de Nexus o un módulo de Blish HUD
-instalados aparte por el usuario; son addons de terceros que corren dentro del proceso del juego o
-al lado de él, dentro de lo que la política de addons de terceros de ArenaNet permite. El addon en
-sí (Nexus en Rust, Blish HUD en C#) vive en un repositorio aparte y no forma parte de este plugin.
+El aviso dentro del juego (H13.9/H13.15) se ve, y el contexto de juego se lee, por un addon de
+Nexus o un módulo de Blish HUD instalados aparte por el usuario, con el mismo protocolo los dos; son
+addons de terceros que corren dentro del proceso del juego o al lado de él, dentro de lo que la
+política de addons de terceros de ArenaNet permite: no simulan entrada ni actúan en el juego. El
+addon en sí (Nexus en Rust, Blish HUD en C#) vive en un repositorio aparte y no forma parte de este
+plugin. Dos addons conectados a la vez producen una sola presencia; una conexión cerrada es pérdida
+de presencia con 10 minutos de gracia, no el cierre del juego. Las fuentes soportadas y auditadas
+no acreditan un flujo completo de botín ni una señal fiable de AFK: la ausencia de combate, una
+desconexión o un cambio de mapa no prueban por sí solos inactividad.
 
 H9.6 descarta el benchmarking de clan en el producto actual. Comparar cuentas exigiría intercambio de
 datos o un backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se podrá
@@ -185,6 +199,8 @@ Cada dato local se trata como no confiable, se valida con versionado, nonce, ord
 y cada canal empieza con `initialSequence:0`; se descarta ante cualquier duda. No hay persistencia raw ni fallback por memoria del proceso,
 inyección, logs, interceptación de tráfico o automatización. Incluso en una fase posterior, el dato
 solo podrá mejorar evidencia o proponer revisión: **Start/Stop siempre requiere confirmación humana**.
+Esta regla gobierna el dato de H8; no alcanza a la presencia del puente de addons, que por decisión
+de David del 24 sep 2026 marca inicio y fin sin confirmación (H18.23 la expone, H18.26 la consume).
 
 ### Política shadow H8.8
 
@@ -339,7 +355,10 @@ La versión `0.1.0` valida la base técnica:
 - Escritura libre o automática de notas del vault; las notas de sesión, assets, historial e inventario
   solo cambian mediante sus operaciones explícitas y validadas.
 - Persistencia de preferencias/intenciones y ejecución de recomendaciones; H5.11 solo presenta decisiones manuales y no opera en el juego.
-- Inicio o cierre automático de sesiones sin confirmación.
+- Inicio o cierre automático de sesiones sin confirmación a partir de la API o de H8. Excepción
+  decidida por David el 24 sep 2026: la presencia que reportan los addons del puente autenticado
+  marca el inicio y el fin de la sesión sin confirmación, con hora corregible después. El puente ya
+  expone esa presencia (H18.23); el marcado automático que la consume es H18.26 y aún no existe.
 - Compatibilidad móvil.
 
 ## Principios

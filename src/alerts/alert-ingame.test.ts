@@ -16,19 +16,19 @@ const ALERT: AlertV1 = {
 const LOCALES: readonly Locale[] = ['es', 'en'];
 
 describe('H13.9/H13.15 in-game alert payload', () => {
-	it('serializes v, seq, kind, name, quantity, totalCopper and content and nothing else', () => {
+	it('serializes v, type, seq, kind, name, quantity, totalCopper and content and nothing else', () => {
 		expect(Object.keys(alertIngamePayload(ALERT, 17)).sort())
-			.toEqual(['content', 'kind', 'name', 'quantity', 'seq', 'totalCopper', 'v']);
+			.toEqual(['content', 'kind', 'name', 'quantity', 'seq', 'totalCopper', 'type', 'v']);
 	});
 
 	it('omits seq entirely rather than serializing it as null when the caller has none yet', () => {
 		expect(Object.keys(alertIngamePayload(ALERT)).sort())
-			.toEqual(['content', 'kind', 'name', 'quantity', 'totalCopper', 'v']);
+			.toEqual(['content', 'kind', 'name', 'quantity', 'totalCopper', 'type', 'v']);
 	});
 
-	it('closes v to the payload version', () => {
+	it('closes v to the bridge protocol version and tags the line as an alert', () => {
 		expect(alertIngamePayload(ALERT).v).toBe(ALERT_INGAME_PAYLOAD_VERSION);
-		expect(alertIngamePayload(ALERT).v).toBe(1);
+		expect(alertIngamePayload(ALERT)).toMatchObject({ v: 2, type: 'alert' });
 	});
 
 	/**
