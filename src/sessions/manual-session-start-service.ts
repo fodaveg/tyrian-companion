@@ -50,8 +50,10 @@ import {
 	API_SETTLEMENT_TICK_MS,
 	captureSettlement,
 	settlementWait,
+	settlementWindowMs,
 	type SessionApiSettlement,
 	type SessionSettlementWait,
+	type SettlementEndpoint,
 } from './session-api-settlement';
 
 export interface SessionLeaseCoordinator {
@@ -213,6 +215,12 @@ export interface ManualSessionStartServiceOptions {
 	 * at startup). The host resumes what it runs around a live session, such as the loot poll.
 	 */
 	onAutoRecovered?: () => void;
+	/**
+	 * H18.11: the settlement wait per endpoint the final capture reads. Absent, or an unusable
+	 * value, keeps that endpoint at the documented ten-minute ceiling; nothing is measured yet
+	 * (`API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS`).
+	 */
+	settlementWindowByEndpointMs?: Partial<Record<SettlementEndpoint, number>>;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -264,6 +272,8 @@ export class ManualSessionStartService {
 	private readonly farmedLossItemTypeCapture: SessionItemTypeCapture | null;
 	private readonly diagnostics: LocalDebugActionPort | null;
 	private readonly onAutoRecovered: () => void;
+	/** The wait the final capture needs: the slowest endpoint it reads (H18.11). */
+	private readonly settlementWindowMs: number;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -281,6 +291,7 @@ export class ManualSessionStartService {
 		this.farmedLossItemTypeCapture = options.farmedLossItemTypeCapture ?? null;
 		this.diagnostics = options.diagnostics ?? null;
 		this.onAutoRecovered = options.onAutoRecovered ?? (() => undefined);
+		this.settlementWindowMs = settlementWindowMs(options.settlementWindowByEndpointMs);
 	}
 
 	getState(): SessionState {
@@ -425,7 +436,7 @@ export class ManualSessionStartService {
 	getSettlementWait(): SessionSettlementWait | null {
 		if (this.state.status !== 'stopping') return null;
 		try {
-			return settlementWait(this.state.stopRequestedAt, this.safeNow());
+			return settlementWait(this.state.stopRequestedAt, this.safeNow(), this.settlementWindowMs);
 		} catch {
 			return null;
 		}
@@ -981,7 +992,7 @@ export class ManualSessionStartService {
 			if (stopping.status !== 'stopping') {
 				return this.failStop('unexpected', 'The session could not enter the stopping state.');
 			}
-			const wait = settlementWait(stopping.stopRequestedAt, this.safeNow());
+			const wait = settlementWait(stopping.stopRequestedAt, this.safeNow(), this.settlementWindowMs);
 			if (wait === null) {
 				return this.failStop('unexpected', 'The session stop boundary is unusable.');
 			}
@@ -1179,7 +1190,7 @@ export class ManualSessionStartService {
 	private stateSettlement(
 		state: Extract<SessionState, { status: 'provisional' | 'complete' }>,
 	): SessionApiSettlement {
-		return captureSettlement(state.stopRequestedAt, state.finalSnapshot.startedAt);
+		return captureSettlement(state.stopRequestedAt, state.finalSnapshot.startedAt, this.settlementWindowMs);
 	}
 
 	private apply(event: SessionEvent): void {
