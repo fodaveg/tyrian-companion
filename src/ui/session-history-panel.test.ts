@@ -132,8 +132,8 @@ describe('mountSessionHistoryPanel', () => {
 		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
 
 		const visible = allText(container);
-		expect(visible).toContain('Rendimiento por actividad y build');
-		expect(visible).toContain('Halloween · Power Reaper');
+		expect(visible).toContain('Rendimiento por actividad, build y calidad');
+		expect(visible).toContain('Halloween · Power Reaper · Exacta');
 		expect(visible).toContain('2/2 sesiones comparables');
 		expect(visible).toContain('Muestra insuficiente: 1/2 sesiones comparables');
 	});
@@ -152,8 +152,52 @@ describe('mountSessionHistoryPanel', () => {
 		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
 
 		const visible = allText(container);
-		expect(visible).toContain('All year · Power Reaper');
+		expect(visible).toContain('All year · Power Reaper · Exact');
 		expect(visible).not.toContain('sessions are outside groups');
+	});
+
+	// H18.10 (Anexo 2): a Labyrinth session (sacks, keys) is routinely `estimated`, so its rate must
+	// still form a comparable group of its own — and never merge with an `exact` one.
+	it('groups an estimated Labyrinth session apart from an exact one, with an explicit note', async () => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [
+				record('2026-08-20T10:00:00.000Z', 3_600_000, {
+					activity: 'halloween', build: 'Deadeye', classification: 'estimated', confidence: 'medium',
+				}),
+				record('2026-08-21T10:00:00.000Z', 3_600_000, {
+					activity: 'halloween', build: 'Deadeye', classification: 'estimated', confidence: 'low',
+				}),
+				record('2026-08-22T10:00:00.000Z', 3_600_000, { activity: 'halloween', build: 'Deadeye' }),
+			],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
+
+		const visible = allText(container);
+		expect(visible).toContain('Halloween · Deadeye · Estimada');
+		expect(visible).toContain('Halloween · Deadeye · Exacta');
+		expect(visible).toContain('Tasa estimada: no se compara con una tasa exacta.');
+	});
+
+	it('gives a contaminated session its own visible exclusion instead of silently dropping it', async () => {
+		const document = new FakeDocument();
+		const container = new FakeElement('div', document);
+		const controller = new SessionHistoryPanelController(async () => ({
+			status: 'ok', ignored: 0, sessions: [
+				record('2026-08-20T10:00:00.000Z', 3_600_000, {
+					activity: 'halloween', build: 'Deadeye', classification: 'contaminated', confidence: 'high',
+					valuationCoverage: 'not_evaluated', sacks: null, observedImmediateCopper: null,
+				}),
+			],
+		}));
+		mountSessionHistoryPanel(container as unknown as HTMLElement, 'es', controller);
+		descendants(container).find((element) => element.tag === 'button')!.click();
+		await vi.waitFor(() => expect(controller.current().status).toBe('ready'));
+
+		expect(allText(container)).toContain('1 sesiones quedan excluidas: su calidad no es comparable');
 	});
 
 	// H18.10: `loot-presentation-view.ts` had no consumer at all; the durable gains list a note's

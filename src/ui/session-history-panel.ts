@@ -203,6 +203,12 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 			cls: 'tyrian-session-history__warning',
 		});
 	}
+	if (aggregate.performance.qualityExcludedSessions > 0) {
+		section.createEl('p', {
+			text: t.t('sessionHistory.performanceQualityExcluded', { count: aggregate.performance.qualityExcludedSessions }),
+			cls: 'tyrian-session-history__warning',
+		});
+	}
 	if (aggregate.performance.groups.length === 0) {
 		section.createEl('p', { text: t.t('sessionHistory.performanceEmpty') });
 		return;
@@ -223,15 +229,23 @@ const PERFORMANCE_STATUS_KEY = {
 } as const;
 
 const PERFORMANCE_EXCLUSION_KEY = {
-	quality: 'sessionHistory.performanceExclusion.quality',
 	valuation: 'sessionHistory.performanceExclusion.valuation',
 	metrics: 'sessionHistory.performanceExclusion.metrics',
 } as const;
 
+/**
+ * Quality is now part of the group itself (H18.10): the heading names it with the same
+ * `qualityLabel` copy the per-session table already uses, and an `estimated` group gets an
+ * explicit note that its rate is never averaged with an `exact` one, since grouping keeps them in
+ * separate buckets precisely so a Labyrinth session's routinely `estimated` rate stops being
+ * silently excluded from every comparison instead of quietly merged into one.
+ */
 function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
 	const t = createTranslator(locale);
 	const article = container.createEl('article', { cls: 'tyrian-session-history__performance-group' });
-	article.createEl('h5', { text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build}` });
+	article.createEl('h5', {
+		text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build} · ${qualityLabel(group.quality, t)}`,
+	});
 	article.createEl('p', {
 		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
 			eligible: group.eligibleSessions,
@@ -242,6 +256,9 @@ function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: S
 	const details = article.createEl('dl');
 	appendDetail(details, t.t('sessionHistory.sacksPerHour'), group.sacksPerHourMilli === null ? t.t('sessionHistory.unknown') : rate(group.sacksPerHourMilli, locale));
 	appendDetail(details, t.t('sessionHistory.immediatePerHour'), money(group.immediateCopperPerHour, locale));
+	if (group.quality === 'estimated') {
+		article.createEl('p', { text: t.t('sessionHistory.performanceEstimatedNote') });
+	}
 	if (group.exclusions.length > 0) {
 		article.createEl('p', {
 			text: `${t.t('sessionHistory.performanceExcluded')}: ${group.exclusions.map((reason) => t.t(PERFORMANCE_EXCLUSION_KEY[reason])).join(' · ')}`,

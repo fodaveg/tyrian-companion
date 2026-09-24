@@ -96,7 +96,7 @@ describe('buildSessionHistoryAggregate', () => {
 		expect(buildSessionHistoryAggregate([record('2026-08-20T10:00:00.000Z')]).comparison).toBeNull();
 	});
 
-	it('compares only a minimum sample from the same declared activity and build using duration-weighted rates', () => {
+	it('compares only a minimum sample from the same declared activity, build, and quality using duration-weighted rates', () => {
 		const aggregate = buildSessionHistoryAggregate([
 			record('2026-08-20T10:00:00.000Z', {
 				activity: 'halloween', build: 'Power Reaper', durationMs: 3_600_000,
@@ -106,6 +106,8 @@ describe('buildSessionHistoryAggregate', () => {
 				activity: 'halloween', build: 'Power Reaper', durationMs: 7_200_000,
 				sacks: 40, observedImmediateCopper: 40_000,
 			}),
+			// A Labyrinth session is routinely `estimated` (H18 audit, Anexo 2): it must not join
+			// the two `exact` sessions above, so it forms its own single-session `estimated` group.
 			record('2026-08-22T10:00:00.000Z', {
 				activity: 'halloween', build: 'Power Reaper', classification: 'estimated', confidence: 'medium',
 			}),
@@ -118,19 +120,80 @@ describe('buildSessionHistoryAggregate', () => {
 		expect(aggregate.performance).toEqual({
 			minimumSessions: 2,
 			missingContextSessions: 1,
+			qualityExcludedSessions: 0,
 			groups: [
 				{
-					activity: 'halloween', build: 'Condi Scourge', sessionCount: 1, eligibleSessions: 1,
+					activity: 'halloween', build: 'Condi Scourge', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
 					status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null,
 					exclusions: [],
 				},
 				{
-					activity: 'halloween', build: 'Power Reaper', sessionCount: 3, eligibleSessions: 2,
+					activity: 'halloween', build: 'Power Reaper', quality: 'estimated', sessionCount: 1, eligibleSessions: 1,
+					status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null,
+					exclusions: [],
+				},
+				{
+					activity: 'halloween', build: 'Power Reaper', quality: 'exact', sessionCount: 2, eligibleSessions: 2,
 					status: 'ready', sacksPerHourMilli: 16_667, immediateCopperPerHour: 16_667,
-					exclusions: ['quality'],
+					exclusions: [],
 				},
 			],
 		});
+	});
+
+	/** H18.10 (Anexo 2): the previous single `exact`/`high` bucket left this comparison empty in
+	 *  practice, since a Labyrinth session (sacks, keys) is routinely `estimated`. */
+	it('forms a comparable `estimated` group from two sessions of the same build', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', {
+				activity: 'halloween', build: 'Deadeye', classification: 'estimated', confidence: 'medium',
+				durationMs: 3_600_000, sacks: 20, observedImmediateCopper: 20_000,
+			}),
+			record('2026-08-21T10:00:00.000Z', {
+				activity: 'halloween', build: 'Deadeye', classification: 'estimated', confidence: 'low',
+				durationMs: 3_600_000, sacks: 30, observedImmediateCopper: 30_000,
+			}),
+		]);
+
+		expect(aggregate.performance.groups).toEqual([{
+			activity: 'halloween', build: 'Deadeye', quality: 'estimated', sessionCount: 2, eligibleSessions: 2,
+			status: 'ready', sacksPerHourMilli: 25_000, immediateCopperPerHour: 25_000, exclusions: [],
+		}]);
+	});
+
+	it('never averages an exact session with an estimated one, even for the same build', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', { activity: 'halloween', build: 'Deadeye' }),
+			record('2026-08-21T10:00:00.000Z', {
+				activity: 'halloween', build: 'Deadeye', classification: 'estimated', confidence: 'medium',
+			}),
+		]);
+
+		expect(aggregate.performance.groups).toEqual([
+			{
+				activity: 'halloween', build: 'Deadeye', quality: 'estimated', sessionCount: 1, eligibleSessions: 1,
+				status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
+			},
+			{
+				activity: 'halloween', build: 'Deadeye', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
+				status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
+			},
+		]);
+	});
+
+	/** A `contaminated` session fits neither bucket; it must stay excluded (its metrics are already
+	 *  withheld at the source) with its own visible count instead of vanishing. */
+	it('excludes a contaminated session from every quality bucket, with its own visible count', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', {
+				activity: 'halloween', build: 'Deadeye', classification: 'contaminated', confidence: 'high',
+				valuationCoverage: 'not_evaluated', sacks: null, observedImmediateCopper: null,
+			}),
+		]);
+
+		expect(aggregate.performance.qualityExcludedSessions).toBe(1);
+		expect(aggregate.performance.missingContextSessions).toBe(0);
+		expect(aggregate.performance.groups).toEqual([]);
 	});
 
 	/**
@@ -148,11 +211,11 @@ describe('buildSessionHistoryAggregate', () => {
 
 		expect(aggregate.performance.missingContextSessions).toBe(0);
 		expect(aggregate.performance.groups).toContainEqual({
-			activity: 'general', build: 'Power Reaper', sessionCount: 2, eligibleSessions: 2,
+			activity: 'general', build: 'Power Reaper', quality: 'exact', sessionCount: 2, eligibleSessions: 2,
 			status: 'ready', sacksPerHourMilli: 25_000, immediateCopperPerHour: 25_000, exclusions: [],
 		});
 		expect(aggregate.performance.groups).toContainEqual({
-			activity: 'halloween', build: 'Power Reaper', sessionCount: 1, eligibleSessions: 1,
+			activity: 'halloween', build: 'Power Reaper', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
 			status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
 		});
 	});

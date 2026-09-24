@@ -30,6 +30,10 @@ export interface SessionHistoryAggregate {
 export interface SessionHistoryPerformance {
 	readonly minimumSessions: typeof SESSION_HISTORY_PERFORMANCE_MINIMUM;
 	readonly missingContextSessions: number;
+	/** Neither a comparable `exact` nor a comparable `estimated` session (in practice: a
+	 *  `contaminated` one, whose metrics are already withheld at the source): it cannot join any
+	 *  quality bucket at all, so this is where its exclusion stays visible instead of vanishing. */
+	readonly qualityExcludedSessions: number;
 	readonly groups: readonly SessionHistoryPerformanceGroup[];
 }
 
@@ -40,9 +44,19 @@ export interface SessionHistoryPerformance {
  */
 export type SessionHistoryPerformanceActivity = 'halloween' | 'general';
 
+/**
+ * `exact` is `classification: 'exact'` at `confidence: 'high'`; `estimated` is any
+ * `classification: 'estimated'` session, regardless of its `medium`/`low` confidence tier — both
+ * still rest on the same cache-blurred window, never on a second-accurate one. A Labyrinth session
+ * (sacks, keys) is routinely `estimated`, so H18.10 gives it its own comparable bucket instead of
+ * excluding it from a comparison that used to require `exact`/`high` and stayed empty in practice.
+ */
+export type SessionHistoryPerformanceQuality = 'exact' | 'estimated';
+
 export interface SessionHistoryPerformanceGroup {
 	readonly activity: SessionHistoryPerformanceActivity;
 	readonly build: string;
+	readonly quality: SessionHistoryPerformanceQuality;
 	readonly sessionCount: number;
 	readonly eligibleSessions: number;
 	readonly status: 'ready' | 'insufficient_sample' | 'unavailable';
@@ -51,7 +65,7 @@ export interface SessionHistoryPerformanceGroup {
 	readonly exclusions: readonly SessionHistoryPerformanceExclusion[];
 }
 
-export type SessionHistoryPerformanceExclusion = 'quality' | 'valuation' | 'metrics';
+export type SessionHistoryPerformanceExclusion = 'valuation' | 'metrics';
 
 /** Visible durable facts for one completed session; hashed identity is intentionally absent. */
 export interface SessionHistorySummaryRow {
@@ -114,29 +128,44 @@ export function buildSessionHistoryAggregate(
  * (H18.10, audit §3.C). A build is still required — the rate is meaningless without knowing which
  * spec earned it — but the activity itself now always resolves to one of two buckets instead of
  * silently dropping everything that isn't Halloween.
+ *
+ * The grouping key also carries `quality` now: a Labyrinth session is routinely `estimated` (its
+ * sacks and keys never get an `exact`/`high` window), so requiring `exact`/`high` to even join a
+ * group — the previous shape — left the comparison empty in exactly the case it exists for. Two
+ * sessions of the same activity, build, and quality still share one rate; an `exact` one and an
+ * `estimated` one never average together (H18 audit, Anexo 2).
  */
 function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): SessionHistoryPerformance {
 	const grouped = new Map<string, {
-		activity: SessionHistoryPerformanceActivity; build: string; sessions: DurableSessionHistoryRecord[];
+		activity: SessionHistoryPerformanceActivity; build: string; quality: SessionHistoryPerformanceQuality;
+		sessions: DurableSessionHistoryRecord[];
 	}>();
 	let missingContextSessions = 0;
+	let qualityExcludedSessions = 0;
 	for (const session of sessions) {
 		const build = normalizeBuild(session.build);
 		if (build === null) {
 			missingContextSessions += 1;
 			continue;
 		}
+		const quality = qualityBucket(session);
+		if (quality === null) {
+			qualityExcludedSessions += 1;
+			continue;
+		}
 		const activity = normalizeActivity(session.activity);
-		const key = `${activity}\u0000${build}`;
-		const group = grouped.get(key) ?? { activity, build, sessions: [] };
+		const key = `${activity}\u0000${build}\u0000${quality}`;
+		const group = grouped.get(key) ?? { activity, build, quality, sessions: [] };
 		group.sessions.push(session);
 		grouped.set(key, group);
 	}
 	return {
 		minimumSessions: SESSION_HISTORY_PERFORMANCE_MINIMUM,
 		missingContextSessions,
+		qualityExcludedSessions,
 		groups: [...grouped.values()].map(performanceGroup).sort((left, right) =>
-			left.activity.localeCompare(right.activity) || left.build.localeCompare(right.build)),
+			left.activity.localeCompare(right.activity) || left.build.localeCompare(right.build) ||
+			left.quality.localeCompare(right.quality)),
 	};
 }
 
@@ -144,18 +173,24 @@ function normalizeActivity(activity: 'halloween' | null): SessionHistoryPerforma
 	return activity === 'halloween' ? 'halloween' : 'general';
 }
 
+/** `null` means neither bucket fits — in practice a `contaminated` session, whose metrics are
+ *  already withheld at the source (`inspectDurableSessionNote`), so it was never going to clear
+ *  the `metrics` filter below either; it just never gets the chance to join a group first. */
+function qualityBucket(session: DurableSessionHistoryRecord): SessionHistoryPerformanceQuality | null {
+	if (session.classification === 'exact' && session.confidence === 'high') return 'exact';
+	if (session.classification === 'estimated') return 'estimated';
+	return null;
+}
+
 function performanceGroup(group: {
 	readonly activity: SessionHistoryPerformanceActivity;
 	readonly build: string;
+	readonly quality: SessionHistoryPerformanceQuality;
 	readonly sessions: readonly DurableSessionHistoryRecord[];
 }): SessionHistoryPerformanceGroup {
 	const exclusions = new Set<SessionHistoryPerformanceExclusion>();
 	const eligible = group.sessions.filter((session) => {
 		let accepted = true;
-		if (session.classification !== 'exact' || session.confidence !== 'high') {
-			exclusions.add('quality');
-			accepted = false;
-		}
 		if (session.valuationCoverage !== 'complete') {
 			exclusions.add('valuation');
 			accepted = false;
@@ -168,7 +203,7 @@ function performanceGroup(group: {
 	});
 	if (eligible.length < SESSION_HISTORY_PERFORMANCE_MINIMUM) {
 		return {
-			activity: group.activity, build: group.build, sessionCount: group.sessions.length,
+			activity: group.activity, build: group.build, quality: group.quality, sessionCount: group.sessions.length,
 			eligibleSessions: eligible.length, status: 'insufficient_sample', sacksPerHourMilli: null,
 			immediateCopperPerHour: null, exclusions: [...exclusions],
 		};
@@ -179,7 +214,7 @@ function performanceGroup(group: {
 	const sacksPerHourMilli = safeRoundedRate(sacks, durationMs, 3_600_000_000n);
 	const immediateCopperPerHour = safeRoundedRate(immediateCopper, durationMs, 3_600_000n);
 	return {
-		activity: group.activity, build: group.build, sessionCount: group.sessions.length,
+		activity: group.activity, build: group.build, quality: group.quality, sessionCount: group.sessions.length,
 		eligibleSessions: eligible.length,
 		status: sacksPerHourMilli === null || immediateCopperPerHour === null ? 'unavailable' : 'ready',
 		sacksPerHourMilli, immediateCopperPerHour, exclusions: [...exclusions],
