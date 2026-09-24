@@ -1,10 +1,9 @@
 import type { Translator } from '../core/i18n';
 import { formatRelativeDay } from './format-time';
-import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistoryDailyV1, PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
-import type { PriceSeedDayV1 } from '../economy/price-seed-model';
+import type { PriceSeedDayV1, PriceSeedQueueCoverage } from '../economy/price-seed-model';
 import { mountPriceHistoryChart } from './price-history-chart-view';
 
 export {

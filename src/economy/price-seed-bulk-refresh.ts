@@ -4,7 +4,10 @@ import {
 	type ResolvedLocalDebugActionContext,
 } from '../core/local-debug-action-runner';
 import { IndexedDbPriceSeedCacheStore, IndexedDbPriceSeedNoSeedStore } from './price-seed-cache-store';
-import type { PriceSeedResult } from './price-seed-model';
+import type { PriceSeedResult, PriceSeedQueueCoverage } from './price-seed-model';
+
+/** Re-exported for existing callers (`main.ts`, this module's own tests); the type itself now lives in `./price-seed-model`. */
+export type { PriceSeedQueueCoverage } from './price-seed-model';
 
 /**
  * Decision 4 (SPEC-recomendacion-por-objeto.md §7, approved by David 11 sep 2026): after an
@@ -28,17 +31,6 @@ export const PRICE_SEED_BULK_REFRESH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
  * item per day, whichever direction the last answer went.
  */
 export const PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS = 24 * 60 * 60 * 1000;
-
-/** Coverage across the WHOLE watch list passed to `run`, not just the slice this run reached. */
-export interface PriceSeedQueueCoverage {
-	total: number;
-	/** Has a cached seed (any freshness): "con histórico". */
-	seeded: number;
-	/** Last answer was `no_seed`, still on file: "sin datos". */
-	noData: number;
-	/** Neither yet: waiting its turn on a future sync: "pendiente". */
-	pending: number;
-}
 
 export interface PriceSeedBulkRefreshOutcome {
 	/** How many items actually reached a request this run (excludes items skipped for a fresh cache or cooldown). */
