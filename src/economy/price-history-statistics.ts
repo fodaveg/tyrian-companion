@@ -64,25 +64,42 @@ export type PriceHistoryPercentileResult =
 	| { status: 'ready'; percentile: number; coveredDays: number; valueCopper: number }
 	| { status: 'insufficient_history'; coveredDays: number; requiredDays: number };
 
-/** Nearest-rank empirical percentile over locally observed UTC closes; it never fills missing days. */
+/**
+ * Nearest-rank empirical percentile of `currentCopper` against locally observed UTC closes; it
+ * never fills missing days.
+ *
+ * H18.2 (audit 2026-09-24 §3.A): the value being ranked is an explicit argument, today's own
+ * quote, never "whatever the last historical close happens to be". Before this, a series that
+ * ended 60 days ago had its last close ranked as if it were today's price. `daily` is the
+ * REFERENCE only: the caller drops today's own day from it, so the reference and the observation
+ * never double-count the same day. `coveredDays` counts the reference days plus the observation
+ * itself, so a dense 42-day series that ends today still covers 42 days, exactly as before.
+ */
 export function calculatePriceHistoryPercentile(
 	daily: readonly PriceHistoryDailyV1[],
 	side: PriceHistorySide,
 	windowDays: number,
-	requiredDays = 42,
+	requiredDays: number,
+	currentCopper: number,
 ): PriceHistoryPercentileResult {
 	if (!Number.isSafeInteger(windowDays) || windowDays <= 0 || !Number.isSafeInteger(requiredDays) || requiredDays <= 0) {
 		throw new RangeError('Price-history percentile window is invalid.');
 	}
-	const points = [...daily]
+	if (!Number.isSafeInteger(currentCopper) || currentCopper < 0) {
+		throw new RangeError('Price-history percentile observation is invalid.');
+	}
+	// The observation takes one of the window's days, so at most `windowDays - 1` reference days.
+	const referenceDays = windowDays - 1;
+	const reference = referenceDays === 0 ? [] : [...daily]
 		.sort((left, right) => left.dayUtc.localeCompare(right.dayUtc))
-		.slice(-windowDays)
+		.slice(-referenceDays)
 		.map((entry) => entry[side]?.closeCopper ?? null)
 		.filter((value): value is number => value !== null);
+	const points = [...reference, currentCopper];
 	if (points.length < requiredDays) {
 		return { status: 'insufficient_history', coveredDays: points.length, requiredDays };
 	}
-	const current = points.at(-1)!;
+	const current = currentCopper;
 	const atOrBelow = points.filter((value) => value <= current).length;
 	return {
 		status: 'ready',

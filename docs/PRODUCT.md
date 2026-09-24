@@ -6,7 +6,7 @@ Tyrian Companion es una plataforma modular para entender y organizar una cuenta 
 
 H5.1 convierte la vista base en una bitácora de campo: en dos segundos debe responder si una sesión puede o está farmeando y si su observación es fiable. Fase y duración dominan; detector, polling, calidad y cuenta forman una sola rail, mientras la incidencia más importante interrumpe la superficie y el diagnóstico completo queda bajo disclosures. Esta vertical no añade comandos, notificaciones, historial ni acciones económicas.
 
-H5.2 hace accesible el mismo lifecycle desde la paleta y un único menú de ribbon. Solo muestra acciones válidas para el estado observado y vuelve a comprobarlas al ejecutar; recovery bloquea Start, stop fallido puede reintentarse, y provisional abre la revisión existente. Descartar recovery o limpiar una sesión completa requiere confirmación y solo afecta datos locales del companion. No existe un comando que cancele una sesión activa ni se añaden operaciones sobre la cuenta.
+H5.2 hace accesible el mismo lifecycle desde la paleta y un único menú de ribbon. Solo muestra acciones válidas para el estado observado y vuelve a comprobarlas al ejecutar; recovery bloquea Start, stop fallido puede reintentarse. Una sesión `provisional` ya no abre ninguna revisión (retirada el 9 sep): si se encuentra una al cargar el plugin —Obsidian cerrado antes de finalizar, o el incidente real que motivó el cambio—, se finaliza sola por el mismo camino que un Stop en vivo (`autoFinalizeProvisionalRecord`, `manual-session-start-service.ts:429-438`); solo si esa reclamación falla (lease ocupado o perdido, store no disponible) cae a recovery normal. Descartar recovery o limpiar una sesión completa requiere confirmación y solo afecta datos locales del companion. No existe un comando que cancele una sesión activa ni se añaden operaciones sobre la cuenta.
 
 H5.3 conserva localmente las propuestas asistidas aunque la nota esté cerrada. El fondo solo encola y actualiza indicadores existentes: no reconstruye controles, muestra `Notice`, modal o notificación del sistema, cambia el foco ni revela una vista. La bitácora y el ribbon anuncian cuántas confirmaciones esperan y enseñan una sola propuesta para revisar. La elección fija la identidad exacta observada; aceptar reutiliza Start/Stop, renueva su claim y solo emite receipt tras el éxito, mientras descartar conserva una causa cerrada incluso si la medición auxiliar no puede escribirse. Un Start/Stop manual ordinario deja intacta la cola.
 
@@ -27,15 +27,14 @@ El producto nunca promete conocer «todo el loot»: la API de Guild Wars 2 ofrec
 
 Ante datos desconocidos o una regla insuficiente, el advisor debe recomendar conservar o revisar, nunca destruir.
 
-## Decisiones de rumbo del 2026-09-01
+## Decisiones de rumbo del 2026-09-01 (sustituidas el 2026-09-24)
 
-Tomadas por David tras la auditoría de cinco ejes de esa fecha. Se anotan aquí porque las tres se
-habían dado por abiertas en discusiones anteriores y ninguna lo está.
+Tomadas por David tras la auditoría de cinco ejes de esa fecha. **Sustituidas parcialmente el 2026-09-24** tras la auditoría conjunta.
 
-**La sesión de farmeo es el núcleo del producto.** No se degrada a función secundaria. La auditoría
-señaló que compite con gw2efficiency y con DRF en desventaja de método, porque medir por diferencia
-de instantáneas nunca verá lo que ve un lector del flujo de objetos dentro del juego. La decisión es
-seguir, con esa desventaja conocida y declarada, no descubierta más tarde.
+**La sesión sirve para ver cuánto has ganado; las decisiones económicas viven en el inventario acumulado.** 
+Se analiza lo acumulado cuando tú quieras, sin sesión previa. La sesión de farmeo se mide por diferencia de instantáneas, 
+con la desventaja conocida de que nunca verá lo que ve un lector del flujo de objetos dentro del juego. Esa desventaja 
+queda declarada, no descubierta más tarde.
 
 **Halloween y la Bolsa de truco o trato se mantienen como parte de primera.** El origen del proyecto
 es trackear lo que entra en el Laberinto del Rey Loco, y de ahí viene el peso del objeto `36038` en
@@ -77,11 +76,18 @@ El único motivo que sigue contaminando por completo (`contaminated`, `recommend
 
 ### Decisión del 2026-09-09: el plugin se fía de la API; nada pide revisión ni aprobación
 
-Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque la API te lo ha dado. No tengo que aprobar nada.» Nace de la sesión real del 9 sep (10:07 a 10:22), que acabó en «La sesión necesita revisión» y sin guardar: la revisión «automática» respondía `unsure` en su nombre y el validador semántico del clasificador rechazaba el registro al escribirlo.
+Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque la API te lo ha dado. No tengo que aprobar nada.» 
+Implementado el 2026-09-09; revisión humana de sesiones eliminada el 2026-09-09. Nace de la sesión real
+del 9 sep (10:07 a 10:22), que acabó en «La sesión necesita revisión» y sin guardar: la revisión
+«automática» respondía `unsure` en nombre de David y el validador semántico del clasificador rechazaba el
+registro al escribirlo.
 
-- Parar una sesión es guardarla: la clasificación se calcula sola con la evidencia de la API (`exact`, `estimated` o `invalid` por motivo técnico) y la nota se escribe. No existe el estado «necesita revisión», ni modal de preguntas, ni `permissions.finalize: false`; `reviewRequests` está siempre vacío. Un registro que quedó en `provisional` se finaliza solo al cargar.
+Parar una sesión es guardarla: 
+- La clasificación se calcula sola con la evidencia de la API (`exact`, `estimated` o `invalid` por motivo técnico) y la nota se escribe automáticamente.
+- No existe el estado «necesita revisión», ni modal de preguntas, ni `permissions.finalize: false`; `reviewRequests` está siempre vacío.
+- Un registro que quedó en `provisional` se finaliza solo al cargar.
 - La regla del 2026-09-08 sigue diciendo qué degrada a `estimated`; solo cambia que ningún motivo depende de una declaración humana y que `contaminated` deja de ser alcanzable.
-- Los avisos no se marcan como revisados ni tienen estado leído/no leído. Solo son avisos los de la política única (umbral de valor, skin o mini no desbloqueados) y los de precio de la bolsa; `first_seen` y «raro sin cotización» son información de la nota.
+- Los avisos no se marcan como revisados ni tienen estado leído/no leído.
 - Los validadores de forma de los registros guardados comprueban forma, nunca semántica: un registro de una versión anterior se lee, no se tira como corrupto.
 
 ### Las cuatro decisiones de H14.21 y la del aviso único (delegadas por David el 8 sep, implementadas el 9 sep)
@@ -120,33 +126,47 @@ La primera versión de producto incluye:
 
 - Núcleo de API, credenciales, catálogo, caché y snapshots de las superficies de cuenta soportadas.
 - Paridad con la sincronización de materiales y cartera existente.
-- Sesiones manuales y detección autoasistida mediante API, con revisión final del usuario.
+- Sesiones manuales y detección autoasistida mediante API, con clasificación automática por evidencia.
 - Valoración económica trazable y recomendación conservadora de abrir, vender o reservar.
 - Notas y Bases instalables sin sobrescribir contenido del usuario.
 - Inventory Advisor limitado a reglas de alta confianza.
 
 La cuenta se consulta exclusivamente por la API oficial de Guild Wars 2. El plugin incluye además
 tres salidas opcionales que no tocan la cuenta. La semilla de datawars2 es una lectura de
-precios públicos del objeto `#36038` desde `https://api.datawars2.ie`, sin clave, una sola vez,
+precios públicos desde `https://api.datawars2.ie` de hasta 25 objetos, sin clave, una sola vez,
 solo para inicializar el histórico local; si falla, el plugin declara «sin semilla» y captura a
 partir de ese momento. El webhook es una salida al destino que elige el usuario en ajustes (vacía
 por defecto); si se proporciona, el plugin envía solo nombre del objeto, cantidad y valor en cobre
-cuando detecta un drop valioso. El puente dentro del juego (H13.9/H13.15) es un servidor TCP en
-`127.0.0.1`, apagado por defecto, al que se conectan addons de Nexus o Blish HUD instalados aparte
-para pintar el mismo aviso encima de la ventana del juego; envía los mismos tres campos que el
-webhook, es de una sola dirección y falla en el informe del emisor si ningún addon está conectado.
+cuando detecta un drop valioso. El puente con los addons del juego (H13.9/H13.15, protocolo v2 de
+H18.23) es un servidor TCP en `127.0.0.1`, apagado por defecto, al que se conectan addons de Nexus o
+Blish HUD instalados aparte. Es bidireccional y autenticado: cada addon presenta un secreto
+compartido que el usuario copia desde los ajustes; el plugin le envía los mismos tres campos del
+aviso que el webhook, para pintarlo encima de la ventana del juego, y el addon le devuelve solo el
+contexto de juego (mapa, personaje y si está en gameplay, en carga o en la selección de personaje).
+Una conexión que no se autentica no cuenta ni recibe avisos, y el canal falla en el informe del
+emisor si no hay ningún addon autenticado. Contrato completo en
+[SPEC del puente](SPEC-puente-ingame.md).
 Linux con Steam/Proton es la plataforma primaria, macOS con CrossOver la secundaria y Windows
-permanece en beta. La matriz de soporte, los gates y las métricas del piloto se fijan en
+permanece en beta, salvo el puente con Blish HUD: en Windows tiene que funcionar, con su propia QA,
+porque es la plataforma de los compañeros del clan (decisión del 24 sep 2026). La matriz de soporte, los gates y las métricas del piloto se fijan en
 [Política de plataformas e integraciones](PLATFORM_POLICY.md).
 
-Quedan fuera de v1 Mumble Link, cualquier automatización del juego, operaciones sobre el bazar, un
-backend compartido y recomendaciones destructivas automáticas. H8.1 fija para v2 solo el contrato
+Queda fuera de v1 que el plugin lea Mumble Link por sí mismo (el helper H8 sigue en el árbol y no es
+la vía viva), y también cualquier automatización del juego, operaciones sobre el bazar, un backend
+compartido y recomendaciones destructivas automáticas. El contexto de juego entra solo por los
+addons de Nexus y Blish HUD, que lo leen de su anfitrión y lo envían por el puente autenticado
+(decisión de David del 24 sep 2026). H8.1 fija para v2 solo el contrato
 previo de un helper IPC opcional y separado para mapa/actividad; no implementa el helper ni el
 runtime, no sustituye la API, no inspecciona el proceso del juego y no confirma ni ejecuta acciones.
-El aviso dentro del juego (H13.9/H13.15) se ve por un addon de Nexus o un módulo de Blish HUD
-instalados aparte por el usuario; son addons de terceros que corren dentro del proceso del juego o
-al lado de él, dentro de lo que la política de addons de terceros de ArenaNet permite. El addon en
-sí (Nexus en Rust, Blish HUD en C#) vive en un repositorio aparte y no forma parte de este plugin.
+El aviso dentro del juego (H13.9/H13.15) se ve, y el contexto de juego se lee, por un addon de
+Nexus o un módulo de Blish HUD instalados aparte por el usuario, con el mismo protocolo los dos; son
+addons de terceros que corren dentro del proceso del juego o al lado de él, dentro de lo que la
+política de addons de terceros de ArenaNet permite: no simulan entrada ni actúan en el juego. El
+addon en sí (Nexus en Rust, Blish HUD en C#) vive en un repositorio aparte y no forma parte de este
+plugin. Dos addons conectados a la vez producen una sola presencia; una conexión cerrada es pérdida
+de presencia con 10 minutos de gracia, no el cierre del juego. Las fuentes soportadas y auditadas
+no acreditan un flujo completo de botín ni una señal fiable de AFK: la ausencia de combate, una
+desconexión o un cambio de mapa no prueban por sí solos inactividad.
 
 H9.6 descarta el benchmarking de clan en el producto actual. Comparar cuentas exigiría intercambio de
 datos o un backend compartido y reabriría la evaluación de privacidad y RGPD. Solo se podrá
@@ -179,6 +199,8 @@ Cada dato local se trata como no confiable, se valida con versionado, nonce, ord
 y cada canal empieza con `initialSequence:0`; se descarta ante cualquier duda. No hay persistencia raw ni fallback por memoria del proceso,
 inyección, logs, interceptación de tráfico o automatización. Incluso en una fase posterior, el dato
 solo podrá mejorar evidencia o proponer revisión: **Start/Stop siempre requiere confirmación humana**.
+Esta regla gobierna el dato de H8; no alcanza a la presencia del puente de addons, que por decisión
+de David del 24 sep 2026 marca inicio y fin sin confirmación (H18.23 la expone, H18.26 la consume).
 
 ### Política shadow H8.8
 
@@ -205,7 +227,8 @@ La versión `0.1.0` valida la base técnica:
 - Los ajustes permiten seleccionar una clave de API con `SecretComponent`.
 - La configuración persistida contiene el nombre del secreto, nunca su valor.
 - **Check connection** valida explícitamente la clave y la cuenta; la primera vez que resuelve una cuenta con Halloween activo en temporada, además siembra en segundo plano el inventario ya poseído con una captura completa de cuenta (para que un aviso de «objeto nuevo» no dispare sobre algo que el jugador ya tenía; H14.21). **Start session** y **Stop session** capturan las fronteras manuales. **Arm assisted detection** inicia el muestreo solo tras una acción explícita. Ninguna llamada de red ocurre al cargar o abrir la vista: toda petición, incluida esa siembra, nace de una de estas acciones explícitas, nunca del arranque del plugin.
-- Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección; el modo asistido expone un control de armado que siempre vuelve desarmado al recargar.
+  - **Divergencia medida (24 sep 2026):** si hay una clave de API configurada (`hasConfiguredApiKey()`), `onLayoutReady` → `initializeRuntime` dispara en segundo plano un `checkConnection()` de calentamiento (`src/main.ts:1171-1173`, `component: 'connection', state: 'startup_warmup'`), documentado como arreglo del H16.5 del 11 sep: sin él, el primer refresh tras recargar veía la clave como si no existiera. Ese `checkConnection()` sí abre red (`connection.check`, y si conecta, `switchHalloweenAccount`) sin que el jugador pulse nada, y si el estado resultante es `connected`/`warning` también llama a `armAssistedDetection()` (`src/main.ts:1276-1281`, `src/main.ts:2004-2035`), que arma el detector con `session.status` `idle`, sin ninguna acción explícita de armado. Contradice esta viñeta y H3.8 (más abajo) tal y como están escritas para quien tenga clave configurada; el principio no se toca aquí, se dejan las dos descripciones en pie porque el arreglo del 11 sep fue deliberado.
+- Los ajustes versionados preparan idioma, carpeta de salida, personaje preferido, intervalo y modo de detección; el modo asistido expone un control de armado que siempre vuelve desarmado al recargar el plugin **sin clave configurada**; con clave configurada, el calentamiento de arriba puede rearmarlo solo, sin pulsar el control.
 - H1.4 garantiza mediante lease cercado local que una máquina no tenga dos sesiones activas coordinadas a la vez; todavía no crea ni gestiona sesiones de producto.
 - H3.1 aporta una máquina de estados pura y cercada para `idle → starting → active → stopping → provisional → complete|error`.
 - H3.2 conecta el inicio manual a la vista: pide personaje y Magic Find, captura un baseline estable y el build activo, conserva sus timestamps y mantiene la autoridad mediante heartbeat. Un fallo de arranque vuelve a `idle` y no deja una sesión de producto fantasma.
@@ -214,8 +237,8 @@ La versión `0.1.0` valida la base técnica:
 - H3.5 aporta el reloj de polling: no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. H3.8 solo lo arranca tras capturar un baseline estable desde el control de armado.
 - H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos que comparten snapshot fronterizo generan una propuesta con la ventana en que pudo empezar. La regla inicial usa el id oficial de los sacos de Halloween; no usa nombres ni heurísticas de catálogo y no inicia una sesión sin confirmación.
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
-- H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
-- H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; H5.10 permite exportar el historial durable y H9.7 lo agrega en Companion tras una carga manual, sin leer el vault al abrir ni convertir datos desconocidos en cero.
+- H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin o los ajustes vuelven desarmado el detector y exigen una acción explícita de armado.
+- H3.9 (`session-contamination-review.ts`) ya no pregunta nada: la revisión se deriva sola de la evidencia de la API, sin cuestionario de aperturas, reciclaje, consumo, bazar o transferencias (revisión humana retirada el 9 sep, ver decisión anterior). `createSessionContaminationReview` fija `declaration: { status: 'absent' }` y unas `answers` constantes (`AUTOMATIC_ANSWERS`, `certainty: 'unsure'`); esa forma sobrevive solo porque `halloween-loot-comparison.ts` sigue leyendo `answers.certainty` para la elegibilidad de la estadística de la Bolsa de truco o trato, algo fuera de este lote. H2.7 clasifica por evidencia (`exact`, `estimated` o `invalid` por motivo técnico): ninguna declaración humana contamina ya una sesión, y `contaminated`/`activity_declared` siguen en el vocabulario solo para que un registro anterior al 9 sep se siga leyendo. La sesión completa sobrevive al reinicio en almacenamiento local; H5.10 permite exportar el historial durable y H9.7 lo agrega en Companion tras una carga manual, sin leer el vault al abrir ni convertir datos desconocidos en cero.
 - H3.10 registra localmente cómo se fijó cada frontera: manual o asistida, causa, incertidumbre y calidad de evidencia. Descartar una propuesta exige clasificar el falso positivo; el resumen conserva correcciones, modo e incertidumbre sin snapshots ni payloads crudos de inventario ni texto libre. Para procedencia de inicio asistido permite únicamente la `RelevantStartProposal` completa: `version`, `proposalId`, `accountId`, `ruleSet` id/versión, `firstSignal` y `confirmationSignal` con refs de snapshots, intervalos/ventanas, ganancias `itemId`/`quantity` y `deltaStatus`, además de `possibleStart`, `evidenceQuality` y `confirmedAt`. La medición es auxiliar y nunca bloquea la sesión. H7.13 ofrece aparte un journal de piloto opt-in por vault, agregación por plataforma/estratos y exportación local explícita de cuatro JSON/CSV; liga cada revisión humana a una `sampleRevision` transaccional, rehidrata clasificaciones de recovery y deja pasar aceptar/iniciar/parar sin modal instrumental. No tiene Sync propio ni envía telemetría. Un servicio de Sync del Vault configurado por el usuario sí puede copiar los exports.
 - H4.1 fija todas las magnitudes monetarias en cobre entero. Bruto, venta inmediata, listado, mercader y ausencia de valor líquido tienen fórmulas y liquidez explícitas; `null` significa no valorable, mientras que `0` sigue siendo un importe real.
 - H4.2 aplica una política versionada de tasas del bazar —5% de publicación y 10% de intercambio sobre la venta total— y solo ofrece valor de mercader cuando el catálogo declara un valor positivo y no incluye `NoSell`.
@@ -286,10 +309,9 @@ La versión `0.1.0` valida la base técnica:
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
-- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H3.9 posee las preguntas y persistencia, mientras H2.7 sigue sin UI, red ni valoración.
+- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y evidencia observada para clasificarlo como exacto, estimado, contaminado o inválido sin consultar al usuario. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H2.7 sigue sin UI, red ni valoración.
 - H9.8 consulta hasta 90 días de historial personal del bazar dentro de la ventana exacta de la sesión
-  y solo prepara una propuesta en el modal H3.9. Cobertura incompleta no propone actividad y la
-  contaminación sigue requiriendo confirmación humana.
+  para validar evidencia de compra/venta observada. Cobertura incompleta no invalida la clasificación.
 - H9.14 agrega órdenes actuales por lado y objeto, sin IDs de transacción, y suprime únicamente la
   acción económica coincidente cuando ese lado tiene cobertura completa. Cobertura ausente o parcial
   permanece neutral.
@@ -333,7 +355,10 @@ La versión `0.1.0` valida la base técnica:
 - Escritura libre o automática de notas del vault; las notas de sesión, assets, historial e inventario
   solo cambian mediante sus operaciones explícitas y validadas.
 - Persistencia de preferencias/intenciones y ejecución de recomendaciones; H5.11 solo presenta decisiones manuales y no opera en el juego.
-- Inicio o cierre automático de sesiones sin confirmación.
+- Inicio o cierre automático de sesiones sin confirmación a partir de la API o de H8. Excepción
+  decidida por David el 24 sep 2026: la presencia que reportan los addons del puente autenticado
+  marca el inicio y el fin de la sesión sin confirmación, con hora corregible después. El puente ya
+  expone esa presencia (H18.23); el marcado automático que la consume es H18.26 y aún no existe.
 - Compatibilidad móvil.
 
 ## Principios

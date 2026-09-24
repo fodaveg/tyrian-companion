@@ -535,6 +535,11 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 									cls: 'tyrian-companion-settings__legendary-target-warning',
 									text: this.t('settings.legendary.targets.noTable'),
 								});
+							} else if (option.tableStale) {
+								row.createSpan({
+									cls: 'tyrian-companion-settings__legendary-target-warning',
+									text: this.t('settings.legendary.targets.tableStale'),
+								});
 							}
 							checkbox.addEventListener('change', () => {
 								void applyLegendaryTargetChange(checkbox, option.itemId);
@@ -874,6 +879,43 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							feedback.setAttr('role', 'status');
 							feedback.setText('');
 							await save({ alertIngamePort: port });
+						}));
+				},
+			},
+			{
+				category: 'advanced',
+				visible: () => this.plugin.settings.alertIngameEnabled,
+				name: this.t('settings.alerts.ingame.secret.name'), desc: this.t('settings.alerts.ingame.secret.desc'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					let selector: SecretComponent | null = null;
+					setting.addComponent((element) => {
+						selector = new SecretComponent(this.app, element)
+							.setValue(this.plugin.settings.alertIngameSecret)
+							.onChange(async (alertIngameSecret) => {
+								await save({ alertIngameSecret });
+							});
+						return selector;
+					});
+					setting.addButton((button) => button.setButtonText(this.t('settings.alerts.ingame.secret.copy'))
+						.onClick(async () => {
+							button.setDisabled(true);
+							try {
+								const outcome = await this.plugin.copyAlertIngameSecret();
+								// A generated secret is now the selected entry; show it without a rerender
+								// that would wipe the confirmation below.
+								selector?.setValue(this.plugin.settings.alertIngameSecret);
+								feedback.setAttr('role', 'status');
+								feedback.setText(this.t(outcome === 'generated'
+									? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'));
+							} catch {
+								feedback.setAttr('role', 'alert');
+								feedback.setText(this.t('settings.alerts.ingame.secret.failed'));
+							} finally {
+								button.setDisabled(false);
+							}
 						}));
 				},
 			},

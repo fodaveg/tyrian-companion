@@ -82,13 +82,22 @@ describe('H13.2 seeding', () => {
 		expect(runtime.getState()).toMatchObject({ seedStatus: 'seeded', seedFailure: null, seedDayCount: 399 });
 	});
 
-	it('does not touch the network without an active session', async () => {
+	/**
+	 * H18.17 (auditoría 24 sep 2026, §3.D): before this fix, `ensureSeed` also required
+	 * `sessionActive()`, so the bag's sell/hold verdict never got a seed unless a session
+	 * happened to be active the moment a price-history compaction landed — in practice, only
+	 * while farming that exact day. `ensureSeed` is only ever called from `afterCompaction`
+	 * (`assemble-price-history.ts`), which is itself gated on price history being enabled and its
+	 * own scheduler running: that already-configured sync is what makes this download legitimate,
+	 * with no session required on top of it.
+	 */
+	it('downloads the seed even without an active session, because the caller is already a configured sync', async () => {
 		const { runtime, requests } = harness({ sessionActive: () => false });
 
 		await runtime.ensureSeed();
 
-		expect(requests).toHaveLength(0);
-		expect(runtime.getState().seedStatus).toBe('unseeded');
+		expect(requests).toHaveLength(1);
+		expect(runtime.getState().seedStatus).toBe('seeded');
 	});
 
 	it('declares "no seed" when the endpoint is unreachable, and invents no day', async () => {

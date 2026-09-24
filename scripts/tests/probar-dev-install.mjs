@@ -13,8 +13,9 @@ try {
 	testMissingSourceFile();
 	testCorruptedCopyIsCaught();
 	testCreatesMissingPluginDirectory();
-	testReloadCyclesDisableThenEnable();
+	testReloadCyclesLoadManifestsThenDisableThenEnable();
 	testReloadFailureStopsBeforeMarker();
+	testLoadManifestsFailureStopsBeforeDisable();
 	testNoReloadWritesNoMarker();
 	testArgumentParsing();
 } finally {
@@ -79,7 +80,12 @@ function testCreatesMissingPluginDirectory() {
 	assert(result.pluginDir === pluginDir, 'the reported pluginDir did not match the requested one');
 }
 
-function testReloadCyclesDisableThenEnable() {
+/**
+ * H15.27: `disablePlugin`/`enablePlugin` alone cycle the already-registered manifest, so Obsidian
+ * keeps reporting the version it loaded at startup. `loadManifests()` must run first, in the same
+ * sequence, so the reload actually picks up the version just copied to disk.
+ */
+function testReloadCyclesLoadManifestsThenDisableThenEnable() {
 	const { sourceDir, pluginDir } = freshFixture('reload-cycle');
 	const calls = [];
 	const result = installDevBuild({
@@ -93,10 +99,14 @@ function testReloadCyclesDisableThenEnable() {
 		},
 	});
 	assert(result.reloaded, 'a reload:true run did not report reloaded');
-	assert(calls.length === 2, `expected exactly 2 CLI invocations, got ${String(calls.length)}`);
-	assert(calls[0].args.join(' ').includes('disablePlugin'), 'the first CLI call did not disable the plugin');
-	assert(calls[1].args.join(' ').includes('enablePlugin'), 'the second CLI call did not enable the plugin');
-	assert(calls.every((call) => call.args.join(' ').includes('tyrian-companion')), 'a CLI call did not target tyrian-companion');
+	assert(calls.length === 3, `expected exactly 3 CLI invocations, got ${String(calls.length)}`);
+	assert(calls[0].args.join(' ').includes('loadManifests'), 'the first CLI call did not reload the manifests (H15.27)');
+	assert(calls[1].args.join(' ').includes('disablePlugin'), 'the second CLI call did not disable the plugin');
+	assert(calls[2].args.join(' ').includes('enablePlugin'), 'the third CLI call did not enable the plugin');
+	assert(
+		[calls[1], calls[2]].every((call) => call.args.join(' ').includes('tyrian-companion')),
+		'a disable/enable CLI call did not target tyrian-companion',
+	);
 	const expectedVaultRoot = resolve(pluginDir, '..', '..', '..');
 	assert(calls.every((call) => call.cwd === expectedVaultRoot), 'the CLI was not invoked from the vault root');
 	const markerPath = resolve(pluginDir, '.tyrian-dev-reload-at');
@@ -117,6 +127,29 @@ function testReloadFailureStopsBeforeMarker() {
 		'reload-failed',
 		'a failed CLI call did not fail the install',
 	);
+	assert(!existsSync(resolve(pluginDir, '.tyrian-dev-reload-at')), 'a failed reload still wrote the reload marker');
+}
+
+/** If `loadManifests()` itself fails, the disable/enable cycle must never run and no marker is written. */
+function testLoadManifestsFailureStopsBeforeDisable() {
+	const { sourceDir, pluginDir } = freshFixture('load-manifests-failure');
+	const calls = [];
+	assertThrowsCode(
+		() => installDevBuild({
+			pluginDir,
+			sourceDir,
+			reload: true,
+			buildProduction: () => undefined,
+			runCli: (invocation) => {
+				calls.push(invocation);
+				return { status: 1, stdout: '' };
+			},
+		}),
+		'reload-failed',
+		'a failed loadManifests CLI call did not fail the install',
+	);
+	assert(calls.length === 1, `expected the reload to stop after the failed loadManifests call, got ${String(calls.length)} calls`);
+	assert(calls[0].args.join(' ').includes('loadManifests'), 'the single failed call was not loadManifests');
 	assert(!existsSync(resolve(pluginDir, '.tyrian-dev-reload-at')), 'a failed reload still wrote the reload marker');
 }
 

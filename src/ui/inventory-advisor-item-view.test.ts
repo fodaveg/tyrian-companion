@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InventoryVaultSyncLastRun } from '../core/settings';
+import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './inventory-advisor-view-model';
@@ -279,6 +280,25 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		expect(body).toContain('datawars2 is not available right now. Showing only your local capture.');
 		// The panel's own state line, proving it kept rendering instead of failing.
 		expect(body).toContain('Local history is ready.');
+	});
+
+	/** H18.17: the seed queue's progress must be visible where the user already sees the advisor. */
+	it('renders the datawars2 seed queue coverage across the whole watch list', async () => {
+		installDom();
+		const getPriceSeedQueueCoverage = vi.fn((): PriceSeedQueueCoverage => (
+			{ total: 40, seeded: 12, pending: 25, noData: 3 }
+		));
+		const viewActions = actions(() => 'en', {
+			priceHistory: {
+				state: priceHistoryState({ watchItemIds: [36_038], selectedItemId: 36_038, status: 'ready' }),
+			},
+		});
+		viewActions.value.getPriceSeedQueueCoverage = getPriceSeedQueueCoverage;
+		const view = new InventoryAdvisorItemView({} as never, viewActions.value);
+		await view.onOpen();
+		expect(getPriceSeedQueueCoverage).toHaveBeenCalled();
+		const body = text(view.contentEl as unknown as FakeElement);
+		expect(body).toContain('History queue: 12 with data, 25 pending, 3 with no data (of 40).');
 	});
 });
 

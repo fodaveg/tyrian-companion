@@ -23,6 +23,17 @@ import {
 import { ALERT_WEBHOOK_TIMEOUT_MS, postAlertWebhook } from './alerts/alert-webhook';
 import { alertIngamePayload } from './alerts/alert-ingame';
 import { startAlertIngameServer, type AlertIngameServerHandle } from './alerts/alert-ingame-server';
+import {
+	IngamePresenceTracker,
+	type IngamePresenceEvent,
+	type IngamePresenceSnapshot,
+} from './alerts/alert-ingame-presence';
+import {
+	createIngameBridgeNonce,
+	createIngameBridgeSecret,
+	ingameBridgeSecretMatches,
+	isUsableIngameBridgeSecret,
+} from './alerts/alert-ingame-protocol';
 import { alwaysAlertReasonsOf, decideLootAlert, policyAlertPriceOf } from './alerts/loot-alert-criteria';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import {
@@ -88,7 +99,7 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-s
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
-import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
+import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
 import { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import { fetchPriceSeed } from './economy/price-seed-source';
 import type { PriceSeedV1 } from './economy/price-seed-model';
@@ -97,7 +108,8 @@ import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-histor
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
 import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
-import { festivalCalendarEntryForItem } from './economy/seasonal-window';
+import { festivalCalendarEntryForItem, resolveFestivalCalendarWindow, type FestivalAnchorsTableV1 } from './economy/seasonal-window';
+import { HALLOWEEN_FESTIVAL_ANCHORS } from './economy/models/halloween-festival-anchors';
 import {
 	assembleAdvisor,
 	type InventoryAdvisorCaptureProgressListenerRef,
@@ -112,6 +124,7 @@ import type { KeepExceptionV1 } from './advisor/inventory-advisor-model';
 import type { ReservationGoal } from './economy/reservation-model';
 import { LEGENDARY_MATERIALS_TABLE, legendaryMaterialsEntryFor } from './economy/legendary-materials';
 import {
+	ALERT_INGAME_SECRET_ID,
 	mergeSettingsUpdate,
 	migrateSettings,
 	resolveEquipmentSalvagePreferences,
@@ -262,6 +275,10 @@ export interface LegendaryArmoryOptionV1 {
 	icon: string | null;
 	/** `false` when `LEGENDARY_MATERIALS_TABLE` has no curated entry for this legendary yet. */
 	hasTable: boolean;
+	/** H18.5: `true` once `LEGENDARY_MATERIALS_TABLE.validUntil` is past, whether or not `hasTable`
+	 * is also true — a stale table is still read and used (`buildLegendaryReservationGoals` has no
+	 * `asOf` gate of its own), so this is what makes that caducity visible instead of silent. */
+	tableStale: boolean;
 }
 
 export type LegendaryArmoryOptionsResult =
@@ -338,6 +355,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
 	private priceSeedBulkRefresh: PriceSeedBulkRefreshService | null = null;
 	/**
+	 * H18.17: the last `run()`'s queue coverage, across the WHOLE derived watch list (not only the
+	 * slice one run reached). `null` until the first "Sincronizar inventario" completes a pass.
+	 * Read-only, in-memory; `getPriceSeedQueueCoverage` is the only thing that reads it.
+	 */
+	private priceSeedQueueCoverage: PriceSeedQueueCoverage | null = null;
+	/**
 	 * Read-only connection to the same `tyrian-companion-price-seed-cache` database
 	 * `priceSeedBulkRefresh` writes into, for `previewInventorySync`'s recommendation port
 	 * (decision 4, M2). Opened lazily on first read, same pattern as `priceHistoryPanelSeed`'s own
@@ -365,6 +388,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private alertIngameServerErrorCode: string | null = null;
 	/** Per-process counter for the `seq` field addons use to dedupe a reconnect. Never persisted. */
 	private alertIngameSeq = 0;
+	/**
+	 * H18.23: game presence reported by the authenticated addons. Outlives any one server (a port
+	 * change is a loss with grace, not a new game) and is what H18.26 subscribes to. Built on first
+	 * use by `ingamePresenceTracker`, and dropped on unload.
+	 */
+	private alertIngamePresence: IngamePresenceTracker | null = null;
 	private settingTab!: TyrianCompanionSettingTab;
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
@@ -706,6 +735,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 							name: item?.name ?? `#${String(itemId)}`,
 							icon: item?.icon ?? null,
 							hasTable: legendaryMaterialsEntryFor(LEGENDARY_MATERIALS_TABLE, itemId) !== null,
+							tableStale: Date.now() >= Date.parse(LEGENDARY_MATERIALS_TABLE.validUntil),
 						};
 					}).sort((left, right) => left.name.localeCompare(right.name));
 					this.legendaryArmoryOptionsCache = options;
@@ -882,16 +912,29 @@ export default class TyrianCompanionPlugin extends Plugin {
 						// recomputed on every sync so an item that drops below the threshold leaves it.
 						updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
 						// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
-						refreshPriceSeeds: async (itemIds) => { await this.priceSeedBulkRefresh?.run(itemIds); },
+						// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
+						// schedule nor the queue's coverage ever reached anything past this call.
+						refreshPriceSeeds: async (itemIds) => {
+							const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
+							if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+						},
 						// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 						// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
 						seasonalInputFor: (itemId) => {
-							const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+							const asOf = new Date();
+							const loaded = inventoryAdvisorBuiltinBundleProvider.load(asOf.toISOString());
 							if (loaded.status !== 'available') return null;
 							const entry = festivalCalendarEntryForItem(loaded.bundle.festivalCalendar, itemId);
 							if (entry === null) return null;
+							// H18.20: an item can carry several candidate windows (e.g. "before the
+							// festival" anchored to its real start, plus a plain annual one); this
+							// picks whichever governs `asOf`, or returns null when the only
+							// applicable candidate needs a festival year this build has no anchor
+							// for (declared lack of coverage, never a guessed date).
+							const window = resolveFestivalCalendarWindow(entry, FESTIVAL_ANCHORS, asOf.getTime());
+							if (window === null) return null;
 							return {
-								window: entry.window,
+								window,
 								parameters: {
 									minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
 									referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
@@ -1229,6 +1272,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		// socket's actual release and land in the port-occupied retry table.
 		await this.alertIngameServer?.close();
 		this.alertIngameServer = null;
+		this.alertIngamePresence?.dispose();
+		this.alertIngamePresence = null;
 		this.startModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
@@ -2157,6 +2202,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return this.sellSignal?.getState() ?? null;
 	}
 
+	/**
+	 * H18.17: the datawars2 seed queue's coverage across the whole watch list — how many items have
+	 * a history, how many are still pending their turn, how many answered with no data — from the
+	 * last "Sincronizar inventario" pass. `null` until that first pass completes; never triggers work.
+	 */
+	getPriceSeedQueueCoverage(): PriceSeedQueueCoverage | null {
+		return this.priceSeedQueueCoverage;
+	}
+
 	/** The Companion card's escape hatch for a blocked `operation_conflict`: the same journaled Move. */
 	async retryManagedAssetsReconciliation(): Promise<void> {
 		await this.reconcileManagedAssetsRoot();
@@ -2573,7 +2627,19 @@ export default class TyrianCompanionPlugin extends Plugin {
 			void stale.close();
 		}
 		if (this.alertIngameServerFlight !== null) return await this.alertIngameServerFlight;
-		const flight = startAlertIngameServer(port, { schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds) })
+		const flight = startAlertIngameServer(
+			port,
+			{
+				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+				cancel: (handle) => { window.clearTimeout(handle as number); },
+			},
+			{
+				authenticate: (candidate) => ingameBridgeSecretMatches(candidate, this.readAlertIngameSecret()),
+				now: () => Date.now(),
+				fillRandom: (bytes) => { crypto.getRandomValues(bytes); },
+				onConnectionEvent: (event) => { this.ingamePresenceTracker().apply(event); },
+			},
+		)
 			.then((server) => {
 				this.alertIngameServer = server;
 				this.alertIngameServerPort = port;
@@ -2608,6 +2674,75 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private nextAlertIngameSeq(): number {
 		this.alertIngameSeq += 1;
 		return this.alertIngameSeq;
+	}
+
+	/** H18.23: what the authenticated addons say about the game right now. H18.26 reads this. */
+	getIngamePresence(): IngamePresenceSnapshot {
+		return this.ingamePresenceTracker().snapshot();
+	}
+
+	/** H18.23: every presence transition (`started`, `context`, `lost`, `restored`, `ended`). */
+	onIngamePresence(listener: (event: IngamePresenceEvent) => void): () => void {
+		return this.ingamePresenceTracker().subscribe(listener);
+	}
+
+	private ingamePresenceTracker(): IngamePresenceTracker {
+		this.alertIngamePresence ??= new IngamePresenceTracker({
+			timer: {
+				schedule: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+				cancel: (handle) => { window.clearTimeout(handle as number); },
+			},
+			now: () => Date.now(),
+			createPresenceId: () => createIngameBridgeNonce((bytes) => { crypto.getRandomValues(bytes); }),
+			recordObserverFailure: (error) => { this.recordAlertIngamePresenceFailure(error); },
+		});
+		return this.alertIngamePresence;
+	}
+
+	/**
+	 * Reads the bridge secret from `SecretStorage` for one comparison and keeps nothing. Like the
+	 * API key, `data.json` holds only the entry's name, so the value never syncs with the vault.
+	 */
+	private readAlertIngameSecret(): string | null {
+		const name = this.settings.alertIngameSecret;
+		if (name.length === 0 || !this.app.secretStorage.listSecrets().includes(name)) return null;
+		return this.app.secretStorage.getSecret(name);
+	}
+
+	/**
+	 * Copies the bridge secret to the clipboard so the user can paste it into the addon's settings,
+	 * generating one first when the selected entry is missing or too weak to accept (32 CSPRNG
+	 * bytes, stored under `ALERT_INGAME_SECRET_ID`). The value goes to the clipboard and to
+	 * `SecretStorage`, never to settings, a log or the vault.
+	 */
+	async copyAlertIngameSecret(): Promise<'copied' | 'generated'> {
+		const run = async (): Promise<'copied' | 'generated'> => {
+			const current = this.readAlertIngameSecret();
+			if (isUsableIngameBridgeSecret(current)) {
+				await navigator.clipboard.writeText(current);
+				return 'copied';
+			}
+			const stored = this.app.secretStorage.listSecrets().includes(ALERT_INGAME_SECRET_ID)
+				? this.app.secretStorage.getSecret(ALERT_INGAME_SECRET_ID) : null;
+			const secret = isUsableIngameBridgeSecret(stored)
+				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
+			if (secret !== stored) this.app.secretStorage.setSecret(ALERT_INGAME_SECRET_ID, secret);
+			await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
+			await navigator.clipboard.writeText(secret);
+			return 'generated';
+		};
+		return await (this.localDebugActions?.run(
+			{ component: 'notification', action: 'command_execute', state: 'ingame_secret_copy' }, run,
+		) ?? run());
+	}
+
+	private recordAlertIngamePresenceFailure(error: unknown): void {
+		const mapped = unmappedErrorLogDetails(error);
+		this.localDebugActions?.event({
+			component: 'notification', action: 'notification_emit', state: 'ingame_presence_listener',
+			level: 'error', phase: 'failure', code: 'internal_failure',
+			details: { errorName: mapped.reason },
+		});
 	}
 
 	/** Resolves the queue scope, falling back to the active session baseline before Halloween sets it. */
@@ -4004,6 +4139,14 @@ const SELL_SIGNAL_SERIES_SPAN_MS = (SELL_SIGNAL_REFERENCE_DAYS + 1) * 86_400_000
  * used only as the fallback: the live wiring always prefers the pack's own `policy.maxPriceAgeMs`.
  */
 const FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS = 900_000;
+
+/**
+ * H18.20: every curated festival this plugin anchors a selling window to, keyed by `festivalId`.
+ * Only Halloween is curated today; a second festival is a second entry here, not a new mechanism.
+ */
+const FESTIVAL_ANCHORS: ReadonlyMap<string, FestivalAnchorsTableV1> = new Map([
+	[HALLOWEEN_FESTIVAL_ANCHORS.festivalId, HALLOWEEN_FESTIVAL_ANCHORS],
+]);
 
 type PriceHistoryDailyReader = (itemId: number, fromDayUtc: string) => Promise<PriceHistoryDailyV1[]>;
 

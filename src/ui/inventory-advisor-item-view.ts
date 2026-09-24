@@ -8,6 +8,7 @@ import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
 import { renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
+import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
 import type { PriceHistorySide, PriceHistoryWindowDays } from '../economy/price-history-model';
@@ -43,6 +44,11 @@ export interface InventoryAdvisorViewActions {
 	resolvePriceHistoryItemCatalog?(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>>;
 	/** Last known datawars2 seed state for one item; a stale read, never a trigger. */
 	getPriceHistorySeedState?(itemId: number): PriceHistoryPanelSeedState;
+	/**
+	 * H18.17: the bulk seed queue's coverage across the whole watch list, from the last
+	 * "Sincronizar inventario" pass. A stale read, never a trigger.
+	 */
+	getPriceSeedQueueCoverage?(): PriceSeedQueueCoverage | null;
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
@@ -191,6 +197,7 @@ export class InventoryAdvisorItemView extends ItemView {
 			itemLabels,
 			itemIcons,
 			seed,
+			queueCoverage: this.actions.getPriceSeedQueueCoverage?.() ?? null,
 			busy: this.priceHistoryBusy,
 			onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
 			onLoad: (itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays) =>

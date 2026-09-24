@@ -84,15 +84,17 @@ valid for the current state.
 3. When the session is active, **Start farming session** is replaced by **Finish farming session**;
    the Companion view also shows **Finish session**. If the view still says `idle`, no session was
    started and there is nothing to finish.
-4. After the final snapshot, run **Review session** and declare any outside activity. “Not sure” stays
-   estimated; declaring an activity marks the result contaminated instead of guessing its cause.
-5. When review is complete, **Clear completed session** first writes or updates the managed session
+4. After the final snapshot, **Finish farming session** classifies the result automatically and
+   leaves the session ready to save. The Companion view shows the classification, its confidence
+   and any detected outside activity.
+5. Run **Clear completed session** and confirm. This writes or updates the managed session
    note and only then clears the local runtime.
 
 Assisted detection is optional. Set **Detection mode → Assisted**, check the connection, and run
 **Arm assisted detection**. Arming captures a baseline and may later propose a start or finish, but
-every proposal still needs an explicit review action. It always reloads disarmed and never starts or
-stops a session automatically.
+every proposal still needs an explicit review action. Arming always reloads disarmed and never starts or
+stops a session automatically. When you stop a session, the detector disarms; run **Check connection**
+again to re-arm it.
 
 Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
 the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.
@@ -111,7 +113,7 @@ identifiers. This instrumentation never gates a session action and sends no remo
 
 ## Inventory advisor
 
-Run **Open inventory advisor**, then use **Refresh inventory** to make the one explicit account
+Run **Open inventory advisor**, then use **Refresh inventory advisor** to make the one explicit account
 capture. Opening the view never reads the GW2 account; visible catalog icons may load from ArenaNet's
 official `https://render.guildwars2.com` CDN. Filters and explanations help
 review owned positions, reservations, keep exceptions, evidence coverage, and any supported manual
@@ -140,10 +142,14 @@ destroy executor. Check every action in Guild Wars 2 yourself.
 
 ### Durable inventory Bases
 
-The Inventory Advisor also exposes a separate explicit **Preview sync → Sync to Vault** flow. Preview
-captures a stable account-wide inventory, resolves catalog and current instant-sale prices, and builds
-a read-only plan. Sync rereads that plan and writes one managed note per item, location, and character
-below the configured portable output root. Opening the view performs neither action.
+The Inventory Advisor also exposes an explicit **Sync inventory** button: a single click captures a
+stable account-wide inventory, resolves catalog and current instant-sale prices, builds a plan, and
+writes one managed note per item, location, and character below the configured portable output root
+— pausing for confirmation only when the plan would deactivate rows that no longer appear on the
+account. **Analyze without writing** reruns only the Advisor's own classification, without touching
+the Vault. The command palette additionally exposes the same preview/apply pair as two separate
+explicit commands, **Preview inventory Vault sync** and **Sync inventory to the Vault**, for scripting
+or running the write without opening the view. Opening the view performs none of these actions.
 
 Managed assets bundle v4 introduced localized `Inventory.base` and `Materials.base`; bundle v5 writes
 frontmatter display labels under Obsidian's canonical `note.tc_*` property namespace. Their filters
@@ -378,8 +384,8 @@ human-reviewed
 and may emit only a manual recommendation when its H4.19 evidence is complete and fresh. Vault writes are
 limited to H5.4 completed-session notes, H5.6 explicit managed assets, H5.10 explicit history export
 and scrub, and the explicit inventory preview/apply workflow; no background or free-form vault write is performed.
-Snapshot capture runs from explicit **Start session**, **Stop session**, or **Arm assisted
-detection** actions; it describes observed storage, not total account wealth.
+Snapshot capture runs from explicit **Start farming session**, **Finish farming session**, or **Arm
+assisted detection** actions; it describes observed storage, not total account wealth.
 
 ## Requirements
 
@@ -451,8 +457,8 @@ remain human QA even when the package and CI gates are green.
 Plugin settings store only the selected Obsidian secret name. Recoverable session evidence is kept
 machine-locally in IndexedDB, outside settings and vault notes, and contains no API key. The API-key
 value is resolved from the vault-local `SecretStorage` only when **Check connection**, **Start
-session**, **Stop session**, **Review session**, **Arm assisted detection**, **Refresh inventory advisor**, or
-**Preview inventory Vault sync**
+farming session**, **Finish farming session**, **Arm assisted detection**, **Refresh inventory
+advisor**, or **Preview inventory Vault sync**
 is explicitly selected. Loading the plugin or opening a non-inventory view reads only local recovery
 state and does not make network requests. The Inventory Advisor may load visible public item icons
 from the exact official `https://render.guildwars2.com` origin; no API key, account identifier or
@@ -465,7 +471,7 @@ it never contains the API key, account/snapshot identifiers, character names, it
 response bodies, and it is never uploaded. Assisted
 detection always reloads disarmed, pauses offline or after sleep, and never starts or stops a session
 without confirmation.
-At **Stop session**, the plugin sends only gained numeric item IDs to the official public
+At **Finish farming session**, the plugin sends only gained numeric item IDs to the official public
 `/v2/commerce/prices` endpoint; it does not attach the API key, account, character, or quantities.
 
 An explicit Inventory Advisor Refresh also reads current Trading Post buys and sells when the key
@@ -693,7 +699,7 @@ dedicated `tyrian-companion-session-runtime` IndexedDB database. A later authori
 last durable boundary available instead of attempting an unfenced write. The record includes the full
 baseline and, once available, the full final snapshot plus its recomputed canonical delta. On plugin
 load this database is read locally without acquiring a lease or contacting GW2. The view then offers
-an explicit **Recover session** action or a confirmed destructive discard. Both must first acquire the
+an explicit **Recover saved session** action or a confirmed destructive discard. Both must first acquire the
 same session lease; recovery requires a strictly newer fence and stale owners cannot save or clear a
 newer record. Corruption, unavailable storage, a live owner in another window, and `versionchange`
 all fail closed without a memory fallback.

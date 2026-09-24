@@ -96,11 +96,11 @@ describe('Companion incident callout: local diagnostics', () => {
 		const harness = callHarness({ getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }) });
 		Object.assign(harness as object, { checkConnection });
 
-		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'network_failure', message: 'Could not reach the account API.', retryAt: null });
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'unavailable', message: 'Guild Wars 2 is currently unavailable.', retryAt: null });
 		expect(callout?.tone).toBe('warning');
 		expect(callout?.title).toBe('Account unavailable');
 		expect(callout?.lines).toHaveLength(1);
-		expect(callout?.lines[0]?.text).toBe('Could not reach the account API.');
+		expect(callout?.lines[0]?.text).toBe('Guild Wars 2 is unavailable for a connection check. Try again later.');
 		expect(callout?.lines[0]?.button?.text).toBe('Check connection');
 		callout?.lines[0]?.button?.onClick();
 		expect(checkConnection).toHaveBeenCalledOnce();
@@ -115,9 +115,53 @@ describe('Companion incident callout: local diagnostics', () => {
 		};
 		const harness = callHarness({ getLocalDebugStatus: () => status });
 
-		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'network_failure', message: 'Could not reach the account API.', retryAt: null });
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'unavailable', message: 'Guild Wars 2 is currently unavailable.', retryAt: null });
 		expect(callout?.title).toBe('Errors since load: 1');
-		expect(callout?.lines.map((line) => line.text)).toEqual(['Could not reach the account API.']);
+		expect(callout?.lines.map((line) => line.text)).toEqual(['Guild Wars 2 is unavailable for a connection check. Try again later.']);
+	});
+
+	// H15.24: `connection.message` is the gateway's raw English text (never translated, and not
+	// always the same phrasing per code); the line used to show it verbatim regardless of locale.
+	// It now goes through Settings' `connectionErrorKey` catalogue instead, so a Spanish session
+	// (the common case: David's vault is `es`) gets Spanish guidance, and every known
+	// `ConnectionErrorCode` keeps its own specific detail instead of collapsing into one string.
+	it('translates a known connection failure code into the active locale instead of the raw gateway message (H15.24)', () => {
+		const harness = callHarness({
+			getLocale: () => 'es' as const,
+			getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }),
+		});
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'unavailable', message: 'Guild Wars 2 is currently unavailable.', retryAt: null });
+		expect(callout?.lines.map((line) => line.text)).toEqual(['Guild Wars 2 no está disponible para comprobar la conexión. Vuelve a intentarlo más tarde.']);
+	});
+
+	it.each([
+		['missing_key', 'Selecciona una clave API de Obsidian antes de comprobar la conexión.'],
+		['key_invalid', 'La clave API fue rechazada. Selecciona una clave válida y vuelve a intentarlo.'],
+		['key_expired', 'La clave API ha caducado. Crea o selecciona una clave vigente y vuelve a intentarlo.'],
+		['url_restricted', 'La clave API restringe endpoints necesarios. Usa una que permita tokeninfo y account.'],
+		['scope_missing', 'La clave API no incluye el permiso account. Crea o elige una que lo incluya.'],
+		['rate_limited', 'Guild Wars 2 limita temporalmente las comprobaciones. Espera y vuelve a intentarlo.'],
+		['unavailable', 'Guild Wars 2 no está disponible para comprobar la conexión. Vuelve a intentarlo más tarde.'],
+		['invalid_response', 'Guild Wars 2 devolvió una respuesta no válida. Reintenta y revisa la clave si continúa.'],
+	] as const)('translates every known connection error code (%s) into Spanish (H15.24)', (code, es) => {
+		const harness = callHarness({
+			getLocale: () => 'es' as const,
+			getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }),
+		});
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code, message: 'Raw transport failure.', retryAt: null });
+		expect(callout?.lines.map((line) => line.text)).toEqual([es]);
+	});
+
+	it('falls back to a translated generic line for an unrecognized connection error code, without leaking the raw gateway message (H15.24)', () => {
+		const harness = callHarness({
+			getLocale: () => 'es' as const,
+			getLocalDebugStatus: () => ({ state: 'ready', errorsSinceLoad: 0, lastError: null }),
+		});
+
+		const callout = build.call(harness, { errors: [], incidentTone: null }, { status: 'error', code: 'legacy_gateway_failure', message: 'Raw transport failure.', retryAt: null });
+		expect(callout?.lines.map((line) => line.text)).toEqual(['La comprobación de conexión falló de forma inesperada. Vuelve a intentarlo.']);
 	});
 
 	// H15.7: `errorsSinceLoad` used to replace the whole callout title, so a `startFailure` (or any

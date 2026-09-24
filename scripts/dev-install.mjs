@@ -98,8 +98,19 @@ export function installDevBuild({
 	return Object.freeze({ files: Object.freeze(files), pluginDir, reloaded });
 }
 
+/**
+ * `loadManifests()` goes first (H15.27): without it, `disablePlugin`/`enablePlugin` cycle the
+ * already-registered manifest, so Obsidian keeps reporting the version it loaded at startup even
+ * though the files on disk (and the copy this same call just verified by SHA-256) are newer.
+ * Measured 10 sep: `app.plugins.plugins['tyrian-companion'].manifest.version` still said the old
+ * version after a reload; adding this call first is what picked up the new one.
+ */
 function reloadPlugin(runCli, cliCommand, vaultRoot) {
-	for (const code of [`app.plugins.disablePlugin("${PLUGIN_ID}")`, `app.plugins.enablePlugin("${PLUGIN_ID}")`]) {
+	for (const code of [
+		'await app.plugins.loadManifests()',
+		`app.plugins.disablePlugin("${PLUGIN_ID}")`,
+		`app.plugins.enablePlugin("${PLUGIN_ID}")`,
+	]) {
 		const result = runCli({ args: ['eval', `code=${code}`], cliCommand, cwd: vaultRoot });
 		if (!isRecord(result) || result.status !== 0) fail('reload-failed');
 	}

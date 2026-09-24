@@ -12,6 +12,12 @@ exclusivamente de la API oficial de Guild Wars 2.
 | Secundaria | macOS con CrossOver | El mismo contrato API-only, sin integración con el proceso de CrossOver | Son bloqueantes los fallos de datos, privacidad, conexión, lifecycle o recovery. Una limitación exclusiva de presentación puede documentarse sin prometer paridad visual inmediata. |
 | Beta | Windows | El mismo contrato API-only, distribuido como soporte experimental | Debe pasar instalación, conexión, sesión manual, recovery y escritura segura. Un defecto exclusivamente Windows puede quedar conocido durante la beta; nunca se relajan privacidad, integridad ni la prohibición de operar sobre la cuenta. |
 
+Excepción decidida por David el 24 sep 2026: el puente con los addons del juego en **Windows con
+Blish HUD** deja de ser beta y tiene que funcionar, porque es la plataforma de los compañeros del
+clan. Su QA propia (sesión automática de principio a fin y aviso visible) es bloqueante para la
+entrega que active la sesión automática. Blish HUD en Linux sigue sin acreditar; en Linux con
+Steam/Proton la vía es Nexus.
+
 Las métricas se publican separadas por plataforma y versión de Steam/Proton, CrossOver,
 Windows, Obsidian y Tyrian Companion. Un agregado global no puede ocultar una regresión de la
 plataforma primaria. La compatibilidad móvil sigue fuera de alcance.
@@ -23,9 +29,13 @@ desde el servicio de terceros datawars2, mediante el endpoint público
 `https://api.datawars2.ie/gw2/v2/history/json?itemID=36038&fields=date,buy_price_avg,buy_price_max,
 buy_price_min,sell_price_avg,sell_price_max,sell_price_min` (migrado desde `v1/history` el 4 de
 septiembre de 2026: mismos campos, mismos valores, 3,2 veces menos bytes). Esta descarga es única,
-sin clave, ocurre únicamente durante una sesión activa a la primera petición de histórico, y siembra
-la IndexedDB local con los datos antecedentes. Si la descarga falla, el plugin declara «sin semilla»
-y construye su serie desde las capturas propias realizadas después; nunca inventa valores ausentes.
+sin clave, y siembra la IndexedDB local con los datos antecedentes. Corregido el 24 de septiembre de
+2026 (H18.17, auditoría §3.D): ya no exige una sesión activa —eso hacía que la oportunidad de venta
+del saco dependiera de estar jugando ese mismo día—; ocurre tras la primera compactación del
+histórico local, ella misma solo alcanzable mientras el histórico de precios está activado y su
+propio programador ya configurado por la persona está corriendo. Si la descarga falla, el plugin
+declara «sin semilla» y construye su serie desde las capturas propias realizadas después; nunca
+inventa valores ausentes.
 
 ## Histórico de terceros y icono en el panel del histórico local de precios (H9.1)
 
@@ -52,7 +62,8 @@ datawars2; nunca se mezclan en una sola serie indistinguible.
 
 Sigue sin relajarse la regla de «ninguna llamada de red durante la carga del plugin ni la apertura de
 una vista»: las dos peticiones de esta sección viven exclusivamente detrás de la acción explícita de
-cargar un histórico, igual que la semilla H13.2 vive detrás de una sesión activa.
+cargar un histórico; la semilla H13.2 vive detrás de la sincronización del histórico local ya
+configurada por la persona (ver arriba), no de abrir ninguna vista.
 
 ## Piloto de histórico dentro de la nota de inventario (H9.2)
 
@@ -79,6 +90,14 @@ anterior termina. Un tope por ejecución (`PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER
 `src/economy/price-seed-bulk-refresh.ts`) limita cuántas peticiones nuevas dispara una sola
 sincronización; lo que queda fuera del tope se siembra en la sincronización siguiente. Un fallo de
 datawars2 en un ítem se registra y la siembra continúa con el siguiente; ninguno detiene el resto.
+Corregido el 24 de septiembre de 2026 (H18.17, auditoría §3.E): una respuesta «sin semilla» se
+recuerda aparte, en `tyrian-companion-price-seed-no-seed-cache`, con el mismo espaciado de 24 horas
+antes de volver a intentarla (`PRICE_SEED_BULK_REFRESH_NO_SEED_RETRY_MS`); antes de esto, un ítem sin
+semilla volvía a gastar uno de los 25 huecos en cada sincronización y, con más de 25 ítems en la
+lista, los últimos podían no atenderse nunca. El progreso de la cola completa (cuántos ítems tienen
+histórico, cuántos siguen pendientes de su turno y cuántos respondieron sin datos) se muestra en el
+panel de «Histórico local de precios» del asesor, como una lectura que nunca dispara trabajo por sí
+misma.
 
 La nota que el plugin escribe embebe únicamente un bloque de código Markdown mínimo con el id del
 objeto (`\`\`\`tyrian-price-history` / `itemId: <id>`), nunca una serie de precios ni ningún dato
@@ -100,26 +119,32 @@ y sin ninguna información de la cuenta. El destino de la URL es responsabilidad
 plugin nunca genera credenciales, no las almacena, no las valida y no persiste el resultado de la
 llamada.
 
-## Puente de avisos dentro del juego (H13.9/H13.15)
+## Puente con los addons del juego (H13.9/H13.15, protocolo v2 de H18.23)
 
 El sexto canal de aviso, `ingame`, es opcional y viene apagado por defecto en ajustes. En cuanto se
 activa el interruptor, el plugin abre un servidor TCP que escucha exclusivamente en `127.0.0.1`, en
 el puerto que el usuario elige (1024-65535), sin esperar a que salte un aviso; si el interruptor ya
 estaba activado al cargar el plugin (una sesión previa), el servidor se abre en la carga por el mismo
-motivo. Apagar el interruptor cierra el servidor de inmediato. Adiciones de Nexus y de Blish HUD
-instaladas aparte por el usuario —cada una en su propio repositorio, ninguna se distribuye desde
-este— se conectan a ese puerto para pintar el aviso encima de la ventana del juego. El canal envía
-exactamente los mismos campos que el webhook (nombre, cantidad, valor en cobre) más un identificador
-de tipo de aviso y un contador de secuencia; nunca la clave de API, el `accountId`, `accountRef`,
-`alertId`, el `itemId` ni el motivo (`reason`) que describe el progreso de desbloqueo del jugador.
+motivo. Apagar el interruptor cierra el servidor de inmediato. Addons de Nexus y de Blish HUD
+instalados aparte por el usuario —cada uno en su propio repositorio, ninguno se distribuye desde
+este— se conectan a ese puerto con el mismo protocolo. Hacia el addon, el canal envía exactamente
+los mismos campos que el webhook (nombre, cantidad, valor en cobre) más un identificador de tipo de
+aviso y un contador de secuencia; nunca la clave de API, el `accountId`, `accountRef`, `alertId`, el
+`itemId` ni el motivo (`reason`) que describe el progreso de desbloqueo del jugador.
 
-**El canal es de una sola dirección.** Tras la línea `hello` inicial del addon, el plugin deja de
-leer esa conexión; cualquier byte posterior la cierra. El addon no puede mandar nada de vuelta que
-desencadene una acción, ni un comando, ni una consulta. Es exactamente el límite que mantiene esto
-dentro de «utility that helps players without affecting others» de la política de terceros de
-ArenaNet: el addon solo dibuja lo que el plugin le manda, nunca actúa sobre el juego ni sobre la
-cuenta. Sin cliente conectado, el canal falla en el informe del emisor en vez de fingir éxito; no
-hay cola ni replay al reconectar, la cola durable de Obsidian ya guarda el histórico de avisos.
+**El canal es bidireccional y autenticado** desde el 24 sep 2026 (decisión de David). El addon abre
+con un `hello` que lleva un secreto compartido, guardado en el SecretStorage de Obsidian y copiado
+por el usuario en los ajustes del addon; sin ese `hello` válido en 5 s, la conexión se cierra y
+mientras tanto no cuenta ni recibe avisos. Tras autenticarse, el addon solo puede enviar mensajes de
+claves cerradas, con nonce de conexión y secuencia estricta, que describen el contexto de juego:
+mapa, personaje y si está en gameplay, en carga o en la selección de personaje; además de latidos y
+una despedida. Ningún mensaje del addon es un comando ni una consulta, y cualquier campo de más
+cierra la conexión. Lo que el plugin haga con ese contexto (marcar una sesión en las notas del
+usuario) ocurre fuera del juego; el addon no simula entrada ni actúa sobre el juego ni sobre la
+cuenta, que es el límite de «utility that helps players without affecting others» de la política de
+terceros de ArenaNet. Sin addon autenticado, el canal falla en el informe del emisor en vez de fingir
+éxito; no hay cola ni replay al reconectar, la cola durable de Obsidian ya guarda el histórico de
+avisos. Contrato de mensajes en [SPEC del puente](SPEC-puente-ingame.md).
 
 ## Límite del MVP: solo API
 
@@ -137,13 +162,13 @@ terceros: el `bind` loopback en `127.0.0.1` que H13.9/H13.15 abre en la carga cu
 estaba activado no contacta nada fuera de la máquina, no es una consulta y no es una excepción a
 esta regla.
 
-El MVP no integra Mumble Link ni depende de Steam, Proton o CrossOver para obtener evidencia.
-El plugin de Obsidian obtiene toda su evidencia únicamente por API; un aviso dentro del juego se ve
-por un addon de Nexus o un módulo de Blish HUD, instalados aparte por el usuario, que se conectan
-al servidor TCP en loopback descrito arriba (H13.9/H13.15). Esos addons son terceros que corren
-dentro del proceso del juego o al lado de él, dentro de lo que la política de addons de terceros de
-ArenaNet permite; sus repositorios son independientes de este y el plugin sigue sin inspeccionar el
-cliente ni leer su memoria.
+El plugin no lee Mumble Link por sí mismo ni depende de Steam, Proton o CrossOver para obtener
+evidencia. Su evidencia de cuenta y botín llega únicamente por API; un aviso dentro del juego se ve,
+y el contexto de juego se lee, por un addon de Nexus o un módulo de Blish HUD, instalados aparte por
+el usuario, que se conectan al servidor TCP en loopback descrito arriba. Esos addons son terceros
+que corren dentro del proceso del juego o al lado de él, dentro de lo que la política de addons de
+terceros de ArenaNet permite, y leen el contexto de lo que su anfitrión ya expone; sus repositorios
+son independientes de este y el plugin sigue sin inspeccionar el cliente ni leer su memoria.
 Inicio y parada asistidos siguen siendo propuestas: una persona debe aceptarlas o descartarlas.
 Vender, listar, abrir, consumir, mover, fabricar, canjear o ejecutar cualquier otra operación
 dentro del juego o sobre la cuenta queda siempre fuera del companion.
@@ -405,6 +430,13 @@ Para observar el estado o la actividad del jugador en runtime solo se admiten:
 
 1. La API oficial de Guild Wars 2.
 2. La interfaz oficial Mumble Link, exclusivamente mediante el helper opcional de v2 anterior.
+3. El contexto de juego que envían los addons de Nexus y de Blish HUD por el puente autenticado
+   (H18.23): mapa, personaje y estado de juego (gameplay, carga o selección de personaje), tal como
+   su anfitrión lo expone a cualquier addon. Admitido por decisión de David del 24 sep 2026; es la
+   vía viva para la sesión automática, y el helper del punto 2 sigue en el árbol sin serlo. Estas
+   fuentes no acreditan un flujo completo de botín ni una señal fiable de AFK: la ausencia de
+   combate, una desconexión o un cambio de mapa no prueban por sí solos inactividad, y una conexión
+   cerrada es pérdida de presencia con gracia, no el cierre del juego.
 
 No se admiten scraping de estado personal, lectura de logs o memoria del cliente, inyección,
 hooks, interceptación de tráfico, simulación de entrada, macros, bots ni automatización mediante

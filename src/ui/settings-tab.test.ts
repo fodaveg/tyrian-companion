@@ -198,19 +198,20 @@ describe('settings information architecture', () => {
 	// with a connected account, no more on/off setting), dropping the "Advanced" tab from 28 to 27
 	// rows and the total from 32 to 31. M1 of SPEC-recomendacion-por-objeto adds the recommendation
 	// capital threshold as a new "Advanced" row, back up to 28/32. M4 adds the legendary targets
-	// row, another "Advanced" row, to 29/33.
-	it('assigns all 33 existing rows to explicit intent categories', () => {
+	// row, another "Advanced" row, to 29/33. H18.23 adds the in-game bridge secret, an "Advanced"
+	// row shown only while the bridge is on, to 30/34.
+	it('assigns all 34 existing rows to explicit intent categories', () => {
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, settingsPlugin() as never);
 		const assignments = tab.getSettingCategoryAssignments();
-		expect(assignments).toHaveLength(33);
+		expect(assignments).toHaveLength(34);
 		// H14.20: the first screen is exactly the four rows a new install needs;
-		// every other row (29) lives under the single "Advanced" tab.
+		// every other row (30) lives under the single "Advanced" tab.
 		const essentials = assignments.filter(({ category }) => category === 'essentials');
 		expect(essentials).toHaveLength(4);
 		expect(essentials.map(({ name }) => name).sort()).toEqual(
 			['API key', 'Alert me about a drop from', 'Default character', 'Output folder'].sort(),
 		);
-		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(29);
+		expect(assignments.filter(({ category }) => category === 'advanced')).toHaveLength(30);
 		expect(assignments.every(({ category }) => SETTINGS_CATEGORIES.includes(category))).toBe(true);
 	});
 
@@ -423,7 +424,7 @@ describe('legendary targets setting (M4)', () => {
 		const plugin = settingsPlugin();
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
-			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true }],
+			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: false }],
 		}));
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
@@ -440,7 +441,7 @@ describe('legendary targets setting (M4)', () => {
 		const plugin = settingsPlugin();
 		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
 			status: 'ok' as const,
-			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false }],
+			options: [{ itemId: 999_999, name: 'Untabled Legendary', icon: null, hasTable: false, tableStale: false }],
 		}));
 		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
 		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
@@ -450,6 +451,24 @@ describe('legendary targets setting (M4)', () => {
 		definition.render(fake.setting as never);
 		await fake.clickLoadButton();
 		expect(fake.textContent()).toContain('No materials table');
+	});
+
+	/** H18.5: a curated table that HAS an entry but is past its own `validUntil` must still say so —
+	 * `hasTable: true` alone used to look identical to a freshly reviewed table. */
+	it('shows the "table expired" warning for a legendary with a stale curated entry', async () => {
+		const plugin = settingsPlugin();
+		plugin.loadLegendaryArmoryOptions = vi.fn(async () => ({
+			status: 'ok' as const,
+			options: [{ itemId: 103_815, name: 'Klobjarne Geirr', icon: null, hasTable: true, tableStale: true }],
+		}));
+		const tab = new TyrianCompanionSettingTab({ vault: { configDir: 'config-dir' } } as never, plugin as never);
+		const definition = (tab.getSettingDefinitions() as unknown as RenderableSettingDefinition[])
+			.find((candidate) => candidate.name === 'Legendary targets');
+		if (definition === undefined) throw new Error('Expected the legendary targets setting.');
+		const fake = fakeLegendarySetting();
+		definition.render(fake.setting as never);
+		await fake.clickLoadButton();
+		expect(fake.textContent()).toContain('Materials table expired');
 	});
 });
 

@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { PINNED_SCHEMA, type StorageSnapshot } from '../account/storage-snapshot-model';
 import { createInventoryRecommendationEnvelope } from '../economy/inventory-recommendation-envelope';
-import { isFestivalCalendar, isSeasonalWindow, seasonalWindowClosesAfterMs, sha256FestivalCalendar } from '../economy/seasonal-window';
+import {
+	isFestivalCalendar, isFestivalRelativeWindow, isSeasonalWindow, resolveFestivalRelativeWindow,
+	seasonalWindowClosesAfterMs, sha256FestivalCalendar,
+} from '../economy/seasonal-window';
 import {
 	createInventoryAdvisorBuiltinBundleProvider,
 	inventoryAdvisorBuiltinBundleProvider,
@@ -96,6 +99,9 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 	/**
 	 * Test 2, M3 cierre (docs/SPEC-recomendacion-por-objeto.md §5): every calendar `seasonId` is a
 	 * real, distinct, valid window, and 36059 (no bid market measured, audit §5) is NOT in it.
+	 *
+	 * H18.20: an entry now carries at least one CANDIDATE rather than a single window, so the
+	 * assertion walks `entry.candidates` instead of a bare `entry.window`.
 	 */
 	it('carries a valid, distinct festival calendar entry per measured item, and excludes 36059', () => {
 		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
@@ -108,12 +114,45 @@ describe('inventory advisor H4.18 built-in human-reviewed bundle', () => {
 		expect(itemIds).not.toContain(36_059);
 		const seasonIds = new Set<string>();
 		for (const entry of calendar.entries) {
-			expect(isSeasonalWindow(entry.window)).toBe(true);
-			expect(entry.auditRow.length).toBeGreaterThan(0);
-			expect(seasonIds.has(entry.window.seasonId)).toBe(false);
-			seasonIds.add(entry.window.seasonId);
+			expect(entry.candidates.length).toBeGreaterThan(0);
+			for (const candidate of entry.candidates) {
+				expect(candidate.kind === 'annual'
+					? isSeasonalWindow(candidate.window)
+					: isFestivalRelativeWindow(candidate.window)).toBe(true);
+				expect(candidate.auditRow.length).toBeGreaterThan(0);
+				expect(seasonIds.has(candidate.window.seasonId)).toBe(false);
+				seasonIds.add(candidate.window.seasonId);
+			}
 		}
-		expect(seasonIds.size).toBe(5);
+		// 36038 (before-festival + mayo), 36041 (semana previa), 47909 (antes + inicio),
+		// 43320 (junio), 48805 (antes + inicio): 8 distinct candidates across 5 items.
+		expect(seasonIds.size).toBe(8);
+	});
+
+	/**
+	 * H18.20 acceptance: the saco (36038) carries at least "before the festival" (anchored to the
+	 * real start) and "May" (a plain annual window), and a festival that moves a week moves the
+	 * anchored candidate's resolved window with it.
+	 */
+	it('resolves the saco festival-relative candidate to a window that moves with the real festival start', () => {
+		const result = inventoryAdvisorBuiltinBundleProvider.load(BEFORE_EXPIRY);
+		if (result.status !== 'available') throw new Error('expected built-in bundle');
+		const entry = result.bundle.festivalCalendar.entries.find((candidate) => candidate.itemId === 36_038);
+		if (entry === undefined) throw new Error('expected a 36038 calendar entry');
+		expect(entry.candidates.some((candidate) => candidate.kind === 'annual')).toBe(true);
+		const relative = entry.candidates.find((candidate) => candidate.kind === 'festival_relative');
+		if (relative === undefined || relative.kind !== 'festival_relative') {
+			throw new Error('expected a festival_relative candidate for 36038');
+		}
+		const earlyYearStartMs = Date.parse('2021-10-05T00:00:00.000Z');
+		const lateYearStartMs = Date.parse('2022-10-18T00:00:00.000Z');
+		const earlyWindow = resolveFestivalRelativeWindow(relative.window, earlyYearStartMs);
+		const lateWindow = resolveFestivalRelativeWindow(relative.window, lateYearStartMs);
+		if (earlyWindow === null || lateWindow === null) throw new Error('expected both years to resolve');
+		expect(earlyWindow.closesOn).not.toBe(lateWindow.closesOn);
+		// A festival 13 days later closes the window 13 days later too.
+		expect(earlyWindow.closesOn).toBe('10-04');
+		expect(lateWindow.closesOn).toBe('10-17');
 	});
 
 	it('uses standard SHA-256 rather than a self-consistent local fingerprint', () => {
