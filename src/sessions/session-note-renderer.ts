@@ -7,8 +7,9 @@ import { isMap, isScalar, parseDocument, type Scalar } from 'yaml';
 import type { SnapshotQuality } from '../account/storage-snapshot-model';
 import { createTranslator } from '../core/i18n';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
-import { buildLootPresentation } from './loot-presentation';
+import { buildLootPresentation, formatLootMoney } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
+import { sessionAttributionSummary } from './session-attribution';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
@@ -282,6 +283,7 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 			`- ${noteText(locale, 'note.profession')}: ${text(state.startContext.build.profession)}`,
 			`- ${noteText(locale, 'note.duration')}: ${formatDuration(note.durationMs)}`,
 			`- ${noteText(locale, 'note.classification')}: ${localizedClassification(classification.status, locale)}`,
+			...renderAttributionSummary(note),
 		].join('\n'),
 		evidence: renderEvidence(note),
 		results: loot.results,
@@ -289,6 +291,32 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 		decision: loot.decision,
 		provenance: renderProvenance(note),
 	};
+}
+
+/**
+ * H18.11: the summary keeps liquid gold, sellable item value and attribution apart, and states the
+ * attribution as uncertain with its causes instead of letting a single total read as exact.
+ */
+function renderAttributionSummary(note: PreparedSessionNote): string[] {
+	const locale = note.locale;
+	const summary = sessionAttributionSummary(note);
+	const money = (copper: number | null): string => copper === null ? '—' : formatLootMoney(copper, locale).visual;
+	const sellable = summary.sellableNowCopper === null || summary.sellableListedCopper === null
+		? '—'
+		: noteText(locale, 'note.sellableValueDetail', {
+			now: money(summary.sellableNowCopper), listed: money(summary.sellableListedCopper),
+		});
+	return [
+		`- ${noteText(locale, 'note.liquidGold')}: ${money(summary.liquidCopper)}`,
+		`- ${noteText(locale, 'note.sellableValue')}: ${sellable}`,
+		...(summary.unvaluedItemKinds !== null && summary.unvaluedItemKinds > 0
+			? [`  - ${noteText(locale, 'note.sellableUnvalued', { count: summary.unvaluedItemKinds })}`]
+			: []),
+		`- ${noteText(locale, 'note.attribution')}: ${noteText(locale, 'note.attributionUncertain')}`,
+		...summary.causes.map((cause) => `  - ${noteText(locale, `note.attributionCause.${cause.code}`, {
+			minutes: cause.minutes ?? 0,
+		})}`),
+	];
 }
 
 function renderEvidence(note: PreparedSessionNote): string {
