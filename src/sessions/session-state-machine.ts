@@ -3,8 +3,11 @@ import { PINNED_SCHEMA } from '../account/storage-snapshot-model';
 import { MAX_MAGIC_FIND, type SessionStartContext } from './session-start-capture';
 import {
 	SESSION_STATE_VERSION,
+	SESSION_ABANDON_REASONS,
 	SESSION_UNOBSERVED_GAPS_MAX,
+	type AbandonedSessionState,
 	type ActiveSessionState,
+	type SessionAbandonReason,
 	type CompleteSessionState,
 	type ErrorSessionState,
 	type IdleSessionState,
@@ -77,6 +80,8 @@ export function isSessionState(value: unknown): value is SessionState {
 			return isCompleteState(value);
 		case 'error':
 			return isErrorState(value);
+		case 'abandoned':
+			return isAbandonedState(value);
 		default:
 			return false;
 	}
@@ -123,6 +128,11 @@ export function isSessionEvent(value: unknown): value is SessionEvent {
 				&& Date.parse(value.recoveredAt) >= value.authority.acquiredAt;
 		case 'reset':
 			return exactKeys(value, ['type']);
+		case 'abandon':
+			return exactKeys(value, ['type', 'authority', 'abandonedAt', 'reason'])
+				&& isAuthority(value.authority)
+				&& isIsoTimestamp(value.abandonedAt)
+				&& SESSION_ABANDON_REASONS.includes(value.reason as SessionAbandonReason);
 		case 'record_unobserved_gap':
 			return exactKeys(value, ['type', 'authority', 'from', 'to'])
 				&& isAuthority(value.authority)
@@ -236,8 +246,26 @@ function transitionValidated(state: SessionState, event: SessionEvent): SessionT
 
 		case 'reset':
 			if (state.status === 'idle') return unchanged(state);
-			if (state.status !== 'complete' && state.status !== 'error') return rejected(state, 'illegal_transition');
+			if (state.status !== 'complete' && state.status !== 'error' && state.status !== 'abandoned') {
+				return rejected(state, 'illegal_transition');
+			}
 			return applied(initialSessionState());
+
+		case 'abandon': {
+			if (state.status === 'abandoned' && sameAuthority(state.authority, event.authority)
+				&& state.abandonedAt === event.abandonedAt && state.reason === event.reason) return unchanged(state);
+			// Only a stop that could not finish can be given up: an active session is stopped, and a
+			// captured one is finalized, never thrown away.
+			if (state.status !== 'stopping') return rejected(state, 'illegal_transition');
+			if (!sameAuthority(state.authority, event.authority)) return rejected(state, 'authority_mismatch');
+			const { stopBoundary: _stopBoundary, ...stopping } = clone(state);
+			return applied({
+				...stopping,
+				status: 'abandoned',
+				abandonedAt: event.abandonedAt,
+				reason: event.reason,
+			});
+		}
 	}
 }
 
@@ -288,6 +316,19 @@ function isCompleteState(value: Record<string, unknown>): value is Record<string
 		&& isIsoTimestamp(value.finalizedAt)
 		&& Date.parse(value.finalizedAt) >= Date.parse((value.finalSnapshot as SessionSnapshotReference).completedAt)
 		&& COMPLETION_KINDS.includes(value.classification as SessionCompletionKind);
+}
+
+function isAbandonedState(value: Record<string, unknown>): value is Record<string, unknown> & AbandonedSessionState {
+	return exactKeys(value, withUnobservedGaps(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'abandonedAt', 'reason']))
+		&& validUnobservedGaps(value, value.stopRequestedAt)
+		&& validSessionBase(value)
+		&& isSnapshotReference(value.baseline)
+		&& isStartContext(value.startContext)
+		&& isIsoTimestamp(value.stopRequestedAt)
+		&& isIsoTimestamp(value.abandonedAt)
+		&& SESSION_ABANDON_REASONS.includes(value.reason as SessionAbandonReason)
+		&& Date.parse(value.stopRequestedAt) >= Date.parse(value.baseline.completedAt)
+		&& Date.parse(value.abandonedAt) >= Date.parse(value.stopRequestedAt);
 }
 
 function isErrorState(value: Record<string, unknown>): value is Record<string, unknown> & ErrorSessionState {

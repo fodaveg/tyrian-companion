@@ -29,7 +29,7 @@ import { canonicalJson as canonical } from '../core/canonical-sha256';
 /** Re-exported under its historical name; `session-note-renderer` fingerprints blocks with it. */
 export { canonical };
 
-export const SESSION_NOTE_SCHEMA_VERSION = 5 as const;
+export const SESSION_NOTE_SCHEMA_VERSION = 6 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
 export const SESSION_NOTE_BLOCK_IDS = [
 	'summary', 'evidence', 'results', 'economy', 'decision', 'provenance',

@@ -119,6 +119,10 @@ export interface CompanionActions extends HalloweenAlertPanelActions {
 	/** Countdown of the grace window the final capture waits for, or null when nothing waits. */
 	getSessionSettlementWait?(): SessionSettlementWait | null;
 	captureSessionFinalNow?(): Promise<void>;
+	/** Whether the stopping session can be abandoned (a stop no retry fixes, e.g. `account_changed`). */
+	canAbandonSession?(): boolean;
+	/** Asks for confirmation, then abandons the session; cancelling does nothing. */
+	confirmAbandonSession?(): void;
 	rotateToNewSession?(): Promise<void>;
 	recoverSession(): Promise<void>;
 	confirmDiscardRecoveredSession(): void;
@@ -611,6 +615,11 @@ export class TyrianCompanionView extends ItemView {
 					text: createTranslator(this.actions.getLocale()).t('commands.retryStop'), cta: true,
 					onClick: () => { void this.actions.stopManualSession().catch(() => undefined); },
 				});
+				// A stop no retry can fix (the key now reads another account) gets a way out, behind
+				// a confirmation: the retry stays first, the session is never thrown away by one click.
+				if (this.actions.canAbandonSession?.() === true) {
+					actions.push({ text: this.t('view.abandonSession'), onClick: () => { this.actions.confirmAbandonSession?.(); } });
+				}
 			}
 			return {
 				ariaLabel: copy.session, state: copy.finishing,
@@ -631,6 +640,17 @@ export class TyrianCompanionView extends ItemView {
 				meta: { clock: formatElapsed(elapsed ?? 0), text: `· ${observed.startContext.characterName}` },
 				actions: [],
 				callout, figures: this.buildTerminalFigures(elapsed, copy, locale), ...drawers,
+			};
+		}
+
+		if (observed.status === 'abandoned') {
+			// Nothing was measured, so neither a duration nor figures: only what happened and the
+			// way to the next session.
+			return {
+				ariaLabel: copy.session, state: this.t('view.sessionAbandoned'),
+				meta: { text: this.t(`status.abandonedDetail.${observed.reason}`) },
+				actions: [{ text: copy.start, cta: true, onClick: () => this.actions.openManualSessionStart() }],
+				callout, figures: [], ...drawers,
 			};
 		}
 
@@ -1539,6 +1559,41 @@ export class ConfirmClearCompletedSessionModal extends Modal {
 		cancel.addEventListener('click', () => this.close());
 		clear.addEventListener('click', () => {
 			clear.disabled = true;
+			cancel.disabled = true;
+			void this.onConfirm().finally(() => this.close());
+		});
+		cancel.focus();
+	}
+
+	onClose(): void {
+		this.onClosed();
+	}
+}
+
+/**
+ * Confirms abandoning a session whose stop cannot finish (David, 2026-09-24). Same shape as the
+ * discard and clear confirmations: keeping the session is the focused, default choice, and closing
+ * the modal any other way does nothing.
+ */
+export class ConfirmAbandonSessionModal extends Modal {
+	constructor(
+		app: App,
+		private readonly onConfirm: () => Promise<void>,
+		private readonly onClosed: () => void = () => undefined,
+		private readonly getLocale: () => Locale = () => 'es',
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.setTitle(runtimeText(this.getLocale(), 'modal.abandonTitle'));
+		this.contentEl.createEl('p', { text: runtimeText(this.getLocale(), 'modal.abandonDetail') });
+		const actions = this.contentEl.createDiv({ cls: 'tyrian-companion-view__session-actions' });
+		const cancel = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.keepSession'), cls: 'mod-cta' });
+		const abandon = actions.createEl('button', { text: runtimeText(this.getLocale(), 'modal.abandonConfirm'), cls: 'mod-warning' });
+		cancel.addEventListener('click', () => this.close());
+		abandon.addEventListener('click', () => {
+			abandon.disabled = true;
 			cancel.disabled = true;
 			void this.onConfirm().finally(() => this.close());
 		});

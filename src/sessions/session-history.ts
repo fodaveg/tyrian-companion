@@ -1,6 +1,7 @@
 import type { LocalDebugActionPort } from '../core/local-debug-action-runner';
 import { unmappedErrorLogDetails } from '../core/local-debug-error-details';
 import { normalizeSessionOutputFolder } from './session-note-model';
+import { SESSION_ABANDON_REASONS } from './session';
 import {
 	inspectStoredSessionLootSummary,
 	inspectStoredSessionNote,
@@ -45,6 +46,8 @@ export interface DurableSessionHistoryRecord {
 	startedAt: string;
 	endedAt: string;
 	durationMs: number;
+	/** `abandoned` (schema 6): the player gave the session up; it measured nothing. Absent means completed. */
+	outcome?: 'completed' | 'abandoned';
 	classification: string;
 	confidence: string;
 	scope: string;
@@ -64,7 +67,7 @@ export interface DurableSessionHistoryRecord {
 }
 
 export interface DurableSessionNoteEvidence {
-	schema: 1 | 2 | 3 | 4 | 5;
+	schema: 1 | 2 | 3 | 4 | 5 | 6;
 	event: 'halloween' | null;
 	sessionRef: string;
 	accountRef: string;
@@ -177,6 +180,9 @@ const V4_SESSION_KEYS = [...V3_SESSION_KEYS, 'tc_magic_find_source', 'tc_magic_f
 // H18.11: the duration is the active time, and the time nobody observed (a suspend, Obsidian
 // closed) travels next to it, so the end stays the player's stop.
 const V5_SESSION_KEYS = [...V4_SESSION_KEYS, 'tc_unobserved_ms'] as const;
+// The player may abandon a session whose stop cannot finish (David, 2026-09-24): the note says
+// whether the session completed or was abandoned, and why.
+const V6_SESSION_KEYS = [...V5_SESSION_KEYS, 'tc_outcome', 'tc_abandon_reason'] as const;
 const CSV_COLUMNS = [
 	'session_ref', 'account_ref', 'started_at', 'ended_at', 'duration_ms', 'classification', 'confidence', 'scope',
 	'valuation_coverage', 'observed_immediate_copper', 'observed_listing_copper', 'sacks', 'sacks_per_hour_milli',
@@ -468,7 +474,7 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const fm = note.frontmatter;
 	if (Object.keys(fm).length === 0) return { status: 'non_candidate' };
 	if (fm.tc_kind !== 'gw2_farming_session' ||
-		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5) ||
+		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5 && fm.tc_schema !== 6) ||
 		!hasExactKeys(fm, sessionKeysFor(fm.tc_schema)) ||
 		!note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
 	const sessionRef = fm.tc_session_ref;
@@ -480,13 +486,19 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const confidence = fm.tc_confidence;
 	const scope = fm.tc_scope;
 	// H18.11: from schema 5 the duration is the active time; before it there was nothing to subtract.
-	const unobservedMs = fm.tc_schema === 5 ? fm.tc_unobserved_ms : 0;
+	const unobservedMs = fm.tc_schema === 5 || fm.tc_schema === 6 ? fm.tc_unobserved_ms : 0;
+	// From schema 6 a note says whether its session completed or was abandoned (and why); an
+	// abandoned one measured nothing, so it carries no classification at all.
+	const outcome = fm.tc_schema === 6 ? fm.tc_outcome : 'completed';
+	const abandoned = outcome === 'abandoned';
 	if (!isRef(sessionRef) || !isRef(accountRef) || !iso(startedAt) || !iso(endedAt) || !safePositive(durationMs) ||
-		!safeNonNegative(unobservedMs) ||
+		!safeNonNegative(unobservedMs) || !validOutcome(fm) ||
 		Date.parse(endedAt) - Date.parse(startedAt) - unobservedMs !== durationMs ||
-		!enumValue(classification, ['exact', 'estimated', 'contaminated']) || !enumValue(confidence, ['high', 'medium', 'low']) ||
+		(abandoned
+			? classification !== null || confidence !== null
+			: !enumValue(classification, ['exact', 'estimated', 'contaminated']) || !enumValue(confidence, ['high', 'medium', 'low'])) ||
 		scope !== 'observed_storage_net' || !isSessionMetadata(fm)) return { status: 'invalid' };
-	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4 || fm.tc_schema === 5;
+	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4 || fm.tc_schema === 5 || fm.tc_schema === 6;
 	const positiveItemDeltas = carriesItemDeltas ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
 	if (carriesItemDeltas && positiveItemDeltas === null) return { status: 'invalid' };
 	// The results table is read back the same way `readSession` already does for a single note
@@ -498,7 +510,10 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
 		build: nullableString(fm.tc_build),
 		startedAt, endedAt, durationMs,
-		classification, confidence, scope,
+		outcome: abandoned ? 'abandoned' : 'completed',
+		classification: abandoned ? 'abandoned' : classification as string,
+		confidence: abandoned ? 'none' : confidence as string,
+		scope,
 		valuationCoverage: stringOr(fm.tc_valuation_coverage), observedImmediateCopper: numberOrNull(fm.tc_observed_immediate_copper),
 		observedListingCopper: numberOrNull(fm.tc_observed_listing_copper), sacks: numberOrNull(fm.tc_sacks),
 		sacksPerHourMilli: numberOrNull(fm.tc_sacks_per_hour_milli), immediateCopperPerHour: numberOrNull(fm.tc_immediate_copper_per_hour),
@@ -536,22 +551,37 @@ function isSessionMetadata(fm: Readonly<Record<string, string | number | null>>)
  * that did, so there is nothing to validate for them.
  */
 function isV4MagicFindMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
-	if (fm.tc_schema !== 4 && fm.tc_schema !== 5) return true;
+	if (fm.tc_schema !== 4 && fm.tc_schema !== 5 && fm.tc_schema !== 6) return true;
 	return enumValue(fm.tc_magic_find_source, ['derived', 'manual', 'unavailable']) &&
 		safeNonNegative(fm.tc_magic_find_consumables) &&
 		fm.tc_magic_find_consumables <= (fm.tc_magic_find as number);
 }
 
 /** The exact key set a note of this schema must carry, no more and no less. */
-function sessionKeysFor(schema: 1 | 2 | 3 | 4 | 5): readonly string[] {
+function sessionKeysFor(schema: 1 | 2 | 3 | 4 | 5 | 6): readonly string[] {
 	if (schema === 1) return V1_SESSION_KEYS;
 	if (schema === 2) return V2_SESSION_KEYS;
 	if (schema === 5) return V5_SESSION_KEYS;
+	if (schema === 6) return V6_SESSION_KEYS;
 	return schema === 3 ? V3_SESSION_KEYS : V4_SESSION_KEYS;
+}
+
+/**
+ * Schema 6: `completed` carries no reason; `abandoned` carries one of the known reasons and no
+ * value, rate or loot at all, so nothing can read it as a measured result.
+ */
+function validOutcome(fm: Readonly<Record<string, string | number | null>>): boolean {
+	if (fm.tc_schema !== 6) return true;
+	if (fm.tc_outcome === 'completed') return fm.tc_abandon_reason === null;
+	return fm.tc_outcome === 'abandoned'
+		&& (SESSION_ABANDON_REASONS as readonly unknown[]).includes(fm.tc_abandon_reason)
+		&& fm.tc_valuation_coverage === 'not_evaluated'
+		&& fm.tc_positive_item_deltas_json === '[]';
 }
 
 /** The renderer derives confidence from classification; no other pair is durable. */
 function validClassificationMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
+	if (fm.tc_schema === 6 && fm.tc_outcome === 'abandoned') return fm.tc_classification === null && fm.tc_confidence === null;
 	return (fm.tc_classification === 'exact' && fm.tc_confidence === 'high') ||
 		(fm.tc_classification === 'estimated' && (fm.tc_confidence === 'medium' || fm.tc_confidence === 'low')) ||
 		(fm.tc_classification === 'contaminated' && fm.tc_confidence === 'high');
@@ -599,7 +629,7 @@ function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boo
 }
 
 function validPositiveItemDeltas(fm: Readonly<Record<string, string | number | null>>): boolean {
-	if (fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5) return true;
+	if (fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5 && fm.tc_schema !== 6) return true;
 	return parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) !== null;
 }
 
@@ -667,7 +697,7 @@ function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string 
 	return `${rows.join('\r\n')}\r\n`;
 }
 function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV_COLUMNS[number]): string | number | null {
-	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows'>;
+	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows' | 'outcome'>;
 	return session[key];
 }
 /** RFC-style quoting plus spreadsheet formula protection after invisible prefixes. */

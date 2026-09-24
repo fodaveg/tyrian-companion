@@ -272,6 +272,34 @@ describe('Companion API settlement surface', () => {
 		expect(stopManualSession).toHaveBeenCalledOnce();
 	});
 
+	it('offers "Abandonar sesión" beside the retry only when the stop cannot finish on its own', async () => {
+		const confirmAbandonSession = vi.fn();
+		const { contentEl, render } = mountCompanion({
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => null,
+			getSessionStopFailure: () => ({ code: 'account_changed', message: 'another account' }),
+			canAbandonSession: () => true,
+			confirmAbandonSession,
+		});
+		render();
+		const abandon = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Abandonar sesión');
+		expect(abandon).toBeDefined();
+		expect(find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Reintentar finalizar sesión')).toBeDefined();
+		abandon?.click();
+		await Promise.resolve();
+		// The click only asks for confirmation; nothing is abandoned from here.
+		expect(confirmAbandonSession).toHaveBeenCalledOnce();
+
+		const recoverable = mountCompanion({
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => null,
+			getSessionStopFailure: () => ({ code: 'snapshot_failed', message: 'offline' }),
+			canAbandonSession: () => false,
+		});
+		recoverable.render();
+		expect(find(recoverable.contentEl, (node) => node.tag === 'button' && node.textContent === 'Abandonar sesión')).toBeUndefined();
+	});
+
 	it('shows the ordinary reconciling copy when no window is pending', () => {
 		const { contentEl, render } = mountCompanion({
 			captureSessionFinalNow: vi.fn(async () => undefined),

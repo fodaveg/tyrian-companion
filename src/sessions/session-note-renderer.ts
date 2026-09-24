@@ -10,10 +10,11 @@ import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runti
 import { buildLootPresentation, formatLootMoney } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
 import { sessionAttributionSummary } from './session-attribution';
-import { sessionUnobservedMs } from './session';
+import { sessionUnobservedMs, type AbandonedSessionState } from './session';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
+	normalizeSessionOutputFolder,
 	type PreparedSessionNote,
 	type SessionNoteBlockId,
 } from './session-note-model';
@@ -40,39 +41,120 @@ export async function renderSessionNote(note: PreparedSessionNote): Promise<Rend
 		const state = note.runtime.state;
 		const sessionRef = await sha256Text(state.sessionId);
 		const accountRef = await sha256Text(note.runtime.finalSnapshot.accountId);
-		const started = new Date(state.baseline.completedAt);
-		const year = String(started.getUTCFullYear()).padStart(4, '0');
-		const date = `${year}-${pad(started.getUTCMonth() + 1)}-${pad(started.getUTCDate())}`;
-		const time = `${pad(started.getUTCHours())}${pad(started.getUTCMinutes())}${pad(started.getUTCSeconds())}Z`;
-		const base = `${note.outputFolder}/sessions/${year}/${date} ${time} - `;
 		const frontmatter = createFrontmatter(note, sessionRef, accountRef);
-		const contents = createBlocks(note);
-		const blocks = {} as RenderedSessionNote['blocks'];
-		for (const id of SESSION_NOTE_BLOCK_IDS) {
-			const content = contents[id];
-			const hash = await sha256Text(content);
-			blocks[id] = {
-				content,
-				hash,
-				serialized: `<!-- tyrian-companion:managed:start:${id} sha256=${hash} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`,
-			};
-		}
-		const heading = `# ${noteText(note.locale, 'note.heading')}`;
-		const notes = `## ${noteText(note.locale, 'note.myNotes')}`;
-		const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
-		return {
-			status: 'ok',
-			note: {
-				sessionRef, accountRef,
-				preferredPath: `${base}${sessionRef.slice(0, 16)}.md`,
-				collisionPath: `${base}${sessionRef}.md`,
-				frontmatter, blocks,
-				content: `${serializeFrontmatter(frontmatter, [])}${body}`,
-			},
-		};
+		return { status: 'ok', note: await assembleNote(sessionRef, accountRef, state.baseline.completedAt, note.outputFolder, note.locale, frontmatter, createBlocks(note)) };
 	} catch {
 		return { status: 'invalid', reason: 'hash_unavailable' };
 	}
+}
+
+/** What the abandoned note needs (see `renderAbandonedSessionNote`). */
+export interface AbandonedSessionNoteInput {
+	state: AbandonedSessionState;
+	locale: PreparedSessionNote['locale'];
+	outputFolder: string;
+}
+
+/**
+ * The note of a session the player abandoned (David, 2026-09-24). Same path and same managed
+ * blocks as any session note, so an existing note of that session is updated in place and marked
+ * abandoned, never deleted; human lines are kept. It carries no loot, no value, no rate and no
+ * classification: nothing was measured. `tc_outcome: abandoned` and its reason say why.
+ */
+export async function renderAbandonedSessionNote(input: AbandonedSessionNoteInput): Promise<RenderSessionNoteResult> {
+	try {
+		const { state, locale } = input;
+		const outputFolder = normalizeSessionOutputFolder(input.outputFolder);
+		if (outputFolder === null) return { status: 'invalid', reason: 'arithmetic_invalid' };
+		const unobservedMs = sessionUnobservedMs(state);
+		const durationMs = Date.parse(state.stopRequestedAt) - Date.parse(state.baseline.completedAt) - unobservedMs;
+		if (!Number.isSafeInteger(durationMs) || durationMs <= 0) return { status: 'invalid', reason: 'arithmetic_invalid' };
+		const sessionRef = await sha256Text(state.sessionId);
+		const accountRef = await sha256Text(state.baseline.accountId);
+		const frontmatter: Record<string, string | number | null> = {
+			tc_schema: SESSION_NOTE_SCHEMA_VERSION, tc_kind: 'gw2_farming_session',
+			tc_event: null, tc_event_source: null, tc_positive_item_deltas_json: '[]',
+			tc_session_ref: sessionRef, tc_account_ref: accountRef, tc_locale: locale,
+			tc_started_at: state.baseline.completedAt, tc_ended_at: state.stopRequestedAt,
+			tc_duration_ms: durationMs, tc_unobserved_ms: unobservedMs,
+			tc_character: state.startContext.characterName, tc_profession: state.startContext.build.profession,
+			tc_build: state.startContext.build.name || null, tc_magic_find: state.startContext.magicFind.value,
+			tc_magic_find_source: state.startContext.magicFind.source,
+			tc_magic_find_consumables: state.startContext.magicFind.consumablesBonus,
+			tc_detection_mode: null, tc_classification: null, tc_confidence: null, tc_scope: 'observed_storage_net',
+			tc_valuation_coverage: 'not_evaluated', tc_price_source: null, tc_price_captured_at: null,
+			tc_observed_immediate_copper: null, tc_observed_listing_copper: null, tc_sacks: null,
+			tc_sacks_per_hour_milli: null, tc_immediate_copper_per_hour: null, tc_listing_copper_per_hour: null,
+			tc_reservation_status: 'not_evaluated', tc_reserved_quantity: null,
+			tc_hold_status: 'not_evaluated', tc_held_quantity: null,
+			tc_recommendation_status: 'not_evaluated', tc_recommendation_action: null,
+			tc_recommendation_quantity: null, tc_recommendation_route: null,
+			tc_execution: 'manual_in_game', tc_side_effects: 'none',
+			tc_outcome: 'abandoned', tc_abandon_reason: state.reason,
+			descripcion: noteText(locale, 'note.description'),
+		};
+		const reason = noteText(locale, `note.abandonReason.${state.reason}`);
+		const noLoot = noteText(locale, 'note.abandonedNoLoot');
+		const contents: Record<SessionNoteBlockId, string> = {
+			summary: [
+				`## ${noteText(locale, 'note.summary')}`,
+				`- ${noteText(locale, 'note.character')}: ${text(state.startContext.characterName)}`,
+				`- ${noteText(locale, 'note.profession')}: ${text(state.startContext.build.profession)}`,
+				`- ${noteText(locale, 'note.duration')}: ${formatDuration(durationMs)}`,
+				`- ${noteText(locale, 'note.classification')}: ${noteText(locale, 'note.abandoned')}`,
+				`- ${noteText(locale, 'note.abandonReason')}: ${reason}`,
+			].join('\n'),
+			evidence: [`## ${noteText(locale, 'note.evidence')}`, noLoot].join('\n'),
+			results: [`## ${noteText(locale, 'markdown.results')}`, noLoot].join('\n'),
+			economy: [`## ${noteText(locale, 'markdown.observedEconomy')}`, noteText(locale, 'note.notEvaluated')].join('\n'),
+			decision: [`## ${noteText(locale, 'markdown.manualDecision')}`, noteText(locale, 'note.notEvaluated')].join('\n'),
+			provenance: [
+				`## ${noteText(locale, 'note.provenance')}`,
+				`- ${noteText(locale, 'note.baselineQuality')}: ${localizedSnapshotQuality(state.baseline.quality, locale)}`,
+				`- ${noteText(locale, 'note.finalQuality')}: ${noteText(locale, 'note.notEvaluated')}`,
+			].join('\n'),
+		};
+		return { status: 'ok', note: await assembleNote(sessionRef, accountRef, state.baseline.completedAt, outputFolder, locale, frontmatter, contents) };
+	} catch {
+		return { status: 'invalid', reason: 'hash_unavailable' };
+	}
+}
+
+/** Path, managed blocks and content shared by every session note, whatever its outcome. */
+async function assembleNote(
+	sessionRef: string,
+	accountRef: string,
+	baselineCompletedAt: string,
+	outputFolder: string,
+	locale: PreparedSessionNote['locale'],
+	frontmatter: Record<string, string | number | null>,
+	contents: Record<SessionNoteBlockId, string>,
+): Promise<RenderedSessionNote> {
+	const started = new Date(baselineCompletedAt);
+	const year = String(started.getUTCFullYear()).padStart(4, '0');
+	const date = `${year}-${pad(started.getUTCMonth() + 1)}-${pad(started.getUTCDate())}`;
+	const time = `${pad(started.getUTCHours())}${pad(started.getUTCMinutes())}${pad(started.getUTCSeconds())}Z`;
+	const base = `${outputFolder}/sessions/${year}/${date} ${time} - `;
+	const blocks = {} as RenderedSessionNote['blocks'];
+	for (const id of SESSION_NOTE_BLOCK_IDS) {
+		const content = contents[id];
+		const hash = await sha256Text(content);
+		blocks[id] = {
+			content,
+			hash,
+			serialized: `<!-- tyrian-companion:managed:start:${id} sha256=${hash} -->\n${content}\n<!-- tyrian-companion:managed:end:${id} -->`,
+		};
+	}
+	const heading = `# ${noteText(locale, 'note.heading')}`;
+	const notes = `## ${noteText(locale, 'note.myNotes')}`;
+	const body = `${heading}\n\n${SESSION_NOTE_BLOCK_IDS.map((id) => blocks[id].serialized).join('\n\n')}\n\n${notes}\n`;
+	return {
+		sessionRef, accountRef,
+		preferredPath: `${base}${sessionRef.slice(0, 16)}.md`,
+		collisionPath: `${base}${sessionRef}.md`,
+		frontmatter, blocks,
+		content: `${serializeFrontmatter(frontmatter, [])}${body}`,
+	};
 }
 
 export async function mergeRenderedSessionNote(
@@ -245,6 +327,8 @@ function createFrontmatter(
 		tc_recommendation_route: recommendationDecision?.route ?? null,
 		tc_execution: 'manual_in_game',
 		tc_side_effects: 'none',
+		tc_outcome: 'completed',
+		tc_abandon_reason: null,
 		descripcion: noteText(note.locale, 'note.description'),
 	};
 }

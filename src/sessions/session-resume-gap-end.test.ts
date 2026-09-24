@@ -210,7 +210,7 @@ describe('unobserved gaps are subtracted, the end stays the stop (H18.11)', () =
 		// 2 h 59 min of active time, the end is the stop, and the minute nobody saw is declared.
 		expect(prepared.durationMs).toBe(3 * HOUR - MINUTE);
 		expect(rendered.frontmatter).toMatchObject({
-			tc_schema: 5, tc_ended_at: iso(stopAt), tc_duration_ms: 3 * HOUR - MINUTE, tc_unobserved_ms: MINUTE,
+			tc_schema: 6, tc_outcome: 'completed', tc_ended_at: iso(stopAt), tc_duration_ms: 3 * HOUR - MINUTE, tc_unobserved_ms: MINUTE,
 		});
 		expect(rendered.content).toContain('Tiempo sin observar descontado: 00:01:00 en 1 hueco(s)');
 		expect(rendered.content).toContain('la duración es incierta');

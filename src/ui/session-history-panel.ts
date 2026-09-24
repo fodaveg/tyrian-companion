@@ -209,6 +209,12 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 			cls: 'tyrian-session-history__warning',
 		});
 	}
+	if (aggregate.performance.abandonedSessions > 0) {
+		section.createEl('p', {
+			text: t.t('sessionHistory.performanceAbandoned', { count: aggregate.performance.abandonedSessions }),
+			cls: 'tyrian-session-history__warning',
+		});
+	}
 	if (aggregate.performance.groups.length === 0) {
 		section.createEl('p', { text: t.t('sessionHistory.performanceEmpty') });
 		return;
@@ -405,7 +411,7 @@ function formatNumber(value: number, locale: Locale, options?: Intl.NumberFormat
 
 const QUALITY_LABEL_KEY: Readonly<Record<string, TranslationKey>> = {
 	exact: 'sessionHistory.qualityLabel.exact', estimated: 'sessionHistory.qualityLabel.estimated',
-	contaminated: 'sessionHistory.qualityLabel.contaminated',
+	contaminated: 'sessionHistory.qualityLabel.contaminated', abandoned: 'sessionHistory.qualityLabel.abandoned',
 };
 
 function qualityLabel(value: string, t: Translator): string {

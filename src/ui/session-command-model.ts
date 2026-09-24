@@ -1,6 +1,10 @@
 import type { ConnectionState } from '../account/connection-service';
 import { createTranslator, type Locale, type TranslationKey } from '../core/i18n';
-import type { SessionRecoveryState, SessionStopFailure } from '../sessions/manual-session-start-service';
+import {
+	isAbandonableStopFailure,
+	type SessionRecoveryState,
+	type SessionStopFailure,
+} from '../sessions/manual-session-start-service';
 import type { SessionState } from '../sessions/session';
 
 export const SESSION_COMMAND_IDS = [
@@ -9,6 +13,7 @@ export const SESSION_COMMAND_IDS = [
 	'recover-saved-session',
 	'discard-saved-session',
 	'clear-completed-session',
+	'abandon-farming-session',
 ] as const;
 export type SessionCommandId = typeof SESSION_COMMAND_IDS[number];
 
@@ -40,7 +45,8 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 	const connected = context.connection === 'connected' || context.connection === 'warning';
 	// A finished session no longer has to be cleared first (H18.8): starting releases it once its
 	// summary is proven saved, and keeps it whole otherwise.
-	const awaitingNext = context.state.status === 'idle' || context.state.status === 'complete';
+	const awaitingNext = context.state.status === 'idle' || context.state.status === 'complete'
+		|| context.state.status === 'abandoned';
 	return [
 		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && awaitingNext, 'play', false, targetKey(context, false)),
 		descriptor('finish-farming-session',
@@ -55,6 +61,12 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 		descriptor('recover-saved-session', t('commands.recoverSession'), recoveryRetry, 'rotate-ccw', false, targetKey(context, true)),
 		descriptor('discard-saved-session', t('commands.discardSession'), recoveryDiscardable, 'trash-2', true, targetKey(context, true)),
 		descriptor('clear-completed-session', t('commands.clearSession'), !recovering && context.state.status === 'complete', 'eraser', true, targetKey(context, false)),
+		// Only a stop no retry can fix (the key now reads another account, the snapshots cannot be
+		// compared); every other stop failure retries on its own and ends in a real result.
+		descriptor('abandon-farming-session', t('commands.abandonSession'),
+			!recovering && context.state.status === 'stopping' && context.stopFailure !== null
+				&& isAbandonableStopFailure(context.stopFailure.code),
+			'circle-x', true, targetKey(context, false)),
 	];
 }
 

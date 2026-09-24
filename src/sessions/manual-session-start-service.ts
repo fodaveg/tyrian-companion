@@ -21,12 +21,14 @@ import {
 	sessionAuthorityFromLease,
 	transitionSession,
 } from './session-state-machine';
-import type {
-	SessionEvent,
-	SessionFailureCode,
-	SessionInProgressState,
-	SessionSnapshotReference,
-	SessionState,
+import {
+	SESSION_ABANDON_REASONS,
+	type SessionAbandonReason,
+	type SessionEvent,
+	type SessionFailureCode,
+	type SessionInProgressState,
+	type SessionSnapshotReference,
+	type SessionState,
 } from './session';
 import {
 	createSessionContaminationReview,
@@ -177,6 +179,22 @@ export type ManualSessionStopResult =
  * `false` anymore (David, 2026-09-09), a review that computed cleanly always finalizes the session
  * in the same step, and the old `'reviewed'` (provisional, unfinalized) outcome is unreachable.
  */
+/**
+ * Stop failures a session may be abandoned from: the ones no retry fixes by itself, because the
+ * two snapshots can never be compared (the key now reads another account, or the final snapshot
+ * disagrees with the baseline). Network, rate limit, lease and coordination failures retry on
+ * their own and end in a real result, so they never offer the way out.
+ */
+export const ABANDONABLE_STOP_FAILURES: readonly SessionAbandonReason[] = SESSION_ABANDON_REASONS;
+
+export function isAbandonableStopFailure(code: SessionStopFailure['code']): code is SessionAbandonReason {
+	return (ABANDONABLE_STOP_FAILURES as readonly string[]).includes(code);
+}
+
+export type SessionAbandonResult =
+	| { status: 'abandoned'; state: Extract<SessionState, { status: 'abandoned' }> }
+	| { status: 'failed'; message: string };
+
 export type SessionContaminationReviewResult =
 	| {
 			status: 'finalized';
@@ -278,6 +296,7 @@ export class ManualSessionStartService {
 	private initializationFlight: Promise<void> | null = null;
 	private recoveryFlight: Promise<SessionRecoveryResult> | null = null;
 	private reclaimFlight: Promise<SessionStopFailure | null> | null = null;
+	private abandonFlight: Promise<SessionAbandonResult> | null = null;
 	/** Last evidence saved before the failure the latest reclaim recovered from; see `lastSavedEvidenceAt`. */
 	private reclaimedEvidenceAt: number | null = null;
 	/** Earliest instant the lifecycle watch may retry on its own; null when nothing waits for it. */
@@ -552,6 +571,76 @@ export class ManualSessionStartService {
 			else if (this.state.status === 'provisional') this.scheduleAutoRetry();
 		}
 		return result;
+	}
+
+	/**
+	 * Whether the player may abandon the session now: it is `stopping` and its last stop failed in
+	 * a way no retry fixes on its own (`ABANDONABLE_STOP_FAILURES`). Every other failure (network,
+	 * rate limit, a lost lease, coordination) retries by itself and ends in a real result.
+	 */
+	canAbandon(): boolean {
+		const code = this.lastStopFailure?.code;
+		return this.state.status === 'stopping' && !this.disposed && this.stopFlight === null
+			&& code !== undefined && isAbandonableStopFailure(code);
+	}
+
+	/**
+	 * Ends a stopping session the player gave up on (David, 2026-09-24): after the key changed to
+	 * another account (H18.12) the stop could only fail forever. The session ends `abandoned`, with
+	 * no final snapshot, no delta and no loot; its saved record is cleared and its lease released,
+	 * so the next session starts without anything to clear first. Only under the lease this window
+	 * still owns: a session another window took keeps going there.
+	 */
+	abandon(): Promise<SessionAbandonResult> {
+		if (this.abandonFlight) return this.abandonFlight;
+		const flight = this.abandonInternal().finally(() => {
+			if (this.abandonFlight === flight) this.abandonFlight = null;
+		});
+		this.abandonFlight = flight;
+		return flight;
+	}
+
+	private async abandonInternal(): Promise<SessionAbandonResult> {
+		const code = this.lastStopFailure?.code;
+		if (!this.canAbandon() || this.state.status !== 'stopping' || code === undefined || !isAbandonableStopFailure(code)) {
+			return { status: 'failed', message: 'Only a stop that cannot finish on its own can be abandoned.' };
+		}
+		const handle = this.currentHandle;
+		if (!handle) return { status: 'failed', message: 'The session lease was lost.' };
+		const owned = await this.safeAssert(handle);
+		if (owned.status !== 'owned') {
+			return { status: 'failed', message: owned.status === 'lost'
+				? 'Another Obsidian window owns this farming session.'
+				: 'Session coordination is unavailable.' };
+		}
+		const stopping = this.state;
+		const abandoned = transitionSession(stopping, {
+			type: 'abandon',
+			authority: stopping.authority,
+			abandonedAt: this.safeTimestampAtOrAfter(Date.parse(stopping.stopRequestedAt)),
+			reason: code,
+		});
+		if (abandoned.status === 'rejected' || abandoned.state?.status !== 'abandoned') {
+			return { status: 'failed', message: 'The session could not be abandoned.' };
+		}
+		const cleared = await this.runtimeStore.clear(stopping.authority);
+		if (cleared.status !== 'cleared') {
+			return { status: 'failed', message: 'The saved farming session could not be released safely.' };
+		}
+		this.stopHeartbeat();
+		this.stopSettlement();
+		this.clearAutoRetry();
+		this.currentHandle = null;
+		await this.safeRelease(handle);
+		this.state = abandoned.state;
+		this.lastStopFailure = null;
+		this.baselineSnapshot = null;
+		this.finalSnapshot = null;
+		this.provisionalDelta = null;
+		this.contaminationReview = null;
+		this.priceSnapshot = null;
+		this.onStateChange();
+		return { status: 'abandoned', state: this.getState() as Extract<SessionState, { status: 'abandoned' }> };
 	}
 
 	async resetCompletedSession(): Promise<boolean> {
@@ -920,6 +1009,11 @@ export class ManualSessionStartService {
 			if (!await this.resetCompletedSession()) {
 				return this.failWithoutLease('coordination_unavailable', 'The finished session could not be released safely.');
 			}
+		}
+		// An abandoned session already released its lease and its record: nothing is left to keep.
+		if (this.state.status === 'abandoned') {
+			const reset = transitionSession(this.state, { type: 'reset' });
+			if (reset.status !== 'rejected') this.state = reset.state;
 		}
 		this.lastFailure = null;
 		this.lastStopFailure = null;
@@ -1607,7 +1701,8 @@ export class ManualSessionStartService {
 		});
 		const recoveredState = transition.state;
 		if (transition.status === 'rejected' || recoveredState === null || recoveredState.status === 'error'
-			|| recoveredState.status === 'idle' || recoveredState.status === 'starting' || recoveredState.status === 'complete') {
+			|| recoveredState.status === 'idle' || recoveredState.status === 'starting' || recoveredState.status === 'complete'
+			|| recoveredState.status === 'abandoned') {
 			await this.safeRelease(handle);
 			return { code: 'unexpected', message: 'The saved session authority could not be taken back safely.' };
 		}

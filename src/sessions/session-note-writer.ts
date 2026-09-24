@@ -3,7 +3,9 @@ import { prepareSessionNote, type SessionNoteInput } from './session-note-model'
 import {
 	frontmatterSessionRef,
 	mergeRenderedSessionNote,
+	renderAbandonedSessionNote,
 	renderSessionNote,
+	type AbandonedSessionNoteInput,
 	type RenderedSessionNote,
 } from './session-note-renderer';
 
@@ -38,6 +40,22 @@ export class SessionNoteWriter {
 		if (rendered.status !== 'ok') return { status: 'invalid', reason: rendered.reason };
 		const current = this.flights.get(rendered.note.sessionRef);
 		if (current) return current;
+		const flight = this.writeRendered(rendered.note).finally(() => {
+			if (this.flights.get(rendered.note.sessionRef) === flight) this.flights.delete(rendered.note.sessionRef);
+		});
+		this.flights.set(rendered.note.sessionRef, flight);
+		return flight;
+	}
+
+	/**
+	 * Writes the note of an abandoned session, or marks the note that session already has as
+	 * abandoned: same path, same managed blocks, human lines kept, nothing deleted.
+	 */
+	async writeAbandoned(input: AbandonedSessionNoteInput): Promise<SessionNoteWriteResult> {
+		const rendered = await renderAbandonedSessionNote(input);
+		if (rendered.status !== 'ok') return { status: 'invalid', reason: rendered.reason };
+		const current = this.flights.get(rendered.note.sessionRef);
+		if (current) await current;
 		const flight = this.writeRendered(rendered.note).finally(() => {
 			if (this.flights.get(rendered.note.sessionRef) === flight) this.flights.delete(rendered.note.sessionRef);
 		});
