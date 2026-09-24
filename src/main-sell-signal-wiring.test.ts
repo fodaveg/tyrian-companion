@@ -142,7 +142,11 @@ describe('H13.2 sell signal cabling', () => {
 		expect(plugin.getEmittedAlerts()).toHaveLength(0);
 	});
 
-	it('does not seed while no session is active', async () => {
+	// H18.17: `ensureSeed` no longer gates on `sessionActive()` — it rides the price-history
+	// compaction cycle instead, which is already reachable with no session and no API key. The
+	// only precondition that still holds is the one the first test in this file covers: the
+	// runtime must have composed a detector at all (`plugin.sellSignal` non-null).
+	it('seeds even while no session is active (H18.17 freed it from a live session)', async () => {
 		const send = vi.spyOn(ObsidianRequestTransport.prototype, 'send')
 			.mockResolvedValue({ status: 200, headers: {}, body: trickOrTreatBagHistoryRecords() });
 		const plugin = sellSignalPlugin(new IDBFactory());
@@ -150,8 +154,8 @@ describe('H13.2 sell signal cabling', () => {
 
 		await plugin.evaluateSellSignal({ nowMs: SELL_DAY_MS, readDaily: async () => [] });
 
-		expect(send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed')).toHaveLength(0);
-		expect(plugin.sellSignal?.getState().seedStatus).toBe('unseeded');
+		expect(send.mock.calls.filter(([request]) => request.endpoint === 'price_history_seed')).toHaveLength(1);
+		expect(plugin.sellSignal?.getState().seedStatus).toBe('seeded');
 	});
 
 	// H15.18 (2026-09-10 incident): `ensureSeed`/`evaluate` throwing an unexpected error (not the
