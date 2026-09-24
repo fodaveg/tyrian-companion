@@ -86,3 +86,27 @@ Ninguna se traga un fallo sin rastro:
 - Las demás desvinculan o encadenan una operación que ya lo registra.
 - La fila 6 devuelve el valor conservador: sin enlace, la presencia adopta la sesión y nunca la
   cierra.
+
+## Anexo: «Abandonar sesión» (aprobado por David el 24 sep 2026)
+
+`main` integró ya las 11 entradas de arriba en `67a9152`; su baseline sigue sin aplicarlas, así que
+`67a9152` sale con 42 hallazgos. Este árbol (`f33e200`, `67a9152` integrado) sale con 50. Las
+**8 de diferencia** son del botón «Abandonar sesión» y se recogen aquí. Mismo método: `id` comparados
+con una copia limpia de `67a9152`. **No se ha aplicado nada.**
+
+| # | Fichero | Hallazgo del censo | Frontera (kind, scope, línea) | `id` | Clasificación propuesta | Justificación literal propuesta |
+|---|---|---|---|---|---|---|
+| A1 | `src/sessions/manual-session-start-service.ts` | `callback_registration (added)` | `finally`, `abandon`, 596 | `c9c6564b96cb7cd0a60db8f01c32045bf79dddeb` | `allowlisted`, `reviewed_registered_callback`, registration `finally` | The \"abandon\" owner registers \"finally\" only to release its single in-flight abandon slot; it clears one field, performs no I/O and cannot reject. |
+| A2 | `src/sessions/session-note-renderer.ts` | `catch_clause (added)` | `catch_clause`, `renderAbandonedSessionNote`, 118 | `48dd6ee4b3cbed851b0102bc02a346c72c9925ce` | `allowlisted`, `reviewed_recovery`, behavior `fallback_return` | The \"renderAbandonedSessionNote\" owner applies \"fallback_return\" when hashing the note fails: it returns the typed invalid result the writer reports as not written, and main.ts records that through writeSessionNoteWithDiagnostics as a note_write failure. |
+| A3 | `src/sessions/session-note-writer.ts` | `callback_registration (added)` | `finally`, `writeAbandoned`, 59 | `604bc82c1f93a3871ec7c4baf356aa9de52ed852` | `allowlisted`, `reviewed_registered_callback`, registration `finally` | The \"writeAbandoned\" owner registers \"finally\" only to release the per-session write flight, exactly like write; it deletes one map entry and cannot reject. |
+| A4 | `src/main.ts` | `callback_registration (added)` | `finally`, `performAbandonSession`, 4090 | `f0b8e767ed0cdd98b3ad2e8dff3c088b661d4bfd` | `allowlisted`, `reviewed_registered_callback`, registration `finally` | The \"performAbandonSession\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. |
+| A5 | `src/ui/companion-view.ts` | `callback_registration (added)` | `addEventListener` (cancelar), `onOpen` de `ConfirmAbandonSessionModal`, 1594 | `18857d01ce5106492b3ec12fef225dd5be3ad15d` | `allowlisted`, `reviewed_registered_callback`, registration `addEventListener` (misma decisión que los otros modales de confirmación) | The \"onOpen\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. |
+| A6 | `src/ui/companion-view.ts` | `callback_registration (added)` | `addEventListener` (abandonar), `onOpen`, 1595 | `5ded0e49ee8474ef8c7de4ff479a56af79e54ff1` | Igual que A5 | Igual que A5 (misma justificación, literal). |
+| A7 | `src/ui/companion-view.ts` | `void_expression (added)` | `void`, `onOpen`, 1598 | `7358ac9e62bb20bb452de10bcac381c5db69eb0e` | `allowlisted`, `reviewed_detached_execution`, target `this.onConfirm().finally` (misma decisión que los otros modales) | The \"onOpen\" owner deliberately detaches \"this.onConfirm().finally\"; that named operation owns rejection and terminal diagnostics. |
+| A8 | `src/ui/companion-view.ts` | `callback_registration (added)` | `finally`, `onOpen`, 1598 | `d316fe460bbc48bcd87041ccc805da8ec11ebcb3` | `allowlisted`, `reviewed_registered_callback`, registration `finally` (misma decisión que los otros modales) | The \"onOpen\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. |
+
+Las filas A5 a A8 repiten, en el modal nuevo, exactamente las cuatro fronteras que el baseline ya
+acepta en `ConfirmDiscardSessionModal`, `ConfirmDiscardUnreadableSessionModal` y
+`ConfirmClearCompletedSessionModal`, con la misma justificación. Ninguna de las 8 se traga un fallo:
+A2 devuelve un resultado tipado que acaba registrado, y las demás liberan un hueco en vuelo o
+delegan en una operación que ya registra sus fallos.
