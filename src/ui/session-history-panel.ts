@@ -9,6 +9,7 @@ import {
 	type SessionHistoryPerformanceGroup,
 	type SessionHistorySummaryRow,
 } from '../sessions/session-history-summary';
+import { renderStoredSessionLoot } from './loot-presentation-view';
 
 /** Complete visible state machine for the manually loaded history panel. */
 export type SessionHistoryPanelState =
@@ -154,9 +155,12 @@ function renderReady(container: HTMLElement, locale: Locale, aggregate: SessionH
 	appendMetric(summary, t.t('sessionHistory.sessions'), String(aggregate.sessionCount));
 	appendMetric(summary, t.t('sessionHistory.duration'), aggregate.totalDurationMs === null
 		? t.t('sessionHistory.unknown') : formatSessionHistoryDuration(aggregate.totalDurationMs, locale));
-	appendMetric(summary, t.t('sessionHistory.sacks'), completeNumber(aggregate.totalSacks, aggregate.sacksKnown, aggregate.sessionCount, locale));
+	appendMetric(summary, t.t('sessionHistory.sacks'), completeNumber(
+		aggregate.totalSacks, aggregate.sacksKnownSubtotal, aggregate.sacksKnown, aggregate.sessionCount, locale,
+	));
 	appendMetric(summary, t.t('sessionHistory.immediateValue'), completeMoney(
-		aggregate.totalImmediateCopper, aggregate.immediateValueKnown, aggregate.sessionCount, locale,
+		aggregate.totalImmediateCopper, aggregate.immediateValueKnownSubtotal, aggregate.immediateValueKnown,
+		aggregate.sessionCount, locale,
 	));
 
 	const comparison = container.createEl('section', { cls: 'tyrian-session-history__comparison' });
@@ -207,6 +211,11 @@ function renderPerformance(container: HTMLElement, locale: Locale, aggregate: Se
 	for (const group of aggregate.performance.groups) renderPerformanceGroup(groups, locale, group);
 }
 
+const PERFORMANCE_ACTIVITY_KEY = {
+	halloween: 'sessionHistory.halloween',
+	general: 'sessionHistory.generalActivity',
+} as const;
+
 const PERFORMANCE_STATUS_KEY = {
 	ready: 'sessionHistory.performanceReady',
 	insufficient_sample: 'sessionHistory.performanceInsufficient',
@@ -222,7 +231,7 @@ const PERFORMANCE_EXCLUSION_KEY = {
 function renderPerformanceGroup(container: HTMLElement, locale: Locale, group: SessionHistoryPerformanceGroup): void {
 	const t = createTranslator(locale);
 	const article = container.createEl('article', { cls: 'tyrian-session-history__performance-group' });
-	article.createEl('h5', { text: `${t.t('sessionHistory.halloween')} · ${group.build}` });
+	article.createEl('h5', { text: `${t.t(PERFORMANCE_ACTIVITY_KEY[group.activity])} · ${group.build}` });
 	article.createEl('p', {
 		text: t.t(PERFORMANCE_STATUS_KEY[group.status], {
 			eligible: group.eligibleSessions,
@@ -280,6 +289,12 @@ function renderCards(container: HTMLElement, locale: Locale, rows: readonly Sess
 		appendDetail(details, t.t('sessionHistory.sacks'), row.sacks === null ? t.t('sessionHistory.unknown') : formatNumber(row.sacks, locale));
 		appendDetail(details, t.t('sessionHistory.immediateValue'), money(row.immediateCopper, locale));
 		appendDetail(details, t.t('sessionHistory.listingValue'), money(row.listingCopper, locale));
+		// H18.10: `loot-presentation-view.ts` had no consumer; the durable per-session gains list
+		// it already parsed back from the note's own results table now renders here.
+		if (row.lootRows.length > 0) {
+			article.createEl('h5', { text: t.t('loot.regionLabel') });
+			renderStoredSessionLoot(article, row.lootRows);
+		}
 	}
 }
 
@@ -296,12 +311,24 @@ function appendDetail(container: HTMLElement, label: string, value: string): voi
 
 function appendCell(row: HTMLElement, text: string): void { row.createEl('td', { text }); }
 
-function completeNumber(value: number | null, known: number, total: number, locale: Locale): string {
-	return value === null ? createTranslator(locale).t('sessionHistory.knownCoverage', { known, total }) : formatNumber(value, locale);
+/**
+ * A single unrated session used to withhold this metric entirely, leaving only "unknown, X/Y have
+ * data" with no number at all (H18.10): now the known subtotal is shown next to how many are
+ * missing, and it is never called the total gain — that word stays for the one case where every
+ * session actually has a value.
+ */
+function completeNumber(value: number | null, knownSubtotal: number | null, known: number, total: number, locale: Locale): string {
+	if (value !== null) return formatNumber(value, locale);
+	const t = createTranslator(locale);
+	if (knownSubtotal === null) return t.t('sessionHistory.knownCoverage', { known, total });
+	return t.t('sessionHistory.partialCoverage', { subtotal: formatNumber(knownSubtotal, locale), missing: total - known });
 }
 
-function completeMoney(value: number | null, known: number, total: number, locale: Locale): string {
-	return value === null ? createTranslator(locale).t('sessionHistory.knownCoverage', { known, total }) : money(value, locale);
+function completeMoney(value: number | null, knownSubtotal: number | null, known: number, total: number, locale: Locale): string {
+	if (value !== null) return money(value, locale);
+	const t = createTranslator(locale);
+	if (knownSubtotal === null) return t.t('sessionHistory.knownCoverage', { known, total });
+	return t.t('sessionHistory.partialCoverage', { subtotal: money(knownSubtotal, locale), missing: total - known });
 }
 
 function money(copper: number | null, locale: Locale): string {

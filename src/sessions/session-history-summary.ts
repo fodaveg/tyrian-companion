@@ -1,4 +1,4 @@
-import type { DurableSessionHistoryRecord, SessionHistoryScan } from './session-history';
+import type { DurableSessionHistoryRecord, DurableSessionLootLine, SessionHistoryScan } from './session-history';
 
 /** Result exposed to the UI after one explicit load request. */
 export type SessionHistoryLoadResult = SessionHistoryScan | { status: 'unavailable' };
@@ -12,10 +12,16 @@ export interface SessionHistoryAggregate {
 	readonly totalDurationMs: number | null;
 	readonly totalSacks: number | null;
 	readonly sacksKnown: number;
+	/** Sum over only the sessions that have a value, regardless of `totalSacks` (H18.10): a
+	 *  single missing session used to withhold this number too, so the panel had nothing honest
+	 *  left to show but the count. */
+	readonly sacksKnownSubtotal: number | null;
 	readonly totalImmediateCopper: number | null;
 	readonly immediateValueKnown: number;
+	readonly immediateValueKnownSubtotal: number | null;
 	readonly totalListingCopper: number | null;
 	readonly listingValueKnown: number;
+	readonly listingValueKnownSubtotal: number | null;
 	readonly comparison: SessionHistoryComparison | null;
 	readonly performance: SessionHistoryPerformance;
 	readonly sessions: readonly SessionHistorySummaryRow[];
@@ -27,8 +33,15 @@ export interface SessionHistoryPerformance {
 	readonly groups: readonly SessionHistoryPerformanceGroup[];
 }
 
+/**
+ * `general` covers every session outside the Halloween Labyrinth (a manual farm, or the rest of
+ * the year): H18.10 stopped treating "no declared event" as "cannot be compared" and gave it its
+ * own bucket instead, so a build's normal-year rate has somewhere to live next to its Halloween one.
+ */
+export type SessionHistoryPerformanceActivity = 'halloween' | 'general';
+
 export interface SessionHistoryPerformanceGroup {
-	readonly activity: 'halloween';
+	readonly activity: SessionHistoryPerformanceActivity;
 	readonly build: string;
 	readonly sessionCount: number;
 	readonly eligibleSessions: number;
@@ -53,6 +66,9 @@ export interface SessionHistorySummaryRow {
 	readonly listingCopper: number | null;
 	readonly immediateCopperPerHour: number | null;
 	readonly listingCopperPerHour: number | null;
+	/** Already-rendered gains lines the note itself wrote; empty when its results table couldn't
+	 *  be read back. No identity travels with a line: only a name, a quantity, and its label. */
+	readonly lootRows: readonly DurableSessionLootLine[];
 }
 
 /** Arithmetic delta between the latest two validated sessions. */
@@ -78,27 +94,41 @@ export function buildSessionHistoryAggregate(
 		totalDurationMs: safeSum(rows.map((row) => row.durationMs)),
 		totalSacks: sacks.value,
 		sacksKnown: sacks.known,
+		sacksKnownSubtotal: sacks.knownSubtotal,
 		totalImmediateCopper: immediate.value,
 		immediateValueKnown: immediate.known,
+		immediateValueKnownSubtotal: immediate.knownSubtotal,
 		totalListingCopper: listing.value,
 		listingValueKnown: listing.known,
+		listingValueKnownSubtotal: listing.knownSubtotal,
 		comparison: compareLatest(rows),
 		performance: buildPerformance(sessions),
 		sessions: rows,
 	};
 }
 
+/**
+ * Groups by build alone used to also require `activity === 'halloween'`, so a manual session or
+ * any farm outside the Labyrinth never formed a group at all: it just inflated
+ * `missingContextSessions`, indistinguishable from a session that genuinely declared nothing
+ * (H18.10, audit §3.C). A build is still required — the rate is meaningless without knowing which
+ * spec earned it — but the activity itself now always resolves to one of two buckets instead of
+ * silently dropping everything that isn't Halloween.
+ */
 function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): SessionHistoryPerformance {
-	const grouped = new Map<string, { activity: 'halloween'; build: string; sessions: DurableSessionHistoryRecord[] }>();
+	const grouped = new Map<string, {
+		activity: SessionHistoryPerformanceActivity; build: string; sessions: DurableSessionHistoryRecord[];
+	}>();
 	let missingContextSessions = 0;
 	for (const session of sessions) {
 		const build = normalizeBuild(session.build);
-		if (session.activity !== 'halloween' || build === null) {
+		if (build === null) {
 			missingContextSessions += 1;
 			continue;
 		}
-		const key = `${session.activity}\u0000${build}`;
-		const group = grouped.get(key) ?? { activity: session.activity, build, sessions: [] };
+		const activity = normalizeActivity(session.activity);
+		const key = `${activity}\u0000${build}`;
+		const group = grouped.get(key) ?? { activity, build, sessions: [] };
 		group.sessions.push(session);
 		grouped.set(key, group);
 	}
@@ -110,8 +140,12 @@ function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): Ses
 	};
 }
 
+function normalizeActivity(activity: 'halloween' | null): SessionHistoryPerformanceActivity {
+	return activity === 'halloween' ? 'halloween' : 'general';
+}
+
 function performanceGroup(group: {
-	readonly activity: 'halloween';
+	readonly activity: SessionHistoryPerformanceActivity;
 	readonly build: string;
 	readonly sessions: readonly DurableSessionHistoryRecord[];
 }): SessionHistoryPerformanceGroup {
@@ -181,6 +215,7 @@ function summaryRow(session: DurableSessionHistoryRecord): SessionHistorySummary
 		listingCopper: session.observedListingCopper,
 		immediateCopperPerHour: session.immediateCopperPerHour,
 		listingCopperPerHour: session.listingCopperPerHour,
+		lootRows: session.lootRows,
 	};
 }
 
@@ -208,11 +243,20 @@ function difference(latest: number | null, previous: number | null): number | nu
 	return Number.isSafeInteger(delta) ? delta : null;
 }
 
-function completeSum(values: readonly (number | null)[]): { value: number | null; known: number } {
+/**
+ * `value` keeps withholding the aggregate the moment a single session lacks the figure (never
+ * treating the gap as zero); `knownSubtotal` is new (H18.10) and answers a narrower, always
+ * honest question: what do the sessions that DO have a value add up to. The panel shows that
+ * subtotal next to how many are missing instead of hiding every session's total the instant one
+ * of them can't be valued.
+ */
+function completeSum(values: readonly (number | null)[]): { value: number | null; known: number; knownSubtotal: number | null } {
 	const knownValues = values.filter((value): value is number => value !== null);
+	const knownSubtotal = knownValues.length > 0 ? safeSum(knownValues) : null;
 	return {
-		value: knownValues.length === values.length && values.length > 0 ? safeSum(knownValues) : null,
+		value: knownValues.length === values.length && values.length > 0 ? knownSubtotal : null,
 		known: knownValues.length,
+		knownSubtotal,
 	};
 }
 

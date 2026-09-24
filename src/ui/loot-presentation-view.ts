@@ -8,6 +8,30 @@ import {
 
 export type LootPresentationLayout = 'wide' | 'compact' | 'ledger';
 
+/** One already-rendered gains line as the durable history reads it back; see `session-history.ts`. */
+export interface StoredLootPresentationRow {
+	readonly name: string;
+	readonly netQuantity: number;
+	readonly immediateLabel: string;
+}
+
+/**
+ * Renders the durable per-session gains list (H18.10): a session read back from history has no
+ * runtime left to rebuild a `LootPresentationV1` from, only the strings its own note already
+ * wrote, so this renders those as-is instead of inventing a valuation it cannot evidence. Uses the
+ * container's own `createEl`, the idiom the rest of the history panel and its tests share, unlike
+ * `renderLootPresentationView` below.
+ */
+export function renderStoredSessionLoot(
+	container: HTMLElement,
+	rows: readonly StoredLootPresentationRow[],
+): HTMLElement | null {
+	if (rows.length === 0) return null;
+	const list = container.createEl('ul', { cls: 'tyrian-companion-loot__stored-rows' });
+	for (const row of rows) list.createEl('li', { text: `${row.name} ×${String(row.netQuantity)} · ${row.immediateLabel}` });
+	return list;
+}
+
 export function lootPresentationLayout(width: number): LootPresentationLayout {
 	return width >= 760 ? 'wide' : width >= 480 ? 'compact' : 'ledger';
 }

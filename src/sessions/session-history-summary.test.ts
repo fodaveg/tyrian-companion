@@ -36,13 +36,25 @@ describe('buildSessionHistoryAggregate', () => {
 		]);
 
 		expect(aggregate).toMatchObject({
-			totalSacks: null, sacksKnown: 1,
-			totalImmediateCopper: null, immediateValueKnown: 1,
-			totalListingCopper: null, listingValueKnown: 1,
+			totalSacks: null, sacksKnown: 1, sacksKnownSubtotal: 10,
+			totalImmediateCopper: null, immediateValueKnown: 1, immediateValueKnownSubtotal: 10_000,
+			totalListingCopper: null, listingValueKnown: 1, listingValueKnownSubtotal: 12_000,
 			comparison: {
 				sacksPerHourMilliDelta: null, immediateCopperPerHourDelta: null, listingCopperPerHourDelta: null,
 			},
 		});
+	});
+
+	it('carries each session’s already-rendered gains lines through to its row, with no identity attached', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', {
+				lootRows: [{ name: 'Vial of Condensed Mists Essence', netQuantity: 3, immediateLabel: '3 oro' }],
+			}),
+		]);
+
+		expect(aggregate.sessions[0]?.lootRows).toEqual([
+			{ name: 'Vial of Condensed Mists Essence', netQuantity: 3, immediateLabel: '3 oro' },
+		]);
 	});
 
 	it('orders overlapping sessions by completion and compares the two latest completions', () => {
@@ -98,7 +110,9 @@ describe('buildSessionHistoryAggregate', () => {
 				activity: 'halloween', build: 'Power Reaper', classification: 'estimated', confidence: 'medium',
 			}),
 			record('2026-08-23T10:00:00.000Z', { activity: 'halloween', build: 'Condi Scourge' }),
-			record('2026-08-24T10:00:00.000Z', { activity: null, build: 'Power Reaper' }),
+			// Missing a declared build (not a declared activity, see the test below): the only
+			// case that still lands in `missingContextSessions`.
+			record('2026-08-24T10:00:00.000Z', { build: null }),
 		]);
 
 		expect(aggregate.performance).toEqual({
@@ -118,6 +132,30 @@ describe('buildSessionHistoryAggregate', () => {
 			],
 		});
 	});
+
+	/**
+	 * H18.10 (audit §3.C): a manual session, or any farm outside the Labyrinth, used to be
+	 * indistinguishable in the aggregate from one that declared nothing at all — both just
+	 * inflated `missingContextSessions` with no further explanation. A declared build must still
+	 * form a group of its own, kept apart from Halloween's, instead of disappearing.
+	 */
+	it('groups a session outside the Labyrinth under its own activity instead of dropping it silently', () => {
+		const aggregate = buildSessionHistoryAggregate([
+			record('2026-08-20T10:00:00.000Z', { activity: null, build: 'Power Reaper', sacks: 20, observedImmediateCopper: 20_000 }),
+			record('2026-08-21T10:00:00.000Z', { activity: null, build: 'Power Reaper', sacks: 30, observedImmediateCopper: 30_000 }),
+			record('2026-08-22T10:00:00.000Z', { activity: 'halloween', build: 'Power Reaper' }),
+		]);
+
+		expect(aggregate.performance.missingContextSessions).toBe(0);
+		expect(aggregate.performance.groups).toContainEqual({
+			activity: 'general', build: 'Power Reaper', sessionCount: 2, eligibleSessions: 2,
+			status: 'ready', sacksPerHourMilli: 25_000, immediateCopperPerHour: 25_000, exclusions: [],
+		});
+		expect(aggregate.performance.groups).toContainEqual({
+			activity: 'halloween', build: 'Power Reaper', sessionCount: 1, eligibleSessions: 1,
+			status: 'insufficient_sample', sacksPerHourMilli: null, immediateCopperPerHour: null, exclusions: [],
+		});
+	});
 });
 
 function record(
@@ -131,7 +169,7 @@ function record(
 		classification: 'exact', confidence: 'high', scope: 'observed_storage_net', valuationCoverage: 'complete',
 		observedImmediateCopper: 10_000, observedListingCopper: 12_000, sacks: 10, sacksPerHourMilli: 10_000,
 		immediateCopperPerHour: 10_000, listingCopperPerHour: 12_000, recommendationStatus: 'not_evaluated',
-		recommendationAction: null, recommendationQuantity: null, recommendationRoute: null,
+		recommendationAction: null, recommendationQuantity: null, recommendationRoute: null, lootRows: [],
 		...overrides,
 	};
 }
