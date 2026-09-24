@@ -186,6 +186,23 @@ describe('PendingProposalService', () => {
 		expect(record?.receipts).toEqual([expect.objectContaining({ outcome: 'dismissed', correctionCause: 'not_farming', correctionRecorded: false })]);
 	});
 
+	// H18.4: a stop whose summary could not be saved used to leave a receipt that read as success.
+	it('records a failed accepted workflow in the receipt, and reads a legacy receipt as unknown', async () => {
+		const store = new MemoryPendingProposalStore();
+		const queue = service(store, undefined, 'window-a', 'operation-a');
+		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });
+		const intent = currentIntent(queue);
+		await queue.claim(intent, 'operation-a');
+		await expect(queue.accept(intent, 'operation-a', 'session-a', 'failed')).resolves.toBe(true);
+		const record = normalizeProposalQueueRecord(await store.read());
+		expect(record?.receipts).toEqual([expect.objectContaining({ outcome: 'accepted', sessionId: 'session-a', workflow: 'failed' })]);
+
+		const legacy = structuredClone(record!);
+		const { workflow: _workflow, ...withoutWorkflow } = legacy.receipts[0]!;
+		const migrated = normalizeProposalQueueRecord({ ...legacy, receipts: [withoutWorkflow] });
+		expect(migrated?.receipts).toEqual([expect.objectContaining({ outcome: 'accepted', workflow: null })]);
+	});
+
 	it('enforces phase-specific dismissal causes', async () => {
 		const queue = service(new MemoryPendingProposalStore(), undefined, 'window-a', 'operation-a');
 		await queue.enqueue({ phase: 'start', pollingIntervalMs: 60_000, proposal: startProposal() });

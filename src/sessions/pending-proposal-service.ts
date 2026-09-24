@@ -9,6 +9,7 @@ import {
 	type PendingProposalQueueRecord,
 	type ProposalReceipt,
 	type ProposalReceiptOutcome,
+	type ProposalReceiptWorkflow,
 } from './pending-proposal-model';
 import type { PendingProposalStore } from './pending-proposal-store';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
@@ -208,9 +209,18 @@ export class PendingProposalService {
 		} catch { this.unavailable(); return false; }
 	}
 
-	async accept(intent: PendingProposalIntent, operationId: string, sessionId: string): Promise<boolean> {
+	/**
+	 * `workflow` is what the accepted proposal led to (H18.4): a stop whose summary could not be
+	 * saved is recorded as `failed`, so the receipt never reads as a clean success it was not.
+	 */
+	async accept(
+		intent: PendingProposalIntent,
+		operationId: string,
+		sessionId: string,
+		workflow: ProposalReceiptWorkflow = 'succeeded',
+	): Promise<boolean> {
 		if (!validId(operationId) || !validId(sessionId)) return false;
-		return this.completeClaim(intent, operationId, 'accepted', sessionId, null, null);
+		return this.completeClaim(intent, operationId, 'accepted', sessionId, null, null, workflow);
 	}
 
 	async dismiss(
@@ -255,7 +265,7 @@ export class PendingProposalService {
 
 	private async completeClaim(
 		intent: PendingProposalIntent, operationId: string, outcome: 'accepted' | 'dismissed', sessionId: string | null,
-		cause: DetectionCorrectionCause | null, recorded: boolean | null,
+		cause: DetectionCorrectionCause | null, recorded: boolean | null, workflow: ProposalReceiptWorkflow | null = null,
 	): Promise<boolean> {
 		try {
 			const now = this.timestamp();
@@ -264,7 +274,7 @@ export class PendingProposalService {
 				const proposal = record.proposals.find((entry) => sameProposalIntent(entry, intent));
 				if (!proposal?.claim || proposal.claim.operationId !== operationId || proposal.claim.instanceId !== this.instanceId ||
 					Date.parse(proposal.claim.expiresAt) <= Date.parse(now)) return { result: false, next: record };
-				resolve(record, proposal, outcome, now, sessionId, cause, recorded);
+				resolve(record, proposal, outcome, now, sessionId, cause, recorded, workflow);
 				bump(record);
 				return { result: true, next: record };
 			});
@@ -327,9 +337,13 @@ function expireAndPrune(record: PendingProposalQueueRecord, now: string): Pendin
 function resolve(
 	record: PendingProposalQueueRecord, proposal: PendingProposal, outcome: ProposalReceiptOutcome, resolvedAt: string,
 	sessionId: string | null, correctionCause: DetectionCorrectionCause | null, correctionRecorded: boolean | null,
+	workflow: ProposalReceiptWorkflow | null = null,
 ): void {
 	record.proposals = record.proposals.filter((entry) => entry.proposalId !== proposal.proposalId);
-	const receipt: ProposalReceipt = { version: 1, proposalId: proposal.proposalId, outcome, resolvedAt, sessionId, correctionCause, correctionRecorded };
+	const receipt: ProposalReceipt = {
+		version: 1, proposalId: proposal.proposalId, outcome, resolvedAt, sessionId, correctionCause, correctionRecorded,
+		workflow: outcome === 'accepted' ? workflow : null,
+	};
 	record.receipts = record.receipts.filter((entry) => entry.proposalId !== receipt.proposalId).concat(receipt);
 	record.receipts = record.receipts
 		.sort((a, b) => a.resolvedAt.localeCompare(b.resolvedAt) || a.proposalId.localeCompare(b.proposalId))
