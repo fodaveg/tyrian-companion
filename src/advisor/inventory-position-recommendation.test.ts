@@ -33,6 +33,7 @@ function baseInput(overrides: Partial<PositionRecommendationInput> = {}): Positi
 		legendaryShortfall: null,
 		freeQuantity: 1,
 		todayBidCopper: todayClose ?? 500,
+		untradeable: false,
 		...overrides,
 	};
 }
@@ -450,6 +451,19 @@ describe('recommendPosition: today\'s price separated from the history (H18.2)',
 			seasonal: seasonalInput(), todayBidCopper: null,
 		}));
 		expect(inSeason).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+	});
+
+	it('an item the trading post will never quote is hold/not_tradeable, not a doubt, even with price history off', () => {
+		for (const priceHistoryEnabled of [true, false]) {
+			const result = recommendPosition(baseInput({ priceHistoryEnabled, untradeable: true, todayBidCopper: null, totalSellCopper: null }));
+			expect(result).toEqual({ action: 'hold', reason: 'not_tradeable', until: null, ...NO_EVIDENCE });
+		}
+		// A tradeable item without a quote today stays the doubt it is.
+		const tradeable = recommendPosition(baseInput({ untradeable: false, todayBidCopper: null, totalSellCopper: null }));
+		expect(tradeable).toEqual({ action: 'review', reason: 'price_unknown', until: null, ...NO_EVIDENCE });
+		// A reservation still decides first: an untradeable stack held for a goal says so.
+		const reserved = recommendPosition(baseInput({ untradeable: true, legendaryShortfall: 0, freeQuantity: 0 }));
+		expect(reserved).toMatchObject({ action: 'hold_for_legendary', reason: 'reserved_for_goal' });
 	});
 
 	it('rule (b) reads today\'s quote, not a local close already recorded for today', () => {

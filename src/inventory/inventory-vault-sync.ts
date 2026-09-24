@@ -25,11 +25,15 @@ import {
 	type InventoryMarketDepthEvidenceV1,
 } from '../economy/commerce-listings';
 import { captureInventoryMarketDepth } from '../economy/commerce-listings-capture';
-import { classifyItemLiquidity, isTradingPostAccessible } from '../economy/item-liquidity';
+import { classifyItemLiquidity, isTradingPostAccessible, type TradingPostEligibility } from '../economy/item-liquidity';
 import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
-import { legendaryMaterialsTableItemIds, type LegendaryMaterialsTableV1 } from '../economy/legendary-materials';
+import {
+	LEGENDARY_MATERIALS_TABLE,
+	legendaryMaterialsTableItemIds,
+	type LegendaryMaterialsTableV1,
+} from '../economy/legendary-materials';
 import {
 	buildLegendaryReservationGoals,
 	scaledSellCopper,
@@ -420,13 +424,15 @@ export class InventoryVaultCaptureService {
 	 * Rule (a), M4. `GET /v2/account/legendaryarmory` is called ONLY here, once per "Sincronizar
 	 * inventario", never at settings-panel open or plugin load (`docs/SPEC-recomendacion-por-
 	 * objeto.md` M4, decision 1's own scoping). Returns an empty map (rule (a) never fires) when
-	 * there is nothing to reserve: no target chosen, no curated table, or every chosen target
-	 * already forged with no resolvable requirement left.
+	 * there is nothing to reserve: no target chosen, or every chosen target already forged with no
+	 * resolvable requirement left.
 	 *
 	 * H18.1 (audit 2026-09-24 §3.A): a chosen target that is NOT covered is never silently read as
 	 * "nothing reserved". `uncertainItemIds` carries the items whose free share is unknown:
 	 * - a chosen, unforged target without a table entry → every item any curated entry lists
 	 *   (`legendaryMaterialsTableItemIds`), the best available guess at what it needs;
+	 * - no curated table at all (unavailable or expired) with an unforged target → every item the
+	 *   SHIPPED table (`LEGENDARY_MATERIALS_TABLE`) lists, for the same reason;
 	 * - goals that exist but whose balance or plan cannot be built → every item those goals require.
 	 */
 	private async buildLegendaryReservations(
@@ -437,10 +443,18 @@ export class InventoryVaultCaptureService {
 		const targetLegendaryItemIds = this.recommendation.legendaryTargetItemIds();
 		if (targetLegendaryItemIds.length === 0) return none;
 		const table = this.recommendation.legendaryMaterialsTable();
-		if (table === null) return none;
 		// A read failure is treated as "assume none of the targets are forged yet" (see the port's
 		// own doc comment): the safer of the two guesses, never a silent skip of rule (a).
 		const owned = (await this.recommendation.readLegendaryArmoryCounts()) ?? new Map<number, number>();
+		if (table === null) {
+			// The curated table is unavailable (expired, say): the goals' quantities cannot be trusted,
+			// but the chosen, unforged targets still need SOMETHING. The item ids the shipped table
+			// lists stay the best statement of which materials, so they turn uncertain, never free.
+			const unforged = targetLegendaryItemIds.some((itemId) => (owned.get(itemId) ?? 0) < 1);
+			return unforged
+				? { byPositionId: new Map(), uncertainItemIds: new Set(legendaryMaterialsTableItemIds(LEGENDARY_MATERIALS_TABLE)) }
+				: none;
+		}
 		const { goals, withoutTable } = buildLegendaryReservationGoals(targetLegendaryItemIds, owned, table);
 		const uncertainItemIds = new Set(withoutTable.length > 0 ? legendaryMaterialsTableItemIds(table) : []);
 		if (goals.length === 0) return { byPositionId: new Map(), uncertainItemIds };
@@ -488,10 +502,34 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
 	dailyByItem: new Map(),
 };
 
-/** Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a recommendation. */
+/**
+ * Every `InventoryVaultPosition` field `buildInventoryVaultPositionCores` can settle without a
+ * recommendation, plus `untradeable` (`recommendPosition`'s input of the same name), which only
+ * feeds the verdict and never reaches the note.
+ */
 export type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
 	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'
-	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity'>;
+	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity'> & { untradeable: boolean };
+
+/**
+ * True only when this account can definitely not sell the item on the trading post, read from
+ * `classifyItemLiquidity`'s own trading-post eligibility (its binding rule reads the holding's
+ * binding, then the catalog's `AccountBound`/`SoulbindOnAcquire`) and `isTradingPostAccessible`'s
+ * whitelist rule. `NoSell` is deliberately not read: it forbids VENDOR sales (`gw2-fees.ts`), not
+ * trading-post ones. An unknown binding, a missing catalog entry, a missing quote or an unknown
+ * account tier are doubts, not answers, and stay false here.
+ */
+function definitelyUntradeable(
+	tradingPost: TradingPostEligibility,
+	tradingPostAccess: InventoryTradingPostAccess,
+	price: InventoryPriceSnapshotV1['items'][number] | undefined,
+): boolean {
+	if (tradingPost.status === 'excluded') {
+		return tradingPost.reason === 'account_bound' || tradingPost.reason === 'character_bound';
+	}
+	return tradingPostAccess === 'free_to_play' && price !== undefined
+		&& !isTradingPostAccessible(tradingPost, tradingPostAccess, price.whitelisted);
+}
 
 /**
  * Groups holdings into rows and values them, stopping short of `recommendPosition`.
@@ -543,6 +581,8 @@ async function buildInventoryVaultPositionCores(
 		const liquidity = classifyItemLiquidity(group.holding, item, price === undefined ? 'missing' : 'available');
 		const eligible = liquidity.status === 'ok'
 			&& isTradingPostAccessible(liquidity.classification.tradingPost, tradingPostAccess, price?.whitelisted === true);
+		const untradeable = liquidity.status === 'ok'
+			&& definitelyUntradeable(liquidity.classification.tradingPost, tradingPostAccess, price);
 		const unitSellCopper = eligible && price !== undefined && price.bid !== null ? price.bid.unitCopper : null;
 		const unitListCopper = eligible && price !== undefined && price.ask !== null ? price.ask.unitCopper : null;
 		const depth = eligible && unitSellCopper !== null ? depthById.get(group.itemId) : undefined;
@@ -568,6 +608,7 @@ async function buildInventoryVaultPositionCores(
 			sellDepthStatus,
 			sellCoveredQuantity: demonstrated?.coveredQuantity ?? 0,
 			sellUncoveredQuantity: demonstrated?.uncoveredQuantity ?? group.quantity,
+			untradeable,
 			unitListCopper,
 			// The best ask is a competing listing, not demonstrated buyer capacity.
 			totalListCopper: null,
@@ -645,7 +686,7 @@ export function attachPositionRecommendations(
 	const itemThresholdTotals = sumSellCopperByItem(cores.map((core) => ({
 		itemId: core.itemId, totalSellCopper: thresholdValueByPositionId.get(core.positionId) ?? null,
 	})));
-	return cores.map((core) => {
+	return cores.map(({ untradeable, ...core }) => {
 		const reservation = legendaryReservationByPositionId.get(core.positionId) ?? null;
 		const knownFree = reservation?.freeQuantity ?? core.quantity;
 		const nothingFree = knownFree === 0 || (reservation !== null && reservation.shortfall > 0);
@@ -666,6 +707,7 @@ export function attachPositionRecommendations(
 			legendaryShortfall: reservation?.shortfall ?? null,
 			freeQuantity: split.freeQuantity,
 			todayBidCopper: core.unitSellCopper,
+			untradeable,
 		});
 		return {
 			...core,

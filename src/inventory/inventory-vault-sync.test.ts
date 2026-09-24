@@ -485,6 +485,59 @@ describe('inventory Vault projection', () => {
 		expect(projected.positions[0]).toMatchObject({ unitSellCopper: null, totalSellCopper: null, unitListCopper: null, totalListCopper: null });
 	});
 
+	/**
+	 * Revocation of decision 3 of the H18 lote (coordinator, 24 sep 2026): an item the trading post
+	 * will never quote for this account is `hold`/`not_tradeable`, not `review`/`price_unknown`;
+	 * only a TRADEABLE item without today's quote is the doubt. Read from `classifyItemLiquidity`
+	 * (catalog `AccountBound`/`SoulbindOnAcquire`, or the holding's own binding) and the
+	 * free-to-play whitelist, never from `NoSell`, which only forbids vendor sales.
+	 */
+	it('an account-bound item without a quote holds as not_tradeable; a tradeable one without a quote is price_unknown', async () => {
+		const snapshot = snapshotWith([
+			holding(42, 5, { source: 'bank', slot: 0 }),
+			holding(43, 5, { source: 'bank', slot: 1 }),
+			{ ...holding(44, 5, { source: 'bank', slot: 2 }), metadata: { binding: 'Character' } },
+			holding(45, 5, { source: 'bank', slot: 3 }),
+		]);
+		const base = catalogFor(snapshot);
+		const catalog: CatalogResolution = {
+			...base,
+			items: {
+				...base.items,
+				'42': { ...base.items['42']!, flags: ['AccountBound'] },
+				// `NoSell` forbids selling to a vendor, not listing on the trading post.
+				'45': { ...base.items['45']!, flags: ['NoSell'] },
+			},
+		};
+		const noQuotes = priceSnapshotWith(snapshot, []);
+		const projected = await prepareInventoryVaultSyncInput(snapshot, catalog, noQuotes, 'full', 'es', undefined, {
+			capturedAtMs: Date.parse(CAPTURED_AT), priceHistoryEnabled: true, capitalThresholdCopper: 1, maxPriceAgeMs: 900_000,
+			priceHistoryWindowDays: 180, priceHistoryRequiredDays: 42, dailyByItem: new Map(), seasonalInputFor: () => null,
+		});
+		const byItem = new Map(projected.positions.map((position) => [position.itemId, position]));
+		const notTradeable = { recommendation: 'hold', recommendationReason: 'not_tradeable', recommendationUntil: null };
+		const priceUnknown = { recommendation: 'review', recommendationReason: 'price_unknown', recommendationUntil: null };
+		expect(byItem.get(42)).toMatchObject(notTradeable);
+		expect(byItem.get(43)).toMatchObject(priceUnknown);
+		expect(byItem.get(44)).toMatchObject(notTradeable);
+		expect(byItem.get(45)).toMatchObject(priceUnknown);
+	});
+
+	it('a free-to-play account holds a quoted item outside the whitelist as not_tradeable; a full account does not', async () => {
+		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
+		const prices = priceSnapshotWith(snapshot, [
+			{ itemId: 42, whitelisted: false, bid: { unitCopper: 10, quantity: 100 }, ask: { unitCopper: 11, quantity: 100 } },
+		]);
+		const inputs = {
+			capturedAtMs: Date.parse(CAPTURED_AT), priceHistoryEnabled: true, capitalThresholdCopper: 1, maxPriceAgeMs: 900_000,
+			priceHistoryWindowDays: 180, priceHistoryRequiredDays: 42, dailyByItem: new Map(), seasonalInputFor: () => null,
+		};
+		const freeToPlay = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'free_to_play', 'es', undefined, inputs);
+		expect(freeToPlay.positions[0]).toMatchObject({ recommendation: 'hold', recommendationReason: 'not_tradeable' });
+		const full = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es', undefined, inputs);
+		expect(full.positions[0]?.recommendationReason).not.toBe('not_tradeable');
+	});
+
 	it('distinguishes a published listing without a current buy order from an item that cannot be sold at all', async () => {
 		const snapshot = snapshotWith([holding(42, 5, { source: 'bank', slot: 0 })]);
 		const prices = priceSnapshotWith(snapshot, [
@@ -561,7 +614,7 @@ describe('attachPositionRecommendations: capital threshold measured per object (
 			source: 'bank', character: null, quantity: 1,
 			unitSellCopper: 100, sellDepthStatus: 'unavailable', sellCoveredQuantity: 0, sellUncoveredQuantity: 1,
 			unitListCopper: null, totalListCopper: null, totalSellCopper: null,
-			name: `Objeto ${String(overrides.itemId)}`, type: null, rarity: null, icon: null,
+			name: `Objeto ${String(overrides.itemId)}`, type: null, rarity: null, icon: null, untradeable: false,
 			...overrides,
 		};
 	}
@@ -687,8 +740,8 @@ describe('capture(): free quantity under legendary reservations (H18.1)', () => 
 	async function captureWith(
 		holdings: ItemHolding[],
 		targets: number[],
-		table: LegendaryMaterialsTableV1,
-		options: { omitRoster?: boolean } = {},
+		table: LegendaryMaterialsTableV1 | null,
+		options: { omitRoster?: boolean; owned?: ReadonlyMap<number, number> } = {},
 	) {
 		const base = snapshotWith(holdings);
 		const totals: Record<string, number> = {};
@@ -726,7 +779,7 @@ describe('capture(): free quantity under legendary reservations (H18.1)', () => 
 			seasonalInputFor: () => ({ window: WINDOW, parameters: { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDays: 30 } }),
 			legendaryTargetItemIds: () => targets,
 			legendaryMaterialsTable: () => table,
-			readLegendaryArmoryCounts: async () => new Map(),
+			readLegendaryArmoryCounts: async () => options.owned ?? new Map(),
 		};
 		const service = new InventoryVaultCaptureService(
 			{ beginOperation: vi.fn(() => ({ requestDetailed: accountRequest() })) } as never,
@@ -811,11 +864,29 @@ describe('capture(): free quantity under legendary reservations (H18.1)', () => 
 			[holding(MATERIAL, 60, characterBag('Alfa')), holding(OTHER, 5, { source: 'bank', slot: 1 })],
 			[LEGENDARY_A], tableWith([[LEGENDARY_A, 100]]), { omitRoster: true },
 		);
-		// At a2584af the failed plan returned an empty split: MATERIAL read `sell`, all 60 free.
+		// At e469781 (and a2584af) the failed plan returned an empty split: MATERIAL read `sell`, all 60 free.
 		expect(at(MATERIAL, 'character')).toMatchObject({
 			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
 		});
 		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
+	});
+
+	/**
+	 * The curated table can become unavailable (the knowledge-expiry lot makes it expire on 10 dec
+	 * 2026). With a chosen, unforged legendary the materials the SHIPPED table lists turn uncertain;
+	 * at e469781 `legendaryMaterialsTable() === null` returned "nothing reserved" and they read sell.
+	 */
+	it('with the materials table forced to null, a chosen legendary makes the shipped table\'s materials uncertain, never free', async () => {
+		const SHIPPED_MATERIAL = 103_316; // Shard of Janthir Syntri, a leaf of the shipped Klobjarne Geirr entry.
+		const holdings = [holding(SHIPPED_MATERIAL, 100, { source: 'bank', slot: 0 }), holding(OTHER, 5, { source: 'bank', slot: 1 })];
+		const { at } = await captureWith(holdings, [LEGENDARY_A], null);
+		expect(at(SHIPPED_MATERIAL, 'bank')).toMatchObject({
+			reservedQuantity: null, freeQuantity: null, recommendation: 'review', recommendationReason: 'reservation_uncertain',
+		});
+		expect(at(OTHER, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 5 });
+		// Every chosen target already forged: nothing is needed, so nothing turns uncertain.
+		const forged = await captureWith(holdings, [LEGENDARY_A], null, { owned: new Map([[LEGENDARY_A, 1]]) });
+		expect(forged.at(SHIPPED_MATERIAL, 'bank')).toMatchObject({ ...SELLS, reservedQuantity: 0, freeQuantity: 100 });
 	});
 });
 

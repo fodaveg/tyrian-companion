@@ -28,12 +28,15 @@ export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTION
  * H18.1/H18.2 (audit 2026-09-24 §3.A) add two codes, appended so every earlier value keeps its
  * meaning: `reservation_uncertain` (a chosen goal has no materials table, so how much of this
  * position is free is unknown, never assumed free) and `price_unknown` (no quote today, or no
- * demonstrated value: "I don't know what it's worth" is not "it's worth little").
+ * demonstrated value: "I don't know what it's worth" is not "it's worth little"). `not_tradeable`
+ * (the trading post will never quote it for this account: bound, or outside the free-to-play
+ * whitelist) keeps "no price today" from reading as doubt when there is no price to have.
  */
 export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'reserved_for_goal',
 	'reservation_uncertain',
 	'price_unknown',
+	'not_tradeable',
 	'price_history_disabled',
 	'below_capital_threshold',
 	'price_history_insufficient',
@@ -153,6 +156,13 @@ export interface PositionRecommendationInput {
 	 * "today's price": without it no time-bound recommendation is emitted at all.
 	 */
 	todayBidCopper: number | null;
+	/**
+	 * True only when this account can DEFINITELY not sell the item on the trading post: bound to
+	 * the account or a character, or outside the free-to-play whitelist. The caller derives it from
+	 * `classifyItemLiquidity`/`isTradingPostAccessible`; an unknown binding or a missing catalog
+	 * entry is NOT untradeable, it stays a doubt (`price_unknown`).
+	 */
+	untradeable: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -178,6 +188,9 @@ const NO_EVIDENCE = {
  *    `hold_for_legendary`/`reserved_for_goal` too: a reserved stack has nothing to sell, so no
  *    season, price or capital can turn it into `sell`. `freeQuantity` null (a chosen goal without
  *    a materials table) → `review`/`reservation_uncertain`: unknown is shown as unknown, not free.
+ *    Then `untradeable` → `hold`/`not_tradeable`, `until` = null: an item the trading post will
+ *    never quote for this account has no price to wait for, so it is neither a doubt (`review`)
+ *    nor gated on price history being on.
  * 1. Price history off → `review`/`price_history_disabled`. Nothing below this line runs on
  *    guesswork: `docs/PRODUCT.md:28` forbids treating "unknown" as "safe to sell". This gates rule
  *    (b) too: a festival item's window has nothing to read against without the merged series.
@@ -215,6 +228,9 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 	}
 	if (input.freeQuantity === null) {
 		return { action: 'review', reason: 'reservation_uncertain', until: null, ...NO_EVIDENCE };
+	}
+	if (input.untradeable) {
+		return { action: 'hold', reason: 'not_tradeable', until: null, ...NO_EVIDENCE };
 	}
 	if (!input.priceHistoryEnabled) {
 		return { action: 'review', reason: 'price_history_disabled', until: null, ...NO_EVIDENCE };
