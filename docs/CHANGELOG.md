@@ -1,5 +1,24 @@
 # Changelog
 
+## Release beta 0.2.1 - el token del puente, a la vista
+
+Con el puente con el juego activado no había forma fácil de encontrar dónde copiar el token que
+piden los addons 0.2.0 de Nexus y Blish HUD: la fila estaba al final de la pestaña «Avanzado».
+
+- **«Copiar token» en la primera pestaña.** Con «Aviso dentro del juego» activado, la fila «Token del
+  addon» aparece en «Esenciales», la pestaña con la que se abren los ajustes; el interruptor y el
+  puerto siguen en «Avanzado». Con el puente apagado la fila no se muestra, así que una instalación
+  nueva sigue viendo solo las cuatro filas de siempre (`src/ui/settings-tab.ts`).
+- **Comando en la paleta.** «Copiar token del puente con el juego» / «Copy in-game bridge token» hace
+  lo mismo que el botón: copia el token, lo genera si no hay ninguno utilizable y lo avisa («Token
+  copiado.» o «Token nuevo creado y copiado.»). Con el puente apagado solo avisa de que hay que
+  activarlo primero y no genera nada (`src/main.ts`).
+- **Modal de respaldo si el portapapeles falla.** Si el portapapeles rechaza la escritura, el botón
+  y el comando muestran el token en un modal, en un campo de solo lectura ya seleccionado, para
+  copiarlo con Ctrl+C (Cmd+C en macOS). Es el único sitio donde el token llega a la pantalla: no va
+  en ningún aviso, ni en el log de diagnóstico, que solo anota la clase del error
+  (`src/ui/alert-ingame-secret-modal.ts`).
+
 ## Release beta 0.2.0 - puente en el juego autenticado; los addons 0.1.x dejan de conectar
 
 **Rotura de compatibilidad: actualiza los addons antes de abrir el juego.** El puente con el juego
