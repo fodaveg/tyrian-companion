@@ -34,6 +34,8 @@ export interface SessionHistoryPerformance {
 	 *  `contaminated` one, whose metrics are already withheld at the source): it cannot join any
 	 *  quality bucket at all, so this is where its exclusion stays visible instead of vanishing. */
 	readonly qualityExcludedSessions: number;
+	/** Sessions the player abandoned (schema 6): nothing was measured, so they never join a group. */
+	readonly abandonedSessions: number;
 	readonly groups: readonly SessionHistoryPerformanceGroup[];
 }
 
@@ -100,12 +102,15 @@ export function buildSessionHistoryAggregate(
 	sessions: readonly DurableSessionHistoryRecord[],
 ): SessionHistoryAggregate {
 	const rows = sessions.map(summaryRow).sort(compareNewestFirst);
-	const sacks = completeSum(rows.map((row) => row.sacks));
-	const immediate = completeSum(rows.map((row) => row.immediateCopper));
-	const listing = completeSum(rows.map((row) => row.listingCopper));
+	// An abandoned session stays in the ledger, but it has no loot to add and no duration of farming
+	// to bill: counting it would turn every total into "unknown" and every rate into a lie.
+	const measured = sessions.filter((session) => session.outcome !== 'abandoned').map(summaryRow).sort(compareNewestFirst);
+	const sacks = completeSum(measured.map((row) => row.sacks));
+	const immediate = completeSum(measured.map((row) => row.immediateCopper));
+	const listing = completeSum(measured.map((row) => row.listingCopper));
 	return {
 		sessionCount: rows.length,
-		totalDurationMs: safeSum(rows.map((row) => row.durationMs)),
+		totalDurationMs: safeSum(measured.map((row) => row.durationMs)),
 		totalSacks: sacks.value,
 		sacksKnown: sacks.known,
 		sacksKnownSubtotal: sacks.knownSubtotal,
@@ -115,7 +120,7 @@ export function buildSessionHistoryAggregate(
 		totalListingCopper: listing.value,
 		listingValueKnown: listing.known,
 		listingValueKnownSubtotal: listing.knownSubtotal,
-		comparison: compareLatest(rows),
+		comparison: compareLatest(measured),
 		performance: buildPerformance(sessions),
 		sessions: rows,
 	};
@@ -142,7 +147,13 @@ function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): Ses
 	}>();
 	let missingContextSessions = 0;
 	let qualityExcludedSessions = 0;
+	let abandonedSessions = 0;
 	for (const session of sessions) {
+		// An abandoned session measured nothing: counted apart, never averaged into a rate.
+		if (session.outcome === 'abandoned') {
+			abandonedSessions += 1;
+			continue;
+		}
 		const build = normalizeBuild(session.build);
 		if (build === null) {
 			missingContextSessions += 1;
@@ -163,6 +174,7 @@ function buildPerformance(sessions: readonly DurableSessionHistoryRecord[]): Ses
 		minimumSessions: SESSION_HISTORY_PERFORMANCE_MINIMUM,
 		missingContextSessions,
 		qualityExcludedSessions,
+		abandonedSessions,
 		groups: [...grouped.values()].map(performanceGroup).sort((left, right) =>
 			left.activity.localeCompare(right.activity) || left.build.localeCompare(right.build) ||
 			left.quality.localeCompare(right.quality)),

@@ -4,7 +4,9 @@ import { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugLogger } from '../core/local-debug-logger';
 import type { LocalDebugRecordInput } from '../core/local-debug-contract';
 import { SESSION_NOTE_BLOCK_IDS } from './session-note-model';
-import { sha256Text } from './session-note-renderer';
+import { renderAbandonedSessionNote, sha256Text } from './session-note-renderer';
+import { buildSessionHistoryAggregate } from './session-history-summary';
+import type { AbandonedSessionState } from './session';
 import {
 	SESSION_HISTORY_CSV_FILE,
 	SESSION_HISTORY_JSON_FILE,
@@ -261,6 +263,35 @@ describe('durable session history', () => {
 		await expect(new SessionHistoryService(broken).scan()).resolves.toMatchObject({ status: 'conflict', invalid: 1 });
 	});
 
+	it('keeps an abandoned session in the ledger and out of performance and totals', async () => {
+		const vault = new MemoryVault();
+		const completed = { tc_schema: 6, tc_build: 'Power Reaper', tc_event: 'halloween', tc_event_source: 'manual_explicit' };
+		vault.contents.set('Sessions/one.md', await note({ ...completed }));
+		vault.contents.set('Sessions/two.md', await note({ ...completed, tc_session_ref: 'c'.repeat(64) }));
+		const abandoned = await renderAbandonedSessionNote({ state: abandonedState(), locale: 'es', outputFolder: 'Tyrian Companion' });
+		if (abandoned.status !== 'ok') throw new Error('The abandoned note did not render.');
+		expect(abandoned.note.frontmatter).toMatchObject({
+			tc_outcome: 'abandoned', tc_abandon_reason: 'account_changed', tc_classification: null,
+			tc_observed_immediate_copper: null, tc_sacks: null, tc_positive_item_deltas_json: '[]',
+		});
+		expect(abandoned.note.content).toContain('Sesión abandonada');
+		vault.contents.set('Sessions/abandoned.md', abandoned.note.content);
+
+		const scanned = await new SessionHistoryService(vault).scan();
+		if (scanned.status !== 'ok') throw new Error(`Scan failed: ${scanned.status}`);
+		expect(scanned.sessions).toHaveLength(3);
+		expect(scanned.sessions.find((session) => session.outcome === 'abandoned')).toMatchObject({
+			classification: 'abandoned', sacks: null, observedImmediateCopper: null,
+		});
+		const aggregate = buildSessionHistoryAggregate(scanned.sessions);
+		expect(aggregate.performance).toMatchObject({ abandonedSessions: 1, qualityExcludedSessions: 0, missingContextSessions: 0 });
+		expect(aggregate.performance.groups).toEqual([expect.objectContaining({
+			build: 'Power Reaper', sessionCount: 2, eligibleSessions: 2, status: 'ready',
+		})]);
+		// The two measured sessions still add up; the abandoned one never turns a total into unknown.
+		expect(aggregate).toMatchObject({ sessionCount: 3, totalSacks: 2, totalImmediateCopper: 200, totalDurationMs: 7_200_000 });
+	});
+
 	it('H18.26: scans a Labyrinth note tagged by the in-game presence', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note({
@@ -311,7 +342,7 @@ describe('durable session history', () => {
 		corrupt.contents.set('Sessions/one.md', (await note()).replace('summary content', 'edited summary'));
 		await expect(new SessionHistoryService(corrupt).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const future = new MemoryVault();
-		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 6'));
+		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 7'));
 		await expect(new SessionHistoryService(future).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const duplicate = new MemoryVault();
 		duplicate.contents.set('Sessions/one.md', await note());
@@ -559,6 +590,32 @@ class MemoryVault implements SessionHistoryVault {
 	}
 }
 
+/** A session abandoned after its key moved to another account; nothing about it was measured. */
+function abandonedState(): AbandonedSessionState {
+	return {
+		version: 1, status: 'abandoned', sessionId: 'abandoned-session',
+		authority: { machineId: 'machine', instanceId: 'instance', sessionId: 'abandoned-session', fence: 1, acquiredAt: Date.parse('2026-08-14T07:59:58.000Z') },
+		requestedAt: '2026-08-14T07:59:59.000Z',
+		baseline: {
+			snapshotId: 'snapshot-abandoned', accountId: 'account-anonymous', schemaVersion: '2024-07-20T01:00:00.000Z',
+			startedAt: '2026-08-14T08:00:00.000Z', completedAt: '2026-08-14T08:00:01.000Z', quality: 'stable',
+		},
+		startContext: {
+			characterName: 'Astra Uno', magicFind: { value: 321, source: 'manual', consumablesBonus: 0, breakdown: null },
+			build: {
+				tab: 1, name: 'Power Reaper', profession: 'Necromancer',
+				specializations: [{ id: 3, traits: [1, 2, 3] }, { id: 52, traits: [4, 5, 6] }, { id: 63, traits: [7, 8, 9] }],
+				skills: { heal: 1, utilities: [2, 3, 4], elite: 5 },
+				aquaticSkills: { heal: 6, utilities: [7, 8, 9], elite: 10 },
+			},
+			capturedAt: '2026-08-14T08:00:02.000Z',
+		},
+		stopRequestedAt: '2026-08-14T09:00:00.000Z',
+		abandonedAt: '2026-08-14T09:15:00.000Z',
+		reason: 'account_changed',
+	};
+}
+
 async function note(overrides: Record<string, string | number | null> = {}): Promise<string> {
 	const frontmatter: Record<string, string | number | null> = {
 		tc_schema: 2, tc_kind: 'gw2_farming_session', tc_session_ref: 'a'.repeat(64), tc_account_ref: 'b'.repeat(64),
@@ -573,14 +630,18 @@ async function note(overrides: Record<string, string | number | null> = {}): Pro
 		tc_event: null, tc_event_source: null, tc_recommendation_action: null, tc_recommendation_quantity: null,
 		tc_recommendation_route: null, ...overrides,
 	};
-	if (frontmatter.tc_schema === 3 || frontmatter.tc_schema === 4 || frontmatter.tc_schema === 5) {
+	if (typeof frontmatter.tc_schema === 'number' && frontmatter.tc_schema >= 3) {
 		frontmatter.tc_positive_item_deltas_json ??= '[]';
 	}
-	if (frontmatter.tc_schema === 4 || frontmatter.tc_schema === 5) {
+	if (typeof frontmatter.tc_schema === 'number' && frontmatter.tc_schema >= 4) {
 		frontmatter.tc_magic_find_source ??= 'derived';
 		frontmatter.tc_magic_find_consumables ??= 0;
 	}
-	if (frontmatter.tc_schema === 5) frontmatter.tc_unobserved_ms ??= 0;
+	if (frontmatter.tc_schema === 5 || frontmatter.tc_schema === 6) frontmatter.tc_unobserved_ms ??= 0;
+	if (frontmatter.tc_schema === 6) {
+		frontmatter.tc_outcome ??= 'completed';
+		if (!('tc_abandon_reason' in frontmatter)) frontmatter.tc_abandon_reason = null;
+	}
 	if (frontmatter.tc_schema === 1) {
 		delete frontmatter.tc_event; delete frontmatter.tc_event_source; delete frontmatter.tc_recommendation_action;
 		delete frontmatter.tc_recommendation_quantity; delete frontmatter.tc_recommendation_route;

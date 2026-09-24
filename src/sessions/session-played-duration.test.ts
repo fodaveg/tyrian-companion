@@ -188,7 +188,7 @@ describe('played duration against the API settlement window', () => {
 		const rendered = await renderSessionNote(prepared.note);
 		if (rendered.status !== 'ok') throw new Error('Legacy note did not render.');
 		expect(rendered.note.frontmatter).toMatchObject({
-			tc_schema: 5, tc_ended_at: STOPPED_AT, tc_duration_ms: PLAYED_MS, tc_unobserved_ms: 0,
+			tc_schema: 6, tc_ended_at: STOPPED_AT, tc_duration_ms: PLAYED_MS, tc_unobserved_ms: 0,
 		});
 	});
 

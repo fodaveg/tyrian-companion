@@ -12,7 +12,7 @@ import { createAcceptedDetectionEvent } from './session-detection-quality';
 import type { SessionDetectionQualitySummary } from './session-detection-quality';
 import type { RelevantStartProposal } from './relevant-item-start-detector';
 import { createSessionRuntimeRecord, SESSION_RUNTIME_VERSION, type SessionRuntimeRecord } from './session-runtime-store';
-import type { CompleteSessionState, SessionAuthority, SessionSnapshotReference } from './session';
+import type { AbandonedSessionState, CompleteSessionState, SessionAuthority, SessionSnapshotReference } from './session';
 import {
 	prepareSessionNote,
 	normalizeSessionOutputFolder,
@@ -56,7 +56,7 @@ describe('session note model and renderer', () => {
 		if (first.status !== 'ok') return;
 		expect(first.note.preferredPath).toMatch(/^Tyrian Companion\/sessions\/2026\/2026-08-13 080001Z - [a-f0-9]{16}\.md$/u);
 		expect(first.note.frontmatter).toMatchObject({
-			tc_schema: 5, tc_kind: 'gw2_farming_session', tc_locale: 'es', tc_unobserved_ms: 0,
+			tc_schema: 6, tc_kind: 'gw2_farming_session', tc_locale: 'es', tc_unobserved_ms: 0, tc_outcome: 'completed', tc_abandon_reason: null,
 			tc_positive_item_deltas_json: '[[100,3]]',
 			tc_event: null,
 			tc_scope: 'observed_storage_net', tc_execution: 'manual_in_game', tc_side_effects: 'none',
@@ -341,6 +341,28 @@ describe('SessionNoteWriter', () => {
 		expect((await writer.write(input)).status).toBe('unchanged');
 		expect(vault.processCalls).toBe(processCalls + 1);
 		expect(vault.contents.get(created.path)).toBe(merged);
+	});
+
+	it('marks the note of an abandoned session as abandoned, keeping every human line, deleting nothing', async () => {
+		const vault = new MemoryVault();
+		const writer = new SessionNoteWriter(vault);
+		const input = sessionInput();
+		const created = await writer.write(input);
+		if (created.status !== 'written') throw new Error('Fixture note was not written.');
+		vault.contents.set(created.path, `${vault.contents.get(created.path)!}\nTexto humano.\n`);
+
+		const { finalSnapshot: _final, stoppedAt: _stopped, finalizedAt: _finalized, classification: _classification, status: _status,
+			...kept } = input.runtime.state as Extract<SessionNoteInput['runtime']['state'], { status: 'complete' }>;
+		const state: AbandonedSessionState = { ...kept, status: 'abandoned', abandonedAt: '2026-08-13T09:30:00.000Z', reason: 'account_changed' };
+		await expect(writer.writeAbandoned({ state, locale: 'es', outputFolder: 'Tyrian Companion' }))
+			.resolves.toEqual({ status: 'written', path: created.path });
+		const marked = vault.contents.get(created.path)!;
+		expect(marked).toContain('Texto humano.');
+		expect(marked).toContain('tc_outcome: "abandoned"');
+		expect(marked).toContain('tc_abandon_reason: "account_changed"');
+		expect(marked).toContain('Motivo: la clave de API pasó a otra cuenta a mitad de sesión');
+		expect(marked).toContain('tc_observed_immediate_copper: null');
+		expect([...vault.contents.keys()].filter((path) => path.endsWith('.md'))).toEqual([created.path]);
 	});
 
 	it('fails closed for tampered, duplicate or out-of-order managed markers', async () => {

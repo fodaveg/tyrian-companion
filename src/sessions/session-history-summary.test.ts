@@ -121,6 +121,7 @@ describe('buildSessionHistoryAggregate', () => {
 			minimumSessions: 2,
 			missingContextSessions: 1,
 			qualityExcludedSessions: 0,
+			abandonedSessions: 0,
 			groups: [
 				{
 					activity: 'halloween', build: 'Condi Scourge', quality: 'exact', sessionCount: 1, eligibleSessions: 1,
