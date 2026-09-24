@@ -153,6 +153,20 @@ describe('StorageSnapshotService', () => {
 		expect(isComparableStorageSnapshot(snapshot)).toBe(true);
 	});
 
+	it('carries free slots per bag, character, and bank into the finished snapshot (H18.15)', async () => {
+		const fixture = clientFor([passWith()]);
+		const snapshot = await new StorageSnapshotService(fixture.client)
+			.captureInventoryWithOperation(fixture.client.beginOperation());
+
+		expect(snapshot.freeSlots).toEqual({
+			bank: { total: 2, free: 1 },
+			sharedInventory: { total: 2, free: 1 },
+			characterBags: [
+				{ character: characterName, bagIndex: 0, bagItemId: 1_001, total: 20, free: 19 },
+			],
+		});
+	});
+
 	it('keeps the advisor core usable when optional stores fail twice', async () => {
 		const fixture = clientFor([passWith()], {
 			onRequest: async (path) => {

@@ -129,10 +129,23 @@ describe('public catalog parsers', () => {
 		]);
 	});
 
+	/* H18.13: `/v2/items?ids=86804&lang=es` returned "Vale de intercambio de Tyria\n"
+	 * on 24 Sep 2026; one such name must not reject the whole batch. */
+	it('trims API whitespace around item names instead of rejecting the batch', () => {
+		const parsed = parseCatalogItems([
+			{ ...itemPayload(86_804), name: 'Vale de intercambio de Tyria\n' },
+			{ ...itemPayload(11), name: ' \tObjeto 11 ' },
+			itemPayload(12),
+		]);
+		expect(parsed.map((item) => [item.id, item.name])).toEqual([
+			[86_804, 'Vale de intercambio de Tyria'], [11, 'Objeto 11'], [12, 'Objeto 12'],
+		]);
+	});
+
 	it.each([
 		['zero item id', [{ ...itemPayload(10), id: 0 }], parseCatalogItems],
 		['blank item name', [{ ...itemPayload(10), name: '' }], parseCatalogItems],
-		['untrimmed item name', [{ ...itemPayload(10), name: ' Objeto 10' }], parseCatalogItems],
+		['whitespace-only item name', [{ ...itemPayload(10), name: ' \n ' }], parseCatalogItems],
 		['oversized item name', [{ ...itemPayload(10), name: 'x'.repeat(257) }], parseCatalogItems],
 		['unsafe item value', [{ ...itemPayload(10), vendor_value: Number.MAX_SAFE_INTEGER + 1 }], parseCatalogItems],
 		['negative currency order', [{ ...currencyPayload(1), order: -1 }], parseCatalogCurrencies],

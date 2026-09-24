@@ -3,9 +3,13 @@ import {
 	type CurrencyTotal,
 	type SnapshotCoverage,
 	type SnapshotQuality,
+	type StorageFreeSlots,
 	type StorageSnapshot,
 	type StorageSnapshotPass,
 } from './storage-snapshot-model';
+
+/** Default when a caller (mostly tests predating H18.15) does not pass free-slot data. */
+const EMPTY_FREE_SLOTS: StorageFreeSlots = { bank: null, sharedInventory: null, characterBags: [] };
 
 export interface QualifiedStorageSnapshotPasses {
 	pass: StorageSnapshotPass;
@@ -34,6 +38,7 @@ export function buildStorageSnapshotPass(
 	currencies: StorageSnapshotPass['currencies'],
 	coverage: SnapshotCoverage,
 	roster: string[],
+	freeSlots: StorageFreeSlots = EMPTY_FREE_SLOTS,
 ): StorageSnapshotPass {
 	const availableByItem: Record<string, number> = {};
 	const ownedByItem: Record<string, number> = {};
@@ -58,6 +63,7 @@ export function buildStorageSnapshotPass(
 		currencyById,
 		coverage,
 		roster: [...roster].sort(),
+		freeSlots,
 	};
 }
 

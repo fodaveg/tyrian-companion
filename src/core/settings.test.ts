@@ -244,6 +244,18 @@ describe('migrateSettings', () => {
 		expect(migrateSettings({ recommendationCapitalThresholdCopper: -1 }).recommendationCapitalThresholdCopper).toBe(100_000);
 	});
 
+	// H18.15, interface boceto H18.31 decision 9: default 20, editable, an absent pre-H18.15 value
+	// falls through to the default instead of losing an unrelated field to a future schema bump.
+	it('ships the low-storage-space threshold at 20 free slots and accepts an editable override', () => {
+		expect(DEFAULT_SETTINGS.lowStorageSpaceThresholdFreeSlots).toBe(20);
+		const migrated = migrateSettings({ schemaVersion: SETTINGS_SCHEMA_VERSION, valuableLootThresholdCopper: 1 });
+		expect(migrated.lowStorageSpaceThresholdFreeSlots).toBe(20);
+		expect(migrateSettings({ lowStorageSpaceThresholdFreeSlots: 40 }).lowStorageSpaceThresholdFreeSlots).toBe(40);
+		expect(migrateSettings({ lowStorageSpaceThresholdFreeSlots: -1 }).lowStorageSpaceThresholdFreeSlots).toBe(20);
+		expect(migrateSettings({ lowStorageSpaceThresholdFreeSlots: 2_001 }).lowStorageSpaceThresholdFreeSlots).toBe(20);
+		expect(migrateSettings({ lowStorageSpaceThresholdFreeSlots: 0 }).lowStorageSpaceThresholdFreeSlots).toBe(0);
+	});
+
 	// v14, docs/SPEC-recomendacion-por-objeto.md M4. Empty by default: a fresh install (and every
 	// pre-v14 install with no explicit choice) reserves nothing for rule (a).
 	it('ships an empty legendary target list, sanitizing whatever a pre-v14 payload carried', () => {

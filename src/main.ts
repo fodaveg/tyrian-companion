@@ -138,6 +138,7 @@ import {
 	type AssistedDetectionState,
 } from './sessions/assisted-detection-service';
 import { ActiveSessionLeaseCoordinator } from './sessions/coordination-coordinator';
+import { SessionStorageScope } from './sessions/session-storage-scope';
 import type { DetectionCorrectionCause } from './sessions/session-detection-quality';
 import type { DetectionQualityRecorder, DetectionQualityRecorderState } from './sessions/session-detection-quality-recorder';
 import type { PilotMetricsExporter, PilotMetricsExportPreview, PilotMetricsExportResult } from './sessions/pilot-metrics-export';
@@ -694,7 +695,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const inventoryClient = new GuildWars2Client(inventoryTransport, apiKeyProvider);
 		const inventoryPublicClient = new GuildWars2PublicCatalogClient(inventoryTransport);
 		this.connection = new ConnectionService(new GuildWars2AccountGateway(client));
+		// H18.12: IndexedDB is shared by every vault window, so the saved session and its lease are
+		// scoped to this vault; both read the same decision, taken lazily on first use.
+		const sessionStorage = new SessionStorageScope(window.indexedDB, vaultId);
 		const coordinator = new ActiveSessionLeaseCoordinator({
+			databaseName: async () => await sessionStorage.coordinationDatabaseName(),
 			diagnostics: this.persistenceDiagnostics('session', 'session_lease'),
 		});
 		// One shared cooldown: a 429 seen by session capture, assisted detection,
@@ -1048,6 +1053,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const sessionServices = assembleSessions({
 			factory: window.indexedDB,
 			vaultId,
+			sessionStorage,
 			client,
 			priceGateway: publicClient,
 			snapshots,

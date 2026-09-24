@@ -19,6 +19,7 @@ import {
 	alertIngamePortValue,
 	alertWebhookDestination,
 	MATERIAL_STORAGE_CAPACITIES,
+	MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 	POLLING_INTERVAL_OPTIONS,
 	resolveVaultFolderInput,
 	type MaterialStorageCapacity,
@@ -75,6 +76,12 @@ function optionalInteger(value: string, maximum: number): number | null | 'inval
 	if (value.trim() === '') return null;
 	const parsed = Number(value);
 	return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= maximum ? parsed : 'invalid';
+}
+
+/** Like `optionalInteger`, but the field is never allowed to become empty (H18.15's threshold). */
+function requiredInteger(value: string, maximum: number): number | 'invalid' {
+	const parsed = optionalInteger(value, maximum);
+	return parsed === null ? 'invalid' : parsed;
 }
 
 export function goldThresholdToCopper(value: string): number | 'invalid' {
@@ -626,6 +633,29 @@ export class TyrianCompanionSettingTab extends PluginSettingTab {
 							dropdown.setDisabled(false);
 						});
 					});
+				},
+			},
+			{
+				category: 'advanced',
+				name: this.t('settings.lowStorageSpace.name'), desc: this.t('settings.lowStorageSpace.desc'),
+				tooltip: this.t('settings.lowStorageSpace.desc.tooltip'),
+				render: (setting, save) => {
+					const feedback = setting.descEl.createDiv({ cls: 'tyrian-companion-settings__feedback' });
+					feedback.setAttr('role', 'status');
+					feedback.setAttr('aria-live', 'polite');
+					setting.addText((text) => text
+						.setValue(String(this.plugin.settings.lowStorageSpaceThresholdFreeSlots))
+						.onChange(async (value) => {
+							const parsed = requiredInteger(value, MAX_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS);
+							if (parsed === 'invalid') {
+								text.inputEl.setAttr('aria-invalid', 'true');
+								feedback.setText(this.t('settings.lowStorageSpace.invalid'));
+								return;
+							}
+							text.inputEl.removeAttribute('aria-invalid');
+							feedback.setText('');
+							await save({ lowStorageSpaceThresholdFreeSlots: parsed });
+						}));
 				},
 			},
 			{

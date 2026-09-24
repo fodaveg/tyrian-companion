@@ -409,6 +409,7 @@ const STOP_FAILURE_LABELS = {
 	snapshot_failed: 'status.stopFailure.snapshot_failed',
 	lease_lost: 'status.stopFailure.lease_lost',
 	delta_invalid: 'status.stopFailure.delta_invalid',
+	account_changed: 'status.stopFailure.account_changed',
 	rate_limited: 'status.stopFailure.rate_limited',
 	unexpected: 'status.stopFailure.unexpected',
 } satisfies Record<SessionStopFailure['code'], RuntimeTranslationKey>;
