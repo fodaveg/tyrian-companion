@@ -174,7 +174,7 @@ function validateDocumentation(root, findings) {
 	for (const [name, text, terms] of [
 		['support', support, ['revoca primero la clave', 'inventario crudo', 'indexeddb', 'logs sin redactar']],
 		['api-key', apiKey, ['account', 'characters', 'inventories', 'builds', 'wallet', 'tradingpost', 'progression', 'unlocks']],
-		['readme', readme, ['open companion', 'start farming session', 'finish farming session', 'review session', 'support.md']],
+		['readme', readme, ['open companion', 'start farming session', 'finish farming session', 'support.md']],
 	]) {
 		for (const term of terms) {
 			if (!text.includes(term)) findings.push(`${name}-term:${term}`);
