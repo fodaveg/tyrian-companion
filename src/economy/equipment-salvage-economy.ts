@@ -273,7 +273,14 @@ function selectOutputRoute(
 	strategy: EquipmentSalvageSaleStrategy | null,
 	expectedOutputMicroQuantity: number,
 ): { status: 'ready'; strategy: EquipmentSalvageSaleStrategy; grossOutputMicroCopper: number }
-	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' } {
+	| { status: 'review'; reason: 'output_price_missing' | 'arithmetic_overflow' | 'price_uncertain' } {
+	/* Two disagreeing instant-sell readings are price uncertainty, not a stale
+	 * rule. Salvage is irreversible, so the instant route withholds it instead of
+	 * silently trusting either endpoint; a configured listing strategy never
+	 * reads the instant quote and stays unaffected. */
+	if (strategy !== 'listing' && !instantSellQuotesAgree(output)) {
+		return { status: 'review', reason: 'price_uncertain' };
+	}
 	const instant = instantSellOutputValue(output, expectedOutputMicroQuantity);
 	const listing = listingOutputValue(output.listingUnitCopper, expectedOutputMicroQuantity);
 	if (strategy !== null) {
@@ -390,10 +397,22 @@ function salvageOutput(value: unknown): value is EquipmentSalvageEconomyInputV1[
 			|| !value.instantSellLevels.every((level) => record(level) && exactKeys(level, ['unitCopper', 'quantity'])
 				&& positive(level.unitCopper) && positive(level.quantity))))) return false;
 	if (value.instantSellLevels === null) return true;
+	/* Shape only. Whether the `/commerce/prices` bid agrees with the first
+	 * `/commerce/listings` level is price evidence from two separately cached
+	 * endpoints, judged by `instantSellQuotesAgree` only where the ecto value is
+	 * used; a disagreement must never invalidate the policy for every item. */
 	const levels = value.instantSellLevels as CommerceListingLevelV1[];
-	if (!levels.every((level, index) => index === 0 || levels[index - 1]!.unitCopper > level.unitCopper)) return false;
-	return levels.length === 0 ? value.instantSellUnitCopper === null
-		: value.instantSellUnitCopper === levels[0]!.unitCopper;
+	return levels.every((level, index) => index === 0 || levels[index - 1]!.unitCopper > level.unitCopper);
+}
+
+/**
+ * Tells whether the two instant-sell readings of the output agree: the
+ * `/commerce/prices` bid and the first `/commerce/listings` buy level. Without
+ * complete depth there is no second reading to contradict the first.
+ */
+function instantSellQuotesAgree(output: EquipmentSalvageEconomyInputV1['output']): boolean {
+	if (output.instantSellLevels === null) return true;
+	return output.instantSellUnitCopper === (output.instantSellLevels[0]?.unitCopper ?? null);
 }
 
 function record(value: unknown): value is Record<string, unknown> {

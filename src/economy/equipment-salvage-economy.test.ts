@@ -156,7 +156,84 @@ describe('equipment salvage economy', () => {
 			status: 'review', reason: 'output_price_missing',
 		});
 	});
+
+	/* H18.13: `/commerce/prices` and `/commerce/listings` are cached separately;
+	 * measured on 24 Sep 2026 at a 1,703 bid against a 1,697 first level. */
+	it.each([
+		['a relic', { type: 'Relic', rarity: 'Exotic', level: 60 }],
+		['a crafting material', { type: 'CraftingMaterial', rarity: 'Rare', level: 0 }],
+	] as const)('keeps %s out of salvage regardless of disagreeing ectoplasm quotes', (_label, shape) => {
+		const input = divergentEctoplasm(fixture());
+		Object.assign(input.item, shape);
+		expect(evaluateEquipmentSalvageEconomy(input)).toEqual({ status: 'not_applicable', reason: 'known_non_equipment' });
+	});
+
+	it('does not let disagreeing ectoplasm quotes decide Exotic equipment, whose output rate is unattested', () => {
+		const input = divergentEctoplasm(fixture());
+		input.item.rarity = 'Exotic';
+		expect(evaluateEquipmentSalvageEconomy(input)).toEqual({
+			status: 'review', reason: 'exotic_output_rate_unverified', ruleId: 'exotic-equipment-68-review-v1',
+		});
+	});
+
+	it.each([
+		['a higher prices bid', (input: EquipmentSalvageEconomyInputV1) => { divergentEctoplasm(input); }],
+		['a prices bid without any listed buyer', (input: EquipmentSalvageEconomyInputV1) => {
+			input.output.instantSellLevels = [];
+		}],
+		['listed buyers without a prices bid', (input: EquipmentSalvageEconomyInputV1) => {
+			input.output.instantSellUnitCopper = null;
+		}],
+	] as const)('reports %s as price uncertainty for Rare salvage, not as a stale policy', (_label, mutate) => {
+		for (const saleStrategy of [null, 'instant_sell'] as const) {
+			const input = fixture();
+			input.preferences.saleStrategy = saleStrategy;
+			mutate(input);
+			expect(evaluateEquipmentSalvageEconomy(input)).toEqual({
+				status: 'review', reason: 'price_uncertain', ruleId: 'rare-equipment-68-ecto-v1',
+			});
+		}
+	});
+
+	it('keeps a configured listing strategy independent of the instant-sell disagreement', () => {
+		const input = divergentEctoplasm(fixture());
+		input.preferences.saleStrategy = 'listing';
+		expect(evaluateEquipmentSalvageEconomy(input)).toMatchObject({
+			status: 'ready', economics: { outputStrategy: 'listing' },
+		});
+	});
+
+	it.each([
+		['ascending bid levels', (output: EquipmentSalvageEconomyInputV1['output']) => {
+			output.instantSellLevels = [{ unitCopper: 1_000, quantity: 1 }, { unitCopper: 1_001, quantity: 1 }];
+		}],
+		['a non-positive level quantity', (output: EquipmentSalvageEconomyInputV1['output']) => {
+			output.instantSellLevels = [{ unitCopper: 1_000, quantity: 0 }];
+		}],
+		['an unexpected output key', (output: EquipmentSalvageEconomyInputV1['output']) => {
+			Object.assign(output, { vendorUnitCopper: 1 });
+		}],
+		['another output item', (output: EquipmentSalvageEconomyInputV1['output']) => {
+			Object.assign(output, { itemId: 19_976 });
+		}],
+	] as const)('still rejects malformed output evidence with %s for every item type', (_label, mutate) => {
+		for (const type of ['Weapon', 'Relic'] as const) {
+			const input = fixture();
+			input.item.type = type;
+			mutate(input.output);
+			expect(evaluateEquipmentSalvageEconomy(input)).toEqual({
+				status: 'review', reason: 'policy_invalid_or_stale', ruleId: null,
+			});
+		}
+	});
 });
+
+/** Makes the `/commerce/prices` bid disagree with the first `/commerce/listings` level. */
+function divergentEctoplasm(input: EquipmentSalvageEconomyInputV1): EquipmentSalvageEconomyInputV1 {
+	input.output.instantSellLevels = [{ unitCopper: 1_697, quantity: 10_000 }];
+	input.output.instantSellUnitCopper = 1_703;
+	return input;
+}
 
 function fixture(): EquipmentSalvageEconomyInputV1 {
 	return {
