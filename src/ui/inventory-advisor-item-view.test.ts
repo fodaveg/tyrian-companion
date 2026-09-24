@@ -5,7 +5,13 @@ import type {
 	InventoryPreferencesEditorSession,
 	InventoryPreferencesEditorState,
 } from '../advisor/inventory-preferences-runtime';
-import type { InventoryVaultSyncLastRun } from '../core/settings';
+import {
+	DEFAULT_SETTINGS,
+	mergeSettingsUpdate,
+	priceHistoryOptInOffered,
+	type InventoryVaultSyncLastRun,
+	type TyrianSettings,
+} from '../core/settings';
 import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
 import type { PriceHistoryRuntimeState } from '../economy/price-history-runtime';
@@ -349,7 +355,108 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		const body = text(view.contentEl as unknown as FakeElement);
 		expect(body).toContain('History queue: 12 with data, 25 pending, 3 with no data (of 40).');
 	});
+
+	/** Opt-in notice (David, 24 sep 2026): off by default, offered in one click, consent is the click. */
+	it('offers price history while it is off; the click turns it on through the host and the offer leaves', async () => {
+		installDom();
+		const host = optInHost();
+		const view = new InventoryAdvisorItemView({} as never, host.actions);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const block = optInBlock(root);
+		expect(block.hidden).toBe(false);
+		expect(text(block)).toContain('Sin histórico, vender o esperar sale «sin ventaja demostrada» o «datos insuficientes».');
+		expect(text(block)).toContain('/v2/commerce/prices');
+		expect(text(block)).toContain('datawars2');
+		expect(host.enable).not.toHaveBeenCalled();
+
+		buttonWithText(root, 'Activar histórico de precios').dispatch('click');
+		await flush();
+		expect(host.enable).toHaveBeenCalledOnce();
+		expect(host.settings.priceHistoryEnabled).toBe(true);
+		expect(optInBlock(root).hidden).toBe(true);
+	});
+
+	it('hides the offer on «Ahora no» and keeps it hidden for this version, back on the next one', async () => {
+		installDom();
+		const host = optInHost();
+		const view = new InventoryAdvisorItemView({} as never, host.actions);
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		buttonWithText(root, 'Ahora no').dispatch('click');
+		await flush();
+		expect(host.dismiss).toHaveBeenCalledOnce();
+		expect(host.enable).not.toHaveBeenCalled();
+		expect(host.settings).toMatchObject({ priceHistoryEnabled: false, priceHistoryNoticeDismissedVersion: '0.1.35' });
+		expect(optInBlock(root).hidden).toBe(true);
+
+		// A new view instance reads the same persisted preference: still hidden.
+		const reopened = new InventoryAdvisorItemView({} as never, host.actions);
+		await reopened.onOpen();
+		expect(optInBlock(reopened.contentEl as unknown as FakeElement).hidden).toBe(true);
+		// The next release offers it again.
+		host.setVersion('0.1.36');
+		reopened.render();
+		expect(optInBlock(reopened.contentEl as unknown as FakeElement).hidden).toBe(false);
+	});
+
+	it('opens with the offer on screen without a request, a timer, storage or the setting write', async () => {
+		const host = optInHost();
+		let offered = false;
+		const used = await ambientCapabilityUse(async () => {
+			installDom();
+			const view = new InventoryAdvisorItemView({} as never, host.actions);
+			await view.onOpen();
+			view.render();
+			offered = !optInBlock(view.contentEl as unknown as FakeElement).hidden;
+		});
+		expect(offered).toBe(true);
+		expect(used).toEqual([]);
+		expect(host.enable).not.toHaveBeenCalled();
+		expect(host.dismiss).not.toHaveBeenCalled();
+		expect(host.settings.priceHistoryEnabled).toBe(false);
+	});
 });
+
+/**
+ * A host whose settings behave like the plugin's: `enablePriceHistory` and «Ahora no» are one
+ * `mergeSettingsUpdate` each, and the offer is `priceHistoryOptInOffered`, the function main uses.
+ */
+function optInHost() {
+	let settings: TyrianSettings = { ...DEFAULT_SETTINGS };
+	let version = '0.1.35';
+	const enable = vi.fn(async () => { settings = mergeSettingsUpdate(settings, { priceHistoryEnabled: true }); });
+	const dismiss = vi.fn(async () => { settings = mergeSettingsUpdate(settings, { priceHistoryNoticeDismissedVersion: version }); });
+	const base = actions(() => 'es', { priceHistory: { state: priceHistoryState({ status: 'disabled' }) } }).value;
+	return {
+		get settings() { return settings; },
+		setVersion(next: string) { version = next; },
+		enable,
+		dismiss,
+		actions: {
+			...base,
+			enablePriceHistory: enable,
+			isPriceHistoryOptInOffered: () => priceHistoryOptInOffered(settings, version),
+			dismissPriceHistoryOptIn: dismiss,
+		} satisfies InventoryAdvisorViewActions,
+	};
+}
+
+function optInBlock(root: FakeElement): FakeElement {
+	const blocks = walk(root).filter((element) => element.className === 'tyrian-inventory-advisor__opt-in');
+	if (blocks.length !== 1) throw new Error(`Expected one opt-in block, found ${String(blocks.length)}.`);
+	return blocks[0]!;
+}
+
+function buttonWithText(root: FakeElement, label: string): FakeElement {
+	const button = find(root, 'button').find((candidate) => candidate.textContent === label);
+	if (!button) throw new Error(`No button labelled ${label}.`);
+	return button;
+}
+
+async function flush(): Promise<void> {
+	for (let index = 0; index < 5; index += 1) await Promise.resolve();
+}
 
 function actions(
 	locale: () => 'es' | 'en',

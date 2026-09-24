@@ -67,6 +67,18 @@ export interface InventoryAdvisorViewInteractions {
 	/** Local-only history. Reading storage and enabling polling require an explicit callback. */
 	priceHistory?: PriceHistoryPanelInteractions;
 	/**
+	 * Opt-in offer for price history (David, 24 sep 2026: off by default, offered here). Present
+	 * only while the host decides to offer it (`priceHistoryOptInOffered`); absent hides the block.
+	 * Rendering it starts nothing: the enable button IS the consent, and both buttons only call
+	 * back into the host, which writes the setting through the same `updateSettings` as Settings.
+	 */
+	priceHistoryOptIn?: {
+		busy?: boolean;
+		onEnable: () => void | Promise<void>;
+		/** «Ahora no»: hides the offer until the next plugin version. */
+		onDismiss: () => void | Promise<void>;
+	};
+	/**
 	 * The same account-level sell/hold verdict for the Halloween bag the session panel shows
 	 * (H14.6/H14.12): rendered at the top, above the filters, since it is not scoped to a session.
 	 */
@@ -500,6 +512,24 @@ function mountInventoryAdvisorView(
 	syncConfirmCancel.addEventListener('click', () => { interactions.inventorySync?.onCancel(); });
 	syncConfirmActions.append(syncConfirmApply, syncConfirmCancel);
 	syncConfirm.append(syncConfirmTitle, syncConfirmBody, syncConfirmSummary, syncConfirmActions);
+	// Opt-in offer: what is missing without price history, what turning it on does, and the
+	// consent itself. Hidden unless the host passes `priceHistoryOptIn`.
+	const optIn = createDiv();
+	optIn.className = 'tyrian-inventory-advisor__opt-in';
+	optIn.setAttribute('role', 'note');
+	const optInText = createEl('p');
+	optInText.className = 'tyrian-inventory-advisor__opt-in-text';
+	const optInActions = createDiv();
+	optInActions.className = 'tyrian-inventory-advisor__opt-in-actions';
+	const optInEnable = createEl('button');
+	optInEnable.type = 'button';
+	optInEnable.className = 'mod-cta';
+	optInEnable.addEventListener('click', () => { void interactions.priceHistoryOptIn?.onEnable(); });
+	const optInDismiss = createEl('button');
+	optInDismiss.type = 'button';
+	optInDismiss.addEventListener('click', () => { void interactions.priceHistoryOptIn?.onDismiss(); });
+	optInActions.append(optInEnable, optInDismiss);
+	optIn.append(optInText, optInActions);
 	// The last run is one line at the foot of the list. The progress bar exists only while a run
 	// is in flight; a full bar from two days ago says nothing the line does not.
 	const syncStatusPanel = createEl('footer');
@@ -729,7 +759,7 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, sellSignal, state, keepStatus, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, optIn, sellSignal, state, keepStatus, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
@@ -757,6 +787,14 @@ function mountInventoryAdvisorView(
 		section.setAttribute('aria-busy', String(model.status === 'loading'));
 		sellSignal.replaceChildren();
 		renderSellSignalLine(sellSignal, interactions.sellSignalState, translator);
+		const offer = interactions.priceHistoryOptIn;
+		optIn.hidden = offer === undefined;
+		optIn.setAttribute('aria-label', translator.t('view.optIn.priceHistory.aria'));
+		optInText.textContent = `${translator.t('view.optIn.priceHistory.missing')} ${translator.t('view.optIn.priceHistory.effect')}`;
+		optInEnable.textContent = translator.t('view.optIn.priceHistory.enable');
+		optInDismiss.textContent = translator.t('view.optIn.dismiss');
+		optInEnable.disabled = offer?.busy === true;
+		optInDismiss.disabled = offer?.busy === true;
 		const sync = interactions.inventorySync;
 		syncPrimaryActions.hidden = sync === undefined;
 		syncAssetsHint.hidden = sync === undefined || sync.assetsInstalled;

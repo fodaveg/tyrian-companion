@@ -326,6 +326,8 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__controls',
 			'tyrian-inventory-advisor__sync-hint',
 			'tyrian-inventory-advisor__sync-confirm',
+			// Opt-in offer (24 sep 2026), hidden unless the host offers price history.
+			'tyrian-inventory-advisor__opt-in',
 			'tyrian-inventory-advisor__sell-signal',
 			'tyrian-inventory-advisor__state',
 			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
@@ -337,8 +339,9 @@ describe('Inventory Advisor view', () => {
 		];
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
-		expect(mount.section.children[5]!.hidden).toBe(true);
-		expect(text(walk(mount.section.children[6]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[3]!.hidden).toBe(true);
+		expect(mount.section.children[6]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[7]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -347,6 +350,40 @@ describe('Inventory Advisor view', () => {
 		);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
 	});
+
+	it.each([
+		['es', 'Sin histórico, vender o esperar sale «sin ventaja demostrada» o «datos insuficientes».',
+			'Activar histórico de precios', 'Ahora no'],
+		['en', 'Without history, sell or wait shows “no demonstrated advantage” or “not enough data”.',
+			'Turn on price history', 'Not now'],
+	] as const)('offers price history in one compact block and forwards only its own clicks in %s (opt-in, 24 sep 2026)',
+		(locale, missing, enableLabel, dismissLabel) => {
+			const onEnable = vi.fn();
+			const onDismiss = vi.fn();
+			const mount = render(readyModel(), locale, { priceHistoryOptIn: { onEnable, onDismiss } });
+			const block = only(byClass(mount.elements(), 'tyrian-inventory-advisor__opt-in'));
+			expect(block.hidden).toBe(false);
+			expect(block.attributes.get('role')).toBe('note');
+			expect(text(walk(block))).toContain(missing);
+			expect(text(walk(block))).toContain('/v2/commerce/prices');
+			expect(text(walk(block))).toContain('datawars2');
+			expect(onEnable).not.toHaveBeenCalled();
+			expect(onDismiss).not.toHaveBeenCalled();
+
+			only(withText(walk(block), enableLabel)).dispatch('click');
+			expect(onEnable).toHaveBeenCalledOnce();
+			expect(onDismiss).not.toHaveBeenCalled();
+			only(withText(walk(block), dismissLabel)).dispatch('click');
+			expect(onDismiss).toHaveBeenCalledOnce();
+
+			// Busy: both buttons disabled so a double click writes once.
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator(locale), undefined,
+				{ priceHistoryOptIn: { busy: true, onEnable, onDismiss } });
+			expect(find(walk(block), 'button').map((button) => button.disabled)).toEqual([true, true]);
+			// The host stops offering (enabled, or «Ahora no»): the block leaves.
+			renderInventoryAdvisorView(mount.container as unknown as HTMLElement, readyModel(), createTranslator(locale), undefined, {});
+			expect(block.hidden).toBe(true);
+		});
 
 	// H14.6/H14.12: the same permanent sell/hold line the session panel shows, reused here above the list.
 	it('shows the Halloween bag sell signal in sell and hold states', () => {
