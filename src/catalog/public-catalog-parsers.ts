@@ -178,8 +178,14 @@ function string(value: unknown, kind: 'items' | 'currencies' | 'materials'): str
 	return value;
 }
 
+/**
+ * Parses an item name into its report-safe form. Surrounding whitespace is API
+ * noise (item 86804 arrives in `es` as "Vale de intercambio de Tyria\n"), so it
+ * is trimmed instead of rejecting the owned item; blank or oversized names
+ * still reject the entry.
+ */
 function nonEmptyString(value: unknown, kind: 'items' | 'currencies' | 'materials'): string {
-	const parsed = string(value, kind);
+	const parsed = string(value, kind).trim();
 	if (!isReportSafeCatalogItemName(parsed)) throw new InvalidCatalogPayloadError(kind);
 	return parsed;
 }

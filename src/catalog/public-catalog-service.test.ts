@@ -394,6 +394,21 @@ describe('PublicCatalogService', () => {
 		expect(resolution.warnings).toContainEqual({ code: 'malformed_entry', kind: 'items', id: 11 });
 	});
 
+	it('resolves an item whose API name carries surrounding whitespace', async () => {
+		const api = gateway(() => http(200, [
+			itemPayload(10), { ...itemPayload(86_804), name: 'Vale de intercambio de Tyria\n' },
+		]));
+		const resolution = await new PublicCatalogService(api, new MemoryCatalogCache(), () => NOW).resolve(
+			snapshotWithItems([10, 86_804]),
+			'es',
+		);
+		expect(resolution.items).toMatchObject({ '86804': { id: 86_804, name: 'Vale de intercambio de Tyria' } });
+		expect(resolution.coverage.items).toEqual({
+			'10': { status: 'resolved', source: 'network' },
+			'86804': { status: 'resolved', source: 'network' },
+		});
+	});
+
 	it('marks a 200 omission without discarding valid entries', async () => {
 		const api = gateway(() => http(200, [itemPayload(10)]));
 		const resolution = await new PublicCatalogService(api, new MemoryCatalogCache(), () => NOW).resolve(
