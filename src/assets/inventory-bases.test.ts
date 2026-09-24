@@ -21,10 +21,10 @@ describe('inventory Base assets', () => {
 	it('packages Inventory and Materials once per locale in the single managed bundle', async () => {
 		const assets = await inventoryManagedAssets();
 		expect(assets.map(({ id, kind, contentVersion, locale, relativePath }) => ({ id, kind, contentVersion, locale, relativePath }))).toEqual([
-			{ id: 'inventory-base', kind: 'base', contentVersion: 9, locale: 'es', relativePath: 'Inventory.base' },
-			{ id: 'inventory-base', kind: 'base', contentVersion: 9, locale: 'en', relativePath: 'Inventory.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 9, locale: 'es', relativePath: 'Materials.base' },
-			{ id: 'materials-base', kind: 'base', contentVersion: 9, locale: 'en', relativePath: 'Materials.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 10, locale: 'es', relativePath: 'Inventory.base' },
+			{ id: 'inventory-base', kind: 'base', contentVersion: 10, locale: 'en', relativePath: 'Inventory.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 10, locale: 'es', relativePath: 'Materials.base' },
+			{ id: 'materials-base', kind: 'base', contentVersion: 10, locale: 'en', relativePath: 'Materials.base' },
 		]);
 		const bundle = await managedAssetsBundle();
 		for (const expected of assets) {
@@ -107,13 +107,14 @@ describe('inventory Base assets', () => {
 				expect(keys.filter((key) => key.startsWith('note.'))).toEqual([
 					'note.tc_source', 'note.tc_character', 'note.tc_quantity', 'note.tc_free_quantity',
 					'note.tc_actionable_quantity', 'note.tc_item_type', 'note.tc_item_rarity',
+					'note.tc_price_quoted_at', 'note.tc_recommendation_until', 'note.tc_sell_window_from', 'note.tc_sell_window_to',
 					'note.tc_unit_sell_copper', 'note.tc_total_sell_copper',
 					'note.tc_sell_depth_status', 'note.tc_sell_covered_quantity', 'note.tc_sell_uncovered_quantity',
 					'note.tc_unit_list_copper', 'note.tc_total_list_copper',
 				]);
 				expect(keys.filter((key) => key.startsWith('formula.'))).toEqual([
 					'formula.item_icon', 'formula.item_link',
-					'formula.recommendation_label', 'formula.reason_label', 'formula.valid_until', 'formula.wait_until',
+					'formula.recommendation_label', 'formula.reason_label',
 					'formula.source_label',
 				]);
 				// H14.21: the "last updated" column now reads the note's own mtime instead of a
@@ -146,13 +147,13 @@ describe('inventory Base assets', () => {
 		}
 	});
 
-	it('upgrades installed inventory properties and economic labels to contentVersion 9', async () => {
+	it('upgrades installed inventory properties and economic labels to contentVersion 10', async () => {
 		const vault = new MemoryBaseVault();
 		const current = await managedAssetsBundle();
 		const legacy = await Promise.all(current.map(async (asset) => {
 			if (asset.id !== 'inventory-base' && asset.id !== 'materials-base') return asset;
 			const bytes = asset.bytes
-				.replace('version=9', 'version=1')
+				.replace('version=10', 'version=1')
 				.replace(/^ {2}note\.(tc_[a-z0-9_]+):$/gmu, '  $1:');
 			return { ...asset, contentVersion: 1, bytes, contentHash: await sha256Text(bytes) };
 		}));
@@ -172,8 +173,8 @@ describe('inventory Base assets', () => {
 		expect(inspection.manifest).toMatchObject({ bundleVersion: 5, state: 'ready' });
 		expect(inspection.manifest?.assets.filter(({ id }) => id === 'inventory-base' || id === 'materials-base'))
 			.toEqual(expect.arrayContaining([
-				expect.objectContaining({ id: 'inventory-base', contentVersion: 9 }),
-				expect.objectContaining({ id: 'materials-base', contentVersion: 9 }),
+				expect.objectContaining({ id: 'inventory-base', contentVersion: 10 }),
+				expect.objectContaining({ id: 'materials-base', contentVersion: 10 }),
 			]));
 		const installed = parse(vault.contents.get('Tyrian Companion/Bases/Inventory.base')!) as BaseDocument;
 		expect(installed.properties['formula.item_link']).toBeDefined();
@@ -199,6 +200,7 @@ describe('inventory Base assets', () => {
 				recommendationUntil: null, recommendationMissing: null,
 				pricePercentile: null, priceCoverageDays: null,
 				priceQuotedAt: null, priceHistoryLastDay: null,
+				sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null,
 				reservedQuantity: 0, freeQuantity: 3, actionableQuantity: 0,
 			}],
 		});
@@ -251,19 +253,20 @@ describe('inventory Base: sell now, wait and translated reasons (H18.3)', () => 
 		}
 	});
 
-	it('the waiting view shows where the wait ends; the sell verdicts show how long they hold, in separate columns', async () => {
+	it('three clocks, three columns: the quote\'s date, the analysis\' validity and the suggested window (H18.19)', async () => {
 		for (const { document } of await inventoryDocuments()) {
 			const view = waitView(document);
 			if (view === undefined) throw new Error('Expected a wait-to-sell view.');
 			expect(matchesFilter(view.filters, { tc_recommendation: 'sell_at_season' })).toBe(true);
 			expect(matchesFilter(view.filters, { tc_recommendation: 'sell' })).toBe(false);
-			expect(view.order).toEqual(expect.arrayContaining(['formula.wait_until', 'formula.reason_label']));
-			const waiting = { tc_recommendation: 'sell_at_season', tc_recommendation_until: '2027-05-01T00:00:00.000Z' };
-			expect(evaluateFormula(document.formulas.wait_until!, waiting)).toBe('2027-05-01T00:00:00.000Z');
-			expect(evaluateFormula(document.formulas.valid_until!, waiting)).toBeNull();
-			const selling = { tc_recommendation: 'sell', tc_recommendation_until: '2026-09-24T10:15:00.000Z' };
-			expect(evaluateFormula(document.formulas.valid_until!, selling)).toBe('2026-09-24T10:15:00.000Z');
-			expect(evaluateFormula(document.formulas.wait_until!, selling)).toBeNull();
+			for (const shown of document.views) {
+				expect(shown.order).toEqual(expect.arrayContaining([
+					'formula.reason_label', 'tc_price_quoted_at', 'tc_recommendation_until', 'tc_sell_window_from', 'tc_sell_window_to',
+				]));
+			}
+			// No formula reads `tc_recommendation_until` as a window any more: it is shown as it is.
+			expect(Object.keys(document.formulas)).not.toEqual(expect.arrayContaining(['valid_until']));
+			expect(Object.keys(document.formulas)).not.toEqual(expect.arrayContaining(['wait_until']));
 		}
 	});
 

@@ -23,7 +23,8 @@ const COPY = {
 		unitListValue: 'Menor anuncio actual (bruto/u) 🟤', totalListValue: 'Publicación realizable (no demostrada) 🟤', captured: 'Actualizado',
 		characterSource: 'Personaje', sharedSource: 'Compartido', bankSource: 'Banco', materialsSource: 'Materiales',
 		recommendation: 'Recomendación', reason: 'Motivo', sellNow: 'Vender ahora', waitToSell: 'Esperar para vender',
-		freeQuantity: 'Cantidad libre', validUntil: 'Vigente hasta', waitUntil: 'Esperar hasta',
+		freeQuantity: 'Cantidad libre', priceQuotedAt: 'Precio del', validUntil: 'Análisis vigente hasta',
+		sellWindowFrom: 'Vender desde', sellWindowTo: 'Vender hasta',
 		actionableQuantity: 'Cantidad accionable',
 	},
 	en: {
@@ -34,7 +35,8 @@ const COPY = {
 		unitListValue: 'Lowest current listing (gross/unit) 🟤', totalListValue: 'Realizable listing (not demonstrated) 🟤', captured: 'Updated',
 		characterSource: 'Character', sharedSource: 'Shared', bankSource: 'Bank', materialsSource: 'Materials',
 		recommendation: 'Recommendation', reason: 'Reason', sellNow: 'Sell now', waitToSell: 'Wait to sell',
-		freeQuantity: 'Free quantity', validUntil: 'Valid until', waitUntil: 'Wait until',
+		freeQuantity: 'Free quantity', priceQuotedAt: 'Price of', validUntil: 'Analysis valid until',
+		sellWindowFrom: 'Sell from', sellWindowTo: 'Sell until',
 		actionableQuantity: 'Actionable quantity',
 	},
 } as const;
@@ -88,9 +90,10 @@ function labelFormula(field: string, labels: Readonly<Record<string, string>>): 
 
 function commonBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	// `until` alternates between a price expiry and a seasonal window's open or close (audit
-	// 2026-09-24, Anexo 3): for `sell_at_season` it is when to stop waiting, for everything else
-	// how long the verdict holds. Two columns keep those two meanings apart.
+	// H18.19 (audit 2026-09-24, Anexo 3): three clocks, three columns. When the price was quoted
+	// (`tc_price_quoted_at`), how long the analysis holds (`tc_recommendation_until`, which no longer
+	// carries a window date for any reason) and the window it suggests selling in
+	// (`tc_sell_window_from`..`tc_sell_window_to`).
 	return `filters:
   and:
     - tc_schema == 1
@@ -103,8 +106,6 @@ formulas:
   source_label: 'if(tc_source == "character", "${copy.characterSource}", if(tc_source == "shared_inventory", "${copy.sharedSource}", if(tc_source == "bank", "${copy.bankSource}", "${copy.materialsSource}")))'
   recommendation_label: ${labelFormula('tc_recommendation', actionLabels(locale))}
   reason_label: ${labelFormula('tc_recommendation_reason', reasonLabels(locale))}
-  valid_until: 'if(tc_recommendation != "sell_at_season", tc_recommendation_until, null)'
-  wait_until: 'if(tc_recommendation == "sell_at_season", tc_recommendation_until, null)'
 properties:
   formula.item_icon:
     displayName: "${copy.icon}"
@@ -128,10 +129,14 @@ properties:
     displayName: "${copy.recommendation}"
   formula.reason_label:
     displayName: "${copy.reason}"
-  formula.valid_until:
+  note.tc_price_quoted_at:
+    displayName: "${copy.priceQuotedAt}"
+  note.tc_recommendation_until:
     displayName: "${copy.validUntil}"
-  formula.wait_until:
-    displayName: "${copy.waitUntil}"
+  note.tc_sell_window_from:
+    displayName: "${copy.sellWindowFrom}"
+  note.tc_sell_window_to:
+    displayName: "${copy.sellWindowTo}"
   file.mtime:
     displayName: "${copy.captured}"
   note.tc_unit_sell_copper:
@@ -155,7 +160,7 @@ properties:
 
 function inventoryBody(locale: InventoryBaseLocale): string {
 	const copy = COPY[locale];
-	const order = '[formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, formula.source_label, tc_character, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
+	const order = '[formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, tc_price_quoted_at, tc_recommendation_until, tc_sell_window_from, tc_sell_window_to, formula.source_label, tc_character, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]';
 	const sorted = `sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -240,7 +245,7 @@ function materialsBody(locale: InventoryBaseLocale): string {
 	return `${commonBody(locale).replace('    - tc_active == true\n', '    - tc_active == true\n    - tc_source == "materials"\n')}views:
   - type: table
     name: "${copy.materials}"
-    order: [formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, formula.valid_until, formula.wait_until, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
+    order: [formula.item_icon, formula.item_link, formula.recommendation_label, formula.reason_label, tc_price_quoted_at, tc_recommendation_until, tc_sell_window_from, tc_sell_window_to, tc_quantity, tc_free_quantity, tc_actionable_quantity, tc_unit_sell_copper, tc_total_sell_copper, tc_sell_depth_status, tc_sell_covered_quantity, tc_sell_uncovered_quantity, tc_unit_list_copper, tc_total_list_copper, tc_item_type, tc_item_rarity, file.mtime]
     sort:
       - property: tc_total_sell_copper
         direction: DESC
@@ -274,7 +279,9 @@ export async function inventoryManagedAssets(): Promise<PackagedAsset[]> {
 			// Bumped to 9 by H18.14: the advisor's routes and reasons in the label formulas, the
 			// actionable-quantity column, and "Vender ahora" filtering sell/list on what can be acted
 			// on now instead of on the free quantity.
-			const draft = { id, kind: 'base', contentVersion: 9, locale, relativePath } as const;
+			// Bumped to 10 by H18.19: the three clocks as three columns (quote date, analysis validity,
+			// suggested window) replace the valid/wait-until formulas that read one mixed field.
+			const draft = { id, kind: 'base', contentVersion: 10, locale, relativePath } as const;
 			const bytes = `${managedAssetMarker(draft)}\n${body(locale)}`;
 			assets.push({ ...draft, bytes, contentHash: await sha256Text(bytes) });
 		}

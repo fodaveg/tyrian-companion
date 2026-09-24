@@ -195,11 +195,12 @@ describe('inventory Vault projection', () => {
 				{ itemId: festivalItemId, coverage: 'complete', buys: [{ unitCopper: 100, quantity: 10 }], sells: [] },
 			],
 		};
-		// Flat 36-day series at 500 copper: today is at the reference floor for both items, but only
-		// the festival item has a calendar entry that reads it as inside its own selling window.
+		// 36 days rising 60..95 copper, today's quote 100 above all of them: only the festival item has
+		// a calendar entry that reads it as inside its own selling window, confirmed by the price
+		// (H18.19: a flat series or the floor no longer confirms a window).
 		const dailyByItem = new Map<number, PriceHistoryDailyV1[]>([
-			[festivalItemId, dailySeriesFor(festivalItemId, 36, 500, 0, capturedAtMs)],
-			[otherItemId, dailySeriesFor(otherItemId, 36, 500, 0, capturedAtMs)],
+			[festivalItemId, dailySeriesFor(festivalItemId, 36, 60, 1, capturedAtMs)],
+			[otherItemId, dailySeriesFor(otherItemId, 36, 60, 1, capturedAtMs)],
 		]);
 		const input = await prepareInventoryVaultSyncInput(snapshot, catalogFor(snapshot), prices, 'full', 'es', marketDepth, {
 			priceHistoryEnabled: true,
@@ -216,12 +217,18 @@ describe('inventory Vault projection', () => {
 		const byItem = new Map(input.positions.map((position) => [position.itemId, position]));
 		const festival = byItem.get(festivalItemId);
 		const other = byItem.get(otherItemId);
-		const expectedUntil = new Date(seasonalWindowClosesAfterMs(window, capturedAtMs)!).toISOString();
-		expect(festival).toMatchObject({ recommendation: 'sell', recommendationReason: 'seasonal_sell_window', recommendationUntil: expectedUntil });
+		// H18.19: the window is its own clock (inclusive days, across new year); `until` is the
+		// analysis' validity, the capture plus the price age.
+		expect(festival).toMatchObject({
+			recommendation: 'sell', recommendationReason: 'seasonal_sell_window',
+			recommendationUntil: new Date(capturedAtMs + 900_000).toISOString(),
+			sellWindowFromDay: '2026-12-15', sellWindowToDay: '2027-01-10',
+		});
+		expect(Date.parse(`${festival!.sellWindowToDay!}T00:00:00Z`) + 86_400_000).toBe(seasonalWindowClosesAfterMs(window, capturedAtMs));
 		// Never Halloween's close for the same instant.
-		expect(festival?.recommendationUntil).not.toBe(new Date(seasonalWindowClosesAfterMs(
+		expect(Date.parse(`${festival!.sellWindowToDay!}T00:00:00Z`) + 86_400_000).not.toBe(seasonalWindowClosesAfterMs(
 			{ version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 }, capturedAtMs,
-		)!).toISOString());
+		));
 		// The non-calendar item falls to rule (c): flat series at its own reference floor sells or
 		// holds on the percentile, never `sell_at_season`.
 		expect(other?.recommendation).not.toBe('sell_at_season');
@@ -970,21 +977,57 @@ describe('resync: no rewrite by the clock, managed fields only, the user\'s text
 		expect(vault.contents).toEqual(written);
 	});
 
-	it('a real date still counts: a seasonal wait whose next window moves is rewritten', async () => {
+	it('a real date still counts: a wait whose suggested window moves is rewritten, its validity is not', async () => {
 		const vault = new MemoryInventoryVault();
 		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
-		const waiting = async (capturedAt: string, until: string) => {
+		// H18.19: the window is its own pair of fields; `until` is always the capture plus the price
+		// age, so it never counts as a change on its own.
+		const waiting = async (capturedAt: string, window: [string, string]) => {
 			const input = await pricedAt(capturedAt);
 			return { ...input, positions: input.positions.map((position) => ({
-				...position, recommendation: 'sell_at_season' as const, recommendationReason: 'seasonal_hold' as const,
-				recommendationUntil: until, actionableQuantity: 0,
+				...position, recommendation: 'sell_at_season' as const, recommendationReason: 'wait_advantage_demonstrated' as const,
+				recommendationUntil: new Date(Date.parse(capturedAt) + 900_000).toISOString(), actionableQuantity: 0,
+				sellWindowFromDay: window[0], sellWindowToDay: window[1],
 			})) };
 		};
-		await service.apply(await service.preview(ROOT, await waiting(T1, '2026-10-01T00:00:00.000Z')));
-		expect((await service.preview(ROOT, await waiting(T2, '2026-10-01T00:00:00.000Z'))).steps.map((entry) => entry.status))
+		await service.apply(await service.preview(ROOT, await waiting(T1, ['2026-09-25', '2026-10-12'])));
+		expect((await service.preview(ROOT, await waiting(T2, ['2026-09-25', '2026-10-12']))).steps.map((entry) => entry.status))
 			.toEqual(['unchanged']);
-		expect((await service.preview(ROOT, await waiting(T2, '2027-10-01T00:00:00.000Z'))).steps.map((entry) => entry.status))
+		expect((await service.preview(ROOT, await waiting(T2, ['2027-05-01', '2027-05-31']))).steps.map((entry) => entry.status))
 			.toEqual(['update']);
+	});
+
+	it('H18.19: the note carries the three clocks apart and the sell-now-or-wait comparison; a moved comparison rewrites it', async () => {
+		const vault = new MemoryInventoryVault();
+		const service = new InventoryVaultSyncService(vault, CONFIG_DIR);
+		const comparison = {
+			version: 1 as const, verdict: 'wait' as const, mode: 'instant' as const, strategy: 'wait_pre_festival' as const,
+			quantity: 3, unitCopper: 10, decisionOffsetDays: 19, windowFromDay: '2026-09-25', windowToDay: '2026-10-12',
+			seasons: 7, seasonsWon: 4, seasonsLost: 3, medianRatio: 1.03, lowRatio: 0.97, highRatio: 1.09,
+			netAdvantageCopper: 1, netAdvantageLowCopper: -1, netAdvantageHighCopper: 2,
+		};
+		const waiting = async (capturedAt: string, sellOrWait: typeof comparison) => {
+			const input = await pricedAt(capturedAt);
+			return { ...input, positions: input.positions.map((position) => ({
+				...position, recommendation: 'sell_at_season' as const, recommendationReason: 'wait_advantage_demonstrated' as const,
+				actionableQuantity: 0, sellWindowFromDay: sellOrWait.windowFromDay, sellWindowToDay: sellOrWait.windowToDay, sellOrWait,
+			})) };
+		};
+		await service.apply(await service.preview(ROOT, await waiting(T1, comparison)));
+		const [path] = vault.markdownFiles().map((file) => file.path);
+		expect(frontmatter(vault.contents.get(path!)!)).toMatchObject({
+			tc_price_quoted_at: T1,
+			tc_recommendation_until: new Date(Date.parse(T1) + 900_000).toISOString(),
+			tc_sell_window_from: '2026-09-25', tc_sell_window_to: '2026-10-12',
+			tc_wait_verdict: 'wait', tc_wait_mode: 'instant', tc_wait_strategy: 'wait_pre_festival',
+			tc_wait_advantage_copper: 1, tc_wait_advantage_low_copper: -1, tc_wait_advantage_high_copper: 2,
+			tc_wait_seasons: 7, tc_wait_seasons_lost: 3,
+		});
+		// The note it wrote reads back as its own: same data later is not a change.
+		expect((await service.preview(ROOT, await waiting(T2, comparison))).steps.map((entry) => entry.status)).toEqual(['unchanged']);
+		// A comparison that moved (another free quantity, another advantage) is.
+		expect((await service.preview(ROOT, await waiting(T2, { ...comparison, quantity: 2, netAdvantageCopper: 0 })))
+			.steps.map((entry) => entry.status)).toEqual(['update']);
 	});
 
 	it('a new price rewrites only the managed fields and keeps the user\'s properties and text', async () => {

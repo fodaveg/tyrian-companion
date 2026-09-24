@@ -2,6 +2,7 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { MaterialStorageCapacitySource } from '../economy/material-storage-deposit-validation';
+import type { SellOrWaitComparisonV1, SellOrWaitMode } from '../economy/sell-or-wait';
 import { INVENTORY_ADVISOR_REASON_CODES } from './inventory-advisor-contract';
 import type { InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
 import {
@@ -48,10 +49,11 @@ const ACT_NOW_ROUTES: ReadonlySet<InventoryObjectDecisionAction> = new Set([
 ]);
 
 /**
- * One object's decision. `until` keeps its three meanings apart exactly as `recommendPosition`
- * gives them (audit Anexo 3): a price verdict's expiry, a selling window's close, or the next
- * window's open; `priceQuotedAt`/`priceHistoryLastDay` date today's quote and the history
- * separately. Every evidence field is null when the decision does not rest on a price.
+ * One object's decision, with the three clocks `recommendPosition` keeps apart (H18.19, audit
+ * Anexo 3): when the price was quoted (`priceQuotedAt`, and `priceHistoryLastDay` for the history
+ * it was compared with), how long the analysis holds (`until`), and the window it suggests selling
+ * in (`sellWindowFromDay`..`sellWindowToDay`). `sellOrWait` is the sell-now-or-wait comparison
+ * behind a market decision. Every evidence field is null when the decision does not rest on a price.
  */
 export interface InventoryObjectDecisionV1 {
 	action: InventoryObjectDecisionAction;
@@ -62,6 +64,9 @@ export interface InventoryObjectDecisionV1 {
 	priceCoverageDays: number | null;
 	priceQuotedAt: string | null;
 	priceHistoryLastDay: string | null;
+	sellWindowFromDay: string | null;
+	sellWindowToDay: string | null;
+	sellOrWait: SellOrWaitComparisonV1 | null;
 }
 
 /**
@@ -123,6 +128,7 @@ export interface InventoryObjectStorageSpaceV1 {
 
 const NO_EVIDENCE = {
 	missing: null, pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+	sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null,
 } as const;
 
 /** The view's action for an advisor decision, discard candidates staying review-only. */
@@ -150,6 +156,10 @@ export function isActNowInventoryDecision(action: InventoryObjectDecisionAction)
  *   always win: no route can sell what is held back or cannot be sold.
  * - Every other route (vendor, salvage, use, open, deposit, keep, review, discard review) has no
  *   timing model and stands as the advisor gave it, with the advisor's own reason.
+ * - H18.19: the sell-now-or-wait comparison is only ever read in its own sale mode. The moment
+ *   stage compares instant sales; a `list` route never shows that comparison as its own, and a wait
+ *   it demonstrated for instant sales does not make a listing wait: the listing stands now, with
+ *   "not enough data" as its reason, since nothing measured listings.
  */
 export function decideInventoryObjectRoute(
 	route: InventoryObjectRoute,
@@ -157,18 +167,32 @@ export function decideInventoryObjectRoute(
 	timing: PositionRecommendationV1 | null,
 ): InventoryObjectDecisionV1 {
 	if ((route === 'sell' || route === 'list') && timing !== null) {
+		const sellOrWait = timing.sellOrWait !== null && timing.sellOrWait.mode === modeOf(route) ? timing.sellOrWait : null;
 		const evidence = {
 			missing: timing.missing, pricePercentile: timing.pricePercentile, priceCoverageDays: timing.priceCoverageDays,
 			priceQuotedAt: timing.priceQuotedAt, priceHistoryLastDay: timing.priceHistoryLastDay,
+			sellWindowFromDay: timing.sellWindowFromDay, sellWindowToDay: timing.sellWindowToDay, sellOrWait,
 		};
 		if (timing.action === 'hold_for_legendary' || timing.reason === 'reservation_uncertain'
 			|| timing.reason === 'not_tradeable') return { ...timing };
+		if (timing.sellOrWait !== null && sellOrWait === null && COMPARISON_REASONS.has(timing.reason)) {
+			return { action: route, reason: 'wait_evidence_insufficient', until: timing.until, ...evidence, sellWindowFromDay: null, sellWindowToDay: null };
+		}
 		if (timing.action === 'sell_at_season') return { ...timing };
 		if (timing.action === 'hold' && timing.reason === 'below_local_band') return { ...timing };
 		if (timing.action === 'review') return { action: route, reason: timing.reason, until: null, ...evidence };
 		return { action: route, reason: timing.reason, until: timing.until, ...evidence };
 	}
 	return { action: route, reason: advisorReason, until: null, ...NO_EVIDENCE };
+}
+
+/** The moment stage's reasons that rest on the sell-now-or-wait comparison alone. */
+const COMPARISON_REASONS: ReadonlySet<PositionRecommendationReasonCode> = new Set([
+	'wait_advantage_demonstrated', 'no_demonstrated_wait_advantage', 'wait_evidence_insufficient',
+]);
+
+function modeOf(route: 'sell' | 'list'): SellOrWaitMode {
+	return route === 'sell' ? 'instant' : 'listing';
 }
 
 /**

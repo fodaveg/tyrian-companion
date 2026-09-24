@@ -24,6 +24,7 @@ import {
 import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
+import { sellOrWaitForQuantity } from '../economy/sell-or-wait';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import type { ReservationGoal } from '../economy/reservation-model';
 import {
@@ -289,9 +290,9 @@ export class InventoryAnalysisService {
 				const timing = (positionsByRef.get(decision.explanationRef) ?? [])
 					.map((positionId) => timingByPositionId.get(positionId))
 					.find((entry) => entry !== undefined && entry.freeQuantity !== null && entry.freeQuantity > 0)?.timing ?? null;
-				decisions[decision.explanationRef] = decideInventoryObjectRoute(
+				decisions[decision.explanationRef] = forQuantity(decideInventoryObjectRoute(
 					inventoryObjectRoute(decision.action), primaryReason(reasonCodes), timing,
-				);
+				), decision.quantity);
 			}
 		}
 
@@ -318,7 +319,7 @@ export class InventoryAnalysisService {
 				const actionable = free.filter((slice) => isActNowInventoryDecision(decisions[slice.ref]!.action))
 					.reduce((total, slice) => total + slice.quantity, 0);
 				positions[core.positionId] = {
-					...decisions[primary.ref]!, ...split, actionableQuantity: Math.min(actionable, freeQuantity),
+					...forQuantity(decisions[primary.ref]!, freeQuantity), ...split, actionableQuantity: Math.min(actionable, freeQuantity),
 				};
 			}
 		}
@@ -396,6 +397,9 @@ export async function inventoryVaultSyncInputFromAnalysis(
 			priceCoverageDays: result.priceCoverageDays,
 			priceQuotedAt: result.priceQuotedAt,
 			priceHistoryLastDay: result.priceHistoryLastDay,
+			sellWindowFromDay: result.sellWindowFromDay,
+			sellWindowToDay: result.sellWindowToDay,
+			sellOrWait: result.sellOrWait,
 			reservedQuantity: result.reservedQuantity,
 			freeQuantity: result.freeQuantity,
 			actionableQuantity: result.actionableQuantity,
@@ -488,6 +492,15 @@ function protectionOf(
 	if (action !== 'keep') return null;
 	if (reasonCodes.includes('reserved_for_goal')) return 'goal';
 	return reasonCodes.includes('user_keep_exception') ? 'keep' : null;
+}
+
+/**
+ * H18.19: the sell-now-or-wait comparison restated for the units this surface shows. The moment
+ * stage compares one note's free quantity; an advisor row covers its own quantity, and a note reads
+ * the row that covers most of it, so each states the advantage for exactly its own units.
+ */
+function forQuantity(decision: InventoryObjectDecisionV1, quantity: number): InventoryObjectDecisionV1 {
+	return decision.sellOrWait === null ? decision : { ...decision, sellOrWait: sellOrWaitForQuantity(decision.sellOrWait, quantity) };
 }
 
 /** The advisor's leading reason for a decision; every public decision explains itself with one. */

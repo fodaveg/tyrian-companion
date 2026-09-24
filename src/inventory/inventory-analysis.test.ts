@@ -61,8 +61,10 @@ const SIGNAL = { minimumOfMaxBps: 9_000, referenceDays: 365, minimumReferenceDay
  * - 20: a keep exception on the whole stack. The advisor keeps it; at e693eba the notes ignored the
  *   preference and read `review`/`price_history_disabled` (or `sell` with history on).
  * - 21: a user goal reserving 3 of 5. Three kept for the goal, two sold now.
- * - 22: a festival item outside its selling window, today's bid well below its yearly high: the
- *   advisor's route is to sell, the moment is to wait for the season.
+ * - 22: a festival item outside its selling window, today's bid well below its yearly high. Until
+ *   H18.19 the moment was to wait for the season on the calendar's word; now nothing demonstrates
+ *   that waiting pays (36 days of history, and no curated start for the 2027 edition), so every
+ *   surface sells it now with "not enough data" as the reason.
  * - 23: a plain item without enough history: sold now, with no demonstrated advantage in waiting.
  */
 describe('one result per object: the advisor view, the notes and the Base agree (H18.14)', () => {
@@ -87,7 +89,10 @@ describe('one result per object: the advisor view, the notes and the Base agree 
 		expect(rowFor(rows, 21, 'keep')).toMatchObject({ quantity: 3, decision: { action: 'keep', reason: 'reserved_for_goal' } });
 		expect(rowFor(rows, 21, 'sell')).toMatchObject({ quantity: 2, decision: { action: 'sell', reason: 'price_history_insufficient' } });
 		expect(rowFor(rows, 22, 'sell')).toMatchObject({
-			action: 'sell', decision: { action: 'sell_at_season', reason: 'seasonal_hold', until: '2027-10-01T00:00:00.000Z' },
+			action: 'sell', decision: {
+				action: 'sell', reason: 'wait_evidence_insufficient', until: '2026-12-20T12:15:00.000Z',
+				sellWindowFromDay: null, sellOrWait: { verdict: 'insufficient_data' },
+			},
 		});
 		expect(rowFor(rows, 23, 'sell')).toMatchObject({ decision: { action: 'sell', reason: 'price_history_insufficient' } });
 
@@ -101,14 +106,15 @@ describe('one result per object: the advisor view, the notes and the Base agree 
 			tc_reserved_quantity: 3, tc_free_quantity: 2, tc_actionable_quantity: 2,
 		});
 		expect(notes.get(22)).toMatchObject({
-			tc_recommendation: 'sell_at_season', tc_recommendation_reason: 'seasonal_hold',
-			tc_recommendation_until: '2027-10-01T00:00:00.000Z', tc_actionable_quantity: 0,
+			tc_recommendation: 'sell', tc_recommendation_reason: 'wait_evidence_insufficient',
+			tc_recommendation_until: '2026-12-20T12:15:00.000Z', tc_actionable_quantity: 5,
+			tc_sell_window_from: null, tc_sell_window_to: null, tc_wait_verdict: 'insufficient_data', tc_wait_mode: 'instant',
 		});
-		expect(notes.get(23)).toMatchObject({ tc_recommendation: 'sell', tc_actionable_quantity: 5 });
+		expect(notes.get(23)).toMatchObject({ tc_recommendation: 'sell', tc_actionable_quantity: 5, tc_wait_verdict: null });
 
 		// The Base, on those notes: sell now holds exactly the objects to act on now.
-		expect([...notes].filter(([, note]) => base.sellNow(note)).map(([itemId]) => itemId)).toEqual([21, 23]);
-		expect([...notes].filter(([, note]) => base.waitToSell(note)).map(([itemId]) => itemId)).toEqual([22]);
+		expect([...notes].filter(([, note]) => base.sellNow(note)).map(([itemId]) => itemId)).toEqual([21, 22, 23]);
+		expect([...notes].filter(([, note]) => base.waitToSell(note)).map(([itemId]) => itemId)).toEqual([]);
 
 		// And generically: the note's decision is the one of the view row that covers its free share
 		// (or its protected share, when nothing is free).
@@ -215,6 +221,24 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 		readStore.close();
 	});
 
+	it('H18.19: each surface states the sell-now-or-wait comparison for its own units, on the free quantity', async () => {
+		const port = recommendationPort({
+			readDaily: async (itemId) => dailySeries(itemId, 36, 300, 5, AS_OF_MS),
+			seasonalInputFor: () => ({ window: WINDOW, parameters: SIGNAL }),
+		});
+		const goals: ReservationGoal[] = [goal('build-24', 'Build', 24, 10)];
+		const { rows, input, notes } = await analyse([bank(24, 60, 0), character(24, 40, 'Alfa', 0)], { port, goals });
+		const note = (source: string) => input.positions.find((entry) => entry.itemId === 24 && entry.source === source);
+		// The goal holds 10 back; each note compares what it has free, the sale row what it sells.
+		const free = input.positions.map((entry) => entry.freeQuantity ?? 0);
+		expect(free.reduce((sum, value) => sum + value, 0)).toBe(90);
+		for (const source of ['bank', 'character']) {
+			expect(note(source)?.sellOrWait).toMatchObject({ verdict: 'insufficient_data', mode: 'instant', quantity: note(source)?.freeQuantity });
+		}
+		expect(rowFor(rows, 24, 'sell').decision?.sellOrWait).toMatchObject({ quantity: 90 });
+		expect(notes.get(24)).toMatchObject({ tc_wait_verdict: 'insufficient_data', tc_wait_mode: 'instant' });
+	});
+
 	it('touches the watch list and the seed download only for an inventory sync with price history on (decisions 3 and 4)', async () => {
 		for (const [enabled, refreshSeeds, expected] of [[false, true, 0], [true, false, 0], [true, true, 1]] as const) {
 			const updateDerivedWatchList = vi.fn(async () => undefined);
@@ -238,8 +262,9 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 /**
  * H18.1 (audit 2026-09-24 §3.A), now through the advisor: the chosen legendary targets become
  * reservation goals the advisor classifies like any other goal, so the view and the notes hold
- * back the same units. Every item sits inside a festival selling window with a quote today, so
- * without a reservation it reads `sell`/`seasonal_sell_window` (OTHER is that control).
+ * back the same units. Every item sits inside a festival selling window with a quote today above
+ * its rising history (H18.19: the price has to confirm the window), so without a reservation it
+ * reads `sell`/`seasonal_sell_window` (OTHER is that control).
  */
 describe('inventory analysis: legendary reservations through the advisor (H18.1)', () => {
 	const MATERIAL = 42;
@@ -267,7 +292,7 @@ describe('inventory analysis: legendary reservations through the advisor (H18.1)
 		options: { owned?: ReadonlyMap<number, number>; goals?: ReservationGoal[] } = {},
 	) {
 		const port = recommendationPort({
-			readDaily: async (itemId) => dailySeries(itemId, 36, 500, 0, AS_OF_MS),
+			readDaily: async (itemId) => dailySeries(itemId, 36, 300, 5, AS_OF_MS),
 			seasonalInputFor: () => ({ window: WINDOW, parameters: SIGNAL }),
 			legendaryTargetItemIds: () => targets,
 			legendaryMaterialsTable: () => table,

@@ -6,7 +6,7 @@ import {
 	type PositionRecommendationSeasonalInput,
 } from './inventory-position-recommendation';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
-import { seasonalWindowClosesAfterMs, seasonalWindowOpensAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
+import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 
 const CAPTURED_AT_MS = Date.parse('2026-09-11T12:00:00.000Z');
 const MAX_PRICE_AGE_MS = 900_000;
@@ -40,6 +40,7 @@ function baseInput(overrides: Partial<PositionRecommendationInput> = {}): Positi
 
 const NO_EVIDENCE = {
 	missing: null, pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+	sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null,
 } as const;
 
 const WINTER_WINDOW: SeasonalWindowV1 = {
@@ -226,9 +227,10 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M1, regla c)', () =>
 
 describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, regla b)', () => {
 	it('precedence: (b) decides even when capital is below the threshold that gates rule (c)', () => {
-		// 35 flat reference days plus today, all inside the window: `sell`/`seasonal_sell_window`
-		// fires regardless of how little capital is parked here.
-		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500);
+		// 35 rising reference days plus today at the top, all inside the window: `sell`/
+		// `seasonal_sell_window` fires regardless of how little capital is parked here. (H18.19: a
+		// flat series no longer confirms a window; the price has to.)
+		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, (index) => 300 + index * 10);
 		const result = recommendPosition(baseInput({
 			capturedAtMs: WINTER_CAPTURED_AT_MS, totalSellCopper: 1, capitalThresholdCopper: 1_000_000,
 			priceHistoryDaily: daily, seasonal: seasonalInput(),
@@ -244,18 +246,17 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, regla b)', (
 	 * (`evaluateSellSignal` decides `inSeason: true, signal: 'hold'` here — verified directly against
 	 * the unchanged `evaluateSellSignal`), the opposite of "sell now, it's the best moment".
 	 */
-	it('in season -> sell/seasonal_sell_window, with `until` at the CLOSE OF ITS OWN WINDOW, not Halloween\'s', () => {
-		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, () => 500);
+	it('in season, price confirming -> sell/seasonal_sell_window, suggesting ITS OWN window (across new year), not Halloween\'s', () => {
+		const daily = bidSeries(36, WINTER_CAPTURED_AT_MS, (index) => 300 + index * 10);
 		const result = recommendPosition(baseInput({
 			capturedAtMs: WINTER_CAPTURED_AT_MS, priceHistoryDaily: daily, seasonal: seasonalInput(),
 		}));
 		const expectedCloses = seasonalWindowClosesAfterMs(WINTER_WINDOW, WINTER_CAPTURED_AT_MS);
 		expect(result).toMatchObject({ action: 'sell', reason: 'seasonal_sell_window' });
-		expect(result.until).toBe(new Date(expectedCloses!).toISOString());
-		// Distinct from what Halloween's own window would have said for the same instant.
-		expect(result.until).not.toBe(new Date(seasonalWindowClosesAfterMs(
-			{ version: 1, seasonId: 'halloween', opensOn: '10-01', closesOn: '11-15', returnsInMonth: 10 }, WINTER_CAPTURED_AT_MS,
-		)!).toISOString());
+		// H18.19: the window is its own clock; `until` is the analysis' validity.
+		expect(result).toMatchObject({ sellWindowFromDay: '2026-12-15', sellWindowToDay: '2027-01-10' });
+		expect(Date.parse(`${result.sellWindowToDay!}T00:00:00Z`) + 86_400_000).toBe(expectedCloses);
+		expect(result.until).toBe(new Date(WINTER_CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
 	});
 
 	it('out of season, bid clears the reference -> sell/bid_above_reference, until the ordinary price expiry', () => {
@@ -268,17 +269,20 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, regla b)', (
 		expect(result.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
 	});
 
-	it('out of season, no qualifying bid -> sell_at_season/seasonal_hold, until the window\'s NEXT open (never falls through to rule (c))', () => {
+	it('out of season, no qualifying bid and no demonstrated wait -> sells now with its reason (never falls through to rule (c))', () => {
 		// Flat reference at 500, today far below it: out of season for the winter window (default
 		// `CAPTURED_AT_MS` is September), today does not clear the 90 % sell threshold. Before the
 		// M3 fix this landed on rule (c) via `evaluateSellSignal`'s `none`; the fix removes that
-		// fall-through entirely for an item with a calendar entry.
+		// fall-through entirely for an item with a calendar entry. H18.19: it used to wait for the
+		// window's next open on the calendar's word alone; 41 days prove nothing about waiting.
 		const daily = bidSeries(42, CAPTURED_AT_MS, (index) => (index === 41 ? 100 : 500));
 		const withoutSeasonal = recommendPosition(baseInput({ priceHistoryDaily: daily }));
 		const withSeasonal = recommendPosition(baseInput({ priceHistoryDaily: daily, seasonal: seasonalInput() }));
-		const expectedOpens = seasonalWindowOpensAfterMs(WINTER_WINDOW, CAPTURED_AT_MS);
-		expect(withSeasonal).toMatchObject({ action: 'sell_at_season', reason: 'seasonal_hold' });
-		expect(withSeasonal.until).toBe(new Date(expectedOpens!).toISOString());
+		expect(withSeasonal).toMatchObject({
+			action: 'sell', reason: 'wait_evidence_insufficient', sellWindowFromDay: null, sellWindowToDay: null,
+			sellOrWait: { verdict: 'insufficient_data' },
+		});
+		expect(withSeasonal.until).toBe(new Date(CAPTURED_AT_MS + MAX_PRICE_AGE_MS).toISOString());
 		expect(withSeasonal).not.toEqual(withoutSeasonal);
 	});
 
@@ -318,27 +322,28 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, regla b)', (
  * concrete dates, per the M3 fix's own closing criterion.
  */
 describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, real festival calendar dates)', () => {
-	it('saco, 15 May (inside its window), price at the floor -> sell/seasonal_sell_window, until 1 June 00:00 UTC', () => {
+	it('saco, 15 May (inside its window), price confirming -> sell/seasonal_sell_window, window 1-31 May', () => {
 		const capturedAtMs = Date.parse('2026-05-15T12:00:00.000Z');
-		const daily = bidSeries(36, capturedAtMs, () => 500);
+		const daily = bidSeries(36, capturedAtMs, (index) => 300 + index * 10);
 		const result = recommendPosition(baseInput({
 			capturedAtMs, priceHistoryDaily: daily,
 			seasonal: seasonalInput({ window: SACO_WINDOW }),
 		}));
-		expect(result).toMatchObject({ action: 'sell', reason: 'seasonal_sell_window' });
+		expect(result).toMatchObject({
+			action: 'sell', reason: 'seasonal_sell_window', sellWindowFromDay: '2026-05-01', sellWindowToDay: '2026-05-31',
+		});
 		expect(seasonalWindowClosesAfterMs(SACO_WINDOW, capturedAtMs)).toBe(Date.parse('2026-06-01T00:00:00.000Z'));
-		expect(result.until).toBe('2026-06-01T00:00:00.000Z');
+		expect(result.until).toBe(new Date(capturedAtMs + MAX_PRICE_AGE_MS).toISOString());
 	});
 
-	it('saco, 11 September (outside its window), price at the floor -> sell_at_season, until 1 May NEXT YEAR 00:00 UTC', () => {
+	it('saco, 11 September (outside its window), price at the floor, nothing demonstrating a wait -> sells now, no window', () => {
 		const capturedAtMs = CAPTURED_AT_MS; // 2026-09-11
 		const daily = bidSeries(42, capturedAtMs, (index) => (index === 41 ? 100 : 500));
 		const result = recommendPosition(baseInput({
 			capturedAtMs, priceHistoryDaily: daily,
 			seasonal: seasonalInput({ window: SACO_WINDOW }),
 		}));
-		expect(result).toMatchObject({ action: 'sell_at_season', reason: 'seasonal_hold' });
-		expect(result.until).toBe('2027-05-01T00:00:00.000Z');
+		expect(result).toMatchObject({ action: 'sell', reason: 'wait_evidence_insufficient', sellWindowFromDay: null });
 	});
 
 	it('Jorcamelo, 11 September (outside its window), bid clears the sell threshold -> sell/bid_above_reference', () => {
@@ -352,15 +357,18 @@ describe('recommendPosition (SPEC-recomendacion-por-objeto, M3 fix, real festiva
 		expect(result.until).toBe(new Date(capturedAtMs + MAX_PRICE_AGE_MS).toISOString());
 	});
 
-	it('barra de caramelo, 10 October (inside its window) -> sell/seasonal_sell_window', () => {
+	it('barra de caramelo, 10 October (inside its window), price confirming -> sell/seasonal_sell_window', () => {
 		const capturedAtMs = Date.parse('2026-10-10T12:00:00.000Z');
-		const daily = bidSeries(36, capturedAtMs, () => 500);
+		const daily = bidSeries(36, capturedAtMs, (index) => 300 + index * 10);
 		const result = recommendPosition(baseInput({
 			capturedAtMs, priceHistoryDaily: daily,
 			seasonal: seasonalInput({ window: CARAMEL_BAR_WINDOW }),
 		}));
-		expect(result).toMatchObject({ action: 'sell', reason: 'seasonal_sell_window' });
-		expect(result.until).toBe(new Date(seasonalWindowClosesAfterMs(CARAMEL_BAR_WINDOW, capturedAtMs)!).toISOString());
+		expect(result).toMatchObject({
+			action: 'sell', reason: 'seasonal_sell_window', sellWindowFromDay: '2026-10-05', sellWindowToDay: '2026-10-24',
+		});
+		expect(Date.parse(`${result.sellWindowToDay!}T00:00:00Z`) + 86_400_000)
+			.toBe(seasonalWindowClosesAfterMs(CARAMEL_BAR_WINDOW, capturedAtMs));
 	});
 });
 
@@ -467,13 +475,14 @@ describe('recommendPosition: today\'s price separated from the history (H18.2)',
 	});
 
 	it('rule (b) reads today\'s quote, not a local close already recorded for today', () => {
-		// 41 flat days at 500 then a local close of 100 for today; out of the winter window.
-		const daily = bidSeries(42, CAPTURED_AT_MS, (index) => (index === 41 ? 100 : 500));
+		// 41 days rising 100..500 then a local close of 100 for today; out of the winter window.
+		const daily = bidSeries(42, CAPTURED_AT_MS, (index) => (index === 41 ? 100 : 100 + index * 10));
 		const quoteClears = recommendPosition(baseInput({ priceHistoryDaily: daily, seasonal: seasonalInput(), todayBidCopper: 480 }));
 		expect(quoteClears).toMatchObject({ action: 'sell', reason: 'bid_above_reference' });
 		const flatLocal = bidSeries(42, CAPTURED_AT_MS, () => 500);
 		const quoteFloor = recommendPosition(baseInput({ priceHistoryDaily: flatLocal, seasonal: seasonalInput(), todayBidCopper: 100 }));
-		expect(quoteFloor).toMatchObject({ action: 'sell_at_season', reason: 'seasonal_hold' });
+		// H18.19: a quote at the floor is no opportunity, and nothing demonstrates a wait either.
+		expect(quoteFloor).toMatchObject({ action: 'sell', reason: 'wait_evidence_insufficient' });
 		expect(quoteFloor.priceQuotedAt).toBe(new Date(CAPTURED_AT_MS).toISOString());
 		expect(quoteFloor.priceHistoryLastDay).toBe(new Date(CAPTURED_AT_MS - DAY_MS).toISOString().slice(0, 10));
 	});

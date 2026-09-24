@@ -108,6 +108,7 @@ import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from '.
 import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
 import { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import { fetchPriceSeed } from './economy/price-seed-source';
+import { sellOrWaitSeedMaxDays } from './economy/sell-or-wait';
 import type { PriceSeedV1 } from './economy/price-seed-model';
 import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
@@ -867,7 +868,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 			factory: window.indexedDB,
 			vaultId,
 			now: () => Date.now(),
-			fetchSeed: async (itemId, actionContext) => await fetchPriceSeed(itemId, { transport, now: () => Date.now(), actionContext }),
+			// H18.19: a festival-calendar item keeps its whole published history, not the sell rule's
+			// year: the sell-now-or-wait comparison grades waiting on seasons back to 2014. The response
+			// is the full series either way; only what is kept after parsing changes.
+			fetchSeed: async (itemId, actionContext) => {
+				const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+				const calendar = loaded.status === 'available' ? loaded.bundle.festivalCalendar : null;
+				return await fetchPriceSeed(itemId, {
+					transport, now: () => Date.now(), actionContext, maxDays: sellOrWaitSeedMaxDays(calendar, itemId),
+				});
+			},
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		const refreshHalloweenBackfill = (file: unknown, oldPath?: string): void => {
