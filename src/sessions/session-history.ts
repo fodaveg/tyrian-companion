@@ -28,6 +28,14 @@ export interface SessionHistoryVault {
 	create(path: string, content: string): Promise<SessionHistoryFile>;
 }
 
+/** One already-rendered gains line, read back from the note's own results table (H18.10): the
+ *  durable history has no runtime to revalue from, only the strings the session already wrote. */
+export interface DurableSessionLootLine {
+	readonly name: string;
+	readonly netQuantity: number;
+	readonly immediateLabel: string;
+}
+
 export interface DurableSessionHistoryRecord {
 	sessionRef: string;
 	accountRef: string;
@@ -51,6 +59,8 @@ export interface DurableSessionHistoryRecord {
 	recommendationAction: string | null;
 	recommendationQuantity: number | null;
 	recommendationRoute: string | null;
+	/** Empty when the results table could not be read back; never blocks the rest of the record. */
+	lootRows: readonly DurableSessionLootLine[];
 }
 
 export interface DurableSessionNoteEvidence {
@@ -454,6 +464,10 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4;
 	const positiveItemDeltas = carriesItemDeltas ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
 	if (carriesItemDeltas && positiveItemDeltas === null) return { status: 'invalid' };
+	// The results table is read back the same way `readSession` already does for a single note
+	// (H9.5); this just reuses that codec here too, so the history scan carries the gains list
+	// without a second Vault-wide pass (H18.10).
+	const lootSummary = await inspectStoredSessionLootSummary(content);
 	return { status: 'ok', session: {
 		sessionRef, accountRef,
 		activity: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
@@ -466,6 +480,7 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 		listingCopperPerHour: numberOrNull(fm.tc_listing_copper_per_hour), recommendationStatus: stringOr(fm.tc_recommendation_status),
 		recommendationAction: nullableString(fm.tc_recommendation_action), recommendationQuantity: numberOrNull(fm.tc_recommendation_quantity),
 		recommendationRoute: nullableString(fm.tc_recommendation_route),
+		lootRows: lootSummary?.rows ?? [],
 	}, evidence: {
 		schema: fm.tc_schema,
 		event: fm.tc_schema === 1 ? null : fm.tc_event as 'halloween' | null,
@@ -593,8 +608,8 @@ function serializeJson(sessions: readonly DurableSessionHistoryRecord[]): string
 	}, null, 2)}\n`;
 }
 
-/** Export v1 is an explicit allowlist; local activity/build dimensions never cross this boundary. */
-function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build'> {
+/** Export v1 is an explicit allowlist; local activity/build/loot-row dimensions never cross this boundary. */
+function exportSession(session: DurableSessionHistoryRecord): Omit<DurableSessionHistoryRecord, 'activity' | 'build' | 'lootRows'> {
 	return {
 		sessionRef: session.sessionRef,
 		accountRef: session.accountRef,
@@ -625,7 +640,7 @@ function serializeCsv(sessions: readonly DurableSessionHistoryRecord[]): string 
 	return `${rows.join('\r\n')}\r\n`;
 }
 function valueForColumn(session: DurableSessionHistoryRecord, column: typeof CSV_COLUMNS[number]): string | number | null {
-	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as keyof DurableSessionHistoryRecord;
+	const key = column.replace(/_([a-z])/gu, (_, letter: string) => letter.toUpperCase()) as Exclude<keyof DurableSessionHistoryRecord, 'lootRows'>;
 	return session[key];
 }
 /** RFC-style quoting plus spreadsheet formula protection after invisible prefixes. */

@@ -150,19 +150,24 @@ describe('a closed session publishes real money in its note', () => {
 		expect(session.sacks).toBe(SACKS_GAINED);
 		expect(session.observedImmediateCopper).not.toBeNull();
 
-		// Grouping happens before those filters and needs a declared activity. Nothing in the
-		// runtime declares one for a manually started session, so the activity is supplied here to
-		// measure the economic filters; without it every session lands in `missingContextSessions`.
+		// Grouping happens before those filters and needs a declared build (H18.10): a manually
+		// started session never declares an activity, but it still groups on its own under
+		// `general` instead of disappearing into `missingContextSessions`. The activity is
+		// supplied here too, to measure that Halloween and a manual farm never share one average.
 		const grouped = buildSessionHistoryAggregate([
 			{ ...session, sessionRef: 'a'.repeat(64), activity: 'halloween' },
 			{ ...session, sessionRef: 'b'.repeat(64), activity: 'halloween' },
 		]);
 		expect(grouped.performance.groups).toHaveLength(1);
 		expect(grouped.performance.groups[0]).toMatchObject({
-			build: 'Farm', eligibleSessions: 2, status: 'ready', exclusions: [],
+			activity: 'halloween', build: 'Farm', eligibleSessions: 2, status: 'ready', exclusions: [],
 			sacksPerHourMilli: SACKS_GAINED * 1_000,
 		});
-		expect(buildSessionHistoryAggregate([session]).performance.missingContextSessions).toBe(1);
+		const soloGeneral = buildSessionHistoryAggregate([session]);
+		expect(soloGeneral.performance.missingContextSessions).toBe(0);
+		expect(soloGeneral.performance.groups).toContainEqual(expect.objectContaining({
+			activity: 'general', build: 'Farm', sessionCount: 1, status: 'insufficient_sample',
+		}));
 	});
 
 	it('resolves the catalog for the gained items only', async () => {
