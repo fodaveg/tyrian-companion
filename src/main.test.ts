@@ -16,7 +16,7 @@ import TyrianCompanionPlugin, { type SettingsUpdateResult } from './main';
 import { ConnectionService, type ConnectionState } from './account/connection-service';
 import type { LocalDebugRecordInput } from './core/local-debug-contract';
 import { createTranslator } from './core/i18n';
-import { genericManagedAssets } from './assets/generic-assets';
+import { genericManagedAssets, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './assets/managed-assets';
 import { ManagedAssetsLifecycle } from './assets/managed-assets-lifecycle';
 import { MemoryManagedAssetsPointerStore } from './assets/managed-assets-pointer';
@@ -1414,6 +1414,76 @@ describe('managed-assets root reconciliation', () => {
 		expect(harness.settings.managedAssetsRoot).toBe('Home');
 		expect(vault.writeCount).toBe(before);
 	});
+});
+
+describe('automatic Base update behind the inventory sync (H18.18)', () => {
+	const BASE = 'Home/Bases/Sessions.base';
+
+	async function installed(syncStatus: 'success' | 'error' = 'success') {
+		const vault = new MemoryAssetVault();
+		const manager = await buildManagedAssetsManager(vault);
+		const harness = buildManagedAssetsRootHarness(manager, { ...DEFAULT_SETTINGS, outputFolder: 'Home' });
+		await harness.applyManagedAssets();
+		const notices: string[] = [];
+		const plugin = Object.assign(harness, {
+			managedAssets: manager,
+			managedAssetsAutoUpdateWarned: false,
+			inventoryVaultSyncRun: {
+				invalidate: () => undefined,
+				current: () => ({ status: 'idle' as const, lastRun: {
+					status: syncStatus, finishedAt: '2026-09-24T10:00:00.000Z', durationMs: 1, summary: null,
+					error: syncStatus === 'success' ? null : 'write_unavailable' as const,
+				} }),
+			},
+			emitNotice: (_message: string, source: string) => { notices.push(source); },
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const update = (TyrianCompanionPlugin.prototype as unknown as {
+			updateManagedAssetsAfterInventorySync(this: typeof plugin): Promise<void>;
+		}).updateManagedAssetsAfterInventorySync;
+		return { vault, manager, plugin, notices, update: () => update.call(plugin) };
+	}
+
+	it('brings an untouched Base up to the newer plugin after a successful sync, through the Settings apply path', async () => {
+		const { vault, manager, plugin, notices, update } = await installed();
+		await update();
+		expect(notices).toEqual([]);
+
+		manager.setBundle(await newerBundle());
+		await update();
+		expect(vault.contents.get(BASE)).toContain('version=99');
+		expect(plugin.settings.managedAssetsRoot).toBe('Home');
+		expect(notices).toEqual(['managed_assets_updated']);
+	});
+
+	it('leaves an edited Base alone, keeps the manual preview ready and warns once per plugin load', async () => {
+		const { vault, manager, plugin, notices, update } = await installed();
+		vault.contents.set(BASE, `${vault.contents.get(BASE)!}\nhuman edit`);
+		manager.setBundle(await newerBundle());
+
+		await update();
+		await update();
+		expect(vault.contents.get(BASE)).toContain('human edit');
+		expect(vault.contents.get(BASE)).not.toContain('version=99');
+		expect(plugin.managedAssetsView).toMatchObject({ status: 'ready', message: 'preview_blocked', plan: { canApply: false } });
+		expect(notices).toEqual(['managed_assets_blocked']);
+	});
+
+	it('writes nothing after a sync that did not succeed', async () => {
+		const { vault, manager, notices, update } = await installed('error');
+		manager.setBundle(await newerBundle());
+		const before = vault.writeCount;
+		await update();
+		expect(vault.writeCount).toBe(before);
+		expect(notices).toEqual([]);
+	});
+
+	async function newerBundle() {
+		const [asset] = await genericManagedAssets();
+		if (!asset) throw new Error('missing generic-assets fixture');
+		const bytes = asset.bytes.replace(/version=\d+/u, 'version=99');
+		return { bundleVersion: 99, locale: 'es' as const, assets: [{ ...asset, contentVersion: 99, bytes, contentHash: await sha256Text(bytes) }] };
+	}
 });
 
 async function flush(): Promise<void> {

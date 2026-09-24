@@ -8,7 +8,9 @@ import {
 	formatInventoryAdvisorLocation,
 	groupInventoryAdvisorRows,
 	inventoryAdvisorCharacters,
+	inventoryAdvisorScopeSummary,
 	inventoryAdvisorValueConcentration,
+	prioritizeInventoryAdvisorRowsBySpace,
 	inventoryAdvisorViewLayout,
 	renderInventoryAdvisorView,
 	renderInventoryAdvisorViewFromPort,
@@ -46,6 +48,73 @@ describe('Inventory Advisor view', () => {
 			// Advanced filters, the two salvage disclosures, the sync breakdown and the folded price history.
 			expect(find(mount.elements(), 'details')).toHaveLength(5);
 		});
+
+	it.each([
+		['es', '1432 / al menos 1500 · hueco antes: 68 · mínimo visto en tu almacén'],
+		['en', '1432 / at least 1500 · room before: 68 · minimum seen in your storage'],
+	] as const)('shows an observed material capacity as a floor, never as the real capacity, in %s (H18.15)', (locale, expected) => {
+		const mount = render({
+			status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready', optionalSources: null,
+			groups: [{ key: 'curated', rows: [row({
+				itemId: 19_700, name: 'Mineral', action: 'deposit_material', quantity: 68,
+				value: { status: 'not_applicable', route: null },
+				materialStorage: { capacity: 1_500, capacitySource: 'observed_minimum', storedQuantity: 1_432, spaceBefore: 68 },
+			})] }],
+		}, locale);
+		expect(withText(mount.elements(), expected).length).toBeGreaterThan(0);
+	});
+
+	it('says what the default list shows and how many objects it leaves out, and why (H18.18)', () => {
+		const model = scopeModel();
+		const rows = model.groups.flatMap((group) => group.rows);
+		expect(inventoryAdvisorScopeSummary(rows, { query: '', action: 'all', groupBy: 'action' })).toEqual({
+			sources: ['bags'], character: null, outsideItems: 4, outsideReasons: ['bank', 'materials', 'keep', 'review'],
+		});
+		// A stack split between the bags and the bank is visible, so it is never counted as outside.
+		expect(inventoryAdvisorScopeSummary(rows, {
+			query: '', action: 'all', groupBy: 'action', includeBank: true, includeMaterials: true, showKeep: true, showReview: true,
+		})).toEqual({ sources: ['bags', 'bank', 'materials'], character: null, outsideItems: 0, outsideReasons: [] });
+		expect(inventoryAdvisorScopeSummary(rows, { query: 'zzz', action: 'all', groupBy: 'action' }).outsideReasons)
+			.toEqual(['bank', 'materials', 'keep', 'review', 'filters']);
+
+		expect(withText(render(model, 'es').elements(),
+			'Mostrando: bolsas y almacén compartido · 4 objetos fuera del filtro (banco, materiales, conservar, revisar)'))
+			.toHaveLength(1);
+		expect(withText(render(model, 'en').elements(),
+			'Showing: bags and shared inventory · 4 items outside the filter (bank, materials, keep, review)'))
+			.toHaveLength(1);
+	});
+
+	it('shows free slots, the low-space verdict and the material floor, and orders by space only when low (H18.15)', () => {
+		const heavy = row({ id: '#/explanations/1/0', itemId: 1, name: 'Oro', action: 'sell', slotsFreed: 0,
+			value: { status: 'available', copper: 90_000, route: 'instant_sell' } });
+		const bulky = row({ id: '#/explanations/2/0', itemId: 2, name: 'Bulto', action: 'vendor', slotsFreed: 2,
+			value: { status: 'available', copper: 50, route: 'vendor' } });
+		expect(prioritizeInventoryAdvisorRowsBySpace([heavy, bulky], { isLow: true }).map((entry) => entry.name))
+			.toEqual(['Bulto', 'Oro']);
+		expect(prioritizeInventoryAdvisorRowsBySpace([heavy, bulky], { isLow: false }).map((entry) => entry.name))
+			.toEqual(['Oro', 'Bulto']);
+		expect(prioritizeInventoryAdvisorRowsBySpace([heavy, bulky], null).map((entry) => entry.name))
+			.toEqual(['Oro', 'Bulto']);
+
+		const low = storageModel([heavy, bulky], true);
+		const mount = render(low, 'es');
+		const copy = text(mount.elements());
+		expect(copy).toContain('Huecos libres: bolsas 3/30 · banco 4/30 · almacén compartido sin datos');
+		expect(copy).toContain('Poco espacio: 7 huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.');
+		expect(copy).toContain('Materiales: al menos 1500 por material (mínimo visto en tu almacén)');
+		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('53');
+		// The table lists the slot-freeing row first and says what it frees.
+		const tableNames = find(mount.elements(), 'th').filter((cell) => cell.scope === 'row').map((cell) => text(walk(cell)).trim());
+		expect(tableNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Bulto', 'Oro']);
+		expect(copy).toContain('2 huecos');
+
+		const plenty = render(storageModel([heavy, bulky], false), 'en');
+		const plentyNames = find(plenty.elements(), 'th').filter((cell) => cell.scope === 'row').map((cell) => text(walk(cell)).trim());
+		expect(plentyNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
+		expect(text(plenty.elements())).toContain('Plenty of space: 7 free slots across bags and bank (warning at 5 or fewer). Gold comes first.');
+		expect(text(plenty.elements())).not.toContain('2 slots');
+	});
 
 	it('renders the Exotic uncertainty as review without a numeric EV', () => {
 		const model = equipmentSalvageModel();
@@ -215,6 +284,8 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__sync-confirm',
 			'tyrian-inventory-advisor__sell-signal',
 			'tyrian-inventory-advisor__state',
+			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
+			'tyrian-inventory-advisor__keep-status',
 			'tyrian-inventory-advisor__results',
 			'tyrian-inventory-advisor__sync-status',
 			'tyrian-inventory-advisor__preferences',
@@ -222,7 +293,8 @@ describe('Inventory Advisor view', () => {
 		];
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
-		expect(text(walk(mount.section.children[5]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[5]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[6]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,
@@ -1326,6 +1398,40 @@ function allStatesAndActionsModel(): InventoryAdvisorViewModel {
 			action,
 			coverage: coverage(index % 3 === 0 ? 'complete' : index % 3 === 1 ? 'limited' : 'unknown'),
 		})) }],
+	};
+}
+
+/** One object per scope case: in the bags, in the bank only, split, in materials, kept, pending review. */
+function scopeModel(): InventoryAdvisorViewModel {
+	const bank = (slot: number, quantity: number): InventoryAdvisorViewRow['allocations'][number] => ({
+		positionRef: `#/positions/bank/${String(slot)}`, quantity, location: { source: 'bank', slot },
+	});
+	return {
+		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready',
+		optionalSources: { bank: { status: 'complete' }, materials: { status: 'complete' }, delivery: { status: 'complete' } },
+		groups: [{ key: 'market', rows: [
+			row({ id: '#/explanations/1/0', itemId: 1, name: 'En bolsas', action: 'sell' }),
+			row({ id: '#/explanations/2/0', itemId: 2, name: 'Solo banco', action: 'sell', quantity: 4, allocations: [bank(0, 4)] }),
+			row({ id: '#/explanations/3/0', itemId: 3, name: 'Repartido', action: 'sell', quantity: 7,
+				allocations: [allocation('#/positions/3/0', 3), bank(1, 4)] }),
+			row({ id: '#/explanations/4/0', itemId: 4, name: 'Material', action: 'sell', quantity: 250, allocations: [{
+				positionRef: '#/positions/4/0', quantity: 250, location: { source: 'materials', category: 5 },
+			}] }),
+			row({ id: '#/explanations/5/0', itemId: 5, name: 'Guardado', action: 'keep' }),
+			row({ id: '#/explanations/6/0', itemId: 6, name: 'Pendiente', action: 'review' }),
+		] }],
+	};
+}
+
+function storageModel(rows: InventoryAdvisorViewRow[], low: boolean): InventoryAdvisorViewModel {
+	return {
+		status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready', optionalSources: null,
+		storageSpace: {
+			bags: { free: 3, total: 30 }, bank: { free: 4, total: 30 }, sharedInventory: null,
+			lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: low ? 20 : 5, isLow: low },
+			materialCapacity: { quantity: 1_500, source: 'observed_minimum' },
+		},
+		groups: [{ key: 'market', rows }],
 	};
 }
 

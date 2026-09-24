@@ -2,6 +2,7 @@ import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import type { CatalogResolution } from '../catalog/public-catalog-model';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryRecommendationEnvelopeV1 } from '../economy/inventory-recommendation-envelope';
+import type { MaterialStorageCapacitySource } from '../economy/material-storage-deposit-validation';
 
 export const INVENTORY_ADVISOR_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_SCOPE = 'supported_storage_v1' as const;
@@ -297,7 +298,7 @@ export interface InventoryEquipmentSalvageProofV1 {
 
 export interface InventoryMaterialStorageDecisionContextV1 {
 	capacity: number;
-	capacitySource: 'configured' | 'minimum_guaranteed';
+	capacitySource: MaterialStorageCapacitySource;
 	storedQuantity: number;
 	spaceBefore: number;
 }

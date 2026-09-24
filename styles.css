@@ -1858,6 +1858,35 @@
 	border-block: 1px solid var(--background-modifier-border);
 }
 
+/* H18.15/H18.18: free slots, the low-space verdict, the material floor and the list's scope. */
+.tyrian-inventory-advisor__storage-space {
+	margin-block: var(--size-4-3);
+	display: grid;
+	gap: var(--size-4-1);
+}
+
+.tyrian-inventory-advisor__storage-space p,
+.tyrian-inventory-advisor__scope-summary {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-inventory-advisor__storage-meter {
+	inline-size: 100%;
+}
+
+/* H18.18: "Conservar" on the row, next to its decision. */
+.tyrian-inventory-advisor__keep-button {
+	margin-inline-start: var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__storage-materials,
+.tyrian-inventory-advisor__keep-saved,
+.tyrian-inventory-advisor__scope-summary {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
 .tyrian-inventory-advisor__recommendation-summary {
 	margin-block: var(--size-4-3);
 	padding: var(--size-4-3);

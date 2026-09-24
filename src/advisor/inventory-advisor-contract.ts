@@ -8,7 +8,7 @@ import {
 	isNormalizedCatalogMaterial,
 } from '../catalog/public-catalog-validators';
 import { isReservationGoal } from '../economy/reservation';
-import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import { isMaterialStorageCapacity, materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import { EQUIPMENT_SALVAGE_POLICY_V1_SHA256 } from '../economy/equipment-salvage-economy';
 import {
@@ -474,9 +474,7 @@ function equipmentSalvageProofMatchesDecision(
 
 function isMaterialStorageContext(value: unknown): boolean {
 	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
-		&& bounded(value.capacity, 250, 3000) && value.capacity % 250 === 0
-		&& (value.capacitySource === 'configured' || value.capacitySource === 'minimum_guaranteed')
-		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& isMaterialStorageCapacity(value.capacity, value.capacitySource) && bounded(value.capacity, 250, 3000)
 		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
 		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
 }

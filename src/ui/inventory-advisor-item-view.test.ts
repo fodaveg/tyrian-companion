@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
+import type {
+	InventoryPreferencesEditorSession,
+	InventoryPreferencesEditorState,
+} from '../advisor/inventory-preferences-runtime';
 import type { InventoryVaultSyncLastRun } from '../core/settings';
 import type { PriceSeedQueueCoverage } from '../economy/price-seed-bulk-refresh';
 import type { PriceHistoryPanelSeedState } from '../economy/price-seed-panel-service';
@@ -111,6 +116,50 @@ describe('InventoryAdvisorItemView instance behavior', () => {
 		await Promise.resolve();
 		expect(analyzeButton.textContent).toBe('Analizar sin escribir');
 		expect(analyzeButton.disabled).toBe(false);
+	});
+
+	it('keeps an item from its row without typing its id, loading the preferences first (H18.18)', async () => {
+		installDom();
+		const session = preferenceSession([]);
+		const view = new InventoryAdvisorItemView({} as never, {
+			...actions(() => 'es').value, createInventoryPreferencesEditorSession: () => session.value,
+		});
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		const keep = find(root, 'button').filter((button) => button.attributes.get('aria-label') === 'Conservar Material');
+		// One per layout: the wide table and the narrow cards render the same row.
+		expect(keep).toHaveLength(2);
+
+		keep[0]!.dispatch('click');
+		for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+		expect(session.load).toHaveBeenCalledOnce();
+		expect(session.upsert).toHaveBeenCalledOnce();
+		expect(session.upsert.mock.calls[0]![0]).toMatchObject({
+			version: 1, itemId: 10, status: 'active', basis: 'available', quantity: { mode: 'all' }, reason: 'user_keep',
+		});
+		const body = text(root);
+		expect(body).toContain('Guardado: «Material» se conserva entero. Está en «Objetos para conservar».');
+		expect(body).toContain('Guardado para conservar');
+		expect(find(root, 'button').filter((button) => button.attributes.get('aria-label') === 'Conservar Material')).toHaveLength(0);
+	});
+
+	it('widens an existing keep exception instead of duplicating it, and leaves a whole-stack one alone (H18.18)', async () => {
+		installDom();
+		const minimum = { version: 1 as const, exceptionId: 'keep-10', itemId: 10, status: 'paused' as const,
+			basis: 'owned' as const, quantity: { mode: 'minimum' as const, value: 1 }, reason: 'build' as const };
+		const session = preferenceSession([minimum], 'ready');
+		const view = new InventoryAdvisorItemView({} as never, {
+			...actions(() => 'en').value, createInventoryPreferencesEditorSession: () => session.value,
+		});
+		await view.onOpen();
+		const root = view.contentEl as unknown as FakeElement;
+		find(root, 'button').find((button) => button.attributes.get('aria-label') === 'Keep Material')!.dispatch('click');
+		for (let tick = 0; tick < 6; tick += 1) await Promise.resolve();
+
+		expect(session.load).not.toHaveBeenCalled();
+		expect(session.upsert.mock.calls[0]![0]).toEqual({ ...minimum, status: 'active', quantity: { mode: 'all' } });
+		expect(text(root)).toContain('Saved to keep');
 	});
 
 	it('opens without capturing or writing, and a single click on the one guided button runs the whole sync once', async () => {
@@ -348,6 +397,25 @@ function actions(
 		cancelInventoryVaultSync: sync.cancel ?? (() => undefined),
 		hasManagedAssetsRoot: () => true,
 	} };
+}
+
+/** An editor session whose CAS store is an array: `upsert` replaces by exception id, like the real one. */
+function preferenceSession(initial: KeepExceptionV1[], status: 'not_loaded' | 'ready' = 'not_loaded') {
+	let keepExceptions = structuredClone(initial);
+	let loaded = status === 'ready';
+	const current = (): InventoryPreferencesEditorState => loaded
+		? { status: 'ready', goals: [], keepExceptions: structuredClone(keepExceptions) }
+		: { status: 'not_loaded', goals: [], keepExceptions: [] };
+	const load = vi.fn(async () => { loaded = true; return current(); });
+	const upsert = vi.fn(async (exception: KeepExceptionV1) => {
+		keepExceptions = [...keepExceptions.filter((entry) => entry.exceptionId !== exception.exceptionId), exception];
+		return current();
+	});
+	const value: InventoryPreferencesEditorSession = {
+		current, load, upsertKeepException: upsert,
+		upsertGoal: async () => current(), removeGoal: async () => current(), removeKeepException: async () => current(),
+	};
+	return { value, load, upsert };
 }
 
 function readyModel(): InventoryAdvisorViewModel {

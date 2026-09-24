@@ -13,6 +13,8 @@ export interface InventoryAdvisorViewRow {
 	action: InventoryAdvisorPresentationRow['action'];
 	/** H18.14: the row's decision in the one result per object; see `InventoryAdvisorPresentationRow`. */
 	decision?: InventoryAdvisorPresentationRow['decision'];
+	/** H18.15: whole slots this act-now row empties; see `InventoryAdvisorPresentationRow`. */
+	slotsFreed?: number;
 	quantity: number;
 	allocations: InventoryAdvisorPresentationRow['allocations'];
 	reasonCodes: InventoryAdvisorPresentationRow['reasonCodes'];
@@ -39,6 +41,8 @@ export interface InventoryAdvisorViewModel {
 	refreshWarning?: InventoryAdvisorWorkflowBlockedReason | 'unexpected_failure';
 	/** Redacted availability of opt-in stores; null until a trusted capture exists. */
 	optionalSources?: InventoryAdvisorPresentation['optionalSources'] | null;
+	/** H18.15: free slots, low-space state and material capacity of the analysis shown; null without one. */
+	storageSpace?: InventoryAdvisorPresentation['storageSpace'];
 	groups: InventoryAdvisorViewModelGroup[];
 	/**
 	 * Bumped only when the underlying content actually changes (a fresh capture, an
@@ -62,6 +66,9 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 		title: 'Inventory advisor',
 		detail: detailFor(presentation.status),
 		optionalSources: presentation.optionalSources === undefined ? null : structuredClone(presentation.optionalSources),
+		...(presentation.storageSpace === undefined ? {} : {
+			storageSpace: presentation.storageSpace === null ? null : structuredClone(presentation.storageSpace),
+		}),
 		groups: presentation.groups.map((group) => ({
 			key: group.group,
 			rows: group.rows.map((row) => ({
@@ -69,6 +76,7 @@ export function buildInventoryAdvisorViewModel(presentation: InventoryAdvisorPre
 				itemId: row.itemId, name: row.name, icon: row.icon, ownedQuantity: row.ownedQuantity, availableQuantity: row.availableQuantity,
 				action: row.action,
 				...(row.decision === undefined ? {} : { decision: row.decision === null ? null : { ...row.decision } }),
+				...(row.slotsFreed === undefined ? {} : { slotsFreed: row.slotsFreed }),
 				quantity: row.quantity, allocations: structuredClone(row.allocations),
 				reasonCodes: [...row.reasonCodes], protectionReasons: structuredClone(row.protectionReasons),
 				value: { ...row.value }, marketComparison: row.marketComparison === null ? null : { ...row.marketComparison },

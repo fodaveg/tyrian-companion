@@ -10,7 +10,10 @@ import {
 	type InventoryObjectPositionResultV1,
 	type InventoryObjectResultsV1,
 	type InventoryObjectRoute,
+	type InventoryObjectStorageSpaceV1,
 } from '../advisor/inventory-object-result';
+import { DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS } from '../core/settings';
+import { buildSlotClearingActions, resolveStorageSpaceState } from './storage-space';
 import type { PositionRecommendationSeasonalInput } from '../advisor/inventory-position-recommendation';
 import { buildLegendaryReservationGoals, type LegendaryReservationSplit } from '../economy/legendary-goals';
 import {
@@ -90,6 +93,8 @@ export interface InventoryPositionRecommendationPort {
 	 * targets are forged yet" (every target still gets a goal), the SAFER of the two guesses.
 	 */
 	readLegendaryArmoryCounts(): Promise<ReadonlyMap<number, number> | null>;
+	/** H18.15: settings' "low storage space" line in free slots (bags + bank). Read fresh per analysis. */
+	lowStorageSpaceThresholdFreeSlots(): number;
 }
 
 /**
@@ -109,6 +114,7 @@ const DEFAULT_RECOMMENDATION_PORT: InventoryPositionRecommendationPort = {
 	legendaryTargetItemIds: () => [],
 	legendaryMaterialsTable: () => null,
 	readLegendaryArmoryCounts: async () => null,
+	lowStorageSpaceThresholdFreeSlots: () => DEFAULT_LOW_STORAGE_SPACE_THRESHOLD_FREE_SLOTS,
 };
 
 const POSITION_RECOMMENDATION_REQUIRED_DAYS = 42;
@@ -322,6 +328,7 @@ export class InventoryAnalysisService {
 			decisions,
 			positions,
 			uncertainItemIds: sortedIds(uncertain),
+			storageSpace: storageSpaceOf(source, decisions, this.recommendation.lowStorageSpaceThresholdFreeSlots()),
 		};
 	}
 
@@ -410,6 +417,52 @@ function coresFromAnalysis(source: InventoryAdvisorContextualPresentationSource)
 function catalogUnavailable(source: InventoryAdvisorContextualPresentationSource): boolean {
 	const coverage = Object.values(source.input.catalog.coverage.items);
 	return Object.keys(source.input.snapshot.ownedByItem).length > 0 && coverage.every((entry) => entry.status === 'unavailable');
+}
+
+/**
+ * H18.15: the storage space of this analysis, from the same capture the decisions stand on.
+ * Free-slot counts are the capture's own (`StorageSnapshot.freeSlots`); a capture without them
+ * (older fixtures) reports every store as unknown rather than full or empty.
+ */
+function storageSpaceOf(
+	source: InventoryAdvisorContextualPresentationSource,
+	decisions: Readonly<Record<string, InventoryObjectDecisionV1>>,
+	thresholdFreeSlots: number,
+): InventoryObjectStorageSpaceV1 {
+	const input = source.input;
+	const freeSlots = input.snapshot.freeSlots;
+	const bags = freeSlots === undefined || freeSlots.characterBags.length === 0 ? null : {
+		free: freeSlots.characterBags.reduce((total, bag) => total + bag.free, 0),
+		total: freeSlots.characterBags.reduce((total, bag) => total + bag.total, 0),
+	};
+	const lowSpace = freeSlots === undefined ? null : resolveStorageSpaceState(freeSlots, thresholdFreeSlots);
+	const capacity = source.discardContext.engineInput.materialStorageCapacity;
+	const slotsFreedByDecision: Record<string, number> = {};
+	for (const line of source.result.report?.lines ?? []) for (const decision of line.decisions) {
+		const objectDecision = decisions[decision.explanationRef];
+		if (objectDecision === undefined || !isActNowInventoryDecision(objectDecision.action)) continue;
+		const cleared = decision.allocations.flatMap((allocation) => {
+			const holding = input.snapshot.holdings[holdingIndexOf(allocation.positionRef)];
+			if (holding?.kind !== 'item' || holding.quantity !== allocation.quantity) return [];
+			const location = holding.location;
+			if (location.source !== 'character' && location.source !== 'shared_inventory' && location.source !== 'bank') return [];
+			return [{
+				itemId: holding.itemId, source: location.source, quantity: allocation.quantity,
+				character: location.source === 'character' ? location.character : null,
+			}];
+		});
+		const slotsFreed = buildSlotClearingActions(cleared).reduce((total, action) => total + action.slotsFreed, 0);
+		if (slotsFreed > 0) slotsFreedByDecision[decision.explanationRef] = slotsFreed;
+	}
+	return {
+		bags,
+		bank: freeSlots?.bank === undefined || freeSlots.bank === null ? null : { ...freeSlots.bank },
+		sharedInventory: freeSlots?.sharedInventory === undefined || freeSlots.sharedInventory === null
+			? null : { ...freeSlots.sharedInventory },
+		lowSpace: lowSpace === null ? null : { ...lowSpace },
+		materialCapacity: capacity === undefined ? null : { ...capacity },
+		slotsFreedByDecision,
+	};
 }
 
 /** Per item, what the reservation plan of this analysis's goals still lacks and whether a legendary asks for it. */

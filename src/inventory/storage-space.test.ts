@@ -16,23 +16,30 @@ describe('resolveObservedMaterialStorageCapacity', () => {
 		});
 	});
 
-	it('floors at the guaranteed 250 when nothing observed exceeds it', () => {
-		expect(resolveObservedMaterialStorageCapacity(null, [{ quantity: 10 }, { quantity: 249 }])).toEqual({
+	it('keeps the guaranteed 250 as such when nothing observed exceeds it', () => {
+		expect(resolveObservedMaterialStorageCapacity(null, [{ quantity: 10 }, { quantity: 250 }])).toEqual({
 			quantity: 250,
-			source: 'minimum_observed',
+			source: 'minimum_guaranteed',
 		});
 	});
 
 	it('reports the largest quantity actually observed, never the invented 250', () => {
 		expect(resolveObservedMaterialStorageCapacity(null, [
 			{ quantity: 10 }, { quantity: 1_250 }, { quantity: 900 },
-		])).toEqual({ quantity: 1_250, source: 'minimum_observed' });
+		])).toEqual({ quantity: 1_250, source: 'observed_minimum' });
+	});
+
+	it('rounds a stack up to the next multiple of 250, the smallest capacity that can hold it', () => {
+		expect(resolveObservedMaterialStorageCapacity(null, [{ quantity: 1_432 }, { quantity: 251 }])).toEqual({
+			quantity: 1_500,
+			source: 'observed_minimum',
+		});
 	});
 
 	it('floors at 250 with no materials observed at all', () => {
 		expect(resolveObservedMaterialStorageCapacity(null, [])).toEqual({
 			quantity: 250,
-			source: 'minimum_observed',
+			source: 'minimum_guaranteed',
 		});
 	});
 });

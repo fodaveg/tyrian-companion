@@ -28,6 +28,7 @@ import {
 	type InventoryAdvisorProtectionReason,
 	type InventoryAdvisorPresentationRow,
 	type InventoryAdvisorPresentationValue,
+	type InventoryAdvisorStorageSpace,
 } from './inventory-advisor-presentation-model';
 
 export type InventoryAdvisorPresentationSource = InventoryAdvisorProducerPresentationSource | InventoryAdvisorContextualPresentationSource;
@@ -65,6 +66,8 @@ export function buildInventoryAdvisorPresentation(
 		}
 		const decisionByRef = objects !== null && objects.snapshotId === source.input.snapshot.snapshotId
 			? objects.decisions : null;
+		// H18.15: same snapshot guard as the decisions; another capture's space is never shown.
+		const storageSpace = decisionByRef === null ? null : objects?.storageSpace ?? null;
 		const result = source.result;
 		if (result.status === 'invalid' || result.report === null) return invalidInventoryAdvisorPresentation();
 		const contextual = 'discardContext' in source;
@@ -108,6 +111,9 @@ export function buildInventoryAdvisorPresentation(
 				...(decisionByRef === null ? {} : {
 					decision: structuredClone(decisionByRef[decision.explanationRef] ?? null),
 				}),
+				...(storageSpace === null ? {} : {
+					slotsFreed: storageSpace.slotsFreedByDecision[decision.explanationRef] ?? 0,
+				}),
 				quantity: decision.quantity,
 				allocations,
 				reasonCodes: [...reasonCodes],
@@ -148,8 +154,17 @@ export function buildInventoryAdvisorPresentation(
 			discardReview: contextual && source.result.proofs.length > 0
 				? { status: 'review_only', proofs: structuredClone(source.result.proofs) }
 				: { status: 'unavailable' },
+			...(storageSpace === null ? {} : { storageSpace: storageSpaceWithoutIndex(storageSpace) }),
 		};
 	} catch { return invalidInventoryAdvisorPresentation(); }
+}
+
+/** A detached copy of the analysis's storage space; each row already carries its own slots freed. */
+function storageSpaceWithoutIndex(
+	storageSpace: NonNullable<InventoryObjectResultsV1['storageSpace']>,
+): InventoryAdvisorStorageSpace {
+	const { slotsFreedByDecision: _slotsFreedByDecision, ...rest } = storageSpace;
+	return structuredClone(rest);
 }
 
 interface ProtectionSegment {

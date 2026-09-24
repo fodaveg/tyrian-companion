@@ -3,7 +3,13 @@ import { IDBFactory } from 'fake-indexeddb';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PINNED_SCHEMA, type ItemHolding, type SourceCoverage, type StorageSnapshot } from '../account/storage-snapshot-model';
+import {
+	PINNED_SCHEMA,
+	type ItemHolding,
+	type SourceCoverage,
+	type StorageFreeSlots,
+	type StorageSnapshot,
+} from '../account/storage-snapshot-model';
 import { sha256CanonicalValue, sha256InventoryRulePack } from '../advisor/inventory-advisor-contract';
 import { sha256InventoryKnowledgePack } from '../advisor/inventory-advisor-classifier';
 import type { InventoryKnowledgePackV1 } from '../advisor/inventory-advisor-classifier-model';
@@ -346,6 +352,63 @@ describe('inventory analysis: legendary reservations through the advisor (H18.1)
 	});
 });
 
+/**
+ * H18.15 (audit 2026-09-24 §3.E, §9): the object result carries the storage space of the same
+ * capture, and how many whole slots each act-now decision empties, so the view can say how full
+ * the account is and put the actions that free space first when it is low.
+ */
+describe('storage space in the one result per object (H18.15)', () => {
+	const freeSlots: StorageFreeSlots = {
+		bank: { total: 30, free: 4 },
+		sharedInventory: { total: 10, free: 10 },
+		characterBags: [
+			{ character: 'Alfa', bagIndex: 0, bagItemId: 8_932, total: 20, free: 2 },
+			{ character: 'Alfa', bagIndex: 1, bagItemId: 8_932, total: 10, free: 1 },
+		],
+	};
+
+	it('reports free slots, the low-space state and the slots each act-now decision frees', async () => {
+		const analysed = await analyse([
+			// Sold whole, now: one bag slot.
+			character(23, 5, 'Alfa', 0),
+			// Three of five reserved for a goal: selling the other two empties no slot.
+			bank(21, 5, 1),
+			// Kept by the user: nothing to act on.
+			bank(20, 5, 2),
+		], {
+			freeSlots,
+			goals: [goal('build-21', 'Build', 21, 3)],
+			keepExceptions: [keepAll('keep-20', 20)],
+		});
+
+		const sold = rowFor(analysed.rows, 23, 'sell');
+		expect(analysed.objects.storageSpace).toEqual({
+			bags: { free: 3, total: 30 },
+			bank: { free: 4, total: 30 },
+			sharedInventory: { free: 10, total: 10 },
+			lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 20, isLow: true },
+			materialCapacity: null,
+			slotsFreedByDecision: { [sold.id]: 1 },
+		});
+		expect(sold.slotsFreed).toBe(1);
+		expect(rowFor(analysed.rows, 21, 'sell').slotsFreed).toBe(0);
+		expect(rowFor(analysed.rows, 20, 'keep').slotsFreed).toBe(0);
+		expect(analysed.model.storageSpace).toMatchObject({
+			bags: { free: 3, total: 30 }, lowSpace: { isLow: true, thresholdFreeSlots: 20 },
+		});
+	});
+
+	it('reads the threshold from settings and never invents space for a store the capture missed', async () => {
+		const plenty = await analyse([character(23, 5, 'Alfa', 0)], {
+			freeSlots, port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 5 }),
+		});
+		expect(plenty.objects.storageSpace?.lowSpace).toEqual({ freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 5, isLow: false });
+
+		const withoutBank = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots: { ...freeSlots, bank: null } });
+		expect(withoutBank.objects.storageSpace).toMatchObject({ bank: null, lowSpace: null, bags: { free: 3, total: 30 } });
+	});
+});
+
 function pick(value: { tc_recommendation: string; tc_recommendation_reason: string }): Pick<InventoryVaultPosition, 'recommendation' | 'recommendationReason'> {
 	return {
 		recommendation: value.tc_recommendation as InventoryVaultPosition['recommendation'],
@@ -360,6 +423,7 @@ interface AnalyseOptions {
 	prices?: Record<number, { bid: number; ask: number }>;
 	refreshSeeds?: boolean;
 	capture?: ReturnType<typeof vi.fn>;
+	freeSlots?: StorageFreeSlots;
 }
 
 /**
@@ -367,7 +431,7 @@ interface AnalyseOptions {
  * wired exactly as `main.ts` wires it, the view's controller, the notes' sync input and writer.
  */
 async function analyse(holdings: ItemHolding[], options: AnalyseOptions = {}) {
-	const snapshot = snapshotOf(holdings);
+	const snapshot = { ...snapshotOf(holdings), ...(options.freeSlots === undefined ? {} : { freeSlots: options.freeSlots }) };
 	const evidence = evidenceOf(snapshot, options.prices ?? {});
 	const marketDepth = marketDepthOf(evidence.prices);
 	const capture = options.capture ?? vi.fn();
@@ -398,7 +462,10 @@ async function analyse(holdings: ItemHolding[], options: AnalyseOptions = {}) {
 		const fields = frontmatter(content);
 		if (!notes.has(fields.tc_item_id as number)) notes.set(fields.tc_item_id as number, fields);
 	}
-	return { source: analysis.source, objects: analysis.objects, rows, input, notes: new Map([...notes].sort(([left], [right]) => left - right)) };
+	return {
+		source: analysis.source, objects: analysis.objects, rows, input, model: controller.current(),
+		notes: new Map([...notes].sort(([left], [right]) => left - right)),
+	};
 }
 
 function rowFor(rows: readonly InventoryAdvisorViewRow[], itemId: number, action: string): InventoryAdvisorViewRow {
@@ -461,6 +528,7 @@ function recommendationPort(overrides: Partial<InventoryPositionRecommendationPo
 		legendaryTargetItemIds: () => [],
 		legendaryMaterialsTable: () => null,
 		readLegendaryArmoryCounts: async () => null,
+		lowStorageSpaceThresholdFreeSlots: () => 20,
 		...overrides,
 	};
 }

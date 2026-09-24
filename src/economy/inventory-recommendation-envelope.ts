@@ -6,7 +6,7 @@ import {
 	isInventoryAdvisorReport,
 	sha256InventoryAdvisorReport,
 } from '../advisor/inventory-advisor-contract';
-import { materialStorageDepositsFit } from './material-storage-deposit-validation';
+import { isMaterialStorageCapacity, materialStorageDepositsFit } from './material-storage-deposit-validation';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from './models/equipment-salvage-policy';
 import { EQUIPMENT_SALVAGE_POLICY_V1_SHA256 } from './equipment-salvage-economy';
 
@@ -134,10 +134,7 @@ function equipmentSalvageProofMatchesDecision(
 
 function isMaterialStorageContext(value: unknown): boolean {
 	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
-		&& Number.isSafeInteger(value.capacity) && (value.capacity as number) >= 250
-		&& (value.capacity as number) <= 3000 && (value.capacity as number) % 250 === 0
-		&& (value.capacitySource === 'configured' || value.capacitySource === 'minimum_guaranteed')
-		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& isMaterialStorageCapacity(value.capacity, value.capacitySource)
 		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
 		&& value.spaceBefore === Math.max(0, (value.capacity as number) - value.storedQuantity);
 }

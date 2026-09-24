@@ -12,6 +12,7 @@ import type {
 	EquipmentSalvagePolicyV1,
 	EquipmentSalvagePreferencesV1,
 } from '../economy/equipment-salvage-economy';
+import type { MaterialStorageCapacitySource } from '../economy/material-storage-deposit-validation';
 
 export const INVENTORY_KNOWLEDGE_PACK_VERSION = 1 as const;
 export const INVENTORY_ADVISOR_ENGINE_VERSION = 1 as const;
@@ -60,8 +61,11 @@ export interface InventoryAdvisorEngineInputV1 {
 	activeOrders?: ActiveTradingPostOrdersEvidenceV1;
 	/** Public, keyless order-book depth captured by the same explicit refresh. */
 	marketDepth?: InventoryMarketDepthEvidenceV1;
-	/** Manual account setting resolved to its configured value or the guaranteed 250 floor. */
-	materialStorageCapacity?: { quantity: number; source: 'configured' | 'minimum_guaranteed' };
+	/**
+	 * Manual account setting resolved to its configured value or the guaranteed 250 floor; H18.15:
+	 * or, with nothing configured, the minimum this snapshot's own material stacks prove.
+	 */
+	materialStorageCapacity?: { quantity: number; source: MaterialStorageCapacitySource };
 	/** Immutable category rules plus explicit optional user economics; no operation port. */
 	equipmentSalvage?: {
 		policy: EquipmentSalvagePolicyV1;

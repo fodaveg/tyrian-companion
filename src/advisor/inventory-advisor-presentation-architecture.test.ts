@@ -59,7 +59,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../economy/equipment-salvage-economy', '../economy/models/equipment-salvage-policy',
 			'../economy/commerce-listings', '../core/local-debug-action-runner',
 			// H18.14: pure goal merge plus the object-result types; the analysis itself is a port.
-			'./inventory-object-result'],
+			'./inventory-object-result',
+			// H18.15: the pure observed-minimum rule the classifier validates the capacity against.
+			'../economy/material-storage-deposit-validation'],
 		portCalls: ['ports.capture.capture', 'ports.now', 'ports.preferences.load', 'ports.rules.current', 'provider.load',
 			'ports.objects.derivedGoals', 'ports.objects.evaluate'],
 	}],
@@ -91,7 +93,9 @@ const BOUNDARY_POLICIES = new Map<string, { imports: string[]; portCalls: string
 			'../advisor/inventory-position-recommendation',
 			'../economy/reservation-model', '../economy/sell-signal-runtime', './inventory-advisor-view-model',
 			'./inventory-vault-sync-run-controller', './inventory-sync-panel-view', './price-history-panel-view',
-			'./sell-signal-line'],
+			'./sell-signal-line',
+			// H18.15: the pure "free space first when low, gold first otherwise" ordering; no I/O.
+			'../inventory/storage-space'],
 		portCalls: [],
 	}],
 	['src/ui/inventory-sync-panel-view.ts', {

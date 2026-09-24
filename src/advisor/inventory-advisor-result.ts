@@ -31,7 +31,11 @@ import { evaluateInventoryContainerEconomy, isInventoryContainerPriceEvidence } 
 import type { ContainerPersonalValuationV1 } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence, type ActiveTradingPostOrdersEvidenceV1 } from '../account/trading-post-orders-model';
 import { isInventoryMarketDepthEvidence, type InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
-import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import {
+	isMaterialStorageCapacity,
+	materialStorageDepositsFit,
+	observedMaterialStorageMinimumMatches,
+} from '../economy/material-storage-deposit-validation';
 import { isEquipmentSalvagePolicy, isEquipmentSalvagePreferences } from '../economy/equipment-salvage-economy';
 
 export function isInventoryAdvisorResult(value: unknown): value is InventoryAdvisorResultV1 {
@@ -97,7 +101,8 @@ function isInventoryAdvisorResultForInputUnsafe(
 		|| activeOrders.accountId !== input.snapshot.accountId
 		|| !fresh(activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
 			input.policy.maxFutureSkewMs))) return false;
-	if (materialStorageCapacity !== undefined && !validMaterialStorageCapacity(materialStorageCapacity)) return false;
+	if (materialStorageCapacity !== undefined && (!validMaterialStorageCapacity(materialStorageCapacity)
+		|| !observedMaterialStorageMinimumMatches(materialStorageCapacity, input.snapshot))) return false;
 	if (equipmentSalvage !== undefined && (!isEquipmentSalvageContext(equipmentSalvage))) return false;
 	if (marketDepth !== undefined && (!isInventoryMarketDepthEvidence(marketDepth)
 		|| marketDepth.requestedItemIds.length !== input.prices.requestedItemIds.length
@@ -448,9 +453,7 @@ function validMaterialDeposit(
 }
 
 function validMaterialStorageCapacity(value: NonNullable<InventoryAdvisorEngineInputV1['materialStorageCapacity']>): boolean {
-	return Number.isSafeInteger(value.quantity) && value.quantity >= 250 && value.quantity <= 3000
-		&& value.quantity % 250 === 0
-		&& (value.source === 'configured' || (value.source === 'minimum_guaranteed' && value.quantity === 250));
+	return isMaterialStorageCapacity(value.quantity, value.source);
 }
 
 function isEquipmentSalvageContext(value: NonNullable<InventoryAdvisorEngineInputV1['equipmentSalvage']>): boolean {

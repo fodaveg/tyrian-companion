@@ -124,6 +124,20 @@ const H5_11_KEYS = [
 	'advisor.view.reason.arithmetic_overflow',
 	'advisor.view.materialStorage.capacity', 'advisor.view.materialStorage.value',
 	'advisor.view.materialStorage.source.configured', 'advisor.view.materialStorage.source.minimum_guaranteed',
+	'advisor.view.materialStorage.source.observed_minimum', 'advisor.view.materialStorage.atLeast',
+	'advisor.view.storage.title', 'advisor.view.storage.freeSlots', 'advisor.view.storage.count',
+	'advisor.view.storage.unknown', 'advisor.view.storage.name.bags', 'advisor.view.storage.name.bank',
+	'advisor.view.storage.name.sharedInventory', 'advisor.view.storage.low', 'advisor.view.storage.plenty',
+	'advisor.view.storage.lowUnknown', 'advisor.view.storage.meter', 'advisor.view.storage.materials',
+	'advisor.view.slotsFreed.label', 'advisor.view.slotsFreed.one', 'advisor.view.slotsFreed.many',
+	'advisor.view.scope.showing', 'advisor.view.scope.character', 'advisor.view.scope.source.bags',
+	'advisor.view.scope.source.bank', 'advisor.view.scope.source.materials', 'advisor.view.scope.source.delivery',
+	'advisor.view.scope.outsideOne', 'advisor.view.scope.outsideMany', 'advisor.view.scope.reason.bank',
+	'advisor.view.scope.reason.materials', 'advisor.view.scope.reason.delivery',
+	'advisor.view.scope.reason.other_characters', 'advisor.view.scope.reason.keep',
+	'advisor.view.scope.reason.review', 'advisor.view.scope.reason.filters',
+	'advisor.view.keep.button', 'advisor.view.keep.buttonLabel', 'advisor.view.keep.saved',
+	'advisor.view.keep.saving', 'advisor.view.keep.done', 'advisor.view.keep.failed',
 ] as const;
 
 function placeholders(value: string): string[] {
