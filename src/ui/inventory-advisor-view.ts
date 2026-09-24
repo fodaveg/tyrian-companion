@@ -49,6 +49,11 @@ export interface InventoryAdvisorViewInteractions {
 	onRemoveGoal?: (goalId: string) => void | Promise<void>;
 	onUpsertKeepException?: (keepException: KeepExceptionV1) => void | Promise<void>;
 	onRemoveKeepException?: (exceptionId: string) => void | Promise<void>;
+	/**
+	 * H18.18: "Conservar" on a row. The host loads the preferences if needed and writes the item's
+	 * whole-stack keep exception (`keepExceptionForItem`); the view never asks for an item id.
+	 */
+	onKeepItem?: (itemId: number) => void | Promise<void>;
 	/** The single guided sync button: one click refreshes, previews, and (unless it must pause) applies. */
 	inventorySync?: {
 		state: InventoryVaultSyncRunState;
@@ -525,6 +530,32 @@ function mountInventoryAdvisorView(
 	const state = createEl('p');
 	state.className = 'tyrian-inventory-advisor__state';
 	state.setAttribute('aria-live', 'polite');
+	// H18.18: the outcome of the last row "Conservar", in its own polite line: the row itself
+	// moves to "keep" (hidden by default) once the preference is saved and reclassified.
+	const keepStatus = createEl('p');
+	keepStatus.className = 'tyrian-inventory-advisor__keep-status';
+	keepStatus.setAttribute('aria-live', 'polite');
+	keepStatus.hidden = true;
+	let pendingKeep: { itemId: number; name: string } | null = null;
+	const updateKeepStatus = (): void => {
+		if (pendingKeep === null) { keepStatus.hidden = true; return; }
+		keepStatus.hidden = false;
+		const outcome = keptItemIds(interactions.preferences).has(pendingKeep.itemId) ? 'done'
+			: interactions.preferencesBusy === true ? 'saving' : 'failed';
+		keepStatus.setAttribute('data-outcome', outcome);
+		keepStatus.textContent = translator.t(`advisor.view.keep.${outcome}`, { name: pendingKeep.name });
+	};
+	const keepContext = (): RowKeepContext | null => interactions.onKeepItem === undefined ? null : {
+		kept: keptItemIds(interactions.preferences),
+		busy: interactions.preferencesBusy === true,
+		onKeep: (row) => {
+			pendingKeep = { itemId: row.itemId, name: row.name };
+			keepStatus.hidden = false;
+			keepStatus.setAttribute('data-outcome', 'saving');
+			keepStatus.textContent = translator.t('advisor.view.keep.saving', { name: row.name });
+			void interactions.onKeepItem?.(row.itemId);
+		},
+	};
 	const results = createDiv();
 	results.className = 'tyrian-inventory-advisor__results';
 	const preferencesEnabled = hasPreferencesInteractions(initialInteractions);
@@ -660,6 +691,7 @@ function mountInventoryAdvisorView(
 			{
 				scope: inventoryAdvisorScopeSummary(allRows, filters),
 				storageSpace: model.storageSpace ?? null,
+				keep: keepContext(),
 			},
 		));
 		state.textContent = filteredEmpty ? translator.t('advisor.view.filteredEmpty') : stateLabel(model, translator);
@@ -697,7 +729,7 @@ function mountInventoryAdvisorView(
 	function arrangeSections(): void {
 		if (arranged) return;
 		arranged = true;
-		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, sellSignal, state, results, syncStatusPanel];
+		const ordered: HTMLElement[] = [controls, syncAssetsHint, syncConfirm, sellSignal, state, keepStatus, results, syncStatusPanel];
 		if (preferencesEditor !== null) ordered.push(preferencesEditor.element);
 		ordered.push(priceHistoryDisclosure);
 		section.replaceChildren(...ordered);
@@ -816,6 +848,7 @@ function mountInventoryAdvisorView(
 		if (model.status === 'blocked' || model.status === 'invalid' || model.refreshWarning !== undefined) state.setAttribute('role', 'alert');
 		else state.removeAttribute('role');
 		preferencesEditor?.update();
+		updateKeepStatus();
 		// See `lastResultsKey` above: skip rebuilding the results table when only a
 		// live sync-panel tick changed, not the advisor's actual content, state, or locale.
 		const resultsKey = model.contentVersion === undefined
@@ -864,13 +897,20 @@ function renderResults(
 	showEmptyMessage: boolean,
 	characterScope: string | null,
 	onSelectAction: (action: DirectInventoryAdvisorAction) => void,
-	context: { scope: InventoryAdvisorScopeSummary; storageSpace: InventoryAdvisorStorageSpaceView | null },
+	context: {
+		scope: InventoryAdvisorScopeSummary;
+		storageSpace: InventoryAdvisorStorageSpaceView | null;
+		keep: RowKeepContext | null;
+	},
 ): HTMLElement {
 	const content = createDiv();
 	content.className = 'tyrian-inventory-advisor__results-content';
 	if (context.storageSpace !== null) content.append(renderStorageSpace(context.storageSpace, translator));
 	content.append(renderScopeSummary(context.scope, translator));
-	const showSlotsFreed = context.storageSpace?.lowSpace?.isLow === true;
+	const rowContext: RowRenderContext = {
+		showSlotsFreed: context.storageSpace?.lowSpace?.isLow === true,
+		keep: context.keep,
+	};
 	if (characterScope !== null) {
 		const scopeNote = createEl('p');
 		scopeNote.className = 'tyrian-inventory-advisor__scope-note';
@@ -889,8 +929,8 @@ function renderResults(
 	}
 	const groups = groupInventoryAdvisorRows(rows, groupBy);
 	const concentration = inventoryAdvisorValueConcentration(rows);
-	content.append(renderTable(groups, groupBy, translator, concentration, showSlotsFreed));
-	content.append(renderCards(groups, groupBy, translator, concentration, showSlotsFreed));
+	content.append(renderTable(groups, groupBy, translator, concentration, rowContext));
+	content.append(renderCards(groups, groupBy, translator, concentration, rowContext));
 	return content;
 }
 
@@ -1040,7 +1080,7 @@ function renderTable(
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
 	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
-	showSlotsFreed = false,
+	rowContext: RowRenderContext = DEFAULT_ROW_CONTEXT,
 ): HTMLTableElement {
 	const table = createEl('table');
 	table.className = 'tyrian-inventory-advisor__table';
@@ -1068,7 +1108,7 @@ function renderTable(
 		groupCell.textContent = groupLabel(group.key, groupBy, translator);
 		groupRow.append(groupCell);
 		body.append(groupRow);
-		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null, showSlotsFreed));
+		for (const row of group.rows) body.append(renderTableRow(row, translator, concentration.get(row.id) ?? null, rowContext));
 		body.append(renderSubtotalRow(group.rows, translator));
 		table.append(body);
 	}
@@ -1094,7 +1134,7 @@ function renderTableRow(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
 	concentration: InventoryAdvisorValueConcentration | null,
-	showSlotsFreed: boolean,
+	rowContext: RowRenderContext,
 ): HTMLTableRowElement {
 	const tableRow = createEl('tr');
 	const item = createEl('th');
@@ -1102,14 +1142,76 @@ function renderTableRow(
 	appendItemIdentity(item, row);
 	tableRow.append(item);
 	appendCell(tableRow, String(row.quantity), tableColumnClass('quantity'));
-	tableRow.append(decisionCell(row, translator));
+	const decision = decisionCell(row, translator);
+	const keep = keepControl(row, translator, rowContext.keep);
+	if (keep !== null) decision.append(keep);
+	tableRow.append(decision);
 	appendCell(tableRow, unitValueLabel(row, translator), tableColumnClass('unitValue'));
 	appendCell(tableRow, valueWithConcentrationLabel(row, concentration, translator), tableColumnClass('value'));
 	appendCell(tableRow, ownershipLabel(row, translator), tableColumnClass('owned'));
 	appendCell(tableRow, allocationLabel(row, translator), tableColumnClass('location'));
 	tableRow.append(evidenceCell(row.coverage, translator));
-	tableRow.append(explanationCell(row, translator, showSlotsFreed));
+	tableRow.append(explanationCell(row, translator, rowContext.showSlotsFreed));
 	return tableRow;
+}
+
+/** What every rendered row needs besides itself: the low-space detail and the quick "keep" action. */
+interface RowRenderContext {
+	readonly showSlotsFreed: boolean;
+	readonly keep: RowKeepContext | null;
+}
+
+interface RowKeepContext {
+	/** Items an active whole-stack keep exception already covers, from the loaded preferences. */
+	readonly kept: ReadonlySet<number>;
+	readonly busy: boolean;
+	readonly onKeep: (row: InventoryAdvisorViewRow) => void;
+}
+
+const DEFAULT_ROW_CONTEXT: RowRenderContext = { showSlotsFreed: false, keep: null };
+
+/**
+ * H18.18, criterion 3: "Conservar" on the row itself, the existing keep-exception setting without
+ * typing an item id. A row the advisor already keeps offers nothing; an item a keep exception
+ * already covers says so instead of offering a second one.
+ */
+function keepControl(row: InventoryAdvisorViewRow, translator: Translator, keep: RowKeepContext | null): HTMLElement | null {
+	if (keep === null || row.action === 'keep') return null;
+	if (keep.kept.has(row.itemId)) {
+		const saved = createSpan();
+		saved.className = 'tyrian-inventory-advisor__keep-saved';
+		saved.textContent = translator.t('advisor.view.keep.saved');
+		return saved;
+	}
+	const button = createEl('button');
+	button.type = 'button';
+	button.className = 'tyrian-inventory-advisor__keep-button';
+	button.textContent = translator.t('advisor.view.keep.button');
+	button.setAttribute('aria-label', translator.t('advisor.view.keep.buttonLabel', { name: row.name }));
+	button.disabled = keep.busy;
+	button.addEventListener('click', () => keep.onKeep(row));
+	return button;
+}
+
+/**
+ * H18.18: the keep exception the row's "Conservar" writes: the whole stack, active, for the
+ * user's own reason, as the manual form's defaults would. An exception that already exists for
+ * the item is widened to the whole stack instead of duplicated; null when one already keeps it all.
+ */
+export function keepExceptionForItem(itemId: number, existing: readonly KeepExceptionV1[]): KeepExceptionV1 | null {
+	const current = existing.find((entry) => entry.itemId === itemId);
+	if (current?.status === 'active' && current.quantity.mode === 'all') return null;
+	return {
+		version: 1, exceptionId: current?.exceptionId ?? crypto.randomUUID(), itemId, status: 'active',
+		basis: current?.basis ?? 'available', quantity: { mode: 'all' }, reason: current?.reason ?? 'user_keep',
+	};
+}
+
+/** Items an active whole-stack keep exception covers; the rows then say "Guardado" instead of offering it again. */
+function keptItemIds(preferences: InventoryPreferencesEditorState | undefined): Set<number> {
+	return new Set((preferences?.keepExceptions ?? [])
+		.filter((entry) => entry.status === 'active' && entry.quantity.mode === 'all')
+		.map((entry) => entry.itemId));
 }
 
 /** Closes each group with the exact totals of the rows above it, never an inferred value. */
@@ -1191,7 +1293,7 @@ function renderCards(
 	groupBy: InventoryAdvisorViewGroupBy,
 	translator: Translator,
 	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
-	showSlotsFreed = false,
+	rowContext: RowRenderContext = DEFAULT_ROW_CONTEXT,
 ): HTMLElement {
 	const cards = createDiv();
 	cards.className = 'tyrian-inventory-advisor__cards';
@@ -1209,6 +1311,8 @@ function renderCards(
 			const heading = createEl('h4');
 			appendItemIdentity(heading, row);
 			article.append(recommendation, heading);
+			const keep = keepControl(row, translator, rowContext.keep);
+			if (keep !== null) article.append(keep);
 			const list = createEl('dl');
 			addDefinition(list, translator.t('advisor.view.owned'), ownershipLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.quantity'), String(row.quantity));
@@ -1219,7 +1323,7 @@ function renderCards(
 			addDefinition(list, translator.t('advisor.view.explanation'),
 				moment === null ? explanationLabel(row, translator) : `${explanationLabel(row, translator)} · ${moment}`);
 			article.append(list);
-			const context = rowContextDetails(row, translator, showSlotsFreed);
+			const context = rowContextDetails(row, translator, rowContext.showSlotsFreed);
 			if (context !== null) article.append(context);
 			const advanced = advancedEvidenceDetails(row.coverage, translator);
 			if (advanced !== null) article.append(advanced);

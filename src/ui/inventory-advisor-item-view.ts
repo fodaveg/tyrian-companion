@@ -5,7 +5,7 @@ import type { KeepExceptionV1 } from '../advisor/inventory-advisor-model';
 import type { InventoryPreferencesEditorSession } from '../advisor/inventory-preferences-runtime';
 import type { ReservationGoal } from '../economy/reservation-model';
 import type { InventoryAdvisorViewModel } from './inventory-advisor-view-model';
-import { renderInventoryAdvisorView } from './inventory-advisor-view';
+import { keepExceptionForItem, renderInventoryAdvisorView } from './inventory-advisor-view';
 import type { PriceHistoryPanelInteractions } from './price-history-panel-view';
 import type { InventoryVaultSyncRunState } from './inventory-vault-sync-run-controller';
 import type { PriceSeedQueueCoverage } from '../economy/price-seed-model';
@@ -139,6 +139,7 @@ export class InventoryAdvisorItemView extends ItemView {
 				onRemoveGoal: this.preferenceSession === undefined ? undefined : (goalId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeGoal(goalId); }),
 				onUpsertKeepException: this.preferenceSession === undefined ? undefined : (keepException) => this.runPreferenceAction(async () => { await this.preferenceSession!.upsertKeepException(keepException); }),
 				onRemoveKeepException: this.preferenceSession === undefined ? undefined : (exceptionId) => this.runPreferenceAction(async () => { await this.preferenceSession!.removeKeepException(exceptionId); }),
+				onKeepItem: this.preferenceSession === undefined ? undefined : (itemId) => this.runPreferenceAction(async () => { await this.keepItem(itemId); }),
 				inventorySync: sync,
 				priceHistory,
 				sellSignalState: this.actions.getSellSignalState?.() ?? null,
@@ -223,6 +224,20 @@ export class InventoryAdvisorItemView extends ItemView {
 		} catch {
 			// An unreachable catalog leaves every id on its numeric fallback; the panel keeps working.
 		}
+	}
+
+	/**
+	 * H18.18: a row's "Conservar". The same keep-exception write the preferences form does, without
+	 * the id: the preferences are loaded first when the view never opened them (the write needs
+	 * their CAS revision), and an item already kept whole is left as it is.
+	 */
+	private async keepItem(itemId: number): Promise<void> {
+		const session = this.preferenceSession;
+		if (session === undefined) return;
+		const state = session.current().status === 'ready' ? session.current() : await session.load();
+		if (state.status !== 'ready') return;
+		const keepException = keepExceptionForItem(itemId, state.keepExceptions);
+		if (keepException !== null) await session.upsertKeepException(keepException);
 	}
 
 	private async runPreferenceAction(action: () => void | Promise<void> | undefined): Promise<void> {

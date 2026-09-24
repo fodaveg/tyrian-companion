@@ -284,6 +284,8 @@ describe('Inventory Advisor view', () => {
 			'tyrian-inventory-advisor__sync-confirm',
 			'tyrian-inventory-advisor__sell-signal',
 			'tyrian-inventory-advisor__state',
+			// H18.18: the outcome of a row's "Conservar", hidden until one is pressed.
+			'tyrian-inventory-advisor__keep-status',
 			'tyrian-inventory-advisor__results',
 			'tyrian-inventory-advisor__sync-status',
 			'tyrian-inventory-advisor__preferences',
@@ -291,7 +293,8 @@ describe('Inventory Advisor view', () => {
 		];
 		const mount = render(readyModel(), 'es', interactions);
 		expect(mount.section.children.map((child) => child.className)).toEqual(expected);
-		expect(text(walk(mount.section.children[5]!))).toContain('Qué hacer ahora');
+		expect(mount.section.children[5]!.hidden).toBe(true);
+		expect(text(walk(mount.section.children[6]!))).toContain('Qué hacer ahora');
 
 		renderInventoryAdvisorView(
 			mount.container as unknown as HTMLElement,

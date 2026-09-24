@@ -136,6 +136,8 @@ const H5_11_KEYS = [
 	'advisor.view.scope.reason.materials', 'advisor.view.scope.reason.delivery',
 	'advisor.view.scope.reason.other_characters', 'advisor.view.scope.reason.keep',
 	'advisor.view.scope.reason.review', 'advisor.view.scope.reason.filters',
+	'advisor.view.keep.button', 'advisor.view.keep.buttonLabel', 'advisor.view.keep.saved',
+	'advisor.view.keep.saving', 'advisor.view.keep.done', 'advisor.view.keep.failed',
 ] as const;
 
 function placeholders(value: string): string[] {
