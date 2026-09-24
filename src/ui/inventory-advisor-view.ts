@@ -1292,7 +1292,10 @@ function rowContextDetails(row: InventoryAdvisorViewRow, translator: Translator)
 		list,
 		translator.t('advisor.view.materialStorage.capacity'),
 		translator.t('advisor.view.materialStorage.value', {
-			capacity: row.materialStorage.capacity,
+			// H18.15: an observed minimum is a floor the stacks prove, never the real capacity.
+			capacity: row.materialStorage.capacitySource === 'observed_minimum'
+				? translator.t('advisor.view.materialStorage.atLeast', { capacity: row.materialStorage.capacity })
+				: row.materialStorage.capacity,
 			stored: row.materialStorage.storedQuantity,
 			space: row.materialStorage.spaceBefore,
 			source: translator.t(`advisor.view.materialStorage.source.${row.materialStorage.capacitySource}`),

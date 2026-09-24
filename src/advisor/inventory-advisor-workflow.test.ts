@@ -221,6 +221,28 @@ describe('H5.11 inventory advisor workflow', () => {
 		expect(JSON.stringify(presentation)).not.toContain('destroy');
 	});
 
+	it('turns the guaranteed 250 into the minimum this capture\'s own material stacks prove (H18.15)', async () => {
+		const fixture = reviewedDiscardFixture();
+		fixture.evidence.snapshot.holdings.push({
+			kind: 'item', itemId: 10, quantity: 1_432, state: 'loose', location: { source: 'materials', category: 7 }, metadata: {},
+		});
+		fixture.evidence.snapshot.availableByItem = { '10': 1_434 };
+		fixture.evidence.snapshot.ownedByItem = { '10': 1_434 };
+		fixture.evidence.snapshotFingerprint = sha256CanonicalValue(fixture.evidence.snapshot);
+		const rules = { ...fixture.rules, materialStorageCapacity: { quantity: 250, source: 'minimum_guaranteed' as const } };
+		const workflow = new InventoryAdvisorWorkflow({
+			capture: { capture: async () => ({ status: 'complete' as const, evidence: fixture.evidence }) },
+			preferences: EMPTY_INVENTORY_ADVISOR_PREFERENCES,
+			rules: { current: () => ({ status: 'available', value: rules }) },
+			now: () => Date.parse('2026-08-14T12:00:00.000Z'),
+		});
+		const result = await workflow.refresh('es');
+		if (result.status !== 'ready' || !('discardContext' in result.source)) throw new Error('Expected contextual workflow result.');
+		expect(result.source.discardContext.engineInput.materialStorageCapacity)
+			.toEqual({ quantity: 1_500, source: 'observed_minimum' });
+		expect(buildInventoryAdvisorPresentation(result.source).status).not.toBe('invalid');
+	});
+
 	it('loads preferences only after capture and reclassifies a fresh capture without a second API capture', async () => {
 		const fixture = reviewedDiscardFixture();
 		const capture = vi.fn(async () => ({ status: 'complete' as const, evidence: fixture.evidence }));

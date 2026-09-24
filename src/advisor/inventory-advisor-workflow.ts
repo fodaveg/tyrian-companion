@@ -13,6 +13,7 @@ import type { ContainerPersonalValuationV1 } from '../economy/container-personal
 import type { EquipmentSalvagePreferencesV1 } from '../economy/equipment-salvage-economy';
 import { EQUIPMENT_SALVAGE_POLICY_V1 } from '../economy/models/equipment-salvage-policy';
 import type { InventoryMarketDepthEvidenceV1 } from '../economy/commerce-listings';
+import { materialStorageCapacityForSnapshot } from '../economy/material-storage-deposit-validation';
 import { mergeDerivedReservationGoals, type InventoryObjectResultsV1 } from './inventory-object-result';
 import {
 	startLocalDebugAction,
@@ -314,8 +315,10 @@ export function composeInventoryAdvisorRefresh(
 		...(capture.marketDepth === undefined ? {} : {
 			marketDepth: selectSupplementalMarketDepth(capture.marketDepth, input.prices.requestedItemIds),
 		}),
+		// H18.15: with nothing configured, the capture's own material stacks can prove more than
+		// the guaranteed 250 ("at least N"); the classifier validates it against this same snapshot.
 		...(rules.materialStorageCapacity === undefined ? {} : {
-			materialStorageCapacity: structuredClone(rules.materialStorageCapacity),
+			materialStorageCapacity: materialStorageCapacityForSnapshot(rules.materialStorageCapacity, input.snapshot),
 		}),
 		...(rules.equipmentSalvage === undefined ? {} : {
 			equipmentSalvage: {

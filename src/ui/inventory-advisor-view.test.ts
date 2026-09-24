@@ -47,6 +47,21 @@ describe('Inventory Advisor view', () => {
 			expect(find(mount.elements(), 'details')).toHaveLength(5);
 		});
 
+	it.each([
+		['es', '1432 / al menos 1500 · hueco antes: 68 · mínimo visto en tu almacén'],
+		['en', '1432 / at least 1500 · room before: 68 · minimum seen in your storage'],
+	] as const)('shows an observed material capacity as a floor, never as the real capacity, in %s (H18.15)', (locale, expected) => {
+		const mount = render({
+			status: 'ready', title: 'inventory_advisor.title', detail: 'inventory_advisor.ready', optionalSources: null,
+			groups: [{ key: 'curated', rows: [row({
+				itemId: 19_700, name: 'Mineral', action: 'deposit_material', quantity: 68,
+				value: { status: 'not_applicable', route: null },
+				materialStorage: { capacity: 1_500, capacitySource: 'observed_minimum', storedQuantity: 1_432, spaceBefore: 68 },
+			})] }],
+		}, locale);
+		expect(withText(mount.elements(), expected).length).toBeGreaterThan(0);
+	});
+
 	it('renders the Exotic uncertainty as review without a numeric EV', () => {
 		const model = equipmentSalvageModel();
 		model.groups[0]!.rows[0]!.action = 'review';

@@ -22,7 +22,11 @@ import {
 import type { InventoryAdvisorEngineInputV1 as EngineInput } from './inventory-advisor-classifier-model';
 import { isContainerPersonalValuation, resolveContainerPersonalValuation } from '../economy/container-personal-valuation';
 import { isActiveTradingPostOrdersEvidence } from '../account/trading-post-orders-model';
-import { materialStorageDepositsFit } from '../economy/material-storage-deposit-validation';
+import {
+	isMaterialStorageCapacity,
+	materialStorageDepositsFit,
+	observedMaterialStorageMinimumMatches,
+} from '../economy/material-storage-deposit-validation';
 import { isInventoryMarketDepthEvidence } from '../economy/commerce-listings';
 import {
 	EQUIPMENT_SALVAGE_POLICY_V1_SHA256,
@@ -660,10 +664,12 @@ function isEngineInput(value: unknown): value is InventoryAdvisorEngineInputV1 {
 					input.policy.maxFutureSkewMs))))) return false;
 	if (value.materialStorageCapacity !== undefined && (!record(value.materialStorageCapacity)
 		|| !keys(value.materialStorageCapacity, ['quantity', 'source'])
-		|| !materialCapacity(value.materialStorageCapacity.quantity)
-		|| !['configured', 'minimum_guaranteed'].includes(String(value.materialStorageCapacity.source))
-		|| (value.materialStorageCapacity.source === 'minimum_guaranteed'
-			&& value.materialStorageCapacity.quantity !== 250))) return false;
+		|| !isMaterialStorageCapacity(value.materialStorageCapacity.quantity, value.materialStorageCapacity.source)
+		// H18.15: an observed minimum is only what THIS snapshot's material stacks prove.
+		|| !observedMaterialStorageMinimumMatches({
+			quantity: value.materialStorageCapacity.quantity as number,
+			source: String(value.materialStorageCapacity.source),
+		}, input.snapshot))) return false;
 	if (value.activeOrders !== undefined && (!isActiveTradingPostOrdersEvidence(value.activeOrders)
 		|| value.activeOrders.accountId !== input.snapshot.accountId
 		|| !fresh(value.activeOrders.capturedAt, input.asOf, input.policy.maxPriceAgeMs,
@@ -747,9 +753,7 @@ function materialCapacity(value: unknown): value is number {
 }
 function materialStorageContext(value: unknown): boolean {
 	return record(value) && keys(value, ['capacity', 'capacitySource', 'storedQuantity', 'spaceBefore'])
-		&& materialCapacity(value.capacity)
-		&& ['configured', 'minimum_guaranteed'].includes(String(value.capacitySource))
-		&& (value.capacitySource !== 'minimum_guaranteed' || value.capacity === 250)
+		&& materialCapacity(value.capacity) && isMaterialStorageCapacity(value.capacity, value.capacitySource)
 		&& nonNegative(value.storedQuantity) && nonNegative(value.spaceBefore)
 		&& value.spaceBefore === Math.max(0, value.capacity - value.storedQuantity);
 }

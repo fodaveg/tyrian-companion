@@ -124,6 +124,7 @@ const H5_11_KEYS = [
 	'advisor.view.reason.arithmetic_overflow',
 	'advisor.view.materialStorage.capacity', 'advisor.view.materialStorage.value',
 	'advisor.view.materialStorage.source.configured', 'advisor.view.materialStorage.source.minimum_guaranteed',
+	'advisor.view.materialStorage.source.observed_minimum', 'advisor.view.materialStorage.atLeast',
 ] as const;
 
 function placeholders(value: string): string[] {

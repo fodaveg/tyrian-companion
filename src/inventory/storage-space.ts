@@ -1,5 +1,10 @@
 import type { MaterialStorageCapacity } from '../core/settings';
 import type { StorageFreeSlots } from '../account/storage-snapshot-model';
+import {
+	GUARANTEED_MATERIAL_STORAGE_CAPACITY,
+	observedMaterialStorageMinimum,
+	type MaterialStorageCapacitySource,
+} from '../economy/material-storage-deposit-validation';
 
 /**
  * H18.15 (Auditoría final consolidada, §3.E, §9). A pure module the entry that unifies the
@@ -10,28 +15,28 @@ import type { StorageFreeSlots } from '../account/storage-snapshot-model';
  * list.
  */
 
-const GUARANTEED_MATERIAL_STORAGE_CAPACITY = 250;
-
 export interface ObservedMaterialStorageCapacity {
 	quantity: number;
-	source: 'configured' | 'minimum_observed';
+	source: MaterialStorageCapacitySource;
 }
 
 /**
  * Replaces the flat "250 invented" floor (`settings.ts`'s `resolveMaterialStorageCapacity`) with
- * the largest quantity actually observed of any material, never below the guaranteed 250. Per the
- * audit's acceptance criterion (§3.E): shown as "at least N", never as an invented number.
+ * what the observed stacks prove. Per the audit's acceptance criterion (§3.E): shown as "at least
+ * N", never as an invented number. H18.18 wiring: N is the largest stack rounded up to the next
+ * multiple of 250 (every real capacity is one), the exact rule the advisor's contract validates as
+ * `observed_minimum`; with no stack above 250 it stays the `minimum_guaranteed` 250 older results
+ * already carry.
  */
 export function resolveObservedMaterialStorageCapacity(
 	configured: MaterialStorageCapacity | null,
 	materials: readonly { quantity: number }[],
 ): ObservedMaterialStorageCapacity {
 	if (configured !== null) return { quantity: configured, source: 'configured' };
-	const observedMax = materials.reduce(
-		(max, material) => Math.max(max, material.quantity),
-		GUARANTEED_MATERIAL_STORAGE_CAPACITY,
-	);
-	return { quantity: observedMax, source: 'minimum_observed' };
+	const observed = observedMaterialStorageMinimum(materials.map((material) => material.quantity));
+	return observed > GUARANTEED_MATERIAL_STORAGE_CAPACITY
+		? { quantity: observed, source: 'observed_minimum' }
+		: { quantity: GUARANTEED_MATERIAL_STORAGE_CAPACITY, source: 'minimum_guaranteed' };
 }
 
 export interface StorageSpaceState {

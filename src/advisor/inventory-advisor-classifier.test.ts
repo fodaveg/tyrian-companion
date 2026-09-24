@@ -468,6 +468,42 @@ describe('H4.15 inventory advisor classifier', () => {
 		} });
 	});
 
+	it('deposits against an observed minimum only when this snapshot\'s own stacks prove it (H18.15)', () => {
+		// 300 stored proves a capacity of at least 500: the next multiple of 250 that can hold it.
+		const input = materialStorageFixture(400, 300);
+		input.materialStorageCapacity = { quantity: 500, source: 'observed_minimum' };
+
+		const result = classifyInventoryAdvisor(input);
+		expect(result.status).not.toBe('invalid');
+		expect(result.report?.lines[0]?.decisions.find((decision) => decision.action === 'deposit_material')).toMatchObject({
+			quantity: 200,
+			materialStorage: { capacity: 500, capacitySource: 'observed_minimum', storedQuantity: 300, spaceBefore: 200 },
+		});
+		expect(isInventoryAdvisorResultForInput(
+			result, input.input, input.knowledgePack, undefined, undefined, undefined, input.materialStorageCapacity,
+		)).toBe(true);
+		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25, {
+			capacity: 500, capacitySource: 'observed_minimum', storedQuantity: 450, spaceBefore: 50,
+		}))).toBe(true);
+
+		// A larger "observed" floor than the stacks prove is an invented number, and so is an
+		// observed minimum of exactly 250 (nothing was observed beyond the guarantee).
+		for (const invented of [
+			{ quantity: 750, source: 'observed_minimum' as const },
+			{ quantity: 250, source: 'observed_minimum' as const },
+		]) {
+			const rejected = materialStorageFixture(400, 300);
+			rejected.materialStorageCapacity = invented;
+			expect(classifyInventoryAdvisor(rejected).status).toBe('invalid');
+			expect(isInventoryAdvisorResultForInput(
+				result, input.input, input.knowledgePack, undefined, undefined, undefined, invented,
+			)).toBe(false);
+		}
+		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25, {
+			capacity: 250, capacitySource: 'observed_minimum', storedQuantity: 200, spaceBefore: 50,
+		}))).toBe(false);
+	});
+
 	it('validates the aggregate material-deposit budget across multiple engine decisions', () => {
 		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(25))).toBe(true);
 		expect(isInventoryAdvisorEngineResult(materialDepositEngineResult(30))).toBe(false);
@@ -815,10 +851,12 @@ function depth(
 		requestedItemIds: [10], status: 'complete', items: [{ itemId: 10, coverage: 'complete', buys, sells }] };
 }
 
-function materialDepositEngineResult(quantity: number): InventoryAdvisorEngineResultV1 {
-	const materialStorage = {
+function materialDepositEngineResult(
+	quantity: number,
+	materialStorage: InventoryRecommendationDecisionV1['materialStorage'] = {
 		capacity: 250, capacitySource: 'minimum_guaranteed' as const, storedQuantity: 200, spaceBefore: 50,
-	};
+	},
+): InventoryAdvisorEngineResultV1 {
 	return {
 		status: 'ready',
 		report: {
