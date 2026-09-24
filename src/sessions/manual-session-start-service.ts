@@ -454,6 +454,15 @@ export class ManualSessionStartService {
 	}
 
 	/**
+	 * H18.26: the same stop, but an `active` session ends at `endAtMs` (the last evidence the game
+	 * was there, from the in-game presence) instead of at this call, which can come ten minutes of
+	 * grace later. Clamped to the baseline and to now; a session already stopping keeps its end.
+	 */
+	stopAt(endAtMs: number): Promise<ManualSessionStopResult> {
+		return this.runStop(false, endAtMs);
+	}
+
+	/**
 	 * Captures the final snapshot right now, on explicit human demand. The result is degraded to an
 	 * estimate because the snapshot cannot contain what the Guild Wars 2 cache has not published yet.
 	 */
@@ -477,17 +486,17 @@ export class ManualSessionStartService {
 		return this.stateSettlement(this.state);
 	}
 
-	private runStop(force: boolean): Promise<ManualSessionStopResult> {
+	private runStop(force: boolean, endAtMs: number | null = null): Promise<ManualSessionStopResult> {
 		if (this.stopFlight) return this.stopFlight;
-		const flight = this.stopAndScheduleRetry(force).finally(() => {
+		const flight = this.stopAndScheduleRetry(force, endAtMs).finally(() => {
 			if (this.stopFlight === flight) this.stopFlight = null;
 		});
 		this.stopFlight = flight;
 		return flight;
 	}
 
-	private async stopAndScheduleRetry(force: boolean): Promise<ManualSessionStopResult> {
-		const result = await this.stopInternal(force);
+	private async stopAndScheduleRetry(force: boolean, endAtMs: number | null): Promise<ManualSessionStopResult> {
+		const result = await this.stopInternal(force, endAtMs);
 		this.afterStopAttempt(result);
 		return result;
 	}
@@ -979,7 +988,7 @@ export class ManualSessionStartService {
 		}
 	}
 
-	private async stopInternal(force: boolean): Promise<ManualSessionStopResult> {
+	private async stopInternal(force: boolean, endAtMs: number | null = null): Promise<ManualSessionStopResult> {
 		this.lastStopFailure = null;
 		if (this.disposed) {
 			return this.failStop('coordination_unavailable', 'Session coordination is unavailable.');
@@ -1021,10 +1030,16 @@ export class ManualSessionStartService {
 		try {
 			if (this.state.status === 'active') {
 				const baselineAt = Date.parse(this.state.baseline.completedAt);
+				// H18.26: an end the in-game presence observed wins; it is evidence, not a guess.
+				const observedEnd = endAtMs !== null && Number.isSafeInteger(endAtMs)
+					? new Date(Math.max(baselineAt, Math.min(endAtMs, this.safeNow()))).toISOString()
+					: null;
 				// H18.11: a session taken back after a gap, with no play seen since, ends at the last
 				// evidence saved before the gap, marked uncertain; the click would count the whole gap.
-				const gapEnd = this.resumeGapEnd();
-				this.apply(gapEnd === null
+				const gapEnd = observedEnd === null ? this.resumeGapEnd() : null;
+				this.apply(observedEnd !== null
+					? { type: 'request_stop', authority, requestedAt: observedEnd }
+					: gapEnd === null
 					? { type: 'request_stop', authority, requestedAt: this.timestampAtOrAfter(baselineAt) }
 					: {
 						type: 'request_stop',

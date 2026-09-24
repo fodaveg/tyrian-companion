@@ -328,6 +328,35 @@ describe('grace window before the final session snapshot', () => {
 		expect(service.getApiSettlement()).toBe('settled');
 	});
 
+	it('H18.26: an end observed by the in-game presence becomes the session end, not the call time', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const { service } = await startedService(runtimeStore, async () => afterSnapshot());
+		const lastPresence = STOP_REQUESTED_AT;
+
+		// The grace ran out ten minutes after the last frame; that is when the stop is asked for.
+		clock = lastPresence + API_SETTLEMENT_WINDOW_MS;
+		await expect(service.stopAt(lastPresence)).resolves.toMatchObject({ status: 'stopped' });
+		expect(service.getState()).toMatchObject({
+			status: 'provisional', stopRequestedAt: new Date(lastPresence).toISOString(),
+		});
+		expect(service.getState()).not.toHaveProperty('stopBoundary');
+		// The final read waited the whole window after that end, so it is settled, not skipped.
+		expect(service.getApiSettlement()).toBe('settled');
+	});
+
+	it('H18.26: clamps an observed end to the baseline and never moves it into the future', async () => {
+		const early = await startedService(new MemorySessionRuntimeStore(), async () => afterSnapshot());
+		clock = STOP_REQUESTED_AT;
+		await early.service.stopAt(STARTED_AT - 3_600_000);
+		expect(early.service.getState()).toMatchObject({ stopRequestedAt: captured.snapshot.completedAt });
+
+		clock = STARTED_AT;
+		const late = await startedService(new MemorySessionRuntimeStore(), async () => afterSnapshot());
+		clock = STOP_REQUESTED_AT;
+		await late.service.stopAt(STOP_REQUESTED_AT + 3_600_000);
+		expect(late.service.getState()).toMatchObject({ stopRequestedAt: new Date(STOP_REQUESTED_AT).toISOString() });
+	});
+
 	it('H18.11: one endpoint left at the default keeps the whole wait at ten minutes', async () => {
 		const service = new ManualSessionStartService(
 			coordinator(),
