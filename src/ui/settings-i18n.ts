@@ -57,8 +57,12 @@ export function projectConnectionDescription(state: ConnectionState, translator:
 	return summary;
 }
 
-/** Preserves a safe local fallback if an older runtime supplies an unknown code. */
-function connectionErrorKey(code: string): TranslationKey {
+/**
+ * Preserves a safe local fallback if an older runtime supplies an unknown code. Exported so the
+ * session card's incident callout (`companion-view.ts`'s `buildIncidentCallout`, H15.24) can show
+ * the same actionable, per-code guidance instead of the gateway's raw English `message`.
+ */
+export function connectionErrorKey(code: string): TranslationKey {
 	return Object.prototype.hasOwnProperty.call(CONNECTION_ERROR_KEYS, code)
 		? CONNECTION_ERROR_KEYS[code as ConnectionErrorCode]
 		: 'settings.connection.error.unknown';

@@ -9,7 +9,7 @@ import type { AssistedDetectionState } from '../sessions/assisted-detection-serv
 import type { SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
-import { projectManagedAssetsDescription } from './settings-i18n';
+import { connectionErrorKey, projectManagedAssetsDescription } from './settings-i18n';
 import { renderSellSignalLine } from './sell-signal-line';
 import type { SellSignalRuntimeState } from '../economy/sell-signal-runtime';
 import type {
@@ -371,10 +371,14 @@ export class TyrianCompanionView extends ItemView {
 
 		// Settings owns the full connection detail; here it only earns a line (FICHA decision 4's
 		// retry lives in the Detalle gaveto too) with its own "Comprobar conexión" button, added
-		// after every graver source above so the worst problem always stays on top.
+		// after every graver source above so the worst problem always stays on top. H15.24: the
+		// line used to show `connection.message` verbatim (the gateway's raw English text); it now
+		// reuses Settings' per-code catalogue (`connectionErrorKey`) so every known failure gets
+		// actionable, localized guidance, and an unrecognized code still falls back to a translated
+		// generic line instead of leaking the untranslated detail.
 		if (connection.status === 'error') {
 			const connectionLine: SessionCardCalloutLine = {
-				text: connection.message,
+				text: translator.t(connectionErrorKey(connection.code)),
 				button: {
 					text: this.t('view.checkConnection'),
 					disabled: isCoolingDown(getRetryAt(connection)),
