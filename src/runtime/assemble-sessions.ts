@@ -21,7 +21,11 @@ import type { LocalDebugActionRunner } from '../core/local-debug-action-runner';
 import type { LocalDebugPersistenceProbe } from '../core/local-debug-persistence';
 import { SessionPriceSnapshotService } from '../economy/session-price-snapshot';
 import { AssistedDetectionService } from '../sessions/assisted-detection-service';
-import { ManualSessionStartService, type SessionLeaseCoordinator } from '../sessions/manual-session-start-service';
+import {
+	ManualSessionStartService,
+	type ObservedPlayInterval,
+	type SessionLeaseCoordinator,
+} from '../sessions/manual-session-start-service';
 import { SessionItemTypeSnapshotService } from '../sessions/session-item-type-capture';
 import { PendingProposalService } from '../sessions/pending-proposal-service';
 import { PendingProposalRenewalRegistry } from '../sessions/pending-proposal-renewal';
@@ -68,8 +72,8 @@ export interface SessionsAssemblyInput {
 	onSettlementDue: () => void;
 	/** The session service took a session back on its own (lost lease, startup busy); see H18.7. */
 	onSessionAutoRecovered: () => void;
-	/** H18.11: the latest instant the game was seen being played (in-game presence), or null. */
-	lastPlayEvidenceAt?: () => number | null;
+	/** H18.11: the stretches the in-game presence saw the game being played. */
+	observedPlayIntervals?: () => readonly ObservedPlayInterval[];
 	onProposalQueueStateChange: () => void;
 	onProposalExcluded: (
 		proposalId: string,
@@ -119,7 +123,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			onStateChange: input.onSessionStateChange,
 			onSettlementDue: input.onSettlementDue,
 			onAutoRecovered: input.onSessionAutoRecovered,
-			...(input.lastPlayEvidenceAt === undefined ? {} : { lastPlayEvidenceAt: input.lastPlayEvidenceAt }),
+			...(input.observedPlayIntervals === undefined ? {} : { observedPlayIntervals: input.observedPlayIntervals }),
 			runtimeStore: new IndexedDbSessionRuntimeStore(
 				input.factory, async () => await input.sessionStorage.runtimeDatabaseName(), input.sessionRecoverPersistence,
 			),

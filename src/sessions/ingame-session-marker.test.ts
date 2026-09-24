@@ -282,16 +282,23 @@ describe('H18.26: the in-game presence marks the session', () => {
 		expect(game.link()).toMatchObject({ owner: 'automatic', labyrinthAt: new Date(clock).toISOString() });
 	});
 
-	it('reads present play as evidence now, and a presence in its grace up to its last frame', () => {
+	it('H18.11: reports the stretches the game was seen being played, open and finished', () => {
 		const game = harness();
-		expect(game.marker.lastPlayEvidenceAt()).toBeNull();
+		expect(game.marker.observedPlayIntervals()).toEqual([]);
 		game.connect('a');
 		game.report('a', OUTSIDE);
-		expect(game.marker.lastPlayEvidenceAt()).toBe(clock);
+		const startedAt = clock;
+		clock += 30 * 60_000;
+		// Present: the stretch runs to now.
+		expect(game.marker.observedPlayIntervals()).toEqual([{ fromMs: startedAt, toMs: clock }]);
 		const lastSeen = clock;
 		game.drop('a');
 		clock += 60_000;
-		expect(game.marker.lastPlayEvidenceAt()).toBe(lastSeen);
+		// In its grace: up to the last frame, not to now.
+		expect(game.marker.observedPlayIntervals()).toEqual([{ fromMs: startedAt, toMs: lastSeen }]);
+		game.advance(INGAME_PRESENCE_GRACE_MS);
+		// Ended: kept as a finished stretch that closes at the last frame.
+		expect(game.marker.observedPlayIntervals()).toEqual([{ fromMs: startedAt, toMs: lastSeen }]);
 	});
 
 	it('only trusts a stored link with the exact shape it writes', () => {

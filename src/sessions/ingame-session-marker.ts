@@ -60,6 +60,9 @@ export interface IngameSessionMarkerOptions {
 	now: () => number;
 }
 
+/** Finished stretches of play kept for H18.11: enough to cover any session, bounded all the same. */
+const OBSERVED_PLAY_KEPT = 32;
+
 const IN_PROGRESS: ReadonlySet<SessionStatus> = new Set(['starting', 'active', 'stopping', 'provisional']);
 
 export class IngameSessionMarker {
@@ -68,6 +71,10 @@ export class IngameSessionMarker {
 	private readonly linkedPresences = new Set<string>();
 	private queue: Promise<void> = Promise.resolve();
 	private disposed = false;
+	/** H18.11: when each presence still open started, to close its stretch on `ended`. */
+	private readonly playStartedAt = new Map<string, number>();
+	/** H18.11: finished stretches of observed play, most recent last, at most `OBSERVED_PLAY_KEPT`. */
+	private readonly finishedPlay: Array<{ fromMs: number; toMs: number }> = [];
 
 	constructor(private readonly options: IngameSessionMarkerOptions) {
 		this.link = readLink(options.port);
@@ -76,7 +83,18 @@ export class IngameSessionMarker {
 
 	/** Feeds one presence event. Events are handled one at a time, in order. */
 	handle(event: IngamePresenceEvent): Promise<void> {
+		if (event.kind === 'started') this.playStartedAt.set(event.presenceId, event.atMs);
+		if (event.kind === 'ended') this.finishPlay(event.presenceId, event.endedAtMs);
 		return this.enqueue(() => this.process(event));
+	}
+
+	/** Closes one observed stretch of play, keeping only the most recent ones. */
+	private finishPlay(presenceId: string, endedAtMs: number): void {
+		const startedAt = this.playStartedAt.get(presenceId);
+		this.playStartedAt.delete(presenceId);
+		if (startedAt === undefined || endedAtMs <= startedAt) return;
+		this.finishedPlay.push({ fromMs: startedAt, toMs: endedAtMs });
+		if (this.finishedPlay.length > OBSERVED_PLAY_KEPT) this.finishedPlay.splice(0, this.finishedPlay.length - OBSERVED_PLAY_KEPT);
 	}
 
 	/**
@@ -94,14 +112,19 @@ export class IngameSessionMarker {
 	}
 
 	/**
-	 * H18.11: the latest instant the game was seen being played, or null. Present right now counts
-	 * as now; a presence in its grace counts up to its last evidence.
+	 * H18.11: the stretches the game was seen being played, oldest first. A finished presence runs
+	 * from its start to its end; the current one runs to now while present, or to its last frame
+	 * while in its grace. Kept whatever `enabled()` says: it is evidence, not an action.
 	 */
-	lastPlayEvidenceAt(): number | null {
+	observedPlayIntervals(): Array<{ fromMs: number; toMs: number }> {
+		const intervals = this.finishedPlay.map((interval) => ({ ...interval }));
 		const presence = this.options.presence();
-		if (presence.status === 'present') return this.options.now();
-		if (presence.status === 'lost') return presence.lastSeenAtMs;
-		return null;
+		if (presence.startedAtMs !== null) {
+			const toMs = presence.status === 'present' ? this.options.now()
+				: presence.status === 'lost' ? presence.lastSeenAtMs : null;
+			if (toMs !== null && toMs > presence.startedAtMs) intervals.push({ fromMs: presence.startedAtMs, toMs });
+		}
+		return intervals;
 	}
 
 	/** When the Labyrinth tag was observed for `sessionId`, or null. Read when its note is written. */

@@ -1140,7 +1140,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					() => this.performStopManualSession());
 			},
 			onSessionAutoRecovered: () => this.resumeAutoRecoveredSession(),
-			lastPlayEvidenceAt: () => this.ingameSessionMarker?.lastPlayEvidenceAt() ?? null,
+			observedPlayIntervals: () => this.ingameSessionMarker?.observedPlayIntervals() ?? [],
 			onProposalQueueStateChange: () => this.refreshBackgroundIndicators(),
 			onProposalExcluded: (proposalId, reason, resolvedAt) => {
 				void this.pilotMetrics.proposalExcluded(proposalId, reason, resolvedAt);
