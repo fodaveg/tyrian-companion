@@ -1,5 +1,69 @@
 # Changelog
 
+## Release beta 0.2.0 - puente en el juego autenticado; los addons 0.1.x dejan de conectar
+
+**Rotura de compatibilidad: actualiza los addons antes de abrir el juego.** El puente con el juego
+pasa a un protocolo autenticado (v2, H18.23); un addon de Nexus o Blish HUD todavía en 0.1.x recibe
+`version_unsupported` y no conecta. Actualiza ambos addons a 0.2.0 y, en Ajustes → «Copiar token»,
+genera y pega el token en el addon antes de volver a abrir Guild Wars 2.
+
+- **Puente en el juego autenticado (H18.22, H18.23).** Cada addon presenta un secreto compartido
+  (comparación en tiempo constante, guardado en el `SecretStorage` de Obsidian; los ajustes solo
+  recuerdan el nombre de la entrada) y recibe una bienvenida con un nonce por conexión y un id de
+  instancia de servidor; después intercambia tramas selladas y secuenciadas de contexto, latido y
+  adiós. Toda conexión sin una bienvenida válida se cierra a los 5 s (`hello_timeout`) y nunca cuenta
+  como presencia conectada (`src/alerts/alert-ingame-protocol.ts`, `src/alerts/alert-ingame-server.ts`).
+- **Marcado automático de sesión y atribución declarada (H18.26, H18.11).** La presencia del puente
+  (una sola por máquina, aunque haya dos addons conectados a la vez) arranca y cierra la sesión de
+  farmeo sin que el jugador toque nada, y este puede declarar él mismo a quién atribuir la ganancia
+  observada (`src/sessions/ingame-session-marker.ts`, `src/sessions/session-attribution.ts`).
+- **Huecos sin observar (H18.11).** La duración de la sesión pasa a ser el tiempo activo; el tiempo
+  que nadie observó (una suspensión, Obsidian cerrado) viaja aparte en la nota
+  (`tc_unobserved_ms`, esquema 5) en vez de restarse en silencio del final.
+- **Sesión por vault y «Abandonar sesión» (H18.12; esquema 6).** Cada vault usa ya su propia sesión e
+  IndexedDB — antes, dos vaults con el plugin abierto a la vez se disputaban la misma sesión guardada.
+  El jugador puede abandonar explícitamente una sesión atascada (cambio de cuenta, delta inválido); la
+  nota queda marcada como abandonada con el motivo y nunca entra en el resumen de rendimiento
+  (`src/sessions/session-storage-scope.ts`, `src/sessions/session-note-model.ts`).
+- **Recuperación y sesión siguiente sin limpiar (H18.4, H18.7, H18.8, H18.9).** Reintentar desde
+  `error` retoma la sesión guardada bajo un nuevo fence en vez de la memoria de esta ventana; el
+  arranque recupera por sí solo una sesión `active`/`stopping` colgada tras un cierre inesperado; y la
+  sesión siguiente arranca sin escanear ni reescribir ninguna nota, apoyada en la prueba de que el
+  resumen anterior ya llegó al vault (`src/sessions/manual-session-start-service.ts`).
+- **Un resultado por objeto en el asesor, las notas y la Base (H18.14, H18.16).** El asesor y la
+  recomendación que escriben las notas y la Base podían no coincidir sobre el mismo objeto; ahora el
+  asesor es la fuente única y notas/Base consumen esa misma decisión, con un solo resultado por
+  objeto en las tres superficies (`src/advisor/inventory-object-result.ts`,
+  `src/inventory/inventory-analysis.ts`).
+- **Notas estables (H18.16).** Una sincronización con los mismos datos ya no reescribe la nota entera:
+  el bloque gestionado (`tc_*`, descripción) se separa byte a byte del texto propio del usuario, «sin
+  cambios» compara solo los valores gestionados, y un conflicto se cuenta por nota en vez de abortar
+  todo el plan.
+- **Huecos libres y «al menos N» (H18.15).** El inventario muestra los huecos libres por bolsa,
+  personaje y banco, y un suelo observado de material («al menos N») cuando la reserva completa no
+  puede confirmarse, en vez de callar el dato o inventarlo (`src/inventory/storage-space.ts`).
+- **Conservar por fila (H18.18).** Se puede reservar un objeto directamente desde su fila en el
+  asesor, sin escribir su id a mano.
+- **Bases actualizadas tras sincronizar (H18.18).** Tras «Sincronizar inventario», `Inventory.base` y
+  `Materials.base` se actualizan solas cuando nada entra en conflicto, sin un paso manual aparte
+  (`src/assets/inventory-bases.ts`).
+- **Vender ahora o esperar (H18.19, H18.21).** Cada objeto por encima del umbral compara vender hoy
+  con esperar a la próxima edición del festival por un criterio fuera de muestra: solo recomienda
+  esperar cuando la ventaja queda demostrada sobre temporadas pasadas, nunca por una sola comparación.
+  Tres relojes se mantienen aparte —el de la sesión, el del festival y el del experimento— para que
+  ninguno contamine a otro (`src/economy/sell-or-wait.ts`, `src/economy/sell-timing-experiment.ts`).
+- **Ventanas de festival ancladas a la fecha real (H18.20).** El calendario de festival ya no adivina
+  un `MM-DD` fijo por objeto: usa una tabla curada con el día real de inicio de cada edición
+  (2019-2026) y elige la ventana vigente o la próxima en abrir, sin inventar una fecha para un año sin
+  cobertura (`src/economy/models/halloween-festival-anchors.ts`).
+- **Caducidad del conocimiento curado, visible (H18.5).** Un paquete de reglas caducado y el aviso de
+  revisión de 90 días de su propio conocimiento curado se confundían antes con «faltan reglas» o con
+  un hueco de precio genérico. Ahora cada caso tiene su propio motivo traducido (`rules_expired`,
+  `knowledge_stale`), y una tabla de materiales de legendarias caducada se avisa en Ajustes.
+- **Arreglo del `rule_stale` del ecto (H18.13).** El asesor marcaba el inventario entero como
+  `rule_stale` cuando la cotización del ecto llegaba partida en compra/venta; ahora reconoce esa
+  forma de cotización y deja de degradar el resto de reglas por su culpa.
+
 ## Release beta 0.1.35 - Hallazgo mágico calculado desde la API
 
 El Hallazgo mágico (Magic Find) se calcula automáticamente al capturar la línea base desde
