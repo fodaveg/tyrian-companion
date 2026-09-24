@@ -88,7 +88,7 @@ import type { SellSignalRuntime, SellSignalRuntimeState } from './economy/sell-s
 import { SELL_SIGNAL_REFERENCE_DAYS } from './economy/sell-signal';
 import { assemblePriceHistory } from './runtime/assemble-price-history';
 import { PriceHistoryPanelSeedService, type PriceHistoryPanelSeedState } from './economy/price-seed-panel-service';
-import { PriceSeedBulkRefreshService } from './economy/price-seed-bulk-refresh';
+import { PriceSeedBulkRefreshService, type PriceSeedQueueCoverage } from './economy/price-seed-bulk-refresh';
 import { IndexedDbPriceSeedCacheStore } from './economy/price-seed-cache-store';
 import { fetchPriceSeed } from './economy/price-seed-source';
 import type { PriceSeedV1 } from './economy/price-seed-model';
@@ -337,6 +337,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private priceHistoryPanelSeed: PriceHistoryPanelSeedService | null = null;
 	/** Deferred to `capture()`'s own decision-4 pass; never touched from `onload`. */
 	private priceSeedBulkRefresh: PriceSeedBulkRefreshService | null = null;
+	/**
+	 * H18.17: the last `run()`'s queue coverage, across the WHOLE derived watch list (not only the
+	 * slice one run reached). `null` until the first "Sincronizar inventario" completes a pass.
+	 * Read-only, in-memory; `getPriceSeedQueueCoverage` is the only thing that reads it.
+	 */
+	private priceSeedQueueCoverage: PriceSeedQueueCoverage | null = null;
 	/**
 	 * Read-only connection to the same `tyrian-companion-price-seed-cache` database
 	 * `priceSeedBulkRefresh` writes into, for `previewInventorySync`'s recommendation port
@@ -878,7 +884,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 						// recomputed on every sync so an item that drops below the threshold leaves it.
 						updateDerivedWatchList: async (itemIds) => { await this.priceHistory?.applyDerivedWatchList(itemIds); },
 						// Decision 4: bulk datawars2 seeding for that same list, one request at a time.
-						refreshPriceSeeds: async (itemIds) => { await this.priceSeedBulkRefresh?.run(itemIds); },
+						// H18.17: the outcome used to be discarded here, so neither a `no_seed` retry
+						// schedule nor the queue's coverage ever reached anything past this call.
+						refreshPriceSeeds: async (itemIds) => {
+							const outcome = await this.priceSeedBulkRefresh?.run(itemIds);
+							if (outcome !== undefined) this.priceSeedQueueCoverage = outcome.queueCoverage;
+						},
 						// Rule (b), M3: the item's calendar window plus the pack's shared sellSignal
 						// parameters, or null (rule (c)) when it has no entry or the pack is unavailable.
 						seasonalInputFor: (itemId) => {
@@ -2148,6 +2159,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 	/** The sell/hold verdict for the Halloween bag, a permanent surface rather than only a transient alert. */
 	getSellSignalState(): SellSignalRuntimeState | null {
 		return this.sellSignal?.getState() ?? null;
+	}
+
+	/**
+	 * H18.17: the datawars2 seed queue's coverage across the whole watch list — how many items have
+	 * a history, how many are still pending their turn, how many answered with no data — from the
+	 * last "Sincronizar inventario" pass. `null` until that first pass completes; never triggers work.
+	 */
+	getPriceSeedQueueCoverage(): PriceSeedQueueCoverage | null {
+		return this.priceSeedQueueCoverage;
 	}
 
 	/** The Companion card's escape hatch for a blocked `operation_conflict`: the same journaled Move. */

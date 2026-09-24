@@ -23,10 +23,19 @@ import {
 /**
  * Seeds the annual series once, then reads it on every compaction.
  *
- * The network policy is the same one the rest of the plugin follows and is the
- * reason the seed is not fetched on load: nothing reaches the network without
- * an active session. One GET per activation at most, never retried within a
- * session, and never repeated once it has succeeded.
+ * H18.17 (auditoría 24 sep 2026, §3.D): this used to gate the download on
+ * `sessionActive()`, so the bag's sell/hold verdict never got a seed unless a
+ * session happened to be active the moment a compaction landed — in practice,
+ * only while farming the exact day it mattered. `ensureSeed` is only ever
+ * called from `afterCompaction` (`assemble-price-history.ts`), itself only
+ * reachable while price history is enabled and its own scheduler is running:
+ * that is the "sincronización ya configurada por el usuario" the product
+ * policy asks for, and it needs no session on top of it. `sessionActive` is
+ * kept on the options for now (existing wiring, unread here) rather than
+ * touched at every call site outside this file's own scope.
+ *
+ * One GET per activation at most, never retried within a session, and never
+ * repeated once it has succeeded.
  *
  * There is deliberately no "seed failed, try again in five minutes". The whole
  * point of `no_seed` is that the plugin keeps working on what it captured
@@ -46,7 +55,11 @@ export interface SellSignalRuntimeOptions {
 	window: SeasonalWindowV1;
 	transport: HttpTransport;
 	now: () => number;
-	/** No network without a session. The seed is not an exception to that rule. */
+	/**
+	 * H18.17: no longer read by `ensureSeed` — the download now rides the price-history compaction
+	 * cycle it is already only ever called from, not a live session. Kept typed (and still supplied
+	 * by every caller) so this fix stays inside `sell-signal-runtime.ts`.
+	 */
 	sessionActive: () => boolean;
 	/** The durable queue, which is where the per-kind cooldown floor is read from. */
 	emittedAlerts: () => readonly EmittedAlertRecordV1[];
@@ -96,10 +109,12 @@ export class SellSignalRuntime {
 	 * Concurrent callers share the one in-flight promise rather than opening a
 	 * second request: the price-history compaction and an explicit refresh can
 	 * both arrive inside the same second on activation.
+	 *
+	 * H18.17: no `sessionActive()` gate here (see the class docblock above) — the caller
+	 * (`afterCompaction`) is itself the "already configured sync" this is allowed to ride.
 	 */
 	async ensureSeed(parent?: ResolvedLocalDebugActionContext): Promise<void> {
 		if (this.disposed || this.attempted) return;
-		if (!this.options.sessionActive()) return;
 		if (this.seeding !== null) { await this.seeding; return; }
 		this.attempted = true;
 		const flight = this.downloadSeed(parent).finally(() => {
