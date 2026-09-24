@@ -50,6 +50,12 @@ import type { StorageDelta } from './account/storage-delta-model';
 import { managedAssetsBundle, sha256Text } from './assets/generic-assets';
 import { ManagedAssetsManager, type ManagedAssetsResult } from './assets/managed-assets';
 import { ManagedAssetsLifecycle, type ManagedAssetsLifecycleResult } from './assets/managed-assets-lifecycle';
+import {
+	decideManagedAssetsAutoUpdate,
+	planManagedAssets,
+	type ManagedAssetsAutoUpdateDecision,
+	type ManagedAssetsInspection,
+} from './assets/managed-assets-model';
 import type { ManagedAssetsMessageCode, ManagedAssetsView } from './assets/managed-assets-ui';
 import { IndexedDbManagedAssetsPointerStore } from './assets/managed-assets-pointer';
 import { ObsidianRequestTransport } from './core/obsidian-http';
@@ -303,6 +309,7 @@ type NoticeDiagnosticSource =
 	| 'plugin_start_failed'
 	| 'managed_assets_relocated'
 	| 'managed_assets_blocked'
+	| 'managed_assets_updated'
 	| 'session_command'
 	| 'live_observation'
 	| 'valuable_loot';
@@ -418,6 +425,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private managedAssetsPointer!: IndexedDbManagedAssetsPointerStore;
 	private managedAssetsView: ManagedAssetsView =
 		{ status: 'idle', message: 'not_inspected', plan: null };
+	/** H18.18: a held automatic Base update warns once per plugin load, not on every sync. */
+	private managedAssetsAutoUpdateWarned = false;
 	private sessionHistoryView: SessionHistoryView =
 		{ status: 'idle', sessions: 0, erased: 0, alreadyAbsent: 0 };
 	private sessionHistoryPreviewFlight: Promise<SessionHistoryScrubPreview> | null = null;
@@ -1736,12 +1745,57 @@ export default class TyrianCompanionPlugin extends Plugin {
 	async runInventoryVaultSync(): Promise<void> {
 		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.run());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
+		await this.updateManagedAssetsAfterInventorySync();
 	}
 
 	/** Writes a plan that paused for confirmation because it would deactivate rows. */
 	async confirmInventoryVaultSync(): Promise<void> {
 		const perform = async () => inventoryOneClickSyncOutcome(await this.inventoryVaultSyncRun.confirm());
 		await (this.localDebugActions?.run({ component: 'inventory', action: 'inventory_sync' }, perform) ?? perform());
+		await this.updateManagedAssetsAfterInventorySync();
+	}
+
+	/**
+	 * H18.18: the Bases follow a newer plugin on their own, but only behind the explicit inventory
+	 * sync that just rewrote the notes they read (never on load: PRODUCT.md principle 2 and 4).
+	 * Only an installed root that already is the output folder is touched, and only when the
+	 * manual preview's own conflict rule finds nothing the user edited
+	 * (`decideManagedAssetsAutoUpdate`); the write is the Settings "Aplicar" path, unchanged. A held
+	 * update keeps today's manual preview, ready in Settings, and warns once per plugin load.
+	 */
+	private async updateManagedAssetsAfterInventorySync(): Promise<void> {
+		const state = this.inventoryVaultSyncRun.current();
+		if (!this.runtimeReady || state.status !== 'idle' || state.lastRun?.status !== 'success') return;
+		const root = this.settings.managedAssetsRoot;
+		if (root === null || root !== this.settings.outputFolder
+			|| this.settings.legacyManagedAssetsRoot !== null || this.settings.legacyOutputFolder !== null) return;
+		const perform = async () => {
+			let decision: ManagedAssetsAutoUpdateDecision;
+			let inspection: ManagedAssetsInspection;
+			try {
+				inspection = await this.managedAssets.inspect(root);
+				decision = decideManagedAssetsAutoUpdate(inspection);
+			} catch (error) {
+				return { phase: 'failure' as const, code: 'unknown_failure' as const, details: unmappedErrorLogDetails(error) };
+			}
+			const translator = createTranslator(this.settings.language);
+			if (decision.action === 'manual') {
+				this.managedAssetsView = { status: 'ready', message: 'preview_blocked', plan: planManagedAssets(inspection, 'upgrade') };
+				this.settingTab.refreshManagedAssetsRow();
+				if (!this.managedAssetsAutoUpdateWarned) {
+					this.managedAssetsAutoUpdateWarned = true;
+					this.emitNotice(translateRuntime(translator, 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_blocked');
+				}
+				return undefined;
+			}
+			if (decision.action === 'none') return undefined;
+			await this.applyManagedAssets();
+			this.emitNotice(translateRuntime(translator, this.managedAssetsView.status === 'ready'
+				? 'notices.managedAssetsAutoUpdated' : 'notices.managedAssetsAutoUpdateBlocked'), 'managed_assets_updated');
+			return undefined;
+		};
+		await (this.localDebugActions?.run({ component: 'assets', action: 'managed_assets_apply', state: 'after_inventory_sync' }, perform)
+			?? perform());
 	}
 
 	/** Discards a pending destructive plan without writing anything. */

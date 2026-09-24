@@ -5,7 +5,14 @@ import { genericManagedAssets, managedAssetsBundle, sha256Text } from './generic
 import { halloweenManagedAssets } from './halloween-base';
 import { ManagedAssetsManager, type ManagedAssetFile, type ManagedAssetsVault } from './managed-assets';
 import { ManagedAssetsLifecycle } from './managed-assets-lifecycle';
-import { MANAGED_ASSETS_MANIFEST, managedAssetMarker, normalizeManagedAssetPath, planManagedAssets, type PackagedAsset } from './managed-assets-model';
+import {
+	decideManagedAssetsAutoUpdate,
+	MANAGED_ASSETS_MANIFEST,
+	managedAssetMarker,
+	normalizeManagedAssetPath,
+	planManagedAssets,
+	type PackagedAsset,
+} from './managed-assets-model';
 import { MemoryManagedAssetsPointerStore } from './managed-assets-pointer';
 
 const CONFIG_DIR = 'vault-config';
@@ -36,6 +43,42 @@ describe('managed asset paths and planning', () => {
 		const [asset] = await genericManagedAssets();
 		expect(asset?.bytes).toContain('tc_schema >= 1');
 		expect(asset?.bytes).toContain('tc_kind == "gw2_farming_session"');
+	});
+});
+
+describe('automatic Base update behind the inventory sync (H18.18)', () => {
+	const ROOT = 'Tyrian Companion';
+	const PATH = 'Tyrian Companion/Bases/Sessions.base';
+
+	it('applies a newer bundle on its own only when nothing the user touched is in the way', async () => {
+		const vault = new MemoryAssetVault();
+		// Never installs by itself: without a manifest there is nothing to follow.
+		expect(decideManagedAssetsAutoUpdate(await (await manager(vault, 1)).inspect(ROOT))).toEqual({ action: 'none' });
+		await (await manager(vault, 1)).apply(ROOT);
+		expect(decideManagedAssetsAutoUpdate(await (await manager(vault, 1)).inspect(ROOT))).toEqual({ action: 'none' });
+
+		const newer = await manager(vault, 2);
+		expect(decideManagedAssetsAutoUpdate(await newer.inspect(ROOT))).toEqual({ action: 'apply' });
+		expect((await newer.apply(ROOT, 'upgrade')).status).toBe('applied');
+		expect(decideManagedAssetsAutoUpdate(await newer.inspect(ROOT))).toEqual({ action: 'none' });
+	});
+
+	it('holds an update back for the manual preview when the user edited or deleted a Base', async () => {
+		const edited = new MemoryAssetVault();
+		await (await manager(edited, 1)).apply(ROOT);
+		edited.contents.set(PATH, `${edited.contents.get(PATH)!}\nhuman edit`);
+		// Customised but already current: nothing pending, so no warning on every sync.
+		expect(decideManagedAssetsAutoUpdate(await (await manager(edited, 1)).inspect(ROOT))).toEqual({ action: 'none' });
+		// A newer bundle over that edit: the preview's own conflict rule holds it.
+		expect(decideManagedAssetsAutoUpdate(await (await manager(edited, 2)).inspect(ROOT)))
+			.toEqual({ action: 'manual', reasons: ['modified'] });
+
+		const deleted = new MemoryAssetVault();
+		await (await managerAtContentVersion(deleted, 1, 1)).apply(ROOT);
+		deleted.contents.delete(PATH);
+		const withNewBase = await managerWithAdditionalAsset(deleted);
+		expect(decideManagedAssetsAutoUpdate(await withNewBase.inspect(ROOT)))
+			.toEqual({ action: 'manual', reasons: ['missing'] });
 	});
 });
 

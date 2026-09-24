@@ -134,6 +134,38 @@ export function planManagedAssets(inspection: ManagedAssetsInspection, kind: Man
 	};
 }
 
+/** Why an automatic Base update is left to the manual preview: a conflict, or a Base the user deleted. */
+export type ManagedAssetsAutoUpdateHold = ManagedAssetsBlockerReason | 'missing';
+
+export type ManagedAssetsAutoUpdateDecision =
+	/** Nothing installed (never installs by itself), another operation in flight, or nothing newer. */
+	| { action: 'none' }
+	/** A newer bundle and nothing the user touched: apply it through the ordinary upgrade. */
+	| { action: 'apply' }
+	/** A newer bundle held back: leave everything as it is and point the user to the preview. */
+	| { action: 'manual'; reasons: ManagedAssetsAutoUpdateHold[] };
+
+/**
+ * H18.18: whether the managed Bases can follow a newer plugin on their own. It reuses the exact
+ * conflict rule of the manual preview (`planManagedAssets(…, 'upgrade')`), so anything that
+ * preview would refuse (a Base the user edited, a foreign file, a newer manifest, a detached
+ * root) keeps the manual path and only earns a warning, and adds one hold of its own: a Base the
+ * user deleted is never recreated behind their back. An edited Base whose installed version is
+ * already current is not "pending", so a user who customised a Base is not warned on every sync.
+ */
+export function decideManagedAssetsAutoUpdate(inspection: ManagedAssetsInspection): ManagedAssetsAutoUpdateDecision {
+	if (inspection.manifestStatus === 'missing' || inspection.manifestStatus === 'applying') return { action: 'none' };
+	const installedVersion = new Map((inspection.manifest?.assets ?? []).map((entry) => [entry.id, entry.contentVersion]));
+	const pending = inspection.assets.some((entry) => entry.status === 'update' || entry.status === 'create'
+		|| entry.status === 'recoverable'
+		|| (entry.status === 'modified' && (installedVersion.get(entry.asset.id) ?? 0) < entry.asset.contentVersion));
+	if (!pending) return { action: 'none' };
+	const plan = planManagedAssets(inspection, 'upgrade');
+	const missing = inspection.assets.some((entry) => entry.status === 'missing');
+	if (plan.canApply && !missing) return { action: 'apply' };
+	return { action: 'manual', reasons: [...plan.reasons, ...(missing ? ['missing' as const] : [])] };
+}
+
 export function isManagedAssetsManifest(value: unknown): value is ManagedAssetsManifest {
 	if (!record(value) || (value.schemaVersion !== 1 && value.schemaVersion !== 2) || value.pluginId !== 'tyrian-companion') return false;
 	const schemaVersion = value.schemaVersion;
