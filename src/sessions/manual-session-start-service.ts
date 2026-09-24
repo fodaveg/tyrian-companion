@@ -24,6 +24,7 @@ import {
 import type {
 	SessionEvent,
 	SessionFailureCode,
+	SessionInProgressState,
 	SessionSnapshotReference,
 	SessionState,
 } from './session';
@@ -35,9 +36,9 @@ import type { SessionItemTypeCapture } from './session-item-type-capture';
 import {
 	createSessionRuntimeRecord,
 	recoverableState,
-	type PersistedSessionState,
 	type SessionRuntimeRecord,
 	type SessionRuntimeStore,
+	type SessionSummaryReceipt,
 } from './session-runtime-store';
 import {
 	normalizeSessionStartInput,
@@ -126,11 +127,34 @@ export type ManualSessionStartResult =
 	| { status: 'started'; state: Extract<SessionState, { status: 'active' }> }
 	| { status: 'failed'; failure: SessionStartFailure };
 
+/**
+ * Delays between the automatic attempts that finish what a failure interrupted (H18.7): a final
+ * capture that failed (network gone during the wait), a lease that expired while the machine slept,
+ * a saved session found at startup that another window still held. The last delay repeats: nothing
+ * here gives up on its own, and a click on the visible retry always goes straight through.
+ */
+export const SESSION_AUTO_RETRY_DELAYS_MS: readonly number[] = Object.freeze([5_000, 30_000, 60_000, 120_000, 300_000]);
+
+/**
+ * How long the watch waits before dispatching a due capture or finalize again when the host never
+ * got as far as calling back into the service; a real failure schedules its own backoff instead.
+ */
+const SESSION_DISPATCH_GUARD_MS = 60_000;
+
+/** Who asked for a recovery: a click, `initialize()`, or the automatic retry of the watch. */
+type RecoveryMode = 'manual' | 'startup' | 'watch';
+
 export type ManualSessionStopResult =
 	| {
 			status: 'stopped';
 			state: Extract<SessionState, { status: 'provisional' }>;
 			delta: StorageDelta;
+			/**
+			 * Present only when the final snapshot had already been captured and reported by an earlier
+			 * attempt (a retry after the finalize or its save failed): the host finalizes again but must
+			 * not repeat the capture-time bookkeeping.
+			 */
+			resumed?: true;
 	  }
 	| {
 			/** The stop is committed; the final snapshot waits for the Guild Wars 2 cache window. */
@@ -183,6 +207,12 @@ export interface ManualSessionStartServiceOptions {
 	farmedLossItemTypeCapture?: SessionItemTypeCapture;
 	/** Records a `warn` line when recover/discard finds the saved session's lease owned elsewhere. */
 	diagnostics?: LocalDebugActionPort;
+	/**
+	 * Called after the service took a session back on its own, from a timer rather than from a call
+	 * the host made (H18.7: a lease lost while the machine slept, a saved session another window held
+	 * at startup). The host resumes what it runs around a live session, such as the loot poll.
+	 */
+	onAutoRecovered?: () => void;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -214,6 +244,12 @@ export class ManualSessionStartService {
 	private startupFinalization: StartupFinalization | null = null;
 	private initializationFlight: Promise<void> | null = null;
 	private recoveryFlight: Promise<SessionRecoveryResult> | null = null;
+	private reclaimFlight: Promise<SessionStopFailure | null> | null = null;
+	/** Earliest instant the lifecycle watch may retry on its own; null when nothing waits for it. */
+	private autoRetryAt: number | null = null;
+	private autoRetryAttempts = 0;
+	/** Proof that the completed session's summary reached the vault (H18.8); see `markCompletedSummarySaved`. */
+	private summaryReceipt: SessionSummaryReceipt | null = null;
 	private disposed = false;
 	private readonly now: () => number;
 	private readonly sessionId: () => string;
@@ -225,6 +261,7 @@ export class ManualSessionStartService {
 	private readonly priceCapture: SessionPriceCapture | null;
 	private readonly farmedLossItemTypeCapture: SessionItemTypeCapture | null;
 	private readonly diagnostics: LocalDebugActionPort | null;
+	private readonly onAutoRecovered: () => void;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -241,6 +278,7 @@ export class ManualSessionStartService {
 		this.priceCapture = options.priceCapture ?? null;
 		this.farmedLossItemTypeCapture = options.farmedLossItemTypeCapture ?? null;
 		this.diagnostics = options.diagnostics ?? null;
+		this.onAutoRecovered = options.onAutoRecovered ?? (() => undefined);
 	}
 
 	getState(): SessionState {
@@ -282,6 +320,47 @@ export class ManualSessionStartService {
 
 	getRecoveryState(): SessionRecoveryState {
 		return structuredClone(this.recoveryState);
+	}
+
+	/** The proof that the completed session's summary is in the vault, or null while it is not. */
+	getCompletedSummaryReceipt(): SessionSummaryReceipt | null {
+		if (this.state.status !== 'complete' || this.summaryReceipt?.sessionId !== this.state.sessionId) return null;
+		return structuredClone(this.summaryReceipt);
+	}
+
+	/**
+	 * Records that the completed session's summary reached the vault at `path` (H18.8). From then on
+	 * the next `start()` releases the completed record on its own: no scan of every note to find it
+	 * again, and no rewrite of a note the player may have moved or edited since. The proof holds for
+	 * this window even when the local store rejects it (the note itself is the durable copy); the
+	 * result says whether it also survives a restart.
+	 */
+	async markCompletedSummarySaved(path: string): Promise<boolean> {
+		if (this.state.status !== 'complete' || path.length === 0) return false;
+		const receipt: SessionSummaryReceipt = {
+			version: 1, sessionId: this.state.sessionId, path, savedAt: Math.max(0, this.safeNowOr(Date.now())),
+		};
+		this.summaryReceipt = receipt;
+		// The store's own contract answers `false` instead of throwing, like every other write here.
+		return await this.runtimeStore.saveSummaryReceipt?.(receipt) ?? false;
+	}
+
+	private async loadSummaryReceipt(): Promise<SessionSummaryReceipt | null> {
+		return await this.runtimeStore.loadSummaryReceipt?.() ?? null;
+	}
+
+	/**
+	 * The machine woke up or the network came back (H18.7): renew the lease now instead of on the next
+	 * heartbeat, and let any automatic retry that was waiting run on the next tick instead of after its
+	 * backoff.
+	 */
+	notifyWake(): void {
+		if (this.disposed) return;
+		if (this.currentHandle) void this.runHeartbeat();
+		if (this.autoRetryAt !== null) {
+			this.autoRetryAt = this.safeNowOr(0);
+			this.armWatch();
+		}
 	}
 
 	/**
@@ -358,11 +437,34 @@ export class ManualSessionStartService {
 
 	private runStop(force: boolean): Promise<ManualSessionStopResult> {
 		if (this.stopFlight) return this.stopFlight;
-		const flight = this.stopInternal(force).finally(() => {
+		const flight = this.stopAndScheduleRetry(force).finally(() => {
 			if (this.stopFlight === flight) this.stopFlight = null;
 		});
 		this.stopFlight = flight;
 		return flight;
+	}
+
+	private async stopAndScheduleRetry(force: boolean): Promise<ManualSessionStopResult> {
+		const result = await this.stopInternal(force);
+		this.afterStopAttempt(result);
+		return result;
+	}
+
+	/**
+	 * A failed final capture used to leave the session `stopping` with nothing scheduled to try again
+	 * (H18.7): the network gone for the ten-minute wait meant a session that never finished unless the
+	 * player found a button. Any failure that leaves something to finish (still `stopping`, or an
+	 * authority failure this window may still take back) now schedules the next attempt itself.
+	 */
+	private afterStopAttempt(result: ManualSessionStopResult): void {
+		if (this.disposed) return;
+		if (result.status !== 'failed') {
+			// A resumed result only hands the capture back for another finalize; whether that one
+			// saves decides the backoff (see `finalizeStoppedSession`), so it must not reset it here.
+			if (result.status !== 'stopped' || result.resumed !== true) this.clearAutoRetry();
+			return;
+		}
+		if (this.state.status === 'stopping' || this.reclaimableError() !== null) this.scheduleAutoRetry();
 	}
 
 	/**
@@ -374,11 +476,24 @@ export class ManualSessionStartService {
 	 */
 	finalizeStoppedSession(): Promise<SessionContaminationReviewResult> {
 		if (this.reviewFlight) return this.reviewFlight;
-		const flight = this.finalizeStoppedSessionInternal().finally(() => {
+		const flight = this.finalizeAndScheduleRetry().finally(() => {
 			if (this.reviewFlight === flight) this.reviewFlight = null;
 		});
 		this.reviewFlight = flight;
 		return flight;
+	}
+
+	/**
+	 * A finalize that could not be saved leaves the session `provisional` with its lease held
+	 * (H18.4): the watch tries again through the host, so the result is never left half-saved.
+	 */
+	private async finalizeAndScheduleRetry(): Promise<SessionContaminationReviewResult> {
+		const result = await this.finalizeStoppedSessionInternal();
+		if (!this.disposed) {
+			if (result.status === 'finalized') this.clearAutoRetry();
+			else if (this.state.status === 'provisional') this.scheduleAutoRetry();
+		}
+		return result;
 	}
 
 	async resetCompletedSession(): Promise<boolean> {
@@ -393,6 +508,7 @@ export class ManualSessionStartService {
 		this.provisionalDelta = null;
 		this.contaminationReview = null;
 		this.priceSnapshot = null;
+		this.summaryReceipt = null;
 		this.onStateChange();
 		return true;
 	}
@@ -426,20 +542,28 @@ export class ManualSessionStartService {
 				this.contaminationReview = loaded.record.review;
 				this.priceSnapshot = loaded.record.priceSnapshot;
 				this.recoveryState = { status: 'none' };
-			} else if (loaded.record.state.status === 'provisional') {
+				const receipt = await this.loadSummaryReceipt();
+				this.summaryReceipt = receipt?.sessionId === loaded.record.state.sessionId ? receipt : null;
+			} else if (recoverableState(loaded.record.state).status === 'provisional') {
 				// A session that already captured its final snapshot never asks a human to review it
 				// (David, 2026-09-09): reclaim the lease and finalize through the exact same path a
 				// live `stop()` uses, whether Obsidian just started, a previous run closed before
 				// finalizing, or today's real incident. Only a failure along the way (lease busy or
 				// lost, store unavailable) still falls back to the ordinary "recovery available" state,
 				// so a human is never stuck without any way to resolve it.
-				await this.autoFinalizeProvisionalRecord(
-					loaded.record as SessionRuntimeRecord & { state: Extract<PersistedSessionState, { status: 'provisional' }> },
-				);
+				// A failure saved while provisional (H18.4: the lease lost between the capture and the
+				// finalize) takes the same path: the recover transition unwraps it.
+				await this.autoFinalizeProvisionalRecord(loaded.record);
 				return;
 			} else {
+				// `active`, `stopping` or a failure saved from either (H18.7): reopening Obsidian used to
+				// stop here and wait for someone to press "Recover". It now takes the session back on its
+				// own through the same fenced path; only a lease another window still holds, or storage
+				// that is down, leaves the recovery state visible, and the watch retries those by itself.
 				this.recoveryRecord = loaded.record;
 				this.recoveryState = { status: 'available', state: loaded.record.state };
+				await this.recoverSavedRecord('recover', 'startup');
+				return;
 			}
 		} else {
 			this.recoveryState = {
@@ -453,12 +577,14 @@ export class ManualSessionStartService {
 		this.onStateChange();
 	}
 
-	private async autoFinalizeProvisionalRecord(
-		record: SessionRuntimeRecord & { state: Extract<PersistedSessionState, { status: 'provisional' }> },
-	): Promise<void> {
+	private async autoFinalizeProvisionalRecord(record: SessionRuntimeRecord): Promise<void> {
+		if (record.state.status === 'complete') return;
+		const recordState = record.state;
 		const fallbackToRecoverable = (): void => {
 			this.recoveryRecord = record;
-			this.recoveryState = { status: 'available', state: record.state };
+			this.recoveryState = { status: 'available', state: recordState };
+			// Nobody has to press "Recover" for it either (H18.7): the watch retries on its own.
+			if (!this.disposed) this.scheduleAutoRetry();
 			this.onStateChange();
 		};
 		if (this.disposed || this.state.status !== 'idle') {
@@ -530,16 +656,19 @@ export class ManualSessionStartService {
 		}
 	}
 
-	private runRecovery(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
+	private runRecovery(
+		action: 'recover' | 'discard',
+		mode: RecoveryMode = 'manual',
+	): Promise<SessionRecoveryResult> {
 		if (this.recoveryFlight) return this.recoveryFlight;
-		const flight = this.recoveryInternal(action).finally(() => {
+		const flight = this.recoveryInternal(action, mode).finally(() => {
 			if (this.recoveryFlight === flight) this.recoveryFlight = null;
 		});
 		this.recoveryFlight = flight;
 		return flight;
 	}
 
-	private async recoveryInternal(action: 'recover' | 'discard'): Promise<SessionRecoveryResult> {
+	private async recoveryInternal(action: 'recover' | 'discard', mode: RecoveryMode): Promise<SessionRecoveryResult> {
 		await this.initialize();
 		// The stored record itself could not be read (`recoveryState.status === 'error'`), so there is
 		// no `recoveryRecord` and no authority to recover into. Discard is still possible: it does not
@@ -547,6 +676,26 @@ export class ManualSessionStartService {
 		if (this.recoveryState.status === 'error' && action === 'discard') {
 			return this.discardUnreadableRecovery();
 		}
+		return await this.recoverSavedRecord(action, mode);
+	}
+
+	private async recoverSavedRecord(action: 'recover' | 'discard', mode: RecoveryMode): Promise<SessionRecoveryResult> {
+		const result = await this.recoverRecordInternal(action, mode);
+		if (action === 'recover' && result.status !== 'recovered' && this.recoveryRecord !== null
+			&& this.state.status === 'idle' && !this.disposed) {
+			this.scheduleAutoRetry(this.recoveryState.status === 'busy' ? this.recoveryState.ownerExpiresAt + 1_000 : undefined);
+		}
+		return result;
+	}
+
+	/**
+	 * The fenced recover/discard of the saved record. `mode` only changes what happens around it:
+	 * `manual` is a click (visible "working" state), `startup` runs inside `initialize()` (the host
+	 * is not wired yet, so nothing is dispatched to it synchronously) and `watch` is the automatic
+	 * retry (the host hears about a success through `onAutoRecovered`). A recover that cannot happen
+	 * yet schedules its own retry: at the other owner's lease expiry, or after the usual backoff.
+	 */
+	private async recoverRecordInternal(action: 'recover' | 'discard', mode: RecoveryMode): Promise<SessionRecoveryResult> {
 		const record = this.recoveryRecord;
 		if (this.disposed || !record || this.state.status !== 'idle') {
 			return { status: 'failed', message: 'There is no saved session available to recover.' };
@@ -554,8 +703,10 @@ export class ManualSessionStartService {
 		if (record.state.status === 'complete') {
 			return { status: 'failed', message: 'The saved session is already complete.' };
 		}
-		this.recoveryState = { status: 'working', action, state: record.state };
-		this.onStateChange();
+		if (mode === 'manual') {
+			this.recoveryState = { status: 'working', action, state: record.state };
+			this.onStateChange();
+		}
 		const persisted = recoverableState(record.state);
 		const acquisition = await this.safeAcquire(persisted.sessionId);
 		if (acquisition.status === 'busy') {
@@ -645,11 +796,27 @@ export class ManualSessionStartService {
 		this.recoveryRecord = null;
 		this.recoveryState = { status: 'none' };
 		this.startHeartbeat(handle);
+		this.clearAutoRetry();
 		this.onStateChange();
 		// A session recovered mid-wait keeps waiting, and one whose window already elapsed while
 		// Obsidian was closed captures now instead of losing the stop the player already requested.
-		if (this.state.status === 'stopping') this.armSettlement();
+		// At startup the capture waits for the watch's first tick: the host is still being wired.
+		this.continueRecoveredSession(mode === 'startup');
+		if (mode === 'watch') this.onAutoRecovered();
 		return { status: 'recovered', state: this.getState() };
+	}
+
+	/** What a session taken back needs next: its capture (`stopping`) or its finalize (`provisional`). */
+	private continueRecoveredSession(deferred: boolean): void {
+		if (this.state.status === 'stopping') {
+			if (deferred) this.armWatch();
+			else this.armSettlement();
+		} else if (this.state.status === 'provisional') {
+			// Finalizing writes the note, which is the host's job: the watch hands it over on its next
+			// tick instead of calling into the host from inside this flow.
+			this.autoRetryAt = this.safeNowOr(0);
+			this.armWatch();
+		}
 	}
 
 	/**
@@ -678,6 +845,16 @@ export class ManualSessionStartService {
 
 	private async startInternal(input: SessionStartInput): Promise<ManualSessionStartResult> {
 		await this.initialize();
+		// The next session no longer needs the previous one cleared by hand (H18.8), but its result
+		// is only released once its summary is proven saved in the vault: otherwise it stays, whole.
+		if (this.state.status === 'complete' && !this.disposed) {
+			if (this.getCompletedSummaryReceipt() === null) {
+				return this.failWithoutLease('busy', 'The finished session summary is not saved yet, so it was kept.');
+			}
+			if (!await this.resetCompletedSession()) {
+				return this.failWithoutLease('coordination_unavailable', 'The finished session could not be released safely.');
+			}
+		}
 		this.lastFailure = null;
 		this.lastStopFailure = null;
 		this.provisionalDelta = null;
@@ -754,6 +931,23 @@ export class ManualSessionStartService {
 		this.lastStopFailure = null;
 		if (this.disposed) {
 			return this.failStop('coordination_unavailable', 'Session coordination is unavailable.');
+		}
+		// "Retry" from `error` used to answer `unexpected` every time (H18.4). It now takes the
+		// session back through the lease first, exactly like a restart would, and only then goes on
+		// from the phase the store actually holds; a window that lost the race stays in `error`.
+		if (this.state.status === 'error') {
+			const reclaimFailure = await this.reclaim();
+			if (reclaimFailure !== null) return this.failStop(reclaimFailure.code, reclaimFailure.message);
+		}
+		if (this.state.status === 'provisional') {
+			// The final snapshot is already committed: hand it back so the host finalizes again.
+			if (!this.provisionalDelta) return this.failStop('unexpected', 'The session final evidence is unavailable.');
+			return {
+				status: 'stopped',
+				state: this.getState() as Extract<SessionState, { status: 'provisional' }>,
+				delta: structuredClone(this.provisionalDelta),
+				resumed: true,
+			};
 		}
 		if (this.state.status !== 'active' && this.state.status !== 'stopping') {
 			return this.failStop('unexpected', 'There is no active farming session to stop.');
@@ -1094,6 +1288,9 @@ export class ManualSessionStartService {
 				code: mapped.code === 'lease_lost' ? 'lease_lost' : 'storage_unavailable',
 			});
 			void this.persistCurrentState().catch(() => undefined);
+			// A 300 s lease expires while the machine sleeps (H18.7), which is not another window
+			// taking the session: the watch tries to take it back on its own, through the fence.
+			this.scheduleAutoRetry();
 		} catch { /* the state machine remains fail-closed */ }
 	}
 
@@ -1110,10 +1307,15 @@ export class ManualSessionStartService {
 	 * the real elapsed time rather than with how often this callback happened to run.
 	 */
 	private armSettlement(): void {
+		this.armWatch();
+		this.checkSettlement();
+	}
+
+	/** Starts the one lifecycle tick (settlement wait and automatic retries) without checking now. */
+	private armWatch(): void {
 		if (this.settlementHandle === null && !this.disposed) {
 			this.settlementHandle = this.scheduleInterval(() => this.checkSettlement(), API_SETTLEMENT_TICK_MS);
 		}
-		this.checkSettlement();
 	}
 
 	private stopSettlement(): void {
@@ -1123,19 +1325,233 @@ export class ManualSessionStartService {
 		}
 	}
 
+	/**
+	 * The lifecycle tick. Besides the settlement wait it now finishes, on its own and with backoff
+	 * (H18.7), whatever a failure interrupted: a final capture (`stopping`), a finalize or its save
+	 * (`provisional`), a lost authority (`error`) or a saved session another window held at startup
+	 * (`idle` with a recovery record). The interval stops once there is nothing left to watch.
+	 */
 	private checkSettlement(): void {
-		if (this.disposed || this.state.status !== 'stopping') {
+		if (this.disposed) {
 			this.stopSettlement();
 			return;
 		}
+		if (this.state.status === 'stopping') {
+			this.checkSettlementDue();
+			return;
+		}
+		if (this.autoRetryAt === null) {
+			this.stopSettlement();
+			return;
+		}
+		if (this.safeNowOr(0) < this.autoRetryAt) return;
+		if (this.state.status === 'provisional') {
+			if (this.stopFlight || this.reviewFlight) return;
+			this.autoRetryAt = this.safeNowOr(0) + SESSION_DISPATCH_GUARD_MS;
+			this.onSettlementDue();
+		} else if (this.reclaimableError() !== null) {
+			if (this.stopFlight || this.reclaimFlight) return;
+			this.autoRetryAt = null;
+			void this.runAutoRetry('reclaim');
+		} else if (
+			this.state.status === 'idle' && this.recoveryRecord !== null
+			&& (this.recoveryState.status === 'available' || this.recoveryState.status === 'busy')
+		) {
+			if (this.recoveryFlight) return;
+			this.autoRetryAt = null;
+			void this.runAutoRetry('recover');
+		} else {
+			this.clearAutoRetry();
+			this.stopSettlement();
+		}
+	}
+
+	private checkSettlementDue(): void {
 		const wait = this.getSettlementWait();
 		if (wait === null || wait.status === 'waiting') return;
 		// A stop already in flight owns the decision; the next tick sees whatever it left behind.
 		if (this.stopFlight) return;
-		this.stopSettlement();
-		// One dispatch per due window. A capture that fails leaves the session `stopping` with its
-		// stop failure visible, which is the existing retry path, instead of hammering the API.
+		const now = this.safeNowOr(0);
+		if (this.autoRetryAt !== null && now < this.autoRetryAt) return;
+		// One dispatch per attempt. A failed capture schedules the next one with backoff
+		// (`afterStopAttempt`); the guard only covers a host that never got to call `stop()`.
+		this.autoRetryAt = now + SESSION_DISPATCH_GUARD_MS;
 		this.onSettlementDue();
+	}
+
+	private scheduleAutoRetry(at?: number): void {
+		if (this.disposed) return;
+		const delays = SESSION_AUTO_RETRY_DELAYS_MS;
+		const delay = delays[Math.min(this.autoRetryAttempts, delays.length - 1)] ?? 0;
+		this.autoRetryAttempts += 1;
+		this.autoRetryAt = at ?? this.safeNowOr(Date.now()) + delay;
+		this.armWatch();
+	}
+
+	private clearAutoRetry(): void {
+		this.autoRetryAt = null;
+		this.autoRetryAttempts = 0;
+	}
+
+	/**
+	 * The watch's only detached call. A throw here (an invalid local clock, a store that throws
+	 * instead of answering) is logged and turned into the next scheduled attempt, never lost.
+	 */
+	private async runAutoRetry(kind: 'reclaim' | 'recover'): Promise<void> {
+		try {
+			if (kind === 'recover') {
+				await this.runRecovery('recover', 'watch');
+				return;
+			}
+			const failed = await this.reclaim();
+			if (this.disposed) return;
+			if (failed !== null) {
+				if (this.reclaimableError() !== null) this.scheduleAutoRetry();
+				return;
+			}
+			this.onAutoRecovered();
+			this.continueRecoveredSession(false);
+		} catch (error) {
+			this.diagnostics?.event({
+				component: 'session', action: kind === 'recover' ? 'session_recover' : 'session_heartbeat',
+				level: 'error', phase: 'failure', code: 'unknown_failure', state: 'auto_retry',
+				details: unmappedErrorLogDetails(error),
+			});
+			this.scheduleAutoRetry();
+		}
+	}
+
+	/** The phase an `error` can be taken back into, or null when there is nothing to take back. */
+	private reclaimableError(): Exclude<SessionInProgressState, { status: 'starting' }> | null {
+		if (this.state.status !== 'error') return null;
+		const failed = this.state.failedState;
+		return failed.status === 'starting' ? null : failed;
+	}
+
+	private reclaim(): Promise<SessionStopFailure | null> {
+		if (this.reclaimFlight) return this.reclaimFlight;
+		const flight = this.reclaimInternal().finally(() => {
+			if (this.reclaimFlight === flight) this.reclaimFlight = null;
+		});
+		this.reclaimFlight = flight;
+		return flight;
+	}
+
+	/**
+	 * Takes a session in `error` back (H18.4/H18.7) without trusting anything this window still
+	 * remembers: the saved record is the source of truth and the lease is acquired again under a
+	 * new fence, exactly like a restart. The store only accepts the recovered record if its evidence
+	 * is the one already saved, so an older writer can never overwrite a newer one; a live owner
+	 * elsewhere keeps the session; and a session another window already finished is adopted as it
+	 * is instead of being finished a second, different time.
+	 */
+	private async reclaimInternal(): Promise<SessionStopFailure | null> {
+		const failed = this.reclaimableError();
+		if (this.disposed) return { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' };
+		if (failed === null) {
+			return this.state.status === 'error'
+				? { code: 'unexpected', message: 'There is no farming session to take back.' }
+				: null;
+		}
+		const sessionId = failed.sessionId;
+		this.stopHeartbeat();
+		await this.heartbeatFlight;
+		const stale = this.currentHandle;
+		this.currentHandle = null;
+		// Whatever this window still holds is released first, so the lease is issued again under a
+		// newer fence rather than reused: a lease that expired while asleep simply comes back vacant.
+		if (stale) await this.safeRelease(stale);
+		const loaded = await this.runtimeStore.load();
+		if (loaded.status === 'error') {
+			return { code: 'coordination_unavailable', message: 'Session recovery storage is unavailable.' };
+		}
+		if (loaded.status === 'empty') {
+			return { code: 'lease_lost', message: 'The saved farming session no longer exists.' };
+		}
+		const record = loaded.record;
+		const storedSessionId = record.state.status === 'complete'
+			? record.state.sessionId
+			: recoverableState(record.state).sessionId;
+		if (storedSessionId !== sessionId) {
+			return { code: 'lease_lost', message: 'Another farming session replaced this one.' };
+		}
+		if (record.state.status === 'complete') {
+			this.adoptRecord(record);
+			this.clearAutoRetry();
+			this.onStateChange();
+			return { code: 'lease_lost', message: 'Another Obsidian window already finished this farming session.' };
+		}
+		let acquisition = await this.safeAcquire(sessionId);
+		if (acquisition.status === 'already_owned') {
+			const released = await this.safeRelease(acquisition.handle);
+			if (released.status === 'error') {
+				return { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' };
+			}
+			acquisition = await this.safeAcquire(sessionId);
+		}
+		if (acquisition.status === 'busy' || acquisition.status === 'already_owned') {
+			return { code: 'lease_lost', message: 'Another Obsidian window owns this farming session.' };
+		}
+		if (acquisition.status === 'error') {
+			return { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' };
+		}
+		const handle = acquisition.handle;
+		if (handle.sessionId !== sessionId) {
+			await this.safeRelease(handle);
+			return { code: 'lease_lost', message: 'Another farming session owns the lease.' };
+		}
+		const owned = await this.safeAssert(handle);
+		if (owned.status !== 'owned') {
+			await this.safeRelease(handle);
+			return owned.status === 'lost'
+				? { code: 'lease_lost', message: 'The session lease was lost before it could be taken back.' }
+				: { code: 'coordination_unavailable', message: 'Session coordination is unavailable.' };
+		}
+		const authority = sessionAuthorityFromLease(handle);
+		const transition = transitionSession(record.state, {
+			type: 'recover',
+			authority,
+			recoveredAt: this.timestampAtOrAfter(authority.acquiredAt),
+		});
+		const recoveredState = transition.state;
+		if (transition.status === 'rejected' || recoveredState === null || recoveredState.status === 'error'
+			|| recoveredState.status === 'idle' || recoveredState.status === 'starting' || recoveredState.status === 'complete') {
+			await this.safeRelease(handle);
+			return { code: 'unexpected', message: 'The saved session authority could not be taken back safely.' };
+		}
+		const recoveredRecord = createSessionRuntimeRecord(
+			recoveredState,
+			record.baselineSnapshot,
+			record.finalSnapshot,
+			record.delta,
+			this.safeNow(),
+			record.review,
+			record.priceSnapshot,
+		);
+		const saved = recoveredRecord === null ? null : await this.runtimeStore.save(recoveredRecord);
+		if (saved?.status !== 'saved') {
+			await this.safeRelease(handle);
+			return saved?.status === 'stale'
+				? { code: 'lease_lost', message: 'A newer session owner rejected this stale write.' }
+				: { code: 'coordination_unavailable', message: 'Session recovery storage is unavailable.' };
+		}
+		this.adoptRecord({ ...record, state: recoveredState });
+		this.currentHandle = handle;
+		this.authorityFailure = null;
+		this.clearAutoRetry();
+		this.startHeartbeat(handle);
+		this.onStateChange();
+		return null;
+	}
+
+	/** Replaces this window's memory of the session with a saved record, evidence included. */
+	private adoptRecord(record: SessionRuntimeRecord): void {
+		this.state = structuredClone(record.state);
+		this.baselineSnapshot = structuredClone(record.baselineSnapshot);
+		this.finalSnapshot = record.finalSnapshot === null ? null : structuredClone(record.finalSnapshot);
+		this.provisionalDelta = record.delta === null ? null : structuredClone(record.delta);
+		this.contaminationReview = record.review === null ? null : structuredClone(record.review);
+		this.priceSnapshot = record.priceSnapshot === null ? null : structuredClone(record.priceSnapshot);
 	}
 
 	private async cleanupFailedStart(failed: SessionStartFailure, authority: ReturnType<typeof sessionAuthorityFromLease>): Promise<void> {
@@ -1207,6 +1623,10 @@ export class ManualSessionStartService {
 
 	private timestampAtOrAfter(floor: number): string {
 		return new Date(Math.max(this.safeNow(), floor)).toISOString();
+	}
+
+	private safeNowOr(fallback: number): number {
+		try { return this.safeNow(); } catch { return fallback; }
 	}
 
 	private safeTimestampAtOrAfter(floor: number): string {

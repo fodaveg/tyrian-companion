@@ -25,7 +25,8 @@ describe('projectSessionCommands', () => {
 		// Nobody reviews a session anymore (Lote S, 2026-09-09): `provisional` finalizes on its own
 		// and offers no command while it does.
 		['provisional', []],
-		['complete', ['clear-completed-session']],
+		// H18.8: the next session starts from a finished one without clearing it by hand first.
+		['complete', ['start-farming-session', 'clear-completed-session']],
 		['error', []],
 	] as const)('projects commands for %s', (status, expected) => {
 		expect(available(context(status))).toEqual(expected);

@@ -232,9 +232,10 @@ describe('grace window before the final session snapshot', () => {
 			serviceOptions({ runtimeStore }),
 		);
 
+		// Reopening takes the session back on its own (H18.7): no "Recover" click in between.
 		await second.initialize();
-		expect(second.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'stopping' } });
-		await expect(second.recover()).resolves.toMatchObject({ status: 'recovered', state: { status: 'stopping' } });
+		expect(second.getRecoveryState()).toEqual({ status: 'none' });
+		expect(second.getState()).toMatchObject({ status: 'stopping', authority: { fence: 2 } });
 
 		expect(captureFinal).not.toHaveBeenCalled();
 		expect(second.getSettlementWait()).toMatchObject({ status: 'waiting', remainingMs: 240_000 });
@@ -275,7 +276,10 @@ describe('grace window before the final session snapshot', () => {
 			serviceOptions({ runtimeStore }),
 		);
 		await second.initialize();
-		await second.recover();
+		// Startup never calls into a host that is still being wired: the capture waits for the
+		// watch's first tick instead of running inside `initialize()`.
+		expect(captureFinal).not.toHaveBeenCalled();
+		tickSettlementWatcher();
 
 		// Recovering an already requested stop honours an order the player already gave; losing the
 		// session would be worse. What changes is the declared quality, not whether it completes.

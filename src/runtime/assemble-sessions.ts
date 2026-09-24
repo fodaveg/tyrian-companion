@@ -63,6 +63,8 @@ export interface SessionsAssemblyInput {
 	onSessionStateChange: () => void;
 	/** The grace window ends outside any click, and the same stop pipeline has to run then. */
 	onSettlementDue: () => void;
+	/** The session service took a session back on its own (lost lease, startup busy); see H18.7. */
+	onSessionAutoRecovered: () => void;
 	onProposalQueueStateChange: () => void;
 	onProposalExcluded: (
 		proposalId: string,
@@ -111,6 +113,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 		{
 			onStateChange: input.onSessionStateChange,
 			onSettlementDue: input.onSettlementDue,
+			onAutoRecovered: input.onSessionAutoRecovered,
 			runtimeStore: new IndexedDbSessionRuntimeStore(
 				input.factory, undefined, input.sessionRecoverPersistence,
 			),
