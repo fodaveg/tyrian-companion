@@ -25,7 +25,7 @@ import { LocalDebugActionRunner, type LocalDebugActionPort } from './core/local-
 import { LocalDebugLogger } from './core/local-debug-logger';
 import { LocalDebugJsonlWriter, type LocalDebugStoragePort } from './core/local-debug-writer';
 import { SESSION_STATE_VERSION, type SessionState } from './sessions/session';
-import { COMPANION_VIEW_TYPE } from './ui/companion-view';
+import { COMPANION_VIEW_TYPE, ConfirmAbandonSessionModal } from './ui/companion-view';
 import { INVENTORY_ADVISOR_VIEW_TYPE } from './ui/inventory-advisor-item-view';
 import type { InventoryAdvisorViewModel } from './ui/inventory-advisor-view-model';
 import { SessionCommandController } from './ui/session-command-controller';
@@ -520,6 +520,56 @@ describe('manual session start command', () => {
 		expect(startManualSession).not.toHaveBeenCalled();
 		expect(runtime.mutations).toBe(0);
 		expect(notify).not.toHaveBeenCalled();
+	});
+});
+
+describe('abandon session command', () => {
+	/** A session whose key moved to another account mid-stop (H18.12): the only case the button is for. */
+	const stoppingContext = (): SessionCommandContext => ({
+		state: { version: 1, status: 'stopping' } as unknown as SessionState,
+		recovery: { status: 'none' },
+		connection: 'connected',
+		stopFailure: { code: 'account_changed', message: 'another account' },
+	});
+
+	function abandonHarness() {
+		const performAbandonSession = vi.fn(async () => undefined);
+		const plugin = {
+			app: {}, settings: { language: 'es' }, abandonModal: null as ConfirmAbandonSessionModal | null,
+			performAbandonSession,
+		};
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicitly invoked with the isolated plugin harness below.
+		const prepare = (TyrianCompanionPlugin.prototype as unknown as {
+			prepareAbandonIntent(this: typeof plugin): Promise<PreparedSessionCommand | null>;
+		}).prepareAbandonIntent;
+		const notify = vi.fn();
+		const controller = new SessionCommandController({
+			getContext: stoppingContext, prepare: () => prepare.call(plugin), notify,
+		} satisfies SessionCommandPorts);
+		return { plugin, performAbandonSession, controller, notify };
+	}
+
+	it('does nothing when the confirmation is cancelled', async () => {
+		const { plugin, performAbandonSession, controller, notify } = abandonHarness();
+		const run = controller.run('abandon-farming-session');
+		await flush();
+		expect(plugin.abandonModal).toBeInstanceOf(ConfirmAbandonSessionModal);
+		plugin.abandonModal!.close();
+		await expect(run).resolves.toBeUndefined();
+		expect(plugin.abandonModal).toBeNull();
+		expect(performAbandonSession).not.toHaveBeenCalled();
+		expect(notify).not.toHaveBeenCalled();
+	});
+
+	it('abandons only once the confirmation is accepted', async () => {
+		const { plugin, performAbandonSession, controller } = abandonHarness();
+		const run = controller.run('abandon-farming-session');
+		await flush();
+		const modal = plugin.abandonModal as unknown as { onConfirm(): Promise<void>; close(): void };
+		await modal.onConfirm();
+		modal.close();
+		await run;
+		expect(performAbandonSession).toHaveBeenCalledOnce();
 	});
 });
 

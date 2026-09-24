@@ -201,6 +201,7 @@ import type { SessionStartInput } from './sessions/session-start-capture';
 import { assembleSessions } from './runtime/assemble-sessions';
 import {
 	COMPANION_VIEW_TYPE,
+	ConfirmAbandonSessionModal,
 	ConfirmClearCompletedSessionModal,
 	ConfirmDiscardSessionModal,
 	ConfirmDiscardUnreadableSessionModal,
@@ -417,6 +418,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 	private startModal: ManualSessionStartModal | null = null;
 	private discardModal: ConfirmDiscardSessionModal | ConfirmDiscardUnreadableSessionModal | null = null;
 	private clearModal: ConfirmClearCompletedSessionModal | null = null;
+	private abandonModal: ConfirmAbandonSessionModal | null = null;
 	private sessionCommands!: SessionCommandController;
 	private productActions!: ProductActionController;
 	private sessionDispatch!: SessionCommandDispatch;
@@ -1302,6 +1304,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.startModal?.close();
 		this.discardModal?.close();
 		this.clearModal?.close();
+		this.abandonModal?.close();
 		this.assistedDetection?.dispose();
 		this.detectionQuality?.dispose();
 		if (this.pilotMetrics) {
@@ -2826,7 +2829,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const state = this.sessions.getState();
 		const sessionId = state.status === 'idle' ? null
 			: state.status === 'error' ? state.failedState.sessionId : state.sessionId;
-		const released = state.status === 'idle'
+		const released = state.status === 'idle' || state.status === 'abandoned'
 			|| (state.status === 'complete' && this.sessions.getCompletedSummaryReceipt() !== null);
 		return {
 			status: state.status,
@@ -3931,7 +3934,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			checkConnection: () => this.checkConnection(),
 			canStartSession: () => this.runtimeReady
 				&& this.sessions.getRecoveryState().status === 'none'
-				&& this.sessions.getState().status === 'idle',
+				&& (this.sessions.getState().status === 'idle' || this.sessions.getState().status === 'abandoned'),
 			diagnostics: this.localDebugActions ?? undefined,
 		});
 		registerProductActionPalette(
@@ -4010,6 +4013,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		if (id === 'start-farming-session') return this.prepareStartIntent();
 		if (id === 'discard-saved-session') return this.prepareDiscardIntent();
 		if (id === 'clear-completed-session') return this.prepareClearIntent();
+		if (id === 'abandon-farming-session') return this.prepareAbandonIntent();
 		if (id === 'finish-farming-session') return Promise.resolve(() => this.performStopManualSession());
 		return Promise.resolve(() => this.performRecoverSession());
 	}
@@ -4059,6 +4063,56 @@ export default class TyrianCompanionPlugin extends Plugin {
 			);
 			this.clearModal.open();
 		});
+	}
+
+	private prepareAbandonIntent(): Promise<PreparedSessionCommand | null> {
+		if (this.abandonModal) return Promise.resolve(null);
+		return new Promise((resolve) => {
+			let confirmed = false;
+			this.abandonModal = new ConfirmAbandonSessionModal(
+				this.app,
+				() => { confirmed = true; resolve(() => this.performAbandonSession()); return Promise.resolve(); },
+				() => { this.abandonModal = null; if (!confirmed) resolve(null); },
+				() => this.settings.language,
+			);
+			this.abandonModal.open();
+		});
+	}
+
+	/**
+	 * Abandons a stopping session whose stop cannot finish (David, 2026-09-24): the session ends
+	 * `abandoned` with no loot, its record and lease are released, its note says it was abandoned
+	 * and why, and detection is armed again so the next session is detectable at once. A note that
+	 * could not be written is reported but does not keep the player stuck in the failed stop.
+	 */
+	private async performAbandonSession(): Promise<void> {
+		const runtimeLease = this.requireRuntimeMutationLease();
+		const result = await this.sessions.abandon().finally(() => runtimeLease.release());
+		if (result.status !== 'abandoned') throw new Error('Abandon failed.');
+		this.sessionSummarySaveState = 'unknown';
+		this.storedSessionLootSummary = null;
+		this.savedSessionNotePath = null;
+		const note = await writeSessionNoteWithDiagnostics(this.localDebugActions, () => this.sessionNotes.writeAbandoned({
+			state: result.state, locale: this.settings.language, outputFolder: this.settings.outputFolder,
+		}));
+		if (note.status === 'written' || note.status === 'unchanged') this.savedSessionNotePath = note.path;
+		else this.emitNotice(translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'), 'session_command');
+		this.renderViews();
+		if (this.runtimeReady) fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_arm', state: 'session_abandoned' },
+			() => this.armAssistedDetection());
+	}
+
+	/** Whether the card may offer "Abandon session": a stopping session no retry can finish. */
+	canAbandonSession(): boolean {
+		return this.runtimeReady && this.sessions.canAbandon();
+	}
+
+	/** The card's "Abandon session": the confirmation opens first; cancelling it does nothing. */
+	confirmAbandonSession(): void {
+		fireAndForgetLocal(this.localDebugActions,
+			{ component: 'session', action: 'session_finish', state: 'abandon' },
+			() => this.sessionCommands.run('abandon-farming-session'));
 	}
 
 	private async performRecoverSession(): Promise<void> {
