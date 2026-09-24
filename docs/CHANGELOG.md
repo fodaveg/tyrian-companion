@@ -63,6 +63,12 @@ genera y pega el token en el addon antes de volver a abrir Guild Wars 2.
 - **Arreglo del `rule_stale` del ecto (H18.13).** El asesor marcaba el inventario entero como
   `rule_stale` cuando la cotización del ecto llegaba partida en compra/venta; ahora reconoce esa
   forma de cotización y deja de degradar el resto de reglas por su culpa.
+- **Aviso opt-in del histórico de precios (David, 24 sep 2026).** El histórico sigue apagado por
+  defecto; el asesor ofrece activarlo con un aviso compacto y el botón «Activar histórico de
+  precios», que es el consentimiento y escribe el mismo ajuste que la pestaña de Ajustes. «Ahora
+  no» lo oculta hasta la siguiente versión del plugin (`priceHistoryNoticeDismissedVersion`).
+  Mostrar el aviso no hace ninguna petición (`src/core/settings.ts`,
+  `src/ui/inventory-advisor-view.ts`).
 
 ## Release beta 0.1.35 - Hallazgo mágico calculado desde la API
 
