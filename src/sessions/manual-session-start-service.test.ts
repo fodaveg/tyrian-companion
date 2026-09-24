@@ -532,7 +532,9 @@ describe('ManualSessionStartService', () => {
 	it('keeps stopping retryable when the snapshots cannot produce a valid delta', async () => {
 		const capture = {
 			capture: vi.fn(async () => structuredClone(captured)),
-			captureFinal: vi.fn(async () => afterSnapshot({ accountId: 'another-account' })),
+			// A reused snapshot id, not another account: a different account is its own, non-retried
+			// failure since H18.12 (`session-key-change.test.ts`).
+			captureFinal: vi.fn(async () => afterSnapshot({ snapshotId: captured.snapshot.snapshotId })),
 		};
 		const service = new ManualSessionStartService(coordinator(), capture, serviceOptions());
 		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
