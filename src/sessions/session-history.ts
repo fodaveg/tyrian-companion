@@ -254,6 +254,25 @@ export class SessionHistoryService {
 		}
 	}
 
+	/**
+	 * Reads the one note a completed session was written to (H18.8), instead of every Markdown file
+	 * in the vault. A note moved or renamed since reads as `missing`; that never undoes the fact
+	 * that it was saved, it only means its stored loot summary is not shown.
+	 */
+	async readSessionAt(path: string, sessionRef: string): Promise<DurableSessionLookup> {
+		try {
+			const file = this.vault.file(path);
+			if (file === null) return { status: 'missing' };
+			const content = await this.vault.read(file);
+			const decoded = await decodeDurableSession(content);
+			if (decoded.status !== 'ok' || decoded.session.sessionRef !== sessionRef) return { status: 'missing' };
+			return { status: 'found', path: file.path, session: decoded.session, loot: await inspectStoredSessionLootSummary(content) };
+		} catch (error) {
+			this.logFailure('vault_read', 'read_session', error);
+			return { status: 'unavailable' };
+		}
+	}
+
 	export(outputFolder: unknown): Promise<SessionHistoryExportResult> {
 		if (this.exportFlight) return this.exportFlight;
 		const flight = this.exportInternal(outputFolder).finally(() => {
