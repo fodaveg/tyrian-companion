@@ -13,9 +13,10 @@ import {
 } from '../economy/reservation';
 import {
 	isSessionValuation,
-	sessionPlayedDurationMs,
+	sessionActiveDurationMs,
 	type SessionValuation,
 } from '../economy/session-valuation';
+import { sessionUnobservedMs } from './session';
 import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { isSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
 import {
@@ -28,7 +29,7 @@ import { canonicalJson as canonical } from '../core/canonical-sha256';
 /** Re-exported under its historical name; `session-note-renderer` fingerprints blocks with it. */
 export { canonical };
 
-export const SESSION_NOTE_SCHEMA_VERSION = 4 as const;
+export const SESSION_NOTE_SCHEMA_VERSION = 5 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
 export const SESSION_NOTE_BLOCK_IDS = [
 	'summary', 'evidence', 'results', 'economy', 'decision', 'provenance',
@@ -133,7 +134,8 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	// The note reports the time the player farmed, not the time the plugin needed to read the
 	// account afterwards: with the API settlement window those differ by up to ten minutes, and
 	// dividing loot by the longer one understates every rate the note publishes.
-	const playedMs = sessionPlayedDurationMs(runtime.delta, runtime.state.stoppedAt);
+	// H18.11: minus the stretches nobody observed (a suspend, Obsidian closed); the end stays the stop.
+	const playedMs = sessionActiveDurationMs(runtime.delta, runtime.state.stoppedAt, sessionUnobservedMs(runtime.state));
 	if (playedMs === null) return { status: 'invalid', reason: 'invalid_runtime' };
 	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames) ||
 		!validItemIds(value.firstSeenItemIds) || !validItemIds(value.rareUnpricedOrBoundItemIds)) {
@@ -246,7 +248,7 @@ function optionalValuation(
 ): OptionalEvidence<SessionValuation> {
 	if (value === null) return { status: 'not_evaluated' };
 	const sackItemIds = reservation.status === 'valid' ? reservation.value.overlay.sackItemIds : [];
-	if (!isSessionValuation(value, runtime.delta, sackItemIds, runtime.state.stoppedAt) ||
+	if (!isSessionValuation(value, runtime.delta, sackItemIds, runtime.state.stoppedAt, sessionUnobservedMs(runtime.state)) ||
 		value.priceCapturedAt !== runtime.priceSnapshot?.capturedAt || value.priceSource !== runtime.priceSnapshot?.source) {
 		return { status: 'invalid' };
 	}

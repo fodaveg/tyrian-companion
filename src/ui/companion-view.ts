@@ -6,7 +6,7 @@ import { formatClock, formatRelativeDay } from './format-time';
 import type { LocalDebugStatus } from '../core/local-debug-contract';
 import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runtime-catalog';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
-import type { SessionState } from '../sessions/session';
+import { sessionUnobservedMs, type SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { ManagedAssetsView } from '../assets/managed-assets-ui';
 import { connectionErrorKey, projectManagedAssetsDescription } from './settings-i18n';
@@ -625,7 +625,7 @@ export class TyrianCompanionView extends ItemView {
 			// Nobody reviews a session anymore (David, 2026-09-09): this branch is only the brief gap
 			// between the final capture and the automatic finalize that follows it, never a state that
 			// waits on a human. No action fits it.
-			const elapsed = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
+			const elapsed = activeElapsed(observed);
 			return {
 				ariaLabel: copy.session, state: copy.saving, badge: this.buildQualityBadge(projection),
 				meta: { clock: formatElapsed(elapsed ?? 0), text: `· ${observed.startContext.characterName}` },
@@ -694,7 +694,7 @@ export class TyrianCompanionView extends ItemView {
 				onClick: () => this.actions.openSavedSessionNote?.(),
 			});
 		}
-		const elapsed = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
+		const elapsed = activeElapsed(observed);
 		return {
 			ariaLabel: copy.session, state, badge: this.buildQualityBadge(projection),
 			meta: { clock: formatElapsed(elapsed ?? 0), text: `· ${observed.startContext.characterName}` },
@@ -1432,6 +1432,14 @@ function simpleMoney(copper: number, locale: Locale): string {
 function elapsedBetween(startIso: string, endIso: string): number | null {
 	const ms = Date.parse(endIso) - Date.parse(startIso);
 	return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+/** H18.11: the played window of a stopped session minus what nobody observed, as the note bills it. */
+function activeElapsed(
+	observed: Extract<SessionState, { status: 'provisional' | 'complete' }>,
+): number | null {
+	const played = elapsedBetween(observed.baseline.completedAt, observed.stoppedAt);
+	return played === null ? null : Math.max(0, played - sessionUnobservedMs(observed));
 }
 
 function durableImmediateCopper(row: LootPresentationRow): number | null {

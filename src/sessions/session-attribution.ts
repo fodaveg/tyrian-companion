@@ -2,6 +2,7 @@ import { declaresConsumedInputs } from '../account/contamination';
 import type { SessionClassificationReasonCode } from '../account/contamination-model';
 import { settlementWindowMs } from './session-api-settlement';
 import type { PreparedSessionNote } from './session-note-model';
+import { sessionUnobservedMs } from './session';
 
 /**
  * H18.11: why the loot a session reports cannot be pinned to its window with certainty. Every
@@ -13,7 +14,9 @@ import type { PreparedSessionNote } from './session-note-model';
  *   played in between is inside the delta.
  * - `end_not_settled`: the final snapshot did not wait out the cache, so the last minutes can be
  *   missing.
- * - `end_uncertain`: the end is the last evidence saved before an interruption (H18.4, H18.11).
+ * - `end_uncertain`: the end is the last evidence saved before a failed stop (H18.4).
+ * - `unobserved_gap`: `minutes` nobody observed (a suspend, Obsidian closed) were subtracted from
+ *   the duration; any loot from them is still in the delta.
  * - `consumed_inputs`: containers, keys or other inputs were spent; part of the loot can come from
  *   stock built before the session.
  * - `trading_post_activity`: a Trading Post pick-up or order moved items or coin during the window.
@@ -24,6 +27,7 @@ export type SessionAttributionCauseCode =
 	| 'after_end_window'
 	| 'end_not_settled'
 	| 'end_uncertain'
+	| 'unobserved_gap'
 	| 'consumed_inputs'
 	| 'trading_post_activity'
 	| 'incomplete_reading';
@@ -88,6 +92,8 @@ function attributionCauses(note: PreparedSessionNote, stoppedAt: string, finalRe
 	if (Number.isFinite(afterEndMs) && afterEndMs > 0) causes.push({ code: 'after_end_window', minutes: wholeMinutes(afterEndMs) });
 	if (codes.has('api_settlement_window_skipped')) causes.push({ code: 'end_not_settled' });
 	if (note.runtime.state.stopBoundary === 'last_saved_evidence') causes.push({ code: 'end_uncertain' });
+	const unobservedMs = sessionUnobservedMs(note.runtime.state);
+	if (unobservedMs > 0) causes.push({ code: 'unobserved_gap', minutes: wholeMinutes(unobservedMs) });
 	if (declaresConsumedInputs(classification)) causes.push({ code: 'consumed_inputs' });
 	if ([...codes].some((code) => TRADING_POST_REASONS.has(code))) causes.push({ code: 'trading_post_activity' });
 	if ([...codes].some((code) => INCOMPLETE_READING_REASONS.has(code))) causes.push({ code: 'incomplete_reading' });

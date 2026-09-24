@@ -56,7 +56,7 @@ describe('session note model and renderer', () => {
 		if (first.status !== 'ok') return;
 		expect(first.note.preferredPath).toMatch(/^Tyrian Companion\/sessions\/2026\/2026-08-13 080001Z - [a-f0-9]{16}\.md$/u);
 		expect(first.note.frontmatter).toMatchObject({
-			tc_schema: 4, tc_kind: 'gw2_farming_session', tc_locale: 'es',
+			tc_schema: 5, tc_kind: 'gw2_farming_session', tc_locale: 'es', tc_unobserved_ms: 0,
 			tc_positive_item_deltas_json: '[[100,3]]',
 			tc_event: null,
 			tc_scope: 'observed_storage_net', tc_execution: 'manual_in_game', tc_side_effects: 'none',
@@ -144,7 +144,7 @@ describe('session note model and renderer', () => {
 			state: { ...uncertain.runtime.state, stopBoundary: 'last_saved_evidence' } as SessionRuntimeRecord['state'],
 		};
 		const marked = await rendered(uncertain);
-		expect(marked.content).toContain('Hora de fin incierta: es la última evidencia guardada antes de una interrupción');
+		expect(marked.content).toContain('Hora de fin incierta: la petición de parada no llegó a guardarse');
 
 		expect((await rendered(sessionInput())).content).not.toContain('Hora de fin incierta');
 	});

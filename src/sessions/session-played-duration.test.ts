@@ -14,7 +14,7 @@ import { createSessionContaminationReview } from './session-contamination-review
 import type { CompleteSessionState, SessionAuthority, SessionSnapshotReference } from './session';
 import { prepareSessionNote, type SessionNoteInput } from './session-note-model';
 import { renderSessionNote } from './session-note-renderer';
-import { createSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
+import { createSessionRuntimeRecord, MemorySessionRuntimeStore, type SessionRuntimeRecord } from './session-runtime-store';
 
 /**
  * One hour of farming followed by the ten-minute grace window the final capture waits out. The
@@ -173,6 +173,42 @@ describe('played duration against the API settlement window', () => {
 		const { tc_started_at: startedAt, tc_ended_at: endedAt, tc_duration_ms: durationMs } = rendered.note.frontmatter;
 		expect(durationMs).toBe(OBSERVED_MS);
 		expect(Date.parse(String(endedAt)) - Date.parse(String(startedAt))).toBe(durationMs);
+	});
+
+	it('H18.11: an older record without unobserved gaps still loads and publishes zero unobserved time', async () => {
+		const runtime = completeRuntime();
+		expect(runtime.state).not.toHaveProperty('unobservedGaps');
+		const loaded = await new MemorySessionRuntimeStore(runtime).load();
+		expect(loaded).toMatchObject({ status: 'loaded' });
+		if (loaded.status !== 'loaded') return;
+
+		const prepared = prepareSessionNote(noteInput(loaded.record, valuationFor(loaded.record, STOPPED_AT)));
+		if (prepared.status !== 'ok') throw new Error('Legacy note did not prepare.');
+		expect(prepared.note.durationMs).toBe(PLAYED_MS);
+		const rendered = await renderSessionNote(prepared.note);
+		if (rendered.status !== 'ok') throw new Error('Legacy note did not render.');
+		expect(rendered.note.frontmatter).toMatchObject({
+			tc_schema: 5, tc_ended_at: STOPPED_AT, tc_duration_ms: PLAYED_MS, tc_unobserved_ms: 0,
+		});
+	});
+
+	it('H18.11: with unobserved time the valuation divides by the active time, and only that is accepted', () => {
+		const runtime = completeRuntime();
+		const unobservedMs = 30 * 60_000;
+		const valued = calculateSessionValuation({
+			sessionId: 'session-1', delta: runtime.delta, prices: runtime.priceSnapshot, catalogItems: {},
+			bindingByItem: { '100': 'unknown' }, sackItemIds: [100], playedUntil: STOPPED_AT, unobservedMs,
+		});
+		if (valued.status !== 'ok') throw new Error(`Invalid valuation: ${valued.reason}`);
+		expect(valued.valuation.durationMs).toBe(PLAYED_MS - unobservedMs);
+		// Twice the rate of the same loot over the full hour: half of it nobody observed.
+		expect(valued.valuation.rates.immediateCopperPerHour).toBe(100);
+		expect(isSessionValuation(valued.valuation, runtime.delta, [100], STOPPED_AT, unobservedMs)).toBe(true);
+		// The played hour, or the observed window, no longer pass once there is something to subtract.
+		const fullHour = valuationFor(runtime, STOPPED_AT, [100]);
+		expect(isSessionValuation(fullHour, runtime.delta, [100], STOPPED_AT, unobservedMs)).toBe(false);
+		const observed = valuationFor(runtime, null, [100]);
+		expect(isSessionValuation(observed, runtime.delta, [100], STOPPED_AT, unobservedMs)).toBe(false);
 	});
 
 	it('refuses a valuation that claims more time than the account was observed for', () => {

@@ -20,6 +20,7 @@ import {
 	type SessionValuationInput,
 } from '../economy/session-valuation';
 import type { SessionRuntimeRecord } from './session-runtime-store';
+import { sessionUnobservedMs } from './session';
 
 /** Containers the note counts when it publishes `tc_sacks` and `tc_sacks_per_hour_milli`. */
 export const SESSION_SACK_ITEM_IDS: readonly number[] = Object.freeze([HALLOWEEN_TOT_BAG_ITEM_ID]);
@@ -85,6 +86,8 @@ export function buildSessionEconomyEvidence(input: SessionEconomyEvidenceInput):
 		catalogItems: narrowCatalogItems(input.catalogItems, itemIds),
 		bindingByItem: sessionBindingEvidence(finalSnapshot, itemIds),
 		playedUntil: runtime.state.stoppedAt,
+		// H18.11: rates divide by the active time, never by stretches nobody observed.
+		...(sessionUnobservedMs(runtime.state) > 0 ? { unobservedMs: sessionUnobservedMs(runtime.state) } : {}),
 	};
 	const plan = sessionReservationPlan(finalSnapshot, input.goals);
 	if (plan === null) return valuationOnly(common);

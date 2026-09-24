@@ -243,6 +243,24 @@ describe('durable session history', () => {
 		});
 	});
 
+	it('H18.11: reads a schema 5 note whose duration is the active time, and still reads every older one', async () => {
+		const vault = new MemoryVault();
+		// Ends at the stop (09:00), bills 50 min: ten minutes nobody observed travel next to it.
+		vault.contents.set('Sessions/v5.md', await note({ tc_schema: 5, tc_duration_ms: 3_000_000, tc_unobserved_ms: 600_000 }));
+		vault.contents.set('Sessions/v4.md', await note({ tc_schema: 4, tc_session_ref: 'c'.repeat(64) }));
+		vault.contents.set('Sessions/v2.md', await note({ tc_session_ref: 'd'.repeat(64) }));
+		const scanned = await new SessionHistoryService(vault).scan();
+		if (scanned.status !== 'ok') throw new Error(`Scan failed: ${scanned.status}`);
+		const byRef = new Map(scanned.sessions.map((session) => [session.sessionRef, session]));
+		expect(byRef.get('a'.repeat(64))).toMatchObject({ endedAt: '2026-08-13T09:00:00.000Z', durationMs: 3_000_000 });
+		expect(byRef.get('c'.repeat(64))).toMatchObject({ durationMs: 3_600_000 });
+		expect(byRef.get('d'.repeat(64))).toMatchObject({ durationMs: 3_600_000 });
+		// The pair must add up: an active time that ignores the unobserved one is not accepted.
+		const broken = new MemoryVault();
+		broken.contents.set('Sessions/v5.md', await note({ tc_schema: 5, tc_duration_ms: 3_600_000, tc_unobserved_ms: 600_000 }));
+		await expect(new SessionHistoryService(broken).scan()).resolves.toMatchObject({ status: 'conflict', invalid: 1 });
+	});
+
 	it('H18.26: scans a Labyrinth note tagged by the in-game presence', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note({
@@ -293,7 +311,7 @@ describe('durable session history', () => {
 		corrupt.contents.set('Sessions/one.md', (await note()).replace('summary content', 'edited summary'));
 		await expect(new SessionHistoryService(corrupt).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const future = new MemoryVault();
-		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 5'));
+		future.contents.set('Sessions/one.md', (await note()).replace('tc_schema: 2', 'tc_schema: 6'));
 		await expect(new SessionHistoryService(future).scan()).resolves.toEqual({ status: 'conflict', invalid: 1, duplicates: 0 });
 		const duplicate = new MemoryVault();
 		duplicate.contents.set('Sessions/one.md', await note());
@@ -555,13 +573,14 @@ async function note(overrides: Record<string, string | number | null> = {}): Pro
 		tc_event: null, tc_event_source: null, tc_recommendation_action: null, tc_recommendation_quantity: null,
 		tc_recommendation_route: null, ...overrides,
 	};
-	if (frontmatter.tc_schema === 3 || frontmatter.tc_schema === 4) {
+	if (frontmatter.tc_schema === 3 || frontmatter.tc_schema === 4 || frontmatter.tc_schema === 5) {
 		frontmatter.tc_positive_item_deltas_json ??= '[]';
 	}
-	if (frontmatter.tc_schema === 4) {
+	if (frontmatter.tc_schema === 4 || frontmatter.tc_schema === 5) {
 		frontmatter.tc_magic_find_source ??= 'derived';
 		frontmatter.tc_magic_find_consumables ??= 0;
 	}
+	if (frontmatter.tc_schema === 5) frontmatter.tc_unobserved_ms ??= 0;
 	if (frontmatter.tc_schema === 1) {
 		delete frontmatter.tc_event; delete frontmatter.tc_event_source; delete frontmatter.tc_recommendation_action;
 		delete frontmatter.tc_recommendation_quantity; delete frontmatter.tc_recommendation_route;

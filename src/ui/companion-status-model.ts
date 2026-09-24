@@ -4,7 +4,7 @@ import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runti
 import { leaseRemainingSeconds } from '../sessions/coordination-model';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { ApiPollSchedulerState } from '../sessions/api-poll-scheduler';
-import type { SessionState } from '../sessions/session';
+import { sessionUnobservedMs, type SessionState } from '../sessions/session';
 import type { StorageDelta } from '../account/storage-delta-model';
 import type { StorageDeltaStatus } from '../account/storage-delta-model';
 import type { SessionClassificationStatus } from '../account/contamination-model';
@@ -238,7 +238,9 @@ function sessionStatus(
 	// A stopping session keeps ticking even though its duration below is already frozen: the
 	// settlement countdown beside it is what the second still repaints.
 	const live = state.status === 'active' || state.status === 'stopping';
-	const elapsed = elapsedOrNull(Date.parse(state.baseline.completedAt), playedUntil(state, now));
+	// H18.11: the same active time the note bills, without the stretches nobody observed.
+	const played = elapsedOrNull(Date.parse(state.baseline.completedAt), playedUntil(state, now));
+	const elapsed = played === null ? null : Math.max(0, played - sessionUnobservedMs(state));
 	const duration = elapsed === null ? '—' : formatElapsed(elapsed);
 	if (state.status === 'active') {
 		return { item: item('session', t('status.session'), t('status.active'), t('status.activeDetail', { duration, character: state.startContext.characterName }), 'good'), live };

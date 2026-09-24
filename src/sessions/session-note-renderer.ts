@@ -10,6 +10,7 @@ import { translateRuntime, type RuntimeTranslationKey } from '../core/i18n-runti
 import { buildLootPresentation, formatLootMoney } from './loot-presentation';
 import { renderLootMarkdown } from './loot-presentation-markdown';
 import { sessionAttributionSummary } from './session-attribution';
+import { sessionUnobservedMs } from './session';
 import {
 	SESSION_NOTE_BLOCK_IDS,
 	SESSION_NOTE_SCHEMA_VERSION,
@@ -181,6 +182,7 @@ function createFrontmatter(
 	accountRef: string,
 ): Record<string, string | number | null> {
 	const state = note.runtime.state;
+	const unobservedMs = sessionUnobservedMs(state);
 	const classification = note.runtime.review.classification;
 	const canValue = classification.permissions.valueNet && classification.status !== 'contaminated' && note.valuation.status === 'valid';
 	const canRate = canValue && classification.permissions.grossPerHour;
@@ -209,8 +211,11 @@ function createFrontmatter(
 		// The session ends when the player closed it, not when the final capture managed to read
 		// the account. Deriving it from the duration keeps the durable pair arithmetically
 		// consistent, which is exactly what the history reader verifies.
-		tc_ended_at: new Date(Date.parse(note.runtime.delta.window!.from) + note.durationMs).toISOString(),
+		// H18.11: the duration is the active time; the time nobody observed is published next to it,
+		// so the end is still the stop and `ended − started − unobserved = duration` holds exactly.
+		tc_ended_at: new Date(Date.parse(note.runtime.delta.window!.from) + note.durationMs + unobservedMs).toISOString(),
 		tc_duration_ms: note.durationMs,
+		tc_unobserved_ms: unobservedMs,
 		tc_character: state.startContext.characterName,
 		tc_profession: state.startContext.build.profession,
 		tc_build: state.startContext.build.name || null,
@@ -282,6 +287,12 @@ function createBlocks(note: PreparedSessionNote): Record<SessionNoteBlockId, str
 			`- ${noteText(locale, 'note.character')}: ${text(state.startContext.characterName)}`,
 			`- ${noteText(locale, 'note.profession')}: ${text(state.startContext.build.profession)}`,
 			`- ${noteText(locale, 'note.duration')}: ${formatDuration(note.durationMs)}`,
+			// H18.11: the unobserved stretches are declared, never silently dropped from the count.
+			...(sessionUnobservedMs(state) > 0
+				? [`- ${noteText(locale, 'note.unobservedGaps', {
+					duration: formatDuration(sessionUnobservedMs(state)), count: state.unobservedGaps?.length ?? 0,
+				})}`]
+				: []),
 			`- ${noteText(locale, 'note.classification')}: ${localizedClassification(classification.status, locale)}`,
 			...renderAttributionSummary(note),
 		].join('\n'),

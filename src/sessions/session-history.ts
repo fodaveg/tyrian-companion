@@ -64,7 +64,7 @@ export interface DurableSessionHistoryRecord {
 }
 
 export interface DurableSessionNoteEvidence {
-	schema: 1 | 2 | 3 | 4;
+	schema: 1 | 2 | 3 | 4 | 5;
 	event: 'halloween' | null;
 	sessionRef: string;
 	accountRef: string;
@@ -174,6 +174,9 @@ const V3_SESSION_KEYS = [...V2_SESSION_KEYS, 'tc_positive_item_deltas_json'] as 
 // H17.1 derives magic find from the API instead of asking for it, so the total alone no longer
 // says where it came from: the source and the manually declared consumables part travel with it.
 const V4_SESSION_KEYS = [...V3_SESSION_KEYS, 'tc_magic_find_source', 'tc_magic_find_consumables'] as const;
+// H18.11: the duration is the active time, and the time nobody observed (a suspend, Obsidian
+// closed) travels next to it, so the end stays the player's stop.
+const V5_SESSION_KEYS = [...V4_SESSION_KEYS, 'tc_unobserved_ms'] as const;
 const CSV_COLUMNS = [
 	'session_ref', 'account_ref', 'started_at', 'ended_at', 'duration_ms', 'classification', 'confidence', 'scope',
 	'valuation_coverage', 'observed_immediate_copper', 'observed_listing_copper', 'sacks', 'sacks_per_hour_milli',
@@ -465,7 +468,7 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const fm = note.frontmatter;
 	if (Object.keys(fm).length === 0) return { status: 'non_candidate' };
 	if (fm.tc_kind !== 'gw2_farming_session' ||
-		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4) ||
+		(fm.tc_schema !== 1 && fm.tc_schema !== 2 && fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5) ||
 		!hasExactKeys(fm, sessionKeysFor(fm.tc_schema)) ||
 		!note.managedBlocksValid || note.hasInvalidScalar) return { status: 'invalid' };
 	const sessionRef = fm.tc_session_ref;
@@ -476,11 +479,14 @@ export async function inspectDurableSessionNote(content: string): Promise<Durabl
 	const classification = fm.tc_classification;
 	const confidence = fm.tc_confidence;
 	const scope = fm.tc_scope;
+	// H18.11: from schema 5 the duration is the active time; before it there was nothing to subtract.
+	const unobservedMs = fm.tc_schema === 5 ? fm.tc_unobserved_ms : 0;
 	if (!isRef(sessionRef) || !isRef(accountRef) || !iso(startedAt) || !iso(endedAt) || !safePositive(durationMs) ||
-		Date.parse(endedAt) - Date.parse(startedAt) !== durationMs ||
+		!safeNonNegative(unobservedMs) ||
+		Date.parse(endedAt) - Date.parse(startedAt) - unobservedMs !== durationMs ||
 		!enumValue(classification, ['exact', 'estimated', 'contaminated']) || !enumValue(confidence, ['high', 'medium', 'low']) ||
 		scope !== 'observed_storage_net' || !isSessionMetadata(fm)) return { status: 'invalid' };
-	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4;
+	const carriesItemDeltas = fm.tc_schema === 3 || fm.tc_schema === 4 || fm.tc_schema === 5;
 	const positiveItemDeltas = carriesItemDeltas ? parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) : null;
 	if (carriesItemDeltas && positiveItemDeltas === null) return { status: 'invalid' };
 	// The results table is read back the same way `readSession` already does for a single note
@@ -530,16 +536,17 @@ function isSessionMetadata(fm: Readonly<Record<string, string | number | null>>)
  * that did, so there is nothing to validate for them.
  */
 function isV4MagicFindMetadata(fm: Readonly<Record<string, string | number | null>>): boolean {
-	if (fm.tc_schema !== 4) return true;
+	if (fm.tc_schema !== 4 && fm.tc_schema !== 5) return true;
 	return enumValue(fm.tc_magic_find_source, ['derived', 'manual', 'unavailable']) &&
 		safeNonNegative(fm.tc_magic_find_consumables) &&
 		fm.tc_magic_find_consumables <= (fm.tc_magic_find as number);
 }
 
 /** The exact key set a note of this schema must carry, no more and no less. */
-function sessionKeysFor(schema: 1 | 2 | 3 | 4): readonly string[] {
+function sessionKeysFor(schema: 1 | 2 | 3 | 4 | 5): readonly string[] {
 	if (schema === 1) return V1_SESSION_KEYS;
 	if (schema === 2) return V2_SESSION_KEYS;
+	if (schema === 5) return V5_SESSION_KEYS;
 	return schema === 3 ? V3_SESSION_KEYS : V4_SESSION_KEYS;
 }
 
@@ -592,7 +599,7 @@ function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boo
 }
 
 function validPositiveItemDeltas(fm: Readonly<Record<string, string | number | null>>): boolean {
-	if (fm.tc_schema !== 3 && fm.tc_schema !== 4) return true;
+	if (fm.tc_schema !== 3 && fm.tc_schema !== 4 && fm.tc_schema !== 5) return true;
 	return parsePositiveItemDeltas(fm.tc_positive_item_deltas_json) !== null;
 }
 
