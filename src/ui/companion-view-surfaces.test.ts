@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { TyrianCompanionView, type CompanionActions } from './companion-view';
+import { connectionErrorKey } from './settings-i18n';
 import type { AssistedDetectionState } from '../sessions/assisted-detection-service';
 import type { HalloweenNoticeV1 } from '../halloween/halloween-model';
 import type { HalloweenPriceNoticeV1 } from '../halloween/halloween-price-alert';
@@ -8,6 +9,7 @@ import type { PendingProposal } from '../sessions/pending-proposal-model';
 import type { SessionRecoveryState } from '../sessions/manual-session-start-service';
 import type { SessionHistoryLoadResult } from '../sessions/session-history-summary';
 import type { SessionState } from '../sessions/session';
+import { createTranslator } from '../core/i18n';
 
 /**
  * Behavioural coverage for the surfaces the Companion view mounts. Every case renders the real
@@ -322,10 +324,13 @@ describe('Companion incident callout', () => {
 
 		// A failed connection also feeds `companion-status-model.ts`'s generic incident line (its own
 		// closed, non-leaking wording, tone `error`); this line is the extra one the callout carries
-		// underneath it, with the raw failure text and its own action.
+		// underneath it. H15.24 (commit f869eaa) stopped showing the gateway's raw `message` here and
+		// switched to Settings' per-code catalogue (`connectionErrorKey`), so the callout must show
+		// the translated guidance for the `unavailable` code and never leak the raw 'offline' text.
 		const callout = find(contentEl, (node) => node.className === 'callout');
 		expect(callout?.attributes.get('data-callout')).toBe('error');
-		expect(texts(contentEl)).toContain('offline');
+		expect(texts(contentEl)).toContain(createTranslator('es').t(connectionErrorKey('unavailable')));
+		expect(texts(contentEl)).not.toContain('offline');
 		// Both the Detalle row (decision 4) and this callout line offer the same recheck, so search
 		// broadly instead of assuming which one the walk visits first.
 		const checkButtons = walk(contentEl).filter((node) => node.tag === 'button' && node.textContent === 'Comprobar conexión');

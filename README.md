@@ -160,8 +160,10 @@ remains numeric so sorting is based on copper rather than formatted text. See th
 
 - A session is an observed net change between stable account snapshots, not a drop log and not total
   account wealth. Transfers and unrelated account activity can change that net.
-- **Exact** requires qualified snapshots, high-confidence boundaries, and a clean human review.
-  Missing or contradictory evidence is shown as estimated, contaminated, limited, or invalid.
+- **Exact** requires qualified snapshots, high-confidence boundaries, and no degrading reason found
+  in the delta evidence; the session classifies itself from the API's own evidence, with no human
+  review or approval step (decision of 2026-09-09). Missing or contradictory evidence is shown as
+  estimated, contaminated, limited, or invalid.
 - Trading Post values use public quotes captured at close time. They are estimates after the modeled
   fees, not proof that an item sold at that price.
 - Assisted detection is a polling heuristic. Offline periods, sleep, API cooldowns, and activity
@@ -689,7 +691,7 @@ fallback. Lease timestamps are sampled inside the IndexedDB operation after wait
 before entering a queue. The primitive itself exposes no automatic timer. The H3.2 start workflow
 owns a non-overlapping heartbeat while starting and active, checks the current fence immediately
 before committing the baseline, and releases the lease on a failed start. H3.3 keeps that heartbeat
-through stop and provisional review, captures the final boundary under a new pinned operation, and
+through stop and provisional, captures the final boundary under a new pinned operation, and
 checks the current fence immediately before committing it. A transient final-capture or invalid-delta
 failure leaves the state at `stopping`, retains the original full baseline in memory, and can be retried
 without recapturing the start. A lost fence moves the preserved stopping evidence to `error`.
