@@ -5,6 +5,8 @@ import { parseAccountProfile, parseTokenInfo } from './account-service';
 import {
 	PINNED_SCHEMA,
 	SnapshotCapabilityError,
+	type CharacterBagFreeSlots,
+	type ContainerFreeSlots,
 	type SnapshotCoverage,
 	type SourceCoverage,
 	type StorageSnapshot,
@@ -18,7 +20,9 @@ import {
 	qualifyStorageSnapshotTriple,
 } from './storage-snapshot-pure';
 import {
+	parseCharacterBagFreeSlots,
 	parseCharacterInventory,
+	parseContainerFreeSlots,
 	parseDelivery,
 	parseMaterials,
 	parseRoster,
@@ -264,6 +268,11 @@ export class StorageSnapshotService {
 		const coverage = emptyCoverage(context.permissions, context.urls, scope);
 		const holdings: StorageSnapshotPass['holdings'] = [];
 		const currencies: StorageSnapshotPass['currencies'] = [];
+		// H18.15: `null` until (if ever) its own store answers below — never invented, exactly like
+		// this pass's own coverage already leaves a skipped/failed store's holdings out.
+		let bankFreeSlots: ContainerFreeSlots | null = null;
+		let sharedInventoryFreeSlots: ContainerFreeSlots | null = null;
+		const characterBagFreeSlots: CharacterBagFreeSlots[] = [];
 		// Every store this token can even reach is already known from its permissions
 		// and URL restrictions above; only the character count still needs the roster.
 		const accountStoresTotal = 1
@@ -312,6 +321,7 @@ export class StorageSnapshotService {
 				(value) => parseSlotArray(value, 'shared_inventory'),
 				true,
 				onSharedInventoryLastModified,
+				(value) => { sharedInventoryFreeSlots = value; },
 			).finally(reportAccountStore),
 		];
 		if (coverage.sources.bank.status === 'complete') accountTasks.push(
@@ -324,6 +334,8 @@ export class StorageSnapshotService {
 				'account/bank',
 				(value) => parseSlotArray(value, 'bank'),
 				scope === 'complete',
+				undefined,
+				(value) => { bankFreeSlots = value; },
 			).finally(reportAccountStore),
 		);
 		if (coverage.sources.materials.status === 'complete') accountTasks.push(
@@ -358,8 +370,13 @@ export class StorageSnapshotService {
 			characterLimit(() =>
 				this.globalLimit(async () => {
 					const path = withSchema(`characters/${encodeURIComponent(character)}/inventory`);
-					const parse = (value: unknown): StorageSnapshotPass['holdings'] =>
-						parseCharacterInventory(value, character);
+					// H18.15: the holdings parse runs first, so a shape it rejects never adds this
+					// character's bags to `characterBagFreeSlots` either.
+					const parse = (value: unknown): StorageSnapshotPass['holdings'] => {
+						const holdings = parseCharacterInventory(value, character);
+						characterBagFreeSlots.push(...parseCharacterBagFreeSlots(value, character));
+						return holdings;
+					};
 					let result = await captureSource(() => operation.requestDetailed(path), parse, true, true);
 					// H14.10: `GW2_CHARACTER_OPERATION_POLICIES` deliberately gives a character
 					// inventory 0 transport-level retries ("capture/scheduler own recovery"). This is
@@ -392,7 +409,11 @@ export class StorageSnapshotService {
 			coverage.sources.characters = { ...characterFailure };
 		}
 
-		return buildStorageSnapshotPass(holdings, currencies, coverage, roster);
+		return buildStorageSnapshotPass(holdings, currencies, coverage, roster, {
+			bank: bankFreeSlots,
+			sharedInventory: sharedInventoryFreeSlots,
+			characterBags: characterBagFreeSlots,
+		});
 	}
 
 	private async captureItems(
@@ -407,13 +428,21 @@ export class StorageSnapshotService {
 		/** H14.10: only supplied for `shared_inventory`, the one required store that always
 		 * runs — used as the anchor for the last-modified skip in `captureInternal`. */
 		onLastModified?: (value: string | null) => void,
+		/** H18.15: only supplied for `shared_inventory`/`bank`, the two flat stores whose free-slot
+		 * count `parseContainerFreeSlots` can read; `materials` never passes this. */
+		onFreeSlots?: (value: ContainerFreeSlots) => void,
 	): Promise<void> {
 		const result = await captureSource(
 			() => limit(() => operation.requestDetailed(withSchema(path))).then((response) => {
 				onLastModified?.(readHeader(response.headers, 'last-modified'));
 				return response;
 			}),
-			parser,
+			// The holdings parse runs first: a shape it rejects never reports free slots either.
+			(value) => {
+				const parsed = parser(value);
+				onFreeSlots?.(parseContainerFreeSlots(value, source as 'shared_inventory' | 'bank'));
+				return parsed;
+			},
 			false,
 			forbiddenIsFatal,
 		);

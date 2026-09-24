@@ -11,7 +11,9 @@ import {
 } from './__fixtures__/storage';
 import { InvalidSnapshotPayloadError } from './storage-snapshot-model';
 import {
+	parseCharacterBagFreeSlots,
 	parseCharacterInventory,
+	parseContainerFreeSlots,
 	parseDelivery,
 	parseMaterials,
 	parseSlotArray,
@@ -103,5 +105,55 @@ describe('storage snapshot parsers', () => {
 		expect(parseSlotArray([{ id: 42, count: 1, binding: 'FutureBinding' }], 'bank')).toMatchObject([
 			{ metadata: { binding: 'FutureBinding' } },
 		]);
+	});
+
+	describe('free slot parsers (H18.15)', () => {
+		it('counts a flat account store free slots from its own array length, nulls included', () => {
+			expect(parseContainerFreeSlots(sharedInventoryFixture, 'shared_inventory')).toEqual({
+				total: 2,
+				free: 1,
+			});
+			expect(parseContainerFreeSlots(bankFixture, 'bank')).toEqual({ total: 2, free: 1 });
+		});
+
+		it('counts every slot as occupied when the store has no empty holes', () => {
+			expect(parseContainerFreeSlots([{ id: 1, count: 1 }, { id: 2, count: 1 }], 'bank')).toEqual({
+				total: 2,
+				free: 0,
+			});
+		});
+
+		it('rejects a non-array container', () => {
+			expect(() => parseContainerFreeSlots({ not: 'an array' }, 'bank')).toThrow(InvalidSnapshotPayloadError);
+		});
+
+		it("reads a bag's real capacity from its own size, never from the inventory array length", () => {
+			expect(parseCharacterBagFreeSlots(characterInventoryFixture, characterName)).toEqual([
+				{ character: characterName, bagIndex: 0, bagItemId: 1_001, total: 20, free: 19 },
+			]);
+		});
+
+		it('skips an empty equipped bag slot without throwing', () => {
+			expect(parseCharacterBagFreeSlots({
+				name: characterName,
+				bags: [null, { id: 1_002, size: 4, inventory: [null, null, null, null] }],
+			}, characterName)).toEqual([
+				{ character: characterName, bagIndex: 1, bagItemId: 1_002, total: 4, free: 4 },
+			]);
+		});
+
+		it('reports a bag with impossible occupancy as unknown instead of inventing or crashing', () => {
+			expect(parseCharacterBagFreeSlots({
+				name: characterName,
+				bags: [{ id: 1_003, size: 1, inventory: [{ id: 2, count: 1 }, { id: 3, count: 1 }] }],
+			}, characterName)).toEqual([]);
+		});
+
+		it('reports a bag missing its size field as unknown, matching a pre-H18.15 fixture', () => {
+			expect(parseCharacterBagFreeSlots({
+				name: characterName,
+				bags: [{ id: 1_004, inventory: [null] }],
+			}, characterName)).toEqual([]);
+		});
 	});
 });
