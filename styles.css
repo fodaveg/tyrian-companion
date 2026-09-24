@@ -608,6 +608,12 @@
 	overflow-wrap: anywhere;
 }
 
+/* 0.2.1: the "Copy token" fallback modal; the full 43-character token fits on one line. */
+.tyrian-companion-secret-field {
+	inline-size: 100%;
+	font-family: var(--font-monospace);
+}
+
 .tyrian-product-shell button:focus-visible,
 .tyrian-product-shell summary:focus-visible,
 .tyrian-product-shell input:focus-visible,

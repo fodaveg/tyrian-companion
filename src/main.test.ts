@@ -1632,7 +1632,7 @@ describe('deferred runtime boot guard', () => {
 		const registeredCommandIds = addCommand.mock.calls.map((call) => (call[0] as { id: string }).id);
 		expect(registeredCommandIds).toEqual(expect.arrayContaining([
 			'open-companion', 'open-inventory-advisor', 'refresh-inventory-advisor',
-			'arm-assisted-detection', 'disarm-assisted-detection',
+			'arm-assisted-detection', 'disarm-assisted-detection', 'copy-ingame-bridge-token',
 		]));
 		// H14.9: both states read `unattributed_origin` now, not `window_error`/`unhandled_rejection`;
 		// the sanitized path leaves nothing behind either listener could attribute a failure to,

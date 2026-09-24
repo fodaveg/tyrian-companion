@@ -216,6 +216,7 @@ import {
 	TyrianCompanionView,
 } from './ui/companion-view';
 import { ManualSessionStartModal } from './ui/manual-session-start-modal';
+import { AlertIngameSecretModal } from './ui/alert-ingame-secret-modal';
 import {
 	SessionCommandController,
 	type PreparedSessionCommand,
@@ -321,7 +322,19 @@ type NoticeDiagnosticSource =
 	| 'managed_assets_updated'
 	| 'session_command'
 	| 'live_observation'
-	| 'valuable_loot';
+	| 'valuable_loot'
+	| 'ingame_secret_copy';
+
+/** Palette command that copies the in-game bridge token (0.2.1), registered outside the product actions. */
+export const ALERT_INGAME_SECRET_COMMAND_ID = 'copy-ingame-bridge-token';
+/** Commands `onload` registers besides `PRODUCT_ACTION_IDS`; the load journal counts both. */
+const STANDALONE_COMMAND_IDS = [ALERT_INGAME_SECRET_COMMAND_ID] as const;
+
+/**
+ * Where "Copy token" left the bridge secret: on the clipboard (`copied`, or `generated` when it had
+ * to create one first), or in the fallback modal because the clipboard refused it (`shown`).
+ */
+export type AlertIngameSecretCopyOutcome = 'copied' | 'generated' | 'shown';
 
 export default class TyrianCompanionPlugin extends Plugin {
 	settings: TyrianSettings = migrateSettings(null);
@@ -492,7 +505,10 @@ export default class TyrianCompanionPlugin extends Plugin {
 		};
 		await this.localDebugActions!.run({
 			component: 'plugin', action: 'plugin_load',
-			details: { commandCount: PRODUCT_ACTION_IDS.length, viewCount: Object.keys(viewFactories).length },
+			details: {
+				commandCount: PRODUCT_ACTION_IDS.length + STANDALONE_COMMAND_IDS.length,
+				viewCount: Object.keys(viewFactories).length,
+			},
 		}, async () => {
 
 		for (const [type, factory] of Object.entries(viewFactories)) this.registerView(type, factory);
@@ -507,6 +523,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.addSettingTab(this.settingTab);
 		this.setupSessionCommands();
 		this.setupProductActions();
+		this.registerAlertIngameSecretCommand();
 		// `state` reads `unattributed_origin` for both listeners below, not `window_error` or
 		// `unhandled_rejection`: those names described which browser event fired, which reads
 		// as attribution but is not one. The sanitizer already redacts any absolute path in
@@ -2849,26 +2866,74 @@ export default class TyrianCompanionPlugin extends Plugin {
 	 * generating one first when the selected entry is missing or too weak to accept (32 CSPRNG
 	 * bytes, stored under `ALERT_INGAME_SECRET_ID`). The value goes to the clipboard and to
 	 * `SecretStorage`, never to settings, a log or the vault.
+	 *
+	 * 0.2.1: when the clipboard refuses the write, the value goes to `AlertIngameSecretModal`
+	 * instead (`shown`), the one other place it may appear. The refusal is logged by error class
+	 * only, never with the error's message, and the call still resolves: the settings button and the
+	 * palette command share this path, so both get the same fallback.
 	 */
-	async copyAlertIngameSecret(): Promise<'copied' | 'generated'> {
-		const run = async (): Promise<'copied' | 'generated'> => {
-			const current = this.readAlertIngameSecret();
-			if (isUsableIngameBridgeSecret(current)) {
-				await navigator.clipboard.writeText(current);
-				return 'copied';
+	async copyAlertIngameSecret(): Promise<AlertIngameSecretCopyOutcome> {
+		const deliver = async (secret: string, outcome: 'copied' | 'generated'): Promise<AlertIngameSecretCopyOutcome> => {
+			try {
+				await navigator.clipboard.writeText(secret);
+				return outcome;
+			} catch (error) {
+				this.localDebugActions?.event({
+					component: 'notification', action: 'command_execute', state: 'ingame_secret_copy',
+					level: 'warn', phase: 'failure', code: 'unavailable',
+					details: { reason: unmappedErrorLogDetails(error).reason },
+				});
+				const translator = createTranslator(this.settings.language);
+				new AlertIngameSecretModal(this.app, secret, {
+					title: translator.t('settings.alerts.ingame.secret.name'),
+					hint: translator.t('settings.alerts.ingame.secret.manualCopy'),
+				}).open();
+				return 'shown';
 			}
+		};
+		const run = async (): Promise<AlertIngameSecretCopyOutcome> => {
+			const current = this.readAlertIngameSecret();
+			if (isUsableIngameBridgeSecret(current)) return await deliver(current, 'copied');
 			const stored = this.app.secretStorage.listSecrets().includes(ALERT_INGAME_SECRET_ID)
 				? this.app.secretStorage.getSecret(ALERT_INGAME_SECRET_ID) : null;
 			const secret = isUsableIngameBridgeSecret(stored)
 				? stored : createIngameBridgeSecret((bytes) => { crypto.getRandomValues(bytes); });
 			if (secret !== stored) this.app.secretStorage.setSecret(ALERT_INGAME_SECRET_ID, secret);
 			await this.updateSettings({ alertIngameSecret: ALERT_INGAME_SECRET_ID });
-			await navigator.clipboard.writeText(secret);
-			return 'generated';
+			return await deliver(secret, 'generated');
 		};
 		return await (this.localDebugActions?.run(
 			{ component: 'notification', action: 'command_execute', state: 'ingame_secret_copy' }, run,
 		) ?? run());
+	}
+
+	/**
+	 * The palette's "Copy in-game bridge token" (0.2.1): the same action as the settings button, for
+	 * a player who cannot find the row. With the bridge off it only says to turn it on and generates
+	 * nothing. The notices carry fixed copy, never the value.
+	 */
+	async copyAlertIngameSecretFromCommand(): Promise<void> {
+		const translator = createTranslator(this.settings.language);
+		if (!this.settings.alertIngameEnabled) {
+			this.emitNotice(translator.t('settings.alerts.ingame.secret.bridgeOff'), 'ingame_secret_copy');
+			return;
+		}
+		try {
+			const outcome = await this.copyAlertIngameSecret();
+			if (outcome === 'shown') return;
+			this.emitNotice(translator.t(outcome === 'generated'
+				? 'settings.alerts.ingame.secret.generated' : 'settings.alerts.ingame.secret.copied'), 'ingame_secret_copy');
+		} catch {
+			this.emitNotice(translator.t('settings.alerts.ingame.secret.failed'), 'ingame_secret_copy');
+		}
+	}
+
+	private registerAlertIngameSecretCommand(): void {
+		this.addCommand({
+			id: ALERT_INGAME_SECRET_COMMAND_ID,
+			name: createTranslator(this.settings.language).t('commands.copyIngameBridgeToken'),
+			callback: () => { void this.copyAlertIngameSecretFromCommand(); },
+		});
 	}
 
 	/**
