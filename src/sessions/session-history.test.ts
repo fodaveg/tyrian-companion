@@ -243,6 +243,16 @@ describe('durable session history', () => {
 		});
 	});
 
+	it('H18.26: scans a Labyrinth note tagged by the in-game presence', async () => {
+		const vault = new MemoryVault();
+		vault.contents.set('Sessions/one.md', await note({
+			tc_schema: 4, tc_event: 'halloween', tc_event_source: 'ingame_presence',
+		}));
+		await expect(new SessionHistoryService(vault).scan()).resolves.toMatchObject({
+			status: 'ok', sessions: [{ sessionRef: 'a'.repeat(64), activity: 'halloween' }],
+		});
+	});
+
 	it('scans schema v4 notes carrying the magic find source and its manual consumables part', async () => {
 		const vault = new MemoryVault();
 		vault.contents.set('Sessions/one.md', await note({

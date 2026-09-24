@@ -157,6 +157,13 @@ describe('session note model and renderer', () => {
 		expect((await rendered(plain)).frontmatter).toMatchObject({ tc_event: 'halloween', tc_event_source: 'manual_explicit' });
 		expect(prepareSessionNote({ ...plain, eventDeclaration: { event: 'halloween', source: 'manual_explicit' } }))
 			.toEqual({ status: 'invalid', reason: 'invalid_input' });
+		// H18.26: map 866 reported by the in-game presence, even before the start request landed.
+		plain.eventDeclaration = { event: 'halloween', source: 'ingame_presence', observedAt: '2026-08-13T07:59:00.000Z' };
+		expect((await rendered(plain)).frontmatter).toMatchObject({ tc_event: 'halloween', tc_event_source: 'ingame_presence' });
+		// Never after the session ended: that tag belongs to whatever came next.
+		expect(prepareSessionNote({
+			...plain, eventDeclaration: { event: 'halloween', source: 'ingame_presence', observedAt: '2026-08-13T09:30:00.000Z' },
+		})).toEqual({ status: 'invalid', reason: 'invalid_input' });
 		const proposal = halloweenProposal();
 		const accepted = createAcceptedDetectionEvent('start', 'session-sensitive-id', '2026-08-13T08:00:03.000Z', proposal);
 		if (!accepted) throw new Error('Invalid assisted event fixture.');

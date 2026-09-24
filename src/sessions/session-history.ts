@@ -585,7 +585,8 @@ function validHoldMetadata(fm: Readonly<Record<string, string | number | null>>)
 function isV2Metadata(fm: Readonly<Record<string, string | number | null>>): boolean {
 	if (fm.tc_schema === 1) return true;
 	return (fm.tc_event === null || fm.tc_event === 'halloween') &&
-		(fm.tc_event_source === null || fm.tc_event_source === 'manual_explicit' || fm.tc_event_source === 'assisted') &&
+		(fm.tc_event_source === null || fm.tc_event_source === 'manual_explicit' || fm.tc_event_source === 'assisted'
+			|| fm.tc_event_source === 'ingame_presence') &&
 		(fm.tc_event === null ? fm.tc_event_source === null : fm.tc_event_source !== null) &&
 		validRecommendationMetadata(fm) && validPositiveItemDeltas(fm);
 }

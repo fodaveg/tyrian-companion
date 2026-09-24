@@ -39,7 +39,9 @@ export type SessionNoteLocale = 'es' | 'en';
 export type SessionNoteEvent = 'halloween';
 export type SessionNoteEventDeclaration =
 	| { event: 'halloween'; source: 'manual_explicit'; declaredAt: string }
-	| { event: 'halloween'; source: 'assisted'; accepted: DetectionQualityEvent };
+	| { event: 'halloween'; source: 'assisted'; accepted: DetectionQualityEvent }
+	/** H18.26: the in-game presence reported map 866 (the Labyrinth) while the session ran. */
+	| { event: 'halloween'; source: 'ingame_presence'; observedAt: string };
 
 export interface SessionNoteInput {
 	runtime: SessionRuntimeRecord;
@@ -173,7 +175,14 @@ function normalizeEventDeclaration(
 ): SessionNoteEventDeclaration | null {
 	if (value === null) return null;
 	if (!isRecord(value) || value.event !== 'halloween' ||
-		(value.source !== 'manual_explicit' && value.source !== 'assisted')) return null;
+		(value.source !== 'manual_explicit' && value.source !== 'assisted' && value.source !== 'ingame_presence')) return null;
+	if (value.source === 'ingame_presence') {
+		// The tag can be seen before the start request lands (the game reported map 866 first),
+		// never after the session ended.
+		if (!exactKeys(value, ['event', 'source', 'observedAt']) || !isIso(value.observedAt)) return null;
+		if (Date.parse(value.observedAt) > Date.parse(runtime.state.stoppedAt)) return null;
+		return structuredClone(value) as SessionNoteEventDeclaration;
+	}
 	if (value.source === 'manual_explicit') {
 		if (!exactKeys(value, ['event', 'source', 'declaredAt']) || !isIso(value.declaredAt)) return null;
 		const declared = Date.parse(value.declaredAt);
