@@ -65,6 +65,50 @@ describe('Inventory Advisor view', () => {
 		expect(copy).not.toContain('EV neto de reciclaje');
 	});
 
+	it('H18.19: shows a wait with its three clocks apart and the comparison behind it: advantage, range, seasons and risk', () => {
+		const model = readyModel();
+		model.groups[0]!.rows[0] = row({
+			itemId: 100, name: 'Mazorca', action: 'sell', decision: {
+				action: 'sell_at_season', reason: 'wait_advantage_demonstrated', until: '2026-09-24T12:15:00.000Z',
+				missing: null, pricePercentile: null, priceCoverageDays: null,
+				priceQuotedAt: '2026-09-24T12:00:00.000Z', priceHistoryLastDay: '2026-05-31',
+				sellWindowFromDay: '2026-09-25', sellWindowToDay: '2026-10-12',
+				sellOrWait: {
+					version: 1, verdict: 'wait', mode: 'instant', strategy: 'wait_pre_festival', quantity: 250, unitCopper: 45_681,
+					decisionOffsetDays: 19, windowFromDay: '2026-09-25', windowToDay: '2026-10-12',
+					seasons: 7, seasonsWon: 4, seasonsLost: 3, medianRatio: 1.029, lowRatio: 0.97, highRatio: 1.093,
+					netAdvantageCopper: 285_851, netAdvantageLowCopper: -294_353, netAdvantageHighCopper: 905_932,
+				},
+			},
+		});
+		const copy = text(render(model, 'es').elements());
+		expect(copy).toContain('Esperar tiene ventaja demostrada frente a vender ahora · precio del 2026-09-24 · análisis vigente hasta el 2026-09-24 · ventana sugerida del 2026-09-25 al 2026-10-12');
+		expect(copy).toContain('Esperar (venta inmediata, 250 u.): +28 oro · 58 plata · 51 cobre netos frente a vender ahora; rango −29 oro · 43 plata · 53 cobre a +90 oro · 59 plata · 32 cobre en 7 temporadas.');
+		expect(copy).toContain('Riesgo de no vender ahora: esperar rindió menos en 3 de 7 temporadas.');
+	});
+
+	it('H18.19: "datos insuficientes" says so, with no invented window or range', () => {
+		const model = readyModel();
+		model.groups[0]!.rows[0] = row({
+			itemId: 100, name: 'Saco', action: 'sell', decision: {
+				action: 'sell', reason: 'wait_evidence_insufficient', until: '2026-12-20T12:15:00.000Z',
+				missing: null, pricePercentile: null, priceCoverageDays: null,
+				priceQuotedAt: '2026-12-20T12:00:00.000Z', priceHistoryLastDay: '2026-12-19',
+				sellWindowFromDay: null, sellWindowToDay: null,
+				sellOrWait: {
+					version: 1, verdict: 'insufficient_data', mode: 'instant', strategy: 'sell_now', quantity: 5, unitCopper: 500,
+					decisionOffsetDays: null, windowFromDay: null, windowToDay: null, seasons: 0, seasonsWon: 0, seasonsLost: 0,
+					medianRatio: null, lowRatio: null, highRatio: null, netAdvantageCopper: null, netAdvantageLowCopper: null, netAdvantageHighCopper: null,
+				},
+			},
+		});
+		const copy = text(render(model, 'en').elements());
+		expect(copy).toContain('Not enough data to compare with waiting: no demonstrated advantage in waiting · price of 2026-12-20 · analysis valid until 2026-12-20');
+		expect(copy).toContain('Not enough data to compare selling now with waiting (instant sale): 0 seasons with data.');
+		expect(copy).not.toContain('suggested window');
+		expect(copy).not.toContain('range');
+	});
+
 	it.each([
 		['es', 'Compara venta instantánea, publicación y mercader con precios actuales.'],
 		['en', 'Compares instant sell, listing and vendor routes with current prices.'],

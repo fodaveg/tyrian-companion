@@ -1,7 +1,8 @@
 import { priceHistoryDayUtc, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { calculatePriceHistoryPercentile } from '../economy/price-history-statistics';
+import { compareSellNowWithWaiting, type SellOrWaitComparisonV1 } from '../economy/sell-or-wait';
 import { evaluateSellSignal, type SellSignalParameters, type SellSignalSeries } from '../economy/sell-signal';
-import { seasonalWindowClosesAfterMs, seasonalWindowOpensAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
+import { seasonalWindowClosesAfterMs, type SeasonalWindowV1 } from '../economy/seasonal-window';
 
 /**
  * Per-position sell/hold recommendation (SPEC-recomendacion-por-objeto).
@@ -31,6 +32,13 @@ export type PositionRecommendationAction = typeof POSITION_RECOMMENDATION_ACTION
  * demonstrated value: "I don't know what it's worth" is not "it's worth little"). `not_tradeable`
  * (the trading post will never quote it for this account: bound, or outside the free-to-play
  * whitelist) keeps "no price today" from reading as doubt when there is no price to have.
+ *
+ * H18.19 (audit 2026-09-24 §3.D) appends three, the outcomes of the sell-now-or-wait comparison
+ * (`compareSellNowWithWaiting`): `wait_advantage_demonstrated` (waiting beat selling now out of
+ * sample), `no_demonstrated_wait_advantage` ("sin ventaja demostrada para esperar": sell now, with
+ * that reason in view) and `wait_evidence_insufficient` ("datos insuficientes": sell now too, since
+ * nothing demonstrates that waiting pays). `seasonal_hold` stays in the list so every note already
+ * written keeps validating, but no rule emits it any more: the calendar alone never makes anyone wait.
  */
 export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'reserved_for_goal',
@@ -48,6 +56,9 @@ export const POSITION_RECOMMENDATION_REASON_CODES = [
 	'no_close_today',
 	'insufficient_reference',
 	'undecidable_calendar',
+	'wait_advantage_demonstrated',
+	'no_demonstrated_wait_advantage',
+	'wait_evidence_insufficient',
 ] as const;
 export type PositionRecommendationReasonCode = typeof POSITION_RECOMMENDATION_REASON_CODES[number];
 
@@ -65,7 +76,16 @@ export interface PositionRecommendationSeasonalInput {
 export interface PositionRecommendationV1 {
 	action: PositionRecommendationAction;
 	reason: PositionRecommendationReasonCode;
-	/** ISO-8601, or null when the recommendation (`review`) never had a price-based expiry. */
+	/**
+	 * How long this analysis holds (ISO-8601): the capture instant plus `maxPriceAgeMs`, or null
+	 * when the verdict does not rest on today's price (reservations, `review` of any kind).
+	 *
+	 * H18.19: ONLY that. Before, a seasonal verdict put its window's open or close here instead
+	 * (audit 2026-09-24, Anexo 3), so one field meant two clocks depending on the rule. The three
+	 * clocks now live apart: when the price was quoted (`priceQuotedAt`, `priceHistoryLastDay`), how
+	 * long the analysis holds (`until`), and the window it suggests selling in (`sellWindowFromDay`
+	 * .. `sellWindowToDay`).
+	 */
 	until: string | null;
 	/** Only meaningful for `hold_for_legendary` (M4); always null while M1 is the only rule that runs. */
 	missing: number | null;
@@ -95,6 +115,20 @@ export interface PositionRecommendationV1 {
 	 * that ends 60 days ago says so here instead of passing for today's price.
 	 */
 	priceHistoryLastDay: string | null;
+	/**
+	 * H18.19: the window this verdict suggests selling in, as inclusive UTC days (`YYYY-MM-DD`), or
+	 * null when it suggests none. Set only by rule (b): the item's own calendar window when today's
+	 * price confirms it (`seasonal_sell_window`), or the window a demonstrated wait points at
+	 * (`wait_advantage_demonstrated`). Never a date the evidence does not back.
+	 */
+	sellWindowFromDay: string | null;
+	sellWindowToDay: string | null;
+	/**
+	 * H18.19: sell now or wait, for this position's free quantity, in the instant-sale mode rule (b)
+	 * reads (today's bid against the bid history). Computed for every item with a festival calendar
+	 * entry once rule (b) can read its series, null everywhere else.
+	 */
+	sellOrWait: SellOrWaitComparisonV1 | null;
 }
 
 export interface PositionRecommendationInput {
@@ -170,7 +204,11 @@ const DAY_MS = 86_400_000;
 /** Every evidence field a verdict carries, all empty: each branch fills only what it measured. */
 const NO_EVIDENCE = {
 	missing: null, pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+	sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null,
 } as const satisfies Partial<PositionRecommendationV1>;
+
+/** A percentile at or above this is "the high band of its history" (rule (c)). */
+const HIGH_BAND_PERCENTILE = 90;
 
 /**
  * Rules (b) and (c) of the recommendation spec, in precedence order. (a) is not implemented here
@@ -199,10 +237,9 @@ const NO_EVIDENCE = {
  *    here on today's quote is the observation both rules compare, never the last historical close.
  * 2. Rule (b): the item has a festival calendar entry → `evaluateSeasonalRule` decides, and its
  *    verdict is final (never falls through to rule (c) below; only the absence of a calendar entry
- *    does that). `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave. Today
- *    inside the item's own selling window → `sell`/`seasonal_sell_window`, `until` = the window's
- *    own close. Today outside it with a qualifying bid → `sell`/`bid_above_reference`. Today
- *    outside it without one → `sell_at_season`/`seasonal_hold`, `until` = the window's NEXT open.
+ *    does that). `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave. H18.19:
+ *    otherwise the sell-now-or-wait comparison decides whether to wait, and today's price, never the
+ *    calendar alone, whether now is an opportunity; see `evaluateSeasonalRule`.
  * 3. No demonstrated value (`totalSellCopper` null) → `review`/`price_unknown` (H18.2): "I don't
  *    know what it's worth" is never "it's worth little". Capital below the threshold →
  *    `hold`/`below_capital_threshold`. Too little is parked here to make the recommendation worth
@@ -211,7 +248,11 @@ const NO_EVIDENCE = {
  * 4. `insufficient_history` → `review`/`price_history_insufficient`, NEVER `hold`: "I don't know"
  *    and "it's cheap" are opposite recommendations that must never share an outcome.
  * 5. Today's quote at or above the local p90 of the history → `sell`/`bid_above_reference`;
- *    otherwise `hold`/`below_local_band`.
+ *    otherwise `hold`/`below_local_band`. H18.19: a p90 reached only through ties (a flat series, or
+ *    today at the level the history sits on) is not the high band of anything: the percentile
+ *    counts every equal day as "at or below", so a flat series used to read p100. It is
+ *    `sell`/`no_demonstrated_wait_advantage` instead, without a percentile: not an exceptional
+ *    opportunity, and no sign that waiting would pay more either.
  */
 export function recommendPosition(input: PositionRecommendationInput): PositionRecommendationV1 {
 	if (input.legendaryShortfall !== null && input.legendaryShortfall > 0) {
@@ -270,13 +311,31 @@ export function recommendPosition(input: PositionRecommendationInput): PositionR
 			...NO_EVIDENCE, priceCoverageDays: percentile.coveredDays, priceHistoryLastDay,
 		};
 	}
+	if (percentile.percentile >= HIGH_BAND_PERCENTILE && !clearsHighBandStrictly(windowed, todayBidCopper)) {
+		return {
+			action: 'sell', reason: 'no_demonstrated_wait_advantage', until: priceUntil(input),
+			...NO_EVIDENCE, priceCoverageDays: percentile.coveredDays, priceQuotedAt, priceHistoryLastDay,
+		};
+	}
 	const measured = {
-		missing: null, pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
+		...NO_EVIDENCE, pricePercentile: Math.round(percentile.percentile), priceCoverageDays: percentile.coveredDays,
 		priceQuotedAt, priceHistoryLastDay,
 	};
-	return percentile.percentile >= 90
+	return percentile.percentile >= HIGH_BAND_PERCENTILE
 		? { action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), ...measured }
 		: { action: 'hold', reason: 'below_local_band', until: priceUntil(input), ...measured };
+}
+
+/**
+ * Whether today's quote reaches the high band counting only the days it strictly beats (today
+ * itself included among the points, as `calculatePriceHistoryPercentile` does). `windowed` is
+ * already the statistic's own reference: filtered to the calendar window and strictly before
+ * today, so it never holds more than `windowDays - 1` entries and the statistic's slice is a no-op.
+ */
+function clearsHighBandStrictly(windowed: readonly PriceHistoryDailyV1[], todayCopper: number): boolean {
+	const reference = windowed.map((entry) => entry.bid?.closeCopper ?? null).filter((value): value is number => value !== null);
+	const strictlyBelow = reference.filter((value) => value < todayCopper).length;
+	return (strictlyBelow / (reference.length + 1)) * 100 >= HIGH_BAND_PERCENTILE;
 }
 
 function priceUntil(input: PositionRecommendationInput): string {
@@ -310,13 +369,21 @@ function lastBidDay(history: readonly PriceHistoryDailyV1[]): string | null {
  * here; unlike before M3's fix, there is no case that falls through to rule (c).
  *
  * 1. `undecidable` → `review` with the EXACT reason `evaluateSellSignal` gave.
- * 2. Inside the window → `sell`/`seasonal_sell_window`, `until` = this window's own close. This is
- *    the measured best moment; no percentile is required on top of it.
- * 3. Outside the window, bid clears the reference → `sell`/`bid_above_reference` (an out-of-season
- *    opportunity, taken), `until` = the ordinary price-based expiry.
- * 4. Outside the window, bid does not clear it → `sell_at_season`/`seasonal_hold`, `until` = the
- *    window's NEXT open, not its close: the point is to wait for the next good moment to sell, not
- *    to expire the recommendation at a date that already passed.
+ * 2. H18.19: the sell-now-or-wait comparison (`compareSellNowWithWaiting`, the published
+ *    experiment's own out-of-sample criterion, for this position's free quantity at today's bid)
+ *    demonstrates that waiting pays → `sell_at_season`/`wait_advantage_demonstrated`, with the
+ *    window it points at as the suggested window. Only a demonstrated advantage makes anyone wait.
+ * 3. Today's price confirms the opportunity: it clears the pack's share of the year's maximum
+ *    (`minimumOfMaxBps`, the comparison `evaluateSellSignal` already makes) AND sits above the
+ *    year's minimum, so neither a flat series nor the floor passes for a peak. Inside the item's
+ *    selling window → `sell`/`seasonal_sell_window`, the window's own days as the suggested window;
+ *    outside it → `sell`/`bid_above_reference`, an out-of-season opportunity taken.
+ * 4. Anything else sells now with its reason in view: `no_demonstrated_wait_advantage` or, when the
+ *    comparison had too few seasons, `wait_evidence_insufficient`. This is the audit's C05 fix: the
+ *    calendar alone never made a sale right when the price contradicts it, and it no longer makes
+ *    anyone wait either; selling cheap stays a valid decision, with the motive shown.
+ *
+ * `until` is always the price-based validity of the analysis, never a window date.
  *
  * H18.2: `history` holds only days before today, and today's close handed to `evaluateSellSignal`
  * is `todayBidCopper`, the live quote, never a historical close that happens to be the latest.
@@ -336,25 +403,54 @@ function evaluateSeasonalRule(
 	};
 	const projection = evaluateSellSignal(series, capturedAtMs, seasonal.parameters, seasonal.window);
 	const undecided = { until: null, ...NO_EVIDENCE, priceHistoryLastDay } as const;
-	const decided = { ...NO_EVIDENCE, priceQuotedAt: new Date(capturedAtMs).toISOString(), priceHistoryLastDay };
 	if (projection.status === 'undecidable') {
 		return { action: 'review', reason: projection.reason, ...undecided };
 	}
-	if (projection.inSeason) {
-		const closesAfterMs = seasonalWindowClosesAfterMs(seasonal.window, capturedAtMs);
-		if (closesAfterMs === null) return { action: 'review', reason: 'undecidable_calendar', ...undecided };
+	const sellOrWait = compareSellNowWithWaiting({
+		nowMs: capturedAtMs,
+		mode: 'instant',
+		// Rule (b) only runs with a known, positive free quantity: every earlier exit handled 0 and null.
+		quantity: input.freeQuantity ?? 0,
+		todayUnitCopper: todayBidCopper,
+		history: historySeries.days,
+	});
+	const decided = {
+		...NO_EVIDENCE, until: priceUntil(input), priceQuotedAt: new Date(capturedAtMs).toISOString(), priceHistoryLastDay, sellOrWait,
+	};
+	if (sellOrWait.verdict === 'wait') {
 		return {
-			action: 'sell', reason: 'seasonal_sell_window', until: new Date(closesAfterMs).toISOString(), ...decided,
+			action: 'sell_at_season', reason: 'wait_advantage_demonstrated', ...decided,
+			sellWindowFromDay: sellOrWait.windowFromDay, sellWindowToDay: sellOrWait.windowToDay,
 		};
 	}
-	if (projection.signal === 'sell') {
-		return { action: 'sell', reason: 'bid_above_reference', until: priceUntil(input), ...decided };
+	const priceConfirms = projection.bidCopper >= projection.sellThresholdCopper
+		&& projection.bidCopper > projection.referenceMinCopper;
+	if (priceConfirms && projection.inSeason) {
+		const window = currentWindowDays(seasonal.window, capturedAtMs);
+		if (window === null) return { action: 'review', reason: 'undecidable_calendar', ...undecided };
+		return { action: 'sell', reason: 'seasonal_sell_window', ...decided, sellWindowFromDay: window.from, sellWindowToDay: window.to };
 	}
-	const opensAfterMs = seasonalWindowOpensAfterMs(seasonal.window, capturedAtMs);
-	if (opensAfterMs === null) return { action: 'review', reason: 'undecidable_calendar', ...undecided };
+	if (priceConfirms) return { action: 'sell', reason: 'bid_above_reference', ...decided };
 	return {
-		action: 'sell_at_season', reason: 'seasonal_hold', until: new Date(opensAfterMs).toISOString(), ...decided,
+		action: 'sell',
+		reason: sellOrWait.verdict === 'insufficient_data' ? 'wait_evidence_insufficient' : 'no_demonstrated_wait_advantage',
+		...decided,
 	};
+}
+
+/**
+ * The inclusive UTC days of the window `nowMs` sits inside: its closing day from
+ * `seasonalWindowClosesAfterMs` (whose exclusive end is the next midnight), its opening day in the
+ * same year, or the year before for a window that wraps across new year. Null for an unreadable
+ * window or clock, like the function it builds on.
+ */
+function currentWindowDays(window: SeasonalWindowV1, nowMs: number): { from: string; to: string } | null {
+	const endsAt = seasonalWindowClosesAfterMs(window, nowMs);
+	if (endsAt === null) return null;
+	const to = priceHistoryDayUtc(endsAt - DAY_MS);
+	const closingYear = Number.parseInt(to.slice(0, 4), 10);
+	const openingYear = window.opensOn <= window.closesOn ? closingYear : closingYear - 1;
+	return { from: `${String(openingYear)}-${window.opensOn}`, to };
 }
 
 /**

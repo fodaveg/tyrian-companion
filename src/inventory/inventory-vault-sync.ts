@@ -25,6 +25,15 @@ import {
 import { classifyItemLiquidity, isTradingPostAccessible, type TradingPostEligibility } from '../economy/item-liquidity';
 import type { PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { scaledSellCopper, type LegendaryReservationSplit } from '../economy/legendary-goals';
+import {
+	isSellOrWaitComparison,
+	SELL_OR_WAIT_MODES,
+	SELL_OR_WAIT_STRATEGIES,
+	SELL_OR_WAIT_VERDICTS,
+	type SellOrWaitComparisonV1,
+	type SellOrWaitMode,
+	type SellOrWaitVerdict,
+} from '../economy/sell-or-wait';
 import { priceHistoryNoteBlockMarkdown } from './price-history-note-block';
 
 export const INVENTORY_NOTE_SCHEMA_VERSION = 1 as const;
@@ -82,6 +91,14 @@ export interface InventoryVaultPosition {
 	 */
 	priceQuotedAt: string | null;
 	priceHistoryLastDay: string | null;
+	/**
+	 * H18.19: the window the decision suggests selling in (inclusive UTC days), the third clock next
+	 * to the quote's date and `recommendationUntil` (how long the analysis holds), and the
+	 * sell-now-or-wait comparison behind it. Both window ends are null when nothing backs a window.
+	 */
+	sellWindowFromDay: string | null;
+	sellWindowToDay: string | null;
+	sellOrWait: SellOrWaitComparisonV1 | null;
 	/**
 	 * How much of this position a reservation holds back, and how much is free to act on. When
 	 * non-null they always sum to `quantity`: `reservedQuantity` is held back for the chosen
@@ -187,6 +204,21 @@ interface InventoryNoteFields {
 	/** `InventoryVaultPosition.priceQuotedAt`/`priceHistoryLastDay` (H18.2). */
 	tc_price_quoted_at: string | null;
 	tc_price_history_last_day: string | null;
+	/** `InventoryVaultPosition.sellWindowFromDay`/`sellWindowToDay` (H18.19). */
+	tc_sell_window_from: string | null;
+	tc_sell_window_to: string | null;
+	/**
+	 * `InventoryVaultPosition.sellOrWait` (H18.19), flattened so a Base can read it: all null when
+	 * the decision carries no comparison. The copper figures are signed and net of fees.
+	 */
+	tc_wait_verdict: SellOrWaitVerdict | null;
+	tc_wait_mode: SellOrWaitMode | null;
+	tc_wait_strategy: SellOrWaitComparisonV1['strategy'] | null;
+	tc_wait_advantage_copper: number | null;
+	tc_wait_advantage_low_copper: number | null;
+	tc_wait_advantage_high_copper: number | null;
+	tc_wait_seasons: number | null;
+	tc_wait_seasons_lost: number | null;
 	/** `InventoryVaultPosition.reservedQuantity`/`freeQuantity` (M4, H18.1): both `null` means uncertain. */
 	tc_reserved_quantity: number | null;
 	tc_free_quantity: number | null;
@@ -209,6 +241,10 @@ const INVENTORY_NOTE_KEYS = [
 	'tc_recommendation', 'tc_recommendation_reason', 'tc_recommendation_until', 'tc_recommendation_missing',
 	'tc_price_percentile', 'tc_price_coverage_days',
 	'tc_price_quoted_at', 'tc_price_history_last_day',
+	'tc_sell_window_from', 'tc_sell_window_to',
+	'tc_wait_verdict', 'tc_wait_mode', 'tc_wait_strategy',
+	'tc_wait_advantage_copper', 'tc_wait_advantage_low_copper', 'tc_wait_advantage_high_copper',
+	'tc_wait_seasons', 'tc_wait_seasons_lost',
 	'tc_reserved_quantity', 'tc_free_quantity', 'tc_actionable_quantity',
 	'descripcion',
 ] as const;
@@ -244,6 +280,11 @@ const INVENTORY_NOTE_KEYS_ADDED_LATER = [
 	'tc_price_quoted_at', 'tc_price_history_last_day',
 	// H18.14, same discipline.
 	'tc_actionable_quantity',
+	// H18.19, same discipline.
+	'tc_sell_window_from', 'tc_sell_window_to',
+	'tc_wait_verdict', 'tc_wait_mode', 'tc_wait_strategy',
+	'tc_wait_advantage_copper', 'tc_wait_advantage_low_copper', 'tc_wait_advantage_high_copper',
+	'tc_wait_seasons', 'tc_wait_seasons_lost',
 ] as const;
 
 /**
@@ -323,7 +364,8 @@ const DEFAULT_RECOMMENDATION_INPUTS: InventoryPositionRecommendationInputs = {
  */
 export type InventoryVaultPositionCore = Omit<InventoryVaultPosition,
 	'recommendation' | 'recommendationReason' | 'recommendationUntil' | 'recommendationMissing' | 'pricePercentile' | 'priceCoverageDays'
-	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'reservedQuantity' | 'freeQuantity' | 'actionableQuantity'> & { untradeable: boolean };
+	| 'priceQuotedAt' | 'priceHistoryLastDay' | 'sellWindowFromDay' | 'sellWindowToDay' | 'sellOrWait'
+	| 'reservedQuantity' | 'freeQuantity' | 'actionableQuantity'> & { untradeable: boolean };
 
 /**
  * True only when this account can definitely not sell the item on the trading post, read from
@@ -520,6 +562,9 @@ function positionFromTiming({ core: { untradeable: _untradeable, ...core }, timi
 		priceCoverageDays: timing.priceCoverageDays,
 		priceQuotedAt: timing.priceQuotedAt,
 		priceHistoryLastDay: timing.priceHistoryLastDay,
+		sellWindowFromDay: timing.sellWindowFromDay,
+		sellWindowToDay: timing.sellWindowToDay,
+		sellOrWait: timing.sellOrWait,
 		reservedQuantity,
 		freeQuantity,
 		actionableQuantity: timing.action === 'sell' ? freeQuantity ?? 0 : 0,
@@ -928,6 +973,9 @@ function fieldsFor(position: InventoryVaultPosition, locale: CatalogLocale): Inv
 		tc_price_coverage_days: position.priceCoverageDays,
 		tc_price_quoted_at: position.priceQuotedAt,
 		tc_price_history_last_day: position.priceHistoryLastDay,
+		tc_sell_window_from: position.sellWindowFromDay,
+		tc_sell_window_to: position.sellWindowToDay,
+		...waitNoteFields(position.sellOrWait),
 		tc_reserved_quantity: position.reservedQuantity,
 		tc_free_quantity: position.freeQuantity,
 		tc_actionable_quantity: position.actionableQuantity,
@@ -953,6 +1001,9 @@ function inactiveInventoryNoteFields(fields: InventoryNoteFields): InventoryNote
 		tc_total_list_copper: null,
 		tc_recommendation_until: null,
 		tc_recommendation_missing: null,
+		tc_sell_window_from: null,
+		tc_sell_window_to: null,
+		...waitNoteFields(null),
 		tc_reserved_quantity: 0,
 		tc_free_quantity: 0,
 		tc_actionable_quantity: 0,
@@ -998,13 +1049,15 @@ function hasUserParts(note: InventoryNoteUserParts): boolean {
 }
 
 /**
- * Whether a rewrite would change anything the plugin manages. `tc_price_quoted_at` and a price
- * verdict's `tc_recommendation_until` are the capture instant plus a constant; comparing them
- * would rewrite every note on every sync (audit 2026-09-24 §3.E, "la vigencia de 15 minutos entra
- * en el hash"). So the quote date only counts by its presence, and a price expiry by its distance
- * from the quote; a seasonal window's open or close is a real date and is compared as such. A note
- * an older build wrote (a managed key missing or retired) is never "the same": its migrated values
- * may coincide, but the note itself still lacks the column, so it is rewritten once.
+ * Whether a rewrite would change anything the plugin manages. `tc_price_quoted_at` and
+ * `tc_recommendation_until` are the capture instant plus a constant; comparing them would rewrite
+ * every note on every sync (audit 2026-09-24 §3.E, "la vigencia de 15 minutos entra en el hash").
+ * So the quote date only counts by its presence, and the analysis' validity by its distance from
+ * the quote. H18.19: `tc_recommendation_until` is that validity for every reason now; the suggested
+ * window (`tc_sell_window_from`/`_to`) is a real pair of dates and is compared as such, as is the
+ * comparison, which moves with the price, the free quantity and the sale mode. A note an older
+ * build wrote (a managed key missing or retired) is never "the same": its migrated values may
+ * coincide, but the note itself still lacks the column, so it is rewritten once.
  */
 function sameManagedContent(note: OwnedInventoryNote, fields: InventoryNoteFields, block: string): boolean {
 	return note.currentKeys && note.block === block
@@ -1014,8 +1067,7 @@ function sameManagedContent(note: OwnedInventoryNote, fields: InventoryNoteField
 function comparableManagedFields(fields: InventoryNoteFields): string {
 	const quotedAt = fields.tc_price_quoted_at;
 	const until = fields.tc_recommendation_until;
-	const seasonal = fields.tc_recommendation_reason === 'seasonal_sell_window' || fields.tc_recommendation_reason === 'seasonal_hold';
-	const comparableUntil = until === null || seasonal || quotedAt === null
+	const comparableUntil = until === null || quotedAt === null
 		? until
 		: `+${String(Date.parse(until) - Date.parse(quotedAt))}ms`;
 	return JSON.stringify(INVENTORY_NOTE_KEYS.map((key) => key === 'tc_price_quoted_at' ? quotedAt !== null
@@ -1156,8 +1208,54 @@ function isInventoryPosition(value: unknown): value is InventoryVaultPosition {
 		nullableNonNegative(value.recommendationMissing) &&
 		nullablePercentile(value.pricePercentile) && nullableNonNegative(value.priceCoverageDays) &&
 		(value.priceQuotedAt === null || iso(value.priceQuotedAt)) && nullableDayUtc(value.priceHistoryLastDay) &&
+		sellWindow(value.sellWindowFromDay, value.sellWindowToDay) &&
+		(value.sellOrWait === null || isSellOrWaitComparison(value.sellOrWait)) &&
 		legendarySplit(value.reservedQuantity, value.freeQuantity, value.quantity) &&
 		nonNegative(value.actionableQuantity) && value.actionableQuantity <= value.quantity;
+}
+
+/** H18.19: both ends null, or two real UTC days in order. */
+function sellWindow(from: unknown, to: unknown): boolean {
+	if (from === null && to === null) return true;
+	return from !== null && to !== null && nullableDayUtc(from) && nullableDayUtc(to) && from <= to;
+}
+
+type InventoryWaitNoteFields = Pick<InventoryNoteFields,
+	'tc_wait_verdict' | 'tc_wait_mode' | 'tc_wait_strategy' | 'tc_wait_advantage_copper' | 'tc_wait_advantage_low_copper'
+	| 'tc_wait_advantage_high_copper' | 'tc_wait_seasons' | 'tc_wait_seasons_lost'>;
+
+/** H18.19: the comparison as flat note fields, every one null when there is none. */
+function waitNoteFields(comparison: SellOrWaitComparisonV1 | null): InventoryWaitNoteFields {
+	return {
+		tc_wait_verdict: comparison?.verdict ?? null,
+		tc_wait_mode: comparison?.mode ?? null,
+		tc_wait_strategy: comparison?.strategy ?? null,
+		tc_wait_advantage_copper: comparison?.netAdvantageCopper ?? null,
+		tc_wait_advantage_low_copper: comparison?.netAdvantageLowCopper ?? null,
+		tc_wait_advantage_high_copper: comparison?.netAdvantageHighCopper ?? null,
+		tc_wait_seasons: comparison?.seasons ?? null,
+		tc_wait_seasons_lost: comparison?.seasonsLost ?? null,
+	};
+}
+
+/** All null, or a verdict with its mode, strategy and season counts, and signed copper figures. */
+function waitNoteFieldsValid(value: Record<string, unknown>): boolean {
+	if (value.tc_wait_verdict === null) {
+		return value.tc_wait_mode === null && value.tc_wait_strategy === null && value.tc_wait_advantage_copper === null
+			&& value.tc_wait_advantage_low_copper === null && value.tc_wait_advantage_high_copper === null
+			&& value.tc_wait_seasons === null && value.tc_wait_seasons_lost === null;
+	}
+	return (SELL_OR_WAIT_VERDICTS as readonly unknown[]).includes(value.tc_wait_verdict)
+		&& (SELL_OR_WAIT_MODES as readonly unknown[]).includes(value.tc_wait_mode)
+		&& (SELL_OR_WAIT_STRATEGIES as readonly unknown[]).includes(value.tc_wait_strategy)
+		&& nullableInteger(value.tc_wait_advantage_copper) && nullableInteger(value.tc_wait_advantage_low_copper)
+		&& nullableInteger(value.tc_wait_advantage_high_copper)
+		&& nonNegative(value.tc_wait_seasons) && nonNegative(value.tc_wait_seasons_lost)
+		&& value.tc_wait_seasons_lost <= value.tc_wait_seasons;
+}
+
+function nullableInteger(value: unknown): boolean {
+	return value === null || (typeof value === 'number' && Number.isSafeInteger(value));
 }
 
 /** Both null (outside any legendary requirement), or both non-negative integers summing to `quantity`. */
@@ -1229,6 +1327,7 @@ function isInventoryNoteFields(value: unknown): value is InventoryNoteFields {
 		nullableNonNegative(value.tc_recommendation_missing) &&
 		nullablePercentile(value.tc_price_percentile) && nullableNonNegative(value.tc_price_coverage_days) &&
 		(value.tc_price_quoted_at === null || iso(value.tc_price_quoted_at)) && nullableDayUtc(value.tc_price_history_last_day) &&
+		sellWindow(value.tc_sell_window_from, value.tc_sell_window_to) && waitNoteFieldsValid(value) &&
 		legendarySplit(value.tc_reserved_quantity, value.tc_free_quantity, value.tc_quantity) &&
 		nonNegative(value.tc_actionable_quantity) && value.tc_actionable_quantity <= value.tc_quantity &&
 		nonEmptyText(value.descripcion);

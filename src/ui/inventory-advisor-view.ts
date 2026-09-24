@@ -981,6 +981,13 @@ function explanationCell(row: InventoryAdvisorViewRow, translator: Translator): 
 		momentLine.textContent = moment;
 		cell.append(momentLine);
 	}
+	const sellOrWait = sellOrWaitLabel(row, translator);
+	if (sellOrWait !== null) {
+		const comparisonLine = createEl('p');
+		comparisonLine.className = 'tyrian-inventory-advisor__decision-moment';
+		comparisonLine.textContent = sellOrWait;
+		cell.append(comparisonLine);
+	}
 	const context = rowContextDetails(row, translator);
 	if (context !== null) cell.append(context);
 	const season = containerSeasonNotice(row, translator);
@@ -1022,9 +1029,8 @@ function renderCards(
 			addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.location'), allocationLabel(row, translator));
 			addDefinition(list, translator.t('advisor.view.evidence'), evidenceLabel(row.coverage, translator));
-			const moment = decisionMomentLabel(row, translator);
-			addDefinition(list, translator.t('advisor.view.explanation'),
-				moment === null ? explanationLabel(row, translator) : `${explanationLabel(row, translator)} · ${moment}`);
+			const moment = [decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)].filter((part) => part !== null);
+			addDefinition(list, translator.t('advisor.view.explanation'), [explanationLabel(row, translator), ...moment].join(' · '));
 			article.append(list);
 			const context = rowContextDetails(row, translator);
 			if (context !== null) article.append(context);
@@ -1169,15 +1175,49 @@ function decisionLabel(row: InventoryAdvisorViewRow, translator: Translator): st
 }
 
 /**
- * The moment behind a row's decision, when the moment stage set it: why now or why wait, and until
- * when. Null for a route with no timing model, whose explanation already says everything.
+ * The moment behind a row's decision, when the moment stage set it: why now or why wait, then its
+ * three clocks, never mixed (H18.19): when the price was quoted, how long the analysis holds, and
+ * the window it suggests selling in. Null for a route with no timing model, whose explanation
+ * already says everything.
  */
 function decisionMomentLabel(row: InventoryAdvisorViewRow, translator: Translator): string | null {
 	const decision = row.decision ?? null;
 	if (decision === null || !isPositionReasonCode(decision.reason)) return null;
-	const reason = translator.t(`inventory.decision.reason.${decision.reason}`);
-	return decision.until === null ? reason
-		: `${reason} · ${translator.t('advisor.view.decisionUntil', { date: decision.until.slice(0, 10) })}`;
+	const parts = [translator.t(`inventory.decision.reason.${decision.reason}`)];
+	if (decision.priceQuotedAt !== null) parts.push(translator.t('inventory.decision.clock.quotedAt', { date: decision.priceQuotedAt.slice(0, 10) }));
+	if (decision.until !== null) parts.push(translator.t('advisor.view.decisionUntil', { date: decision.until.slice(0, 10) }));
+	if (decision.sellWindowFromDay !== null && decision.sellWindowToDay !== null) {
+		parts.push(translator.t('inventory.decision.clock.window', { from: decision.sellWindowFromDay, to: decision.sellWindowToDay }));
+	}
+	return parts.join(' · ');
+}
+
+/**
+ * H18.19: sell now or wait, for the row's free quantity and in its own sale mode: the net advantage
+ * of waiting, its range, the seasons behind it and the risk of not selling now. Null without one.
+ */
+function sellOrWaitLabel(row: InventoryAdvisorViewRow, translator: Translator): string | null {
+	const comparison = row.decision?.sellOrWait ?? null;
+	if (comparison === null) return null;
+	const mode = translator.t(`inventory.sellOrWait.mode.${comparison.mode}`);
+	if (comparison.verdict === 'insufficient_data') {
+		return translator.t('inventory.sellOrWait.insufficient_data', { mode, seasons: comparison.seasons });
+	}
+	if (comparison.strategy === 'sell_now') {
+		return translator.t('inventory.sellOrWait.no_wait_chosen', { mode, quantity: comparison.quantity });
+	}
+	const figures = {
+		mode, quantity: comparison.quantity, seasons: comparison.seasons,
+		advantage: comparisonCopper(comparison.netAdvantageCopper, translator),
+		low: comparisonCopper(comparison.netAdvantageLowCopper, translator),
+		high: comparisonCopper(comparison.netAdvantageHighCopper, translator),
+	};
+	const risk = translator.t('inventory.sellOrWait.risk', { lost: comparison.seasonsLost, seasons: comparison.seasons });
+	return `${translator.t(`inventory.sellOrWait.${comparison.verdict}`, figures)} ${risk}`;
+}
+
+function comparisonCopper(copper: number | null, translator: Translator): string {
+	return copper === null ? translator.t('advisor.view.value.unavailable') : signedCopper(copper, translator);
 }
 
 function isPositionReasonCode(value: string): value is PositionRecommendationReasonCode {
