@@ -1,6 +1,7 @@
 import type { StorageSnapshot } from '../account/storage-snapshot-model';
 import { buildInventoryAdvisorReservationBalance, createReservationPlan } from '../economy/reservation';
 import type { ReservationGoal } from '../economy/reservation-model';
+import type { MaterialStorageCapacitySource } from '../economy/material-storage-deposit-validation';
 import { INVENTORY_ADVISOR_REASON_CODES } from './inventory-advisor-contract';
 import type { InventoryAdvisorReasonCode, InventoryRecommendationAction } from './inventory-advisor-model';
 import {
@@ -86,6 +87,38 @@ export interface InventoryObjectResultsV1 {
 	decisions: Record<string, InventoryObjectDecisionV1>;
 	positions: Record<string, InventoryObjectPositionResultV1>;
 	uncertainItemIds: number[];
+	/** H18.15: the storage space this analysis saw. Absent on results built before H18.15. */
+	storageSpace?: InventoryObjectStorageSpaceV1 | null;
+}
+
+/** Free and total slots of one kind of container, both as the capture counted them. */
+export interface InventoryObjectSlotCountV1 {
+	free: number;
+	total: number;
+}
+
+/**
+ * H18.15 (audit 2026-09-24 §3.E, §9): the storage space one analysis saw, for every surface that
+ * orders or explains by it. Every count comes from the capture; a store the capture did not read
+ * is `null`, never zero.
+ *
+ * - `bags` sums every character's equipped bags; `bank` and `sharedInventory` are the account
+ *   stores.
+ * - `lowSpace` compares bags + bank with the threshold (the boceto's decision 9); null without the
+ *   bank, since the total would silently under-count real free space.
+ * - `materialCapacity` is the per-material capacity the classification used: configured, the
+ *   guaranteed 250, or the minimum the stacks prove ("at least N").
+ * - `slotsFreedByDecision`, keyed like `decisions`: how many whole bag, shared-inventory or bank
+ *   slots an act-now decision empties (only stacks it clears entirely count, so the number is
+ *   exact). A decision that frees nothing is absent.
+ */
+export interface InventoryObjectStorageSpaceV1 {
+	bags: InventoryObjectSlotCountV1 | null;
+	bank: InventoryObjectSlotCountV1 | null;
+	sharedInventory: InventoryObjectSlotCountV1 | null;
+	lowSpace: { freeSlots: number; totalSlots: number; thresholdFreeSlots: number; isLow: boolean } | null;
+	materialCapacity: { quantity: number; source: MaterialStorageCapacitySource } | null;
+	slotsFreedByDecision: Record<string, number>;
 }
 
 const NO_EVIDENCE = {

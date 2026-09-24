@@ -16,7 +16,7 @@ import type {
 } from './inventory-container-economy';
 import type { ContainerDispositionKernelExplanation } from '../economy/container-disposition-kernel';
 import type { ReservationReason } from '../economy/reservation-model';
-import type { InventoryObjectDecisionV1 } from './inventory-object-result';
+import type { InventoryObjectDecisionV1, InventoryObjectStorageSpaceV1 } from './inventory-object-result';
 
 export const INVENTORY_ADVISOR_PRESENTATION_VERSION = 1 as const;
 
@@ -107,6 +107,11 @@ export interface InventoryAdvisorPresentationRow {
 	 * shares. Null only when the presentation was built without an analysis.
 	 */
 	decision?: InventoryObjectDecisionV1 | null;
+	/**
+	 * H18.15: whole bag, shared-inventory or bank slots this act-now decision empties, from the same
+	 * analysis. Absent when the presentation was built without one that measured storage space.
+	 */
+	slotsFreed?: number;
 	quantity: number;
 	allocations: InventoryAdvisorPresentationAllocation[];
 	reasonCodes: InventoryAdvisorReasonCode[];
@@ -164,4 +169,9 @@ export interface InventoryAdvisorPresentation {
 	discardReview:
 		| { status: 'unavailable' }
 		| { status: 'review_only'; proofs: InventoryDiscardAllowlistProofV1[] };
+	/** H18.15: the analysis's storage space (free slots, low-space state, material capacity). */
+	storageSpace?: InventoryAdvisorStorageSpace | null;
 }
+
+/** The analysis's storage space without its per-decision index, which the rows already carry. */
+export type InventoryAdvisorStorageSpace = Omit<InventoryObjectStorageSpaceV1, 'slotsFreedByDecision'>;

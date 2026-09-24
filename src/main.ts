@@ -947,6 +947,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 					},
 				};
 			},
+			// H18.15: bags + bank at or below this many free slots is "low space".
+			lowStorageSpaceThresholdFreeSlots: () => this.settings.lowStorageSpaceThresholdFreeSlots,
 			// Rule (a), M4: the settings' target list, empty by default.
 			legendaryTargetItemIds: () => this.settings.legendaryTargetItemIds,
 			legendaryMaterialsTable: () => LEGENDARY_MATERIALS_TABLE,
@@ -3534,6 +3536,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const previousHalloweenEnabled = this.settings.halloweenEnabled;
 		const previousPersonalValuation = JSON.stringify(this.settings.halloweenPersonalValuation);
 		const previousMaterialStorageCapacity = this.settings.materialStorageCapacity;
+		const previousLowStorageSpaceThreshold = this.settings.lowStorageSpaceThresholdFreeSlots;
 		const previousSalvagePreferences = JSON.stringify(resolveEquipmentSalvagePreferences(this.settings));
 		const previousAlertIngameEnabled = this.settings.alertIngameEnabled;
 		const previousAlertIngamePort = this.settings.alertIngamePort;
@@ -3577,6 +3580,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let inventoryAdvisorResult: Extract<SettingsUpdateResult, { status: 'saved' }>['inventoryAdvisor'] = 'unchanged';
 		if (previousPersonalValuation !== JSON.stringify(this.settings.halloweenPersonalValuation)
 			|| previousMaterialStorageCapacity !== this.settings.materialStorageCapacity
+			// H18.15: the threshold decides the low-space state and the order the view shows.
+			|| previousLowStorageSpaceThreshold !== this.settings.lowStorageSpaceThresholdFreeSlots
 			|| previousSalvagePreferences !== JSON.stringify(resolveEquipmentSalvagePreferences(this.settings))) {
 			// Reuses the workflow's retained fresh capture and never starts account or price I/O.
 			try {
