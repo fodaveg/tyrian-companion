@@ -88,6 +88,12 @@ export interface SessionStopFailure {
 		| 'snapshot_failed'
 		| 'lease_lost'
 		| 'delta_invalid'
+		/**
+		 * The final snapshot belongs to another account than the baseline: the API key was changed
+		 * to a different account mid-session (H18.12). Retrying with that key reads the same account
+		 * again, so this one is never retried on its own; only the visible retry tries again.
+		 */
+		| 'account_changed'
 		| 'rate_limited'
 		| 'unexpected';
 	message: string;
@@ -464,6 +470,13 @@ export class ManualSessionStartService {
 			// A resumed result only hands the capture back for another finalize; whether that one
 			// saves decides the backoff (see `finalizeStoppedSession`), so it must not reset it here.
 			if (result.status !== 'stopped' || result.resumed !== true) this.clearAutoRetry();
+			return;
+		}
+		// A key changed to another account (H18.12) gives the same answer on every retry: the backoff
+		// used to repeat it every five minutes, forever. The failure stays declared on the session and
+		// only the visible retry (or the next reload) tries again.
+		if (result.failure.code === 'account_changed') {
+			this.clearAutoRetry();
 			return;
 		}
 		if (this.state.status === 'stopping' || this.reclaimableError() !== null) this.scheduleAutoRetry();
@@ -995,6 +1008,12 @@ export class ManualSessionStartService {
 			const finalReference = snapshotReference(finalSnapshot);
 			const delta = compareStorageSnapshots(this.baselineSnapshot, finalSnapshot);
 			if (delta.status === 'invalid') {
+				if (delta.reasons.some((reason) => reason.code === 'account_mismatch')) {
+					return this.failStop(
+						'account_changed',
+						'The API key now belongs to another account than the one this session started with.',
+					);
+				}
 				return this.failStop(
 					'delta_invalid',
 					'The final account snapshot could not be compared with the session baseline.',

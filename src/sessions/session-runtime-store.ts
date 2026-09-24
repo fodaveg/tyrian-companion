@@ -162,9 +162,14 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 	private opening: Promise<IDBDatabase> | null = null;
 	private unavailable = false;
 
+	/**
+	 * `databaseName` may be how to find the name out on first open instead of the name itself: each
+	 * vault's session lives in its own database (H18.12), and which one is only known once
+	 * `SessionStorageScope` decided. A failed decision fails the open, never falls back to a guess.
+	 */
 	constructor(
 		private readonly factory: IDBFactory,
-		private readonly databaseName = SESSION_RUNTIME_DB_NAME,
+		private readonly databaseName: string | (() => Promise<string>) = SESSION_RUNTIME_DB_NAME,
 		private readonly diagnostics = new LocalDebugPersistenceProbe(),
 	) {}
 
@@ -289,20 +294,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		if (this.database) return this.database;
 		if (this.opening) return this.opening;
 		const attempt = this.diagnostics.begin('session_runtime', 'open', context);
-		const opening = openIndexedDb({
-			factory: this.factory,
-			databaseName: this.databaseName,
-			databaseVersion: SESSION_RUNTIME_DB_VERSION,
-			schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
-			accept: () => !this.unavailable,
-			onVersionChange: (database) => {
-				if (this.database === database) this.database = null;
-				this.unavailable = true;
-			},
-			toError: (reason) => new Error(reason === 'blocked'
-				? 'Session recovery storage upgrade was blocked.'
-				: 'Could not open session recovery storage.'),
-		});
+		const opening = this.openDatabase();
 		this.opening = opening;
 		try {
 			const database = await opening;
@@ -315,6 +307,24 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		} finally {
 			if (this.opening === opening) this.opening = null;
 		}
+	}
+
+	private async openDatabase(): Promise<IDBDatabase> {
+		const databaseName = typeof this.databaseName === 'function' ? await this.databaseName() : this.databaseName;
+		return await openIndexedDb({
+			factory: this.factory,
+			databaseName,
+			databaseVersion: SESSION_RUNTIME_DB_VERSION,
+			schema: [{ name: SESSION_RUNTIME_STORE_NAME }],
+			accept: () => !this.unavailable,
+			onVersionChange: (database) => {
+				if (this.database === database) this.database = null;
+				this.unavailable = true;
+			},
+			toError: (reason) => new Error(reason === 'blocked'
+				? 'Session recovery storage upgrade was blocked.'
+				: 'Could not open session recovery storage.'),
+		});
 	}
 
 	private async read(context?: LocalDebugPersistenceContext, key: string = RUNTIME_KEY): Promise<unknown> {

@@ -19,7 +19,11 @@ export interface ActiveSessionLeaseCoordinatorOptions {
 	store?: CoordinationStore;
 	openStore?: () => Promise<CoordinationStore>;
 	indexedDb?: IDBFactory | null;
-	databaseName?: string;
+	/**
+	 * A name, or how to find it out when the store is first opened: each vault's lease lives in
+	 * its own database (H18.12), and which one is only known once `SessionStorageScope` decided.
+	 */
+	databaseName?: string | (() => Promise<string>);
 	clock?: () => number;
 	sleep?: (milliseconds: number) => Promise<void>;
 	machineId?: () => string;
@@ -63,9 +67,12 @@ export class ActiveSessionLeaseCoordinator {
 			: options.openStore ?? (async () => {
 				const factory = options.indexedDb ?? window.indexedDB;
 				if (!factory) throw new Error('IndexedDB is unavailable.');
+				const databaseName = typeof options.databaseName === 'function'
+					? await options.databaseName()
+					: options.databaseName ?? COORDINATION_DB_NAME;
 				return IndexedDbCoordinationStore.open(
 					factory,
-					options.databaseName ?? COORDINATION_DB_NAME,
+					databaseName,
 					undefined,
 					options.diagnostics,
 				);

@@ -39,12 +39,15 @@ import { SessionHistoryService, type SessionHistoryVault } from '../sessions/ses
 import { SessionNoteWriter, type SessionNoteVault } from '../sessions/session-note-writer';
 import { IndexedDbSessionRuntimeStore } from '../sessions/session-runtime-store';
 import { SessionStartCaptureService } from '../sessions/session-start-capture';
+import type { SessionStorageScope } from '../sessions/session-storage-scope';
 
 export interface SessionsAssemblyInput {
 	/** The IndexedDB factory every session store opens against. */
 	factory: IDBFactory;
 	/** Scopes the pilot metrics journal to one vault. */
 	vaultId: string;
+	/** Which database holds this vault's saved session (H18.12); the lease coordinator shares it. */
+	sessionStorage: Pick<SessionStorageScope, 'runtimeDatabaseName'>;
 	client: GuildWars2Client;
 	/** Public prices, read once at close time to value the session. */
 	priceGateway: PublicCatalogGateway;
@@ -115,7 +118,7 @@ export function assembleSessions(input: SessionsAssemblyInput): SessionsAssembly
 			onSettlementDue: input.onSettlementDue,
 			onAutoRecovered: input.onSessionAutoRecovered,
 			runtimeStore: new IndexedDbSessionRuntimeStore(
-				input.factory, undefined, input.sessionRecoverPersistence,
+				input.factory, async () => await input.sessionStorage.runtimeDatabaseName(), input.sessionRecoverPersistence,
 			),
 			priceCapture: new SessionPriceSnapshotService(input.priceGateway),
 			farmedLossItemTypeCapture: new SessionItemTypeSnapshotService(input.priceGateway),
