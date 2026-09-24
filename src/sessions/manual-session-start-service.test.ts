@@ -849,6 +849,7 @@ describe('ManualSessionStartService', () => {
 		await expect(runtimeStore.load()).resolves.toEqual({ status: 'empty' });
 	});
 
+	// H18.7: reopening Obsidian takes the session back on its own; nobody presses "Recover" anymore.
 	it('recovers an active session after restart without another account capture', async () => {
 		const runtimeStore = new MemorySessionRuntimeStore();
 		const first = new ManualSessionStartService(
@@ -878,10 +879,9 @@ describe('ManualSessionStartService', () => {
 		);
 
 		await second.initialize();
-		expect(second.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'active' } });
-		await expect(second.recover()).resolves.toMatchObject({
-			status: 'recovered',
-			state: { status: 'active', authority: { fence: 2, instanceId: 'instance-after-restart' } },
+		expect(second.getRecoveryState()).toEqual({ status: 'none' });
+		expect(second.getState()).toMatchObject({
+			status: 'active', authority: { fence: 2, instanceId: 'instance-after-restart' },
 		});
 		expect(capture.capture).not.toHaveBeenCalled();
 		expect(second.getState()).toMatchObject({
@@ -928,9 +928,8 @@ describe('ManualSessionStartService', () => {
 			);
 
 			await second.initialize();
-			await expect(second.recover()).resolves.toMatchObject({
-				status: 'recovered', state: { status: 'stopping', authority: { fence: 2 } },
-			});
+			expect(second.getRecoveryState()).toEqual({ status: 'none' });
+			expect(second.getState()).toMatchObject({ status: 'stopping', authority: { fence: 2 } });
 			expect(evidence.capture).not.toHaveBeenCalled();
 			expect(evidence.captureFinal).not.toHaveBeenCalled();
 		},
@@ -1239,8 +1238,15 @@ describe('ManualSessionStartService', () => {
 			renewedAt: acquiredAt + 60_000,
 			expiresAt: acquiredAt + 90_000,
 		};
+		// Startup recovers on its own now (H18.7), so the saved session only stays offered for a
+		// discard while another window holds it; the discard then waits for its own newer fence.
 		const leases = coordinator({
-			acquire: vi.fn(async () => ({ status: 'acquired' as const, handle: recoveredHandle })),
+			acquire: vi.fn()
+				.mockResolvedValueOnce({
+					status: 'busy' as const, ownerExpiresAt: handle.expiresAt,
+					ownerInstanceId: 'instance-elsewhere', ownerMachineId: 'machine-1',
+				})
+				.mockResolvedValue({ status: 'acquired' as const, handle: recoveredHandle }),
 		});
 		const second = new ManualSessionStartService(
 			leases,
@@ -1249,6 +1255,7 @@ describe('ManualSessionStartService', () => {
 		);
 
 		await second.initialize();
+		expect(second.getRecoveryState()).toMatchObject({ status: 'busy' });
 		await expect(second.discardRecovery()).resolves.toEqual({ status: 'discarded' });
 		expect(leases.acquire).toHaveBeenCalledWith('session-1');
 		expect(leases.release).toHaveBeenCalledWith(recoveredHandle);
@@ -1332,10 +1339,9 @@ describe('ManualSessionStartService', () => {
 		);
 
 		await serviceTwo.initialize();
-		expect(serviceTwo.getRecoveryState()).toMatchObject({ status: 'available', state: { status: 'active' } });
-		await expect(serviceTwo.recover()).resolves.toMatchObject({
-			status: 'recovered',
-			state: { status: 'active', authority: { instanceId: 'instance-two' } },
+		expect(serviceTwo.getRecoveryState()).toEqual({ status: 'none' });
+		expect(serviceTwo.getState()).toMatchObject({
+			status: 'active', authority: { instanceId: 'instance-two' },
 		});
 	});
 

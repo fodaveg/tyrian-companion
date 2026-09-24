@@ -1058,35 +1058,67 @@ describe('Halloween production gating', () => {
 });
 
 describe('non-destructive next-session rotation', () => {
-	it('verifies the previous durable summary without rewriting it before opening the next session', async () => {
-		let state: { status: 'complete' | 'idle' } = { status: 'complete' };
-		const runtime = {
-			state: { status: 'complete' as const, sessionId: 'session-rotation', baseline: { completedAt: '2026-09-01T08:00:00.000Z' } },
-			finalSnapshot: { completedAt: '2026-09-01T09:00:00.000Z' },
-		};
+	/**
+	 * H18.8: "New session" used to scan every Markdown file for the previous note and refuse when it
+	 * had been moved or its block edited. With the saved proof it reads nothing, rewrites nothing and
+	 * clears nothing itself: the start releases the finished session once it actually starts.
+	 */
+	function rotationHarness(receipt: { sessionId: string; path: string } | null, write: ReturnType<typeof vi.fn>) {
 		const readSession = vi.fn(async () => ({ status: 'found' as const, path: 'session.md', session: {}, loot: null }));
-		const resetCompletedSession = vi.fn(async () => { state = { status: 'idle' }; return true; });
+		const scan = vi.fn(async () => ({ status: 'ok' as const, sessions: [], ignored: 0 }));
+		const resetCompletedSession = vi.fn(async () => true);
 		const openManualSessionStart = vi.fn();
+		const runtime = { state: { status: 'complete' as const, sessionId: 'session-rotation' }, delta: null };
+		let currentReceipt = receipt;
 		const harness = Object.assign(Object.create(TyrianCompanionPlugin.prototype) as object, {
 			sessions: {
-				getCompletedRuntimeRecord: vi.fn(async () => runtime), resetCompletedSession,
-				getState: () => state,
+				getState: () => ({ status: 'complete' as const, sessionId: 'session-rotation' }),
+				getCompletedSummaryReceipt: () => currentReceipt,
+				getCompletedRuntimeRecord: vi.fn(async () => runtime),
+				markCompletedSummarySaved: vi.fn(async (path: string) => { currentReceipt = { sessionId: 'session-rotation', path }; return true; }),
+				resetCompletedSession,
 			},
-			sessionHistory: { readSession },
-			liveSessionLoot: { reset: vi.fn() }, openManualSessionStart,
+			sessionHistory: { readSession, scan },
+			sessionNotes: { write },
+			sessionNoteInput: vi.fn(() => ({ prepared: true })),
+			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
+			openManualSessionStart,
 			emitNotice: vi.fn(), settings: { language: 'es' as const }, runtimeReady: true,
-			renderViews: vi.fn(), sessionSummarySaveState: 'unknown', storedSessionLootSummary: null,
+			renderViews: vi.fn(), sessionSummarySaveState: 'saved', storedSessionLootSummary: null, localDebugActions: null,
 		});
 		// eslint-disable-next-line @typescript-eslint/unbound-method -- Explicit production-method harness.
 		const rotate = (TyrianCompanionPlugin.prototype as unknown as {
 			rotateToNewSession(this: typeof harness): Promise<void>;
 		}).rotateToNewSession;
+		return { harness, rotate, readSession, scan, resetCompletedSession, openManualSessionStart };
+	}
+
+	it('opens the next start from a saved summary without reading, rewriting or clearing anything', async () => {
+		const write = vi.fn(async () => ({ status: 'written' as const, path: 'moved/elsewhere.md' }));
+		const { harness, rotate, readSession, scan, resetCompletedSession, openManualSessionStart } =
+			rotationHarness({ sessionId: 'session-rotation', path: 'Tyrian Companion/Sessions/old.md' }, write);
 
 		await rotate.call(harness);
-		expect(readSession).toHaveBeenCalledOnce();
-		expect(resetCompletedSession).toHaveBeenCalledOnce();
+
+		expect(readSession).not.toHaveBeenCalled();
+		expect(scan).not.toHaveBeenCalled();
+		expect(write).not.toHaveBeenCalled();
+		expect(resetCompletedSession).not.toHaveBeenCalled();
 		expect(openManualSessionStart).toHaveBeenCalledOnce();
 		expect((harness as { emitNotice: ReturnType<typeof vi.fn> }).emitNotice).not.toHaveBeenCalled();
+	});
+
+	it('saves an unsaved summary first and keeps the finished session when the vault refuses it', async () => {
+		const write = vi.fn(async () => ({ status: 'unavailable' as const, message: 'offline' }));
+		const { harness, rotate, readSession, resetCompletedSession, openManualSessionStart } = rotationHarness(null, write);
+
+		await rotate.call(harness);
+
+		expect(write).toHaveBeenCalledOnce();
+		expect(readSession).not.toHaveBeenCalled();
+		expect(resetCompletedSession).not.toHaveBeenCalled();
+		expect(openManualSessionStart).not.toHaveBeenCalled();
+		expect((harness as { emitNotice: ReturnType<typeof vi.fn> }).emitNotice).toHaveBeenCalled();
 	});
 });
 
@@ -1115,7 +1147,7 @@ describe('completed-session summary persistence', () => {
 	it('writes the core summary before optional Halloween enrichment and keeps it saved when enrichment throws', async () => {
 		const order: string[] = [];
 		const proto = TyrianCompanionPlugin.prototype as unknown as {
-			finalizeAndPersistStoppedSession(this: unknown, sessionId: string, delta: StorageDelta): Promise<void>;
+			finalizeAndPersistStoppedSession(this: unknown, sessionId: string, delta: StorageDelta): Promise<boolean>;
 		};
 		const delta = { status: 'comparable' } as StorageDelta;
 		const runtime = { state: { status: 'complete' as const, sessionId: 'session-final' } };
@@ -1128,6 +1160,7 @@ describe('completed-session summary persistence', () => {
 					review: { classification: 'estimated' },
 				})),
 				getCompletedRuntimeRecord: vi.fn(async () => runtime),
+				markCompletedSummarySaved: vi.fn(async () => true),
 			},
 			sessionNotes: { write: vi.fn(async () => { order.push('write'); return { status: 'written' as const, path: 'session.md' }; }) },
 			sessionNoteInput: vi.fn(() => ({ prepared: true })),
@@ -1137,7 +1170,8 @@ describe('completed-session summary persistence', () => {
 			emitNotice: vi.fn(), settings: { language: 'es' as const },
 		});
 
-		await expect(proto.finalizeAndPersistStoppedSession.call(harness, 'session-final', delta)).resolves.toBeUndefined();
+		// H18.4: the result now says whether the summary is saved; the throwing enrichment does not change it.
+		await expect(proto.finalizeAndPersistStoppedSession.call(harness, 'session-final', delta)).resolves.toBe(true);
 		await Promise.resolve();
 
 		expect(order).toEqual(['write', 'halloween']);
@@ -1170,6 +1204,94 @@ describe('stop observation teardown ordering', () => {
 
 		expect(order).toEqual(['disarm', 'persist']);
 		expect(detectorState).toBe('disarmed');
+	});
+});
+
+describe('stop workflow outcome in the receipt and the pilot (H18.4)', () => {
+	function stopHarness(summarySaved: boolean) {
+		const accept = vi.fn(async () => true);
+		const proposalDecided = vi.fn(async () => true);
+		const intent = { proposalId: 'proposal-1', accountId: 'account-1', phase: 'stop' as const, binding: { kind: 'session' as const, sessionId: 'session-1', baselineSnapshotId: 'before' } };
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			performStopManualSession(this: unknown, intent?: unknown): Promise<void>;
+		};
+		const harness = Object.assign(Object.create(proto) as object, {
+			sessionHistoryRuntimeAuthority: { runtimeMutationAllowed: () => true },
+			requireRuntimeMutationLease: () => ({ release: vi.fn() }),
+			acquirePendingIntent: vi.fn(async () => ({
+				proposal: { phase: 'stop', proposalId: 'proposal-1', proposal: { proposalId: 'proposal-1' } },
+				operationId: 'operation-1', stopRenewal: vi.fn(),
+			})),
+			sessions: {
+				stop: vi.fn(async () => ({
+					status: 'stopped' as const,
+					state: { sessionId: 'session-1', stopRequestedAt: '2026-09-01T08:00:00.000Z', finalSnapshot: { completedAt: '2026-09-01T08:10:00.000Z' } },
+					delta: { status: 'comparable', itemChanges: [] },
+				})),
+				getPriceSnapshot: () => null,
+			},
+			assistedDetection: { getState: () => ({ status: 'armed' }), disarm: vi.fn() },
+			finalizeAndPersistStoppedSession: vi.fn(async () => summarySaved),
+			pendingProposals: { accept },
+			pilotMetrics: { proposalDecided },
+			detectionQuality: { recordAccepted: vi.fn(async () => undefined) },
+			priceHistory: null,
+			renderViews: vi.fn(), localDebugActions: null,
+		});
+		return { run: () => proto.performStopManualSession.call(harness, intent), accept, proposalDecided };
+	}
+
+	it('records a failed workflow in the receipt and the pilot when the summary could not be saved', async () => {
+		const { run, accept, proposalDecided } = stopHarness(false);
+
+		await run();
+
+		expect(accept).toHaveBeenCalledWith(expect.anything(), 'operation-1', 'session-1', 'failed');
+		expect(proposalDecided).toHaveBeenCalledWith(expect.objectContaining({ decision: 'accepted', workflow: 'failed' }));
+	});
+
+	it('keeps recording a clean success when the summary was saved', async () => {
+		const { run, accept, proposalDecided } = stopHarness(true);
+
+		await run();
+
+		expect(accept).toHaveBeenCalledWith(expect.anything(), 'operation-1', 'session-1', 'succeeded');
+		expect(proposalDecided).toHaveBeenCalledWith(expect.objectContaining({ workflow: 'succeeded' }));
+	});
+});
+
+describe('detection after a finished session (H18.9, prueba 6)', () => {
+	it('re-arms the detector once the first summary is saved, without a manual connection check', async () => {
+		const arm = vi.fn(async () => ({ status: 'armed' as const, armedAt: '2026-09-10T00:00:00.000Z', scheduler: {}, lastSnapshotAt: null }));
+		const checkConnection = vi.fn();
+		const proto = TyrianCompanionPlugin.prototype as unknown as {
+			finishFinalizedSession(this: unknown, sessionId: string, delta: StorageDelta, reviewed: unknown): Promise<boolean>;
+		};
+		const harness = Object.assign(Object.create(proto) as object, {
+			runtimeReady: true,
+			pilotMetrics: null,
+			sessions: {
+				getCompletedRuntimeRecord: vi.fn(async () => ({ state: { status: 'complete', sessionId: 'session-1' } })),
+				getState: () => ({ version: SESSION_STATE_VERSION, status: 'complete' as const, sessionId: 'session-1' }),
+				getRecoveryState: () => ({ status: 'none' as const }),
+			},
+			persistCompletedSessionSummary: vi.fn(async () => ({ status: 'written' as const, path: 'session.md' })),
+			refreshLootPresentation: vi.fn(async () => undefined),
+			observeHalloweenDelta: vi.fn(async () => undefined),
+			sessionHistoryRuntimeAuthority: { acquireRuntimeMutation: () => ({ release: vi.fn() }) },
+			connection: { getState: () => ({ status: 'connected' as const }) },
+			assistedDetection: { arm },
+			checkConnection,
+			settings: { ...DEFAULT_SETTINGS },
+			renderViews: vi.fn(), emitNotice: vi.fn(), localDebugActions: null,
+		});
+
+		await expect(proto.finishFinalizedSession.call(harness, 'session-1', { status: 'comparable' } as StorageDelta, {
+			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' }, review: {},
+		})).resolves.toBe(true);
+
+		await vi.waitFor(() => expect(arm).toHaveBeenCalledOnce());
+		expect(checkConnection).not.toHaveBeenCalled();
 	});
 });
 
@@ -1408,6 +1530,7 @@ describe('completed session note delivery', () => {
 			sessionNotes: { write },
 			sessionNoteInput: () => ({ session: 'input' }),
 			prepareSessionEconomyEvidence: vi.fn(async () => undefined),
+			sessions: { markCompletedSummarySaved: vi.fn(async () => true) },
 			renderViews: vi.fn(),
 			emitNotice: vi.fn(),
 		};

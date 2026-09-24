@@ -508,6 +508,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			const handle = () => {
 				if (!this.runtimeReady) return { phase: 'skip' as const, code: 'skipped' as const, state: 'online' };
 				this.runRuntimeMutation(() => this.assistedDetection.setOnline(true));
+				// A final capture that failed while offline retries now, not after its backoff (H18.7).
+				this.sessions.notifyWake();
 				this.priceHistory?.setOnline(true);
 				this.halloween?.setOnline(true);
 				return { state: 'online' };
@@ -532,6 +534,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 		this.registerDomEvent(document, 'visibilitychange', () => {
 			if (!this.runtimeReady || document.visibilityState !== 'visible') return;
+			// After a suspend the session lease may have expired: renew (or take it back) right away.
+			this.sessions.notifyWake();
 			if (this.runRuntimeMutation(() => this.assistedDetection.notifyWake())) {
 				fireAndForgetLocal(this.localDebugActions,
 					{ component: 'detection', action: 'detection_poll', state: 'wake' },
@@ -1118,6 +1122,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 					{ component: 'session', action: 'session_finish', state: 'settlement_due' },
 					() => this.performStopManualSession());
 			},
+			onSessionAutoRecovered: () => this.resumeAutoRecoveredSession(),
 			onProposalQueueStateChange: () => this.refreshBackgroundIndicators(),
 			onProposalExcluded: (proposalId, reason, resolvedAt) => {
 				void this.pilotMetrics.proposalExcluded(proposalId, reason, resolvedAt);
@@ -1189,7 +1194,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.finishFinalizedSession(
 				startupFinalization.sessionId, startupFinalization.delta, startupFinalization.review,
 			);
-		} else if (restoredSession.status === 'complete') await this.inspectCompletedSessionSummary();
+		} else if (restoredSession.status === 'complete') await this.restoreCompletedSessionSummary();
 		await this.refreshLootPresentation();
 
 		if (this.unloaded) return;
@@ -2055,9 +2060,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 				const connected = this.connection.getState().status;
 				const session = this.sessions.getState();
 				const recovery = this.sessions.getRecoveryState();
+				// `complete` arms too (H18.9): a finished session waits for the next one like `idle`,
+				// and the detector must look for it without anyone checking the connection by hand.
 				if (
 					(connected !== 'connected' && connected !== 'warning') ||
-					(session.status !== 'idle' && session.status !== 'active') ||
+					(session.status !== 'idle' && session.status !== 'active' && session.status !== 'complete') ||
 					(session.status === 'idle' && recovery.status !== 'none')
 				) return 'unavailable';
 				this.renderViews();
@@ -2245,7 +2252,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 			await this.liveSessionLoot.reconcile(runtime.state.sessionId, runtime.delta);
 		}
 		const note = await this.persistCompletedSessionSummary(true, runtime ?? undefined);
-		if (note?.status === 'written' || note?.status === 'unchanged') await this.inspectCompletedSessionSummary(runtime ?? undefined);
+		if ((note?.status === 'written' || note?.status === 'unchanged') && runtime?.state.status === 'complete') {
+			await this.readStoredSessionLoot(runtime.state.sessionId, note.path);
+		}
 		await this.refreshLootPresentation();
 		this.renderViews();
 	}
@@ -3001,22 +3010,35 @@ export default class TyrianCompanionPlugin extends Plugin {
 			{ component: 'session', action: 'session_clear' }, () => this.sessionCommands.run('clear-completed-session'));
 	}
 
+	/**
+	 * "New session" from a finished one (H18.8). It no longer clears anything itself, and no longer
+	 * scans every note in the vault to prove the summary exists: it only makes sure the summary is
+	 * saved (idempotent, and a no-op once it already was) and opens the ordinary start. The start
+	 * releases the finished session only once it has started, so cancelling it changes nothing.
+	 */
 	async rotateToNewSession(): Promise<void> {
-		const runtime = await this.sessions.getCompletedRuntimeRecord();
-		if (runtime === null || runtime.state.status !== 'complete' || runtime.finalSnapshot === null) return;
-		const archived = await this.inspectCompletedSessionSummary(runtime);
-		if (!archived || !await this.sessions.resetCompletedSession()) {
+		if (this.sessions.getState().status !== 'complete') return;
+		if (!await this.ensureCompletedSummarySaved()) {
 			this.emitNotice(
 				translateRuntime(createTranslator(this.settings.language), 'notices.newSessionBlocked'),
 				'session_command',
 			);
 			return;
 		}
-		this.liveSessionLoot.reset();
-		this.storedSessionLootSummary = null;
-		this.sessionSummarySaveState = 'unknown';
-		this.savedSessionNotePath = null;
 		this.openManualSessionStart();
+	}
+
+	/**
+	 * True once the finished session's summary is proven to be in the vault, writing it first when
+	 * nothing proves that yet. Never rewrites a summary already proven saved, so a note the player
+	 * moved or edited since neither blocks the next session nor gets a duplicate.
+	 */
+	private async ensureCompletedSummarySaved(): Promise<boolean> {
+		if (this.sessions.getState().status !== 'complete') return true;
+		if (this.sessions.getCompletedSummaryReceipt() !== null) return true;
+		const note = await this.persistCompletedSessionSummary(true);
+		return (note?.status === 'written' || note?.status === 'unchanged')
+			&& this.sessions.getCompletedSummaryReceipt() !== null;
 	}
 
 	async resetCompletedSession(): Promise<void> {
@@ -3127,10 +3149,17 @@ export default class TyrianCompanionPlugin extends Plugin {
 			// The stop itself is decided the moment the session leaves `active`, even when the final
 			// snapshot still waits out the API cache window: the detector must not keep proposing and
 			// the accepted proposal must not stay claimed for ten minutes waiting for a receipt.
+			// What the accepted proposal led to (H18.4): a stop whose summary could not be saved is
+			// recorded as such in its receipt and in the pilot, never as a clean success.
+			let summarySaved = true;
 			if (result.status !== 'failed') {
 				this.assistedDetection.disarm('session_stopped'); this.localDebugActions?.event({ component: 'detection', action: 'detection_disarm', state: 'session_stopped', level: 'info', phase: 'success', code: 'ok' });
 				if (result.status === 'stopped') {
-					await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
+					summarySaved = await this.finalizeAndPersistStoppedSession(result.state.sessionId, result.delta);
+				}
+				// A resumed result is a retry of a capture already reported once: finalize again, but do
+				// not record the stop or its price observation a second time.
+				if (result.status === 'stopped' && result.resumed !== true) {
 					const priceSnapshot = this.sessions.getPriceSnapshot();
 					const stopped = result.state;
 					const delta = result.delta;
@@ -3156,15 +3185,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 						},
 						); this.renderViews(); });
 				}
+				const workflow = summarySaved ? 'succeeded' : 'failed';
 				if (intent && pendingClaim) {
-					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId)) {
+					if (!await this.pendingProposals.accept(intent, pendingClaim.operationId, result.state.sessionId, workflow)) {
 						throw new Error('Proposal receipt failed.');
 					}
 				}
 				pilotWorkflowSucceeded = true;
 				if (workflowProposalId) void this.pilotMetrics?.proposalDecided({
 					proposalId: workflowProposalId,
-					decision: 'accepted', workflow: 'succeeded', cause: null, humanBoundaryAt,
+					decision: 'accepted', workflow, cause: null, humanBoundaryAt,
 				});
 			}
 			this.renderViews();
@@ -3180,8 +3210,12 @@ export default class TyrianCompanionPlugin extends Plugin {
 		}
 	}
 
-	/** Stop a live session: hand its final delta to the runtime, then finalize and persist it. */
-	private async finalizeAndPersistStoppedSession(sessionId: string, delta: StorageDelta): Promise<void> {
+	/**
+	 * Stop a live session: hand its final delta to the runtime, then finalize and persist it. Returns
+	 * whether the summary is saved (H18.4): before, a failure here only showed a Notice, and the
+	 * proposal receipt and the pilot kept recording the workflow as a success.
+	 */
+	private async finalizeAndPersistStoppedSession(sessionId: string, delta: StorageDelta): Promise<boolean> {
 		await this.liveSessionLoot.reconcile(sessionId, delta);
 		const reviewed = await this.sessions.finalizeStoppedSession();
 		if (reviewed.status !== 'finalized' || reviewed.state.status !== 'complete') {
@@ -3190,9 +3224,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
 				'session_command',
 			);
-			return;
+			return false;
 		}
-		await this.finishFinalizedSession(sessionId, delta, reviewed);
+		return await this.finishFinalizedSession(sessionId, delta, reviewed);
 	}
 
 	/**
@@ -3205,7 +3239,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		sessionId: string,
 		delta: StorageDelta,
 		reviewed: Extract<Awaited<ReturnType<ManualSessionStartService['finalizeStoppedSession']>>, { status: 'finalized' }>,
-	): Promise<void> {
+	): Promise<boolean> {
 		void this.pilotMetrics?.sessionCompleted(reviewed.state.sessionId, reviewed.state.finalizedAt);
 		const runtime = await this.sessions.getCompletedRuntimeRecord();
 		if (runtime === null) {
@@ -3214,21 +3248,58 @@ export default class TyrianCompanionPlugin extends Plugin {
 				translateRuntime(createTranslator(this.settings.language), 'notices.sessionSummaryNotSaved'),
 				'session_command',
 			);
-			return;
+			return false;
 		}
-		await this.persistCompletedSessionSummary(true, runtime);
+		const note = await this.persistCompletedSessionSummary(true, runtime);
 		await this.refreshLootPresentation();
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'halloween', action: 'halloween_refresh', state: 'session_final' },
 			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`, reviewed.review));
+		// The detector was disarmed when the stop was decided; the next session must be detectable
+		// again without anyone checking the connection by hand (H18.9). It only arms with an account
+		// already connected, and a summary not saved yet never blocks it: `start()` guards that. At
+		// boot the connection warm-up arms it instead, once the runtime is ready.
+		if (this.runtimeReady) fireAndForgetLocal(this.localDebugActions,
+			{ component: 'detection', action: 'detection_arm', state: 'session_complete' },
+			() => this.armAssistedDetection());
+		return note?.status === 'written' || note?.status === 'unchanged';
 	}
 
-	private async inspectCompletedSessionSummary(existingRuntime?: SessionRuntimeRecord): Promise<boolean> {
+	/**
+	 * Boot with a finished session (H18.8). The saved proof says where its summary went, so only
+	 * that one note is read, for its loot summary; a note moved since still counts as saved. Only a
+	 * record from before the proof existed falls back, once, to the old full lookup, and leaves the
+	 * proof behind when it finds the note.
+	 */
+	private async restoreCompletedSessionSummary(): Promise<void> {
+		const receipt = this.sessions.getCompletedSummaryReceipt();
+		if (receipt !== null) {
+			this.sessionSummarySaveState = 'saved';
+			this.savedSessionNotePath = receipt.path;
+			await this.readStoredSessionLoot(receipt.sessionId, receipt.path);
+			return;
+		}
+		const found = await this.inspectCompletedSessionSummary();
+		if (found !== null) {
+			this.savedSessionNotePath = found;
+			await this.sessions.markCompletedSummarySaved(found);
+		}
+	}
+
+	/** Reads the stored loot summary from the one note the session was written to. */
+	private async readStoredSessionLoot(sessionId: string, path: string): Promise<void> {
+		const durable = await this.sessionHistory.readSessionAt(path, await sha256Text(sessionId));
+		this.storedSessionLootSummary = durable.status === 'found' ? durable.loot : null;
+		if (this.runtimeReady) this.renderViews();
+	}
+
+	/** Legacy full lookup of the completed session's note; returns its path when found. */
+	private async inspectCompletedSessionSummary(existingRuntime?: SessionRuntimeRecord): Promise<string | null> {
 		const runtime = existingRuntime ?? await this.sessions.getCompletedRuntimeRecord();
 		if (runtime === null || runtime.state.status !== 'complete') {
 			this.sessionSummarySaveState = 'failed';
 			this.storedSessionLootSummary = null;
-			return false;
+			return null;
 		}
 		let durable: DurableSessionLookup;
 		try { durable = await this.sessionHistory.readSession(await sha256Text(runtime.state.sessionId)); }
@@ -3236,7 +3307,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		this.sessionSummarySaveState = durable.status === 'found' ? 'saved' : 'failed';
 		this.storedSessionLootSummary = durable.status === 'found' ? durable.loot : null;
 		if (this.runtimeReady) this.renderViews();
-		return durable.status === 'found';
+		return durable.status === 'found' ? durable.path : null;
 	}
 
 	private async persistCompletedSessionSummary(
@@ -3271,6 +3342,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 			return null;
 		}
 		const durable = note.status === 'written' || note.status === 'unchanged' ? note : null;
+		// The proof the next session releases this one on (H18.8): no vault scan, no rewrite later.
+		if (durable !== null) await this.sessions.markCompletedSummarySaved(durable.path);
 		this.sessionSummarySaveState = durable === null ? 'failed' : 'saved';
 		this.savedSessionNotePath = durable?.path ?? null;
 		if (this.runtimeReady) this.renderViews();
@@ -3325,6 +3398,9 @@ export default class TyrianCompanionPlugin extends Plugin {
 		let pilotWorkflowSucceeded = false;
 		this.renderViews();
 		try {
+			// A finished session is released by the start itself once its summary is proven saved
+			// (H18.8); saving it here first is what lets the next session start without a clear.
+			await this.ensureCompletedSummarySaved();
 			const runtimeLease = this.sessionHistoryRuntimeAuthority.acquireRuntimeMutation();
 			if (runtimeLease === null) throw new Error('Session history scrub is active.');
 			const result = await this.sessions.start(input).finally(() => runtimeLease.release());
@@ -3598,9 +3674,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.pendingProposals.reconcile({
 			accountId,
 			recoveryPending: this.sessions.getRecoveryState().status !== 'none',
+			// A finished session waits for the next one exactly like `idle` (H18.8/H18.9): a start
+			// proposal found meanwhile stays valid, and accepting it releases the finished session.
 			session: observed.status === 'active'
 				? { status: 'active', sessionId: observed.sessionId, baselineSnapshotId: observed.baseline.snapshotId }
-				: { status: observed.status },
+				: { status: observed.status === 'complete' ? 'idle' : observed.status },
 		});
 	}
 
@@ -3837,6 +3915,22 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const recovered = this.sessions.getState();
 		if (recovered.status === 'active') this.startLiveObservation(recovered.sessionId, true);
 		if (recoveryId) void this.pilotMetrics.recoveryFinished(recoveryId, 'succeeded');
+	}
+
+	/**
+	 * The session service took a session back on its own (H18.7: a lease lost while the machine
+	 * slept, or a saved session another window held when Obsidian started). An `active` session whose
+	 * loot poll is not following it any more gets it back, as after a manual recovery; one the poll
+	 * still follows is left alone, so the running loot is not reset.
+	 */
+	private resumeAutoRecoveredSession(): void {
+		// Never earlier than a timer tick after `initialize()`, so every service below is assigned.
+		const session = this.sessions.getState();
+		const live = this.liveSessionLoot.getState();
+		if (session.status === 'active' && (live.status !== 'observing' || live.sessionId !== session.sessionId)) {
+			this.startLiveObservation(session.sessionId, true);
+		}
+		this.renderViews();
 	}
 
 	private async performDiscardRecoveredSession(): Promise<void> {

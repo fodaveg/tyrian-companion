@@ -136,6 +136,19 @@ describe('session note model and renderer', () => {
 		expect(plain.content).not.toContain('Sin cotización o vinculados');
 	});
 
+	// H18.4: a stop retried without its saved request ends at the last saved evidence, and says so.
+	it('marks the end as uncertain only when the stop came from the last saved evidence', async () => {
+		const uncertain = sessionInput();
+		uncertain.runtime = {
+			...uncertain.runtime,
+			state: { ...uncertain.runtime.state, stopBoundary: 'last_saved_evidence' } as SessionRuntimeRecord['state'],
+		};
+		const marked = await rendered(uncertain);
+		expect(marked.content).toContain('Hora de fin incierta: la petición de parada no llegó a guardarse');
+
+		expect((await rendered(sessionInput())).content).not.toContain('Hora de fin incierta');
+	});
+
 	it('records only an explicit validated event and never infers it from session evidence', async () => {
 		const plain = sessionInput();
 		expect((await rendered(plain)).frontmatter.tc_event).toBeNull();

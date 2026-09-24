@@ -33,6 +33,21 @@ export const SESSION_RUNTIME_STORE_NAME = 'active-session-v1';
 /** Exported so a test can seed a legacy-schema record directly, bypassing `save()`'s current-schema validation. */
 export const SESSION_RUNTIME_KEY = 'active-session';
 const RUNTIME_KEY = SESSION_RUNTIME_KEY;
+/**
+ * Second key in the same object store (no schema upgrade): the proof that one completed session's
+ * summary already reached the vault (H18.8). It lets the next session release the completed record
+ * without scanning every Markdown file for the note, and without rewriting a note the player has
+ * since moved or edited.
+ */
+export const SESSION_SUMMARY_RECEIPT_KEY = 'completed-session-summary';
+
+export interface SessionSummaryReceipt {
+	version: 1;
+	sessionId: string;
+	/** Vault path the note was written to; the player may move it later, the proof stands. */
+	path: string;
+	savedAt: number;
+}
 
 export type PersistedSessionState =
 	| RecoverableSessionState
@@ -75,12 +90,19 @@ export interface SessionRuntimeStore {
 	 * allowed to clear it, because nothing else can read it.
 	 */
 	forceClear(context?: LocalDebugPersistenceContext): Promise<SessionRuntimeMutationResult>;
+	/**
+	 * Optional so a narrow test double can keep implementing only the record surface: without it a
+	 * completed session can never prove its summary was saved, and so is never released on its own.
+	 */
+	loadSummaryReceipt?(): Promise<SessionSummaryReceipt | null>;
+	saveSummaryReceipt?(receipt: SessionSummaryReceipt): Promise<boolean>;
 	close(): void;
 }
 
 /** Deterministic test adapter. Production must use IndexedDbSessionRuntimeStore. */
 export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 	private value: unknown;
+	private summaryReceipt: SessionSummaryReceipt | null = null;
 
 	constructor(initial?: unknown) {
 		this.value = initial === undefined ? undefined : structuredClone(initial);
@@ -119,6 +141,16 @@ export class MemorySessionRuntimeStore implements SessionRuntimeStore {
 	async forceClear(): Promise<SessionRuntimeMutationResult> {
 		this.value = undefined;
 		return { status: 'cleared' };
+	}
+
+	async loadSummaryReceipt(): Promise<SessionSummaryReceipt | null> {
+		return this.summaryReceipt === null ? null : structuredClone(this.summaryReceipt);
+	}
+
+	async saveSummaryReceipt(receipt: SessionSummaryReceipt): Promise<boolean> {
+		if (!isSessionSummaryReceipt(receipt)) return false;
+		this.summaryReceipt = structuredClone(receipt);
+		return true;
 	}
 
 	close(): void {}
@@ -221,6 +253,29 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		}
 	}
 
+	async loadSummaryReceipt(context?: LocalDebugPersistenceContext): Promise<SessionSummaryReceipt | null> {
+		try {
+			const value = await this.read(context, SESSION_SUMMARY_RECEIPT_KEY);
+			return isSessionSummaryReceipt(value) ? structuredClone(value) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	async saveSummaryReceipt(receipt: SessionSummaryReceipt, context?: LocalDebugPersistenceContext): Promise<boolean> {
+		if (!isSessionSummaryReceipt(receipt)) return false;
+		try {
+			await this.mutate(
+				() => ({ result: { status: 'saved' } as const, nextValue: structuredClone(receipt) }),
+				context,
+				SESSION_SUMMARY_RECEIPT_KEY,
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	close(): void {
 		const attempt = this.diagnostics.begin('session_runtime', 'close');
 		this.unavailable = true;
@@ -262,7 +317,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 		}
 	}
 
-	private async read(context?: LocalDebugPersistenceContext): Promise<unknown> {
+	private async read(context?: LocalDebugPersistenceContext, key: string = RUNTIME_KEY): Promise<unknown> {
 		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
 			let transaction: IDBTransaction;
@@ -272,7 +327,7 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 				reject(new Error('Session recovery storage is unavailable.'));
 				return;
 			}
-			const request = transaction.objectStore(SESSION_RUNTIME_STORE_NAME).get(RUNTIME_KEY);
+			const request = transaction.objectStore(SESSION_RUNTIME_STORE_NAME).get(key);
 			let value: unknown;
 			request.onsuccess = () => { value = request.result as unknown; };
 			transaction.oncomplete = () => resolve(value);
@@ -282,8 +337,15 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 	}
 
 	private async mutate<T extends SessionRuntimeMutationResult>(
-		mutator: (current: unknown) => { result: T; next?: SessionRuntimeRecord; remove?: boolean },
+		mutator: (current: unknown) => {
+			result: T;
+			next?: SessionRuntimeRecord;
+			/** Any other value, for keys that do not hold the runtime record itself. */
+			nextValue?: unknown;
+			remove?: boolean;
+		},
 		context?: LocalDebugPersistenceContext,
+		key: string = RUNTIME_KEY,
 	): Promise<T> {
 		const database = await this.open(context);
 		return await new Promise((resolve, reject) => {
@@ -295,15 +357,16 @@ export class IndexedDbSessionRuntimeStore implements SessionRuntimeStore {
 				return;
 			}
 			const store = transaction.objectStore(SESSION_RUNTIME_STORE_NAME);
-			const request = store.get(RUNTIME_KEY);
+			const request = store.get(key);
 			let result: T;
 			let mutationFailed = false;
 			request.onsuccess = () => {
 				try {
 					const mutation = mutator(request.result as unknown);
 					result = mutation.result;
-					if (mutation.remove) store.delete(RUNTIME_KEY);
-					else if (mutation.next) store.put(mutation.next, RUNTIME_KEY);
+					if (mutation.remove) store.delete(key);
+					else if (mutation.next) store.put(mutation.next, key);
+					else if (mutation.nextValue !== undefined) store.put(mutation.nextValue, key);
 				} catch {
 					mutationFailed = true;
 					transaction.abort();
@@ -428,6 +491,15 @@ function checkSessionRuntimeRecordV3(
 		if (!finalized) return INVALID_RUNTIME_RECORD;
 	}
 	return { valid: true, reviewVerified };
+}
+
+export function isSessionSummaryReceipt(value: unknown): value is SessionSummaryReceipt {
+	return isRecord(value)
+		&& exactKeys(value, ['version', 'sessionId', 'path', 'savedAt'])
+		&& value.version === 1
+		&& typeof value.sessionId === 'string' && value.sessionId.length > 0 && value.sessionId.length <= 256
+		&& typeof value.path === 'string' && value.path.length > 0
+		&& Number.isSafeInteger(value.savedAt) && (value.savedAt as number) >= 0;
 }
 
 export function recoverableState(state: PersistedSessionState): RecoverableSessionState {

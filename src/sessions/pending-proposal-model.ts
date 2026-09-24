@@ -51,7 +51,15 @@ export interface ProposalReceipt {
 	sessionId: string | null;
 	correctionCause: DetectionCorrectionCause | null;
 	correctionRecorded: boolean | null;
+	/**
+	 * What became of the accepted workflow (H18.4): `failed` when the session stopped but its summary
+	 * could not be saved, so the receipt no longer reads as a clean success. `null` for every other
+	 * outcome, and for an accepted receipt written before this field existed.
+	 */
+	workflow: ProposalReceiptWorkflow | null;
 }
+
+export type ProposalReceiptWorkflow = 'succeeded' | 'failed';
 
 export interface PendingProposalQueueRecord {
 	version: 1;
@@ -115,11 +123,14 @@ export function isPendingProposal(value: unknown): value is PendingProposal {
 
 export function isProposalReceipt(value: unknown): value is ProposalReceipt {
 	if (!isRecord(value) || !exactKeys(value, [
-		'version', 'proposalId', 'outcome', 'resolvedAt', 'sessionId', 'correctionCause', 'correctionRecorded',
+		'version', 'proposalId', 'outcome', 'resolvedAt', 'sessionId', 'correctionCause', 'correctionRecorded', 'workflow',
 	])) return false;
 	if (value.version !== 1 || !validId(value.proposalId) || !isIso(value.resolvedAt) ||
 		(value.sessionId !== null && !validId(value.sessionId)) ||
 		!['accepted', 'dismissed', 'superseded', 'expired', 'invalidated'].includes(value.outcome as string)) return false;
+	if (value.workflow !== null && (value.outcome !== 'accepted' || (value.workflow !== 'succeeded' && value.workflow !== 'failed'))) {
+		return false;
+	}
 	if (value.outcome === 'dismissed') {
 		return typeof value.correctionCause === 'string' &&
 			['not_farming', 'still_farming', 'temporary_pause', 'unrelated_account_activity', 'other'].includes(value.correctionCause) &&
@@ -133,15 +144,25 @@ export function normalizeProposalQueueRecord(value: unknown): PendingProposalQue
 	if (!isRecord(value) || !exactKeys(value, ['version', 'revision', 'proposals', 'receipts']) || value.version !== 1 ||
 		!nonNegative(value.revision) ||
 		!Array.isArray(value.proposals) ||
-		!Array.isArray(value.receipts) || !value.receipts.every(isProposalReceipt)) return null;
+		!Array.isArray(value.receipts)) return null;
+	const migratedReceipts = value.receipts.map(normalizeProposalReceipt);
+	if (migratedReceipts.some((receipt) => receipt === null)) return null;
 	const proposals = value.proposals.map(normalizePendingProposal);
 	if (proposals.some((proposal) => proposal === null)) return null;
 	const normalized = proposals as PendingProposal[];
-	const receipts = value.receipts;
+	const receipts = migratedReceipts as ProposalReceipt[];
 	if (new Set(normalized.map((entry) => entry.proposalId)).size !== normalized.length ||
 		new Set(receipts.map((entry) => entry.proposalId)).size !== receipts.length ||
 		normalized.some((entry, index) => index > 0 && comparePendingProposals(normalized[index - 1]!, entry) >= 0)) return null;
 	return { version: 1, revision: value.revision, proposals: structuredClone(normalized), receipts: structuredClone(receipts) };
+}
+
+/** A receipt stored before H18.4 has no `workflow`; it reads as unknown (`null`), never as success. */
+function normalizeProposalReceipt(value: unknown): ProposalReceipt | null {
+	if (isProposalReceipt(value)) return structuredClone(value);
+	if (!isRecord(value) || Object.prototype.hasOwnProperty.call(value, 'workflow')) return null;
+	const migrated = { ...value, workflow: null };
+	return isProposalReceipt(migrated) ? structuredClone(migrated) : null;
 }
 
 function normalizePendingProposal(value: unknown): PendingProposal | null {

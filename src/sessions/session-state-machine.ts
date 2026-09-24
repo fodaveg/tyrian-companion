@@ -95,9 +95,10 @@ export function isSessionEvent(value: unknown): value is SessionEvent {
 				&& isStartContext(value.startContext)
 				&& Date.parse(value.startContext.capturedAt) >= Date.parse(value.baseline.completedAt);
 		case 'request_stop':
-			return exactKeys(value, ['type', 'authority', 'requestedAt'])
+			return exactKeys(value, withStopBoundary(value, ['type', 'authority', 'requestedAt']))
 				&& isAuthority(value.authority)
-				&& isIsoTimestamp(value.requestedAt);
+				&& isIsoTimestamp(value.requestedAt)
+				&& validStopBoundary(value);
 		case 'confirm_stop':
 			return exactKeys(value, ['type', 'authority', 'stoppedAt', 'finalSnapshot'])
 				&& isAuthority(value.authority)
@@ -153,7 +154,12 @@ function transitionValidated(state: SessionState, event: SessionEvent): SessionT
 			if (containsStopRequest(state, event.authority, event.requestedAt)) return unchanged(state);
 			if (state.status !== 'active') return rejected(state, 'illegal_transition');
 			if (!sameAuthority(state.authority, event.authority)) return rejected(state, 'authority_mismatch');
-			return applied({ ...clone(state), status: 'stopping', stopRequestedAt: event.requestedAt });
+			return applied({
+				...clone(state),
+				status: 'stopping',
+				stopRequestedAt: event.requestedAt,
+				...(event.stopBoundary === undefined ? {} : { stopBoundary: event.stopBoundary }),
+			});
 
 		case 'confirm_stop':
 			if (containsFinalSnapshot(state, event.authority, event.stoppedAt, event.finalSnapshot)) return unchanged(state);
@@ -229,7 +235,8 @@ function isActiveState(value: Record<string, unknown>): value is Record<string, 
 }
 
 function isStoppingState(value: Record<string, unknown>): value is Record<string, unknown> & StoppingSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt'])
+	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt']))
+		&& validStopBoundary(value)
 		&& validSessionBase(value)
 		&& isSnapshotReference(value.baseline)
 		&& isStartContext(value.startContext)
@@ -240,12 +247,14 @@ function isStoppingState(value: Record<string, unknown>): value is Record<string
 }
 
 function isProvisionalState(value: Record<string, unknown>): value is Record<string, unknown> & ProvisionalSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot'])
+	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot']))
+		&& validStopBoundary(value)
 		&& validProvisionalFields(value);
 }
 
 function isCompleteState(value: Record<string, unknown>): value is Record<string, unknown> & CompleteSessionState {
-	return exactKeys(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification'])
+	return exactKeys(value, withStopBoundary(value, ['version', 'status', 'sessionId', 'authority', 'requestedAt', 'baseline', 'startContext', 'stopRequestedAt', 'stoppedAt', 'finalSnapshot', 'finalizedAt', 'classification']))
+		&& validStopBoundary(value)
 		&& validProvisionalFields(value)
 		&& isIsoTimestamp(value.finalizedAt)
 		&& Date.parse(value.finalizedAt) >= Date.parse((value.finalSnapshot as SessionSnapshotReference).completedAt)
@@ -489,6 +498,15 @@ function containsFinalSnapshot(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** `stopBoundary` is optional (H18.4): an ordinary stop never carries it, so older records stay valid. */
+function withStopBoundary(value: Record<string, unknown>, keys: string[]): string[] {
+	return Object.prototype.hasOwnProperty.call(value, 'stopBoundary') ? [...keys, 'stopBoundary'] : keys;
+}
+
+function validStopBoundary(value: Record<string, unknown>): boolean {
+	return !Object.prototype.hasOwnProperty.call(value, 'stopBoundary') || value.stopBoundary === 'last_saved_evidence';
 }
 
 function exactKeys(value: Record<string, unknown>, expected: string[]): boolean {

@@ -253,6 +253,25 @@ describe('Companion API settlement surface', () => {
 		expect(captureSessionFinalNow).toHaveBeenCalledOnce();
 	});
 
+	// H18.7: a final capture that failed after the wait used to leave the card with no action at all.
+	it('offers a visible retry once the final capture failed after the wait', async () => {
+		const stopManualSession = vi.fn(async () => undefined);
+		const { contentEl, render } = mountCompanion({
+			stopManualSession,
+			getSessionState: () => stoppingSession(),
+			getSessionSettlementWait: () => null,
+			getSessionStopFailure: () => ({ code: 'snapshot_failed', message: 'offline' }),
+		});
+
+		render();
+
+		const retry = find(contentEl, (node) => node.tag === 'button' && node.textContent === 'Reintentar finalizar sesión');
+		expect(retry).toBeDefined();
+		retry?.click();
+		await Promise.resolve();
+		expect(stopManualSession).toHaveBeenCalledOnce();
+	});
+
 	it('shows the ordinary reconciling copy when no window is pending', () => {
 		const { contentEl, render } = mountCompanion({
 			captureSessionFinalNow: vi.fn(async () => undefined),

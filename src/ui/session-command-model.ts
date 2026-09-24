@@ -38,8 +38,11 @@ export function projectSessionCommands(context: SessionCommandContext, locale: L
 	// not need to understand the record, only to erase it.
 	const recoveryDiscardable = recoveryRetry || context.recovery.status === 'error';
 	const connected = context.connection === 'connected' || context.connection === 'warning';
+	// A finished session no longer has to be cleared first (H18.8): starting releases it once its
+	// summary is proven saved, and keeps it whole otherwise.
+	const awaitingNext = context.state.status === 'idle' || context.state.status === 'complete';
 	return [
-		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && context.state.status === 'idle', 'play', false, targetKey(context, false)),
+		descriptor('start-farming-session', t('commands.startSession'), !recovering && connected && awaitingNext, 'play', false, targetKey(context, false)),
 		descriptor('finish-farming-session',
 			(context.state.status === 'stopping' || context.state.status === 'error') ? t('commands.retryStop') : t('commands.finishSession'),
 			// A live authority failure (heartbeat `lease_lost`, stop `clock_anomaly`) used to leave

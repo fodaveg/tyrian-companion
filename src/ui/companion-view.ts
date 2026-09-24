@@ -604,6 +604,13 @@ export class TyrianCompanionView extends ItemView {
 			const actions: SessionCardAction[] = [];
 			if (wait !== null && this.actions.captureSessionFinalNow) {
 				actions.push({ text: this.t('view.captureNow'), onClick: () => { void this.actions.captureSessionFinalNow?.()?.catch(() => undefined); } });
+			} else if (wait === null && this.actions.getSessionStopFailure() !== null) {
+				// The final capture failed after the wait (H18.7): it already retries on its own, and
+				// this is the visible way to try right now instead of leaving the card without actions.
+				actions.push({
+					text: createTranslator(this.actions.getLocale()).t('commands.retryStop'), cta: true,
+					onClick: () => { void this.actions.stopManualSession().catch(() => undefined); },
+				});
 			}
 			return {
 				ariaLabel: copy.session, state: copy.finishing,
