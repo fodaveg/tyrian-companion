@@ -2,212 +2,248 @@
 
 ## Estado y alcance
 
-Este protocolo cubre H6.8/H6.9. La ejecución humana está **pendiente**: una guía
-preparada no acredita una prueba superada.
+Este protocolo cubre H6.8/H6.9 y recoge las dieciséis pruebas de aceptación de la sección 8 de la auditoría final consolidada del 24 de septiembre de 2026.
 
-Procedencia: se escribió el 14 de agosto de 2026 en el worktree `test/h6-manual-qa` y nunca
-llegó a un commit. Se recuperó a `main` el 18 de agosto de 2026 sin cambiar el protocolo. Las
-cifras de gate verde que citaba (1.085 tests el 14 de agosto) se han quitado a propósito: hay
-que volver a medirlas sobre el candidato que se pruebe de verdad, porque un número de hace
-cuatro días no acredita este binario.
+**Estado: ejecución humana pendiente.** Una guía preparada no acredita una prueba superada. Estas pruebas aún no se han ejecutado.
 
-La instalación y la actualización desde el artifact beta son H7.5 y tienen su propio
-procedimiento en [la guía beta](BETA.md). La fila «Updater/reopen» de la matriz de abajo no la
-sustituye: comprueba que el plugin recarga, no que el instalador transaccional haga bien su
-trabajo.
+## Precondiciones comunes
 
-No se prueba Mumble Link, automatización del juego, H7 ni una actualización del plugin en
-esta ejecución. La comprobación de updater/reopen es una prueba separada del recovery de
-sesión.
-
-## Prerrequisitos y evidencia
+Para todas las pruebas:
 
 1. Crear una bóveda **desechable** nueva. No abrir, copiar ni modificar la bóveda canónica.
-2. Instalar el candidato y anotar versión de Tyrian Companion, SHA, versión de Obsidian,
-   sistema operativo y, cuando aplique, Steam/Proton o CrossOver.
-3. Crear en la bóveda desechable un secreto de Obsidian con una clave de pruebas con permisos
-   mínimos. No pegar el token, su ID ni el `accountId` en notas, logs, capturas o informes.
-4. Configurar una carpeta de salida portable, por ejemplo `Tyrian Companion QA`, y seleccionar
-   el secreto por su nombre no sensible.
-5. Registrar timestamps en UTC y conservar solo: ruta y SHA-256 de la nota generada, resultado
-   visible, versiones y capturas sin secretos. Recortar u ocultar nombre de cuenta, claves,
-   IDs y rutas personales antes de compartir una captura.
+2. Instalar el candidato y anotar: versión de Tyrian Companion (de `manifest.json`), SHA-256 del commit, versión de Obsidian, sistema operativo y plataforma (Linux con Proton / macOS con CrossOver / Windows nativo).
+3. Crear un secreto de Obsidian con una clave de pruebas (`account`, `characters`, `inventories`, `builds` como mínimo).
+4. Configurar una carpeta de salida portable.
+5. Registrar timestamps en UTC. Conservar solo: rutas de notas, SHA-256 de ficheros, estado visible, versiones y capturas sin secretos.
 
-Para cada fila, conservar una evidencia mínima y marcar `PASS` solo tras observar el resultado
-esperado. Si aparece un error saneado, un estado distinto o un control bloqueado fuera de lo
-previsto, marcar `FAIL`, anotar el paso y no forzar la operación.
+Para cada prueba: marcar `PASS` solo tras observar el resultado esperado. Marcar `FAIL` si aparece error inesperado o control bloqueado.
 
-## Recorrido manual de sesión
+---
 
-Ejecutar una sola sesión limpia en la bóveda desechable:
+## Pruebas de aceptación (año normal)
 
-1. En Ajustes, ejecutar **Check connection**. Debe quedar `connected` o `warning`; con ese
-   estado y runtime `idle` queda disponible **Iniciar sesión de farmeo**.
-2. Abrir **Iniciar sesión de farmeo**, completar el modal con personaje y Magic Find manual y
-   confirmar. Esperar a que la bitácora muestre `active`.
-3. Ejecutar **Finalizar sesión de farmeo**. Tras la captura final, esperar el estado
-   `provisional` y la disponibilidad de **Revisar sesión**.
-4. Abrir **Revisar sesión**, responder la declaración de actividad y confirmar. Una revisión
-   limpia confirmada debe llevar a `complete`; una declaración contaminada o dudosa puede
-   conservar el resultado provisional según la revisión visible.
-5. Ejecutar **Limpiar sesión completada** y confirmar. Debe generarse o reutilizarse una nota
-   completa antes de limpiar el runtime. Verificar que existe una única nota bajo
-   `Tyrian Companion QA/sessions/<año UTC>/`, calcular su SHA-256 y confirmar el retorno a
-   `idle`.
-6. Abrir `Tyrian Companion QA/Bases/Sessions.base`. Debe cargarse y mostrar solo sesiones que
-   cumplan sus filtros `tc_schema` y `tc_kind`; no editar sus consultas para hacer que pase.
+### Prueba 1: Reservas
 
-## Assets gestionados
+Verificar que el inventario y el asesor distinguen cantidad libre de reservada, objetivos solapados y objetivos sin tabla de recursos.
 
-En Ajustes, usar **Preview** para la raíz de assets y comprobar que no crea ni modifica archivos.
-Después usar **Apply** una sola vez y verificar `Sessions.base` y el manifiesto bajo la raíz
-gestionada configurada. Si Preview informa conflicto, asset modificado/ajeno o formato futuro,
-el resultado esperado es bloqueo sin sobrescritura; no usar Repair, Move o Remove como atajo.
+**Plataforma:** Linux con Proton (primaria).
 
-## Recovery, concurrencia y sincronización
+**Resultado esperado:**
+- Objeto completamente reservado no aparece para vender.
+- Objeto parcialmente reservado muestra cantidad libre vs. reservada por separado.
+- Objetivo sin tabla se marca como incompleto, no se inventa capacidad.
 
-### Cierre forzado y reinicio
+---
 
-Con una sesión `active`, cerrar Obsidian de forma forzada y volver a abrir la misma bóveda
-desechable. Debe aparecer recovery y permitir recuperar o descartar explícitamente; no debe
-empezar, terminar ni borrar una sesión de forma automática. Repetir desde `stopping` o
-`provisional` si el entorno permite llegar a ellos, verificando que Recovery no recaptura la
-evidencia de frontera.
+### Prueba 2: Precios
 
-### Dos ventanas del mismo dispositivo
+Verificar que el precio histórico y el de hoy se distinguen por fecha, que una serie plana no se etiqueta como oportunidad, y que precio hundido no obliga a vender sin motivo.
 
-Abrir dos ventanas del mismo vault/origin. Iniciar desde una y pulsar el mismo inicio o un
-inicio competidor en la otra. Debe existir una única sesión activa: el lease/mutex bloquea o
-rechaza al competidor sin crear una segunda nota ni sobrescribir runtime. Repetir Preview/Apply
-de assets desde ambas ventanas: solo una operación puede quedar en curso.
+**Plataforma:** Linux con Proton (primaria).
 
-### Dos dispositivos: Linux y macOS
+**Resultado esperado:**
+- Histórico y precio actual llevan fechas distintas.
+- Serie plana puede dar «vender ahora» solo si esperar no tiene ventaja demostrada, nunca como «oportunidad excepcional».
+- «Precio desconocido» se muestra como tal, no como cero.
+- Precio hundido dentro de ventana de temporada no obliga a vender; es una opción si hay motivo.
 
-Usar dos bóvedas locales desechables sincronizadas, una en Linux y otra en macOS. IndexedDB y
-SecretStorage son locales a cada dispositivo: seleccionar por separado un secreto de pruebas y
-no esperar que token, runtime o lease se sincronicen por el vault. Sincronizar únicamente los
-archivos de la bóveda y comprobar que las notas y assets portables convergen sin sobrescribir un
-archivo modificado o ajeno. No ejecutar sesiones simultáneas suponiendo exclusión entre
-dispositivos: el lease es por máquina.
+---
 
-### Updater/reopen
+### Prueba 3: Fallos del cierre
 
-Con runtime `idle` y sin operación de assets en curso, actualizar o reinstalar el mismo
-candidato y reabrir Obsidian. Verificar por separado que el plugin carga y que la selección del
-secreto sigue siendo una referencia, no un valor visible. Esta fila no acredita recovery; el
-recovery se valida con el cierre forzado anterior.
+Verificar que una sesión se recupera de fallos antes y después de guardar, y que dos ventanas no crean sesión duplicada ni sobrescriben.
 
-## H13.1 — Primera ejecución humana
+**Plataforma:** Linux con Proton (primaria).
 
-Esta sección documenta el protocolo de validación de H13.1 en la bóveda desechable creada por
-David. La bóveda está preparada con el build de producción `0.1.21` verificado por SHA-256, y
-aguarda ejecución humana.
+**Resultado esperado:**
+- Reintentar cierre genera una sola nota (sin duplicar).
+- Segunda ventana recibe error de sesión activa (lease/mutex bloquea).
+- No hay sobrescrituras ni corrupción.
 
-### Recorrido de la sesión
+---
 
-1. Abrir la bóveda desechable en Obsidian.
-2. En Ajustes, verificar que el secreto de API está seleccionado y ejecutar **Check connection**;
-   debe marcar `connected` o `warning`.
-3. Ejecutar **Iniciar sesión de farmeo**, introducir personaje y Magic Find manual, confirmar y
-   esperar a que el estado pase a `active`.
-4. Farmear un mapa durante al menos 15 minutos. La API de cuenta sirve desde caché de 5 a 10
-   minutos, así que un recorrido más corto puede dar delta vacío y hacer fallar la prueba por el
-   instrumento en vez de por el plugin.
-5. Ejecutar **Finalizar sesión de farmeo** y esperar a `provisional`.
-6. Abrir **Revisar sesión**, responder la declaración de contaminación y confirmar.
-7. Ejecutar **Limpiar sesión completada**.
-8. Abrir la nota generada bajo `Tyrian Companion QA/sessions/<año UTC>/` y verificar que contiene
-   valores económicos y no dice `valuation: null`.
-9. Esta ejecución NO prueba el aviso nuevo de drop valioso (H13.3/H13.4, posterior). Si la detección
-   asistida estuvo armada, abrir la bandeja de Halloween en Ajustes y verificar que no hay errores
-   en el histórico de propuestas presentadas.
+### Prueba 4: Suspensión
 
-### Datos que anotarás
+Verificar que suspender equipo durante sesión no mata la sesión al reactivar.
 
-Conserva solo estos datos; nunca incluyas token ni `accountId`:
+**Plataforma:** Linux con Proton (primaria) o macOS si suspensión disponible.
 
-- Versión del plugin: `0.1.21` (de `manifest.json`).
-- SHA del commit de `main` con el que se construyó el build.
-- Versión de Obsidian (Ajustes > About).
-- Sistema operativo (Linux/macOS/Windows, con distribución/versión).
-- Hora UTC de inicio y fin de la sesión (formato ISO 8601).
-- Ruta relativa de la nota generada, por ejemplo `Tyrian Companion QA/sessions/2026/2026-09-03.md`.
-- SHA-256 de la nota generada (comando `sha256sum <fichero>` o `shasum -a 256 <fichero>`).
-- ¿Se vio el aviso en la pantalla (para drops valiosos)? (sí/no/no aplicable).
-- ¿Se vio una entrada en la bandeja de Halloween? (sí/no/no aplicable).
-- Observaciones: cualquier diferencia notable, error o comportamiento inesperado.
+**Resultado esperado:**
+- Sesión no se pierde tras suspensión.
+- Recovery aparece si Obsidian se cerró, pero no borra sesión automáticamente.
+- Cierre y guardado funcionan sin error.
 
-### Secreto de API y privacidad
+---
 
-- El secreto se crea como un secreto de Obsidian directamente en la bóveda desechable, no en la
-  bóveda real.
-- La clave de API debe tener los permisos descritos en [API-KEY.md](API-KEY.md).
-- Nunca pegues la clave, su ID ni el `accountId` en notas, capturas, logs o informes.
-- Recorta cualquier captura de pantalla de forma que oculte el nombre de cuenta, rutas personales
-  y valores de configuración.
+### Prueba 5: Sesión manual año normal
 
-### Recarga del plugin
+Verificar que una sesión de 60+ minutos en mapa normal se clasifica, aparece en historial y en comparación de rendimiento, separada por calidad.
 
-Importante: si ejecutas esta prueba sobre la bóveda real de David en lugar de una desechable,
-antes de empezar recarga el plugin en Obsidian (Ajustes > Community plugins > Tyrian Companion >
-reload, o Ctrl+P > "Reload app without saving"). Esto garantiza que ejecutas `0.1.21` y no la
-versión anterior que estaba en memoria al instalar el build.
+**Plataforma:** Linux con Proton (primaria).
 
-### Matriz de validación
+**Resultado esperado:**
+- Nota guardada en `<output>/sessions/<year UTC>/`.
+- Historial la cuenta como manual con su calidad.
+- Total muestra cuántas sesiones quedan sin valorar si alguna falta valor.
 
-Ejecutada el 2026-09-03 sobre la `0.1.21`, en Linux y en la bóveda **real**, no en la desechable que
-pide el protocolo. Personaje Rinopopo, Guardian, build Power Willbender, Magic Find 333. De
-`2026-09-03T05:30:49Z` a `2026-09-03T06:24:40Z`, 53 minutos y 51 segundos. Precios capturados a las
-`2026-09-03T06:35:16Z`, fuente `gw2-commerce-prices`. Nota generada bajo
-`42 Guild Wars 2/42.31 Wiki/sessions/2026/`, 11.712 bytes, SHA-256
-`c88707937efc11fecef7aaa72b4adf1edd59e64a4d8753d6c0b31d648d74a02a`.
+---
 
-| Paso | Criterio PASS | Resultado (PASS/FAIL) |
-| --- | --- | --- |
-| Check connection | `connected` o `warning` | PASS |
-| Iniciar sesión | Modal de personaje y Magic Find aceptado; estado → `active` | PASS |
-| Farmeo en vivo | Sin errores en la bitácora durante al menos 15 minutos de actividad | PASS, 53 min 51 s |
-| Finalizar sesión | Captura sin error; estado → `provisional` | PASS |
-| Revisar sesión | Confirmación sin error; estado → `complete` | PASS |
-| Nota generada | Existe la nota; contiene valores económicos (no `valuation: null`) | **FAIL** |
-| Aviso (si aplica) | No aplicable: la `0.1.21` no incluye el aviso nuevo (H13.3/H13.4). Si la detección asistida está armada, verificar que no hay errores en el histórico de propuestas. | NO APLICABLE |
+### Prueba 6: Dos sesiones con detección rearmada
 
-El resto del protocolo de arriba (bóveda desechable, `Sessions.base`, Preview y Apply de assets,
-cierre forzado, recovery, dos ventanas, matriz por plataforma) **no se ejecutó** en esta sesión.
+Verificar que tras completar sesión, detección se reactiva tras comprobar conexión sin requerir comprobar a mano.
 
-### Por qué falla la fila de la nota
+**Plataforma:** Linux con Proton (primaria).
 
-La nota existe y está completa de forma, pero no trae ni una cifra económica.
-`tc_observed_immediate_copper`, `tc_observed_listing_copper`, `tc_immediate_copper_per_hour`,
-`tc_listing_copper_per_hour`, `tc_sacks` y `tc_sacks_per_hour_milli` salieron `null`,
-`tc_recommendation_status` quedó en `not_evaluated` y las 40 filas de botín dicen «Oculto por
-fiabilidad», con `tc_classification: "contaminated"` y `tc_confidence: "high"`.
+**Resultado esperado:**
+- Tras guardar sesión, detector se rearma solo al comprobar conexión.
+- Proposición de segunda sesión requiere comprobar conexión si no se armó tras primera.
+- Sin falsas propuestas de fin fuera del mapa 866.
 
-La causa medida, contra `/v2/currencies` y `/v2/items`:
+---
 
-- **Monedero**: bajaron la moneda `37` (Exalted Key) y la `42` (Vial of Chak Acid), una unidad cada
-  una, que es lo que cuesta abrir un cofre con su llave. La moneda `1` (Coin) **subió 46.083 cobre**.
-- **Almacenamiento**: el objeto `84731` (Piece of Unidentified Gear) bajó 239, por abrir contenedores.
-- **Precios**: parte del botín sin cotización y sin profundidad de bazar suficiente.
+### Prueba 7: Atribución
 
-Lo que sí quedó verificado: la tubería entera responde y las junturas de la `0.1.21` funcionan
-(`tc_reservation_status: "complete:met"`, `tc_hold_status: "released"`). El arreglo del veredicto
-suprimido es el ticket H13.6.
+Verificar que delta no confunde traslado A→B con ganancia, movimiento entre ubicaciones, compra TP/NPC.
 
-## Matriz de resultados
+**Plataforma:** Linux con Proton (primaria).
 
-| Caso | Criterio PASS | Evidencia mínima | Resultado (PASS/FAIL) |
-| --- | --- | --- | --- |
-| Conexión y start | `connected` o `warning` → modal → `active` | Timestamp UTC y captura saneada | PENDIENTE |
-| Finish, review y complete | `active` → `provisional` → revisión → `complete` cuando corresponda | Respuestas no sensibles y captura saneada | PENDIENTE |
-| Nota antes de clear | Nota única escrita/inalterada antes de `idle` | Ruta relativa y SHA-256 de la nota | PENDIENTE |
-| `Sessions.base` | Abre y filtra por `tc_schema` y `tc_kind` | Captura saneada de la Base | PENDIENTE |
-| Preview/Apply | Preview sin I/O; Apply instala assets gestionados | Ruta relativa, hash de `Sessions.base` y manifiesto | PENDIENTE |
-| Recovery | Recovery visible tras cierre forzado; decisión explícita | Timestamp, estado previo/posterior y captura saneada | PENDIENTE |
-| Dos ventanas | Un lease de sesión y una operación de assets; competidor bloqueado/rechazado | Timestamps de ambas ventanas y capturas saneadas | PENDIENTE |
-| Linux/macOS con Sync | Estado local no se comparte; vault converge sin sobrescritura | Versiones, hashes/rutas relativas y capturas saneadas | PENDIENTE |
-| Updater/reopen | Carga correcta y secreto nunca visible | Versiones, SHA y captura saneada | PENDIENTE |
+**Resultado esperado:**
+- Conversión A→B solo cuenta delta neto de B.
+- Traslados entre ubicaciones → `estimated`, no `contaminated`.
+- Compras TP → observadas y declaradas.
+- Compras NPC → resta pero sin contaminar.
 
-Al cerrar la ejecución, adjuntar el informe al candidato probado con la fecha absoluta de la
-prueba. No incluir tokens, `accountId` crudo, payloads de inventario, snapshots ni capturas que
-los contengan.
+---
+
+### Prueba 8: Inventario sin espacio
+
+Verificar que capacidad desconocida se etiqueta, y que materiales por encima de 250 se muestran con mínimo observado.
+
+**Plataforma:** Linux con Proton (primaria).
+
+**Resultado esperado:**
+- Capacidad desconocida se etiqueta explícitamente.
+- Mínimo observado no bloquea decisiones; se separa lo conocido de lo asumido.
+
+---
+
+### Prueba 9: Resincronizar
+
+Verificar que ejecutar Preview/Sync sin cambios no reescribe notas; precio nuevo sí.
+
+**Plataforma:** Linux con Proton (primaria).
+
+**Resultado esperado:**
+- Sin cambios → sin modificación de ficheros.
+- Precio nuevo → actualización de notas.
+- Texto tuyo se conserva.
+
+---
+
+### Prueba 10: Fronteras de fecha
+
+Verificar que caducidades se declaran (asesor a 12 nov, conocimiento a 1 dic, legendarias a 10 dic) y que sesiones en esas fechas funcionan.
+
+**Plataforma:** Linux con Proton (primaria).
+
+**Resultado esperado:**
+- 13 nov: asesor degrada.
+- 1-2 dic: conocimiento caducado marcado.
+- Caducidades no rompen flujo.
+- Sesiones se guardan con fecha y aviso.
+
+---
+
+## Pruebas de aceptación (Halloween)
+
+### Prueba 11: Drop que se queda frente a consumido
+
+Verificar que delta distingue drop que permanece de drop que se consume **entre dos lecturas de la API**: un objeto que entra y se gasta entre polls no aparece en ninguna captura.
+
+**Plataforma:** Linux con Proton con Laberinto disponible.
+
+**Resultado esperado:**
+- Sacos abiertos: se restan si se ven en ambas capturas.
+- Sacos que desaparecen entre capturas: se documenta como «no detectado en cambio siguiente».
+- Nota declara cobertura y limitación.
+
+---
+
+### Prueba 12: Laberinto
+
+Verificar que al entrar al juego se marca sesión automáticamente, al entrar al mapa 866 se etiqueta Laberinto, se cierra al salir o tras 10 min desconectado, drop >5 oros se ve en juego midiendo retraso real, y reinicio Obsidian no silencia avisos siguientes.
+
+**Plataforma:** Linux con Proton + Nexus (primaria); Windows con Blish para compañeros.
+
+**Resultado esperado:**
+- Sesión automática sin clic manual.
+- Etiqueta Laberinto en nota.
+- Drop >5 oros registrado.
+- Cierre tras 10 min desconectado o salida del mapa.
+- Reinicio Obsidian no silencia avisos siguientes.
+- Retraso de entrega medido (típicamente 5–20 min por caché API).
+
+---
+
+### Prueba 13: Puente
+
+Verificar reinicio del puente/addon, conexión muda, dos addons simultáneos, desconexión sin cerrar juego.
+
+**Plataforma:** Linux con Proton + Nexus; Windows con Blish.
+
+**Resultado esperado:**
+- Reinicio addon no pierde sesión.
+- Conexión muda no cuenta como entregado.
+- Dos addons no duplican sesión.
+- Desconexión red se recupera sin bloqueo.
+
+---
+
+### Prueba 14: Windows con Blish
+
+Verificar que compañeros en Windows con Blish HUD ven sesión automática de principio a fin y aviso visible.
+
+**Plataforma:** Windows x64 con Blish HUD.
+
+**Resultado esperado:**
+- Sesión automática en Windows igual que Linux.
+- Blish muestra aviso con retraso <20 min.
+- Nota se genera correctamente.
+
+---
+
+### Prueba 15: Obsidian cerrado
+
+Verificar que al entrar al juego con Obsidian cerrado, addon abre Obsidian automáticamente.
+
+**Plataforma:** Linux con Proton + Nexus (primaria); Windows con Blish (más directo).
+
+**Resultado esperado:**
+- Obsidian se abre automáticamente.
+- Sesión se marca sin intervención.
+- Nota se genera correctamente.
+
+**Nota:** Aún no probado en Linux con Flatpak + Proton.
+
+---
+
+### Prueba 16: Venta del saco
+
+Verificar que recomendación de saco (36038) usa datos frescos, puede dar «sin ventaja para esperar», incluye banda de incertidumbre.
+
+**Plataforma:** Linux con Proton (primaria).
+
+**Resultado esperado:**
+- Recomendación lleva fecha de decisión y precio hoy.
+- Comparación es cuantificada, no un calendario fijo.
+- «Sin ventaja demostrada» es válido, no fecha inventada.
+- Se muestra incertidumbre y años en muestra histórica.
+
+---
+
+## Medición de línea base (pendiente)
+
+Estos límites se miden **después** de línea base ejecutada, **no antes**:
+- Retraso entre drop en juego y aviso en juego.
+- Número de clics para completar sesión.
+- Tiempo de carga de vistas.

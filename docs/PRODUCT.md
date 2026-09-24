@@ -27,15 +27,14 @@ El producto nunca promete conocer «todo el loot»: la API de Guild Wars 2 ofrec
 
 Ante datos desconocidos o una regla insuficiente, el advisor debe recomendar conservar o revisar, nunca destruir.
 
-## Decisiones de rumbo del 2026-09-01
+## Decisiones de rumbo del 2026-09-01 (sustituidas el 2026-09-24)
 
-Tomadas por David tras la auditoría de cinco ejes de esa fecha. Se anotan aquí porque las tres se
-habían dado por abiertas en discusiones anteriores y ninguna lo está.
+Tomadas por David tras la auditoría de cinco ejes de esa fecha. **Sustituidas parcialmente el 2026-09-24** tras la auditoría conjunta.
 
-**La sesión de farmeo es el núcleo del producto.** No se degrada a función secundaria. La auditoría
-señaló que compite con gw2efficiency y con DRF en desventaja de método, porque medir por diferencia
-de instantáneas nunca verá lo que ve un lector del flujo de objetos dentro del juego. La decisión es
-seguir, con esa desventaja conocida y declarada, no descubierta más tarde.
+**La sesión sirve para ver cuánto has ganado; las decisiones económicas viven en el inventario acumulado.** 
+Se analiza lo acumulado cuando tú quieras, sin sesión previa. La sesión de farmeo se mide por diferencia de instantáneas, 
+con la desventaja conocida de que nunca verá lo que ve un lector del flujo de objetos dentro del juego. Esa desventaja 
+queda declarada, no descubierta más tarde.
 
 **Halloween y la Bolsa de truco o trato se mantienen como parte de primera.** El origen del proyecto
 es trackear lo que entra en el Laberinto del Rey Loco, y de ahí viene el peso del objeto `36038` en
@@ -77,11 +76,15 @@ El único motivo que sigue contaminando por completo (`contaminated`, `recommend
 
 ### Decisión del 2026-09-09: el plugin se fía de la API; nada pide revisión ni aprobación
 
-Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque la API te lo ha dado. No tengo que aprobar nada.» Nace de la sesión real del 9 sep (10:07 a 10:22), que acabó en «La sesión necesita revisión» y sin guardar: la revisión «automática» respondía `unsure` en su nombre y el validador semántico del clasificador rechazaba el registro al escribirlo.
+Palabras de David: «Tengo que confiar en el plugin. Si hay un cambio es porque la API te lo ha dado. No tengo que aprobar nada.» 
+Implementado el 2026-09-09; revisión humana de sesiones eliminada el 2026-09-09.
 
-- Parar una sesión es guardarla: la clasificación se calcula sola con la evidencia de la API (`exact`, `estimated` o `invalid` por motivo técnico) y la nota se escribe. No existe el estado «necesita revisión», ni modal de preguntas, ni `permissions.finalize: false`; `reviewRequests` está siempre vacío. Un registro que quedó en `provisional` se finaliza solo al cargar.
+Parar una sesión es guardarla: 
+- La clasificación se calcula sola con la evidencia de la API (`exact`, `estimated` o `invalid` por motivo técnico) y la nota se escribe automáticamente.
+- No existe el estado «necesita revisión», ni modal de preguntas, ni `permissions.finalize: false`; `reviewRequests` está siempre vacío.
+- Un registro que quedó en `provisional` se finaliza solo al cargar.
 - La regla del 2026-09-08 sigue diciendo qué degrada a `estimated`; solo cambia que ningún motivo depende de una declaración humana y que `contaminated` deja de ser alcanzable.
-- Los avisos no se marcan como revisados ni tienen estado leído/no leído. Solo son avisos los de la política única (umbral de valor, skin o mini no desbloqueados) y los de precio de la bolsa; `first_seen` y «raro sin cotización» son información de la nota.
+- Los avisos no se marcan como revisados ni tienen estado leído/no leído.
 - Los validadores de forma de los registros guardados comprueban forma, nunca semántica: un registro de una versión anterior se lee, no se tira como corrupto.
 
 ### Las cuatro decisiones de H14.21 y la del aviso único (delegadas por David el 8 sep, implementadas el 9 sep)
@@ -120,14 +123,14 @@ La primera versión de producto incluye:
 
 - Núcleo de API, credenciales, catálogo, caché y snapshots de las superficies de cuenta soportadas.
 - Paridad con la sincronización de materiales y cartera existente.
-- Sesiones manuales y detección autoasistida mediante API, con revisión final del usuario.
+- Sesiones manuales y detección autoasistida mediante API, con clasificación automática por evidencia.
 - Valoración económica trazable y recomendación conservadora de abrir, vender o reservar.
 - Notas y Bases instalables sin sobrescribir contenido del usuario.
 - Inventory Advisor limitado a reglas de alta confianza.
 
 La cuenta se consulta exclusivamente por la API oficial de Guild Wars 2. El plugin incluye además
 tres salidas opcionales que no tocan la cuenta. La semilla de datawars2 es una lectura de
-precios públicos del objeto `#36038` desde `https://api.datawars2.ie`, sin clave, una sola vez,
+precios públicos desde `https://api.datawars2.ie` de hasta 25 objetos, sin clave, una sola vez,
 solo para inicializar el histórico local; si falla, el plugin declara «sin semilla» y captura a
 partir de ese momento. El webhook es una salida al destino que elige el usuario en ajustes (vacía
 por defecto); si se proporciona, el plugin envía solo nombre del objeto, cantidad y valor en cobre
@@ -214,7 +217,7 @@ La versión `0.1.0` valida la base técnica:
 - H3.5 aporta el reloj de polling: no solapa consultas, pausa ante offline/sleep y reintenta con rate limit/backoff sin ráfagas. H3.8 solo lo arranca tras capturar un baseline estable desde el control de armado.
 - H3.6 reconoce actividad sostenida solo mediante listas versionadas de IDs relevantes: dos deltas positivos que comparten snapshot fronterizo generan una propuesta con la ventana en que pudo empezar. La regla inicial usa el id oficial de los sacos de Halloween; no usa nombres ni heurísticas de catálogo y no inicia una sesión sin confirmación.
 - H3.7 detecta silencio sostenido mediante muestras contiguas y un umbral temporal. Produce una propuesta revisable con ventana posible de fin; una ganancia reinicia el reloj y nunca termina la sesión automáticamente.
-- H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin nunca restaura el armado.
+- H3.8 conecta esas piezas a un estado permanentemente visible: desarmado, armando, armado, propuesta o error. Las propuestas pausan el polling y exigen iniciar, detener o descartar explícitamente; cargar el plugin o los ajustes vuelven desarmado el detector y exigen una acción explícita de armado.
 - H3.9 pregunta de forma explícita por aperturas, reciclaje, consumo, fabricación/conversión, compras/ventas en bazar o mercader, transferencias y otra actividad. H2.7 deriva la calidad: limpio confirmado puede finalizar, actividad declarada queda contaminada y una duda permanece estimada/provisional. La revisión y la sesión completa sobreviven al reinicio en almacenamiento local; H5.10 permite exportar el historial durable y H9.7 lo agrega en Companion tras una carga manual, sin leer el vault al abrir ni convertir datos desconocidos en cero.
 - H3.10 registra localmente cómo se fijó cada frontera: manual o asistida, causa, incertidumbre y calidad de evidencia. Descartar una propuesta exige clasificar el falso positivo; el resumen conserva correcciones, modo e incertidumbre sin snapshots ni payloads crudos de inventario ni texto libre. Para procedencia de inicio asistido permite únicamente la `RelevantStartProposal` completa: `version`, `proposalId`, `accountId`, `ruleSet` id/versión, `firstSignal` y `confirmationSignal` con refs de snapshots, intervalos/ventanas, ganancias `itemId`/`quantity` y `deltaStatus`, además de `possibleStart`, `evidenceQuality` y `confirmedAt`. La medición es auxiliar y nunca bloquea la sesión. H7.13 ofrece aparte un journal de piloto opt-in por vault, agregación por plataforma/estratos y exportación local explícita de cuatro JSON/CSV; liga cada revisión humana a una `sampleRevision` transaccional, rehidrata clasificaciones de recovery y deja pasar aceptar/iniciar/parar sin modal instrumental. No tiene Sync propio ni envía telemetría. Un servicio de Sync del Vault configurado por el usuario sí puede copiar los exports.
 - H4.1 fija todas las magnitudes monetarias en cobre entero. Bruto, venta inmediata, listado, mercader y ausencia de valor líquido tienen fórmulas y liquidez explícitas; `null` significa no valorable, mientras que `0` sigue siendo un importe real.
@@ -286,10 +289,9 @@ La versión `0.1.0` valida la base técnica:
 - Cada snapshot declara cuenta, identidad, intervalo, cobertura y calidad temporal; separa propiedad de disponibilidad y conserva el origen de las divisas sin calcular valor económico.
 - `PublicCatalog` resuelve aparte nombres y metadatos localizados de objetos, divisas y categorías, con cobertura por id, persistencia local fuera del vault y sin credenciales.
 - H2.6 compara dos snapshots cualificados, valida sus agregados y separa variación neta, disponibilidad y composición. La falta de wallet limita las divisas sin ocultar cambios de items; todavía no infiere causa, sesión, contaminación ni valor.
-- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y declaración del usuario para clasificarlo como exacto, estimado, contaminado o inválido. Una confirmación limpia manual puede resolver aumentos ambiguos de wallet; evidencia observada de actividad siempre prevalece. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H3.9 posee las preguntas y persistencia, mientras H2.7 sigue sin UI, red ni valoración.
+- H2.7 combina ese neto con fronteras, delivery/wallet con cobertura completa, eventos TP y evidencia observada para clasificarlo como exacto, estimado, contaminado o inválido sin consultar al usuario. La clasificación v2 solo autoriza recomendar cuando el resultado es exacto y de confianza alta; H2.7 sigue sin UI, red ni valoración.
 - H9.8 consulta hasta 90 días de historial personal del bazar dentro de la ventana exacta de la sesión
-  y solo prepara una propuesta en el modal H3.9. Cobertura incompleta no propone actividad y la
-  contaminación sigue requiriendo confirmación humana.
+  para validar evidencia de compra/venta observada. Cobertura incompleta no invalida la clasificación.
 - H9.14 agrega órdenes actuales por lado y objeto, sin IDs de transacción, y suprime únicamente la
   acción económica coincidente cuando ese lado tiene cobertura completa. Cobertura ausente o parcial
   permanece neutral.

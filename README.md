@@ -84,15 +84,17 @@ valid for the current state.
 3. When the session is active, **Start farming session** is replaced by **Finish farming session**;
    the Companion view also shows **Finish session**. If the view still says `idle`, no session was
    started and there is nothing to finish.
-4. After the final snapshot, run **Review session** and declare any outside activity. “Not sure” stays
-   estimated; declaring an activity marks the result contaminated instead of guessing its cause.
-5. When review is complete, **Clear completed session** first writes or updates the managed session
+4. After the final snapshot, **Finish farming session** classifies the result automatically and
+   leaves the session ready to save. The Companion view shows the classification, its confidence
+   and any detected outside activity.
+5. Run **Clear completed session** and confirm. This writes or updates the managed session
    note and only then clears the local runtime.
 
 Assisted detection is optional. Set **Detection mode → Assisted**, check the connection, and run
 **Arm assisted detection**. Arming captures a baseline and may later propose a start or finish, but
-every proposal still needs an explicit review action. It always reloads disarmed and never starts or
-stops a session automatically.
+every proposal still needs an explicit review action. Arming always reloads disarmed and never starts or
+stops a session automatically. When you stop a session, the detector disarms; run **Check connection**
+again to re-arm it.
 
 Pilot metrics are also optional and local. After a tester configures a platform profile in Settings,
 the plugin keeps a vault-scoped, unsynchronized journal used to aggregate the H0.6 pilot criteria.
