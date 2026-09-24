@@ -108,7 +108,10 @@ ajustes de cada addon.
 - En los ajustes del plugin, fila «Token del addon»: el botón **Copiar token** copia al portapapeles
   el secreto elegido; si no hay ninguno utilizable, genera uno (32 bytes de un CSPRNG, 43 caracteres
   base64url) y lo guarda en el **SecretStorage de Obsidian** con el nombre `tyrian-companion-ingame`.
-  El usuario también puede elegir otra entrada del SecretStorage.
+  El usuario también puede elegir otra entrada del SecretStorage. Desde 0.2.1 la fila está en la
+  primera pestaña de ajustes mientras el puente está activado, y el comando «Copiar token del puente
+  con el juego» de la paleta hace lo mismo. Si el portapapeles rechaza la escritura, el token se
+  muestra en un modal, en un campo de solo lectura ya seleccionado, para copiarlo a mano.
 - El plugin acepta secretos de **32 a 128 caracteres ASCII imprimibles, sin espacios**. Uno más corto
   o vacío equivale a «sin secreto», y entonces **todos** los `hello` se rechazan: no hay modo abierto.
 - El addon guarda el valor en su configuración (Nexus: un fichero en su carpeta de addon; Blish: un
