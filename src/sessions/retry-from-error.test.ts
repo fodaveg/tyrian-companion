@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { afterSnapshot, storageDeltaSnapshot } from '../account/__fixtures__/storage-delta';
 import { ActiveSessionLeaseCoordinator } from './coordination-coordinator';
 import { ManualSessionStartService } from './manual-session-start-service';
+import { API_SETTLEMENT_TICK_MS } from './session-api-settlement';
 import {
 	IndexedDbSessionRuntimeStore,
 	type SessionRuntimeRecord,
@@ -65,14 +66,35 @@ function openWindow(options: WindowOptions) {
 		capture: vi.fn(async () => structuredClone(captured)),
 		captureFinal: vi.fn(options.captureFinal ?? (async () => afterSnapshot())),
 	};
+	let heartbeat: (() => void) | undefined;
+	let watch: (() => void) | undefined;
+	const heartbeatMs = Math.floor(options.leaseTtlMs / 3);
 	const service = new ManualSessionStartService(coordinator, capture, {
 		now: () => clock,
 		sessionId: () => 'session-1',
-		setInterval: vi.fn(() => 17),
+		// Keeps the heartbeat and the lifecycle watch, so a test can run either at a chosen instant.
+		setInterval: vi.fn((callback: () => void, periodMs: number) => {
+			if (periodMs === heartbeatMs) heartbeat = callback;
+			if (periodMs === API_SETTLEMENT_TICK_MS) watch = callback;
+			return 17;
+		}),
 		clearInterval: vi.fn(),
 		runtimeStore: options.runtimeStore ?? new IndexedDbSessionRuntimeStore(options.factory, 'retry-runtime'),
 	});
-	return { service, capture };
+	/** Runs one heartbeat at the current clock and waits until its renewal is on disk. */
+	const renewNow = async (): Promise<void> => {
+		const renew = vi.spyOn(coordinator, 'renew');
+		heartbeat?.();
+		await vi.waitFor(() => expect(renew).toHaveBeenCalledOnce());
+		await renew.mock.results[0]?.value;
+		renew.mockRestore();
+	};
+	return { service, capture, renewNow, tickWatch: () => watch?.() };
+}
+
+/** A final snapshot read when the retry finally runs, hours after the stop. */
+function lateFinalSnapshot() {
+	return afterSnapshot({ startedAt: '2026-08-13T11:49:05.000Z', completedAt: '2026-08-13T11:49:06.000Z' });
 }
 
 /** A runtime store that refuses the first save matching `refuse`, like a storage hiccup would. */
@@ -107,30 +129,87 @@ async function startAndRequestStop(service: ManualSessionStartService): Promise<
 describe('retry from error (H18.4, prueba 3)', () => {
 	beforeEach(() => { clock = START; });
 
-	it('takes a session whose lease expired back under a new fence and finishes it as complete', async () => {
+	it('keeps the saved stop time when the retry comes three hours later', async () => {
 		const factory = new IDBFactory();
-		// No heartbeat ever runs here: the 20 min lease lapses exactly as it does while the machine sleeps.
-		const { service } = openWindow({ factory, instanceId: 'window-a', leaseTtlMs: 20 * 60_000 });
+		const { service } = openWindow({
+			factory, instanceId: 'window-a', leaseTtlMs: 20 * 60_000, captureFinal: async () => lateFinalSnapshot(),
+		});
 		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
 			.resolves.toMatchObject({ status: 'started' });
+		// The stop request reaches the store while the lease is still alive.
+		clock = Date.parse('2026-08-13T08:15:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({ status: 'awaiting_settlement' });
+
+		// No heartbeat runs after that: the machine sleeps, the lease lapses, the capture is refused.
+		clock = Date.parse('2026-08-13T08:49:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
+		expect(service.getState()).toMatchObject({ status: 'error', failedState: { status: 'stopping' } });
+
+		// "Reintentar" three hours later: before H18.4 this answered `unexpected` every time.
+		clock = Date.parse('2026-08-13T11:49:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'stopped', state: { authority: { fence: 2 }, stopRequestedAt: '2026-08-13T08:15:00.000Z' },
+		});
+		const finalized = await service.finalizeStoppedSession();
+		expect(finalized).toMatchObject({
+			status: 'finalized',
+			state: { status: 'complete', sessionId: 'session-1', stopRequestedAt: '2026-08-13T08:15:00.000Z', stoppedAt: '2026-08-13T08:15:00.000Z' },
+		});
+		expect(finalized.status === 'finalized' && 'stopBoundary' in finalized.state).toBe(false);
+		await expect(new IndexedDbSessionRuntimeStore(factory, 'retry-runtime').load()).resolves.toMatchObject({
+			status: 'loaded', record: { state: { status: 'complete', stopRequestedAt: '2026-08-13T08:15:00.000Z' } },
+		});
+	});
+
+	it('ends an unsaved stop at the last saved evidence, marked uncertain, never at the retry', async () => {
+		const factory = new IDBFactory();
+		const { service, renewNow } = openWindow({
+			factory, instanceId: 'window-a', leaseTtlMs: 20 * 60_000, captureFinal: async () => lateFinalSnapshot(),
+		});
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+		// The last heartbeat that reached disk; then the machine sleeps and the lease lapses.
+		clock = Date.parse('2026-08-13T08:12:00.000Z');
+		await renewNow();
 
 		clock = Date.parse('2026-08-13T08:49:00.000Z');
 		await expect(service.stop()).resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
 		// The stop was decided in memory, but the fence refused to save it: the disk still says active.
 		expect(service.getState()).toMatchObject({ status: 'error', failedState: { status: 'stopping' } });
 
-		// "Reintentar": before H18.4 this answered `unexpected` every time.
-		await expect(service.stop()).resolves.toMatchObject({ status: 'awaiting_settlement' });
-		expect(service.getState()).toMatchObject({ status: 'stopping', authority: { fence: 2 } });
-
-		clock = Date.parse('2026-08-13T09:00:30.000Z');
-		await expect(service.stop()).resolves.toMatchObject({ status: 'stopped' });
+		clock = Date.parse('2026-08-13T11:49:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'stopped',
+			state: { authority: { fence: 2 }, stopRequestedAt: '2026-08-13T08:12:00.000Z', stopBoundary: 'last_saved_evidence' },
+		});
 		await expect(service.finalizeStoppedSession()).resolves.toMatchObject({
-			status: 'finalized', state: { status: 'complete', sessionId: 'session-1', authority: { fence: 2 } },
+			status: 'finalized',
+			state: { status: 'complete', stoppedAt: '2026-08-13T08:12:00.000Z', stopBoundary: 'last_saved_evidence' },
 		});
 		await expect(new IndexedDbSessionRuntimeStore(factory, 'retry-runtime').load()).resolves.toMatchObject({
-			status: 'loaded', record: { state: { status: 'complete', sessionId: 'session-1' } },
+			record: { state: { status: 'complete', stopRequestedAt: '2026-08-13T08:12:00.000Z', stopBoundary: 'last_saved_evidence' } },
 		});
+	});
+
+	it('keeps an unsaved stop when the automatic retry takes the session back, instead of resuming it', async () => {
+		const factory = new IDBFactory();
+		const { service, renewNow, tickWatch } = openWindow({
+			factory, instanceId: 'window-a', leaseTtlMs: 20 * 60_000, captureFinal: async () => lateFinalSnapshot(),
+		});
+		await expect(service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 }))
+			.resolves.toMatchObject({ status: 'started' });
+		clock = Date.parse('2026-08-13T08:12:00.000Z');
+		await renewNow();
+		clock = Date.parse('2026-08-13T08:49:00.000Z');
+		await expect(service.stop()).resolves.toMatchObject({ status: 'failed', failure: { code: 'lease_lost' } });
+
+		// Nobody clicks: the watch takes the session back on its own an hour later.
+		clock = Date.parse('2026-08-13T09:49:00.000Z');
+		tickWatch();
+		await vi.waitFor(() => expect(service.getState()).toMatchObject({
+			authority: { fence: 2 }, stopRequestedAt: '2026-08-13T08:12:00.000Z', stopBoundary: 'last_saved_evidence',
+		}));
+		expect(service.getState().status).not.toBe('active');
 	});
 
 	it('recaptures when the failure hit before the internal state was saved', async () => {

@@ -300,6 +300,12 @@ function renderEvidence(note: PreparedSessionNote): string {
 		`## ${noteText(note.locale, 'note.evidence')}`,
 		noteText(note.locale, `note.evidence.${evidenceStatus}`),
 		`- ${noteText(note.locale, 'note.confidence')}: ${confidence}`,
+		// H18.4: an interrupted stop retried without its saved request ends at the last saved evidence.
+		...(note.runtime.state.stopBoundary === 'last_saved_evidence'
+			? [`- ${noteText(note.locale, 'note.endUncertain', {
+				time: localizedTimestamp(note.runtime.state.stoppedAt, note.locale),
+			})}`]
+			: []),
 		...(classification.reasons.length > 0
 			? classification.reasons.map((reason) => `- ${noteText(note.locale, 'markdown.reason')}: ${reasonText(reason, note.locale)}`)
 			: [`- ${noteText(note.locale, 'note.reasons')}: ${noteText(note.locale, 'note.none')}`]),

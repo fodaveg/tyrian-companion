@@ -56,6 +56,14 @@ export interface ActiveSessionState {
 	startContext: SessionStartContext;
 }
 
+/**
+ * Where `stopRequestedAt` came from when it is not the player's own saved request (H18.4). A stop
+ * whose request never reached the store is retried from the last evidence saved before the failure
+ * (a persisted heartbeat or the saved record itself), never from the moment of the retry, which can
+ * come hours later; the end is then uncertain and says so. Absent on an ordinary stop.
+ */
+export type SessionStopBoundary = 'last_saved_evidence';
+
 export interface StoppingSessionState {
 	version: typeof SESSION_STATE_VERSION;
 	status: 'stopping';
@@ -65,6 +73,7 @@ export interface StoppingSessionState {
 	baseline: SessionSnapshotReference;
 	startContext: SessionStartContext;
 	stopRequestedAt: string;
+	stopBoundary?: SessionStopBoundary;
 }
 
 export interface ProvisionalSessionState {
@@ -76,6 +85,7 @@ export interface ProvisionalSessionState {
 	baseline: SessionSnapshotReference;
 	startContext: SessionStartContext;
 	stopRequestedAt: string;
+	stopBoundary?: SessionStopBoundary;
 	stoppedAt: string;
 	finalSnapshot: SessionSnapshotReference;
 }
@@ -130,7 +140,7 @@ export type SessionEvent =
 			baseline: SessionSnapshotReference;
 			startContext: SessionStartContext;
 	  }
-	| { type: 'request_stop'; authority: SessionAuthority; requestedAt: string }
+	| { type: 'request_stop'; authority: SessionAuthority; requestedAt: string; stopBoundary?: SessionStopBoundary }
 	| {
 			type: 'confirm_stop';
 			authority: SessionAuthority;

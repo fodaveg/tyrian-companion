@@ -245,6 +245,8 @@ export class ManualSessionStartService {
 	private initializationFlight: Promise<void> | null = null;
 	private recoveryFlight: Promise<SessionRecoveryResult> | null = null;
 	private reclaimFlight: Promise<SessionStopFailure | null> | null = null;
+	/** Last evidence saved before the failure the latest reclaim recovered from; see `lastSavedEvidenceAt`. */
+	private reclaimedEvidenceAt: number | null = null;
 	/** Earliest instant the lifecycle watch may retry on its own; null when nothing waits for it. */
 	private autoRetryAt: number | null = null;
 	private autoRetryAttempts = 0;
@@ -938,6 +940,15 @@ export class ManualSessionStartService {
 		if (this.state.status === 'error') {
 			const reclaimFailure = await this.reclaim();
 			if (reclaimFailure !== null) return this.failStop(reclaimFailure.code, reclaimFailure.message);
+			// Taken back as `active`: no stop request ever reached the store, and this retry may come
+			// hours after the failure. The end is the last evidence saved before it, marked uncertain,
+			// never the moment of the retry.
+			// (Re-read on purpose: `reclaim()` replaced the state the narrowing above still assumes.)
+			const reclaimedStatus: SessionState['status'] = (this.state as SessionState).status;
+			if (reclaimedStatus === 'active' && this.reclaimedEvidenceAt !== null) {
+				const stopFailure = await this.requestStopFromSavedEvidence(this.reclaimedEvidenceAt);
+				if (stopFailure !== null) return this.failStop(stopFailure.code, stopFailure.message);
+			}
 		}
 		if (this.state.status === 'provisional') {
 			// The final snapshot is already committed: hand it back so the host finalizes again.
@@ -1458,6 +1469,7 @@ export class ManualSessionStartService {
 		await this.heartbeatFlight;
 		const stale = this.currentHandle;
 		this.currentHandle = null;
+		this.reclaimedEvidenceAt = null;
 		// Whatever this window still holds is released first, so the lease is issued again under a
 		// newer fence rather than reused: a lease that expired while asleep simply comes back vacant.
 		if (stale) await this.safeRelease(stale);
@@ -1540,6 +1552,57 @@ export class ManualSessionStartService {
 		this.authorityFailure = null;
 		this.clearAutoRetry();
 		this.startHeartbeat(handle);
+		this.reclaimedEvidenceAt = lastSavedEvidenceAt(record, stale?.renewedAt ?? null, failed);
+		this.onStateChange();
+		// The player had asked to stop, but the request never reached the store: the saved record
+		// came back `active`. Resuming it would forget the stop, and stopping "now" would count
+		// every hour since the failure as play (H18.4); the stop is re-requested at the last saved
+		// evidence instead, and marked uncertain.
+		if (recoveredState.status === 'active' && failed.status !== 'active') {
+			return await this.requestStopFromSavedEvidence(this.reclaimedEvidenceAt);
+		}
+		return null;
+	}
+
+	/**
+	 * Requests the stop of an `active` session at `evidenceAt`, the last evidence saved before a
+	 * failure, and marks the boundary `last_saved_evidence` (H18.4). Used only when a stop has to
+	 * be retried without its original request on disk; the retry's own clock never becomes the end.
+	 * A write refused here leaves the session in `error` with that same stop in memory, so the next
+	 * attempt re-requests it instead of resuming the session.
+	 */
+	private async requestStopFromSavedEvidence(evidenceAt: number): Promise<SessionStopFailure | null> {
+		if (this.state.status !== 'active' || !this.baselineSnapshot) return null;
+		const authority = this.state.authority;
+		const requested = transitionSession(this.state, {
+			type: 'request_stop',
+			authority,
+			requestedAt: new Date(Math.max(evidenceAt, Date.parse(this.state.baseline.completedAt))).toISOString(),
+			stopBoundary: 'last_saved_evidence',
+		});
+		const stopping = requested.state;
+		if (requested.status === 'rejected' || stopping?.status !== 'stopping') {
+			return { code: 'unexpected', message: 'The interrupted stop could not be requested again.' };
+		}
+		const record = createSessionRuntimeRecord(
+			stopping, this.baselineSnapshot, null, null, this.safeNowOr(evidenceAt), null, null,
+		);
+		const saved = record === null ? null : await this.runtimeStore.save(record);
+		if (saved?.status !== 'saved') {
+			this.stopHeartbeat();
+			const failedTransition = transitionSession(stopping, {
+				type: 'fail',
+				authority,
+				failedAt: this.safeTimestampAtOrAfter(Date.parse(stopping.stopRequestedAt)),
+				code: saved?.status === 'stale' ? 'lease_lost' : 'storage_unavailable',
+			});
+			if (failedTransition.status !== 'rejected' && failedTransition.state !== null) this.state = failedTransition.state;
+			this.onStateChange();
+			return saved?.status === 'stale'
+				? { code: 'lease_lost', message: 'A newer session owner rejected this stale write.' }
+				: { code: 'coordination_unavailable', message: 'Session recovery storage is unavailable.' };
+		}
+		this.state = stopping;
 		this.onStateChange();
 		return null;
 	}
@@ -1734,6 +1797,23 @@ function snapshotReference(snapshot: StorageSnapshot): SessionSnapshotReference 
 		completedAt: snapshot.completedAt,
 		quality: snapshot.quality,
 	};
+}
+
+/**
+ * The latest instant known to be saved before a failure (H18.4): the record's own save (unless the
+ * saved record is the failure itself) or the last heartbeat this window persisted to the lease.
+ * Never later than a stop the player had already asked for in this window, and never earlier than
+ * the baseline. It exists so an interrupted stop never takes the retry's clock as its end.
+ */
+function lastSavedEvidenceAt(
+	record: SessionRuntimeRecord,
+	lastHeartbeatAt: number | null,
+	failed: Exclude<SessionInProgressState, { status: 'starting' }>,
+): number {
+	const baselineAt = Date.parse(record.baselineSnapshot.completedAt);
+	let at = Math.max(baselineAt, record.state.status === 'error' ? 0 : record.persistedAt, lastHeartbeatAt ?? 0);
+	if (failed.status !== 'active') at = Math.min(at, Date.parse(failed.stopRequestedAt));
+	return Math.max(at, baselineAt);
 }
 
 function stopFailureFloor(
