@@ -106,6 +106,13 @@ export interface TyrianSettings {
 	priceHistoryRawRetentionDays: PriceHistoryRawRetentionDays;
 	priceHistoryDailyRetentionDays: PriceHistoryDailyRetentionDays;
 	/**
+	 * Plugin version on which the player answered «Ahora no» to the advisor's price-history offer
+	 * (opt-in notice, David 24 sep 2026). The offer stays hidden while the installed version is
+	 * this one and returns with the next release; empty means never dismissed. A version, not a
+	 * date: equality needs no clock and survives a wrong system time.
+	 */
+	priceHistoryNoticeDismissedVersion: string;
+	/**
 	 * Manual widening of the Halloween observation window. Since H13.3 the
 	 * calendar turns the surface on by itself, so this can only extend it, never
 	 * narrow it: see `halloweenObservationActive`.
@@ -186,6 +193,7 @@ export const DEFAULT_SETTINGS: Readonly<TyrianSettings> = deepFreeze({
 	priceHistoryIntervalMinutes: 15,
 	priceHistoryRawRetentionDays: 7,
 	priceHistoryDailyRetentionDays: 180,
+	priceHistoryNoticeDismissedVersion: '',
 	halloweenEnabled: false,
 	halloweenValueThresholdCopper: 10_000,
 	valuableLootThresholdCopper: DEFAULT_VALUABLE_LOOT_THRESHOLD_COPPER,
@@ -274,6 +282,9 @@ export function migrateSettings(data: unknown, configDir?: string): TyrianSettin
 			DEFAULT_SETTINGS.priceHistoryRawRetentionDays) as PriceHistoryRawRetentionDays,
 		priceHistoryDailyRetentionDays: enumNumber(data.priceHistoryDailyRetentionDays, PRICE_HISTORY_DAILY_RETENTIONS,
 			DEFAULT_SETTINGS.priceHistoryDailyRetentionDays) as PriceHistoryDailyRetentionDays,
+		// Read defensively, like `lowStorageSpaceThresholdFreeSlots`: absent before the opt-in
+		// notice existed, so it falls through to "never dismissed" without a schema bump.
+		priceHistoryNoticeDismissedVersion: pluginVersionOrEmpty(data.priceHistoryNoticeDismissedVersion),
 		halloweenEnabled: data.halloweenEnabled === true,
 		halloweenValueThresholdCopper: safeNonNegativeInteger(data.halloweenValueThresholdCopper,
 			DEFAULT_SETTINGS.halloweenValueThresholdCopper),
@@ -395,6 +406,23 @@ export function alertWebhookDestination(value: unknown): string {
 export function alertIngamePortValue(value: unknown): number {
 	return Number.isSafeInteger(value) && (value as number) >= ALERT_INGAME_MIN_PORT && (value as number) <= ALERT_INGAME_MAX_PORT
 		? value as number : DEFAULT_ALERT_INGAME_PORT;
+}
+
+/** A short manifest-style version (`0.1.35`); anything else reads as "never dismissed". */
+function pluginVersionOrEmpty(value: unknown): string {
+	return typeof value === 'string' && /^[0-9A-Za-z.+-]{1,64}$/u.test(value) ? value : '';
+}
+
+/**
+ * Whether the Inventory Advisor offers to turn on price history (opt-in notice, David 24 sep
+ * 2026). Reads settings only: deciding to show the offer never starts polling, seeding or any
+ * other I/O. Off by default stays the rule; the offer is how the player consents in one click.
+ */
+export function priceHistoryOptInOffered(
+	settings: Pick<TyrianSettings, 'priceHistoryEnabled' | 'priceHistoryNoticeDismissedVersion'>,
+	pluginVersion: string,
+): boolean {
+	return !settings.priceHistoryEnabled && settings.priceHistoryNoticeDismissedVersion !== pluginVersion;
 }
 
 function safeNonNegativeInteger(value: unknown, fallback: number): number {

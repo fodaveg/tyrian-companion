@@ -7,6 +7,7 @@ import {
 	migrateSettings,
 	normalizeVaultFolder,
 	POLLING_INTERVAL_OPTIONS,
+	priceHistoryOptInOffered,
 	resolveMaterialStorageCapacity,
 	resolveEquipmentSalvagePreferences,
 	resolveVaultFolderInput,
@@ -367,6 +368,27 @@ describe('migrateSettings', () => {
 			priceHistoryRawRetentionDays: 7,
 			priceHistoryDailyRetentionDays: 180,
 		});
+	});
+
+	it('keeps price history off by default and persists «Ahora no» on the advisor offer until the next version', () => {
+		expect(DEFAULT_SETTINGS.priceHistoryEnabled).toBe(false);
+		expect(DEFAULT_SETTINGS.priceHistoryNoticeDismissedVersion).toBe('');
+		expect(priceHistoryOptInOffered(DEFAULT_SETTINGS, '0.1.35')).toBe(true);
+
+		// «Ahora no» is one ordinary settings write; the rewrite that `saveData` persists keeps it.
+		const dismissed = mergeSettingsUpdate(DEFAULT_SETTINGS, { priceHistoryNoticeDismissedVersion: '0.1.35' });
+		const reloaded = migrateSettings(JSON.parse(JSON.stringify(dismissed)) as unknown);
+		expect(reloaded.priceHistoryNoticeDismissedVersion).toBe('0.1.35');
+		expect(reloaded.priceHistoryEnabled).toBe(false);
+		expect(priceHistoryOptInOffered(reloaded, '0.1.35')).toBe(false);
+		expect(priceHistoryOptInOffered(reloaded, '0.1.36')).toBe(true);
+
+		// Consenting hides the offer regardless of the dismissal.
+		expect(priceHistoryOptInOffered({ ...DEFAULT_SETTINGS, priceHistoryEnabled: true }, '0.1.35')).toBe(false);
+		// A pre-notice install, or a hostile value, reads as never dismissed.
+		expect(migrateSettings({}).priceHistoryNoticeDismissedVersion).toBe('');
+		expect(migrateSettings({ priceHistoryNoticeDismissedVersion: 35 }).priceHistoryNoticeDismissedVersion).toBe('');
+		expect(migrateSettings({ priceHistoryNoticeDismissedVersion: '../../x' }).priceHistoryNoticeDismissedVersion).toBe('');
 	});
 
 	it('retains b05e656 legacy paths in the canonical rewrite', () => {
