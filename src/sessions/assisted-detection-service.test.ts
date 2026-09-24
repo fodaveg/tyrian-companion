@@ -226,6 +226,34 @@ describe('AssistedDetectionService', () => {
 		expect(harness.service.getState().status).toBe('armed');
 	});
 
+	// H18.9: a finished session waits for the next one; it must not blind the detector until a clear.
+	it('keeps proposing the next start while the previous session is complete', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0), snapshot('b', 15, 1), snapshot('c', 30, 2),
+		], completeSession);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState().status).toBe('start_proposed');
+	});
+
+	// H18.9 / Anexo 3: outside the Labyrinth no Halloween loot falls, and that alone is no end.
+	it('does not propose a stop while the account keeps changing without any Halloween loot', async () => {
+		const harness = createHarness([
+			snapshot('a', 0, 0),
+			snapshot('b', 15, 0, 99),
+			snapshot('c', 30, 0, 99, 98),
+			snapshot('d', 45, 0, 99, 98, 97),
+		], activeSession, 20 * 60_000);
+		await harness.service.arm(900_000);
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+		await harness.scheduler.trigger();
+
+		expect(harness.service.getState().status).toBe('armed');
+	});
+
 	it('fails closed when the arming baseline is unstable', async () => {
 		const unstable = { ...snapshot('a', 0, 0), quality: 'unstable' as const };
 		const harness = createHarness([unstable]);
@@ -625,6 +653,11 @@ function activeSession(): SessionState {
 			capturedAt: '2026-08-13T09:55:03.000Z',
 		},
 	};
+}
+
+/** Only `status` matters to the detector for a finished session. */
+function completeSession(): SessionState {
+	return { ...activeSession(), status: 'complete' } as unknown as SessionState;
 }
 
 function schedulerState(status: ApiPollSchedulerState['status']): ApiPollSchedulerState {

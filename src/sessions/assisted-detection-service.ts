@@ -368,7 +368,7 @@ export class AssistedDetectionService {
 		delta: Exclude<StorageDelta, { status: 'invalid' }>,
 		session: SessionState,
 	): void {
-		if (session.status === 'idle') {
+		if (awaitsNextSession(session)) {
 			this.inactivityDetector = null;
 			this.inactivitySessionId = null;
 			const observation = this.startDetector.observe(delta);
@@ -389,7 +389,7 @@ export class AssistedDetectionService {
 			});
 			this.inactivitySessionId = session.authority.sessionId;
 		}
-		const relevantGainQuantity = relevantGains(delta, this.relevantItemIds);
+		const relevantGainQuantity = accountActivity(delta, this.relevantItemIds);
 		if (relevantGainQuantity === null) return;
 		const observation = this.inactivityDetector.observe({
 			accountId: delta.accountId,
@@ -481,8 +481,16 @@ function stableSnapshot(snapshot: StorageSnapshot): boolean {
 	return snapshot.quality === 'stable' || snapshot.quality === 'stable_owned_placement_changed';
 }
 
+/**
+ * A finished session no longer blocks the next one (H18.8): `start()` releases it once its summary
+ * is saved, so the detector keeps looking for the next start exactly as it does while idle (H18.9).
+ */
+function awaitsNextSession(session: SessionState): boolean {
+	return session.status === 'idle' || session.status === 'complete';
+}
+
 function sessionContext(session: SessionState): string {
-	if (session.status === 'idle') return 'idle';
+	if (awaitsNextSession(session)) return 'idle';
 	if (session.status === 'active') return `active:${session.authority.sessionId}`;
 	return `ineligible:${session.status}`;
 }
@@ -491,7 +499,15 @@ function eligibleSessionContext(context: string): boolean {
 	return context === 'idle' || context.startsWith('active:');
 }
 
-function relevantGains(
+/**
+ * What counts as "still playing" for the inactivity proposal. Only the Labyrinth drops used to
+ * count, so any session outside the Labyrinth looked idle and got a false end after fifteen minutes
+ * (H18.9). The Halloween gains still count first; when there are none, any other change to the
+ * account (an item gained, spent or moved in or out, a currency) counts as activity too. Only a
+ * reading where nothing at all changed is quiet: the absence of Halloween loot, a map or a
+ * disconnection alone never is.
+ */
+function accountActivity(
 	delta: Exclude<StorageDelta, { status: 'invalid' }>,
 	relevantIds: ReadonlySet<number>,
 ): number | null {
@@ -501,7 +517,9 @@ function relevantGains(
 		quantity += change.delta;
 		if (!Number.isSafeInteger(quantity)) return null;
 	}
-	return quantity;
+	if (quantity > 0) return quantity;
+	return delta.itemChanges.filter((change) => change.delta !== 0).length
+		+ delta.currencyChanges.filter((change) => change.delta !== 0).length;
 }
 
 function positiveInteger(value: number, name: string): number {
