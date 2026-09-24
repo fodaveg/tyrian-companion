@@ -1018,6 +1018,52 @@ describe('one-click inventory sync outcome persistence', () => {
 	});
 });
 
+describe('price-history opt-in offer (David, 24 sep 2026)', () => {
+	interface OptInHarness {
+		settings: TyrianSettings;
+		manifest: { version: string };
+		updateSettings(update: Partial<TyrianSettings>): Promise<SettingsUpdateResult>;
+	}
+	const proto = TyrianCompanionPlugin.prototype as unknown as {
+		isPriceHistoryOptInOffered(this: OptInHarness): boolean;
+		enablePriceHistory(this: OptInHarness): Promise<void>;
+		dismissPriceHistoryOptIn(this: OptInHarness): Promise<void>;
+	};
+
+	/** Only `settings`, `manifest` and the Settings tab's own `updateSettings`: any other member would be undefined. */
+	function harness(): OptInHarness & { updates: Partial<TyrianSettings>[] } {
+		const updates: Partial<TyrianSettings>[] = [];
+		const plugin = {
+			settings: { ...DEFAULT_SETTINGS } as TyrianSettings,
+			manifest: { version: '0.1.35' },
+			updates,
+			updateSettings: async (update: Partial<TyrianSettings>): Promise<SettingsUpdateResult> => {
+				updates.push(update);
+				plugin.settings = { ...plugin.settings, ...update };
+				return { status: 'saved', inventoryAdvisor: 'unchanged' };
+			},
+		};
+		return plugin;
+	}
+
+	it('offers on a default install from settings alone, and both buttons write through updateSettings', async () => {
+		const enabled = harness();
+		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(true);
+		expect(enabled.updates).toEqual([]);
+		await proto.enablePriceHistory.call(enabled);
+		expect(enabled.updates).toEqual([{ priceHistoryEnabled: true }]);
+		expect(proto.isPriceHistoryOptInOffered.call(enabled)).toBe(false);
+
+		const dismissed = harness();
+		await proto.dismissPriceHistoryOptIn.call(dismissed);
+		expect(dismissed.updates).toEqual([{ priceHistoryNoticeDismissedVersion: '0.1.35' }]);
+		expect(dismissed.settings.priceHistoryEnabled).toBe(false);
+		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(false);
+		dismissed.manifest.version = '0.1.36';
+		expect(proto.isPriceHistoryOptInOffered.call(dismissed)).toBe(true);
+	});
+});
+
 describe('configured notes root', () => {
 	it('always follows the explicit output folder, never the managed-assets pointer', () => {
 		const plugin = {

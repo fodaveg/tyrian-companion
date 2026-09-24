@@ -39,6 +39,10 @@ export interface InventoryAdvisorViewActions {
 	cancelInventoryVaultSync?(): void;
 	getPriceHistoryState?(): PriceHistoryRuntimeState;
 	enablePriceHistory?(): Promise<void>;
+	/** Opt-in offer (24 sep 2026): a settings read only, never a trigger. See `priceHistoryOptInOffered`. */
+	isPriceHistoryOptInOffered?(): boolean;
+	/** «Ahora no» on the offer: one settings write, hides it until the next plugin version. */
+	dismissPriceHistoryOptIn?(): Promise<void>;
 	loadPriceHistorySeries?(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void>;
 	/** Public catalog name + icon for watched ids not already covered by the current inventory model. Cached; deferred to the panel opening. */
 	resolvePriceHistoryItemCatalog?(itemIds: number[]): Promise<Record<number, { name: string; icon: string | null }>>;
@@ -108,6 +112,17 @@ export class InventoryAdvisorItemView extends ItemView {
 			|| this.actions.enablePriceHistory === undefined
 			|| this.actions.loadPriceHistorySeries === undefined
 			? undefined : this.buildPriceHistoryInteractions(this.actions.getPriceHistoryState(), model);
+		// The offer's enable is the panel's own `enablePriceHistory`, i.e. `updateSettings`, the path
+		// Settings uses; both buttons share the panel's busy guard so a double click writes once.
+		const priceHistoryOptIn = this.actions.enablePriceHistory === undefined
+			|| this.actions.dismissPriceHistoryOptIn === undefined
+			|| this.actions.isPriceHistoryOptInOffered?.() !== true
+			? undefined
+			: {
+				busy: this.priceHistoryBusy,
+				onEnable: () => this.runPriceHistoryAction(() => this.actions.enablePriceHistory!()),
+				onDismiss: () => this.runPriceHistoryAction(() => this.actions.dismissPriceHistoryOptIn!()),
+			};
 		const actionController = this.actions.getProductActionController?.();
 		actionController?.setInventorySurfaceBusy(this, this.analysisBusy || this.syncBusy);
 		const locale = this.actions.getInventoryAdvisorLocale();
@@ -142,6 +157,7 @@ export class InventoryAdvisorItemView extends ItemView {
 				onKeepItem: this.preferenceSession === undefined ? undefined : (itemId) => this.runPreferenceAction(async () => { await this.keepItem(itemId); }),
 				inventorySync: sync,
 				priceHistory,
+				priceHistoryOptIn,
 				sellSignalState: this.actions.getSellSignalState?.() ?? null,
 			},
 		);

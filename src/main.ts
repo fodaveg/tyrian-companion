@@ -134,6 +134,7 @@ import {
 	ALERT_INGAME_SECRET_ID,
 	mergeSettingsUpdate,
 	migrateSettings,
+	priceHistoryOptInOffered,
 	resolveEquipmentSalvagePreferences,
 	resolveMaterialStorageCapacity,
 	shouldPersistSettingsOnLoad,
@@ -1611,6 +1612,16 @@ export default class TyrianCompanionPlugin extends Plugin {
 
 	async enablePriceHistory(): Promise<void> {
 		await this.updateSettings({ priceHistoryEnabled: true });
+	}
+
+	/** Whether the advisor shows the price-history opt-in offer. Reads settings only; starts no I/O. */
+	isPriceHistoryOptInOffered(): boolean {
+		return priceHistoryOptInOffered(this.settings, this.manifest.version);
+	}
+
+	/** «Ahora no» on that offer: records the installed version, so the next release offers it again. */
+	async dismissPriceHistoryOptIn(): Promise<void> {
+		await this.updateSettings({ priceHistoryNoticeDismissedVersion: this.manifest.version });
 	}
 
 	async loadPriceHistorySeries(itemId: number, side: PriceHistorySide, windowDays: PriceHistoryWindowDays): Promise<void> {
