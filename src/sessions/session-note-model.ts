@@ -13,9 +13,10 @@ import {
 } from '../economy/reservation';
 import {
 	isSessionValuation,
-	sessionPlayedDurationMs,
+	sessionActiveDurationMs,
 	type SessionValuation,
 } from '../economy/session-valuation';
+import { sessionUnobservedMs } from './session';
 import { HALLOWEEN_RELEVANT_ITEM_RULE_SET } from './assisted-detection-service';
 import { isSessionRuntimeRecord, type SessionRuntimeRecord } from './session-runtime-store';
 import {
@@ -28,7 +29,7 @@ import { canonicalJson as canonical } from '../core/canonical-sha256';
 /** Re-exported under its historical name; `session-note-renderer` fingerprints blocks with it. */
 export { canonical };
 
-export const SESSION_NOTE_SCHEMA_VERSION = 4 as const;
+export const SESSION_NOTE_SCHEMA_VERSION = 5 as const;
 const DEFAULT_CONFIG_SEGMENT = `.${'obsidian'}`;
 export const SESSION_NOTE_BLOCK_IDS = [
 	'summary', 'evidence', 'results', 'economy', 'decision', 'provenance',
@@ -39,7 +40,9 @@ export type SessionNoteLocale = 'es' | 'en';
 export type SessionNoteEvent = 'halloween';
 export type SessionNoteEventDeclaration =
 	| { event: 'halloween'; source: 'manual_explicit'; declaredAt: string }
-	| { event: 'halloween'; source: 'assisted'; accepted: DetectionQualityEvent };
+	| { event: 'halloween'; source: 'assisted'; accepted: DetectionQualityEvent }
+	/** H18.26: the in-game presence reported map 866 (the Labyrinth) while the session ran. */
+	| { event: 'halloween'; source: 'ingame_presence'; observedAt: string };
 
 export interface SessionNoteInput {
 	runtime: SessionRuntimeRecord;
@@ -131,7 +134,8 @@ function prepareSessionNoteUnsafe(value: unknown): PrepareSessionNoteResult {
 	// The note reports the time the player farmed, not the time the plugin needed to read the
 	// account afterwards: with the API settlement window those differ by up to ten minutes, and
 	// dividing loot by the longer one understates every rate the note publishes.
-	const playedMs = sessionPlayedDurationMs(runtime.delta, runtime.state.stoppedAt);
+	// H18.11: minus the stretches nobody observed (a suspend, Obsidian closed); the end stays the stop.
+	const playedMs = sessionActiveDurationMs(runtime.delta, runtime.state.stoppedAt, sessionUnobservedMs(runtime.state));
 	if (playedMs === null) return { status: 'invalid', reason: 'invalid_runtime' };
 	if ((value.locale !== 'es' && value.locale !== 'en') || !validDisplayNames(value.displayNames) ||
 		!validItemIds(value.firstSeenItemIds) || !validItemIds(value.rareUnpricedOrBoundItemIds)) {
@@ -173,7 +177,14 @@ function normalizeEventDeclaration(
 ): SessionNoteEventDeclaration | null {
 	if (value === null) return null;
 	if (!isRecord(value) || value.event !== 'halloween' ||
-		(value.source !== 'manual_explicit' && value.source !== 'assisted')) return null;
+		(value.source !== 'manual_explicit' && value.source !== 'assisted' && value.source !== 'ingame_presence')) return null;
+	if (value.source === 'ingame_presence') {
+		// The tag can be seen before the start request lands (the game reported map 866 first),
+		// never after the session ended.
+		if (!exactKeys(value, ['event', 'source', 'observedAt']) || !isIso(value.observedAt)) return null;
+		if (Date.parse(value.observedAt) > Date.parse(runtime.state.stoppedAt)) return null;
+		return structuredClone(value) as SessionNoteEventDeclaration;
+	}
 	if (value.source === 'manual_explicit') {
 		if (!exactKeys(value, ['event', 'source', 'declaredAt']) || !isIso(value.declaredAt)) return null;
 		const declared = Date.parse(value.declaredAt);
@@ -237,7 +248,7 @@ function optionalValuation(
 ): OptionalEvidence<SessionValuation> {
 	if (value === null) return { status: 'not_evaluated' };
 	const sackItemIds = reservation.status === 'valid' ? reservation.value.overlay.sackItemIds : [];
-	if (!isSessionValuation(value, runtime.delta, sackItemIds, runtime.state.stoppedAt) ||
+	if (!isSessionValuation(value, runtime.delta, sackItemIds, runtime.state.stoppedAt, sessionUnobservedMs(runtime.state)) ||
 		value.priceCapturedAt !== runtime.priceSnapshot?.capturedAt || value.priceSource !== runtime.priceSnapshot?.source) {
 		return { status: 'invalid' };
 	}

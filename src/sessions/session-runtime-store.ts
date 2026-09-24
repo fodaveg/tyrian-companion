@@ -547,13 +547,27 @@ function canReplace(current: SessionRuntimeRecord, next: SessionRuntimeRecord): 
 		return JSON.stringify(next.state.failedState) === JSON.stringify(current.state)
 			&& JSON.stringify(next.review) === JSON.stringify(current.review);
 	}
-	if (JSON.stringify(next.state) !== JSON.stringify(current.state)) return false;
+	if (JSON.stringify(next.state) !== JSON.stringify(current.state)) return extendsUnobservedGaps(current.state, next.state);
 	if (current.review === null || JSON.stringify(next.review) === JSON.stringify(current.review)) return true;
 	return current.state.status === 'provisional'
 		&& next.state.status === 'provisional'
 		&& next.review !== null
 		&& next.persistedAt >= current.persistedAt
 		&& Date.parse(next.review.reviewedAt) > Date.parse(current.review.reviewedAt);
+}
+
+/**
+ * H18.11: the one change an `active` record accepts under the same fence, besides a newer save of
+ * itself: recording one more unobserved gap after the ones it already holds. Anything else that
+ * differs is still a stale or foreign writer.
+ */
+function extendsUnobservedGaps(current: PersistedSessionState, next: PersistedSessionState): boolean {
+	if (current.status !== 'active' || next.status !== 'active') return false;
+	const { unobservedGaps: currentGaps = [], ...currentRest } = current;
+	const { unobservedGaps: nextGaps = [], ...nextRest } = next;
+	return JSON.stringify(currentRest) === JSON.stringify(nextRest)
+		&& nextGaps.length > currentGaps.length
+		&& JSON.stringify(nextGaps.slice(0, currentGaps.length)) === JSON.stringify(currentGaps);
 }
 
 function canWriteAuthority(current: SessionAuthority, next: SessionAuthority): boolean {

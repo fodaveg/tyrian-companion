@@ -100,7 +100,7 @@ async function inspectHalloweenNote(content: string): Promise<HalloweenBackfillO
 			observationId: `note:${evidence.sessionRef}:${fingerprint}`,
 			episodeId: `note-session:${evidence.sessionRef}`,
 			observedAt: evidence.endedAt,
-			coverage: evidence.schema === 3 || evidence.schema === 4 ? 'complete' : 'partial',
+			coverage: evidence.schema >= 3 ? 'complete' : 'partial',
 			gains,
 		},
 	};

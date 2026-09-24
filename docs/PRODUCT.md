@@ -358,7 +358,11 @@ La versión `0.1.0` valida la base técnica:
 - Inicio o cierre automático de sesiones sin confirmación a partir de la API o de H8. Excepción
   decidida por David el 24 sep 2026: la presencia que reportan los addons del puente autenticado
   marca el inicio y el fin de la sesión sin confirmación, con hora corregible después. El puente ya
-  expone esa presencia (H18.23); el marcado automático que la consume es H18.26 y aún no existe.
+  expone esa presencia (H18.23) y H18.26 la consume (`src/sessions/ingame-session-marker.ts`): abre
+  la sesión, la etiqueta como Laberinto en el mapa 866 y la cierra a la hora de la última presencia
+  tras 10 minutos de gracia. Solo actúa con el puente activado y una clave API configurada. Una
+  sesión iniciada a mano se adopta y se etiqueta, pero la presencia nunca la cierra. La corrección
+  posterior de la hora todavía no tiene interfaz.
 - Compatibilidad móvil.
 
 ## Principios

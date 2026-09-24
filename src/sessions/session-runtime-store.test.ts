@@ -139,6 +139,24 @@ describe('session runtime persistence', () => {
 		await expect(store.clear(recoveredAuthority)).resolves.toEqual({ status: 'cleared' });
 	});
 
+	it('H18.11: lets the current owner append an unobserved gap to an active record, and nothing else', async () => {
+		const store = new MemorySessionRuntimeStore();
+		const first = activeRecord();
+		await expect(store.save(first)).resolves.toEqual({ status: 'saved' });
+		const gap = { from: '2026-08-13T09:00:00.000Z', to: '2026-08-13T09:01:00.000Z' };
+		const withGap = { ...first, state: { ...first.state, unobservedGaps: [gap] }, persistedAt: first.persistedAt + 1 };
+		await expect(store.save(withGap as typeof first)).resolves.toEqual({ status: 'saved' });
+		// A delayed write from before the gap would drop it: refused.
+		await expect(store.save({ ...first, persistedAt: first.persistedAt + 2 })).resolves.toEqual({ status: 'stale' });
+		// Rewriting the gap already recorded is not an extension either.
+		const rewritten = { ...withGap, state: { ...withGap.state, unobservedGaps: [{ ...gap, to: '2026-08-13T09:02:00.000Z' }] } };
+		await expect(store.save(rewritten as typeof first)).resolves.toEqual({ status: 'stale' });
+		// Another owner cannot append one.
+		const foreign = replaceAuthority(withGap, { ...authority, instanceId: 'other-instance' });
+		await expect(store.save(foreign)).resolves.toEqual({ status: 'stale' });
+		await expect(store.load()).resolves.toMatchObject({ status: 'loaded', record: { state: { unobservedGaps: [gap] } } });
+	});
+
 	it('prevents a delayed same-owner write from regressing provisional evidence', async () => {
 		const store = new MemorySessionRuntimeStore();
 		const active = activeRecord();

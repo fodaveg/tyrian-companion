@@ -14,6 +14,57 @@
 export const API_SETTLEMENT_WINDOW_MS = 10 * 60 * 1_000;
 
 /**
+ * The authenticated endpoints the final snapshot reads (`storage-snapshot-service.ts`). The wait
+ * only has to outlast the slowest of them, so it is kept per endpoint instead of as one number.
+ */
+export type SettlementEndpoint =
+	| 'account_inventory'
+	| 'account_bank'
+	| 'account_materials'
+	| 'account_wallet'
+	| 'character_inventory'
+	| 'commerce_delivery';
+
+export const SETTLEMENT_ENDPOINTS: readonly SettlementEndpoint[] = Object.freeze([
+	'account_inventory', 'account_bank', 'account_materials', 'account_wallet', 'character_inventory', 'commerce_delivery',
+]);
+
+/**
+ * H18.11: the wait per endpoint. NONE of these values is measured. The only `max-age` headers the
+ * repo recorded (docs/ARCHITECTURE.md, 2026-09-01) belong to public endpoints the snapshot never
+ * reads (`/v2/build`, `/v2/commerce/prices`, `/v2/commerce/listings`), and the snapshot keeps no
+ * cache header of its own. Every entry therefore stays at the documented ten-minute ceiling until a
+ * reading of `cache-control`/`last-modified` on that endpoint replaces it; lowering one without
+ * that measurement would bring back the under-count the window exists to prevent.
+ */
+export const API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS: Readonly<Record<SettlementEndpoint, number>> = Object.freeze({
+	account_inventory: API_SETTLEMENT_WINDOW_MS,
+	account_bank: API_SETTLEMENT_WINDOW_MS,
+	account_materials: API_SETTLEMENT_WINDOW_MS,
+	account_wallet: API_SETTLEMENT_WINDOW_MS,
+	character_inventory: API_SETTLEMENT_WINDOW_MS,
+	commerce_delivery: API_SETTLEMENT_WINDOW_MS,
+});
+
+/**
+ * The wait a final capture needs: the slowest endpoint it reads. An override that is not a
+ * non-negative safe integer is ignored and that endpoint keeps its default, so a bad setting can
+ * never shorten the wait by accident.
+ */
+export function settlementWindowMs(
+	overrides: Partial<Record<SettlementEndpoint, number>> = {},
+): number {
+	let windowMs = 0;
+	for (const endpoint of SETTLEMENT_ENDPOINTS) {
+		const override = overrides[endpoint];
+		const value = typeof override === 'number' && Number.isSafeInteger(override) && override >= 0
+			? override : API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS[endpoint];
+		windowMs = Math.max(windowMs, value);
+	}
+	return windowMs;
+}
+
+/**
  * Upper bound of the same wait. Past this point a later snapshot is no longer «the same session
  * settling»: an hour after the stop request any further change is far more likely to be new
  * play than cache lag, so the capture still happens — losing the session would be worse — but

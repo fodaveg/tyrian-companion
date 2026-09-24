@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	API_SETTLEMENT_STALE_AFTER_MS,
+	API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS,
 	API_SETTLEMENT_WINDOW_MS,
 	captureSettlement,
+	SETTLEMENT_ENDPOINTS,
 	settlementRemainingSeconds,
 	settlementWait,
+	settlementWindowMs,
 } from './session-api-settlement';
 
 const STOP_REQUESTED_AT = '2026-08-13T09:00:00.000Z';
@@ -34,6 +37,27 @@ describe('session API settlement window', () => {
 	it('never shortens the wait when the local clock jumps backwards', () => {
 		expect(settlementWait(STOP_REQUESTED_AT, requestedAt - 3_600_000))
 			.toMatchObject({ status: 'waiting', waitedMs: 0, remainingMs: API_SETTLEMENT_WINDOW_MS });
+	});
+
+	it('H18.11: keeps the wait per endpoint, every one at the unmeasured ten-minute ceiling', () => {
+		expect(SETTLEMENT_ENDPOINTS).toHaveLength(6);
+		for (const endpoint of SETTLEMENT_ENDPOINTS) {
+			expect(API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS[endpoint]).toBe(API_SETTLEMENT_WINDOW_MS);
+		}
+		expect(settlementWindowMs()).toBe(API_SETTLEMENT_WINDOW_MS);
+	});
+
+	it('H18.11: waits for the slowest endpoint the capture reads, never the fastest', () => {
+		expect(settlementWindowMs({ account_wallet: 120_000 })).toBe(API_SETTLEMENT_WINDOW_MS);
+		expect(settlementWindowMs({ account_bank: 900_000 })).toBe(900_000);
+		const allAtTwoMinutes = Object.fromEntries(SETTLEMENT_ENDPOINTS.map((endpoint) => [endpoint, 120_000]));
+		expect(settlementWindowMs(allAtTwoMinutes)).toBe(120_000);
+	});
+
+	it('H18.11: ignores an override that could shorten the wait by accident', () => {
+		const broken = Object.fromEntries(SETTLEMENT_ENDPOINTS.map((endpoint) => [endpoint, -1]));
+		expect(settlementWindowMs(broken)).toBe(API_SETTLEMENT_WINDOW_MS);
+		expect(settlementWindowMs({ account_bank: Number.NaN, account_wallet: 1.5 })).toBe(API_SETTLEMENT_WINDOW_MS);
 	});
 
 	it('refuses to project a wait from an unusable boundary', () => {

@@ -298,4 +298,75 @@ describe('grace window before the final session snapshot', () => {
 			state: { status: 'complete', classification: 'estimated' },
 		});
 	});
+
+	it('H18.11: waits out the slowest configured endpoint, not a hardcoded ten minutes', async () => {
+		const twoMinutes = 2 * 60_000;
+		const finalCapture = vi.fn(async () => afterSnapshot({
+			startedAt: new Date(STOP_REQUESTED_AT + twoMinutes).toISOString(),
+			completedAt: new Date(STOP_REQUESTED_AT + twoMinutes + 1_000).toISOString(),
+		}));
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)), captureFinal: finalCapture },
+			serviceOptions({
+				settlementWindowByEndpointMs: {
+					account_inventory: twoMinutes, account_bank: twoMinutes, account_materials: twoMinutes,
+					account_wallet: twoMinutes, character_inventory: twoMinutes, commerce_delivery: twoMinutes,
+				},
+			}),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+
+		clock = STOP_REQUESTED_AT;
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'awaiting_settlement', wait: { windowMs: twoMinutes, remainingMs: twoMinutes },
+		});
+		clock = STOP_REQUESTED_AT + twoMinutes;
+		await expect(service.stop()).resolves.toMatchObject({ status: 'stopped' });
+		expect(finalCapture).toHaveBeenCalledOnce();
+		// Two minutes is the whole configured wait, so the capture is declared settled, not skipped.
+		expect(service.getApiSettlement()).toBe('settled');
+	});
+
+	it('H18.26: an end observed by the in-game presence becomes the session end, not the call time', async () => {
+		const runtimeStore = new MemorySessionRuntimeStore();
+		const { service } = await startedService(runtimeStore, async () => afterSnapshot());
+		const lastPresence = STOP_REQUESTED_AT;
+
+		// The grace ran out ten minutes after the last frame; that is when the stop is asked for.
+		clock = lastPresence + API_SETTLEMENT_WINDOW_MS;
+		await expect(service.stopAt(lastPresence)).resolves.toMatchObject({ status: 'stopped' });
+		expect(service.getState()).toMatchObject({
+			status: 'provisional', stopRequestedAt: new Date(lastPresence).toISOString(),
+		});
+		expect(service.getState()).not.toHaveProperty('stopBoundary');
+		// The final read waited the whole window after that end, so it is settled, not skipped.
+		expect(service.getApiSettlement()).toBe('settled');
+	});
+
+	it('H18.26: clamps an observed end to the baseline and never moves it into the future', async () => {
+		const early = await startedService(new MemorySessionRuntimeStore(), async () => afterSnapshot());
+		clock = STOP_REQUESTED_AT;
+		await early.service.stopAt(STARTED_AT - 3_600_000);
+		expect(early.service.getState()).toMatchObject({ stopRequestedAt: captured.snapshot.completedAt });
+
+		clock = STARTED_AT;
+		const late = await startedService(new MemorySessionRuntimeStore(), async () => afterSnapshot());
+		clock = STOP_REQUESTED_AT;
+		await late.service.stopAt(STOP_REQUESTED_AT + 3_600_000);
+		expect(late.service.getState()).toMatchObject({ stopRequestedAt: new Date(STOP_REQUESTED_AT).toISOString() });
+	});
+
+	it('H18.11: one endpoint left at the default keeps the whole wait at ten minutes', async () => {
+		const service = new ManualSessionStartService(
+			coordinator(),
+			{ capture: vi.fn(async () => structuredClone(captured)), captureFinal: vi.fn(async () => afterSnapshot()) },
+			serviceOptions({ settlementWindowByEndpointMs: { account_wallet: 60_000 } }),
+		);
+		await service.start({ characterName: 'Astra Uno', magicFind: 321, consumablesBonus: 0 });
+		clock = STOP_REQUESTED_AT;
+		await expect(service.stop()).resolves.toMatchObject({
+			status: 'awaiting_settlement', wait: { windowMs: API_SETTLEMENT_WINDOW_MS },
+		});
+	});
 });

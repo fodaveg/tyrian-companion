@@ -41,6 +41,12 @@ export interface SessionValuationInput {
 	 * means the caller holds no human boundary, and the observed window remains the only estimate.
 	 */
 	playedUntil?: string | null;
+	/**
+	 * H18.11: milliseconds of the played window nobody observed (a suspend, Obsidian closed),
+	 * subtracted from it so every rate divides by the active time. Absent or zero leaves the
+	 * duration exactly as before.
+	 */
+	unobservedMs?: number;
 }
 
 export interface SessionValuationLine {
@@ -93,7 +99,7 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 	if (!isStorageDelta(delta) || delta.status === 'invalid' || !isSessionPriceSnapshot(prices, sessionId, delta)) {
 		return { status: 'invalid', reason: 'evidence_mismatch' };
 	}
-	const durationMs = sessionPlayedDurationMs(delta, input.playedUntil);
+	const durationMs = sessionActiveDurationMs(delta, input.playedUntil, input.unobservedMs);
 	if (durationMs === null) return { status: 'invalid', reason: 'invalid_duration' };
 	if (!validIdList(sackItemIds)) return { status: 'invalid', reason: 'invalid_sack_ids' };
 	if (!validCatalog(catalogItems) || !validBindings(bindingByItem)) return { status: 'invalid', reason: 'invalid_metadata' };
@@ -164,7 +170,7 @@ export function calculateSessionValuation(input: unknown): SessionValuationResul
 		},
 		warnings: [...warnings].sort(),
 	};
-	return isSessionValuation(valuation, delta, sackItemIds, input.playedUntil)
+	return isSessionValuation(valuation, delta, sackItemIds, input.playedUntil, input.unobservedMs)
 		? { status: 'ok', valuation }
 		: { status: 'invalid', reason: 'valuation_arithmetic_invalid' };
 }
@@ -181,6 +187,7 @@ export function isSessionValuation(
 	delta: unknown,
 	sackItemIds: unknown,
 	playedUntil?: string | null,
+	unobservedMs?: number,
 ): value is SessionValuation {
 	if (!isStorageDelta(delta) || delta.status === 'invalid' || !validIdList(sackItemIds) ||
 		!isSessionValuationRecord(value, sackItemIds)) return false;
@@ -189,11 +196,14 @@ export function isSessionValuation(
 	const coinNetCopper = delta.currencyChanges.find((change) => change.id === 1)?.delta ?? 0;
 	const observed = durationFromDelta(delta);
 	const boundarySupplied = playedUntil !== undefined && playedUntil !== null;
-	const played = boundarySupplied ? sessionPlayedDurationMs(delta, playedUntil) : null;
+	const played = boundarySupplied ? sessionActiveDurationMs(delta, playedUntil, unobservedMs) : null;
 	// A boundary that was supplied and cannot be read is evidence that disagrees with itself.
 	if (boundarySupplied && played === null) return false;
+	// H18.11: a session with unobserved gaps may only declare its active time; the older
+	// windows stay acceptable only where there was nothing to subtract.
+	const gapsDeclared = unobservedMs !== undefined && unobservedMs > 0;
 	const declaredDuration = observed !== null && valuation.durationMs > 0 && valuation.durationMs <= observed
-		&& (played === null || valuation.durationMs === played || valuation.durationMs === observed);
+		&& (played === null || valuation.durationMs === played || (!gapsDeclared && valuation.durationMs === observed));
 	return valuation.lines.length === positive.length && valuation.lines.every((line, index) =>
 		line.itemId === positive[index]!.id && line.quantity === positive[index]!.delta) &&
 		declaredDuration &&
@@ -402,7 +412,9 @@ function isSessionValuationWarning(value: unknown): value is SessionValuation['w
 function isInputShell(value: unknown): value is SessionValuationInput {
 	const required = ['sessionId', 'delta', 'prices', 'catalogItems', 'bindingByItem', 'sackItemIds'];
 	return isRecord(value)
-		&& (exactKeys(value, required) || exactKeys(value, [...required, 'playedUntil']))
+		&& (exactKeys(value, required) || exactKeys(value, [...required, 'playedUntil'])
+			|| exactKeys(value, [...required, 'unobservedMs']) || exactKeys(value, [...required, 'playedUntil', 'unobservedMs']))
+		&& (value.unobservedMs === undefined || (Number.isSafeInteger(value.unobservedMs) && (value.unobservedMs as number) >= 0))
 		&& typeof value.sessionId === 'string' && value.sessionId.length > 0
 		&& isRecord(value.delta) && isRecord(value.prices)
 		&& isRecord(value.catalogItems) && isRecord(value.bindingByItem)
@@ -431,6 +443,23 @@ export function sessionPlayedDurationMs(delta: StorageDelta, playedUntil: string
 	// The human boundary is fenced to be at or before the final capture, so a longer played window
 	// than the observed one means the evidence disagrees with itself.
 	return Number.isSafeInteger(duration) && duration > 0 && duration <= observed ? duration : null;
+}
+
+/**
+ * H18.11: the played duration minus the time nobody observed. Null when either part is unusable
+ * or nothing active would remain, so a broken gap can never produce a rate out of thin air.
+ */
+export function sessionActiveDurationMs(
+	delta: StorageDelta,
+	playedUntil: string | null | undefined,
+	unobservedMs: number | undefined,
+): number | null {
+	const played = sessionPlayedDurationMs(delta, playedUntil);
+	if (played === null) return null;
+	if (unobservedMs === undefined || unobservedMs === 0) return played;
+	if (!Number.isSafeInteger(unobservedMs) || unobservedMs < 0) return null;
+	const active = played - unobservedMs;
+	return active > 0 ? active : null;
 }
 
 function validCatalog(value: Record<string, CatalogItem>): boolean {

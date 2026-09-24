@@ -274,6 +274,72 @@ describe('H13.4 alert channel cabling', () => {
 		}
 	});
 
+	it('H18.26: an addon entering gameplay starts the session through the start pipeline, once', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		const sessionState = vi.spyOn(ManualSessionStartService.prototype, 'getState')
+			.mockReturnValue({ status: 'idle' } as SessionState);
+		const start = vi.spyOn(ManualSessionStartService.prototype, 'start').mockImplementation(async () => {
+			sessionState.mockReturnValue(record.state);
+			return { status: 'started', state: record.state } as never;
+		});
+		vi.spyOn(AssistedDetectionService.prototype, 'armFromSnapshot').mockReturnValue(armedState());
+		const plugin = alertWiringPlugin(new IDBFactory());
+		plugin.settings.apiKeySecret = 'gw2-key';
+		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		await plugin.initializeRuntime();
+		const port = await freeLoopbackPort();
+		try {
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+			await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+			const addon = await connectLoopback(port);
+			addon.setEncoding('utf8');
+			const welcome = new Promise<string>((resolve) => { addon.once('data', (chunk: string) => { resolve(chunk); }); });
+			addon.write(ingameHello(await pluginBridgeSecret(plugin)));
+			const { nonce } = JSON.parse(await welcome) as { nonce: string };
+			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 0, state: 'gameplay', mapId: 866, character: 'Astra Uno' })}\n`);
+			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 1, state: 'gameplay', mapId: 50, character: 'Astra Dos' })}\n`);
+
+			await vi.waitFor(() => { expect(start).toHaveBeenCalledOnce(); });
+			expect(start).toHaveBeenCalledWith({ characterName: 'Astra Uno', magicFind: null, consumablesBonus: 0 });
+			addon.destroy();
+		} finally {
+			await server()?.close();
+		}
+	});
+
+	it('H18.26: without an API key the addon presence starts nothing', async () => {
+		const record = activeSessionRecord();
+		vi.spyOn(ManualSessionStartService.prototype, 'initialize').mockResolvedValue();
+		vi.spyOn(ManualSessionStartService.prototype, 'getBaselineSnapshot').mockReturnValue(record.baselineSnapshot);
+		vi.spyOn(ManualSessionStartService.prototype, 'getState').mockReturnValue({ status: 'idle' } as SessionState);
+		const start = vi.spyOn(ManualSessionStartService.prototype, 'start');
+		const plugin = alertWiringPlugin(new IDBFactory()) as AlertWiringHarness & {
+			getIngamePresence(): { status: string };
+		};
+		const server = () => (plugin as unknown as { alertIngameServer: AlertIngameServerHandle | null }).alertIngameServer;
+		await plugin.initializeRuntime();
+		const port = await freeLoopbackPort();
+		try {
+			await plugin.updateSettings({ alertIngameEnabled: true, alertIngamePort: port });
+			await vi.waitFor(() => { expect(server()).not.toBeNull(); });
+			const addon = await connectLoopback(port);
+			addon.setEncoding('utf8');
+			const welcome = new Promise<string>((resolve) => { addon.once('data', (chunk: string) => { resolve(chunk); }); });
+			addon.write(ingameHello(await pluginBridgeSecret(plugin)));
+			const { nonce } = JSON.parse(await welcome) as { nonce: string };
+			addon.write(`${JSON.stringify({ v: 2, type: 'context', nonce, seq: 0, state: 'gameplay', mapId: 50, character: 'Astra Uno' })}\n`);
+
+			await vi.waitFor(() => { expect(plugin.getIngamePresence().status).toBe('present'); });
+			await new Promise((resolve) => { queueMicrotask(() => { resolve(undefined); }); });
+			expect(start).not.toHaveBeenCalled();
+			addon.destroy();
+		} finally {
+			await server()?.close();
+		}
+	});
+
 	it('refuses to build an alert that is not the signed contract', async () => {
 		const plugin = alertWiringPlugin(new IDBFactory());
 		await plugin.initializeRuntime();

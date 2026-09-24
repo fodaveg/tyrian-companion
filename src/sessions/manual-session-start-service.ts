@@ -50,8 +50,10 @@ import {
 	API_SETTLEMENT_TICK_MS,
 	captureSettlement,
 	settlementWait,
+	settlementWindowMs,
 	type SessionApiSettlement,
 	type SessionSettlementWait,
+	type SettlementEndpoint,
 } from './session-api-settlement';
 
 export interface SessionLeaseCoordinator {
@@ -219,7 +221,32 @@ export interface ManualSessionStartServiceOptions {
 	 * at startup). The host resumes what it runs around a live session, such as the loot poll.
 	 */
 	onAutoRecovered?: () => void;
+	/**
+	 * H18.11: the settlement wait per endpoint the final capture reads. Absent, or an unusable
+	 * value, keeps that endpoint at the documented ten-minute ceiling; nothing is measured yet
+	 * (`API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS`).
+	 */
+	settlementWindowByEndpointMs?: Partial<Record<SettlementEndpoint, number>>;
+	/**
+	 * H18.11: the stretches the game was seen being played (the in-game presence), as epoch
+	 * milliseconds. Absent, or empty, means nothing observed the game. A gap covered by one of them
+	 * was play, so only the part none of them covers is subtracted from the session.
+	 */
+	observedPlayIntervals?: () => readonly ObservedPlayInterval[];
 }
+
+/** H18.11: one stretch the in-game presence saw the game running, `toMs` included. */
+export interface ObservedPlayInterval {
+	fromMs: number;
+	toMs: number;
+}
+
+/**
+ * H18.11: how often an active session re-saves its record while the lease heartbeat runs, so
+ * `persistedAt` stays the last instant Obsidian saw the session alive. A suspend or a closed
+ * Obsidian stops these saves, and that last one is where the unobserved gap starts.
+ */
+export const SESSION_EVIDENCE_SAVE_INTERVAL_MS = 60_000;
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
 export class ManualSessionStartService {
@@ -270,6 +297,11 @@ export class ManualSessionStartService {
 	private readonly farmedLossItemTypeCapture: SessionItemTypeCapture | null;
 	private readonly diagnostics: LocalDebugActionPort | null;
 	private readonly onAutoRecovered: () => void;
+	/** The wait the final capture needs: the slowest endpoint it reads (H18.11). */
+	private readonly settlementWindowMs: number;
+	private readonly observedPlayIntervals: () => readonly ObservedPlayInterval[];
+	/** Last instant the active record was re-saved as evidence (H18.11); 0 before the first. */
+	private lastEvidenceSavedAt = 0;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -287,6 +319,8 @@ export class ManualSessionStartService {
 		this.farmedLossItemTypeCapture = options.farmedLossItemTypeCapture ?? null;
 		this.diagnostics = options.diagnostics ?? null;
 		this.onAutoRecovered = options.onAutoRecovered ?? (() => undefined);
+		this.settlementWindowMs = settlementWindowMs(options.settlementWindowByEndpointMs);
+		this.observedPlayIntervals = options.observedPlayIntervals ?? (() => []);
 	}
 
 	getState(): SessionState {
@@ -420,6 +454,15 @@ export class ManualSessionStartService {
 	}
 
 	/**
+	 * H18.26: the same stop, but an `active` session ends at `endAtMs` (the last evidence the game
+	 * was there, from the in-game presence) instead of at this call, which can come ten minutes of
+	 * grace later. Clamped to the baseline and to now; a session already stopping keeps its end.
+	 */
+	stopAt(endAtMs: number): Promise<ManualSessionStopResult> {
+		return this.runStop(false, endAtMs);
+	}
+
+	/**
 	 * Captures the final snapshot right now, on explicit human demand. The result is degraded to an
 	 * estimate because the snapshot cannot contain what the Guild Wars 2 cache has not published yet.
 	 */
@@ -431,7 +474,7 @@ export class ManualSessionStartService {
 	getSettlementWait(): SessionSettlementWait | null {
 		if (this.state.status !== 'stopping') return null;
 		try {
-			return settlementWait(this.state.stopRequestedAt, this.safeNow());
+			return settlementWait(this.state.stopRequestedAt, this.safeNow(), this.settlementWindowMs);
 		} catch {
 			return null;
 		}
@@ -443,17 +486,17 @@ export class ManualSessionStartService {
 		return this.stateSettlement(this.state);
 	}
 
-	private runStop(force: boolean): Promise<ManualSessionStopResult> {
+	private runStop(force: boolean, endAtMs: number | null = null): Promise<ManualSessionStopResult> {
 		if (this.stopFlight) return this.stopFlight;
-		const flight = this.stopAndScheduleRetry(force).finally(() => {
+		const flight = this.stopAndScheduleRetry(force, endAtMs).finally(() => {
 			if (this.stopFlight === flight) this.stopFlight = null;
 		});
 		this.stopFlight = flight;
 		return flight;
 	}
 
-	private async stopAndScheduleRetry(force: boolean): Promise<ManualSessionStopResult> {
-		const result = await this.stopInternal(force);
+	private async stopAndScheduleRetry(force: boolean, endAtMs: number | null): Promise<ManualSessionStopResult> {
+		const result = await this.stopInternal(force, endAtMs);
 		this.afterStopAttempt(result);
 		return result;
 	}
@@ -811,6 +854,14 @@ export class ManualSessionStartService {
 		this.recoveryRecord = null;
 		this.recoveryState = { status: 'none' };
 		this.startHeartbeat(handle);
+		// H18.11: a session found `active` on disk ran through a gap nothing observed (Obsidian
+		// closed, or a window that died). It goes on and still ends at the player's stop, but the
+		// gap from the last evidence the record saved to now is recorded and subtracted. Only an
+		// `active` record carries that evidence: a saved failure's timestamps come from after the gap,
+		// so that case keeps counting it, as before.
+		if (transition.state.status === 'active' && record.state.status === 'active') {
+			await this.recordUnobservedGap(lastSavedEvidenceAt(record, null, persisted));
+		}
 		this.clearAutoRetry();
 		this.onStateChange();
 		// A session recovered mid-wait keeps waiting, and one whose window already elapsed while
@@ -876,6 +927,7 @@ export class ManualSessionStartService {
 		this.contaminationReview = null;
 		this.priceSnapshot = null;
 		this.authorityFailure = null;
+		this.lastEvidenceSavedAt = 0;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.recoveryState.status !== 'none') {
 			return this.failWithoutLease('busy', 'Recover or discard the saved farming session first.');
@@ -942,7 +994,7 @@ export class ManualSessionStartService {
 		}
 	}
 
-	private async stopInternal(force: boolean): Promise<ManualSessionStopResult> {
+	private async stopInternal(force: boolean, endAtMs: number | null = null): Promise<ManualSessionStopResult> {
 		this.lastStopFailure = null;
 		if (this.disposed) {
 			return this.failStop('coordination_unavailable', 'Session coordination is unavailable.');
@@ -983,10 +1035,17 @@ export class ManualSessionStartService {
 		const authority = this.state.authority;
 		try {
 			if (this.state.status === 'active') {
+				const baselineAt = Date.parse(this.state.baseline.completedAt);
+				// H18.26: an end the in-game presence observed wins; it is evidence, not a guess.
+				const observedEnd = endAtMs !== null && Number.isSafeInteger(endAtMs)
+					? new Date(Math.max(baselineAt, Math.min(endAtMs, this.safeNow()))).toISOString()
+					: null;
+				// H18.11: otherwise the end is the player's stop, even after a gap; the gap itself is
+				// already recorded on the session and subtracted from its duration.
 				this.apply({
 					type: 'request_stop',
 					authority,
-					requestedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
+					requestedAt: observedEnd ?? this.timestampAtOrAfter(baselineAt),
 				});
 				await this.persistCurrentState();
 			}
@@ -994,7 +1053,7 @@ export class ManualSessionStartService {
 			if (stopping.status !== 'stopping') {
 				return this.failStop('unexpected', 'The session could not enter the stopping state.');
 			}
-			const wait = settlementWait(stopping.stopRequestedAt, this.safeNow());
+			const wait = settlementWait(stopping.stopRequestedAt, this.safeNow(), this.settlementWindowMs);
 			if (wait === null) {
 				return this.failStop('unexpected', 'The session stop boundary is unusable.');
 			}
@@ -1198,7 +1257,7 @@ export class ManualSessionStartService {
 	private stateSettlement(
 		state: Extract<SessionState, { status: 'provisional' | 'complete' }>,
 	): SessionApiSettlement {
-		return captureSettlement(state.stopRequestedAt, state.finalSnapshot.startedAt);
+		return captureSettlement(state.stopRequestedAt, state.finalSnapshot.startedAt, this.settlementWindowMs);
 	}
 
 	private apply(event: SessionEvent): void {
@@ -1280,6 +1339,8 @@ export class ManualSessionStartService {
 				if (this.currentHandle?.sessionId === observed.sessionId && this.currentHandle.fence === observed.fence) {
 					this.currentHandle = result.handle;
 				}
+				// Detached on purpose: an IndexedDB write must never delay or fail the lease renewal.
+				void this.saveActiveEvidence();
 				return;
 			}
 			const reason = result.status === 'lost'
@@ -1572,6 +1633,12 @@ export class ManualSessionStartService {
 		this.clearAutoRetry();
 		this.startHeartbeat(handle);
 		this.reclaimedEvidenceAt = lastSavedEvidenceAt(record, stale?.renewedAt ?? null, failed);
+		// H18.11: an active session that failed while active (a suspend that outlived the lease)
+		// goes on as it was; the stretch from the last evidence before the failure to now is recorded
+		// as unobserved and subtracted from its duration, and the end stays the player's stop.
+		if (recoveredState.status === 'active' && failed.status === 'active' && (stale !== null || record.state.status === 'active')) {
+			await this.recordUnobservedGap(this.reclaimedEvidenceAt);
+		}
 		this.onStateChange();
 		// The player had asked to stop, but the request never reached the store: the saved record
 		// came back `active`. Resuming it would forget the stop, and stopping "now" would count
@@ -1624,6 +1691,65 @@ export class ManualSessionStartService {
 		this.state = stopping;
 		this.onStateChange();
 		return null;
+	}
+
+	/**
+	 * H18.11: records, on the `active` session just taken back, the stretch from `evidenceAt` (the
+	 * last evidence saved before the interruption) to now as unobserved, minus whatever part the
+	 * in-game presence saw being played. The end of the session is not touched: it stays the
+	 * player's own stop, and the gap is subtracted from the duration instead. A write the store
+	 * refuses keeps the gap in this window's state, which the stop request then persists anyway.
+	 */
+	private async recordUnobservedGap(evidenceAt: number): Promise<void> {
+		if (this.state.status !== 'active' || !this.baselineSnapshot) return;
+		const now = this.safeNowOr(evidenceAt);
+		const from = Math.max(evidenceAt, Date.parse(this.state.baseline.completedAt));
+		for (const [gapFrom, gapTo] of uncoveredStretches(from, now, this.observedPlayIntervals())) {
+			if (this.state.status !== 'active') return;
+			const recorded = transitionSession(this.state, {
+				type: 'record_unobserved_gap',
+				authority: this.state.authority,
+				from: new Date(gapFrom).toISOString(),
+				to: new Date(gapTo).toISOString(),
+			});
+			// Past the bound the session simply keeps counting the rest: never a failure.
+			if (recorded.status === 'rejected' || recorded.state?.status !== 'active') return;
+			this.state = recorded.state;
+		}
+		const record = createSessionRuntimeRecord(this.state, this.baselineSnapshot, null, null, now, null, null);
+		const saved = record === null ? null : await this.runtimeStore.save(record);
+		if (saved?.status !== 'saved') {
+			this.diagnostics?.event({
+				component: 'session', action: 'session_recover', level: 'warn', phase: 'failure',
+				code: 'unavailable', state: 'unobserved_gap', details: { code: saved?.status ?? 'invalid' },
+			});
+		}
+	}
+
+	/**
+	 * H18.11: re-saves the active record once per `SESSION_EVIDENCE_SAVE_INTERVAL_MS` from the
+	 * heartbeat, so its `persistedAt` is the last instant this window saw the session alive. It
+	 * never touches the lease or the session state: a refused or failed write only means the
+	 * evidence stays older, and is recorded instead of failing the session.
+	 */
+	private async saveActiveEvidence(): Promise<void> {
+		if (this.state.status !== 'active' || !this.baselineSnapshot || this.stopFlight) return;
+		const now = this.safeNowOr(-1);
+		if (now < 0 || now - this.lastEvidenceSavedAt < SESSION_EVIDENCE_SAVE_INTERVAL_MS) return;
+		// Claimed before the write, so a heartbeat that lands meanwhile does not issue a second one.
+		const previous = this.lastEvidenceSavedAt;
+		this.lastEvidenceSavedAt = now;
+		try {
+			const record = createSessionRuntimeRecord(this.state, this.baselineSnapshot, null, null, now, null, null);
+			const saved = record === null ? null : await this.runtimeStore.save(record);
+			if (saved?.status !== 'saved' && this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
+		} catch (error) {
+			if (this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
+			this.diagnostics?.event({
+				component: 'session', action: 'session_heartbeat', level: 'warn', phase: 'failure',
+				code: 'unavailable', state: 'evidence_save', details: unmappedErrorLogDetails(error),
+			});
+		}
 	}
 
 	/** Replaces this window's memory of the session with a saved record, evidence included. */
@@ -1833,6 +1959,26 @@ function lastSavedEvidenceAt(
 	let at = Math.max(baselineAt, record.state.status === 'error' ? 0 : record.persistedAt, lastHeartbeatAt ?? 0);
 	if (failed.status !== 'active') at = Math.min(at, Date.parse(failed.stopRequestedAt));
 	return Math.max(at, baselineAt);
+}
+
+/**
+ * H18.11: the parts of `[from, to]` that no observed play interval covers, in order, each at least
+ * a second long (shorter slivers are clock noise between the last save and the presence).
+ */
+function uncoveredStretches(from: number, to: number, observed: readonly ObservedPlayInterval[]): Array<[number, number]> {
+	const covered = observed
+		.filter((interval) => Number.isFinite(interval.fromMs) && Number.isFinite(interval.toMs) && interval.toMs > interval.fromMs)
+		.map((interval) => [Math.max(from, interval.fromMs), Math.min(to, interval.toMs)] as [number, number])
+		.filter(([start, end]) => end > start)
+		.sort((left, right) => left[0] - right[0]);
+	const stretches: Array<[number, number]> = [];
+	let cursor = from;
+	for (const [start, end] of covered) {
+		if (start > cursor) stretches.push([cursor, start]);
+		cursor = Math.max(cursor, end);
+	}
+	if (to > cursor) stretches.push([cursor, to]);
+	return stretches.filter(([start, end]) => end - start >= 1_000);
 }
 
 function stopFailureFloor(
