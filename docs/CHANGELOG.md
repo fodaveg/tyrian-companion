@@ -18,6 +18,10 @@ piden los addons 0.2.0 de Nexus y Blish HUD: la fila estaba al final de la pesta
   copiarlo con Ctrl+C (Cmd+C en macOS). Es el único sitio donde el token llega a la pantalla: no va
   en ningún aviso, ni en el log de diagnóstico, que solo anota la clase del error
   (`src/ui/alert-ingame-secret-modal.ts`).
+- **Sin token que el puente vaya a rechazar.** Si el plugin aún no ha terminado de arrancar y no
+  puede guardar qué token está seleccionado, el botón y el comando avisan de que no se pudo copiar
+  en vez de dar por copiado un token que el puente no aceptaría. El token ya generado se conserva en
+  el SecretStorage y el siguiente intento lo reutiliza, sin crear otro (`src/main.ts`).
 
 ## Release beta 0.2.0 - puente en el juego autenticado; los addons 0.1.x dejan de conectar
 
