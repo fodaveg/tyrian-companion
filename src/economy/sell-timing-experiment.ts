@@ -239,6 +239,78 @@ export function chooseRecommendedStrategy(trainEvaluations: readonly SellTimingY
 	return best;
 }
 
+export type SellTimingOutOfSampleVerdict = 'advantage_demonstrated' | 'no_demonstrated_advantage' | 'insufficient_data';
+
+export interface SellTimingOutOfSampleSummary {
+	strategy: SellTimingStrategy;
+	/** Test years for which `strategy` had a computable ratio at all. */
+	yearsWithData: number;
+	/** Of those, how many had ratio > 1 (waiting beat selling at the decision day). */
+	yearsWon: number;
+	/** Of those, how many had ratio < 1. A ratio of exactly 1 is neither a win nor a loss. */
+	yearsLost: number;
+	medianRatio: number | undefined;
+	minRatio: number | undefined;
+	maxRatio: number | undefined;
+	verdict: SellTimingOutOfSampleVerdict;
+}
+
+/**
+ * Fewest test years with a ratio before "the recommendation usually wins" is a
+ * claim rather than a coin flip read as a pattern. A documented choice of
+ * mine: the encargo did not fix this number, and section 3.D's own table
+ * treats 7 as already a small sample, so 3 is a floor, not a target.
+ */
+export const SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA = 3;
+
+/**
+ * Whether the recommended strategy's edge over `sell_now` survives on the
+ * held-out (test) years, not just on the training years that chose it. Three
+ * thresholds, all documented decisions of mine (H18.21 and section 3.D ask for
+ * this verdict but do not fix the numbers):
+ *
+ * - `insufficient_data`: fewer than `SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA`
+ *   test years have a ratio at all. Overrides the other two.
+ * - `advantage_demonstrated`: the test-year median ratio is above 1 AND the
+ *   strategy wins (ratio > 1) in strictly more than half of the years with
+ *   data. Either alone is not enough — a median pulled above 1 by one or two
+ *   outlier years is not "usually right", and winning most years by a hair
+ *   while median is at or below 1 is not a demonstrated edge either. A tied
+ *   year (ratio exactly 1) counts toward neither win nor loss, so it can
+ *   never manufacture a majority by itself.
+ * - `no_demonstrated_advantage`: everything else, including `sell_now`
+ *   recommended by definition (there is no wait to demonstrate an advantage
+ *   for).
+ */
+export function summarizeOutOfSampleAdvantage(
+	recommendedStrategy: SellTimingStrategy,
+	testEvaluations: readonly SellTimingYearEvaluation[],
+): SellTimingOutOfSampleSummary {
+	if (recommendedStrategy === 'sell_now') {
+		return {
+			strategy: 'sell_now',
+			yearsWithData: testEvaluations.filter((evaluation) => evaluation.status === 'evaluated').length,
+			yearsWon: 0, yearsLost: 0, medianRatio: 1, minRatio: 1, maxRatio: 1,
+			verdict: 'no_demonstrated_advantage',
+		};
+	}
+	const ratios = testEvaluations
+		.filter((evaluation): evaluation is Extract<SellTimingYearEvaluation, { status: 'evaluated' }> =>
+			evaluation.status === 'evaluated' && evaluation.ratios[recommendedStrategy] !== undefined)
+		.map((evaluation) => evaluation.ratios[recommendedStrategy] as number);
+	const yearsWithData = ratios.length;
+	const yearsWon = ratios.filter((ratio) => ratio > 1).length;
+	const yearsLost = ratios.filter((ratio) => ratio < 1).length;
+	const medianRatio = median(ratios);
+	const minRatio = ratios.length === 0 ? undefined : Math.min(...ratios);
+	const maxRatio = ratios.length === 0 ? undefined : Math.max(...ratios);
+	const verdict: SellTimingOutOfSampleVerdict =
+		yearsWithData < SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA ? 'insufficient_data'
+			: medianRatio !== undefined && medianRatio > 1 && yearsWon > yearsWithData / 2 ? 'advantage_demonstrated'
+				: 'no_demonstrated_advantage';
+	return { strategy: recommendedStrategy, yearsWithData, yearsWon, yearsLost, medianRatio, minRatio, maxRatio, verdict };
+}
+
 export interface SellTimingExperimentResult {
 	itemId: number;
 	recommendedStrategy: SellTimingStrategy;
@@ -253,6 +325,8 @@ export interface SellTimingExperimentResult {
 	 * when empty, so a losing year is never silently dropped from the output.
 	 */
 	losingTestYears: readonly number[];
+	/** Whether the training-chosen strategy's edge survives on the held-out years. */
+	outOfSample: SellTimingOutOfSampleSummary;
 }
 
 /**
@@ -296,10 +370,12 @@ export function runSellTimingExperiment(
 		})
 		.map((evaluation) => evaluation.year);
 
-	return { itemId, recommendedStrategy, trainEvaluations, testEvaluations, losingTestYears };
+	const outOfSample = summarizeOutOfSampleAdvantage(recommendedStrategy, testEvaluations);
+
+	return { itemId, recommendedStrategy, trainEvaluations, testEvaluations, losingTestYears, outOfSample };
 }
 
-/** Renders the per-year, per-strategy ratio table the acceptance criteria ask to see, losing years marked. */
+/** Renders the per-year, per-strategy ratio table the acceptance criteria ask to see, losing years marked, plus the out-of-sample verdict (section 3.D: "sin ventaja demostrada para esperar", with net advantage, range and N seasons). */
 export function formatSellTimingReport(result: SellTimingExperimentResult): string {
 	const lines: string[] = [];
 	lines.push(`item ${String(result.itemId)}: recommended = ${result.recommendedStrategy}`);
@@ -319,5 +395,14 @@ export function formatSellTimingReport(result: SellTimingExperimentResult): stri
 			losing,
 		].join('\t'));
 	}
+	const outOfSample = result.outOfSample;
+	const fmt = (value: number | undefined): string => (value === undefined ? 'n/a' : value.toFixed(3));
+	lines.push('');
+	lines.push(`out-of-sample verdict for ${outOfSample.strategy}: ${outOfSample.verdict}`);
+	lines.push(
+		`N=${String(outOfSample.yearsWithData)} test years with data, ` +
+			`won ${String(outOfSample.yearsWon)}, lost ${String(outOfSample.yearsLost)}, ` +
+			`median ${fmt(outOfSample.medianRatio)}, range [${fmt(outOfSample.minRatio)}, ${fmt(outOfSample.maxRatio)}]`,
+	);
 	return lines.join('\n');
 }

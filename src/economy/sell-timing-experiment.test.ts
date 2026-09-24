@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	HALLOWEEN_FESTIVAL_STARTS,
+	SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA,
 	SELL_TIMING_TEST_YEARS,
 	SELL_TIMING_TRAIN_YEARS,
 	addUtcDays,
@@ -13,8 +14,10 @@ import {
 	nextMayWindowFor,
 	preFestivalWindowFor,
 	runSellTimingExperiment,
+	summarizeOutOfSampleAdvantage,
 	windowExecutionPriceCopper,
 	type SellTimingPriceDay,
+	type SellTimingYearEvaluation,
 } from './sell-timing-experiment';
 import {
 	SELL_TIMING_HISTORY_BAG_GAP,
@@ -161,5 +164,93 @@ describe('chooseRecommendedStrategy: falls back to selling now when no wait stra
 			dayCounts: { wait_pre_festival: 18, wait_next_may: 31 },
 		}));
 		expect(chooseRecommendedStrategy(losingEvaluations)).toBe('sell_now');
+	});
+});
+
+/** Builds a synthetic, already-`evaluated` test year with only the `wait_pre_festival` ratio set, for `summarizeOutOfSampleAdvantage` cases that do not need a real fixture. */
+function evaluatedYear(year: number, ratio: number): SellTimingYearEvaluation {
+	return {
+		status: 'evaluated', year, decisionDayUtc: `${String(year)}-09-01`, decisionBidCopper: 100,
+		ratios: { wait_pre_festival: ratio }, dayCounts: { wait_pre_festival: 18 },
+	};
+}
+
+describe('summarizeOutOfSampleAdvantage: does the training-chosen edge survive on the held-out years', () => {
+	it('the bag (36038), out of sample on 2019-2025, does NOT demonstrate an advantage for waiting (median 0.970, wins 3 of 7): "sin ventaja demostrada para esperar" is the honest reading of today\'s data, not a bug', () => {
+		const result = runSellTimingExperiment(36_038, sellTimingHistoryBagDays());
+		expect(result.outOfSample).toEqual({
+			strategy: 'wait_pre_festival',
+			yearsWithData: 7,
+			yearsWon: 3,
+			yearsLost: 4,
+			medianRatio: 0.970357941834452,
+			minRatio: 0.9059653916211293,
+			maxRatio: 1.056437389770723,
+			verdict: 'no_demonstrated_advantage',
+		});
+	});
+
+	it('the corn (47909), out of sample on the same seven years, comes out on the other side of the threshold (median 1.029, wins 4 of 7): fixed here at its real, computed number rather than assumed to match the bag', () => {
+		const result = runSellTimingExperiment(47_909, sellTimingHistoryCornDays());
+		expect(result.outOfSample).toEqual({
+			strategy: 'wait_pre_festival',
+			yearsWithData: 7,
+			yearsWon: 4,
+			yearsLost: 3,
+			medianRatio: 1.0294472843979023,
+			minRatio: 0.9696768246201847,
+			maxRatio: 1.0933256119218593,
+			verdict: 'advantage_demonstrated',
+		});
+	});
+
+	it('`sell_now` recommended is `no_demonstrated_advantage` by definition: there is no wait to demonstrate an advantage for', () => {
+		expect(summarizeOutOfSampleAdvantage('sell_now', [evaluatedYear(2019, 1), evaluatedYear(2020, 1), evaluatedYear(2021, 1)]))
+			.toMatchObject({ strategy: 'sell_now', verdict: 'no_demonstrated_advantage', medianRatio: 1 });
+	});
+
+	it('`insufficient_data` when fewer than the minimum test years have a ratio at all, even if the two that exist both win', () => {
+		expect(SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA).toBe(3);
+		const twoWinningYears = [evaluatedYear(2019, 1.5), evaluatedYear(2020, 1.3)];
+		expect(summarizeOutOfSampleAdvantage('wait_pre_festival', twoWinningYears).verdict).toBe('insufficient_data');
+	});
+
+	it('`advantage_demonstrated` when the median beats 1 AND the strategy wins strictly more than half the years with data', () => {
+		const mostlyWinning = [
+			evaluatedYear(2019, 1.2), evaluatedYear(2020, 1.1), evaluatedYear(2021, 1.05), evaluatedYear(2022, 0.8),
+		];
+		expect(summarizeOutOfSampleAdvantage('wait_pre_festival', mostlyWinning)).toMatchObject({
+			yearsWithData: 4, yearsWon: 3, yearsLost: 1, verdict: 'advantage_demonstrated',
+		});
+	});
+
+	it('`no_demonstrated_advantage` when one huge win drags the count below a majority (three small losses outnumber it)', () => {
+		const oneBigWin = [
+			evaluatedYear(2019, 3.0), evaluatedYear(2020, 0.95), evaluatedYear(2021, 0.9), evaluatedYear(2022, 0.85),
+		];
+		const result = summarizeOutOfSampleAdvantage('wait_pre_festival', oneBigWin);
+		expect(result.yearsWon).not.toBeGreaterThan(result.yearsWithData / 2);
+		expect(result).toMatchObject({ yearsWithData: 4, yearsWon: 1, verdict: 'no_demonstrated_advantage' });
+	});
+
+	it('`no_demonstrated_advantage` when wins are only half the years, not a majority, even though the median still clears 1', () => {
+		// [0.99, 0.99, 1.5, 1.5]: median is (0.99 + 1.5) / 2 = 1.245, above 1, but only 2 of 4
+		// years win, which is not "strictly more than half". This is the case the median check
+		// alone would get wrong: a strategy that is either flat or a home run, with no in-between,
+		// is not "usually right" just because its typical (median) outcome looks good.
+		const halfWins = [
+			evaluatedYear(2019, 1.5), evaluatedYear(2020, 1.5), evaluatedYear(2021, 0.99), evaluatedYear(2022, 0.99),
+		];
+		const result = summarizeOutOfSampleAdvantage('wait_pre_festival', halfWins);
+		expect(result.medianRatio).toBeGreaterThan(1);
+		expect(result.yearsWon).not.toBeGreaterThan(result.yearsWithData / 2);
+		expect(result.verdict).toBe('no_demonstrated_advantage');
+	});
+
+	it('the report shows the verdict, the sample size and the range, not just the recommendation', () => {
+		const report = formatSellTimingReport(runSellTimingExperiment(36_038, sellTimingHistoryBagDays()));
+		expect(report).toContain('out-of-sample verdict for wait_pre_festival: no_demonstrated_advantage');
+		expect(report).toContain('N=7 test years with data');
+		expect(report).toMatch(/range \[0\.906, 1\.056\]/);
 	});
 });
