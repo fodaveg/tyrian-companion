@@ -221,6 +221,29 @@ export interface ManualSessionStartServiceOptions {
 	 * (`API_SETTLEMENT_WINDOW_BY_ENDPOINT_MS`).
 	 */
 	settlementWindowByEndpointMs?: Partial<Record<SettlementEndpoint, number>>;
+	/**
+	 * H18.11: the latest instant the game was seen being played (the in-game presence), or null
+	 * when nothing says so. Only read to decide the end of a session taken back after a gap: play
+	 * seen after the session came back keeps the player's own stop as its end.
+	 */
+	lastPlayEvidenceAt?: () => number | null;
+}
+
+/**
+ * H18.11: how often an active session re-saves its record while the lease heartbeat runs, so
+ * `persistedAt` stays the last instant Obsidian saw the session alive. A suspend or a closed
+ * Obsidian stops these saves, and that last one is where a session taken back after the gap ends.
+ */
+export const SESSION_EVIDENCE_SAVE_INTERVAL_MS = 60_000;
+
+/**
+ * H18.11: an `active` session taken back after a gap (a suspend that outlived the lease, or
+ * Obsidian closed with the session running). `evidenceAt` is the last evidence saved before the
+ * gap and `resumedAt` the instant it came back.
+ */
+interface SessionResumeGap {
+	evidenceAt: number;
+	resumedAt: number;
 }
 
 /** Owns the fenced idle → active workflow and leaves no product session after a failed start. */
@@ -274,6 +297,11 @@ export class ManualSessionStartService {
 	private readonly onAutoRecovered: () => void;
 	/** The wait the final capture needs: the slowest endpoint it reads (H18.11). */
 	private readonly settlementWindowMs: number;
+	private readonly lastPlayEvidenceAt: () => number | null;
+	/** Last instant the active record was re-saved as evidence (H18.11); 0 before the first. */
+	private lastEvidenceSavedAt = 0;
+	/** Set while an active session taken back after a gap has shown no play since (H18.11). */
+	private resumeGap: SessionResumeGap | null = null;
 
 	constructor(
 		private readonly coordinator: SessionLeaseCoordinator,
@@ -292,6 +320,7 @@ export class ManualSessionStartService {
 		this.diagnostics = options.diagnostics ?? null;
 		this.onAutoRecovered = options.onAutoRecovered ?? (() => undefined);
 		this.settlementWindowMs = settlementWindowMs(options.settlementWindowByEndpointMs);
+		this.lastPlayEvidenceAt = options.lastPlayEvidenceAt ?? (() => null);
 	}
 
 	getState(): SessionState {
@@ -808,6 +837,14 @@ export class ManualSessionStartService {
 		this.authorityFailure = null;
 		this.recoveryRecord = null;
 		this.recoveryState = { status: 'none' };
+		// H18.11: a session found `active` on disk ran through a gap nothing observed (Obsidian
+		// closed, or a window that died). It goes on, but a stop by hand with no play seen since
+		// ends at the last evidence the record saved, never at a click that counts the closed time.
+		// Only an `active` record carries that evidence: a saved failure's timestamps come from after
+		// the gap, and ending there would count it anyway, so that case keeps the click as before.
+		if (transition.state.status === 'active' && record.state.status === 'active') {
+			this.markResumeGap(lastSavedEvidenceAt(record, null, persisted));
+		}
 		this.startHeartbeat(handle);
 		this.clearAutoRetry();
 		this.onStateChange();
@@ -874,6 +911,8 @@ export class ManualSessionStartService {
 		this.contaminationReview = null;
 		this.priceSnapshot = null;
 		this.authorityFailure = null;
+		this.resumeGap = null;
+		this.lastEvidenceSavedAt = 0;
 		if (this.disposed) return this.failWithoutLease('coordination_unavailable', 'Session coordination is unavailable.');
 		if (this.recoveryState.status !== 'none') {
 			return this.failWithoutLease('busy', 'Recover or discard the saved farming session first.');
@@ -981,11 +1020,19 @@ export class ManualSessionStartService {
 		const authority = this.state.authority;
 		try {
 			if (this.state.status === 'active') {
-				this.apply({
-					type: 'request_stop',
-					authority,
-					requestedAt: this.timestampAtOrAfter(Date.parse(this.state.baseline.completedAt)),
-				});
+				const baselineAt = Date.parse(this.state.baseline.completedAt);
+				// H18.11: a session taken back after a gap, with no play seen since, ends at the last
+				// evidence saved before the gap, marked uncertain; the click would count the whole gap.
+				const gapEnd = this.resumeGapEnd();
+				this.apply(gapEnd === null
+					? { type: 'request_stop', authority, requestedAt: this.timestampAtOrAfter(baselineAt) }
+					: {
+						type: 'request_stop',
+						authority,
+						requestedAt: new Date(Math.max(gapEnd, baselineAt)).toISOString(),
+						stopBoundary: 'last_saved_evidence',
+					});
+				this.resumeGap = null;
 				await this.persistCurrentState();
 			}
 			const stopping = this.state;
@@ -1272,6 +1319,8 @@ export class ManualSessionStartService {
 				if (this.currentHandle?.sessionId === observed.sessionId && this.currentHandle.fence === observed.fence) {
 					this.currentHandle = result.handle;
 				}
+				// Detached on purpose: an IndexedDB write must never delay or fail the lease renewal.
+				void this.saveActiveEvidence();
 				return;
 			}
 			const reason = result.status === 'lost'
@@ -1564,6 +1613,12 @@ export class ManualSessionStartService {
 		this.clearAutoRetry();
 		this.startHeartbeat(handle);
 		this.reclaimedEvidenceAt = lastSavedEvidenceAt(record, stale?.renewedAt ?? null, failed);
+		// H18.11: an active session that failed while active (a suspend that outlived the lease)
+		// goes on as it was, but the gap is remembered: a stop by hand with no play seen since
+		// ends at the evidence before it, not at the click.
+		if (recoveredState.status === 'active' && failed.status === 'active' && (stale !== null || record.state.status === 'active')) {
+			this.markResumeGap(this.reclaimedEvidenceAt);
+		}
 		this.onStateChange();
 		// The player had asked to stop, but the request never reached the store: the saved record
 		// came back `active`. Resuming it would forget the stop, and stopping "now" would count
@@ -1614,8 +1669,58 @@ export class ManualSessionStartService {
 				: { code: 'coordination_unavailable', message: 'Session recovery storage is unavailable.' };
 		}
 		this.state = stopping;
+		this.resumeGap = null;
 		this.onStateChange();
 		return null;
+	}
+
+	/**
+	 * H18.11: remembers that an `active` session was just taken back after a gap. A second gap
+	 * before any play keeps the earlier evidence: nothing was played in between either.
+	 */
+	private markResumeGap(evidenceAt: number): void {
+		const resumedAt = this.safeNowOr(evidenceAt);
+		const earlier = this.resumeGap?.evidenceAt ?? evidenceAt;
+		this.resumeGap = { evidenceAt: Math.min(earlier, evidenceAt), resumedAt: Math.max(resumedAt, evidenceAt) };
+	}
+
+	/**
+	 * H18.11: the end a stop by hand takes after a gap, or null when the click stands. Play seen at
+	 * or after the session came back (the in-game presence) means the gap ended in play, so the
+	 * player's own stop is kept; without it the end is the last evidence saved before the gap.
+	 */
+	private resumeGapEnd(): number | null {
+		const gap = this.resumeGap;
+		if (gap === null) return null;
+		const played = this.lastPlayEvidenceAt();
+		if (played !== null && Number.isFinite(played) && played >= gap.resumedAt) return null;
+		return gap.evidenceAt;
+	}
+
+	/**
+	 * H18.11: re-saves the active record once per `SESSION_EVIDENCE_SAVE_INTERVAL_MS` from the
+	 * heartbeat, so its `persistedAt` is the last instant this window saw the session alive. It
+	 * never touches the lease or the session state: a refused or failed write only means the
+	 * evidence stays older, and is recorded instead of failing the session.
+	 */
+	private async saveActiveEvidence(): Promise<void> {
+		if (this.state.status !== 'active' || !this.baselineSnapshot || this.stopFlight) return;
+		const now = this.safeNowOr(-1);
+		if (now < 0 || now - this.lastEvidenceSavedAt < SESSION_EVIDENCE_SAVE_INTERVAL_MS) return;
+		// Claimed before the write, so a heartbeat that lands meanwhile does not issue a second one.
+		const previous = this.lastEvidenceSavedAt;
+		this.lastEvidenceSavedAt = now;
+		try {
+			const record = createSessionRuntimeRecord(this.state, this.baselineSnapshot, null, null, now, null, null);
+			const saved = record === null ? null : await this.runtimeStore.save(record);
+			if (saved?.status !== 'saved' && this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
+		} catch (error) {
+			if (this.lastEvidenceSavedAt === now) this.lastEvidenceSavedAt = previous;
+			this.diagnostics?.event({
+				component: 'session', action: 'session_heartbeat', level: 'warn', phase: 'failure',
+				code: 'unavailable', state: 'evidence_save', details: unmappedErrorLogDetails(error),
+			});
+		}
 	}
 
 	/** Replaces this window's memory of the session with a saved record, evidence included. */

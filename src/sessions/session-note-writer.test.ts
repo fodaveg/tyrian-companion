@@ -144,7 +144,7 @@ describe('session note model and renderer', () => {
 			state: { ...uncertain.runtime.state, stopBoundary: 'last_saved_evidence' } as SessionRuntimeRecord['state'],
 		};
 		const marked = await rendered(uncertain);
-		expect(marked.content).toContain('Hora de fin incierta: la petición de parada no llegó a guardarse');
+		expect(marked.content).toContain('Hora de fin incierta: es la última evidencia guardada antes de una interrupción');
 
 		expect((await rendered(sessionInput())).content).not.toContain('Hora de fin incierta');
 	});
