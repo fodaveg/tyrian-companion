@@ -485,15 +485,18 @@ Proton).
 - La sesión se marca sin que el jugador toque nada.
 - La nota se genera correctamente al cerrar la sesión.
 
-**Depende de H18.x en desarrollo:** decidido el 24 sep (sección 9, pregunta 1), pero sin comprobar
-siquiera la viabilidad técnica: abrir la app de Fedora (Flatpak) desde un addon que corre dentro de
-Proton no está probado, y el marcado automático es la misma Entrega 5 de las pruebas 12 y 14. Ejecutar
-solo como sonda de viabilidad («¿el addon puede siquiera intentar abrir Obsidian en esta plataforma
-concreta?»), no como aceptación, y registrar el resultado como diagnóstico, no como PASS/FAIL de
-producto.
+**Depende de H18.x en desarrollo:** decidido el 24 sep (sección 9, pregunta 1). La viabilidad técnica
+ya está medida ([H18.27](SPEC-puente-ingame.md), sonda `docs/audit/sonda-h18-27-abrir-obsidian-desde-proton.md`):
+un proceso dentro de Proton puede abrir/enfocar el Obsidian del host vía `winebrowser.exe`, e
+implementada en el addon de Nexus (rama `feat/abrir-obsidian-al-arrancar`, pendiente de integrar).
+En Fedora con Nexus, esta prueba ya puede ejecutarse como aceptación en cuanto esa rama esté
+integrada, no solo como sonda de viabilidad. El marcado automático sigue siendo la misma Entrega 5
+de las pruebas 12 y 14. En Windows con Blish HUD sigue sin verificarse ni el mecanismo de apertura
+(Windows nativo, sin Wine/Proton) ni su integración; ejecutar ahí solo como sonda de viabilidad,
+registrando el resultado como diagnóstico.
 
-**Evidencia mínima:** log del intento de apertura (aunque falle); nota de qué mecanismo del sistema
-operativo se usó o se necesitaría.
+**Evidencia mínima:** log del intento de apertura (lanzado / sin handler / error, según lo que
+muestre el panel de Options del addon); nota de qué mecanismo del sistema operativo se usó.
 
 **Versión probada:** ______________
 

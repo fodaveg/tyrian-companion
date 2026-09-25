@@ -84,9 +84,18 @@ existe en el protocolo: las claves son cerradas y cualquier campo de más cierra
 | `$HOME` visto desde Proton | `Z:\home\…` OK |
 | Named pipes de Wine y AF_UNIX | **No cruzan.** Los pipes viven en wineserver y no salen del prefijo; AF_UNIX solo en Wine Staging 11.16, no en Proton estable |
 
-**Sin medir todavía:** abrir la app de Obsidian (Flatpak) desde un addon que corre dentro de Proton
-(decisión 1 del 24 sep, «si empiezo a jugar y está cerrado, que se abra»). Hace falta una prueba
-corta antes de prometerlo; este protocolo no depende de ello.
+**Medido:** abrir la app de Obsidian (Flatpak) desde un addon que corre dentro de Proton
+(decisión 1 del 24 sep, «si empiezo a jugar y está cerrado, que se abra»). Sondado en
+[H18.27](audit/sonda-h18-27-abrir-obsidian-desde-proton.md): un proceso Windows dentro de
+Wine/Proton **sí puede** hacer que el `obsidian://` del host abra o enfoque el Obsidian
+real sin cerrarlo ni reiniciarlo. `ShellExecuteW`/`start.exe` con la URI a secas fallan
+(el esquema `obsidian` no tiene asociación por defecto en el prefijo); la vía elegida (B)
+es invocar directamente `C:\windows\system32\winebrowser.exe` con `obsidian://open` como
+argumento, sin tocar el registro del prefijo. Implementado en el addon de Nexus (rama
+`feat/abrir-obsidian-al-arrancar`, pendiente de integrar). Windows nativo (sin Wine/Proton)
+y Blish HUD no se han verificado: ahí Windows resolvería `obsidian://` vía su propio
+`HKCR\obsidian` si el instalador de Obsidian lo registra, algo no comprobado en esta
+máquina por no haber un Windows real disponible.
 
 ## Transporte
 
@@ -349,8 +358,11 @@ Pendiente de QA humana en la plataforma real, y no acreditado por lo anterior:
   desconexión sin cerrar el juego.
 - **Prueba 14** en Windows con Blish HUD: sesión automática de un compañero de principio a fin y
   aviso visible.
-- **Prueba 12** (Laberinto) y **15** (Obsidian cerrado) dependen además de H18.26 y de la prueba de
-  abrir Obsidian desde el juego.
+- **Prueba 12** (Laberinto) depende además de H18.26. **Prueba 15** (Obsidian cerrado) ya
+  no depende de una prueba de viabilidad pendiente: la vía está medida en H18.27 e
+  implementada en el addon de Nexus (rama `feat/abrir-obsidian-al-arrancar`, pendiente de
+  integrar); falta la ejecución en la plataforma real con el addon integrado, y Blish HUD
+  sigue sin verificar.
 - Reconstruir y publicar los binarios de los dos addons con v2.
 
 ## Riesgos, por orden
