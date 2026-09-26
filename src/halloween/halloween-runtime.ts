@@ -1,5 +1,5 @@
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionContaminationReview } from '../sessions/session-contamination-review';
+import type { SessionClassificationStatus } from '../account/contamination-model';
 import {
 	startLocalDebugAction,
 	type LocalDebugActionPort,
@@ -172,7 +172,8 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
-		review?: SessionContaminationReview;
+		/** The final session's automatic classification status, for the loot-comparison gate (H18.32). */
+		classification?: SessionClassificationStatus;
 	}, parent?: ResolvedLocalDebugActionContext): Promise<HalloweenNoticeV1 | null> {
 		const span = startLocalDebugAction(this.options.diagnostics, {
 			component: 'halloween', action: 'halloween_refresh', ...inheritedIds(parent),
@@ -198,7 +199,7 @@ export class HalloweenRuntime {
 		delta: StorageDelta;
 		source: Exclude<HalloweenObservationSource, 'legacy_backfill'>;
 		episodeId: string;
-		review?: SessionContaminationReview;
+		classification?: SessionClassificationStatus;
 	}, generation: number, queuedAccountRef: string | null,
 	parent: ResolvedLocalDebugActionContext | undefined): Promise<HalloweenNoticeV1 | null> {
 		if (this.activation !== null) await this.activation;
@@ -231,7 +232,7 @@ export class HalloweenRuntime {
 		};
 		const comparison = input.source === 'session_final' ? buildHalloweenLootComparison({
 			vaultId: this.options.vaultId, accountRef, episodeId: input.episodeId,
-			delta: input.delta, review: input.review ?? null,
+			delta: input.delta, classification: input.classification ?? null,
 		}) : null;
 		this.setState({ status: 'pending' });
 		try {

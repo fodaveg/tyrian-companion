@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionContaminationReview } from '../sessions/session-contamination-review';
+import type { SessionClassificationStatus } from '../account/contamination-model';
 import {
 	buildHalloweenLootComparison,
 	isHalloweenComparisonRecord,
@@ -20,11 +20,12 @@ describe('Halloween loot comparison', () => {
 		expect(result.outcomes.find(({ itemId }) => itemId === 36_041)?.expectedNumerator).toBe(String(386_935 * 1_100));
 	});
 
-	it('requires a comparable delta, confirmed review, open-only declaration, and net missing bags', () => {
+	it('requires a comparable delta, a clean-or-estimated classification, and net missing bags', () => {
 		const cases = [
 			{ mutate: (value: ReturnType<typeof input>) => { value.delta.status = 'limited'; }, reason: 'delta_not_comparable' },
-			{ mutate: (value: ReturnType<typeof input>) => { value.review.answers.certainty = 'unsure'; }, reason: 'review_not_confirmed' },
-			{ mutate: (value: ReturnType<typeof input>) => { value.review.answers.activities.salvage = true; }, reason: 'activities_not_open_only' },
+			{ mutate: (value: ReturnType<typeof input>) => { value.classification = null; }, reason: 'classification_unavailable' },
+			{ mutate: (value: ReturnType<typeof input>) => { value.classification = 'contaminated'; }, reason: 'session_contaminated' },
+			{ mutate: (value: ReturnType<typeof input>) => { value.classification = 'invalid'; }, reason: 'session_contaminated' },
 			{ mutate: (value: ReturnType<typeof input>) => { value.delta.itemChanges[0]!.delta = 1; }, reason: 'bags_not_decreased' },
 		] as const;
 		for (const entry of cases) {
@@ -32,6 +33,12 @@ describe('Halloween loot comparison', () => {
 			entry.mutate(value);
 			expect(buildHalloweenLootComparison(value)).toMatchObject({ eligible: false, reason: entry.reason });
 		}
+	});
+
+	it('accepts an estimated classification: opening containers/consuming never contaminates below it', () => {
+		const value = input(1_100, [{ id: 36_041, delta: 4_006 }]);
+		value.classification = 'estimated';
+		expect(buildHalloweenLootComparison(value)).toMatchObject({ eligible: true, reason: null });
 	});
 
 	it('applies every conservative gate at the 1100, E=20, 10%, and Bonferroni z boundaries', () => {
@@ -72,13 +79,21 @@ describe('Halloween loot comparison', () => {
 		expect(isHalloweenComparisonRecord({ ...current, modelVersion: 2 })).toBe(false);
 		expect(isHalloweenComparisonRecord({ ...current, modelId: 'unknown-future-model' })).toBe(false);
 	});
+
+	it('keeps validating and rendering a pre-H18.32 record with the retired reason vocabulary', () => {
+		const current = buildHalloweenLootComparison({ ...input(1_100, []), classification: 'contaminated' });
+		expect(current.reason).toBe('session_contaminated');
+		const legacyReviewNotConfirmed = { ...current, reason: 'review_not_confirmed' };
+		expect(isHalloweenComparisonRecord(legacyReviewNotConfirmed)).toBe(true);
+		const legacyActivitiesNotOpenOnly = { ...current, reason: 'activities_not_open_only' };
+		expect(isHalloweenComparisonRecord(legacyActivitiesNotOpenOnly)).toBe(true);
+	});
 });
 
 function input(bags: number, gains: { id: number; delta: number }[]): {
-	vaultId: string; accountRef: string; episodeId: string; delta: StorageDelta; review: SessionContaminationReview;
+	vaultId: string; accountRef: string; episodeId: string; delta: StorageDelta;
+	classification: SessionClassificationStatus | null;
 } {
-	const activities = { open: true, salvage: false, consume: false, craft: false, tpBuy: false, tpSell: false,
-		vendorBuy: false, vendorSell: false, transfer: false, other: false };
 	return {
 		vaultId: 'vault', accountRef: 'account', episodeId: 'session:test',
 		delta: {
@@ -89,11 +104,6 @@ function input(bags: number, gains: { id: number; delta: number }[]): {
 				...gains.map(({ id, delta }) => ({ id, before: 0, after: delta, delta }))],
 			currencyChanges: [], availabilityChanges: [], compositionChanges: [],
 		},
-		review: {
-			version: 1, reviewedAt: '2026-08-28T11:00:01.000Z', answers: { certainty: 'confirmed', activities },
-			declaration: { status: 'activities', activities: ['open'] },
-			boundary: {} as SessionContaminationReview['boundary'], classification: {} as SessionContaminationReview['classification'],
-			farmedLossItemIds: [],
-		},
+		classification: 'exact',
 	};
 }

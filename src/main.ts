@@ -1587,7 +1587,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		delta: StorageDelta,
 		source: 'assisted_poll' | 'session_final',
 		episodeId: string,
-		review?: Parameters<HalloweenRuntime['observeDelta']>[0]['review'],
+		classification?: Parameters<HalloweenRuntime['observeDelta']>[0]['classification'],
 	): Promise<void> {
 		if (delta.status === 'invalid' || delta.accountId === null) return;
 		// The account hash is resolved before the seasonal gate, not after it: it scopes the
@@ -1596,7 +1596,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const accountRef = await this.switchHalloweenAccount(delta.accountId);
 		if (accountRef !== this.halloweenAccountRef) return;
 		if (!this.halloweenObservationActive() || this.halloween === null) return;
-		await this.halloween.observeDelta({ delta, source, episodeId, review });
+		await this.halloween.observeDelta({ delta, source, episodeId, classification });
 	}
 
 	private async observeAcceptedHalloweenDelta(delta: StorageDelta): Promise<void> {
@@ -3569,7 +3569,8 @@ export default class TyrianCompanionPlugin extends Plugin {
 		await this.refreshLootPresentation();
 		fireAndForgetLocal(this.localDebugActions,
 			{ component: 'halloween', action: 'halloween_refresh', state: 'session_final' },
-			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`, reviewed.review));
+			() => this.observeHalloweenDelta(delta, 'session_final', `session:${sessionId}`,
+				reviewed.review.classification.status));
 		// The detector was disarmed when the stop was decided; the next session must be detectable
 		// again without anyone checking the connection by hand (H18.9). It only arms with an account
 		// already connected, and a summary not saved yet never blocks it: `start()` guards that. At

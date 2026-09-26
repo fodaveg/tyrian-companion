@@ -183,7 +183,10 @@ function renderComparison(container: HTMLElement, state: HalloweenRuntimeState, 
 	const status = summary.createEl('dd');
 	status.setAttr('aria-live', 'polite');
 	if (!comparison.eligible) {
-		status.setText(t(`halloween.comparison.ignored.${comparison.reason ?? 'review_not_confirmed'}`));
+		// `reason` is non-null whenever `eligible` is false (`ineligibleReason` in
+		// `halloween-loot-comparison.ts` always sets one); `classification_unavailable` is only a
+		// type-level fallback for a shape the builder never actually produces.
+		status.setText(t(`halloween.comparison.ignored.${comparison.reason ?? 'classification_unavailable'}`));
 		return;
 	}
 	const deviations = comparison.outcomes.filter(({ deviates }) => deviates).length;

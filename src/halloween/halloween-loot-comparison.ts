@@ -1,5 +1,5 @@
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionContaminationReview } from '../sessions/session-contamination-review';
+import type { SessionClassificationStatus } from '../account/contamination-model';
 import {
 	HALLOWEEN_TRICK_OR_TREAT_MODEL_ID,
 	halloweenTrickOrTreatBagModel,
@@ -11,10 +11,20 @@ export const HALLOWEEN_COMPARISON_VERSION = 2 as const;
 export const HALLOWEEN_COMPARISON_MINIMUM_BAGS = 1_100;
 export const HALLOWEEN_COMPARISON_Z_THRESHOLD_MILLI = 3_450;
 
+/**
+ * `review_not_confirmed`/`activities_not_open_only` are the H18.32-superseded reasons (the human
+ * review this gate used to require was retired 2026-09-09, and `certainty: 'confirmed'` never
+ * happens for an automatic review since). They stay in the vocabulary only so a record persisted
+ * before H18.32 keeps validating and rendering (`isHalloweenComparisonRecord` below); a freshly
+ * built record never produces them again. `classification_unavailable`/`session_contaminated`
+ * replace them: the gate now reads the session's own automatic classification instead.
+ */
 export type HalloweenComparisonIneligibleReason =
 	| 'delta_not_comparable'
 	| 'review_not_confirmed'
 	| 'activities_not_open_only'
+	| 'classification_unavailable'
+	| 'session_contaminated'
 	| 'bags_not_decreased';
 
 export interface HalloweenComparisonOutcomeV1 {
@@ -63,7 +73,13 @@ export interface HalloweenComparisonInput {
 	accountRef: string;
 	episodeId: string;
 	delta: StorageDelta;
-	review: SessionContaminationReview | null;
+	/**
+	 * The final session's own automatic classification status (H2.7,
+	 * `src/account/contamination-model.ts`), not the retired human review. `null` means the caller
+	 * could not resolve it at this point (e.g. the finalized review was never produced), and that is
+	 * its own explicit ineligibility reason rather than being treated as clean.
+	 */
+	classification: SessionClassificationStatus | null;
 }
 
 export interface HalloweenDeviationInput {
@@ -93,7 +109,7 @@ export function buildHalloweenLootComparison(input: HalloweenComparisonInput): H
 	const model = halloweenTrickOrTreatBagModel();
 	const bagChange = input.delta.itemChanges.find(({ id }) => id === model.containerItemId)?.delta ?? 0;
 	const bagsDisappearedNet = Number.isSafeInteger(bagChange) && bagChange < 0 ? -bagChange : 0;
-	const reason = ineligibleReason(input.delta, input.review, bagsDisappearedNet);
+	const reason = ineligibleReason(input.delta, input.classification, bagsDisappearedNet);
 	const observedById = new Map(input.delta.itemChanges
 		.filter(({ id, delta }) => Number.isSafeInteger(id) && id > 0 && Number.isSafeInteger(delta) && delta > 0)
 		.map(({ id, delta }) => [id, delta]));
@@ -130,7 +146,7 @@ export function buildHalloweenLootComparison(input: HalloweenComparisonInput): H
 		vaultId: input.vaultId,
 		accountRef: input.accountRef,
 		episodeId: input.episodeId,
-		observedAt: input.delta.window?.to ?? input.review?.reviewedAt ?? '1970-01-01T00:00:00.000Z',
+		observedAt: input.delta.window?.to ?? '1970-01-01T00:00:00.000Z',
 		eligible: reason === null,
 		reason,
 		bagsDisappearedNet,
@@ -154,7 +170,8 @@ export function isHalloweenComparisonRecord(value: unknown): value is HalloweenC
 		!text(value.vaultId) || !text(value.accountRef) || !text(value.episodeId) ||
 		!iso(value.observedAt) || typeof value.eligible !== 'boolean' ||
 		(value.reason !== null && (typeof value.reason !== 'string' ||
-			!['delta_not_comparable', 'review_not_confirmed', 'activities_not_open_only', 'bags_not_decreased'].includes(value.reason))) ||
+			!['delta_not_comparable', 'review_not_confirmed', 'activities_not_open_only', 'classification_unavailable',
+				'session_contaminated', 'bags_not_decreased'].includes(value.reason))) ||
 		value.eligible !== (value.reason === null) || !nonNegativeInteger(value.bagsDisappearedNet) ||
 		value.minimumBags !== HALLOWEEN_COMPARISON_MINIMUM_BAGS || !Array.isArray(value.outcomes) || value.outcomes.length !== 18 ||
 		typeof value.globalPearsonMilli !== 'string' || !/^\d+$/u.test(value.globalPearsonMilli)) return false;
@@ -193,17 +210,22 @@ function comparisonModel(value: Record<string, unknown>, legacy: boolean): Conta
 	return halloweenTrickOrTreatBagModelAt(value.modelId, value.modelVersion);
 }
 
+/**
+ * H18.32: the eligibility gate reads the session's own automatic classification
+ * (`SessionClassificationStatus`) instead of the retired human review. Per the signed rule
+ * (`docs/PRODUCT.md`, «Decisiones de rumbo del 2026-09-08»), opening containers or consuming does
+ * not degrade a session below `estimated`, so an `estimated` session is still eligible here; only
+ * `contaminated` (an undeclared external activity the delta cannot attribute) or `invalid`
+ * (technical failures) disqualify it.
+ */
 function ineligibleReason(
 	delta: StorageDelta,
-	review: SessionContaminationReview | null,
+	classification: SessionClassificationStatus | null,
 	bagsDisappearedNet: number,
 ): HalloweenComparisonIneligibleReason | null {
 	if (delta.status !== 'comparable') return 'delta_not_comparable';
-	if (review === null || review.answers.certainty !== 'confirmed') return 'review_not_confirmed';
-	const activities = review.answers.activities;
-	if (!activities.open || Object.entries(activities).some(([key, enabled]) => key !== 'open' && enabled)) {
-		return 'activities_not_open_only';
-	}
+	if (classification === null) return 'classification_unavailable';
+	if (classification === 'contaminated' || classification === 'invalid') return 'session_contaminated';
 	return bagsDisappearedNet > 0 ? null : 'bags_not_decreased';
 }
 

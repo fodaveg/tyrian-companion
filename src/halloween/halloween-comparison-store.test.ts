@@ -3,7 +3,6 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 
 import type { StorageDelta } from '../account/storage-delta-model';
-import type { SessionContaminationReview } from '../sessions/session-contamination-review';
 import { buildHalloweenLootComparison } from './halloween-loot-comparison';
 import type { HalloweenObservationV1 } from './halloween-model';
 import { IndexedDbHalloweenStore } from './halloween-store';
@@ -44,15 +43,7 @@ function input() {
 			{ id: 36_041, before: 0, after: 4_006, delta: 4_006 },
 		], currencyChanges: [], availabilityChanges: [], compositionChanges: [],
 	};
-	const review: SessionContaminationReview = {
-		version: 1, reviewedAt: '2026-08-28T11:00:01.000Z',
-		answers: { certainty: 'confirmed', activities: { open: true, salvage: false, consume: false, craft: false,
-			tpBuy: false, tpSell: false, vendorBuy: false, vendorSell: false, transfer: false, other: false } },
-		declaration: { status: 'activities', activities: ['open'] },
-		boundary: {} as SessionContaminationReview['boundary'], classification: {} as SessionContaminationReview['classification'],
-		farmedLossItemIds: [],
-	};
-	return { vaultId: 'vault', accountRef: 'account', episodeId: 'session:test', delta, review };
+	return { vaultId: 'vault', accountRef: 'account', episodeId: 'session:test', delta, classification: 'exact' as const };
 }
 
 function finalObservation(): HalloweenObservationV1 {

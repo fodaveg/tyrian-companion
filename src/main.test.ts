@@ -1103,9 +1103,9 @@ describe('Halloween production gating', () => {
 		expect(harness.sessionSummarySaveState).toBe('failed');
 	});
 
-	it('passes the review and stable delta to session_final only once finalization already succeeded', async () => {
+	it('passes the classification status and stable delta to session_final only once finalization already succeeded', async () => {
 		const stableDelta = { status: 'comparable' } as StorageDelta;
-		const reviewEvidence = { answers: { certainty: 'confirmed' } };
+		const reviewEvidence = { classification: { status: 'exact' } };
 		const observeHalloweenDelta = vi.fn(async () => undefined);
 		const harness = {
 			pilotMetrics: null,
@@ -1130,7 +1130,7 @@ describe('Halloween production gating', () => {
 			review: reviewEvidence,
 		});
 		expect(observeHalloweenDelta).toHaveBeenCalledWith(
-			stableDelta, 'session_final', 'session:session-final', reviewEvidence,
+			stableDelta, 'session_final', 'session:session-final', 'exact',
 		);
 	});
 
@@ -1253,7 +1253,7 @@ describe('completed-session summary persistence', () => {
 				finalizeStoppedSession: vi.fn(async () => ({
 					status: 'finalized' as const,
 					state: { status: 'complete' as const, sessionId: 'session-final', finalizedAt: '2026-09-01T09:00:00.000Z' },
-					review: { classification: 'estimated' },
+					review: { classification: { status: 'estimated' } },
 				})),
 				getCompletedRuntimeRecord: vi.fn(async () => runtime),
 				markCompletedSummarySaved: vi.fn(async () => true),
@@ -1383,7 +1383,8 @@ describe('detection after a finished session (H18.9, prueba 6)', () => {
 		});
 
 		await expect(proto.finishFinalizedSession.call(harness, 'session-1', { status: 'comparable' } as StorageDelta, {
-			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' }, review: {},
+			state: { sessionId: 'session-1', finalizedAt: '2026-09-01T08:10:00.000Z' },
+			review: { classification: { status: 'exact' } },
 		})).resolves.toBe(true);
 
 		await vi.waitFor(() => expect(arm).toHaveBeenCalledOnce());

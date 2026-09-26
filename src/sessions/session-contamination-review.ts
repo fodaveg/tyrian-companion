@@ -66,9 +66,10 @@ export interface LegacySessionDeltaClassification extends Omit<SessionDeltaClass
 /**
  * Fixed stand-in for the human answers this review used to require. Nobody declares or confirms
  * anything anymore (David, 2026-09-09): the plugin trusts whatever the API delta says. The shape
- * survives only because `answers` is still read by code outside this lote's scope
- * (`halloween-loot-comparison.ts`'s eligibility gate for the Trick-or-Treat statistic, which this
- * lote does not touch — see the final report).
+ * survives only for persistence compatibility (`isSessionContaminationReview`/
+ * `isSessionContaminationReviewShape` still validate it): since H18.32 (2026-09-26) no production
+ * code reads `answers` anymore — `halloween-loot-comparison.ts`'s eligibility gate reads
+ * `classification.status` instead, because `answers.certainty` could never be `'confirmed'` here.
  */
 const AUTOMATIC_ANSWERS: SessionContaminationAnswers = {
 	certainty: 'unsure',
