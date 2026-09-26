@@ -58,16 +58,20 @@ export interface InventoryAdvisorBuiltinBundleProvider {
  * backtest (and every other fixed-`asOf` test predating today) reject the bundle as not-yet-published.
  * Only `VALID_UNTIL` moves, exactly like H13.7.
  *
- * This does NOT keep the pack `ready` (vs `review`) through the new `validUntil`: the policy's
- * `maxRulePackAgeMs` (90 days, `INVENTORY_ADVISOR_BUILTIN_BUNDLE.policy`) makes `rulePackFresh`/
- * `knowledgeFresh` (`inventory-advisor-classifier.ts`) go stale around 2026-11-14 (90 days after
- * `HUMAN_REVIEWED_AT`) — a PRE-EXISTING ceiling, unchanged by this task and already inside the old
- * `validUntil` window too (2026-12-01 was already past that cliff). Respected, not extended, per this
- * task's own instructions. What DOES stay `ready` through `VALID_UNTIL` is the Halloween economy
- * pack (`inventory-container-economy.ts`): `evaluateInventoryContainerEconomy` never consults
- * `maxRulePackAgeMs`, only `pack.validUntil`, so the Saco's open-vs-sell comparison keeps working:
- * only the identity/capability rule (an "open" ASSERTION covering ITEM 36038 the classifier reuses
- * for OTHER items too) goes to review after the 90-day mark, until a further `reviewedAt` refresh.
+ * H18.35 (26 sep 2026, David's option "B"): the paragraph above described a real gap this same
+ * H18.34 renewal left open — with the OLD 90-day `maxRulePackAgeMs`, `rulePackFresh`/`knowledgeFresh`
+ * (`inventory-advisor-classifier.ts`) went stale on 2026-11-14 (90 days after `HUMAN_REVIEWED_AT`) and
+ * 2026-11-12 (90 days after `PUBLISHED_AT`) respectively, three months before this bundle's own
+ * `VALID_UNTIL`. From that point row 36038 fell to `coverage.rules: 'review'` /
+ * `knowledge_stale`, `containerEconomyFor` (`inventory-advisor-presentation.ts`) stopped exposing
+ * `row.containerEconomy`, and the Sale card lost `openVsSell` — while the Saco's own "sell in May
+ * 2027" candidate window was still open. David chose to widen the ceiling instead of scheduling
+ * quarterly re-reviews: `maxRulePackAgeMs` below now covers every checked instant (`PUBLISHED_AT`
+ * and the `SOURCES[].retrievedAt` that `inventory-advisor-discard.ts` also freshness-checks against
+ * this same field) through `VALID_UNTIL` with margin, so the classifier and the discard allowlist
+ * both stay `ready`/fresh across the whole Halloween-to-May-2027 window this bundle serves. The
+ * Halloween economy pack (`inventory-container-economy.ts`) was never affected either way:
+ * `evaluateInventoryContainerEconomy` never consults `maxRulePackAgeMs`, only `pack.validUntil`.
  */
 const PUBLISHED_AT = '2026-08-14T18:04:33.000Z';
 const HUMAN_REVIEWED_AT = '2026-08-16T05:22:24.000Z';
@@ -229,7 +233,18 @@ const BUILTIN_BUNDLE: InventoryAdvisorBuiltinBundleV3 = {
 		maxPriceAgeMs: 900_000,
 		maxCatalogAgeMs: 604_800_000,
 		maxAccountSignalsAgeMs: 86_400_000,
-		maxRulePackAgeMs: 7_776_000_000,
+		// H18.35: 300 days, not the old 90 (7_776_000_000 ms). The oldest instant any freshness
+		// check compares against `maxRulePackAgeMs` is `PUBLISHED_AT` (2026-08-14T18:04:33.000Z) —
+		// both as `rulePack`/`knowledgePack.reviewedAt` proxies (`inventory-advisor-classifier.ts`)
+		// and as every `SOURCES[].retrievedAt` (`inventory-advisor-discard.ts:220,241`); `reviewedAt`
+		// on the rule pack (`HUMAN_REVIEWED_AT`) is two days later, so it never binds first. From
+		// `PUBLISHED_AT` to `VALID_UNTIL` (2027-06-01T00:00:00.000Z) is 290.25 days — the minimum
+		// that keeps the pack fresh for the full window this bundle is meant to serve. 300 days
+		// rounds that up with ~10 days of margin, stays a whole number of days, and sits inside
+		// `bounded(maxRulePackAgeMs, 1 day, 366 days)` (`inventory-advisor-contract.ts`). The bundle
+		// itself still hard-expires at `VALID_UNTIL` regardless (`load()` below), so this only
+		// removes the earlier, narrower staleness cliff — it does not extend `VALID_UNTIL`.
+		maxRulePackAgeMs: 25_920_000_000,
 		maxFutureSkewMs: 300_000,
 		listingMinimumAdvantageBps: 1_000,
 	},
@@ -340,7 +355,7 @@ function exactPolicy(value: InventoryAdvisorPolicyV1): boolean {
 		&& value.maxPriceAgeMs === 900_000
 		&& value.maxCatalogAgeMs === 604_800_000
 		&& value.maxAccountSignalsAgeMs === 86_400_000
-		&& value.maxRulePackAgeMs === 7_776_000_000
+		&& value.maxRulePackAgeMs === 25_920_000_000
 		&& value.maxFutureSkewMs === 300_000
 		&& value.listingMinimumAdvantageBps === 1_000;
 }
