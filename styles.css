@@ -2534,3 +2534,381 @@
 .tyrian-companion-settings__diagnostic-status span {
 	overflow-wrap: anywhere;
 }
+
+/* ==========================================================================
+ * Venta de Halloween (docs/diseno/halloween-venta). Solo variables de
+ * Obsidian; una variable propia (--tyrian-action-mark), local a la marca de
+ * acción, como --tyrian-figures ya existente.
+ * ========================================================================== */
+
+.tyrian-product-shell__status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--size-4-1) var(--size-4-2);
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-product-shell__status > span + span::before {
+	content: "·";
+	margin-inline-end: var(--size-4-2);
+	color: var(--text-faint);
+}
+
+.tc-money {
+	white-space: nowrap;
+}
+
+/* Marca de acción: palabra + filete lateral; el color nunca va solo en el texto. */
+.tyrian-action {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-inline-start: 4px solid var(--tyrian-action-mark, var(--text-faint));
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	line-height: 1.8;
+	white-space: nowrap;
+}
+
+.tyrian-action[data-action="sell"] { --tyrian-action-mark: var(--color-green); }
+.tyrian-action[data-action="hold"] { --tyrian-action-mark: var(--interactive-accent); }
+.tyrian-action[data-action="deposit"] { --tyrian-action-mark: var(--text-muted); }
+.tyrian-action[data-action="none"] {
+	--tyrian-action-mark: var(--text-faint);
+	border-inline-start-style: dashed;
+	color: var(--text-muted);
+	font-weight: var(--font-medium);
+}
+.tyrian-action[data-action="nodata"] {
+	--tyrian-action-mark: var(--background-modifier-border);
+	border-style: dashed;
+	color: var(--text-muted);
+	font-weight: var(--font-medium);
+}
+
+/* Sustituto con iniciales cuando el icono del CDN no llega ("icono caído"). */
+.tyrian-inventory__icon {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	flex: 0 0 32px;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	border: 1px dashed var(--text-muted);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-sale {
+	display: grid;
+	gap: var(--size-4-4);
+}
+
+.tyrian-sale__card {
+	display: grid;
+	gap: var(--size-4-3);
+	min-width: 0;
+}
+
+.tyrian-sale__card--hero {
+	padding: var(--size-4-4);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-primary);
+}
+
+.tyrian-sale__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-1) var(--size-4-3);
+}
+
+.tyrian-sale__head h3 {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin: 0;
+	font-size: var(--font-ui-medium);
+	line-height: var(--line-height-tight);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__card--hero .tyrian-sale__head h3 {
+	font-size: var(--font-ui-large);
+}
+
+.tyrian-sale__head small {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-sale__verdict {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-1) var(--size-4-2);
+	margin: 0;
+}
+
+.tyrian-sale__verdict > span:not(.tyrian-action) {
+	color: var(--text-muted);
+}
+
+/* Antigüedad de un precio: siempre al lado del precio que describe. */
+.tyrian-sale__quote {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 var(--size-4-1);
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-sale__quote[data-state="stale"] {
+	color: var(--text-normal);
+	font-weight: var(--font-medium);
+}
+
+.tyrian-sale__quote[data-state="stale"] .is-small {
+	color: var(--color-orange);
+}
+
+/* Calendario de ventanas: mismo eje para todos, relleno = ventana abierta hoy. */
+.tyrian-sale__windows {
+	display: grid;
+	gap: var(--size-4-2);
+	margin: 0;
+}
+
+.tyrian-sale__windows h3 {
+	margin: 0;
+	padding: var(--size-4-1) var(--size-4-2);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	letter-spacing: .08em;
+	text-transform: uppercase;
+}
+
+.tyrian-sale__windows ul {
+	display: grid;
+	gap: var(--size-4-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tyrian-sale__windows li {
+	display: grid;
+	grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+	gap: var(--size-2-2) var(--size-4-3);
+	align-items: center;
+}
+
+.tyrian-sale__win-label {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.tyrian-sale__win-label strong {
+	font-weight: var(--font-medium);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__win-label small {
+	display: block;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-sale__track {
+	position: relative;
+	display: block;
+	height: 14px;
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-sale__bar {
+	position: absolute;
+	inset-block: 2px 2px;
+	inset-inline: 0;
+	width: 60%;
+	border: 1.5px solid var(--text-muted);
+	border-radius: 3px;
+	background: var(--background-primary);
+}
+
+.tyrian-sale__bar[data-open="true"] {
+	border-color: var(--text-normal);
+	background: var(--text-normal);
+}
+
+/* Lista agrupada Ahora/Esperar/Sin datos: una fila por objeto. */
+.tyrian-sale__group {
+	display: grid;
+	gap: 0;
+}
+
+.tyrian-sale__group h3 {
+	margin: 0;
+	padding: var(--size-4-1) var(--size-4-2);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	letter-spacing: .08em;
+	text-transform: uppercase;
+}
+
+.tyrian-sale__rows {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.tyrian-sale__rows-head,
+.tyrian-sale__row {
+	display: grid;
+	grid-template-columns: minmax(11rem, 1.3fr) minmax(12rem, 1.5fr) minmax(8rem, .8fr) minmax(8rem, .8fr);
+	grid-template-areas: "item decision price value";
+	gap: var(--size-4-1) var(--size-4-3);
+	align-items: start;
+	padding: var(--size-4-3) var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+
+.tyrian-sale__rows-head {
+	padding-block: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-sale__rows-head > :nth-child(n + 3),
+.tyrian-sale__price,
+.tyrian-sale__value {
+	text-align: end;
+}
+
+.tyrian-sale__row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.tyrian-sale__item {
+	grid-area: item;
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+	min-width: 0;
+}
+
+.tyrian-sale__item > div {
+	min-width: 0;
+}
+
+.tyrian-sale__item strong {
+	display: block;
+	font-weight: var(--font-semibold);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__item small {
+	display: block;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__decision {
+	grid-area: decision;
+	min-width: 0;
+}
+
+.tyrian-sale__decision small {
+	display: block;
+	margin-top: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__price {
+	grid-area: price;
+	font-variant-numeric: tabular-nums;
+}
+
+.tyrian-sale__value {
+	grid-area: value;
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-semibold);
+}
+
+.tyrian-sale__value[data-unknown="true"] {
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
+.tyrian-sale__foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.tyrian-sale__foot p {
+	margin: 0;
+	flex: 1 1 16rem;
+}
+
+@container (max-width: 759px) {
+	.tyrian-sale__rows-head { display: none; }
+	.tyrian-sale__row {
+		grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+		grid-template-areas: "item value" "decision decision" "price price";
+		padding-inline: 0;
+	}
+	.tyrian-sale__decision,
+	.tyrian-sale__price { padding-inline-start: 40px; }
+	.tyrian-sale__value { max-width: 9.5rem; }
+	.tyrian-sale__price { text-align: start; }
+	.tyrian-sale__windows li { grid-template-columns: minmax(0, 1fr); }
+}
+
+@container (max-width: 520px) {
+	.tyrian-sale__card--hero { padding: var(--size-4-3); }
+}
+
+@container (max-width: 400px) {
+	.tyrian-product-shell__status { display: grid; gap: var(--size-2-2); }
+	.tyrian-product-shell__status > span + span::before { content: none; }
+	.tyrian-sale__card--hero .tyrian-sale__head h3 { font-size: var(--font-ui-medium); }
+	.tyrian-sale__foot button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-sale * { transition: none !important; animation: none !important; }
+}
