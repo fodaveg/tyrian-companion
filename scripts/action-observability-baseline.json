@@ -5,7 +5,7 @@
 		"catch_clause": 467,
 		"promise_catch": 39,
 		"void_expression": 102,
-		"callback_registration": 173
+		"callback_registration": 174
 	},
 	"files": {
 		"src/account/__fixtures__/contamination.ts": {
@@ -76,6 +76,11 @@
 					"reason": "Allowlisted catch_clause: The \"checkConnection\" owner explicitly handles \"rethrow\" as local recovery; its enclosing action owns terminal diagnostics. Verified recovery: \"rethrow\" in \"checkConnection\"."
 				}
 			]
+		},
+		"src/account/character-activity.ts": {
+			"classification": "production_source",
+			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
+			"boundaries": []
 		},
 		"src/account/connection-service.ts": {
 			"classification": "production_source",
@@ -276,11 +281,28 @@
 			"reason": "Reviewed production TypeScript file; zero-boundary files remain in scope so additions cannot bypass the census.",
 			"boundaries": [
 				{
-					"id": "0f0fcef42de9347868eee8bf8280e30922eec396",
+					"id": "20c3d53134dc281c3414d7fb08a529fb4234213d",
 					"kind": "callback_registration",
-					"line": 97,
+					"line": 105,
 					"column": 19,
-					"endLine": 99,
+					"endLine": 110,
+					"endColumn": 5,
+					"registration": "then",
+					"classification": "allowlisted",
+					"evidence": {
+						"type": "reviewed_registered_callback",
+						"registration": "then",
+						"scope": "captureScopedWithOperation",
+						"justification": "The \"captureScopedWithOperation\" owner returns its \"then\" promise: it records only the verified-context activity baseline on success; rejection propagates to the capture owner and terminal diagnostics."
+					},
+					"reason": "Allowlisted callback_registration: The \"captureScopedWithOperation\" owner returns its \"then\" promise: it records only the verified-context activity baseline on success; rejection propagates to the capture owner and terminal diagnostics. Verified registration: \"then\" in \"captureScopedWithOperation\"."
+				},
+				{
+					"id": "b7e2671b88c5a03fbde6b9ac7d75c0a99b169667",
+					"kind": "callback_registration",
+					"line": 105,
+					"column": 19,
+					"endLine": 112,
 					"endColumn": 5,
 					"registration": "finally",
 					"classification": "allowlisted",
@@ -288,9 +310,9 @@
 						"type": "reviewed_registered_callback",
 						"registration": "finally",
 						"scope": "captureScopedWithOperation",
-						"justification": "The \"captureScopedWithOperation\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"justification": "The \"captureScopedWithOperation\" owner returns its \"finally\" promise: it removes only its own in-flight entry on settlement; the original success or rejection propagates to the capture owner."
 					},
-					"reason": "Allowlisted callback_registration: The \"captureScopedWithOperation\" owner registers \"finally\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"finally\" in \"captureScopedWithOperation\"."
+					"reason": "Allowlisted callback_registration: The \"captureScopedWithOperation\" owner returns its \"finally\" promise: it removes only its own in-flight entry on settlement; the original success or rejection propagates to the capture owner. Verified registration: \"finally\" in \"captureScopedWithOperation\"."
 				},
 				{
 					"id": "b6d91fc8296c9f2556b0f838a0ebb59b944f0e89",
@@ -12142,21 +12164,21 @@
 					"reason": "Allowlisted callback_registration: The \"keepControl\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"keepControl\"."
 				},
 				{
-					"id": "3123876ab82edf86e38e6fec2294202f21e84acb",
+					"id": "51fc8be2e8fed4e699af7ed33bbc734901bc46f9",
 					"kind": "callback_registration",
-					"line": 1274,
+					"line": 1292,
 					"column": 3,
-					"endLine": 1274,
-					"endColumn": 72,
+					"endLine": 1292,
+					"endColumn": 61,
 					"registration": "addEventListener",
 					"classification": "allowlisted",
 					"evidence": {
 						"type": "reviewed_registered_callback",
 						"registration": "addEventListener",
-						"scope": "renderInventoryListRow",
-						"justification": "The \"renderInventoryListRow\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics."
+						"scope": "rowDetailDisclosure",
+						"justification": "The \"rowDetailDisclosure\" owner uses \"addEventListener\" to forward existing optional onOpenSale navigation; the host owns navigation and terminal diagnostics. No network or account mutation starts here."
 					},
-					"reason": "Allowlisted callback_registration: The \"renderInventoryListRow\" owner registers \"addEventListener\" as a framework callback; its invoked action or state transition owns diagnostics. Verified registration: \"addEventListener\" in \"renderInventoryListRow\"."
+					"reason": "Allowlisted callback_registration: The \"rowDetailDisclosure\" owner uses \"addEventListener\" to forward existing optional onOpenSale navigation; the host owns navigation and terminal diagnostics. No network or account mutation starts here. Verified registration: \"addEventListener\" in \"rowDetailDisclosure\"."
 				},
 				{
 					"id": "25f734b0e2fd9f44a47a5ab7bdeec4031f384a93",

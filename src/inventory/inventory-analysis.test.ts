@@ -462,7 +462,7 @@ describe('storage space in the one result per object (H18.15)', () => {
 			// Kept by the user: nothing to act on.
 			bank(20, 5, 2),
 		], {
-			freeSlots,
+			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
 			goals: [goal('build-21', 'Build', 21, 3)],
 			keepExceptions: [keepAll('keep-20', 20)],
 		});
@@ -475,6 +475,7 @@ describe('storage space in the one result per object (H18.15)', () => {
 			lowSpace: { freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 20, isLow: true },
 			materialCapacity: null,
 			slotsFreedByDecision: { [sold.id]: 1 },
+			lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' },
 		});
 		expect(sold.slotsFreed).toBe(1);
 		expect(rowFor(analysed.rows, 21, 'sell').slotsFreed).toBe(0);
@@ -486,12 +487,34 @@ describe('storage space in the one result per object (H18.15)', () => {
 
 	it('reads the threshold from settings and never invents space for a store the capture missed', async () => {
 		const plenty = await analyse([character(23, 5, 'Alfa', 0)], {
-			freeSlots, port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 5 }),
+			freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' }, port: recommendationPort({ lowStorageSpaceThresholdFreeSlots: () => 5 }),
 		});
 		expect(plenty.objects.storageSpace?.lowSpace).toEqual({ freeSlots: 7, totalSlots: 60, thresholdFreeSlots: 5, isLow: false });
 
-		const withoutBank = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots: { ...freeSlots, bank: null } });
+		const withoutBank = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots: { ...freeSlots, bank: null }, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' } });
 		expect(withoutBank.objects.storageSpace).toMatchObject({ bank: null, lowSpace: null, bags: { free: 3, total: 30 } });
+	});
+});
+
+describe('inventory value and character scope', () => {
+	it('values kept items from the exact Base position while withholding split-position values', async () => {
+		const result = await analyse([bank(20, 5, 0), bank(21, 5, 1)], {
+			keepExceptions: [keepAll('keep-20', 20)], goals: [goal('build-21', 'Build', 21, 3)],
+		});
+		const kept = rowFor(result.rows, 20, 'keep');
+		expect(kept.value).toEqual({ status: 'available', route: 'instant_sell', copper: result.input.positions.find((p) => p.itemId === 20)!.totalSellCopper });
+		expect(rowFor(result.rows, 21, 'keep').value).toMatchObject({ status: 'unavailable' });
+		expect(rowFor(result.rows, 21, 'sell').value).toMatchObject({ status: 'unavailable' });
+	});
+	it('never sums inactive characters or invents an active character', async () => {
+		const freeSlots: StorageFreeSlots = { bank: { total: 20, free: 4 }, sharedInventory: null, characterBags: [
+			{ character: 'Alfa', bagIndex: 0, bagItemId: 8932, total: 20, free: 2 },
+			{ character: 'Beta', bagIndex: 0, bagItemId: 8932, total: 20, free: 19 },
+		] };
+		const unknown = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots });
+		expect(unknown.objects.storageSpace).toMatchObject({ bags: null, lowSpace: null, lastPlayedCharacter: null });
+		const known = await analyse([character(23, 5, 'Alfa', 0)], { freeSlots, lastPlayedCharacter: { character: 'Alfa', source: 'age_delta' } });
+		expect(known.objects.storageSpace).toMatchObject({ bags: { total: 20, free: 2 }, lowSpace: { freeSlots: 6, totalSlots: 40 } });
 	});
 });
 
@@ -510,6 +533,7 @@ interface AnalyseOptions {
 	refreshSeeds?: boolean;
 	capture?: ReturnType<typeof vi.fn>;
 	freeSlots?: StorageFreeSlots;
+	lastPlayedCharacter?: StorageSnapshot['lastPlayedCharacter'];
 }
 
 /**
@@ -517,7 +541,7 @@ interface AnalyseOptions {
  * wired exactly as `main.ts` wires it, the view's controller, the notes' sync input and writer.
  */
 async function analyse(holdings: ItemHolding[], options: AnalyseOptions = {}) {
-	const snapshot = { ...snapshotOf(holdings), ...(options.freeSlots === undefined ? {} : { freeSlots: options.freeSlots }) };
+	const snapshot = { ...snapshotOf(holdings), ...(options.lastPlayedCharacter === undefined ? {} : { lastPlayedCharacter: options.lastPlayedCharacter }), ...(options.freeSlots === undefined ? {} : { freeSlots: options.freeSlots }) };
 	const evidence = evidenceOf(snapshot, options.prices ?? {});
 	const marketDepth = marketDepthOf(evidence.prices);
 	const capture = options.capture ?? vi.fn();

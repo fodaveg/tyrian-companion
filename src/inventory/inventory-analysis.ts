@@ -334,12 +334,29 @@ export class InventoryAnalysisService {
 				};
 			}
 		}
+		const valuationByDecision: Record<string, number | null> = {};
+		const coreById = new Map(cores.map((core) => [core.positionId, core]));
+		for (const line of report.lines) for (const decision of line.decisions) {
+			const covered = [...new Set(positionsByRef.get(decision.explanationRef) ?? [])];
+			let quantity = 0;
+			let copper: number | null = covered.length === 0 ? null : 0;
+			for (const positionId of covered) {
+				const core = coreById.get(positionId)!;
+				const slices = slicesByPosition.get(positionId) ?? [];
+				quantity += core.quantity;
+				if (slices.length !== 1 || slices[0]!.quantity !== core.quantity || core.totalSellCopper === null) copper = null;
+				else if (copper !== null) copper += core.totalSellCopper;
+			}
+			valuationByDecision[decision.explanationRef] = quantity === decision.quantity && Number.isSafeInteger(copper) ? copper : null;
+		}
+
 		return {
 			version: 1,
 			snapshotId: input.snapshot.snapshotId,
 			decisions,
 			positions,
 			uncertainItemIds: sortedIds(uncertain),
+			valuationByDecision,
 			storageSpace: storageSpaceOf(source, decisions, this.recommendation.lowStorageSpaceThresholdFreeSlots()),
 		};
 	}
@@ -438,6 +455,9 @@ function catalogUnavailable(source: InventoryAdvisorContextualPresentationSource
  * H18.15: the storage space of this analysis, from the same capture the decisions stand on.
  * Free-slot counts are the capture's own (`StorageSnapshot.freeSlots`); a capture without them
  * (older fixtures) reports every store as unknown rather than full or empty.
+ *
+ * Bag pressure refers only to the recently observed character, never every inactive character.
+ * Ambiguous activity leaves bags and lowSpace unknown while keeping bank/shared counts.
  */
 function storageSpaceOf(
 	source: InventoryAdvisorContextualPresentationSource,
@@ -446,11 +466,15 @@ function storageSpaceOf(
 ): InventoryObjectStorageSpaceV1 {
 	const input = source.input;
 	const freeSlots = input.snapshot.freeSlots;
-	const bags = freeSlots === undefined || freeSlots.characterBags.length === 0 ? null : {
-		free: freeSlots.characterBags.reduce((total, bag) => total + bag.free, 0),
-		total: freeSlots.characterBags.reduce((total, bag) => total + bag.total, 0),
+	const lastPlayedCharacter = input.snapshot.lastPlayedCharacter ?? null;
+	const scopedBags = lastPlayedCharacter === null ? undefined
+		: freeSlots?.characterBags.filter((bag) => bag.character === lastPlayedCharacter.character);
+	const bags = scopedBags === undefined || scopedBags.length === 0 ? null : {
+		free: scopedBags.reduce((total, bag) => total + bag.free, 0),
+		total: scopedBags.reduce((total, bag) => total + bag.total, 0),
 	};
-	const lowSpace = freeSlots === undefined ? null : resolveStorageSpaceState(freeSlots, thresholdFreeSlots);
+	const lowSpace = freeSlots === undefined || bags === null ? null
+		: resolveStorageSpaceState({ ...freeSlots, characterBags: scopedBags! }, thresholdFreeSlots);
 	const capacity = source.discardContext.engineInput.materialStorageCapacity;
 	const slotsFreedByDecision: Record<string, number> = {};
 	for (const line of source.result.report?.lines ?? []) for (const decision of line.decisions) {
@@ -477,6 +501,7 @@ function storageSpaceOf(
 		lowSpace: lowSpace === null ? null : { ...lowSpace },
 		materialCapacity: capacity === undefined ? null : { ...capacity },
 		slotsFreedByDecision,
+		lastPlayedCharacter,
 	};
 }
 

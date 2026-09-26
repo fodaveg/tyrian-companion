@@ -171,7 +171,7 @@ describe('H5.11 inventory advisor presentation', () => {
 		});
 	});
 
-	it('aggregates every burden position of one produced item before comparing it with gold value', () => {
+	it('keeps gold value ahead of occupied-space burden in the visible list', () => {
 		const value = source();
 		value.input.snapshot.holdings[0]!.quantity = 1;
 		for (const slot of [1, 2]) value.input.snapshot.holdings.push({
@@ -203,10 +203,10 @@ describe('H5.11 inventory advisor presentation', () => {
 		const rows = buildInventoryAdvisorViewModel(project(value)).groups.flatMap((group) => group.rows);
 		const ordered = sortInventoryAdvisorRows(rows, 'value_desc', 'es');
 
-		expect(ordered.slice(0, 3).every((row) => row.itemId === 10)).toBe(true);
-		expect(new Set(ordered.slice(0, 3).flatMap((row) => row.allocations.map((entry) => entry.positionRef))).size).toBe(3);
-		expect(ordered.slice(3, 5).every((row) => row.itemId === 12)).toBe(true);
-		expect(ordered.at(-1)?.itemId).toBe(11);
+		expect(ordered[0]?.itemId).toBe(11);
+		expect(ordered.filter((row) => row.itemId === 10)).toHaveLength(3);
+		expect(new Set(ordered.filter((row) => row.itemId === 10).flatMap((row) => row.allocations.map((entry) => entry.positionRef))).size).toBe(3);
+		expect(ordered.filter((row) => row.itemId === 12)).toHaveLength(2);
 	});
 
 	it('intersects multiple goals and exceptions with each produced decision allocation', () => {

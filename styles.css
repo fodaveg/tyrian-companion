@@ -1285,6 +1285,11 @@
 	padding: var(--size-4-4);
 }
 
+/* Obsidian assigns display to controls; keep the renderer's hidden state authoritative. */
+.tyrian-inventory-advisor [hidden] {
+	display: none !important;
+}
+
 .tyrian-inventory-advisor h2,
 .tyrian-inventory-advisor h3,
 .tyrian-inventory-advisor h4 {
@@ -1909,54 +1914,41 @@
 	font-size: var(--font-ui-smaller);
 }
 
+/*
+ * 26 sep 2026: "Qué hacer ahora" shrank from a card with a heading, four lines of prose and a
+ * grid of tall boxes to one line of small pressable counts — a filter, not a report.
+ */
 .tyrian-inventory-advisor__recommendation-summary {
 	margin-block: var(--size-4-3);
-	padding: var(--size-4-3);
-	border-inline-start: 3px solid var(--interactive-accent);
-	border-radius: var(--radius-s);
-	background: var(--background-secondary);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
 }
 
-.tyrian-inventory-advisor__recommendation-summary h3,
-.tyrian-inventory-advisor__recommendation-summary p {
-	margin-block: 0 var(--size-4-2);
-}
-
-.tyrian-inventory-advisor__recommendation-value {
-	font-weight: var(--font-semibold);
-}
-
-.tyrian-inventory-advisor__recommendation-coverage,
-.tyrian-inventory-advisor__recommendation-unpriced,
-.tyrian-inventory-advisor__recommendation-navigation {
+.tyrian-inventory-advisor__recommendation-label {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
 .tyrian-inventory-advisor__recommendation-actions {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+	display: flex;
+	flex-wrap: wrap;
 	gap: var(--size-4-2);
 }
 
 .tyrian-inventory-advisor__recommendation-action {
-	display: grid;
-	gap: var(--size-4-1);
-	min-height: 64px;
-	padding: var(--size-4-2) var(--size-4-3);
+	padding: var(--size-2-2) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
 	text-align: start;
 	overflow-wrap: anywhere;
-}
-
-.tyrian-inventory-advisor__recommendation-action span {
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
 }
 
 .tyrian-inventory-advisor__recommendation-action[aria-pressed='true'] {
 	border-color: var(--interactive-accent);
 	box-shadow: 0 0 0 1px var(--interactive-accent);
+	font-weight: var(--font-semibold);
 }
 
 .tyrian-inventory-advisor__recommendation-action:focus-visible {
@@ -2032,6 +2024,26 @@
 .tyrian-inventory-advisor__subtotal .tyrian-inventory__cell {
 	color: var(--text-muted);
 	font-weight: var(--font-semibold);
+}
+
+/* 26 sep 2026: rows with no demonstrated sale value, folded at the end instead of sitting among
+ * the ones the Base orders by that same value. Closed by default. */
+.tyrian-inventory-advisor__no-value {
+	margin-block-start: var(--size-4-2);
+}
+
+.tyrian-inventory-advisor__no-value > summary {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	padding: var(--size-4-2);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.tyrian-inventory-advisor__no-value > summary:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
 }
 
 .tyrian-inventory-advisor__evidence--complete {
@@ -2154,10 +2166,15 @@
  * retiradas). Solo variables de Obsidian.
  * ========================================================================== */
 
+/*
+ * 26 sep 2026: dropped the `explanation`/`data` columns (`c-why`/`c-data`) — moved into the row's
+ * own disclosure — so one row is one compact line (icon + a line of text), not two, matching the
+ * Base David compares this view against.
+ */
 .tyrian-inventory__list {
 	display: grid;
 	grid-template-columns: minmax(9rem, 1.4fr) minmax(6.5rem, .8fr) minmax(11rem, 1.1fr)
-		minmax(6.5rem, .8fr) minmax(9rem, 1.8fr) auto;
+		minmax(6.5rem, .8fr) auto;
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -2187,7 +2204,7 @@
 }
 
 .tyrian-inventory__row {
-	grid-template-rows: auto 1fr auto;
+	grid-template-rows: auto auto;
 	padding: var(--size-4-3) var(--size-4-2);
 	border-block-end: 1px solid var(--background-modifier-border);
 }
@@ -2196,14 +2213,12 @@
 	background: var(--background-modifier-hover);
 }
 
-.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1 / span 2; }
-.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 1 / span 2; }
-.tyrian-inventory__row > .c-action { grid-column: 3; grid-row: 1 / span 2; }
-.tyrian-inventory__row > .c-money { grid-column: 4; grid-row: 1 / span 2; }
-.tyrian-inventory__row > .c-why { grid-column: 5; grid-row: 1; }
-.tyrian-inventory__row > .c-data { grid-column: 5; grid-row: 2; margin-block-start: var(--size-4-1); }
-.tyrian-inventory__row > .c-keep { grid-column: 6; grid-row: 1 / span 2; }
-.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 3; margin-block-start: var(--size-4-2); }
+.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1; }
+.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 1; }
+.tyrian-inventory__row > .c-action { grid-column: 3; grid-row: 1; }
+.tyrian-inventory__row > .c-money { grid-column: 4; grid-row: 1; }
+.tyrian-inventory__row > .c-keep { grid-column: 5; grid-row: 1; }
+.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 2; margin-block-start: var(--size-4-2); }
 
 .tyrian-inventory__cell {
 	min-width: 0;
@@ -2211,9 +2226,20 @@
 }
 
 .tyrian-inventory__item {
-	display: flex;
-	align-items: flex-start;
+	display: grid;
+	grid-template-columns: 32px minmax(0, 1fr);
+	align-content: start;
 	gap: var(--size-4-2);
+}
+
+.tyrian-inventory__item > :first-child {
+	grid-column: 1;
+	grid-row: 1 / span 2;
+}
+
+.tyrian-inventory__item strong,
+.tyrian-inventory__item small {
+	grid-column: 2;
 }
 
 .tyrian-inventory__item strong {
@@ -2243,15 +2269,6 @@
 .tyrian-inventory__money[data-unknown='true'] {
 	color: var(--text-muted);
 	font-weight: var(--font-normal);
-}
-
-.tyrian-inventory__why {
-	color: var(--text-muted);
-}
-
-.tyrian-inventory__data {
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
 }
 
 .tyrian-inventory__keep {
@@ -2334,12 +2351,10 @@
 
 	.tyrian-inventory__row > .c-item { grid-column: 1; grid-row: 1; }
 	.tyrian-inventory__row > .c-money { grid-column: 2; grid-row: 1; }
-	.tyrian-inventory__row > .c-action { grid-column: 1 / -1; grid-row: 2; padding-inline-start: 40px; }
-	.tyrian-inventory__row > .c-qty { grid-column: 1 / -1; grid-row: 3; padding-inline-start: 40px; }
-	.tyrian-inventory__row > .c-why { grid-column: 1 / -1; grid-row: 4; padding-inline-start: 40px; }
-	.tyrian-inventory__row > .c-data { grid-column: 1; grid-row: 5; padding-inline-start: 40px; }
-	.tyrian-inventory__row > .c-keep { grid-column: 2; grid-row: 5; align-self: end; }
-	.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 6; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-action { grid-column: 1; grid-row: 2; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .c-qty { grid-column: 2; grid-row: 2; }
+	.tyrian-inventory__row > .c-keep { grid-column: 1 / -1; grid-row: 3; padding-inline-start: 40px; }
+	.tyrian-inventory__row > .tyrian-inventory__more { grid-column: 1 / -1; grid-row: 4; padding-inline-start: 40px; }
 
 	.tyrian-inventory__qty {
 		display: flex;
@@ -2360,12 +2375,12 @@
 }
 
 @container (max-width: 400px) {
-	.tyrian-inventory__row > .c-money {
-		grid-column: 1;
-		grid-row: 2;
-	}
-
 	.tyrian-inventory__row > .c-item { grid-row: 1; }
+	.tyrian-inventory__row > .c-money { grid-column: 1; grid-row: 2; }
+	.tyrian-inventory__row > .c-action { grid-row: 3; }
+	.tyrian-inventory__row > .c-qty { grid-column: 1; grid-row: 4; }
+	.tyrian-inventory__row > .c-keep { grid-row: 5; }
+	.tyrian-inventory__row > .tyrian-inventory__more { grid-row: 6; }
 }
 
 @container (max-width: 479px) {
@@ -2380,8 +2395,8 @@
 		width: 100%;
 	}
 
-	.tyrian-inventory-advisor__recommendation-actions {
-		grid-template-columns: minmax(0, 1fr);
+	.tyrian-inventory-advisor__recommendation-action {
+		width: 100%;
 	}
 
 	.tyrian-inventory-advisor__controls > label,

@@ -2,6 +2,7 @@ import { HttpTransportError } from '../core/http';
 import { createLimiter } from '../core/concurrency';
 import type { GuildWars2Client, GuildWars2Operation } from './guild-wars-2-client';
 import { parseAccountProfile, parseTokenInfo } from './account-service';
+import { chooseLastPlayedCharacter, parseCharacterActivity, type CharacterActivity } from './character-activity';
 import {
 	PINNED_SCHEMA,
 	SnapshotCapabilityError,
@@ -25,7 +26,6 @@ import {
 	parseContainerFreeSlots,
 	parseDelivery,
 	parseMaterials,
-	parseRoster,
 	parseSlotArray,
 	parseWallet,
 } from './storage-snapshot-parsers';
@@ -36,6 +36,11 @@ interface VerifiedSnapshotContext {
 	permissions: ReadonlySet<string>;
 	urls: readonly string[];
 	key: string;
+}
+
+interface CaptureActivity {
+	previous: readonly CharacterActivity[] | null;
+	current: readonly CharacterActivity[] | null;
 }
 
 export type StorageSnapshotCaptureScope = 'complete' | 'inventory_advisor';
@@ -60,6 +65,8 @@ export class StorageSnapshotService {
 	private readonly globalLimit = createLimiter(6);
 	private readonly characterLimit = createLimiter(4);
 	private readonly inventoryAdvisorCharacterLimit = createLimiter(1);
+	/** Successful capture baselines are isolated by verified account, permissions and scope. */
+	private readonly previousCharacterActivity = new Map<string, readonly CharacterActivity[]>();
 
 	constructor(private readonly client: Pick<GuildWars2Client, 'beginOperation'>) {}
 
@@ -94,7 +101,13 @@ export class StorageSnapshotService {
 		const key = `${context.key}:${scope}`;
 		const existing = this.inFlight.get(key);
 		if (existing) return existing;
-		const promise = this.captureInternal(operation, context, scope, onProgress).finally(() => {
+		const activity: CaptureActivity = { previous: this.previousCharacterActivity.get(key) ?? null, current: null };
+		const promise = this.captureInternal(operation, context, scope, activity, onProgress).then((snapshot) => {
+			if (activity.current !== null && snapshot.coverage.sources.characters.status === 'complete') {
+				this.previousCharacterActivity.set(key, activity.current);
+			}
+			return snapshot;
+		}).finally(() => {
 			if (this.inFlight.get(key) === promise) this.inFlight.delete(key);
 		});
 		this.inFlight.set(key, promise);
@@ -105,6 +118,7 @@ export class StorageSnapshotService {
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
 		scope: StorageSnapshotCaptureScope,
+		activity: CaptureActivity,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 	): Promise<StorageSnapshot> {
 		const startedAt = new Date().toISOString();
@@ -113,13 +127,13 @@ export class StorageSnapshotService {
 			? createAdvisorProgressReporter(onProgress)
 			: null;
 		const sharedInventoryLastModified: { value: string | null } = { value: null };
-		const first = await this.capturePass(operation, context, scope,
+		const first = await this.capturePass(operation, context, scope, activity,
 			advisorProgress?.first ?? onProgress,
 			scope === 'complete' ? (value) => { sharedInventoryLastModified.value = value; } : undefined);
 		if (scope === 'inventory_advisor') {
 			if (!advisorPassComplete(first.coverage) || hasIncompleteCoverage(first.coverage)) {
 				if (shouldRetryAdvisorPass(first.coverage)) {
-					const second = await this.capturePass(operation, context, scope,
+					const second = await this.capturePass(operation, context, scope, activity,
 						advisorProgress?.second);
 					const secondCoreComplete = advisorPassComplete(second.coverage);
 					return finalizeStorageSnapshot({
@@ -148,7 +162,7 @@ export class StorageSnapshotService {
 					completedAt: new Date().toISOString(),
 				});
 			}
-			const second = await this.capturePass(operation, context, scope,
+			const second = await this.capturePass(operation, context, scope, activity,
 				advisorProgress?.second);
 			if (!advisorPassComplete(second.coverage) || hasIncompleteCoverage(second.coverage)) {
 				return finalizeStorageSnapshot({
@@ -225,7 +239,7 @@ export class StorageSnapshotService {
 				completedAt: new Date().toISOString(),
 			});
 		}
-		const second = await this.capturePass(operation, context, scope);
+		const second = await this.capturePass(operation, context, scope, activity);
 		if (hasTransientCoverageFailure(second.coverage)) {
 			return finalizeStorageSnapshot({
 				pass: second,
@@ -249,7 +263,7 @@ export class StorageSnapshotService {
 			});
 		}
 
-		const third = await this.capturePass(operation, context, scope);
+		const third = await this.capturePass(operation, context, scope, activity);
 		return finalizeStorageSnapshot(qualifyStorageSnapshotTriple(first, second, third), {
 			accountId: context.accountId,
 			snapshotId,
@@ -262,6 +276,7 @@ export class StorageSnapshotService {
 		operation: GuildWars2Operation,
 		context: VerifiedSnapshotContext,
 		scope: StorageSnapshotCaptureScope,
+		activity: CaptureActivity,
 		onProgress?: (progress: StorageSnapshotCaptureProgress) => void,
 		onSharedInventoryLastModified?: (value: string | null) => void,
 	): Promise<StorageSnapshotPass> {
@@ -283,14 +298,22 @@ export class StorageSnapshotService {
 		let accountStoresCompleted = 0;
 		let charactersCompleted = 0;
 
+		// H18.38: `ids=all` on the same roster call returns full character objects (name, age,
+		// last_modified…) instead of bare names; `parseCharacterActivity` reads both shapes, so an
+		// endpoint or fixture still answering the bare form keeps working unchanged.
 		const rosterResult = await captureSource(
-			() => this.globalLimit(() => operation.requestDetailed(withSchema('characters'))),
-			parseRoster,
+			() => this.globalLimit(() => operation.requestDetailed(withCharactersRoster())),
+			parseCharacterActivity,
 			false,
 			true,
 		);
 		coverage.sources.characters = rosterResult.coverage;
-		const roster = rosterResult.value ?? [];
+		const characterActivity = rosterResult.value ?? [];
+		const roster = characterActivity.map((entry) => entry.character);
+		const lastPlayedCharacter = rosterResult.coverage.status === 'complete'
+			? chooseLastPlayedCharacter(characterActivity, activity.previous) : null;
+		activity.current = rosterResult.coverage.status === 'complete' ? characterActivity : null;
+
 		if (context.urls.length > 0) {
 			const unavailable = roster
 				.map((character) => `/v2/characters/${encodeURIComponent(character)}/inventory`)
@@ -413,7 +436,7 @@ export class StorageSnapshotService {
 			bank: bankFreeSlots,
 			sharedInventory: sharedInventoryFreeSlots,
 			characterBags: characterBagFreeSlots,
-		});
+		}, lastPlayedCharacter);
 	}
 
 	private async captureItems(
@@ -604,6 +627,11 @@ function readHeader(headers: Readonly<Record<string, string>>, name: string): st
 
 function withSchema(path: string): string {
 	return `${path}?v=${encodeURIComponent(PINNED_SCHEMA)}`;
+}
+
+/** H18.38: `ids=all` on the roster endpoint returns full character objects, `last_modified`/`age` included. */
+function withCharactersRoster(): string {
+	return `${withSchema('characters')}&ids=all`;
 }
 
 async function captureSource<T>(

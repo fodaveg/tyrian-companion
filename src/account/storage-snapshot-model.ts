@@ -126,6 +126,17 @@ export interface StorageSnapshotPass {
 	 * real `StorageSnapshotService` always supplies it (`storage-snapshot-pure.ts`).
 	 */
 	freeSlots?: StorageFreeSlots;
+	/** Recent character activity inferred from the same capture. Null means unknown;
+  * callers must not replace it with the sum of every character's bags. */
+	lastPlayedCharacter?: LastPlayedCharacterChoice | null;
+}
+
+export type LastPlayedCharacterSource = 'last_modified' | 'age_delta';
+
+/** The result `chooseLastPlayedCharacter` (`character-activity.ts`) hands to a capture's pass. */
+export interface LastPlayedCharacterChoice {
+	readonly character: string;
+	readonly source: LastPlayedCharacterSource;
 }
 
 export interface StorageSnapshot extends StorageSnapshotPass {

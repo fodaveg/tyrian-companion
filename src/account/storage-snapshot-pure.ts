@@ -1,6 +1,7 @@
 import {
 	PINNED_SCHEMA,
 	type CurrencyTotal,
+	type LastPlayedCharacterChoice,
 	type SnapshotCoverage,
 	type SnapshotQuality,
 	type StorageFreeSlots,
@@ -39,6 +40,7 @@ export function buildStorageSnapshotPass(
 	coverage: SnapshotCoverage,
 	roster: string[],
 	freeSlots: StorageFreeSlots = EMPTY_FREE_SLOTS,
+	lastPlayedCharacter: LastPlayedCharacterChoice | null = null,
 ): StorageSnapshotPass {
 	const availableByItem: Record<string, number> = {};
 	const ownedByItem: Record<string, number> = {};
@@ -64,6 +66,7 @@ export function buildStorageSnapshotPass(
 		coverage,
 		roster: [...roster].sort(),
 		freeSlots,
+		lastPlayedCharacter,
 	};
 }
 

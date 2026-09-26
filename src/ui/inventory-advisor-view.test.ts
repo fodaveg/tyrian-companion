@@ -44,8 +44,9 @@ describe('Inventory Advisor view', () => {
 			expect(copy).toContain(excluded);
 			expect(copy).toContain('gw2-wiki-ecto-yield');
 			expect(byClass(mount.elements(), 'tyrian-inventory-advisor__advanced-filters')).toHaveLength(1);
-			// Advanced filters, the two salvage disclosures, the sync breakdown and the folded price history.
-			expect(find(mount.elements(), 'details')).toHaveLength(5);
+			// Advanced filters, the folded no-value group (a salvage row has no sale value), the two
+			// salvage disclosures, the sync breakdown and the folded price history.
+			expect(find(mount.elements(), 'details')).toHaveLength(6);
 		});
 
 	it.each([
@@ -76,15 +77,17 @@ describe('Inventory Advisor view', () => {
 		expect(inventoryAdvisorScopeSummary(rows, { query: 'zzz', action: 'all', groupBy: 'action' }).outsideReasons)
 			.toEqual(['bank', 'materials', 'keep', 'review', 'filters']);
 
+		// 26 sep 2026: nothing is hidden by default any more, so the default render shows every
+		// store with nothing left outside the filter.
 		expect(withText(render(model, 'es').elements(),
-			'Mostrando: bolsas y almacén compartido · 4 objetos fuera del filtro (banco, materiales, conservar, revisar)'))
+			'Mostrando: bolsas y almacén compartido, banco, materiales y entrega del bazar'))
 			.toHaveLength(1);
 		expect(withText(render(model, 'en').elements(),
-			'Showing: bags and shared inventory · 4 items outside the filter (bank, materials, keep, review)'))
+			'Showing: bags and shared inventory, bank, materials, and Trading Post delivery'))
 			.toHaveLength(1);
 	});
 
-	it('shows free slots, the low-space verdict and the material floor, and orders by space only when low (H18.15)', () => {
+	it('shows the low-space warning without changing descending net-value order', () => {
 		const heavy = row({ id: '#/explanations/1/0', itemId: 1, name: 'Oro', action: 'sell', slotsFreed: 0,
 			value: { status: 'available', copper: 90_000, route: 'instant_sell' } });
 		const bulky = row({ id: '#/explanations/2/0', itemId: 2, name: 'Bulto', action: 'vendor', slotsFreed: 2,
@@ -100,7 +103,7 @@ describe('Inventory Advisor view', () => {
 		const mount = render(low, 'es');
 		const copy = text(mount.elements());
 		expect(copy).toContain('Huecos libres: bolsas 3/30 · banco 4/30 · almacén compartido sin datos');
-		expect(copy).toContain('Poco espacio: 7 huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.');
+		expect(copy).toContain('Poco espacio: 7 huecos libres entre bolsas y banco (aviso con 20 o menos).');
 		expect(copy).toContain('Materiales: al menos 1500 por material (mínimo visto en tu almacén)');
 		expect(only(find(mount.elements(), 'meter')).attributes.get('value')).toBe('53');
 		// `low`/`optimum` turn the threshold crossing into the meter's own alert state
@@ -111,7 +114,7 @@ describe('Inventory Advisor view', () => {
 		expect(meter.attributes.get('high')).toBe('40');
 		// H18.37: the single list still lists the slot-freeing row first and says what it frees.
 		const rowNames = find(mount.elements(), 'strong').map((cell) => text(walk(cell)).trim());
-		expect(rowNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Bulto', 'Oro']);
+		expect(rowNames.filter((name) => name === 'Bulto' || name === 'Oro')).toEqual(['Oro', 'Bulto']);
 		expect(copy).toContain('2 huecos');
 
 		const plenty = render(storageModel([heavy, bulky], false), 'en');
@@ -535,20 +538,25 @@ describe('Inventory Advisor view', () => {
 		]);
 	});
 
-	it('keeps discard reviews out of the filter while rendering an explicit warning-only proof surface if wired', () => {
+	it('shows discard reviews by default (26 sep 2026: nothing hidden by default) and renders an explicit warning-only proof surface if wired', () => {
 		const mount = render(readyModel());
 		const action = controlWithLabel(mount.elements(), 'select', 'Filtrar acción');
 		expect(action.children.map((option) => option.value)).not.toEqual(expect.arrayContaining(['keep', 'review', 'discard_review']));
-		expect(text(mount.elements())).not.toContain('⚠ Revisión irreversible');
-		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
-		if (review === undefined) throw new Error('Expected the review visibility option.');
-		review.checked = true;
-		review.dispatch('change');
 		expect(text(mount.elements())).toContain('⚠ Revisión irreversible');
+		// Grouping by action still labels it with its own explicit warning heading.
+		const group = controlWithLabel(mount.elements(), 'select', 'Agrupar por');
+		group.value = 'action';
+		group.dispatch('change');
 		expect(byClass(mount.elements(), 'tyrian-inventory__group-heading')
 			.map((element) => element.textContent)).toContain('⚠ Revisión irreversible');
 		expect(find(mount.elements(), 'button').some((button) => walk(button).some((element) => element.textContent?.includes('irreversible') === true))).toBe(false);
 		expect(find(mount.elements(), 'dialog')).toEqual([]);
+		// Unchecking "Pendientes sin recomendación" hides it again: the switch still narrows the view.
+		const review = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox').at(-1);
+		if (review === undefined) throw new Error('Expected the review visibility option.');
+		review.checked = false;
+		review.dispatch('change');
+		expect(text(mount.elements())).not.toContain('⚠ Revisión irreversible');
 	});
 
 	it('renders one semantic list and long content without raw action or coverage enums in Spanish and English', () => {
@@ -674,12 +682,15 @@ describe('Inventory Advisor view', () => {
 			row({ itemId: 5, action: 'sell', quantity: 1, allocations: [allocation('#/positions/5/0', 1)], value: { status: 'available', route: 'instant_sell', copper: 100 } }),
 			row({ itemId: 5, action: 'list', quantity: 1, allocations: [allocation('#/positions/5/1', 1)], value: { status: 'unavailable', route: null } }),
 		])).toMatchObject({ items: 1, pricedItems: 0, unpricedItems: 1, knownCopper: 100 });
+		// 26 sep 2026: the two rows with no demonstrated value fold into their own group, whose
+		// summary states the count; the group's own subtotal states it apart, never as a claim
+		// about the whole "Qué hacer ahora" line, which no longer carries a value line at all.
 		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows }] });
-		expect(text(mount.elements())).toContain('Sin precio demostrado: 2 objetos.');
+		expect(text(mount.elements())).toContain('2 objetos sin valor de venta');
 		expect(text(mount.elements())).toContain('2 sin precio');
 	});
 
-	it('uses one price-or-fallback contract for row totals, unit values, and aggregate value', () => {
+	it('uses one price-or-fallback contract for row totals and unit values', () => {
 		const model: InventoryAdvisorViewModel = {
 			...readyModel(),
 			groups: [{ key: 'market', rows: [
@@ -696,10 +707,12 @@ describe('Inventory Advisor view', () => {
 			return text(walk(listRow));
 		};
 		expect(rowText('Con precio')).toContain('0 oro · 0 plata · 41 cobre');
-		expect(rowText('Con precio')).toContain('0 oro · 1 plata · 23 cobre');
+		expect(rowText('Con precio')).toContain('0g 1s 23c');
 		expect(rowText('Sin precio').match(/No disponible/gu)).toHaveLength(2);
 		expect(rowText('No aplica').match(/No aplica/gu)?.length).toBeGreaterThanOrEqual(2);
-		expect(text(mount.elements())).toContain('Valor conocido: 0 oro · 1 plata · 23 cobre');
+		// 26 sep 2026: "Con precio" is the only priced row, so its own group's subtotal (not a
+		// separate "Qué hacer ahora" value line, gone) states the same known total.
+		expect(text(mount.elements())).toContain('Subtotal · 1 objetos');
 	});
 
 	it('distinguishes a read empty optional store from unavailable or restricted stores', () => {
@@ -743,7 +756,7 @@ describe('Inventory Advisor view', () => {
 			.toEqual([true, false]);
 	});
 
-	it('puts the rows that free the most occupied slots before high-gold rows in the default priority', () => {
+	it('orders by net value independently of occupied slots', () => {
 		const valuable = row({
 			id: '#/explanations/1/0', itemId: 1, name: 'Mucho oro', action: 'sell',
 			value: { status: 'available', route: 'instant_sell', copper: 1_000_000 },
@@ -761,8 +774,26 @@ describe('Inventory Advisor view', () => {
 		});
 
 		expect(sortInventoryAdvisorRows([valuable, oneSlot, deadWeight], 'value_desc', 'es')
-			.map((entry) => entry.itemId)).toEqual([2, 3, 1]);
+			.map((entry) => entry.itemId)).toEqual([1, 2, 3]);
 	});
+
+	it('keeps waiting decisions out of sell-now summaries and filters', () => {
+		const waiting = row({ action: 'sell', decision: { action: 'hold', reason: 'price_history_insufficient', until: null, missing: null,
+			pricePercentile: null, priceCoverageDays: null, priceQuotedAt: null, priceHistoryLastDay: null,
+			sellWindowFromDay: null, sellWindowToDay: null, sellOrWait: null } });
+		const mount = render({ ...readyModel(), groups: [{ key: 'market', rows: [waiting] }] });
+		expect(byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action')).toHaveLength(0);
+		expect(filterInventoryAdvisorRows([waiting], { query: '', action: 'sell', groupBy: 'none' })).toEqual([]);
+	});
+
+ it('renders compact exact money with a complete accessible label', () => {
+  const priced = row({ value: { status: 'available', copper: 123456789, route: 'instant_sell' } });
+  const mount = render({ ...readyModel(), groups: [{ key: 'market', rows: [priced] }] });
+  const cell = byClass(mount.elements(), 'tyrian-inventory__money')[0]!;
+  expect(cell.textContent).toBe('12345g 67s 89c');
+  expect(cell.attributes.get('aria-label')).toContain('12345 oro · 67 plata · 89 cobre');
+  expect(cell.attributes.get('title')).toBe('12345 oro · 67 plata · 89 cobre');
+ });
 
 	it('shows value concentration in value-desc order against the existing visible total', () => {
 		const rows = [
@@ -844,31 +875,34 @@ describe('Inventory Advisor view', () => {
 		const mount = render(model);
 		const head = only(byClass(mount.elements(), 'tyrian-inventory__head'));
 		const columnLabels = head.children.map((cell) => cell.textContent);
-		expect(columnLabels).toHaveLength(6);
+		// 26 sep 2026: "explanation" also moved into the row's own disclosure (item, quantity,
+		// action, value, keep — five columns, not six).
+		expect(columnLabels).toHaveLength(5);
 		expect(columnLabels).not.toContain('Pilas');
 		expect(columnLabels).not.toContain('Disponible');
+		expect(columnLabels).not.toContain('Por qué y datos');
 		// Owned/available now live in the row's own detail disclosure, not a separate column.
 		expect(text(mount.elements())).toContain('3 (0 disponibles)');
 	});
 
-	it('shows direct actions by default and keeps preserve/review context explicitly opt-in', () => {
+	it('shows every action by default (26 sep 2026: nothing hidden by default) and lets "Incluir además" narrow the view', () => {
 		const mount = render(allStatesAndActionsModel());
 		const options = find(mount.elements(), 'input').filter((input) => input.type === 'checkbox');
 		expect(options).toHaveLength(5);
-		expect(options.every((input) => input.checked === false)).toBe(true);
+		expect(options.every((input) => input.checked === true)).toBe(true);
 		expect(options.every((input) => !input.disabled)).toBe(true);
 		const itemRows = (): number => find(mount.elements(), 'li').filter((element) => element.attributes.has('aria-label')).length;
-		expect(itemRows()).toBe(6);
+		expect(itemRows()).toBe(8);
 		const keep = options[3];
 		if (keep === undefined) throw new Error('Expected the keep visibility option.');
-		keep.checked = true;
+		keep.checked = false;
 		keep.dispatch('change');
 		expect(itemRows()).toBe(7);
 		const review = options[4];
 		if (review === undefined) throw new Error('Expected the review visibility option.');
-		review.checked = true;
+		review.checked = false;
 		review.dispatch('change');
-		expect(itemRows()).toBe(8);
+		expect(itemRows()).toBe(6);
 	});
 
 	it('names recommendation summaries as non-executing list filters and handles zero, one, and many types', () => {
@@ -883,16 +917,20 @@ describe('Inventory Advisor view', () => {
 		};
 		const mount = render(model);
 		const allText = text(mount.elements());
+		// 26 sep 2026: "Qué hacer ahora" reduced to its label and the pressable counts; the prose
+		// lines (distinct items, known value, coverage, navigation hint) are gone.
 		expect(allText).toContain('Qué hacer ahora');
-		expect(allText).toContain('Objetos distintos: 3 · Unidades: 9');
 		expect(allText).not.toContain('Pilas:');
-		expect(allText).toContain('Valor conocido: 3 oro · 74 plata · 44 cobre');
-		expect(allText).toContain('Todos los objetos visibles tienen precio demostrado.');
-		expect(allText).toContain('Estos resúmenes solo filtran la lista; no ejecutan acciones.');
+		expect(allText).not.toContain('Objetos distintos:');
+		expect(allText).not.toContain('Valor conocido:');
+		expect(allText).not.toContain('Estos resúmenes solo filtran la lista');
 		expect(allText).toContain('Ver 1 tipo: Vender ya');
 		expect(allText).toContain('Ver 1 tipo: Publicar en el bazar');
 		expect(allText).toContain('Ver 1 tipo: Vender al mercader');
-		expect(allText).not.toContain('Context only');
+		// "Context only" (action `keep`, no demonstrated value) is visible by default now, folded
+		// in the no-value group rather than hidden.
+		expect(allText).toContain('Context only');
+		expect(allText).toContain('1 objeto sin valor de venta');
 		const summaryButtons = byClass(mount.elements(), 'tyrian-inventory-advisor__recommendation-action');
 		expect(summaryButtons).toHaveLength(3);
 		expect(summaryButtons.every((button) => !button.className.includes('mod-cta'))).toBe(true);

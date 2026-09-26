@@ -1,3 +1,4 @@
+import { formatCopperVisual } from '../core/copper-format';
 import { setIcon } from 'obsidian';
 
 import type { Locale, Translator } from '../core/i18n';
@@ -26,7 +27,12 @@ import type {
 export type InventoryAdvisorViewState = 'empty' | 'loading' | 'ready' | 'limited' | 'blocked' | 'invalid';
 export type InventoryAdvisorViewAction = InventoryAdvisorViewRow['action'];
 export type InventoryAdvisorViewFilterAction = Exclude<InventoryAdvisorViewAction, 'discard_review'>;
-export type InventoryAdvisorViewGroupBy = 'action' | 'evidence';
+/**
+ * 26 sep 2026: the Obsidian Base David compares this view against shows one flat list ordered by
+ * net value, no per-action or per-coverage headings. `none` is now the default for that reason;
+ * `action`/`evidence` stay as opt-in groupings for whoever wants them.
+ */
+export type InventoryAdvisorViewGroupBy = 'none' | 'action' | 'evidence';
 export type InventoryAdvisorViewSort = 'value_desc' | 'quantity_desc' | 'name_asc';
 export type InventoryAdvisorViewCoverage = InventoryAdvisorViewRow['coverage'];
 export type InventoryAdvisorViewCoverageState = InventoryAdvisorViewCoverage[keyof InventoryAdvisorViewCoverage];
@@ -162,7 +168,7 @@ export function filterInventoryAdvisorRows(
 		...row,
 		ownedQuantity: ownedByItem.get(row.itemId) ?? row.quantity,
 		availableQuantity: availableByItem.get(row.itemId) ?? 0,
-	})).filter((row) => (filters.action === 'all' || row.action === filters.action)
+	})).filter((row) => (filters.action === 'all' || (row.decision?.action ?? row.action) === filters.action)
 		&& (filters.showKeep === true || row.action !== 'keep')
 		&& (filters.showReview === true || (row.action !== 'review' && row.action !== 'discard_review'))
 		&& (query.length === 0 || row.name.toLowerCase().includes(query) || String(row.itemId).includes(query)));
@@ -293,11 +299,8 @@ export function sortInventoryAdvisorRows(
 	sort: InventoryAdvisorViewSort,
 	locale = 'en',
 ): InventoryAdvisorViewRow[] {
-	const burdenByItem = aggregateInventoryBurden(rows);
 	return [...rows].sort((left, right) => {
 		if (sort === 'value_desc') {
-			const burden = compareBurden(left, right, burdenByItem);
-			if (burden !== 0) return burden;
 			const value = rowCopper(right) - rowCopper(left);
 			if (value !== 0) return value;
 		}
@@ -305,38 +308,6 @@ export function sortInventoryAdvisorRows(
 		return compareDisplayText(left.name, right.name, locale) || left.itemId - right.itemId
 			|| compareDisplayText(left.id, right.id, 'en');
 	});
-}
-
-function aggregateInventoryBurden(
-	rows: readonly InventoryAdvisorViewRow[],
-): ReadonlyMap<number, { occupiedSlots: number; quantity: number }> {
-	const positionsByItem = new Map<number, Set<string>>();
-	const quantityByItem = new Map<number, number>();
-	for (const row of rows) {
-		if (row.burden === null) continue;
-		const positions = positionsByItem.get(row.itemId) ?? new Set<string>();
-		for (const allocation of row.allocations) positions.add(allocation.positionRef);
-		positionsByItem.set(row.itemId, positions);
-		quantityByItem.set(row.itemId, (quantityByItem.get(row.itemId) ?? 0) + row.quantity);
-	}
-	return new Map([...positionsByItem].map(([itemId, positions]) => [itemId, {
-		occupiedSlots: positions.size,
-		quantity: quantityByItem.get(itemId) ?? 0,
-	}]));
-}
-
-function compareBurden(
-	left: InventoryAdvisorViewRow,
-	right: InventoryAdvisorViewRow,
-	burdenByItem: ReadonlyMap<number, { occupiedSlots: number; quantity: number }>,
-): number {
-	const leftBurden = burdenByItem.get(left.itemId);
-	const rightBurden = burdenByItem.get(right.itemId);
-	if (leftBurden === undefined && rightBurden === undefined) return 0;
-	if (leftBurden === undefined) return 1;
-	if (rightBurden === undefined) return -1;
-	return rightBurden.occupiedSlots - leftBurden.occupiedSlots
-		|| rightBurden.quantity - leftBurden.quantity;
 }
 
 /** Calculates visible value concentration in the same descending order used by the queue. */
@@ -409,14 +380,19 @@ function compareDisplayText(left: string, right: string, locale: string): number
 	return collated !== 0 ? collated : left < right ? -1 : left > right ? 1 : 0;
 }
 
-/** Groups already-filtered rows for a scannable wide, compact, or card surface. */
+/**
+ * Groups already-filtered rows for a scannable wide, compact, or card surface. `none` (the
+ * default, 26 sep 2026) keeps every row in the caller's own order, in one group with no heading,
+ * the same flat list the Base shows.
+ */
 export function groupInventoryAdvisorRows(
 	rows: readonly InventoryAdvisorViewRow[],
 	groupBy: InventoryAdvisorViewGroupBy,
 ): InventoryAdvisorViewGroup[] {
+	if (groupBy === 'none') return rows.length === 0 ? [] : [{ key: 'none', rows: [...rows] }];
 	const groups = new Map<string, InventoryAdvisorViewRow[]>();
 	for (const row of rows) {
-		const key = groupBy === 'action' ? row.action : evidenceGroup(row.coverage);
+		const key = groupBy === 'action' ? row.decision?.action ?? row.action : evidenceGroup(row.coverage);
 		const group = groups.get(key) ?? [];
 		group.push(row);
 		groups.set(key, group);
@@ -435,7 +411,7 @@ export function renderInventoryAdvisorView(
 	container: HTMLElement,
 	model: InventoryAdvisorViewModel,
 	translator: Translator,
-	initialFilters: InventoryAdvisorViewFilters = { query: '', action: 'all', groupBy: 'action' },
+	initialFilters: InventoryAdvisorViewFilters = { query: '', action: 'all', groupBy: 'none' },
 	interactions: InventoryAdvisorViewInteractions = {},
 ): void {
 	const mounted = mountedViews.get(container);
@@ -455,7 +431,10 @@ function mountInventoryAdvisorView(
 ): MountedInventoryAdvisorView {
 	let model = initialModel;
 	let translator = initialTranslator;
-	let filters = { includeBank: false, includeMaterials: false, includeDelivery: false, showKeep: false, showReview: false, ...initialFilters };
+	// 26 sep 2026: nothing is hidden by default — the Base David compares this view against shows
+	// every store and every row; these switches stay available to narrow the view, never to widen
+	// a default that used to hide 1000+ objects (bank, materials, keep, review) silently.
+	let filters = { includeBank: true, includeMaterials: true, includeDelivery: true, showKeep: true, showReview: true, ...initialFilters };
 	let interactions = initialInteractions;
 	// `model.contentVersion` only bumps when the advisor's actual content changes (a
 	// fresh capture, an invalidate, a block); `current()` clones on every call, so a
@@ -629,7 +608,7 @@ function mountInventoryAdvisorView(
 	const groupLabelText = createSpan();
 	const group = createEl('select');
 	const groupOptions = new Map<InventoryAdvisorViewGroupBy, HTMLOptionElement>();
-	for (const candidate of ['action', 'evidence'] as const) {
+	for (const candidate of ['none', 'action', 'evidence'] as const) {
 		const option = appendOption(group, candidate, '', filters.groupBy);
 		groupOptions.set(candidate, option);
 	}
@@ -717,10 +696,9 @@ function mountInventoryAdvisorView(
 		const visible = model.status === 'ready' || model.status === 'limited';
 		const allRows = visible ? flattenInventoryAdvisorRows(model.groups) : [];
 		const order = filters.sort ?? 'value_desc';
-		const lowSpace = model.storageSpace?.lowSpace ?? null;
 		const sorted = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, filters), order, translator.locale) : [];
 		// H18.15: only the value order yields to space; an explicit quantity or name order stands.
-		const rows = order === 'value_desc' ? prioritizeInventoryAdvisorRowsBySpace(sorted, lowSpace) : sorted;
+		const rows = sorted;
 		const directRows = visible ? sortInventoryAdvisorRows(filterInventoryAdvisorRows(allRows, {
 			...filters, action: 'all', showKeep: false, showReview: false,
 		}), order, translator.locale) : [];
@@ -886,6 +864,7 @@ function mountInventoryAdvisorView(
 		for (const candidate of inventoryActions()) actionOptions.get(candidate)!.textContent = actionLabelFor(candidate, translator);
 		groupLabelText.textContent = translator.t('advisor.view.group');
 		group.setAttribute('aria-label', translator.t('advisor.view.group'));
+		groupOptions.get('none')!.textContent = translator.t('advisor.view.groupNone');
 		groupOptions.get('action')!.textContent = translator.t('advisor.view.groupAction');
 		groupOptions.get('evidence')!.textContent = translator.t('advisor.view.groupEvidence');
 		characterLabelText.textContent = translator.t('advisor.view.character');
@@ -992,9 +971,15 @@ function renderResults(
 		}
 		return content;
 	}
-	const groups = groupInventoryAdvisorRows(rows, groupBy);
+	// 26 sep 2026: a row with no demonstrated sale value (materials to deposit, "not applicable",
+	// no bid) never earns a place among the priced ones — it goes in one folded group at the end,
+	// counted but out of the way, instead of pushing rows the Base would show first further down.
+	const valuedRows = rows.filter((row) => row.value.status === 'available');
+	const noValueRows = rows.filter((row) => row.value.status !== 'available');
+	const groups = groupInventoryAdvisorRows(valuedRows, groupBy);
 	const concentration = inventoryAdvisorValueConcentration(rows);
-	content.append(renderInventoryList(groups, groupBy, translator, concentration, rowContext));
+	if (groups.length > 0) content.append(renderInventoryList(groups, groupBy, translator, concentration, rowContext));
+	if (noValueRows.length > 0) content.append(renderNoValueGroup(noValueRows, groupBy, translator, concentration, rowContext));
 	return content;
 }
 
@@ -1046,12 +1031,19 @@ export function renderStorageSpace(storageSpace: InventoryAdvisorStorageSpaceVie
 	}
 	const stores = createEl('p');
 	stores.className = 'tyrian-inventory-advisor__storage-stores';
+	// H18.38: `bags` names WHO it counts once the capture chose one, instead of the generic word —
+	// never claims a character without a real choice behind it (`lastPlayedCharacter` from
+	// `chooseLastPlayedCharacter`, `character-activity.ts`).
+	const lastPlayedCharacter = storageSpace.lastPlayedCharacter ?? null;
+	const bagsLabel = lastPlayedCharacter === null
+		? translator.t('advisor.view.storage.name.bags')
+		: translator.t('advisor.view.storage.name.bagsFor', { character: lastPlayedCharacter.character });
 	stores.textContent = translator.t('advisor.view.storage.freeSlots', {
-		stores: ([['bags', storageSpace.bags], ['bank', storageSpace.bank], ['sharedInventory', storageSpace.sharedInventory]] as const)
-			.map(([store, count]) => count === null
-				? translator.t('advisor.view.storage.unknown', { store: translator.t(`advisor.view.storage.name.${store}`) })
+		stores: ([['bags', storageSpace.bags, bagsLabel], ['bank', storageSpace.bank, null], ['sharedInventory', storageSpace.sharedInventory, null]] as const)
+			.map(([store, count, label]) => count === null
+				? translator.t('advisor.view.storage.unknown', { store: label ?? translator.t(`advisor.view.storage.name.${store}`) })
 				: translator.t('advisor.view.storage.count', {
-					store: translator.t(`advisor.view.storage.name.${store}`), free: count.free, total: count.total,
+					store: label ?? translator.t(`advisor.view.storage.name.${store}`), free: count.free, total: count.total,
 				}))
 			.join(' · '),
 	});
@@ -1094,6 +1086,12 @@ const DIRECT_INVENTORY_ACTIONS: readonly DirectInventoryAdvisorAction[] = [
 	'deposit_material', 'sell', 'list', 'vendor', 'salvage', 'use', 'open',
 ];
 
+/**
+ * 26 sep 2026: reduced from a card (heading, four lines of prose, a grid of tall boxes) to one
+ * line of small pressable counts. It only filters the list below; it never carries out an action,
+ * and it no longer claims a "Valor conocido" that read "No disponible" whenever the rows visible
+ * happened to have no market price, even while priced rows sat right below it.
+ */
 function renderRecommendationSummary(
 	rows: readonly InventoryAdvisorViewRow[],
 	selectedAction: InventoryAdvisorViewFilters['action'],
@@ -1103,56 +1101,27 @@ function renderRecommendationSummary(
 	const summary = createEl('section');
 	summary.className = 'tyrian-inventory-advisor__recommendation-summary';
 	summary.setAttribute('aria-label', translator.t('advisor.view.recommendationTitle'));
-	const heading = createEl('h3');
-	heading.textContent = translator.t('advisor.view.recommendationTitle');
-	const totals = summarizeInventoryAdvisorRows(rows);
-	const intro = createEl('p');
-	intro.textContent = translator.t('advisor.view.recommendationIntro', {
-		items: totals.items, quantity: totals.units,
-	});
-	const valueLine = createEl('p');
-	valueLine.className = 'tyrian-inventory-advisor__recommendation-value';
-	valueLine.textContent = translator.t('advisor.view.recommendationValue', {
-		value: aggregateInventoryAdvisorValue(rows, translator),
-	});
-	const coverageLine = createEl('p');
-	coverageLine.className = 'tyrian-inventory-advisor__recommendation-coverage';
-	coverageLine.textContent = totals.unpricedItems === 0
-		? translator.t('advisor.view.recommendationPricedAll')
-		: translator.t('advisor.view.recommendationUnpriced', { items: totals.unpricedItems });
-	const navigationHint = createEl('p');
-	navigationHint.className = 'tyrian-inventory-advisor__recommendation-navigation';
-	navigationHint.textContent = translator.t('advisor.view.recommendationNavigation');
+	const label = createSpan();
+	label.className = 'tyrian-inventory-advisor__recommendation-label';
+	label.textContent = translator.t('advisor.view.recommendationTitle');
 	const actions = createDiv();
 	actions.className = 'tyrian-inventory-advisor__recommendation-actions';
 	for (const action of DIRECT_INVENTORY_ACTIONS) {
-		const actionRows = rows.filter((row) => row.action === action);
+		const actionRows = rows.filter((row) => (row.decision?.action ?? row.action) === action);
 		if (actionRows.length === 0) continue;
 		const button = createEl('button');
 		button.type = 'button';
 		button.className = 'tyrian-inventory-advisor__recommendation-action';
 		button.setAttribute('aria-pressed', String(selectedAction === action));
-		const label = createEl('strong');
 		const actionTotals = summarizeInventoryAdvisorRows(actionRows);
-		label.textContent = translator.t(actionTotals.items === 1
+		button.textContent = translator.t(actionTotals.items === 1
 			? 'advisor.view.recommendationActionOne' : 'advisor.view.recommendationActionMany', {
 				items: actionTotals.items, action: actionLabelFor(action, translator),
 			});
-		const detail = createSpan();
-		detail.textContent = translator.t('advisor.view.recommendationAction', {
-			quantity: actionTotals.units, value: aggregateInventoryAdvisorValue(actionRows, translator),
-		});
-		button.append(label, detail);
-		if (actionTotals.unpricedItems > 0) {
-			const unpriced = createSpan();
-			unpriced.className = 'tyrian-inventory-advisor__recommendation-unpriced';
-			unpriced.textContent = translator.t('advisor.view.unpricedShort', { items: actionTotals.unpricedItems });
-			button.append(unpriced);
-		}
 		button.addEventListener('click', () => onSelectAction(action));
 		actions.append(button);
 	}
-	summary.append(heading, intro, valueLine, coverageLine, navigationHint, actions);
+	summary.append(label, actions);
 	return summary;
 }
 
@@ -1176,19 +1145,21 @@ function renderInventoryList(
 	head.setAttribute('aria-hidden', 'true');
 	for (const label of INVENTORY_LIST_COLUMNS) {
 		const cell = createSpan();
-		cell.textContent = label === 'explanation' ? translator.t('advisor.view.list.headExplanation')
-			: label === 'value' ? translator.t('sale.row.head.value')
-				: label === 'keep' ? translator.t('advisor.view.keep.button')
-					: translator.t(`advisor.view.${label}`);
+		cell.textContent = label === 'value' ? translator.t('sale.row.head.value')
+			: label === 'keep' ? translator.t('advisor.view.keep.button')
+				: translator.t(`advisor.view.${label}`);
 		if (label === 'value') cell.className = 'is-num';
 		head.append(cell);
 	}
 	list.append(head);
 	for (const group of groups) {
-		const heading = createEl('li');
-		heading.className = 'tyrian-inventory__group-heading';
-		heading.textContent = groupLabel(group.key, groupBy, translator);
-		list.append(heading);
+		// `none` (the default): one flat list, like the Base, with no heading splitting it up.
+		if (groupBy !== 'none') {
+			const heading = createEl('li');
+			heading.className = 'tyrian-inventory__group-heading';
+			heading.textContent = groupLabel(group.key, groupBy, translator);
+			list.append(heading);
+		}
 		for (const row of group.rows) {
 			list.append(renderInventoryListRow(row, translator, concentration.get(row.id) ?? null, rowContext));
 		}
@@ -1197,7 +1168,34 @@ function renderInventoryList(
 	return list;
 }
 
-const INVENTORY_LIST_COLUMNS = ['item', 'quantity', 'action', 'value', 'explanation', 'keep'] as const;
+/**
+ * 26 sep 2026: rows with no demonstrated sale value, folded behind one summary instead of sitting
+ * among the priced rows the Base orders by that same value. Closed by default (`<details>`'s own
+ * behaviour); the count in the summary never hides that they still exist.
+ */
+function renderNoValueGroup(
+	rows: readonly InventoryAdvisorViewRow[],
+	groupBy: InventoryAdvisorViewGroupBy,
+	translator: Translator,
+	concentration: ReadonlyMap<string, InventoryAdvisorValueConcentration>,
+	rowContext: RowRenderContext,
+): HTMLElement {
+	const details = createEl('details');
+	details.className = 'tyrian-inventory-advisor__no-value';
+	const summary = createEl('summary');
+	summary.textContent = translator.t(
+		summarizeInventoryAdvisorRows(rows).items === 1 ? 'advisor.view.noValueGroup.one' : 'advisor.view.noValueGroup.many',
+		{ count: summarizeInventoryAdvisorRows(rows).items },
+	);
+	details.append(summary);
+	// Same grouping the caller chose for the priced rows above (e.g. "Acción" still labels a
+	// discard review with its own explicit warning heading, `groupLabel`'s own `discard_review`
+	// branch), never hardcoded, so switching it groups both halves of the list consistently.
+	details.append(renderInventoryList(groupInventoryAdvisorRows(rows, groupBy), groupBy, translator, concentration, rowContext));
+	return details;
+}
+
+const INVENTORY_LIST_COLUMNS = ['item', 'quantity', 'action', 'value', 'keep'] as const;
 
 function renderInventoryListRow(
 	row: InventoryAdvisorViewRow,
@@ -1225,6 +1223,14 @@ function renderInventoryListRow(
 	const qtyValue = createEl('b');
 	qtyValue.textContent = String(row.quantity);
 	qtyCell.append(qtyValue);
+	// 26 sep 2026: the quantity appears once above; a second, labeled figure only when a caller
+	// actually knows the free/reserved split AND it differs from `quantity` — never the same number
+	// twice ("313 · 313").
+	if (row.reservedQuantity != null && row.reservedQuantity > 0 && row.reservedQuantity !== row.quantity) {
+		const reservedLine = createEl('small');
+		reservedLine.textContent = translator.t('advisor.view.qty.reserved', { count: row.reservedQuantity });
+		qtyCell.append(reservedLine);
+	}
 
 	const actionCell = createDiv();
 	actionCell.className = 'tyrian-inventory__cell c-action';
@@ -1243,38 +1249,18 @@ function renderInventoryListRow(
 	moneyCell.className = 'tyrian-inventory__cell c-money tyrian-inventory__money';
 	if (row.value.status !== 'available') moneyCell.setAttribute('data-unknown', 'true');
 	moneyCell.setAttribute('aria-label', `${translator.t('sale.row.head.value')}: ${valueLabel(row, translator)}`);
-	moneyCell.textContent = valueLabel(row, translator);
-
-	const whyCell = createDiv();
-	whyCell.className = 'tyrian-inventory__cell c-why tyrian-inventory__why';
-	whyCell.textContent = explanationLabel(row, translator);
-
-	const dataCell = createDiv();
-	dataCell.className = 'tyrian-inventory__cell c-data tyrian-inventory__data';
-	const dataLine = [decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)].filter((part) => part !== null).join(' · ');
-	if (dataLine.length > 0) {
-		dataCell.setAttribute('aria-label', `${translator.t('advisor.view.list.headExplanation')}: ${dataLine}`);
-		const dataValue = createSpan();
-		dataValue.textContent = dataLine;
-		dataCell.append(dataValue);
-	}
-	if (row.containerEconomy !== undefined) {
-		const viewInSale = createEl('button');
-		viewInSale.className = 'mod-link';
-		viewInSale.type = 'button';
-		viewInSale.textContent = translator.t('advisor.view.list.viewInSale');
-		viewInSale.addEventListener('click', () => rowContext.onOpenSale?.());
-		dataCell.append(viewInSale);
-	}
+	moneyCell.setAttribute('title', valueLabel(row, translator));
+	moneyCell.setAttribute('role', 'img');
+	moneyCell.textContent = row.value.status === 'available' ? formatCopperVisual(row.value.copper) : valueLabel(row, translator);
 
 	const keepCell = createDiv();
 	keepCell.className = 'tyrian-inventory__cell c-keep tyrian-inventory__keep';
 	const keep = keepControl(row, translator, rowContext.keep);
 	if (keep !== null) keepCell.append(keep);
 
-	item.append(itemCell, qtyCell, actionCell, moneyCell, whyCell, dataCell, keepCell);
+	item.append(itemCell, qtyCell, actionCell, moneyCell, keepCell);
 
-	const detail = rowDetailDisclosure(row, translator, concentration, rowContext.showSlotsFreed);
+	const detail = rowDetailDisclosure(row, translator, concentration, rowContext.showSlotsFreed, rowContext.onOpenSale);
 	if (detail !== null) item.append(detail);
 	return item;
 }
@@ -1283,19 +1269,36 @@ function renderInventoryListRow(
  * H18.37: "En propiedad", "Ubicación" y "Evidencia" (H18.31, lámina 3.1) live behind one
  * disclosure per row instead of three columns; every value below reuses the same label
  * functions the removed table/card layout already called, so nothing it showed is lost.
+ *
+ * 26 sep 2026: "Por qué" (`explanationLabel`) and the sell-now-or-wait data line, previously a
+ * visible column each, join them here too — decision E (H18.31, lámina 3.1) wants exactly one
+ * compact visible line per row (icon, name, quantity, where, what to do, net), everything else
+ * on demand.
  */
 function rowDetailDisclosure(
 	row: InventoryAdvisorViewRow,
 	translator: Translator,
 	concentration: InventoryAdvisorValueConcentration | null,
 	showSlotsFreed: boolean,
+	onOpenSale?: () => void,
 ): HTMLElement | null {
 	const details = createEl('details');
 	details.className = 'tyrian-inventory__more';
 	const summary = createEl('summary');
 	summary.textContent = translator.t('advisor.view.list.detailsSummary');
 	details.append(summary);
+	if (row.containerEconomy !== undefined) {
+		const viewInSale = createEl('button');
+		viewInSale.className = 'mod-link';
+		viewInSale.type = 'button';
+		viewInSale.textContent = translator.t('advisor.view.list.viewInSale');
+		viewInSale.addEventListener('click', () => onOpenSale?.());
+		details.append(viewInSale);
+	}
 	const list = createEl('dl');
+	const explanationAndMoment = [explanationLabel(row, translator), decisionMomentLabel(row, translator), sellOrWaitLabel(row, translator)]
+		.filter((part): part is string => part !== null && part.length > 0).join(' · ');
+	if (explanationAndMoment.length > 0) addDefinition(list, translator.t('advisor.view.list.headExplanation'), explanationAndMoment);
 	addDefinition(list, translator.t('advisor.view.owned'), ownershipLabel(row, translator));
 	addDefinition(list, translator.t('advisor.view.unitValue'), unitValueLabel(row, translator));
 	// The row's own money cell already shows `valueLabel`; only the concentration this row adds
@@ -1332,7 +1335,9 @@ function renderInventoryGroupSubtotal(
 	subtotal.className = 'tyrian-inventory__row tyrian-inventory-advisor__subtotal';
 	const label = createDiv();
 	label.className = 'tyrian-inventory__cell c-item';
-	label.textContent = translator.t('advisor.view.subtotal', { items: totals.items });
+	label.textContent = totals.unpricedItems === 0
+		? translator.t('advisor.view.subtotal', { items: totals.items })
+		: `${translator.t('advisor.view.subtotal', { items: totals.items })} · ${translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems })}`;
 	const qty = createDiv();
 	qty.className = 'tyrian-inventory__cell c-qty';
 	const qtyValue = createEl('b');
@@ -1345,14 +1350,9 @@ function renderInventoryGroupSubtotal(
 	money.textContent = totals.pricedItems === 0
 		? translator.t('advisor.view.value.unavailable')
 		: formatInventoryAdvisorCopper(totals.knownCopper, translator);
-	const why = createDiv();
-	why.className = 'tyrian-inventory__cell c-why';
-	why.textContent = totals.unpricedItems === 0 ? '' : translator.t('advisor.view.unpricedShort', { items: totals.unpricedItems });
-	const data = createDiv();
-	data.className = 'tyrian-inventory__cell c-data';
 	const keep = createDiv();
 	keep.className = 'tyrian-inventory__cell c-keep';
-	subtotal.append(label, qty, action, money, why, data, keep);
+	subtotal.append(label, qty, action, money, keep);
 	return subtotal;
 }
 
@@ -1543,12 +1543,16 @@ function initialsFor(name: string): string {
 }
 
 /**
- * H18.37: the compact store line under the item's name (e.g. "Bolsas 412 · Banco 1938"), grouped
- * by broad store instead of `allocationLabel`'s per-slot breakdown, which moved to the row detail.
+ * H18.37: the compact store line under the item's name (e.g. "Banco · Materiales"), grouped by
+ * broad store instead of `allocationLabel`'s per-slot breakdown, which moved to the row detail.
+ *
+ * 26 sep 2026: no quantity here any more — the row's own `c-qty` cell already states it once, and
+ * repeating it here read as a duplicate ("313 · 313"). `character` names the actual character
+ * instead of the generic store name: a real row shows "Bolsas · Personaje 1", not just "bolsas".
  */
 function rowStoreLabel(source: InventoryAdvisorViewRow['allocations'][number]['location']['source'], translator: Translator): string {
 	switch (source) {
-		case 'character': return translator.t('advisor.view.storage.name.bags');
+		case 'character': return capitalizeFirst(translator.t('advisor.view.storage.name.bags'));
 		case 'shared_inventory': return translator.t('advisor.view.location.shared_inventory');
 		case 'bank': return translator.t('advisor.view.location.bank');
 		case 'materials': return translator.t('advisor.view.location.materials');
@@ -1557,19 +1561,29 @@ function rowStoreLabel(source: InventoryAdvisorViewRow['allocations'][number]['l
 	}
 }
 
+function capitalizeFirst(text: string): string {
+	return text.length === 0 ? text : text[0]!.toLocaleUpperCase() + text.slice(1);
+}
+
 function assertNeverLocationSource(value: never): string {
 	throw new Error(`Unsupported Inventory Advisor location source: ${JSON.stringify(value)}`);
 }
 
 function rowStoresSummary(row: InventoryAdvisorViewRow, translator: Translator): string {
-	const totals = new Map<string, number>();
-	const order: Array<InventoryAdvisorViewRow['allocations'][number]['location']['source']> = [];
+	const parts: string[] = [];
+	const seenSources = new Set<string>();
+	const characters: string[] = [];
+	const seenCharacters = new Set<string>();
 	for (const allocation of row.allocations) {
-		const key = allocation.location.source;
-		if (!totals.has(key)) order.push(key);
-		totals.set(key, (totals.get(key) ?? 0) + allocation.quantity);
+		const location = allocation.location;
+		if (location.source === 'character') {
+			if (!seenCharacters.has(location.character)) { seenCharacters.add(location.character); characters.push(location.character); }
+			continue;
+		}
+		if (!seenSources.has(location.source)) { seenSources.add(location.source); parts.push(rowStoreLabel(location.source, translator)); }
 	}
-	return order.map((key) => `${rowStoreLabel(key, translator)} ${String(totals.get(key))}`).join(' · ');
+	if (characters.length > 0) parts.unshift(`${rowStoreLabel('character', translator)} · ${characters.join(', ')}`);
+	return parts.join(' · ');
 }
 
 function safeItemIcon(value: string | null): string | null {
@@ -1739,13 +1753,6 @@ function formatInventoryAdvisorCopper(copper: number, translator: Translator): s
 		silver: Math.floor(copper / 100) % 100,
 		copper: copper % 100,
 	});
-}
-
-function aggregateInventoryAdvisorValue(rows: readonly InventoryAdvisorViewRow[], translator: Translator): string {
-	const available = rows.filter((row) => row.value.status === 'available');
-	const copper = available.length === 0 ? null
-		: available.reduce((total, row) => total + (row.value.status === 'available' ? row.value.copper : 0), 0);
-	return priceOrFallback(copper, 'unavailable', translator);
 }
 
 function ownershipLabel(row: InventoryAdvisorViewRow, translator: Translator): string {
@@ -2172,7 +2179,9 @@ function groupLabel(key: string, groupBy: InventoryAdvisorViewGroupBy, translato
 	if (groupBy === 'action') {
 		return key === 'discard_review'
 			? `⚠ ${translator.t('advisor.view.irreversibleReview')}`
-			: actionLabelFor(key as InventoryAdvisorViewAction, translator);
+			: key === 'hold' || key === 'hold_for_legendary' || key === 'sell_at_season'
+				? translator.t(`inventory.decision.action.${key}`)
+				: actionLabelFor(key as InventoryAdvisorViewAction, translator);
 	}
 	return evidenceLabelForGroup(key, translator);
 }
@@ -2200,7 +2209,7 @@ function selectedFilterAction(value: string): InventoryAdvisorViewFilters['actio
 }
 
 function selectedGroup(value: string): InventoryAdvisorViewGroupBy {
-	return value === 'evidence' ? 'evidence' : 'action';
+	return value === 'evidence' || value === 'action' ? value : 'none';
 }
 
 function selectedSort(value: string): InventoryAdvisorViewSort {

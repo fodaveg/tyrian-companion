@@ -1159,3 +1159,20 @@ function accountItemComposition(surface: AccountItemSurface) {
 		metadata,
 	}));
 }
+
+describe('character activity across captures', () => {
+	it('keeps the previous successful baseline across both consistency passes', async () => {
+		const activity = (age: number) => passWith({ characters: [{ name: characterName, age }] });
+		const fixture = clientFor([activity(100), activity(100), activity(120), activity(120)]);
+		const service = new StorageSnapshotService(fixture.client);
+		expect((await service.capture()).lastPlayedCharacter).toBeNull();
+		expect((await service.capture()).lastPlayedCharacter).toEqual({ character: characterName, source: 'age_delta' });
+	});
+	it('does not compare a different account against the previous account baseline', async () => {
+		const activity = (age: number) => passWith({ characters: [{ name: characterName, age }] });
+		const fixture = clientFor([activity(100), activity(100), activity(120), activity(120)], { accountIds: ['one', 'two'] });
+		const service = new StorageSnapshotService(fixture.client);
+		await service.capture();
+		expect((await service.capture()).lastPlayedCharacter).toBeNull();
+	});
+});

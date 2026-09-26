@@ -68,6 +68,7 @@ export function buildInventoryAdvisorPresentation(
 			? objects.decisions : null;
 		// H18.15: same snapshot guard as the decisions; another capture's space is never shown.
 		const storageSpace = decisionByRef === null ? null : objects?.storageSpace ?? null;
+		const valuationByDecision = decisionByRef === null ? undefined : objects?.valuationByDecision;
 		const result = source.result;
 		if (result.status === 'invalid' || result.report === null) return invalidInventoryAdvisorPresentation();
 		const contextual = 'discardContext' in source;
@@ -120,7 +121,11 @@ export function buildInventoryAdvisorPresentation(
 				protectionReasons: protectionByRef.get(decision.explanationRef) ?? [],
 				coverage: { ...line.coverage },
 				group: groupFor(presentationAction),
-				value: valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity, marketDepth),
+				value: valuationByDecision === undefined
+					? valueFor(source.input, priceByItemId, presentationAction, decision.itemId, decision.quantity, marketDepth)
+					: valuationByDecision[decision.explanationRef] == null
+						? { status: 'unavailable', route: null }
+						: { status: 'available', route: 'instant_sell', copper: valuationByDecision[decision.explanationRef]! },
 				marketComparison: comparisonByRef.get(decision.explanationRef) ?? null,
 				burden: burdenFor(line, decision, allocations, reasonCodes),
 				...(decision.materialStorage === undefined ? {} : {

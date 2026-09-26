@@ -16,6 +16,13 @@ export interface InventoryAdvisorViewRow {
 	/** H18.15: whole slots this act-now row empties; see `InventoryAdvisorPresentationRow`. */
 	slotsFreed?: number;
 	quantity: number;
+	/**
+	 * 26 sep 2026: the portion of `quantity` a goal or keep exception holds back, when a caller
+	 * knows it (e.g. the vault's own `tc_reserved_quantity`/`tc_free_quantity`). Absent or `null`
+	 * means unknown, never zero; `0` means known-and-none. The row shows `quantity` once and this
+	 * second figure only when it differs, so a caller must never pass the same number twice.
+	 */
+	reservedQuantity?: number | null;
 	allocations: InventoryAdvisorPresentationRow['allocations'];
 	reasonCodes: InventoryAdvisorPresentationRow['reasonCodes'];
 	protectionReasons: InventoryAdvisorPresentationRow['protectionReasons'];
