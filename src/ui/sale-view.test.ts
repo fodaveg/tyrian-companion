@@ -71,6 +71,7 @@ describe('sale view render', () => {
 					},
 				}),
 				yearThresholdCopper: 430,
+				openVsSell: null,
 			},
 			calendar: [{
 				itemId: 36038, name: 'Saco de Halloween', icon: null,

@@ -264,10 +264,12 @@ function renderQuoteLine(row: SaleRowViewModel, translator: Translator): HTMLEle
 const ACTION_KEY: Record<SaleDisplayAction, TranslationKey> = {
 	sell: 'sale.action.sell', wait: 'sale.action.wait', not_yet: 'sale.action.notYet',
 	no_data: 'sale.action.noData', deposit: 'advisor.view.action.deposit_material',
+	// Review fix: the hero's own extra word, reusing the advisor's existing "Abrir" (never a new one).
+	open: 'advisor.view.action.open',
 };
 
 const ACTION_DATA_ATTR: Record<SaleDisplayAction, string> = {
-	sell: 'sell', wait: 'hold', not_yet: 'none', no_data: 'nodata', deposit: 'deposit',
+	sell: 'sell', wait: 'hold', not_yet: 'none', no_data: 'nodata', deposit: 'deposit', open: 'open',
 };
 
 function renderActionBadge(action: SaleDisplayAction, translator: Translator): HTMLElement {
