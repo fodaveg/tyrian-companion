@@ -115,6 +115,14 @@ export interface SaleViewModel {
 	/** The latest `priceQuotedAt` this view saw, or null without one; drives the status line's "read at HH:MM". */
 	capturedAtMs: number | null;
 	maxPriceAgeMs: number;
+	/**
+	 * H18.34: non-null exactly when the curated Sale rules (the advisor's builtin bundle) are past
+	 * their own `validUntil`, checked fresh against `nowMs` rather than trusting a possibly-stale
+	 * cached `status`/`blockedReason` from the last advisor refresh. Takes priority over `status` at
+	 * render time (`renderBlocked` in `sale-view.ts`): the caller (`main.ts`) forced `status: 'blocked'`
+	 * for the same reason, but this field carries the exact date the generic `blockedReason` cannot.
+	 */
+	rulesExpiredAtMs: number | null;
 	storageSpace?: InventoryAdvisorStorageSpace | null;
 	hero: SaleHeroViewModel | null;
 	groups: SaleGroupsViewModel;
@@ -139,6 +147,8 @@ export interface SaleViewModelInput {
 	nowMs: number;
 	festivalStartMs: number | null;
 	maxPriceAgeMs: number;
+	/** See `SaleViewModel.rulesExpiredAtMs`. Absent or null: no override, `status`/`blockedReason` stand as given. */
+	rulesExpiredAtMs?: number | null;
 	storageSpace?: InventoryAdvisorStorageSpace | null;
 	hero: (SaleSourceRow & {
 		yearThresholdCopper: number | null;
@@ -227,6 +237,17 @@ function dayWithinSpan(dayUtc: string, fromDay: string, toDay: string): boolean 
 
 /** Builds the render-ready model. Pure: no clock, no translator, no network. */
 export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
+	const rulesExpiredAtMs = input.rulesExpiredAtMs ?? null;
+	// H18.34: the caller already recomputed this against `nowMs` (never against a cached advisor
+	// refresh), so it wins over whatever `status`/`blockedReason` it was also asked to carry — those
+	// can be a stale "ready" left over from before the curated bundle's `validUntil` was crossed.
+	if (rulesExpiredAtMs !== null) {
+		return {
+			status: 'blocked', nowMs: input.nowMs, festivalStartMs: input.festivalStartMs,
+			capturedAtMs: null, maxPriceAgeMs: input.maxPriceAgeMs, rulesExpiredAtMs,
+			hero: null, groups: { now: [], wait: [], noData: [] }, calendar: [],
+		};
+	}
 	const isLow = input.storageSpace?.lowSpace?.isLow === true;
 	const hero = input.hero === null ? null : applyOpenVsSellOverride({
 		...toRowViewModel(input.hero, isLow, input.nowMs),
@@ -255,6 +276,7 @@ export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
 	return {
 		status: input.status, ...(input.blockedReason === undefined ? {} : { blockedReason: input.blockedReason }),
 		nowMs: input.nowMs, festivalStartMs: input.festivalStartMs, capturedAtMs, maxPriceAgeMs: input.maxPriceAgeMs,
+		rulesExpiredAtMs: null,
 		...(input.storageSpace === undefined ? {} : { storageSpace: input.storageSpace }),
 		hero, groups, calendar,
 	};

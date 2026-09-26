@@ -639,6 +639,9 @@ const ES = {
 		'sale.view.loading': 'Leyendo precios del bazar…',
 		'sale.view.empty': 'No hay objetos de temporada en el inventario todavía.',
 		'sale.view.blocked': 'La venta no está disponible ahora mismo.',
+		// H18.34: distinto del genérico `advisor.view.blockedReason.rules_expired` — esta vista
+		// muestra la fecha exacta de caducidad, no solo que «hace falta publicar una revisión».
+		'sale.view.blockedReason.rulesExpired': 'Las reglas de venta caducaron el {{date}}: actualiza el plugin.',
 		'sale.view.status.readAt': 'Precios leídos a las {{time}}',
 		'sale.view.status.validUntil': 'Valen hasta las {{time}}',
 		'sale.view.status.festivalCountdown': 'Halloween empieza el {{date}}: faltan {{days}} días',
@@ -1739,6 +1742,9 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.view.loading': 'Reading bazaar prices…',
 	'sale.view.empty': 'No seasonal items in the inventory yet.',
 	'sale.view.blocked': 'The sale tab is not available right now.',
+	// H18.34: distinct from the generic `advisor.view.blockedReason.rules_expired` — this view
+	// shows the exact expiry date, not just that "a published review is due".
+	'sale.view.blockedReason.rulesExpired': 'The sale rules expired on {{date}}: update the plugin.',
 	'sale.view.status.readAt': 'Prices read at {{time}}',
 	'sale.view.status.validUntil': 'Valid until {{time}}',
 	'sale.view.status.festivalCountdown': 'Halloween starts on {{date}}: {{days}} days left',

@@ -102,9 +102,16 @@ function renderBlocked(model: SaleViewModel, translator: Translator): HTMLElemen
 	const surface = createDiv({ cls: 'tyrian-sale' });
 	const notice = surface.createEl('p');
 	notice.setAttribute('role', 'alert');
-	notice.textContent = model.blockedReason === undefined
-		? translator.t('sale.view.blocked')
-		: translator.t(`advisor.view.blockedReason.${model.blockedReason}`);
+	// H18.34: the expiry date wins over any generic blocked reason — it is the fresher, more
+	// specific fact (checked against `nowMs`, never a cached advisor refresh) and the previous
+	// silent collapse into "sin datos" is exactly what this branch exists to prevent.
+	notice.textContent = model.rulesExpiredAtMs !== null
+		? translator.t('sale.view.blockedReason.rulesExpired', {
+			date: formatDayShort(priceHistoryDayUtc(model.rulesExpiredAtMs), translator.locale),
+		})
+		: model.blockedReason === undefined
+			? translator.t('sale.view.blocked')
+			: translator.t(`advisor.view.blockedReason.${model.blockedReason}`);
 	return surface;
 }
 

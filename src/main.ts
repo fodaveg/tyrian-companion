@@ -115,7 +115,10 @@ import { safePublicRenderIconUrl } from './ui/price-history-panel-view';
 import { PRICE_HISTORY_NOTE_CODE_BLOCK_LANGUAGE } from './inventory/price-history-note-block';
 import { paintPriceHistoryNoteBlock } from './ui/price-history-note-block-controller';
 import type { InventoryAdvisorCaptureReceiptV1 } from './advisor/inventory-advisor-evidence-model';
-import { inventoryAdvisorBuiltinBundleProvider } from './advisor/inventory-advisor-builtin-bundle';
+import {
+	inventoryAdvisorBuiltinBundleProvider,
+	INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL,
+} from './advisor/inventory-advisor-builtin-bundle';
 import {
 	festivalAnchorStartMs,
 	festivalCalendarEntryForItem,
@@ -1608,6 +1611,11 @@ export default class TyrianCompanionPlugin extends Plugin {
 		const bundleLoad = inventoryAdvisorBuiltinBundleProvider.load(new Date(nowMs).toISOString());
 		const maxPriceAgeMs = bundleLoad.status === 'available'
 			? bundleLoad.bundle.policy.maxPriceAgeMs : FALLBACK_RECOMMENDATION_MAX_PRICE_AGE_MS;
+		// H18.34: checked fresh against `nowMs` on every call, never against `advisorModel`'s own
+		// `status` (which only updates on an explicit advisor refresh and can still read `ready` well
+		// after the curated bundle's `validUntil` — the silent "sin datos" this field exists to fix).
+		const rulesExpiredAtMs = bundleLoad.status === 'unavailable' && bundleLoad.reason === 'expired'
+			? Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) : null;
 		const festivalStartMs = festivalAnchorStartMs(HALLOWEEN_FESTIVAL_ANCHORS, new Date(nowMs).getUTCFullYear());
 		const rowsByItemId = new Map<number, InventoryAdvisorViewRow>();
 		for (const group of advisorModel.groups) for (const row of group.rows) {
@@ -1644,7 +1652,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 		return buildSaleViewModel({
 			status: advisorModel.status,
 			...(advisorModel.blockedReason === undefined ? {} : { blockedReason: advisorModel.blockedReason }),
-			nowMs, festivalStartMs, maxPriceAgeMs,
+			nowMs, festivalStartMs, maxPriceAgeMs, rulesExpiredAtMs,
 			...(advisorModel.storageSpace === undefined ? {} : { storageSpace: advisorModel.storageSpace }),
 			hero, rows, calendar,
 		});
