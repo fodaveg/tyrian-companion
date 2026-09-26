@@ -2544,7 +2544,18 @@ function selectedExceptionReason(value: string): KeepExceptionV1['reason'] { ret
 function selectedBasis(value: string): 'owned' | 'available' { return value === 'owned' ? 'owned' : 'available'; }
 function selectedIntendedUse(value: string): ReservationGoal['requirements'][number]['intendedUse'] { return value === 'open' || value === 'consume' || value === 'exchange' || value === 'spend' ? value : 'hold'; }
 
-/** «hace 2 días»: the run's age in the player's words; the exact instant stays in the tooltip. */
+/**
+ * «hace 2 días»: the run's age in the player's words; the exact instant stays in the tooltip.
+ *
+ * Review fix (coordinator, round 2, 26 sep 2026): with `numeric: 'always'`, a same-instant quote
+ * ("now" === "quotedAt", 0 seconds elapsed) rendered as "dentro de 0 segundos"/"in 0 seconds" —
+ * nonsensical for a reading that just happened. A blanket switch to `'auto'` is NOT the fix: CLDR's
+ * "auto" style also substitutes idioms at ±1 for week/month/year ("el mes pasado" instead of "hace 1
+ * mes"), which an existing Inventory test already depends on staying "hace…". `'always'` and `'auto'`
+ * render byte-identical for the `second` unit at every value EXCEPT exactly 0 — so only the
+ * zero-seconds case borrows the `'auto'` formatter, and every other magnitude (minutes, hours, ±1
+ * day included, weeks, months, years) keeps its existing `'always'` wording untouched.
+ */
 export function relativeTimeLabel(iso: string, locale: string, now = Date.now()): string {
 	const at = Date.parse(iso);
 	if (!Number.isFinite(at)) return iso;
@@ -2556,6 +2567,7 @@ export function relativeTimeLabel(iso: string, locale: string, now = Date.now())
 	for (const [unit, size] of steps) {
 		if (Math.abs(seconds) >= size) return format.format(Math.trunc(seconds / size), unit);
 	}
+	if (seconds === 0) return new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(0, 'second');
 	return format.format(seconds, 'second');
 }
 
