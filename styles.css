@@ -2035,10 +2035,13 @@
 .tyrian-inventory-advisor__no-value > summary {
 	display: flex;
 	align-items: center;
-	min-height: 44px;
 	padding: var(--size-4-2);
 	color: var(--text-muted);
 	cursor: pointer;
+}
+
+.is-mobile .tyrian-inventory-advisor__no-value > summary {
+	min-height: 44px;
 }
 
 .tyrian-inventory-advisor__no-value > summary:focus-visible {
