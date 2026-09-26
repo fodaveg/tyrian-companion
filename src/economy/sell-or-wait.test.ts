@@ -106,11 +106,18 @@ describe('compareSellNowWithWaiting: honest abstention', () => {
 		});
 	});
 
-	it('no curated start for the next edition (after 13 October 2026) is "datos insuficientes", never a guessed date', () => {
+	it('no curated start for the next edition (after 13 October 2026) still anchors to THIS edition (H18.22), never a guessed future date', () => {
+		// H18.22 (26 sep 2026): once today is on or after the last catalogued edition's own start,
+		// the reference stays that edition (`referenceFestivalFor`) instead of aborting outright —
+		// `decisionOffsetDays` goes negative ("19 days into the 2026 festival") rather than null. This
+		// fixture was never extended with the corn's own day-19-into-the-festival prices (out of this
+		// encargo's scope, unlike the bag's), so every year is still `no_decision_price` and the
+		// verdict stays the same honest "datos insuficientes" — only `decisionOffsetDays` changes,
+		// from a blanket null to the real distance into the known edition.
 		const comparison = compareSellNowWithWaiting(fixtureInput(sellTimingHistoryCornDays(), {
 			nowMs: Date.parse('2026-11-01T12:00:00.000Z'),
 		}));
-		expect(comparison).toMatchObject({ verdict: 'insufficient_data', decisionOffsetDays: null, windowFromDay: null });
+		expect(comparison).toMatchObject({ verdict: 'insufficient_data', decisionOffsetDays: -19, seasons: 0, windowFromDay: null });
 	});
 
 	it('a flat series is not an opportunity to wait for: "sin ventaja demostrada", so selling now stands', () => {
@@ -121,6 +128,52 @@ describe('compareSellNowWithWaiting: honest abstention', () => {
 		expect(comparison).toMatchObject({
 			verdict: 'no_demonstrated_advantage', strategy: 'sell_now', netAdvantageCopper: 0, windowFromDay: null,
 		});
+	});
+});
+
+describe('compareSellNowWithWaiting: H18.22, deciding INSIDE the festival, not just before it', () => {
+	/**
+	 * 26 sep 2026, David: the Sale hero card sold the Saco "en el suelo" once the festival had
+	 * started, "0 temporadas comparables". Before H18.22 `compareSellNowWithWaiting` required a
+	 * CATALOGUED edition strictly ahead of today (`festivals.find((f) => f.startsOnUtc > today)`),
+	 * which the 2026 Halloween festival itself stops satisfying the moment it starts (13 October):
+	 * there is no 2027 entry yet (`HALLOWEEN_FESTIVAL_STARTS`, `sell-timing-experiment.ts`, deliberate
+	 * per its own doc comment — a real 2027 date is not announced yet, so nothing may guess one), so
+	 * every day from then through the whole cycle aborted to `insufficient_data` regardless of how
+	 * much real history was fed in. `referenceFestivalFor` fixes the SELECTION, not the criterion: on
+	 * or after the last catalogued edition's own start, that same edition stays the reference, with a
+	 * zero-or-negative `decisionOffsetDays` ("N days into the festival") instead of a distance to a
+	 * start nobody has curated.
+	 */
+	it('14 oct 2026, one day into the 2026 festival: real per-year data at that SAME relative day demonstrates waiting to next May', () => {
+		const comparison = compareSellNowWithWaiting({
+			nowMs: Date.parse('2026-10-14T12:00:00.000Z'), mode: 'instant', quantity: 250, todayUnitCopper: 290,
+			history: sellTimingHistoryBagDays(),
+		});
+		expect(comparison).toEqual({
+			version: 1, verdict: 'wait', mode: 'instant', strategy: 'wait_next_may',
+			quantity: 250, unitCopper: 290, decisionOffsetDays: -1, windowFromDay: '2027-05-01', windowToDay: '2027-05-31',
+			seasons: 7, seasonsWon: 6, seasonsLost: 1,
+			medianRatio: 1.1927469445001002, lowRatio: 0.884478973146428, highRatio: 1.452347432209096,
+			netAdvantageCopper: 11_878, netAdvantageLowCopper: -7_119, netAdvantageHighCopper: 27_875,
+		});
+	});
+
+	it('the structural check accepts a zero-or-negative decisionOffsetDays: it is not required to be strictly future any more', () => {
+		const comparison = compareSellNowWithWaiting({
+			nowMs: Date.parse('2026-10-14T12:00:00.000Z'), mode: 'instant', quantity: 250, todayUnitCopper: 290,
+			history: sellTimingHistoryBagDays(),
+		});
+		expect(comparison.decisionOffsetDays).toBeLessThan(0);
+		expect(isSellOrWaitComparison(comparison)).toBe(true);
+	});
+
+	it('past the reference edition\'s own following May, with still no newer edition catalogued, abstains exactly as before: no guessed date', () => {
+		const comparison = compareSellNowWithWaiting({
+			nowMs: Date.parse('2027-06-15T12:00:00.000Z'), mode: 'instant', quantity: 250, todayUnitCopper: 290,
+			history: sellTimingHistoryBagDays(),
+		});
+		expect(comparison).toMatchObject({ verdict: 'insufficient_data', decisionOffsetDays: null, seasons: 0, windowFromDay: null });
 	});
 });
 
