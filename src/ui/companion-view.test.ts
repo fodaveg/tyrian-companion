@@ -1129,6 +1129,78 @@ describe('Companion active-session Laberinto badge and owner suffix', () => {
 	});
 });
 
+/** H18.36 (boceto lámina 2.4): "Sin señal" badge and its callout with the 10-minute-close rule. */
+describe('Companion active-session "Sin señal" badge and callout', () => {
+	function buildActiveModel(
+		presence: { status: 'present' | 'lost' | 'absent'; lastSeenAtMs: number | null; graceUntilMs?: number | null } | null,
+		link: { owner: 'automatic' | 'adopted'; labyrinthAt: string | null } | null = null,
+	) {
+		const now = Date.parse('2026-09-26T22:44:00.000Z');
+		const observed = {
+			status: 'active' as const, sessionId: 'session-1',
+			baseline: { completedAt: '2026-09-26T22:05:00.000Z' },
+			startContext: { characterName: 'Astra Uno' },
+		};
+		const drawer = { summary: '', suffix: '' };
+		const harness = Object.assign(Object.create(TyrianCompanionView.prototype) as object, {
+			actions: {
+				getLocale: () => 'es' as const,
+				getSessionState: () => observed,
+				getAssistedDetectionState: () => ({
+					status: 'armed' as const, armedAt: '2026-09-26T21:00:00.000Z', lastSnapshotAt: null,
+					scheduler: {
+						status: 'scheduled' as const, intervalMs: 300_000, nextRunAt: null,
+						lastAttemptAt: null, lastSuccessAt: null, consecutiveFailures: 0,
+					},
+				}),
+				getLiveSessionLoot: () => ({ status: 'idle' as const }),
+				getIngameSessionLink: () => link,
+				getIngamePresence: () => presence,
+				stopManualSession: async () => undefined,
+			},
+		});
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- Invoked with the explicit isolated harness below.
+		const build = (TyrianCompanionView.prototype as unknown as {
+			buildSessionCardModel(
+				this: typeof harness, connection: unknown, observed: unknown, projection: unknown, now: number,
+				copy: unknown, locale: string, drawers: unknown, callout: unknown,
+			): { badge?: { text: string }; callout: { tone: string; title: string; lines: { text: string }[] } | null };
+		}).buildSessionCardModel;
+		return build.call(
+			harness, { status: 'connected' }, observed, { items: [], errors: [] }, now,
+			simpleSessionCopy('es'), 'es', { detail: drawer, alerts: drawer, history: drawer }, null,
+		);
+	}
+
+	it('shows "Sin señal" only once the presence is actually lost, never for present or absent', () => {
+		expect(buildActiveModel(null).badge).toBeUndefined();
+		expect(buildActiveModel({ status: 'present', lastSeenAtMs: null }).badge).toBeUndefined();
+		expect(buildActiveModel({ status: 'absent', lastSeenAtMs: null }).badge).toBeUndefined();
+		expect(buildActiveModel({ status: 'lost', lastSeenAtMs: Date.parse('2026-09-26T22:40:00.000Z') }).badge?.text).toBe('Sin señal');
+	});
+
+	it('names the hour it went quiet and the hour the 10-minute rule will act, for an automatic session', () => {
+		const lastSeenAtMs = Date.parse('2026-09-26T22:40:00.000Z');
+		const graceUntilMs = Date.parse('2026-09-26T22:50:00.000Z');
+		const model = buildActiveModel({ status: 'lost', lastSeenAtMs, graceUntilMs }, { owner: 'automatic', labyrinthAt: null });
+		expect(model.callout?.title).toContain(formatClock(lastSeenAtMs, 'es'));
+		expect(model.callout?.lines[0]?.text).toContain(formatClock(graceUntilMs, 'es'));
+		expect(model.callout?.lines[0]?.text).toContain(formatClock(lastSeenAtMs, 'es'));
+	});
+
+	it('says the session stays open with no closing hour for one started by hand (adopted)', () => {
+		const lastSeenAtMs = Date.parse('2026-09-26T22:40:00.000Z');
+		const graceUntilMs = Date.parse('2026-09-26T22:50:00.000Z');
+		const model = buildActiveModel({ status: 'lost', lastSeenAtMs, graceUntilMs }, { owner: 'adopted', labyrinthAt: null });
+		expect(model.callout?.lines[0]?.text).toBe('La sesión sigue abierta: la iniciaste a mano.');
+		expect(model.callout?.lines[0]?.text).not.toContain(formatClock(graceUntilMs, 'es'));
+	});
+
+	// Sabotage: reverting `noSignal` to key off `presence?.status !== 'present'` (true for BOTH
+	// 'lost' and 'absent') would show "Sin señal" for an addon that never connected at all — this
+	// fails on the `toBeUndefined()` assertion above for 'absent'.
+});
+
 /** H14.5: the escape hatch for a managed-assets `operation_conflict` that never resolves itself. */
 /**
  * H14.5's escape hatch for an `operation_conflict` that never resolves on its own now lives inside

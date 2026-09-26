@@ -641,10 +641,34 @@ export class TyrianCompanionView extends ItemView {
 			// H18.36 (boceto lámina 2.1, propuesta): the addon's own marker for the session on
 			// screen, never guessed — `linkFor` is null unless the bridge actually linked it.
 			const link = this.actions.getIngameSessionLink?.(observed.sessionId) ?? null;
+			const presence = this.actions.getIngamePresence?.() ?? null;
+			const noSignal = presence?.status === 'lost';
+			// H18.36 (boceto lámina 2.4): "Sin señal" wins the one badge slot over "Laberinto" — the
+			// worst problem first, and the addon going quiet is graver than where the session ran.
 			const labyrinthBadge = this.t('sessionCard.labyrinthBadge');
-			const badge = link !== null && link.labyrinthAt !== null
-				? { text: labyrinthBadge, title: labyrinthBadge, ariaLabel: labyrinthBadge } : undefined;
+			const noSignalBadge = this.t('sessionCard.noSignalBadge');
+			const badge = noSignal
+				? { text: noSignalBadge, title: noSignalBadge, ariaLabel: noSignalBadge }
+				: (link !== null && link.labyrinthAt !== null
+					? { text: labyrinthBadge, title: labyrinthBadge, ariaLabel: labyrinthBadge } : undefined);
 			const ownerSuffix = link?.owner === 'automatic' ? ` · ${this.t('sessionCard.markedByAddon')}` : '';
+			// H18.36 (boceto lámina 2.4, propuesta): the 10-minute-close rule to the screen, with the
+			// hour it acts and the fin it will set — never for a session the player started by hand,
+			// which the addon adopts but never closes (`ingame-session-marker.ts`'s own policy).
+			const noSignalCallout: SessionCardCallout | null = noSignal && presence.lastSeenAtMs !== null
+				? {
+					tone: 'warning',
+					title: this.t('sessionCard.noSignal.title', { time: formatClock(presence.lastSeenAtMs, locale) }),
+					lines: [{
+						text: link?.owner === 'adopted'
+							? this.t('sessionCard.noSignal.manualBody')
+							: this.t('sessionCard.noSignal.body', {
+								graceTime: formatClock(presence.graceUntilMs ?? presence.lastSeenAtMs, locale),
+								endTime: formatClock(presence.lastSeenAtMs, locale),
+							}),
+					}],
+				}
+				: null;
 			return {
 				ariaLabel: copy.session, state: copy.active, badge,
 				meta: {
@@ -654,7 +678,8 @@ export class TyrianCompanionView extends ItemView {
 				// `stopManualSession` now rejects when its diagnostics span already logged the cause
 				// (H15.2, 2026-09-10 incident): swallow it here, there is nothing more this button can do.
 				actions: [{ text: copy.finish, cta: true, onClick: () => { void this.actions.stopManualSession().catch(() => undefined); } }],
-				callout: callout ?? fallbackCallout, figures: this.buildActiveFigures(now, copy, locale), ...drawers,
+				callout: callout ?? noSignalCallout ?? fallbackCallout,
+				figures: this.buildActiveFigures(now, copy, locale), ...drawers,
 			};
 		}
 
