@@ -1,9 +1,9 @@
 # Changelog
 
-## Sin publicar (main, 26 sep 2026) - nueva pestaña Venta de Halloween
+## Release beta 0.2.2 - pestaña Venta de Halloween, y la comparación de botín vuelve a activarse
 
-David aprobó el diseño el 26 sep 2026 («adelante con el diseño»). Maqueta y ficha en
-`docs/diseno/halloween-venta`.
+**Pestaña Venta (H18.33).** David aprobó el diseño el 26 sep 2026 («adelante con el diseño»).
+Maqueta y ficha en `docs/diseno/halloween-venta`.
 
 - **Pestaña Venta nueva** en la navegación del producto (Compañero / Inventario / Venta / Ajustes),
   con vista, comando de paleta (`open-sale`) y entrada de acción propios
@@ -35,10 +35,11 @@ David aprobó el diseño el 26 sep 2026 («adelante con el diseño»). Maqueta y
 - Vocabulario propio de la pestaña («Esperar», nunca «Mantener» ni «Conservar»), i18n ES/EN completo,
   y revisión del censo de observabilidad para los boundaries nuevos.
 
-## Sin publicar (main, 26 sep 2026) - la comparación de botín de Halloween vuelve a activarse
-
-Lo que sigue está en `main` sin release. Tarea H18.32 de la lista «21.15 Tyrian Companion» de
-Lumbre, decidida por David el 26 sep 2026.
+**Comparación de botín de Halloween (H18.32).** Tarea de la lista «21.15 Tyrian Companion» de Lumbre,
+decidida por David el 26 sep 2026.
+`docs/PLATFORM_POLICY.md` conserva todavía la frase anterior sobre H11.3 («revisión humana
+finalizada»): ese documento está fijado por hash en el contrato de decisión de H8 y recalcular el
+hash queda pendiente de autorización.
 
 - **La comparación de botín (H11.3) dejó de estar muerta.** Desde que la revisión humana se retiró
   el 9 sep, su puerta de elegibilidad exigía `certainty: 'confirmed'` en una revisión que ya nadie
