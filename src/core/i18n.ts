@@ -4,6 +4,7 @@ export type Locale = 'es' | 'en';
 const ES = {
 	'commands.openCompanion': 'Abrir acompañante',
 	'commands.openInventoryAdvisor': 'Abrir asesor de inventario',
+	'commands.openSale': 'Abrir venta de Halloween',
 	'commands.refreshInventoryAdvisor': 'Actualizar asesor de inventario',
 	'commands.previewInventoryVault': 'Previsualizar inventario en el vault',
 	'commands.applyInventoryVault': 'Sincronizar inventario con el vault',
@@ -220,6 +221,7 @@ const ES = {
 const EN: { [K in keyof typeof ES]: string } = {
 	'commands.openCompanion': 'Open companion',
 	'commands.openInventoryAdvisor': 'Open inventory advisor',
+	'commands.openSale': 'Open Halloween sale',
 	'commands.refreshInventoryAdvisor': 'Refresh inventory advisor',
 	'commands.previewInventoryVault': 'Preview inventory Vault sync',
 	'commands.applyInventoryVault': 'Sync inventory to the Vault',
