@@ -9,13 +9,24 @@ Lumbre, decidida por David el 26 sep 2026.
   el 9 sep, su puerta de elegibilidad exigía `certainty: 'confirmed'` en una revisión que ya nadie
   produce con ese valor, así que ninguna sesión finalizada volvía a sellar una comparación
   (hallazgo del 24 sep, documentado en `docs/ARCHITECTURE.md`). La puerta ahora lee la clasificación
-  automática de la propia sesión final (`SessionClassificationStatus`, H2.7): es elegible con delta
-  `comparable`, clasificación distinta de `contaminated`/`invalid` (abrir contenedores o consumir no
-  degrada por debajo de `estimated`, regla firmada en `docs/PRODUCT.md`) y sacos desaparecidos netos
-  positivos. Si la clasificación no se pudo resolver en el punto de llamada, la comparación queda no
-  elegible con su propio motivo (`classification_unavailable`), nunca tratada como limpia por
-  defecto (`src/halloween/halloween-loot-comparison.ts`, `src/halloween/halloween-runtime.ts`,
-  `src/main.ts`).
+  automática de la propia sesión final (`SessionDeltaClassification`, H2.7: estado y razones, no solo
+  el estado — ver corrección más abajo): es elegible con delta `comparable`, clasificación distinta
+  de `contaminated`/`invalid` (abrir contenedores o consumir no degrada por debajo de `estimated`,
+  regla firmada en `docs/PRODUCT.md`), sin razones que indiquen que un objeto pudo moverse por algo
+  distinto de abrir, y sacos desaparecidos netos positivos. Si la clasificación no se pudo resolver
+  en el punto de llamada, la comparación queda no elegible con su propio motivo
+  (`classification_unavailable`), nunca tratada como limpia por defecto
+  (`src/halloween/halloween-loot-comparison.ts`, `src/halloween/halloween-runtime.ts`, `src/main.ts`).
+- **Corrección de revisión, mismo día:** el primer cierre solo miraba el `status` de la clasificación,
+  así que una sesión `estimated` por vender una bolsa en el bazar (`tp_sell_observed` degrada, no
+  contamina) seguía siendo elegible y contaba las bolsas vendidas como abiertas. Ahora también se
+  excluye por razón (`tp_sell_observed`, `tp_buy_observed`, `delivery_items_changed`,
+  `roster_changed`, `character_unobserved`, `delta_limited`, motivo nuevo `external_item_movement`) y
+  por una pérdida de objetos que no fue enteramente entrada de farmeo
+  (`item_losses_observed` sin `detail: 'exempt'`, la marca nueva que `src/account/contamination.ts`
+  añade cuando TODAS las pérdidas del delta fueron farmeo). Vender en el bazar, comprar a un NPC,
+  gastar una divisa no monetaria o la ventana de sincronización de la API nunca excluyen: ninguna
+  puede mover un recuento de objetos.
 - Los motivos de exclusión retirados (`review_not_confirmed`, `activities_not_open_only`) siguen en
   el vocabulario solo para que un record persistido antes de este lote se siga leyendo y pintando;
   un record nuevo nunca vuelve a producirlos. `bagsDisappearedNet` sigue siendo neto y los textos no
