@@ -211,7 +211,15 @@ function classifyValidatedSessionDelta(
 	// none of these degrade the reading; they stay visible as information instead.
 	if (walletCurrencies.some((currency) =>
 		currency.delta < 0 && !MONETARY_WALLET_CURRENCY_IDS.has(currency.id))) push('consumable_currency_spent');
-	if (losses.length > 0) push('item_losses_observed', nonFarmingLoss);
+	// H18.32: a loss made up entirely of farmed input (the curated list or `farmedLossItemIds`)
+	// carries `detail: 'exempt'`, so a caller that needs to tell "objects moved by something other
+	// than opening" apart from farming input (the Halloween loot-comparison eligibility gate) can
+	// read it off the reason instead of re-deriving `farmedLossItemIds` itself. A mixed loss (any
+	// real loss alongside farmed ones) is not exempt and still degrades, exactly as before.
+	if (losses.length > 0) {
+		reasons.push(nonFarmingLoss ? { code: 'item_losses_observed' } : { code: 'item_losses_observed', detail: 'exempt' });
+		if (nonFarmingLoss) degraded = true;
+	}
 
 	// Evidence of a bazaar movement or a roster change during the window: real external activity,
 	// but nobody has to review it — the delta already brackets it, so it degrades to a band.
@@ -356,6 +364,11 @@ function isClassificationReason(value: unknown): boolean {
 	if (!isRecord(value) || !CLASSIFICATION_REASONS.has(String(value.code))) return false;
 	if (value.code === 'activity_declared') {
 		return hasExactKeys(value, ['code', 'detail']) && DECLARED_ACTIVITIES.has(value.detail as DeclaredActivity);
+	}
+	// `item_losses_observed` either has no `detail` (a real, non-farmed loss) or `detail: 'exempt'`
+	// (every loss was farmed input); nothing else validates.
+	if (value.code === 'item_losses_observed') {
+		return hasExactKeys(value, ['code']) || (hasExactKeys(value, ['code', 'detail']) && value.detail === 'exempt');
 	}
 	return hasExactKeys(value, ['code']);
 }

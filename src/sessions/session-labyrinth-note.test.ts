@@ -45,7 +45,8 @@ describe('H14.1 · a real Labyrinth session (bags opened, keys spent, no bazaar)
 			finalize: true, showNet: true, valueNet: true, grossPerHour: true, recommend: true,
 		});
 		expect(review.classification.reasons).toContainEqual({ code: 'consumable_currency_spent' });
-		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed' });
+		// H18.32: opening curated bags is farmed input, so the loss is exempt.
+		expect(review.classification.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
 		expect(review.classification.reviewRequests).toEqual([]);
 	});
 

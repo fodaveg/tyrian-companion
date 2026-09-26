@@ -122,9 +122,17 @@ describe('classifySessionDelta', () => {
 			...exact, permissions: { ...exact.permissions, finalize: false },
 		})).toBe(true);
 
+		// H18.32: `item_losses_observed` either has no `detail` or `detail: 'exempt'`.
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'item_losses_observed' }],
+		})).toBe(true);
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'item_losses_observed', detail: 'exempt' }],
+		})).toBe(true);
+
 		// Genuine shape violations still fail: an unknown reason code, a status/confidence pair
-		// outside the producer matrix, `activity_declared` with an invalid or missing `detail`, and
-		// duplicate reasons.
+		// outside the producer matrix, `activity_declared` with an invalid or missing `detail`,
+		// `item_losses_observed` with any other `detail`, and duplicate reasons.
 		expect(isSessionDeltaClassification({
 			...exact, reasons: [{ code: 'not-a-real-reason' }],
 		})).toBe(false);
@@ -134,6 +142,9 @@ describe('classifySessionDelta', () => {
 		})).toBe(false);
 		expect(isSessionDeltaClassification({
 			...exact, reasons: [{ code: 'activity_declared' }],
+		})).toBe(false);
+		expect(isSessionDeltaClassification({
+			...exact, reasons: [{ code: 'item_losses_observed', detail: 'not-exempt' }],
 		})).toBe(false);
 		expect(isSessionDeltaClassification({
 			...exact, reasons: [{ code: 'wallet_decreased' }, { code: 'wallet_decreased' }],
@@ -384,7 +395,9 @@ describe('classifySessionDelta', () => {
 			exactContext({ boundary: buildBoundaryEvidence(before, after) }),
 		);
 		expect(result).toMatchObject({ status: 'exact', confidence: 'high', permissions: { recommend: true } });
-		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+		// H18.32: a loss made up entirely of farmed input is tagged exempt, so a caller (the
+		// Halloween loot-comparison gate) can tell it apart from a real, non-farmed loss.
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
 	});
 
 	it('degrades the loss of an item that is not a curated container or consumable', () => {
@@ -409,7 +422,7 @@ describe('classifySessionDelta', () => {
 			exactContext({ boundary: buildBoundaryEvidence(before, after), farmedLossItemIds: [999] }),
 		);
 		expect(result).toMatchObject({ status: 'exact', confidence: 'high', permissions: { recommend: true } });
-		expect(result.reasons).toContainEqual({ code: 'item_losses_observed' });
+		expect(result.reasons).toContainEqual({ code: 'item_losses_observed', detail: 'exempt' });
 	});
 
 	it('still degrades the loss of an item absent from farmedLossItemIds (a Weapon, or a type the catalog could not resolve)', () => {

@@ -136,6 +136,14 @@ export type SessionClassificationReasonCode =
 
 export interface SessionClassificationReason {
 	code: SessionClassificationReasonCode;
+	/**
+	 * `activity_declared` always carries the declared `DeclaredActivity` here (legacy records
+	 * only, see `contamination.ts`). `item_losses_observed` carries `'exempt'` when every loss in
+	 * the delta was farmed input (curated ids or `farmedLossItemIds`), and is absent when at least
+	 * one loss was not — the signal H18.32's Halloween loot-comparison gate reads to tell "objects
+	 * moved by something other than opening" apart from farming input. Every other code never sets
+	 * this.
+	 */
 	detail?: string;
 }
 
