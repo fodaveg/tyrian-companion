@@ -10,6 +10,11 @@ import TyrianCompanionPlugin, {
 } from './main';
 import { festivalCalendarEntryForItem, type FestivalCalendarCandidateV1 } from './economy/seasonal-window';
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
+import { datawars2RealHistorySacoDays } from './economy/__fixtures__/datawars2-real-history-36038-2026-09-26';
+import { datawars2RealHistoryTrozoDays } from './economy/__fixtures__/datawars2-real-history-36041-2026-09-26';
+import { datawars2RealHistoryBarraDays } from './economy/__fixtures__/datawars2-real-history-47909-2026-09-26';
+import { datawars2RealHistoryJorcameloDays } from './economy/__fixtures__/datawars2-real-history-43320-2026-09-26';
+import { datawars2RealHistoryColmillosAltaCalidadDays } from './economy/__fixtures__/datawars2-real-history-48805-2026-09-26';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
 import { recommendPosition } from './advisor/inventory-position-recommendation';
 import { POSITION_RECOMMENDATION_REQUIRED_DAYS } from './inventory/inventory-analysis';
@@ -44,31 +49,38 @@ function heroFixtureDaily(): PriceHistoryDailyV1[] {
 }
 
 /**
- * The curated 36038 backtest's own last recorded bid (24 sep 2026,
- * `sell-timing-history-36038.ts`'s own final row) — the anchor every OTHER item's synthetic history
- * below scales against, so its relative day-to-day SHAPE (the real, audited seasonal pattern) is
- * reused at a different item's own price level, rather than one item's copper values standing in
- * unscaled for another's.
+ * Round 3 (coordinator, 26 sep 2026): every earlier round scaled OTHER items' history off the
+ * 36038 backtest's own shape — a real pattern, but not THAT item's real prices. Downloaded ONCE,
+ * directly, from the SAME public datawars2 endpoint `fetchPriceSeed` uses
+ * (`datawars2-real-history-<item>-2026-09-26.ts`, each with the SHA-256 of its complete response),
+ * for exactly the 5 items this dump shows.
+ *
+ * Kept in FULL, not trimmed to 400 days: `sellOrWaitSeedMaxDays` (`economy/sell-or-wait.ts`) already
+ * makes a real sync request `PRICE_SEED_CHART_MAX_DAYS` (the whole published history) for any item
+ * with a `festivalCalendarEntryForItem` — all 5 of these qualify — never the 400-day
+ * `PRICE_SEED_MAX_DAYS` default. A 400-day fixture (this file's own round-2 attempt) silently
+ * starved `compareSellNowWithWaiting` of `SELL_TIMING_TRAIN_YEARS` (2014-2018) and most of
+ * `SELL_TIMING_TEST_YEARS` (2019-2025), so it could never leave `insufficient_data` — a fixture
+ * artifact, not what a real sync actually stores for these items. Whatever `recommendPosition` says
+ * against the full series is the real answer — not adjusted to match what a note or a window
+ * "should" say.
  */
-const FIXTURE_ANCHOR_BID_COPPER = 378;
+const REAL_HISTORY_BY_ITEM_ID: ReadonlyMap<number, () => readonly { dayUtc: string; bidCopper: number }[]> = new Map([
+	[36_038, datawars2RealHistorySacoDays],
+	[36_041, datawars2RealHistoryTrozoDays],
+	[47_909, datawars2RealHistoryBarraDays],
+	[43_320, datawars2RealHistoryJorcameloDays],
+	[48_805, datawars2RealHistoryColmillosAltaCalidadDays],
+]);
 
-/**
- * A real item's own price history, standing in for whatever datawars2 would deliver once Fix A
- * (`inventory-analysis.ts`) actually asks for its seed: the curated 36038 backtest's real,
- * audited seasonal shape (`sell-timing-history-36038.ts`), scaled to `itemId`'s own live bid so
- * `recommendPosition` sees a plausible reference at the right order of magnitude, never 36038's
- * unscaled copper values standing in for a completely different item's price level.
- */
-function syntheticDailyHistory(itemId: number, todayBidCopper: number): PriceHistoryDailyV1[] {
-	const scale = todayBidCopper / FIXTURE_ANCHOR_BID_COPPER;
-	return sellTimingHistoryBagDays().map((day) => {
-		const bidCopper = Math.max(1, Math.round(day.bidCopper * scale));
-		return {
-			version: 1, vaultId: 'test-vault', itemId, dayUtc: day.dayUtc, snapshotCount: 1, partialSnapshotCount: 0,
-			bid: { count: 1, minCopper: bidCopper, maxCopper: bidCopper, medianCopperX2: bidCopper * 2, closeCopper: bidCopper, closeCapturedAtMs: 0 },
-			ask: null,
-		};
-	});
+function realDailyHistory(itemId: number): PriceHistoryDailyV1[] {
+	const days = REAL_HISTORY_BY_ITEM_ID.get(itemId);
+	if (days === undefined) throw new Error(`No real datawars2 fixture for item ${String(itemId)}.`);
+	return days().map((day) => ({
+		version: 1, vaultId: 'test-vault', itemId, dayUtc: day.dayUtc, snapshotCount: 1, partialSnapshotCount: 0,
+		bid: { count: 1, minCopper: day.bidCopper, maxCopper: day.bidCopper, medianCopperX2: day.bidCopper * 2, closeCopper: day.bidCopper, closeCapturedAtMs: 0 },
+		ask: null,
+	}));
 }
 
 describe('resolveSaleSeasonalInputFor: the calendar window really moves with the date', () => {
@@ -423,7 +435,7 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
  * (`marketComparisonsForLine`); a row still on `review` never gets one, even though `bidCopper`
  * comes from the account's own live price snapshot, set independently of that classification.
  */
-describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even with no advisor market comparison', () => {
+describe('saleSourceRowFromAdvisorRow: instant proceeds require depth-aware valuation', () => {
 	const CANDY_BAR_ITEM_ID = 47909; // Barra de caramelo, David's real note: 71 units, bid ~4g13s45c.
 	const REAL_BID_COPPER = 41_345;
 	const REAL_OWNED_QUANTITY = 71;
@@ -441,18 +453,20 @@ describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even wi
 		};
 	}
 
-	it('computes an instant-sell net from the bid itself, never leaving it null just because the route stalled on review', () => {
+	it('keeps the unit bid but never extrapolates a full stack net when depth is unknown', () => {
 		const result = saleSourceRowFromAdvisorRow(reviewRow(), REAL_BID_COPPER);
 		expect(result.bidCopper).toBe(REAL_BID_COPPER);
-		expect(result.instantSellNetCopper).not.toBeNull();
-		expect(result.instantSellNetCopper).toBeGreaterThan(0);
+		expect(result.instantSellNetCopper).toBeNull();
 	});
 
-	/**
-	 * Sabotage: reverting `saleSourceRowFromAdvisorRow`'s `instantSellNetCopper` to
-	 * `row.marketComparison?.instantSellCopper ?? null` (dropping the `computeInstantSellNetCopper`
-	 * fallback) makes this fail on `expect(result.instantSellNetCopper).not.toBeNull()`.
-	 */
+	it('reuses the exact position valuation even when the route has no market comparison', () => {
+		const row = reviewRow();
+		row.value = { status: 'available', route: 'instant_sell', copper: 2_501_205 };
+		expect(saleSourceRowFromAdvisorRow(row, REAL_BID_COPPER).instantSellNetCopper).toBe(2_501_205);
+		row.quantity = 1;
+		expect(saleSourceRowFromAdvisorRow(row, REAL_BID_COPPER).instantSellNetCopper).toBeNull();
+	});
+
 	it('never shows the "no quote" badge for a row that carries a real bid, once fed through the real view model', () => {
 		const sourceRow = saleSourceRowFromAdvisorRow(reviewRow(), REAL_BID_COPPER);
 		const model = buildSaleViewModel({
@@ -463,7 +477,7 @@ describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even wi
 			.find((row) => row.itemId === CANDY_BAR_ITEM_ID);
 		expect(rendered).toBeDefined();
 		expect(rendered?.action).not.toBe('no_data');
-		expect(rendered?.instantSellNetCopper).not.toBeNull();
+		expect(rendered?.instantSellNetCopper).toBeNull();
 	});
 });
 
@@ -479,7 +493,10 @@ describe('saleSourceRowFromAdvisorRow: a live bid always produces a net, even wi
  * once a real sync seeds it — this file only proves the RENDER is coherent once history exists,
  * `inventory-analysis.test.ts` proves the seeding wiring that gets it there.
  *
- * The full rendered text is dumped to the scratchpad for a line-by-line human check.
+ * Allocations below group recorded holdings by storage; they are technical test scaffolding,
+ * not evidence of physical occupied slots or order-book depth. Visual QA must use null for
+ * unavailable counts/timestamps and the note's recorded net, never infer either from this scaffold.
+ * The optional JSON dump is a controlled presentation input, not a live account snapshot.
  */
 describe('acceptance: the real Venta pipeline renders David\'s real Halloween inventory without contradictions', () => {
 	interface RealPosition { quantity: number; location: InventoryAdvisorViewRow['allocations'][number]['location'] }
@@ -517,13 +534,12 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 	}
 
 	/**
-	 * Coordinator round 2, points 2 and 6: no more hand-copied decisions from notes written BEFORE
-	 * this review's fixes — every row (hero included, via `computeSaleHeroTiming` below) runs the
-	 * SAME real `recommendPosition`, fed the real calendar (`resolveSaleSeasonalInputFor`) and a
-	 * synthetic-but-scaled history (`syntheticDailyHistory`) standing in for what Fix A now actually
-	 * asks datawars2 for. A stale note's `review`/`no_close_today` (48805) or `review`/
-	 * `insufficient_reference` (36038) cannot survive this: either the code, run today, still
-	 * produces it — and the text is judged as-is — or it does not, and the note was simply stale.
+	 * Round 3 (coordinator, 26 sep 2026): no more hand-copied decisions from notes written BEFORE
+	 * this review's fixes, and no more synthetic history — every row (hero included, via
+	 * `computeSaleHeroTiming` below) runs the SAME real `recommendPosition`, fed the real calendar
+	 * (`resolveSaleSeasonalInputFor`) and the REAL datawars2 history downloaded for this exact item
+	 * (`realDailyHistory`). Whatever verdict comes out is reported as-is, never adjusted to match a
+	 * note or a window's own dates.
 	 */
 	function computeRealDecision(
 		itemId: number, todayBidCopper: number | null, ownedQuantity: number, nowMs: number,
@@ -534,7 +550,7 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 			capturedAtMs: nowMs, priceHistoryEnabled: true,
 			totalSellCopper: todayBidCopper === null ? null : todayBidCopper * ownedQuantity,
 			capitalThresholdCopper: 100_000, maxPriceAgeMs: 900_000,
-			priceHistoryDaily: todayBidCopper === null ? [] : syntheticDailyHistory(itemId, todayBidCopper),
+			priceHistoryDaily: todayBidCopper === null ? [] : realDailyHistory(itemId),
 			priceHistoryWindowDays: 400, priceHistoryRequiredDays: POSITION_RECOMMENDATION_REQUIRED_DAYS,
 			seasonal, legendaryShortfall: null, freeQuantity: ownedQuantity, todayBidCopper, untradeable: false,
 		});
@@ -632,9 +648,10 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 				}),
 			},
 			settings: { priceHistoryEnabled: true, priceHistoryDailyRetentionDays: 400, recommendationCapitalThresholdCopper: 100_000 },
-			// Simulates the state Fix A reaches after a real sync seeds 36038's datawars2 history: the
-			// full curated backtest is what `readDaily` returns (this file's OWN sanctioned fixture).
-			priceHistory: { readDaily: async () => heroFixtureDaily() },
+			// Round 3: simulates the state Fix A reaches after a real sync seeds 36038's datawars2
+			// history — `readDaily` now returns the REAL, freshly-downloaded series
+			// (`datawars2-real-history-36038-2026-09-26.ts`), not the older curated experiment fixture.
+			priceHistory: { readDaily: async () => realDailyHistory(36_038) },
 			vaultId: null,
 			saleHeroTiming: null as unknown,
 		};
@@ -658,6 +675,8 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 			buildSaleHeroInput: unknown;
 		};
 		const model = proto.getSaleViewModel.call({ ...harness, buildSaleHeroInput: proto.buildSaleHeroInput, getSellSignalState: () => null });
+		const modelDump = process.env.TYRIAN_SALE_MODEL_DUMP;
+		if (modelDump !== undefined) writeFileSync(modelDump, JSON.stringify(model, null, 2), 'utf8');
 
 		vi.stubGlobal('createEl', (tag: string, options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl(tag, options));
 		vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string; attr?: Record<string, string> }) => makeEl('div', options));
@@ -668,7 +687,6 @@ describe('acceptance: the real Venta pipeline renders David\'s real Halloween in
 		const lines = textOf(container).split('\n').filter((line) => line.trim() !== '');
 		const dump = lines.join('\n');
 		const dumpPath = '/tmp/claude-1000/-home-fodaveg-code-tyrian-companion/d3671ce6-a44c-4f1c-8165-fef8a1aaa2c8/scratchpad/venta-render-real.txt';
-		// Best-effort: the scratchpad only exists on the dev machine, never in CI.
 		if (existsSync(dirname(dumpPath))) writeFileSync(dumpPath, dump, 'utf8');
 
 		// Criterion 1: no row carrying a bid ever reads "Sin cotización" or "Sin datos".

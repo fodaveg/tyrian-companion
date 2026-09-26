@@ -13,7 +13,7 @@ export interface SaleViewActions {
 	/** A synchronous read boundary, like `InventoryAdvisorViewActions`: opening the view starts no I/O. */
 	getSaleViewModel(): SaleViewModel;
 	/** The same one-click refresh the Inventory tab already exposes (`refreshInventoryAdvisor`). */
-	refreshSale?(): Promise<void>;
+	refreshSale?(options?: { refreshSeeds: boolean }): Promise<void>;
 	getProductActionController?(): ProductActionController;
 	hasConfiguredApiKey?(): boolean;
 	openProductSettings?(): void;
@@ -40,7 +40,7 @@ export class SaleItemView extends ItemView {
 		// says "loading" because the advisor never analyzed this session needs the SAME one-click
 		// refresh the footer button already offers, fired once, not a silent wait for a click that
 		// nothing on screen invites. `runRefresh` already no-ops while one is in flight or absent.
-		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh();
+		if (this.actions.getSaleViewModel().status === 'loading') void this.runRefresh(false);
 	}
 	async onClose(): Promise<void> {
 		this.closed = true;
@@ -75,11 +75,11 @@ export class SaleItemView extends ItemView {
 		});
 	}
 
-	private async runRefresh(): Promise<void> {
+	private async runRefresh(refreshSeeds = true): Promise<void> {
 		if (this.closed || this.refreshing || this.actions.refreshSale === undefined) return;
 		this.refreshing = true;
 		this.render();
-		try { await this.actions.refreshSale(); }
+		try { await this.actions.refreshSale({ refreshSeeds }); }
 		finally { this.refreshing = false; this.render(); }
 	}
 }

@@ -314,3 +314,15 @@ describe('sale view model: an expired curated bundle overrides a stale "ready" s
 	 * `expect(model.status).toBe('blocked')` — it stays `'ready'`.
 	 */
 });
+
+
+it('shows the recommendation window in the calendar when evidence selects a different wait than the curated candidate', () => {
+	const model = buildSaleViewModel({
+		status: 'ready', nowMs: Date.parse('2026-09-26T07:35:00Z'), festivalStartMs: null, maxPriceAgeMs: 900_000, hero: null,
+		rows: [{ id: 'corn', itemId: 36041, name: 'Trozo', icon: null, ownedQuantity: 10, slotsUsed: 1, materialStorageEligible: false,
+			bidCopper: 72, instantSellNetCopper: null, listingNetCopper: null,
+			decision: { action: 'sell_at_season', reason: 'wait_advantage_demonstrated', until: null, priceQuotedAt: null, sellWindowFromDay: '2026-09-27', sellWindowToDay: '2026-10-12' } }],
+		calendar: [{ itemId: 36041, name: 'Trozo', icon: null, candidates: [{ fromDay: '2026-10-06', toDay: '2026-10-12' }] }],
+	});
+	expect(model.calendar[0]?.spans).toEqual([model.groups.wait[0]?.window]);
+});

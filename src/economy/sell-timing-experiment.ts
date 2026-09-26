@@ -91,7 +91,7 @@ export const SELL_TIMING_DECISION_OFFSET_DAYS = 19;
 /** Width of the pre-festival wait window ("-18..-1", 18 days ending the day before the festival). */
 export const SELL_TIMING_PRE_FESTIVAL_WINDOW_DAYS = 18;
 
-export type SellTimingStrategy = 'sell_now' | 'wait_pre_festival' | 'wait_next_may';
+export type SellTimingStrategy = 'sell_now' | 'wait_pre_festival' | 'wait_next_may' | 'wait_annual_window';
 
 export const SELL_TIMING_WAIT_STRATEGIES: readonly SellTimingStrategy[] = Object.freeze([
 	'wait_pre_festival', 'wait_next_may',
@@ -238,9 +238,12 @@ function median(values: readonly number[]): number | undefined {
  * a legitimate recommendation, not a failure of the function. Only ever
  * called with training-year evaluations by `runSellTimingExperiment`.
  */
-export function chooseRecommendedStrategy(trainEvaluations: readonly SellTimingYearEvaluation[]): SellTimingStrategy {
+export function chooseRecommendedStrategy(
+	trainEvaluations: readonly SellTimingYearEvaluation[],
+	waitStrategies: readonly SellTimingStrategy[] = SELL_TIMING_WAIT_STRATEGIES,
+): SellTimingStrategy {
 	const medians: Partial<Record<SellTimingStrategy, number>> = {};
-	for (const strategy of SELL_TIMING_WAIT_STRATEGIES) {
+	for (const strategy of waitStrategies) {
 		const ratios = trainEvaluations
 			.filter((evaluation): evaluation is Extract<SellTimingYearEvaluation, { status: 'evaluated' }> =>
 				evaluation.status === 'evaluated' && evaluation.ratios[strategy] !== undefined)
@@ -250,7 +253,7 @@ export function chooseRecommendedStrategy(trainEvaluations: readonly SellTimingY
 	}
 	let best: SellTimingStrategy = 'sell_now';
 	let bestMedian = 1;
-	for (const strategy of SELL_TIMING_WAIT_STRATEGIES) {
+	for (const strategy of waitStrategies) {
 		const candidate = medians[strategy];
 		if (candidate !== undefined && candidate > bestMedian) {
 			best = strategy;

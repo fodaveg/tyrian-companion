@@ -684,6 +684,8 @@ const ES = {
 		'sale.row.head.price': 'Puja por unidad', 'sale.row.head.value': 'Neto si vendes ya',
 		'sale.zeroQuantity': '0 unidades: nada que vender.',
 		'sale.calendar.title': 'Ventanas de venta',
+		'sale.calendar.today': 'La marca señala hoy',
+		'sale.value.unavailable': 'Neto no disponible',
 		// Review fix (26 sep 2026): por objeto, no solo un "abierta hoy" genérico — cuánto falta o
 		// cuánto queda, la misma marca de hoy que la maqueta (docs/diseno/halloween-venta).
 		'sale.calendar.opensToday': 'abierta: quedan {{days}} días',
@@ -1855,6 +1857,8 @@ Object.assign(RUNTIME_CATALOG.en, {
 	'sale.row.head.price': 'Bid per unit', 'sale.row.head.value': 'Net if you sell now',
 	'sale.zeroQuantity': '0 units: nothing to sell.',
 	'sale.calendar.title': 'Sale windows',
+	'sale.calendar.today': 'The marker shows today',
+	'sale.value.unavailable': 'Net unavailable',
 	'sale.calendar.opensToday': 'open: {{days}} days left',
 	'sale.calendar.opensIn': '{{days}} days left to open',
 	'sale.foot.note': 'Prices are re-read when you press "Refresh". The Guild Wars 2 API serves them a few minutes late.',

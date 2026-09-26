@@ -84,12 +84,13 @@ objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por fil
    plástico de alta calidad» (ya era «Vender ahora» y aun así gana «Libera 1 hueco.”). El número es
    `allocations.length` de la fila del asesor (una posición = un hueco, mismo criterio de
    `storage-space.ts`).
-5. **Netos**: se reutiliza `row.marketComparison.instantSellCopper`/`listingCopper` (ya neto de la
-   política de comisiones de `gw2-fees.ts`) cuando el objeto aparece como fila del asesor. Para el
-   Saco (36038, ruta `open`, puede no tener `marketComparison`) hay un cálculo propio de respaldo,
-   `computeInstantSellNetCopper`, que envuelve la MISMA `createTradingPostValueWithPolicy`
-   (`instant_sell`) — nunca una fórmula nueva — solo para la venta inmediata; sin precio de venta
-   (ask) de respaldo, «Publicar» queda sin dato en ese caso límite.
+5. **Netos**: la venta inmediata reutiliza la valoración de posiciones con profundidad que comparte
+   Inventario/Base (`row.value`, ruta `instant_sell`) y exige que su cantidad coincida con la
+   cantidad mostrada. Como respaldo admite `marketComparison` solo con profundidad completa y
+   cantidad cubierta exacta. Una puja por unidad no demuestra liquidez para toda la pila: sin esa
+   evidencia dice «Neto no disponible», aunque conserve la puja. El Saco sigue la misma regla.
+   La cifra de publicar sigue usando el ask y la política compartida de comisiones; es un anuncio,
+   no una promesa de ejecución inmediata.
 6. **47909 se muestra con el nombre que dé el catálogo** (la API), nunca con el `seasonId` interno
    ni con el nombre de la auditoría: coincide con lo que ya hace cada fila del asesor.
 7. **Fuera de alcance** (igual que pide el encargo): el aviso «empieza su mejor semana de venta»
@@ -112,9 +113,12 @@ objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por fil
 
 ## Lo que no se implementó
 
-- El calendario dibuja el eje y una barra por objeto con la ventana que GOBIERNA hoy
-  (`resolveFestivalCalendarWindow`-equivalente); no dibuja una barra por cada candidato del objeto
-  (el Saco tiene dos: antes del festival y mayo). El texto de la fila sí menciona ambas.
+- El calendario usa un eje común de seis semanas: siete días antes de hoy y 35 después. Dibuja
+  la ventana efectiva cuando la recomendación demuestra que esperar compensa; en las otras filas,
+  todos los candidatos curados que intersectan ese rango. El calendario y la fila de una espera
+  leen así la misma decisión, sin anunciar fechas incompatibles. Las ventanas lejanas se conservan en texto con
+  su año y su cuenta de días, sin falsear su posición en la escala. La marca de hoy y las fechas del
+  eje se explicitan. Los nombres y las fechas ocupan líneas separadas.
 - El escenario de simulación (14 oct) de la maqueta no se implementa: la vista siempre lee «hoy»
   real, según pide el encargo (fuera de alcance el marco de conmutadores).
 - **No medí la cifra real de abrir-vs-vender del Saco con datos de mercado actuales del plugin**:
@@ -123,3 +127,35 @@ objeto, lista agrupada Ahora/Esperar/Sin datos con antigüedad de precio por fil
   lógica de lectura y conversión (`saleOpenVsSellCopper`) está probada con un `containerEconomy`
   de ejemplo con la forma real (`main-sale-hero-timing.test.ts`), no con la cifra que el bazar da
   hoy.
+
+
+## Corrección de continuidad (26 sep 2026)
+
+«Actualizar» siembra los objetos del calendario mediante el servicio existente antes de refrescar
+el asesor, solo con histórico opt-in. Abrir la vista mantiene la captura inicial existente sin
+solicitar nuevas semillas. Los importes muestran unidades compactas con la cantidad completa en
+`aria-label` y `title`; cada celda permite partir importes excepcionalmente largos. Un recuento de
+huecos desconocido se omite, nunca se convierte en uno o cero.
+
+La evidencia de precios de aceptación conserva los cinco payloads públicos reales del 26 sep y sus
+hashes; ejecuta `parseDatawars2History` (media cuando existe, punto medio como respaldo). Los fixtures
+anteriores de `0109128` usaban siempre el punto medio y no reproducían el parser de producción.
+Las cantidades y pujas copiadas de Positions son una entrada histórica de prueba, no una captura
+actual de cuenta; el test de refresco acredita el camino frío con IndexedDB y motor reales,
+transporte público grabado y frontera de cuenta técnica controlada. Ninguno acredita instalación
+Obsidian ni un precio vivo. La QA visual usa CSS de Obsidian y declara aparte qué datos desconoce.
+
+
+Resultados del ensayo del 26 sep 2026 07:35 UTC, con las pujas de las notas de Positions del 13 sep
+como entrada controlada (no cotizaciones vivas), y serie pública completa parseada por producción:
+
+| Objeto | Veredicto | Temporadas ganadas/perdidas por esperar |
+|---|---|---|
+| Saco (36038) | Vender ahora | 2/5 |
+| Trozo (36041) | Todavía no | 5/2 |
+| Barra (47909) | Todavía no | 6/1 |
+| Jorcamelo (43320) | Todavía no, junio de 2027 | 6/1 |
+| Colmillos de alta calidad (48805) | Vender ahora | 0/0, entrenamiento elige vender |
+
+Jorcamelo daba vender 0/0 cuando se evaluaba contra Halloween. Al comparar su junio propio cambia
+el resultado; no se ha ajustado el histórico ni el criterio para conservar la tabla del relevo.

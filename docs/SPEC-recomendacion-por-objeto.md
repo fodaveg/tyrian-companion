@@ -590,8 +590,12 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
 2. **Decidido el 11 sep 2026: tabla curada.** La API no tiene recetas de Forja Mística (medición de la
    decisión 2).
 3. **Decidido el 11 sep 2026: lista derivada del inventario, tope 400.**
-4. **Decidido el 11 sep 2026: SÍ, solo tras «Sincronizar inventario», secuencial**, con caché de 24 h y
-   tope por ejecución. Pendiente de anotar en `docs/PLATFORM_POLICY.md` en M2.
+4. **Decidido el 11 sep 2026: SÍ, tras «Sincronizar inventario», secuencial**, con caché de 24 h y
+   tope por ejecución. **Ampliación del 26 sep 2026**, al delegar David el cierre del proyecto:
+   «Actualizar» en Venta también puede sembrar los objetos del calendario antes de calcular el
+   veredicto, con el mismo opt-in de histórico, caché y límites. Abrir Venta no activa esta siembra.
+   La llamada de arranque en frío pasa `refreshSeeds: false`; el botón explícito pasa `true`.
+   No se requiere escribir notas de inventario para disponer del histórico de Venta.
 5. **Decidido el 11 sep 2026: ajuste nuevo, 10 oros (100 000 cobre).** No se reutiliza
    `valuableLootThresholdCopper`.
 
@@ -601,3 +605,14 @@ las pilas pequeñas. Cambia `SETTINGS_SCHEMA_VERSION` (hoy 12, `src/core/setting
    > corregido: la comparación es contra la suma de `totalSellCopper` de todas las posiciones que
    > comparten `itemId`, vía `sumSellCopperByItem` (`src/inventory/inventory-vault-sync.ts`). Ver
    > §3.c, condición 1, para el detalle y el caso medido.
+
+
+### Comparación de calendarios anuales (26 sep 2026)
+
+Una entrada exclusivamente anual, como Jorcamelo en junio, compara el mismo día del calendario de
+cada año con su siguiente ventana propia. No se sustituye junio por Halloween ni por mayo. Se
+mantienen los años de entrenamiento 2014–2018, los años de prueba 2019–2025 y el criterio de ventaja
+fuera de muestra del experimento. Cada comparación exige cotización del día exacto de decisión,
+ventana cerrada antes de hoy y al menos tres temporadas cubiertas en cada partición. Una decisión
+ya dentro de la ventana solo considera los días posteriores. Las entradas ligadas a Halloween
+conservan el experimento de festival existente; esta corrección no reinterpreta sus anclas.

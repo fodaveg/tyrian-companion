@@ -1,6 +1,6 @@
 import { calculateTradingPostFees } from './gw2-fees';
 import { PRICE_SEED_CHART_MAX_DAYS } from './price-seed-model';
-import { festivalCalendarEntryForItem, type FestivalCalendarV1 } from './seasonal-window';
+import { festivalCalendarEntryForItem, type FestivalCalendarV1, type SeasonalWindowV1 } from './seasonal-window';
 import {
 	HALLOWEEN_FESTIVAL_STARTS,
 	SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA,
@@ -10,6 +10,12 @@ import {
 	nextMayWindowFor,
 	preFestivalWindowFor,
 	runSellTimingExperiment,
+	chooseRecommendedStrategy,
+	summarizeOutOfSampleAdvantage,
+	lookupDecisionDayPrice,
+	windowExecutionPriceCopper,
+	addUtcDays,
+	type SellTimingOutOfSampleSummary,
 	type SellTimingFestivalYear,
 	type SellTimingPriceDay,
 	type SellTimingOutOfSampleVerdict,
@@ -71,7 +77,7 @@ export type SellOrWaitMode = typeof SELL_OR_WAIT_MODES[number];
 export const SELL_OR_WAIT_VERDICTS = ['wait', 'no_demonstrated_advantage', 'insufficient_data'] as const;
 export type SellOrWaitVerdict = typeof SELL_OR_WAIT_VERDICTS[number];
 
-export const SELL_OR_WAIT_STRATEGIES = ['sell_now', ...SELL_TIMING_WAIT_STRATEGIES] as const satisfies readonly SellTimingStrategy[];
+export const SELL_OR_WAIT_STRATEGIES = ['sell_now', ...SELL_TIMING_WAIT_STRATEGIES, 'wait_annual_window'] as const satisfies readonly SellTimingStrategy[];
 
 export interface SellOrWaitInput {
 	/** The instant the player decides at. Never `Date.now()`: the caller supplies it. */
@@ -85,6 +91,8 @@ export interface SellOrWaitInput {
 	history: readonly SellTimingPriceDay[];
 	/** Real per-year festival starts; defaults to the experiment's own table. */
 	festivals?: readonly SellTimingFestivalYear[];
+	/** A calendar independent of Halloween; its own annual window is the only wait tested. */
+	annualWindow?: SeasonalWindowV1;
 }
 
 /**
@@ -110,7 +118,7 @@ export interface SellOrWaitComparisonV1 {
 	 * Days from today to the reference edition's real start; null when no edition (announced or
 	 * already under way, H18.33) covers today at all. Zero or negative once today is on or after that
 	 * edition's own start day — "N days into the festival", never a distance to a future start that
-	 * has not been curated yet.
+	 * has not been curated yet. For an annual-only calendar, days until its next sellable day.
 	 */
 	decisionOffsetDays: number | null;
 	/** The window to sell in when waiting, inclusive UTC days; null unless `verdict` is `wait`. */
@@ -137,6 +145,9 @@ export function compareSellNowWithWaiting(input: SellOrWaitInput): SellOrWaitCom
 	const basis = {
 		version: SELL_OR_WAIT_VERSION, mode: input.mode, quantity: input.quantity, unitCopper: input.todayUnitCopper,
 	} as const;
+	if (input.annualWindow !== undefined && today !== null && positiveInteger(input.quantity) && positiveInteger(input.todayUnitCopper)) {
+		return compareAnnualWindow(input, today, input.annualWindow);
+	}
 	// H18.33: `next` keeps its name (`closed`/`waitWindow` below both read it) but is no longer
 	// necessarily in the future — see `referenceFestivalFor`.
 	const next = today === null ? undefined : referenceFestivalFor(festivals, today);
@@ -165,6 +176,15 @@ export function compareSellNowWithWaiting(input: SellOrWaitInput): SellOrWaitCom
 	const verdict = verdictOf(summary.verdict);
 	if (verdict === 'insufficient_data') return abstain(basis, decisionOffsetDays, summary.yearsWithData);
 	const window = verdict === 'wait' ? waitWindow(summary.strategy, next, decisionOffsetDays) : null;
+	return comparisonWithSummary(input, decisionOffsetDays, summary, window);
+}
+
+/** The shared experiment verdict and the same fee policy, for either calendar basis. */
+function comparisonWithSummary(
+	input: SellOrWaitInput, decisionOffsetDays: number, summary: SellTimingOutOfSampleSummary, window: SellTimingWindow | null,
+): SellOrWaitComparisonV1 {
+	const basis = { version: SELL_OR_WAIT_VERSION, mode: input.mode, quantity: input.quantity, unitCopper: input.todayUnitCopper } as const;
+	const verdict = verdictOf(summary.verdict);
 	const advantage = (ratio: number | undefined): number | null => ratio === undefined ? null
 		: netAdvantageCopper(input.todayUnitCopper, input.quantity, ratio);
 	return {
@@ -184,6 +204,43 @@ export function compareSellNowWithWaiting(input: SellOrWaitInput): SellOrWaitCom
 		netAdvantageLowCopper: advantage(summary.minRatio),
 		netAdvantageHighCopper: advantage(summary.maxRatio),
 	};
+}
+
+/** Compare the same month/day in past years with the item's next annual window, never a festival proxy. */
+function compareAnnualWindow(input: SellOrWaitInput, today: string, window: SeasonalWindowV1): SellOrWaitComparisonV1 {
+	const basis = { version: SELL_OR_WAIT_VERSION, mode: input.mode, quantity: input.quantity, unitCopper: input.todayUnitCopper } as const;
+	const year = Number(today.slice(0, 4));
+	const monthDay = today.slice(5);
+	const wraps = window.closesOn < window.opensOn;
+	const spanFor = (decisionYear: number): SellTimingWindow => {
+		let startYear = decisionYear;
+		if (wraps && monthDay <= window.closesOn) startYear -= 1;
+		else if (!wraps && monthDay > window.closesOn) startYear += 1;
+		const from = `${String(startYear)}-${window.opensOn}`;
+		const afterDecision = addUtcDays(`${String(decisionYear)}-${monthDay}`, 1);
+		return { fromUtc: from > afterDecision ? from : afterDecision, toUtc: `${String(startYear + (wraps ? 1 : 0))}-${window.closesOn}` };
+	};
+	const history = input.history.filter((day) => day.dayUtc < today && Number.isFinite(day.bidCopper) && day.bidCopper > 0);
+	const evaluate = (decisionYear: number): SellTimingYearEvaluation => {
+		const decisionDayUtc = `${String(decisionYear)}-${monthDay}`;
+		const decisionBidCopper = lookupDecisionDayPrice(history, decisionDayUtc);
+		if (decisionBidCopper === undefined) return { status: 'no_decision_price', year: decisionYear, decisionDayUtc };
+		const execution = windowExecutionPriceCopper(history, spanFor(decisionYear));
+		return { status: 'evaluated', year: decisionYear, decisionDayUtc, decisionBidCopper,
+			ratios: execution === undefined ? {} : { wait_annual_window: execution.meanBidCopper / decisionBidCopper },
+			dayCounts: execution === undefined ? {} : { wait_annual_window: execution.dayCount } };
+	};
+	const closed = (decisionYear: number): boolean => spanFor(decisionYear).toUtc < today;
+	const train = SELL_TIMING_TRAIN_YEARS.filter(closed).map(evaluate);
+	const test = SELL_TIMING_TEST_YEARS.filter(closed).map(evaluate);
+	const covered = (evaluations: readonly SellTimingYearEvaluation[]): number => evaluations.filter((evaluation) =>
+		evaluation.status === 'evaluated' && evaluation.ratios.wait_annual_window !== undefined).length;
+	const next = spanFor(year);
+	const offset = Math.round((Date.parse(`${next.fromUtc}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / DAY_MS);
+	if (covered(train) < SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA || covered(test) < SELL_TIMING_MINIMUM_TEST_YEARS_WITH_DATA) return abstain(basis, offset, covered(test));
+	const summary = summarizeOutOfSampleAdvantage(chooseRecommendedStrategy(train, ['wait_annual_window']), test);
+	if (summary.verdict === 'insufficient_data') return abstain(basis, offset, summary.yearsWithData);
+	return comparisonWithSummary(input, offset, summary, summary.verdict === 'advantage_demonstrated' ? next : null);
 }
 
 /**

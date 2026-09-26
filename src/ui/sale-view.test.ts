@@ -155,6 +155,38 @@ describe('sale view render', () => {
 		}
 	});
 
+	it('keeps distant annual windows out of the near-term axis and draws every visible candidate', () => {
+		const model = buildSaleViewModel(baseInput({ calendar: [
+			{ itemId: 36038, name: 'Saco de Halloween', icon: null, candidates: [
+				{ fromDay: '2026-09-15', toDay: '2026-10-12' }, { fromDay: '2027-05-01', toDay: '2027-05-31' },
+			] },
+			{ itemId: 47909, name: 'Barra de caramelo', icon: null, candidates: [
+				{ fromDay: '2026-10-06', toDay: '2026-10-12' }, { fromDay: '2026-10-13', toDay: '2026-10-19' },
+			] },
+			{ itemId: 43320, name: 'Jorcamelo', icon: null, candidates: [{ fromDay: '2027-06-01', toDay: '2027-06-30' }] },
+		] }));
+		const container = render(model);
+		const bars = byClass(walk(container), 'tyrian-sale__bar');
+		expect(bars).toHaveLength(3);
+		const first = bars[0]!.attributes.get('style')!;
+		expect(Number(/--to:([\d.]+)/.exec(first)?.[1]) - Number(/--from:([\d.]+)/.exec(first)?.[1])).toBeGreaterThan(50);
+		expect(text(container)).toContain('jun');
+		expect(text(container)).toContain('2027');
+	});
+
+	it('does not turn an unknown physical slot count into one slot', () => {
+		const container = render(buildSaleViewModel(baseInput({ rows: [row({ itemId: 47909, name: 'Barra', ownedQuantity: 71, slotsUsed: null, bidCopper: 41346 })] })));
+		expect(text(container)).toContain('71');
+		expect(text(container)).not.toContain('hueco');
+	});
+
+	it('keeps full spoken amounts accessible without repeating them in narrow price columns', () => {
+		const container = render(buildSaleViewModel(baseInput({ rows: [row({ itemId: 47909, name: 'Barra', bidCopper: 41346, instantSellNetCopper: 2495231 })] })));
+		const amounts = byClass(walk(container), 'tc-money');
+		expect(amounts[0]!.textContent).not.toContain('(');
+		expect(amounts[0]!.attributes.get('aria-label')).toContain('oro');
+	});
+
 	/**
 	 * Review fix (26 sep 2026): David's report — the hero card never said how many Sacos he owns,
 	 * unlike every other row (`sale.view.slots.*` never actually interpolates `{{quantity}}`).

@@ -102,7 +102,7 @@ describe('SaleItemView wiring', () => {
 		const pending = new Promise<void>((resolve) => { finish = resolve; });
 		const model = buildSaleViewModel(baseInput({}));
 		const view = new SaleItemView({} as never, actions(() => model, {
-			refreshSale: async () => { refreshed += 1; await pending; },
+			refreshSale: async (options) => { expect(options?.refreshSeeds).toBe(true); refreshed += 1; await pending; },
 		}));
 		await view.onOpen();
 		const root = view.contentEl as unknown as FakeElement;
@@ -127,7 +127,8 @@ describe('SaleItemView wiring', () => {
 		const pending = new Promise<void>((resolve) => { resolveRefresh = resolve; });
 		let status: 'loading' | 'ready' = 'loading';
 		const view = new SaleItemView({} as never, actions(() => buildSaleViewModel(baseInput({ status })), {
-			refreshSale: async () => {
+			refreshSale: async (options) => {
+				expect(options?.refreshSeeds).toBe(false);
 				refreshCalls += 1;
 				await pending;
 				status = 'ready';

@@ -134,9 +134,7 @@ function renderHeroCard(hero: SaleHeroViewModel, nowMs: number, translator: Tran
 	// Review fix (26 sep 2026): David's report — the hero card never said how many Sacos he owns.
 	// Same convention `renderRow` already uses for every other row's identity line, quantity first.
 	const small = head.createEl('small');
-	small.textContent = hero.ownedQuantity === 0
-		? translator.t('sale.zeroQuantity')
-		: `${String(hero.ownedQuantity)} · ${translator.t(hero.slotsUsed === 1 ? 'sale.view.slots.one' : 'sale.view.slots.many', { count: hero.slotsUsed })}`;
+	small.textContent = quantityAndSlots(hero, translator);
 	const verdict = article.createEl('p', { cls: 'tyrian-sale__verdict' });
 	verdict.append(renderActionBadge(hero.action, translator));
 	verdict.append(createSpan({ text: rowDetailText(hero, nowMs, translator) }));
@@ -176,34 +174,26 @@ function renderFigure(label: string, copper: number | null, translator: Translat
 	return figure;
 }
 
-/**
- * Review fix (26 sep 2026): David's report — the calendar had no mark for today and a closed
- * window's bar rendered as a fixed, unpositioned 60%-wide outline (`styles.css`'s old
- * `.tyrian-sale__bar` never read `--from`/`--to` at all), identical for every entry regardless of
- * its real dates. `axisFor` builds one shared day axis across every span this calendar shows (plus
- * today), the same "one axis for all" idea `docs/diseno/halloween-venta/maqueta.html` uses (there
- * with a fixed 42-day window; here sized to whatever the actual data spans, so it never clips a
- * real window off-screen). `--from`/`--to`/`--at` carry PERCENTAGES along that axis, read by
- * `.tyrian-sale__bar`/`.tyrian-sale__today` in `styles.css`.
- */
+/** Windows share a six-week near-term axis; distant dates remain explicit text, not tiny bars. */
 function renderCalendar(entries: readonly SaleCalendarRowViewModel[], nowMs: number, translator: Translator): HTMLElement {
 	const section = createEl('section', { cls: 'tyrian-sale__windows' });
 	const headingId = 'tyrian-sale-windows-heading';
 	section.setAttribute('aria-labelledby', headingId);
 	section.createEl('h3', { text: translator.t('sale.calendar.title'), attr: { id: headingId } });
 	const todayUtc = priceHistoryDayUtc(nowMs);
-	const axis = axisFor(entries, todayUtc);
+	const axis = axisFor(todayUtc);
+	section.createEl('p', { cls: 'tyrian-sale__axis-label', text: `${formatDayShort(axis.fromDay, translator.locale)} – ${formatDayShort(axis.toDay, translator.locale)} · ${translator.t('sale.calendar.today')}` });
 	const list = section.createEl('ul');
 	for (const entry of entries) {
 		const item = list.createEl('li');
 		const label = item.createSpan({ cls: 'tyrian-sale__win-label' });
 		label.append(renderIcon(entry.name, entry.icon));
-		label.createEl('strong', { text: entry.name });
-		const spansText = entry.spans.map((span) => `${formatDayShort(span.fromDay, translator.locale)} – ${formatDayShort(span.toDay, translator.locale)}`).join(' · ');
-		label.createEl('small', { text: `${spansText}${calendarDaysDetail(entry, todayUtc, translator)}` });
+		const identity = label.createSpan();
+		identity.createEl('strong', { text: entry.name });
+		const spansText = entry.spans.map((span) => `${formatCalendarDay(span.fromDay, todayUtc, translator.locale)} – ${formatCalendarDay(span.toDay, todayUtc, translator.locale)}`).join(' · ');
+		identity.createEl('small', { text: `${spansText}${calendarDaysDetail(entry, todayUtc, translator)}` });
 		const track = item.createSpan({ cls: 'tyrian-sale__track', attr: { 'aria-hidden': 'true' } });
-		const primary = entry.spans[0];
-		if (primary !== undefined) {
+		for (const primary of entry.spans.filter((span) => span.toDay >= axis.fromDay && span.fromDay <= axis.toDay)) {
 			const bar = createSpan({ cls: 'tyrian-sale__bar', attr: { style: `--from:${String(axis.pct(primary.fromDay))};--to:${String(axis.pct(primary.toDay))}` } });
 			bar.setAttribute('data-open', String(primary.openToday));
 			track.append(bar);
@@ -214,17 +204,14 @@ function renderCalendar(entries: readonly SaleCalendarRowViewModel[], nowMs: num
 	return section;
 }
 
-/** One shared day axis (0-100 %) covering every span this calendar renders, plus today. */
-function axisFor(entries: readonly SaleCalendarRowViewModel[], todayUtc: string): { pct(dayUtc: string): number } {
-	const days = [todayUtc, ...entries.flatMap((entry) => entry.spans.flatMap((span) => [span.fromDay, span.toDay]))];
-	const startMs = Math.min(...days.map((day) => Date.parse(`${day}T00:00:00.000Z`)));
-	const endMs = Math.max(...days.map((day) => Date.parse(`${day}T00:00:00.000Z`)));
-	const spanDays = Math.max(1, Math.round((endMs - startMs) / DAY_MS));
+/** Six weeks around today keep nearby windows comparable; off-axis windows are dated in full. */
+function axisFor(todayUtc: string): { fromDay: string; toDay: string; pct(dayUtc: string): number } {
+	const todayMs = Date.parse(`${todayUtc}T00:00:00.000Z`);
+	const startMs = todayMs - 7 * DAY_MS;
+	const endMs = todayMs + 35 * DAY_MS;
 	return {
-		pct: (dayUtc: string) => {
-			const offsetDays = Math.round((Date.parse(`${dayUtc}T00:00:00.000Z`) - startMs) / DAY_MS);
-			return Math.min(100, Math.max(0, (offsetDays / spanDays) * 100));
-		},
+		fromDay: priceHistoryDayUtc(startMs), toDay: priceHistoryDayUtc(endMs),
+		pct: (dayUtc) => Math.min(100, Math.max(0, (Date.parse(`${dayUtc}T00:00:00.000Z`) - startMs) / (endMs - startMs) * 100)),
 	};
 }
 
@@ -273,9 +260,7 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator)
 	const identity = item.createDiv();
 	identity.createEl('strong', { text: row.name });
 	identity.createEl('small', {
-		text: row.ownedQuantity === 0
-			? translator.t('sale.zeroQuantity')
-			: `${String(row.ownedQuantity)} · ${translator.t(row.slotsUsed === 1 ? 'sale.view.slots.one' : 'sale.view.slots.many', { count: row.slotsUsed })}`,
+		text: quantityAndSlots(row, translator),
 	});
 	const decision = li.createDiv({ cls: 'tyrian-sale__decision' });
 	decision.append(renderActionBadge(row.action, translator));
@@ -287,7 +272,7 @@ function renderRow(row: SaleRowViewModel, nowMs: number, translator: Translator)
 	const value = li.createDiv({ cls: 'tyrian-sale__value' });
 	if (row.instantSellNetCopper === null) {
 		value.setAttribute('data-unknown', 'true');
-		value.setText(translator.t('sale.view.hero.unknown'));
+		value.setText(translator.t('sale.value.unavailable'));
 	} else {
 		value.append(renderMoney(row.instantSellNetCopper, translator));
 	}
@@ -390,10 +375,10 @@ function renderFoot(translator: Translator, interactions: SaleViewInteractions):
 	return foot;
 }
 
-/** `"{visual} ({accessible})"`, the same money copy every other view already renders (`session-history-panel.ts`, `loot-presentation-view.ts`); no separate visually-hidden convention introduced for this one tab. */
+/** Compact coin units on screen; the complete spoken amount stays available to assistive technology. */
 function renderMoney(copper: number, translator: Translator): HTMLElement {
 	const money = formatLootMoney(copper, translator.locale);
-	return createSpan({ cls: 'tc-money', text: `${money.visual} (${money.accessible})` });
+	return createSpan({ cls: 'tc-money', text: money.visual, attr: { role: 'img', 'aria-label': money.accessible, title: money.accessible } });
 }
 
 function formatClock(value: number, locale: string): string {
@@ -402,4 +387,18 @@ function formatClock(value: number, locale: string): string {
 
 function formatDayShort(dayUtc: string, locale: string): string {
 	return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${dayUtc}T00:00:00.000Z`));
+}
+
+/** Distant annual windows include their year so a next-June promise cannot read as last June. */
+function formatCalendarDay(dayUtc: string, todayUtc: string, locale: string): string {
+	return new Intl.DateTimeFormat(locale, {
+		day: 'numeric', month: 'short', ...(dayUtc.slice(0, 4) === todayUtc.slice(0, 4) ? {} : { year: 'numeric' as const }), timeZone: 'UTC',
+	}).format(new Date(`${dayUtc}T00:00:00.000Z`));
+}
+
+/** A missing slot count is unknown, not a synthetic zero or one. */
+function quantityAndSlots(row: SaleRowViewModel, translator: Translator): string {
+	if (row.ownedQuantity === 0) return translator.t('sale.zeroQuantity');
+	if (row.slotsUsed === null) return String(row.ownedQuantity);
+	return `${String(row.ownedQuantity)} · ${translator.t(row.slotsUsed === 1 ? 'sale.view.slots.one' : 'sale.view.slots.many', { count: row.slotsUsed })}`;
 }

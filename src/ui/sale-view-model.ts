@@ -39,8 +39,8 @@ export interface SaleSourceRow {
 	name: string;
 	icon: string | null;
 	ownedQuantity: number;
-	/** Whole bag/shared-inventory/bank slots this stack occupies (one per position, `storage-space.ts`'s own rule). */
-	slotsUsed: number;
+	/** Whole physical slots occupied, or null when the source cannot establish the count. */
+	slotsUsed: number | null;
 	/** True when the row carries a `materialStorage` context: it can be deposited without losing the sale. */
 	materialStorageEligible: boolean;
 	/** Null only when the row never reached `recommendPosition` (should not happen for a calendar item, but never assumed). */
@@ -69,7 +69,7 @@ export interface SaleRowViewModel {
 	name: string;
 	icon: string | null;
 	ownedQuantity: number;
-	slotsUsed: number;
+	slotsUsed: number | null;
 	action: SaleDisplayAction;
 	/** Non-null exactly when low space is active and this row sits in the "Ahora" group: the count to show in "Libera N huecos". */
 	slotsFreedLabel: number | null;
@@ -278,13 +278,22 @@ export function buildSaleViewModel(input: SaleViewModelInput): SaleViewModel {
 		{ isLow },
 	).map((entry) => entry.row);
 	const capturedAtMs = latestQuotedAtMs([hero, ...rows]);
-	const calendar: SaleCalendarRowViewModel[] = input.calendar.map((entry) => ({
-		itemId: entry.itemId, name: entry.name, icon: entry.icon,
-		spans: entry.candidates.map((candidate) => ({
-			fromDay: candidate.fromDay, toDay: candidate.toDay,
-			openToday: dayWithinSpan(priceHistoryDayUtc(input.nowMs), candidate.fromDay, candidate.toDay),
-		})),
-	}));
+	const decisionsByItem = new Map([...(input.hero === null ? [] : [input.hero]), ...input.rows].map((row) => [row.itemId, row.decision]));
+	const calendar: SaleCalendarRowViewModel[] = input.calendar.map((entry) => {
+		const decision = decisionsByItem.get(entry.itemId);
+		// An evidence-backed recommendation governs the displayed calendar too. Otherwise the
+		// calendar could say October 6 while the same row recommends September 27.
+		const candidates = decision?.action === 'sell_at_season' && decision.sellWindowFromDay !== null && decision.sellWindowToDay !== null
+			? [{ fromDay: decision.sellWindowFromDay, toDay: decision.sellWindowToDay }]
+			: entry.candidates;
+		return {
+			itemId: entry.itemId, name: entry.name, icon: entry.icon,
+			spans: candidates.map((candidate) => ({
+				fromDay: candidate.fromDay, toDay: candidate.toDay,
+				openToday: dayWithinSpan(priceHistoryDayUtc(input.nowMs), candidate.fromDay, candidate.toDay),
+			})),
+		};
+	});
 	return {
 		status: input.status, ...(input.blockedReason === undefined ? {} : { blockedReason: input.blockedReason }),
 		nowMs: input.nowMs, festivalStartMs: input.festivalStartMs, capturedAtMs, maxPriceAgeMs: input.maxPriceAgeMs,

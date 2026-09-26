@@ -70,6 +70,8 @@ export type PositionRecommendationReasonCode = typeof POSITION_RECOMMENDATION_RE
  */
 export interface PositionRecommendationSeasonalInput {
 	window: SeasonalWindowV1;
+	/** Annual-only calendar entries are graded against their own window, not Halloween. */
+	annualWaitWindow?: SeasonalWindowV1;
 	parameters: SellSignalParameters;
 }
 
@@ -413,6 +415,7 @@ function evaluateSeasonalRule(
 		quantity: input.freeQuantity ?? 0,
 		todayUnitCopper: todayBidCopper,
 		history: historySeries.days,
+		annualWindow: seasonal.annualWaitWindow,
 	});
 	const decided = {
 		...NO_EVIDENCE, until: priceUntil(input), priceQuotedAt: new Date(capturedAtMs).toISOString(), priceHistoryLastDay, sellOrWait,

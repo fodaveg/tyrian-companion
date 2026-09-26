@@ -47,6 +47,25 @@ describe('PriceSeedBulkRefreshService (SPEC-recomendacion-por-objeto, decision 4
 		});
 	});
 
+	it('serializes overlapping Sync and Sale runs, reusing the first run cache', async () => {
+		const requests: number[] = [];
+		let active = 0;
+		let maximum = 0;
+		const service = new PriceSeedBulkRefreshService({
+			factory: new IDBFactory(), vaultId: 'overlap', now: () => NOW_MS,
+			fetchSeed: async (itemId) => {
+				requests.push(itemId); active += 1; maximum = Math.max(maximum, active);
+				await sleep(5); active -= 1;
+				return seeded(itemId);
+			},
+		});
+		const outcomes = await Promise.all([service.run([1, 2]), service.run([2, 3])]);
+		expect(maximum).toBe(1);
+		expect(requests).toEqual([1, 2, 3]);
+		expect(outcomes[1]).toMatchObject({ seeded: 1, skippedCached: 1 });
+		service.dispose();
+	});
+
 	it('never exceeds the named per-run cap, leaving the rest for the next sync', async () => {
 		const requested: number[] = [];
 		const service = new PriceSeedBulkRefreshService({

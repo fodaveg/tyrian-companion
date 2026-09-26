@@ -2788,7 +2788,7 @@
 
 .tyrian-sale__windows li {
 	display: grid;
-	grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+	grid-template-columns: minmax(16rem, 1fr) minmax(0, 1.4fr);
 	gap: var(--size-2-2) var(--size-4-3);
 	align-items: center;
 }
@@ -2800,7 +2800,12 @@
 	min-width: 0;
 }
 
+.tyrian-sale__win-label > span {
+	min-width: 0;
+}
+
 .tyrian-sale__win-label strong {
+	display: block;
 	font-weight: var(--font-medium);
 	overflow-wrap: anywhere;
 }
@@ -2942,11 +2947,13 @@
 }
 
 .tyrian-sale__price {
+	min-width: 0;
 	grid-area: price;
 	font-variant-numeric: tabular-nums;
 }
 
 .tyrian-sale__value {
+	min-width: 0;
 	grid-area: value;
 	font-variant-numeric: tabular-nums;
 	font-weight: var(--font-semibold);
@@ -3069,4 +3076,16 @@
 	.tyrian-receipt li[data-step="skip"] { border-inline-start-style: dashed; }
 	.tyrian-receipt li > .svg-icon { grid-row: auto; }
 	.tyrian-receipt li > time, .tyrian-receipt li > small { grid-column: 3; text-align: end; }
+}
+
+/* Sale amounts must wrap within their own cell, including unusually large stacks. */
+.tyrian-sale .tc-money {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.tyrian-sale__axis-label {
+	margin: 0 0 var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 }

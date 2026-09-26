@@ -263,7 +263,6 @@ import {
 import { SALE_VIEW_TYPE, SaleItemView } from './ui/sale-item-view';
 import {
 	buildSaleViewModel,
-	computeInstantSellNetCopper,
 	computeListingNetCopper,
 	type SaleSourceCalendarEntry,
 	type SaleSourceDecision,
@@ -1717,8 +1716,7 @@ export default class TyrianCompanionPlugin extends Plugin {
 			materialStorageEligible: false,
 			decision,
 			bidCopper: resolvedBid,
-			instantSellNetCopper: row?.marketComparison?.instantSellCopper
-				?? computeInstantSellNetCopper(resolvedBid, row?.ownedQuantity ?? 0),
+			instantSellNetCopper: row === null ? null : saleInstantSellNetFor(row),
 			// Review fix (coordinator, round 2): same fallback as the bid above, from the account's own
 			// live ask — the advisor never computes `marketComparison` for a container (its route is
 			// always `open`, never `sell`/`list`), so this was the only field the hero could ever
@@ -1788,8 +1786,15 @@ export default class TyrianCompanionPlugin extends Plugin {
 		});
 	}
 
-	/** Applies a "Refresh" button on the Sale tab: the same advisor refresh the Inventory tab already exposes. */
-	async refreshSale(): Promise<void> {
+	/** Explicit Sale refresh may fill the calendar's history, using the existing opt-in and cache. */
+	async refreshSale(options: { refreshSeeds: boolean } = { refreshSeeds: true }): Promise<void> {
+		if (this.runtimeReady && options.refreshSeeds && this.settings.priceHistoryEnabled) {
+			const loaded = inventoryAdvisorBuiltinBundleProvider.load(new Date().toISOString());
+			if (loaded.status === 'available') {
+				// This is a calendar-only pass; its coverage must not replace the whole sync watch list.
+				await this.priceSeedBulkRefresh?.run(loaded.bundle.festivalCalendar.entries.map((entry) => entry.itemId));
+			}
+		}
 		await this.refreshInventoryAdvisor();
 	}
 
@@ -4871,6 +4876,7 @@ export function resolveSaleSeasonalInputFor(itemId: number, asOfMs: number): Pos
 	if (window === null) return null;
 	return {
 		window,
+		...(entry.candidates.every((candidate) => candidate.kind === 'annual') ? { annualWaitWindow: window } : {}),
 		parameters: {
 			minimumOfMaxBps: loaded.bundle.economyPack.sellSignal.minimumOfMaxBps,
 			referenceDays: loaded.bundle.economyPack.sellSignal.referenceDays,
@@ -4902,14 +4908,8 @@ function isPositionRecommendationReasonCode(value: string): value is PositionRec
  * shows as "sin datos" rather than guessing, and (ficha decision 3) still gets the low-space
  * "depositar" override in `buildSaleViewModel` when it is a bankable material.
  *
- * Review fix (26 sep 2026): `row.marketComparison` only exists for a route the advisor already
- * classified as `sell`/`list`/`vendor` (`marketComparisonsForLine`, `inventory-advisor-
- * presentation.ts`); a row whose route landed on `review` (no demonstrated verdict yet) never gets
- * one, even though `bidCopper` comes from the account's own live price snapshot and is set
- * regardless of that classification. Before this fix that produced exactly the contradiction David
- * reported: "Puja por unidad 4g 13s 45c" next to "Neto si vendes ya: Sin datos" for the same row.
- * `computeInstantSellNetCopper` (`sale-view-model.ts`) is the SAME fallback `buildSaleHeroInput`
- * already uses for the Saco's own hero card — one fee formula, not a second one for regular rows.
+ * Instant-sale totals reuse the same depth-aware position valuation as Inventory/Base. A live
+ * unit bid alone cannot establish the proceeds for a whole stack; unknown depth remains unknown.
  */
 export function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCopper: number | null): SaleSourceRow {
 	const decision = row.decision ?? null;
@@ -4926,10 +4926,18 @@ export function saleSourceRowFromAdvisorRow(row: InventoryAdvisorViewRow, bidCop
 		materialStorageEligible: row.materialStorage != null,
 		decision: timed,
 		bidCopper,
-		instantSellNetCopper: row.marketComparison?.instantSellCopper
-			?? computeInstantSellNetCopper(bidCopper, row.ownedQuantity),
+		instantSellNetCopper: saleInstantSellNetFor(row),
 		listingNetCopper: row.marketComparison?.listingCopper ?? null,
 	};
+}
+
+/** Only a valuation covering the displayed quantity can be called its instant-sale net. */
+export function saleInstantSellNetFor(row: InventoryAdvisorViewRow): number | null {
+	if (row.quantity !== row.ownedQuantity) return null;
+	if (row.value.status === 'available' && row.value.route === 'instant_sell') return row.value.copper;
+	const comparison = row.marketComparison;
+	return comparison?.depthStatus === 'complete' && comparison.coveredQuantity === row.quantity
+		? comparison.instantSellCopper : null;
 }
 
 /**

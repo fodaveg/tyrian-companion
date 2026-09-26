@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { datawars2RealHistoryJorcameloDays } from './__fixtures__/datawars2-real-history-43320-2026-09-26';
 
 import {
 	compareSellNowWithWaiting,
@@ -244,10 +245,63 @@ describe('compareSellNowWithWaiting: the basis it answers for', () => {
 		expect(sellOrWaitSeedMaxDays(null, SELL_TIMING_HISTORY_BAG_ITEM_ID)).toBeUndefined();
 	});
 
+	/**
+	 * Round 3 (coordinator review, 26 sep 2026): confirms the full-seed path already covers EVERY
+	 * item the Venta acceptance dump shows, not just the two the test above already had. Measured
+	 * directly: a 400-day-trimmed fixture for these items in a test starved
+	 * `compareSellNowWithWaiting` of `SELL_TIMING_TRAIN_YEARS`/`SELL_TIMING_TEST_YEARS` and could
+	 * never leave `insufficient_data` — that was a fixture gap, not a product one, because a real
+	 * sync already asks for the whole series for every one of them via this same function.
+	 */
+	it('covers 43320 (Jorcamelo), 48805 (Colmillos alta calidad) and 36041 (Trozo de caramelo) too', () => {
+		const loaded = inventoryAdvisorBuiltinBundleProvider.load('2026-09-26T07:35:00.000Z');
+		if (loaded.status !== 'available') throw new Error('the built-in pack must be available');
+		const calendar = loaded.bundle.festivalCalendar;
+		expect(sellOrWaitSeedMaxDays(calendar, 43_320)).toBe(PRICE_SEED_CHART_MAX_DAYS);
+		expect(sellOrWaitSeedMaxDays(calendar, 48_805)).toBe(PRICE_SEED_CHART_MAX_DAYS);
+		expect(sellOrWaitSeedMaxDays(calendar, 36_041)).toBe(PRICE_SEED_CHART_MAX_DAYS);
+	});
+
 	it('the structural check accepts what it computes and refuses a wait without a window', () => {
 		const comparison = compareSellNowWithWaiting(fixtureInput(sellTimingHistoryCornDays()));
 		expect(isSellOrWaitComparison(comparison)).toBe(true);
 		expect(isSellOrWaitComparison({ ...comparison, windowFromDay: null, windowToDay: null })).toBe(false);
 		expect(isSellOrWaitComparison({ ...comparison, verdict: 'maybe' })).toBe(false);
+	});
+});
+
+
+describe('annual calendar comparison, independent of Halloween', () => {
+	const annualWindow = { version: 1 as const, seasonId: 'jorcamelo-junio', opensOn: '06-01', closesOn: '06-30', returnsInMonth: 6 };
+	const realInput = (): SellOrWaitInput => ({ nowMs: Date.parse('2026-09-26T07:35:00Z'), mode: 'instant', quantity: 31, todayUnitCopper: 44_498, history: datawars2RealHistoryJorcameloDays(), annualWindow });
+
+	it('grades Jorcamelo against its own next June using the real public series and production parser', () => {
+		const comparison = compareSellNowWithWaiting(realInput());
+		expect(comparison).toMatchObject({ verdict: 'wait', strategy: 'wait_annual_window', windowFromDay: '2027-06-01', windowToDay: '2027-06-30', seasons: 7, seasonsWon: 6, seasonsLost: 1 });
+		expect(isSellOrWaitComparison(comparison)).toBe(true);
+		expect(compareSellNowWithWaiting({ ...realInput(), annualWindow: undefined })).toMatchObject({ verdict: 'no_demonstrated_advantage', strategy: 'sell_now', seasonsWon: 0, seasonsLost: 0 });
+	});
+
+	it('does not depend on a known Halloween edition and does not consume future prices', () => {
+		const input = realInput();
+		const expected = compareSellNowWithWaiting(input);
+		expect(compareSellNowWithWaiting({ ...input, festivals: [] })).toEqual(expected);
+		expect(compareSellNowWithWaiting({ ...input, history: [...input.history, { dayUtc: '2027-06-01', bidCopper: 999_999_999 }] })).toEqual(expected);
+	});
+
+	it('requires a decision-day quote and enough training seasons instead of filling missing prices', () => {
+		const input = realInput();
+		const history = input.history.filter((day) => !['2014-09-26', '2015-09-26', '2016-09-26'].includes(day.dayUtc));
+		expect(compareSellNowWithWaiting({ ...input, history }).verdict).toBe('insufficient_data');
+	});
+
+	it('only considers the remaining window while it is open, and cannot grade a future close', () => {
+		const input = realInput();
+		const comparison = compareSellNowWithWaiting({ ...input, nowMs: Date.parse('2026-06-15T00:00:00Z') });
+		if (comparison.verdict === 'wait') {
+			expect(comparison.windowFromDay).toBe('2026-06-16');
+			expect(comparison.windowToDay).toBe('2026-06-30');
+		}
+		expect(comparison.seasons).toBeLessThanOrEqual(7);
 	});
 });

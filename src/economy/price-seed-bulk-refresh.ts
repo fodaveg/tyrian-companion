@@ -63,8 +63,8 @@ export interface PriceSeedBulkRefreshOptions {
 
 /**
  * Owns one cache-store connection for repeated bulk passes. Construction performs no I/O, and
- * every request this makes lives behind `run`, itself only ever called right after the explicit
- * "Sincronizar inventario" action (decision 4).
+ * every request lives behind an explicit inventory sync or Sale refresh (decision 4, amended
+ * 2026-09-26). Concurrent actions share one queue, so they cannot duplicate or overlap downloads.
  */
 export class PriceSeedBulkRefreshService {
 	private readonly maxItemsPerRun: number;
@@ -73,6 +73,7 @@ export class PriceSeedBulkRefreshService {
 	private noSeedStore: IndexedDbPriceSeedNoSeedStore | null = null;
 	private opening: Promise<Stores | null> | null = null;
 	private disposed = false;
+	private pending: Promise<unknown> = Promise.resolve();
 
 	constructor(private readonly options: PriceSeedBulkRefreshOptions) {
 		this.maxItemsPerRun = options.maxItemsPerRun ?? PRICE_SEED_BULK_REFRESH_MAX_ITEMS_PER_RUN;
@@ -93,6 +94,12 @@ export class PriceSeedBulkRefreshService {
 	 * moves on to the next id; it never stops early except at the cap.
 	 */
 	async run(itemIds: readonly number[], parent?: ResolvedLocalDebugActionContext): Promise<PriceSeedBulkRefreshOutcome> {
+		const flight = this.pending.then(() => this.runSequential(itemIds, parent));
+		this.pending = flight.catch(() => undefined);
+		return await flight;
+	}
+
+	private async runSequential(itemIds: readonly number[], parent?: ResolvedLocalDebugActionContext): Promise<PriceSeedBulkRefreshOutcome> {
 		const outcome: PriceSeedBulkRefreshOutcome = {
 			attempted: 0, seeded: 0, skippedCached: 0, skippedNoSeedCooldown: 0, noSeed: 0, failed: 0,
 			queueCoverage: { total: itemIds.length, seeded: 0, noData: 0, pending: itemIds.length },
