@@ -1,5 +1,44 @@
 # Changelog
 
+## Sin publicar (main, 26 sep 2026) - renovado el conocimiento curado del asesor y de la Venta (H18.34)
+
+David pidió renovar los datos curados con fecha de caducidad antes del 12 nov 2026, para que la
+recomendación de esperar a vender el Saco en mayo de 2027 no se quede sin conocimiento vivo a mitad
+de camino.
+
+- **Inventario**: dos paquetes curados con `validUntil` gatean el asesor y la pestaña Venta —
+  `src/advisor/inventory-advisor-builtin-bundle.ts` (rule pack + knowledge pack, compartían
+  `VALID_UNTIL = 2026-12-01`) y el pack de economía de Halloween en
+  `src/advisor/inventory-container-economy.ts` (`validUntil` propio, misma fecha). No existe una
+  política escrita de renovación con plazo máximo; el precedente H13.7 es el único antecedente. El
+  policy `maxRulePackAgeMs` (90 días desde `reviewedAt`, `inventory-advisor-classifier.ts`) SÍ es una
+  política escrita y ya limitaba la frescura del rule/knowledge pack a ~14 nov 2026 desde antes de
+  este lote, con independencia de `validUntil`.
+- **Re-verificado hoy** contra la fuente real: `GET https://api.guildwars2.com/v2/items/36038?lang=en`
+  sigue devolviendo `type: Container` y la flag `NoSalvage` (nada cambió); las dos fuentes wiki citadas
+  pinchan un `oldid` exacto, que por construcción no cambia. `PUBLISHED_AT`/`HUMAN_REVIEWED_AT`/
+  `SOURCES` se dejan intactos (re-confirmar un hecho sin cambios no es una publicación nueva, y
+  moverlos habría roto los tests que fijan un `asOf` anterior a hoy, como el backtest del 2026-09-24).
+- **Renovado**: `VALID_UNTIL` de ambos paquetes pasa a `2027-06-01T00:00:00.000Z` (cubre el cierre de
+  la ventana de mayo 2027 con margen), con sus hashes recalculados por
+  `node node_modules/jiti/lib/jiti-cli.mjs scripts/recompute-bundle-hashes.ts`. Esto extiende el límite
+  DURO del bundle y mantiene viva la economía del Saco (`evaluateInventoryContainerEconomy` no
+  consulta `maxRulePackAgeMs`, solo `validUntil`), pero NO evita que el rule/knowledge pack pase a
+  `review`/`rule_stale` hacia el 14 nov 2026 por el límite de 90 días — una política ya existente que
+  este lote respeta sin extender, tal como se pidió. Hará falta otra revisión (`reviewedAt`) antes de
+  esa fecha para que la capacidad "open" del Saco (y cualquier regla que reutilice el rule pack) siga
+  resolviéndose sin revisión manual.
+- **Arreglado un "expira en silencio"**: `getSaleViewModel` (`src/main.ts`) comprobaba el bundle
+  cacheado en `advisorModel.status`, que solo se actualiza en un refresh explícito y podía seguir
+  leyendo `ready` bien pasado el `validUntil` real — la pestaña Venta caía entonces en «Sin datos»
+  mudo. Ahora se comprueba el bundle EN VIVO en cada llamada y, si expiró, fuerza un estado explicado
+  con la fecha exacta («Las reglas de venta caducaron el `<fecha>`: actualiza el plugin», ES/EN),
+  igual que ya hacía `out_of_season` en el aviso de precio de Halloween.
+- Tests: hashes/caducidad renovados verificados en `inventory-advisor-builtin-bundle.test.ts` y
+  ficheros que cargan el bundle real; estado explicado cubierto en `sale-view-model.test.ts`,
+  `sale-view.test.ts` (ES/EN) y `main-sale-hero-timing.test.ts` (cableado real de `getSaleViewModel` +
+  DOM, con reloj posterior a `validUntil`).
+
 ## Sin publicar (main, 26 sep 2026) - la comparación esperar-o-vender ya funciona DENTRO del festival
 
 **Corrección de revisión (H18.22).** David reportó que la tarjeta destacada del Saco de Halloween
