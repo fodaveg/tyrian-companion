@@ -1,7 +1,7 @@
 import { createTranslator, type Locale, type Translator } from '../core/i18n';
 import type { ProductActionController, ProductActionDescriptor, ProductActionGroup } from './product-action-controller';
 
-export type ProductSurface = 'companion' | 'inventory' | 'settings';
+export type ProductSurface = 'companion' | 'inventory' | 'sale' | 'settings';
 
 export interface ProductShellOptions {
 	readonly locale: Locale;
@@ -43,6 +43,7 @@ export function renderProductShell(container: HTMLElement, options: ProductShell
 	const nav = shell.createEl('nav', { cls: 'tyrian-product-shell__nav', attr: { 'aria-label': t.t('shell.title') } });
 	appendNav(nav, t.t('shell.nav.companion'), options.active === 'companion', () => { void options.actions.run('open-companion').catch(() => undefined); });
 	appendNav(nav, t.t('shell.nav.inventory'), options.active === 'inventory', () => { void options.actions.run('open-inventory-advisor').catch(() => undefined); });
+	appendNav(nav, t.t('shell.nav.sale'), options.active === 'sale', () => { void options.actions.run('open-sale').catch(() => undefined); });
 	appendNav(nav, t.t('shell.nav.settings'), options.active === 'settings', options.openSettings);
 
 	if (options.missingApiKey) {
@@ -76,17 +77,20 @@ export function mountActionPanel(controller: ProductActionController, locale: Lo
 	const contentId = `tyrian-action-panel-content-${String(actionPanelSequence)}`;
 	panel.setAttr('aria-labelledby', titleId);
 	panel.setAttr('data-compact', 'false');
+	// `controller.all().length` is the ONE count, read here once; a hardcoded "16" would
+	// have gone stale the moment `PRODUCT_ACTION_IDS` grew a `'open-sale'` entry.
+	const commandCount = controller.all().length;
 	const header = panel.createEl('header', { cls: 'tyrian-action-panel__header' });
 	const title = header.createDiv();
 	title.createEl('h2', { text: t.t('shell.actions'), attr: { id: titleId } });
-	title.createEl('p', { text: t.t('shell.actionsHint') });
-	header.createSpan({ text: '16', cls: 'tyrian-action-panel__count' });
+	title.createEl('p', { text: t.t('shell.actionsHint', { count: commandCount }) });
+	header.createSpan({ text: String(commandCount), cls: 'tyrian-action-panel__count' });
 	const toggle = header.createEl('button', { cls: 'tyrian-action-panel__toggle' });
 	toggle.setAttr('type', 'button');
 	toggle.setAttr('aria-controls', contentId);
 	toggle.setAttr('aria-expanded', 'true');
 	toggle.createEl('strong', { text: t.t('shell.actions') });
-	const toggleSummary = toggle.createEl('small', { text: t.t('shell.actionsSummary') });
+	const toggleSummary = toggle.createEl('small', { text: t.t('shell.actionsSummary', { count: commandCount }) });
 	const content = panel.createDiv({ cls: 'tyrian-action-panel__content', attr: { id: contentId } });
 	const actionNodes = new Map<ProductActionDescriptor['id'], ActionNodes>();
 	for (const group of ['navigation', 'session', 'detection', 'inventory'] as const) {
@@ -96,7 +100,7 @@ export function mountActionPanel(controller: ProductActionController, locale: Lo
 	const feedback = content.createDiv({ cls: 'tyrian-action-panel__feedback' });
 	feedback.setAttr('role', 'status');
 	feedback.setAttr('aria-live', 'polite');
-	content.createEl('p', { text: t.t('shell.palette'), cls: 'tyrian-action-panel__palette-note' });
+	content.createEl('p', { text: t.t('shell.palette', { count: commandCount }), cls: 'tyrian-action-panel__palette-note' });
 	let compact = false;
 	let expanded = true;
 	const projectDisclosure = (): void => {
@@ -115,7 +119,7 @@ export function mountActionPanel(controller: ProductActionController, locale: Lo
 		for (const descriptor of controller.all()) updateAction(actionNodes.get(descriptor.id)!, descriptor, t);
 		const current = controller.currentFeedback();
 		feedback.setText(current === null ? t.t('shell.idle') : `${controller.describe(current.actionId).name}: ${current.message}`);
-		toggleSummary.setText(current === null ? t.t('shell.actionsSummary')
+		toggleSummary.setText(current === null ? t.t('shell.actionsSummary', { count: commandCount })
 			: `${current.kind === 'running' ? t.t('shell.working') : current.kind === 'error' ? t.t('shell.failed')
 				: current.kind === 'success' ? t.t('shell.completed') : t.t('shell.neutral')}: ${controller.describe(current.actionId).name}`);
 		feedback.setAttr('data-tone', current?.kind ?? 'idle');
