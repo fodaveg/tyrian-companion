@@ -1,0 +1,786 @@
+<title>Bazar de Halloween</title>
+<style>
+/* ==========================================================================
+ * CAPA 1 · Imitación de Obsidian (no se implementa: estas variables las pone
+ * Obsidian o el tema de David). Mismos valores que docs/diseno/h18-31-interfaz.
+ * ========================================================================== */
+:root {
+	color-scheme: light;
+	--background-primary: #ffffff;
+	--background-secondary: #f6f6f6;
+	--background-modifier-border: #e0e0e0;
+	--background-modifier-hover: rgba(0, 0, 0, .075);
+	--text-normal: #222222;
+	--text-muted: #5c5c5c;
+	--text-faint: #ababab;
+	--text-on-accent: #ffffff;
+	--interactive-normal: #ffffff;
+	--interactive-hover: #f2f2f2;
+	--interactive-accent: #8a6cef;
+	--text-accent: #7a5ce0;
+	--text-error: #e93147;
+	--text-warning: #ec7500;
+	--text-success: #08b94e;
+	--color-orange: #ec7500;
+	--color-green: #08b94e;
+	--color-red-rgb: 233, 49, 71;
+	--color-orange-rgb: 236, 117, 0;
+	--color-blue-rgb: 8, 109, 221;
+	--input-shadow: 0 0 0 1px rgba(0, 0, 0, .14), 0 2px 3px rgba(0, 0, 0, .05);
+	--font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Cantarell", "Noto Sans", Roboto, sans-serif;
+	--font-ui-smaller: 12px;
+	--font-ui-small: 13px;
+	--font-ui-medium: 15px;
+	--font-ui-large: 20px;
+	--font-normal: 400;
+	--font-medium: 500;
+	--font-semibold: 600;
+	--line-height-normal: 1.5;
+	--line-height-tight: 1.3;
+	--size-2-1: 2px; --size-2-2: 4px; --size-2-3: 6px;
+	--size-4-1: 4px; --size-4-2: 8px; --size-4-3: 12px; --size-4-4: 16px; --size-4-5: 20px; --size-4-6: 24px; --size-4-8: 32px;
+	--radius-s: 4px; --radius-m: 8px;
+	--input-height: 30px;
+	/* Marco de la maqueta (capa 0): el lienzo alrededor del panel. */
+	--bx-page: #e7e7e7;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		color-scheme: dark;
+		--background-primary: #1e1e1e;
+		--background-secondary: #262626;
+		--background-modifier-border: #363636;
+		--background-modifier-hover: rgba(255, 255, 255, .075);
+		--text-normal: #dadada;
+		--text-muted: #b3b3b3;
+		--text-faint: #666666;
+		--interactive-normal: #3f3f3f;
+		--interactive-hover: #4a4a4a;
+		--text-accent: #a68af9;
+		--text-error: #fb464c;
+		--text-warning: #e9973f;
+		--text-success: #44cf6e;
+		--color-orange: #e9973f;
+		--color-green: #44cf6e;
+		--color-red-rgb: 251, 70, 76;
+		--color-orange-rgb: 233, 151, 63;
+		--color-blue-rgb: 2, 122, 255;
+		--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+		--bx-page: #121212;
+	}
+}
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--background-primary: #1e1e1e;
+	--background-secondary: #262626;
+	--background-modifier-border: #363636;
+	--background-modifier-hover: rgba(255, 255, 255, .075);
+	--text-normal: #dadada;
+	--text-muted: #b3b3b3;
+	--text-faint: #666666;
+	--interactive-normal: #3f3f3f;
+	--interactive-hover: #4a4a4a;
+	--text-accent: #a68af9;
+	--text-error: #fb464c;
+	--text-warning: #e9973f;
+	--text-success: #44cf6e;
+	--color-orange: #e9973f;
+	--color-green: #44cf6e;
+	--color-red-rgb: 251, 70, 76;
+	--color-orange-rgb: 233, 151, 63;
+	--color-blue-rgb: 2, 122, 255;
+	--input-shadow: inset 0 .5px .5px .5px rgba(255, 255, 255, .09), 0 2px 4px rgba(0, 0, 0, .15);
+	--bx-page: #121212;
+}
+
+body {
+	margin: 0;
+	background: var(--bx-page);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: 14px;
+	line-height: var(--line-height-normal);
+}
+*, *::before, *::after { box-sizing: border-box; }
+
+.sr-only {
+	position: absolute !important;
+	width: 1px; height: 1px;
+	margin: -1px; padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Obsidian nativo (imitación): botones, iconos, callout. */
+.leaf button {
+	display: inline-flex; align-items: center; justify-content: center; gap: var(--size-4-1);
+	height: var(--input-height); padding: 0 var(--size-4-3);
+	border: 0; border-radius: var(--radius-s);
+	background: var(--interactive-normal); box-shadow: var(--input-shadow);
+	color: var(--text-normal); font: inherit; font-size: var(--font-ui-small); white-space: nowrap; cursor: pointer;
+}
+.leaf button:hover { background: var(--interactive-hover); }
+.leaf button[disabled] { cursor: not-allowed; color: var(--text-muted); box-shadow: none; border: 1px dashed var(--background-modifier-border); }
+.leaf :focus-visible, .bx :focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.svg-icon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.svg-icon.is-small { width: 14px; height: 14px; }
+.leaf .callout {
+	--callout-color: var(--color-blue-rgb);
+	margin: 0; padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-4);
+	border-radius: var(--radius-s); background: rgba(var(--callout-color), .1);
+}
+.leaf .callout[data-callout="warning"] { --callout-color: var(--color-orange-rgb); }
+.leaf .callout[data-callout="error"] { --callout-color: var(--color-red-rgb); }
+.leaf .callout-title { display: flex; align-items: flex-start; gap: var(--size-4-2); font-weight: var(--font-semibold); color: var(--text-normal); }
+.leaf .callout-title .svg-icon { margin-top: 2px; color: rgb(var(--callout-color)); }
+.leaf .callout-content { margin-top: var(--size-4-1); color: var(--text-muted); }
+.leaf .callout-content p { margin: 0; }
+.leaf .callout-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); margin-top: var(--size-4-2); }
+
+/* ==========================================================================
+ * CAPA 2 · El plugin. Solo variables de Obsidian.
+ * [vivo]   = regla que ya está en styles.css (se cita la clase).
+ * [H18.31] = pieza del boceto docs/diseno/h18-31-interfaz, propuesta y sin implementar.
+ * [NUEVO]  = pieza que añade esta maqueta.
+ * ========================================================================== */
+
+/* [vivo] .tyrian-product-surface */
+.tyrian-product-surface {
+	container-type: inline-size;
+	display: grid; gap: var(--size-4-4);
+	padding: var(--size-4-4);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
+	overflow-x: hidden;
+}
+
+/* [H18.31] pestañas */
+.tyrian-product-shell__tabs { display: flex; align-items: flex-end; gap: var(--size-4-1); border-block-end: 1px solid var(--background-modifier-border); }
+.leaf .tyrian-product-shell__tabs [role="tab"] {
+	height: auto; padding: var(--size-4-2) var(--size-4-3);
+	border: 0; border-block-end: 3px solid transparent; border-radius: 0;
+	background: transparent; box-shadow: none; color: var(--text-muted); font-weight: var(--font-medium);
+}
+.leaf .tyrian-product-shell__tabs [role="tab"][aria-selected="true"] { border-block-end-color: var(--interactive-accent); color: var(--text-normal); font-weight: var(--font-semibold); }
+
+/* [H18.31] línea de estado, una sola, role=status */
+.tyrian-product-shell__status {
+	display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--size-4-1) var(--size-4-2);
+	margin: calc(-1 * var(--size-4-2)) 0 0;
+	color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums;
+}
+.tyrian-product-shell__status > span + span::before { content: "·"; margin-inline-end: var(--size-4-2); color: var(--text-faint); }
+.tyrian-product-shell__status [data-tone="attention"] { color: var(--text-normal); font-weight: var(--font-semibold); }
+.tyrian-product-shell__status time { color: var(--text-normal); }
+
+/* [NUEVO] franja de simulación dentro del panel: borde discontinuo y palabra, nunca solo color */
+.tyrian-sale__simulation {
+	display: flex; gap: var(--size-4-2); align-items: flex-start;
+	margin: 0; padding: var(--size-4-2) var(--size-4-3);
+	border: 2px dashed var(--color-orange); border-radius: var(--radius-s);
+	background: rgba(var(--color-orange-rgb), .08);
+	font-size: var(--font-ui-smaller);
+}
+.tyrian-sale__simulation strong { letter-spacing: .08em; }
+.tyrian-sale__simulation .svg-icon { color: var(--color-orange); margin-top: 1px; }
+
+/* [vivo] .tyrian-inventory-advisor__storage-space + [H18.31] tratamiento con marca lateral */
+.tyrian-inventory-advisor__storage-space {
+	display: grid; gap: var(--size-4-2);
+	padding: var(--size-4-3);
+	border-inline-start: 3px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+}
+.tyrian-inventory-advisor__storage-space[data-low-space="true"] { border-inline-start-color: var(--color-orange); }
+.tyrian-inventory-advisor__storage-space p { margin: 0; overflow-wrap: anywhere; }
+.tyrian-inventory-advisor__storage-verdict strong { font-weight: var(--font-semibold); }
+.tyrian-inventory-advisor__storage-stores { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-inventory-advisor__storage-meter { appearance: none; -webkit-appearance: none; display: block; inline-size: 100%; height: var(--size-4-2); border: 0; background: var(--background-modifier-border); border-radius: var(--radius-s); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-bar { height: var(--size-4-2); border: 0; border-radius: var(--radius-s); background: var(--background-modifier-border); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-optimum-value,
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-suboptimum-value { border-radius: var(--radius-s); background: var(--text-muted); }
+.tyrian-inventory-advisor__storage-meter::-webkit-meter-even-less-good-value { border-radius: var(--radius-s); background: var(--color-orange); }
+
+/* [H18.31] tarjeta de venta */
+.tyrian-sale { display: grid; gap: var(--size-4-4); }
+.tyrian-sale__card { display: grid; gap: var(--size-4-3); min-width: 0; }
+.tyrian-sale__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-1) var(--size-4-3); }
+.tyrian-sale__head h3 { display: flex; align-items: center; gap: var(--size-4-2); margin: 0; font-size: var(--font-ui-medium); line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tyrian-sale__head small { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-sale__verdict { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-1) var(--size-4-2); margin: 0; }
+.tyrian-sale__verdict > span:not(.tyrian-action) { color: var(--text-muted); }
+
+/* [NUEVO] el saco manda: tarjeta protagonista con la cifra de la decisión en grande */
+.tyrian-sale__card--hero { padding: var(--size-4-4); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); }
+.tyrian-sale__card--hero .tyrian-sale__head h3 { font-size: var(--font-ui-large); }
+.tyrian-sale__card--hero .tyrian-inventory-advisor__item-icon { width: 40px; height: 40px; flex-basis: 40px; }
+.tyrian-sale__card--hero .tyrian-action { font-size: var(--font-ui-small); line-height: 1.9; padding-inline-end: var(--size-4-3); }
+.tyrian-sale__why { margin: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.tyrian-sale__why strong { color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-sale__card details { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__card summary { display: flex; align-items: center; min-height: 32px; cursor: pointer; color: var(--text-normal); font-size: var(--font-ui-small); }
+.tyrian-sale__card details p { margin: var(--size-4-1) 0 0; }
+
+/* [vivo] .tyrian-inventory-advisor__item-icon */
+.tyrian-inventory-advisor__item-icon { width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-s); object-fit: contain; background: var(--background-secondary); }
+/* [H18.31] sustituto con iniciales cuando el icono no llega */
+.tyrian-inventory__icon { display: grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; border-radius: var(--radius-s); background: var(--background-secondary); border: 1px dashed var(--text-muted); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+
+/* [vivo] cifras de la tarjeta de sesión (.tyrian-companion-session__figure*) */
+.tyrian-companion-session__figures { display: grid; grid-template-columns: repeat(var(--tyrian-figures, 3), minmax(0, 1fr)); gap: var(--size-4-4); margin: 0; }
+.tyrian-companion-session__figure { min-width: 0; margin: 0; }
+.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: var(--size-4-4); border-inline-start: 1px solid var(--background-modifier-border); }
+.tyrian-companion-session__figure dt { color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .06em; text-transform: uppercase; }
+.tyrian-companion-session__figure dd { margin: var(--size-4-1) 0 0; font-size: var(--font-ui-large); font-weight: var(--font-semibold); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tyrian-companion-session__figure small { display: block; margin-top: var(--size-2-2); color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tyrian-companion-session__figure[data-pending="true"] dd { color: var(--text-muted); font-weight: var(--font-medium); }
+
+/* [H18.31] marca de acción: palabra + filete lateral; el color nunca va en el texto */
+.tyrian-action {
+	display: inline-flex; align-items: center; gap: var(--size-4-1);
+	padding: 0 var(--size-4-2) 0 var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-inline-start: 4px solid var(--tyrian-action-mark, var(--text-faint));
+	border-radius: var(--radius-s);
+	color: var(--text-normal); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold);
+	line-height: 1.8; white-space: nowrap;
+}
+.tyrian-action[data-action="sell"] { --tyrian-action-mark: var(--color-green); }
+.tyrian-action[data-action="hold"] { --tyrian-action-mark: var(--interactive-accent); }
+.tyrian-action[data-action="deposit"] { --tyrian-action-mark: var(--text-muted); }
+.tyrian-action[data-action="none"] { --tyrian-action-mark: var(--text-faint); border-inline-start-style: dashed; color: var(--text-muted); font-weight: var(--font-medium); }
+.tyrian-action[data-action="nodata"] { --tyrian-action-mark: var(--background-modifier-border); border-style: dashed; color: var(--text-muted); font-weight: var(--font-medium); }
+
+/* [NUEVO] antigüedad de un precio: siempre al lado del precio que describe */
+.tyrian-sale__quote { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--size-4-1); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-sale__quote[data-state="stale"], .tyrian-sale__quote[data-state="error"], .tyrian-sale__quote[data-state="limited"] { color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-sale__quote[data-state="stale"] .svg-icon, .tyrian-sale__quote[data-state="limited"] .svg-icon { color: var(--color-orange); }
+.tyrian-sale__quote[data-state="error"] .svg-icon { color: var(--text-error); }
+.tyrian-sale__quote[data-state="simulated"] { font-style: italic; }
+
+/* [NUEVO] calendario de ventanas: mismo eje para todos, hueco = ventana, relleno = ventana abierta hoy */
+.tyrian-sale__windows { display: grid; gap: var(--size-4-2); margin: 0; }
+.tyrian-sale__windows h3, .tyrian-sale__group h3 {
+	margin: 0; padding: var(--size-4-1) var(--size-4-2);
+	background: var(--background-secondary); color: var(--text-muted);
+	font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); letter-spacing: .08em; text-transform: uppercase;
+}
+.tyrian-sale__windows ul { display: grid; gap: var(--size-4-2); margin: 0; padding: 0; list-style: none; }
+.tyrian-sale__windows li, .tyrian-sale__axis { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: var(--size-2-2) var(--size-4-3); align-items: center; }
+.tyrian-sale__win-label { display: grid; min-width: 0; }
+.tyrian-sale__win-label strong { font-weight: var(--font-medium); overflow-wrap: anywhere; }
+.tyrian-sale__win-label small { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-sale__track { position: relative; height: 14px; border-block-end: 1px solid var(--background-modifier-border); }
+.tyrian-sale__festival { position: absolute; inset-block: -4px 0; left: calc(var(--from) * 100% / 42); right: 0; background: rgba(var(--color-orange-rgb), .13); border-inline-start: 1px dashed var(--color-orange); }
+.tyrian-sale__bar { position: absolute; inset-block: 2px 2px; left: calc(var(--from) * 100% / 42); width: calc((var(--to) - var(--from)) * 100% / 42); border: 1.5px solid var(--text-muted); border-radius: 3px; background: var(--background-primary); }
+.tyrian-sale__bar[data-open="true"] { border-color: var(--text-normal); background: var(--text-normal); }
+.tyrian-sale__today { position: absolute; inset-block: -6px -2px; left: calc(var(--at) * 100% / 42 + 100% / 84); width: 2px; margin-left: -1px; background: var(--interactive-accent); }
+.tyrian-sale__axis { color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; }
+.tyrian-sale__axis-scale { position: relative; height: 1.5em; }
+.tyrian-sale__axis-scale span { position: absolute; left: calc(var(--at) * 100% / 42); white-space: nowrap; }
+.tyrian-sale__axis-scale span[data-edge="end"] { transform: translateX(-100%); }
+.tyrian-sale__axis-scale span[data-kind="today"] { color: var(--text-normal); font-weight: var(--font-semibold); }
+.tyrian-sale__axis-scale span[data-kind="festival"] { color: var(--text-normal); }
+.tyrian-sale__legend { display: flex; flex-wrap: wrap; gap: var(--size-4-1) var(--size-4-3); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__legend i { display: inline-block; width: 18px; height: 9px; margin-inline-end: var(--size-4-1); vertical-align: -1px; border-radius: 2px; }
+.tyrian-sale__legend i.is-window { border: 1.5px solid var(--text-muted); }
+.tyrian-sale__legend i.is-open { background: var(--text-normal); }
+.tyrian-sale__legend i.is-today { width: 2px; background: var(--interactive-accent); }
+.tyrian-sale__legend i.is-festival { background: rgba(var(--color-orange-rgb), .13); border-inline-start: 1px dashed var(--color-orange); }
+
+/* [NUEVO] lista del resto del botín: una fila por objeto, cuatro columnas en ancho */
+.tyrian-sale__group { display: grid; gap: 0; }
+.tyrian-sale__group > p { margin: var(--size-4-1) 0 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__rows { display: grid; margin: 0; padding: 0; list-style: none; }
+.tyrian-sale__rows-head, .tyrian-sale__row {
+	display: grid;
+	grid-template-columns: minmax(11rem, 1.3fr) minmax(12rem, 1.5fr) minmax(8rem, .8fr) minmax(8rem, .8fr);
+	grid-template-areas: "item decision price value";
+	gap: var(--size-4-1) var(--size-4-3);
+	align-items: start;
+	padding: var(--size-4-3) var(--size-4-2);
+	border-block-end: 1px solid var(--background-modifier-border);
+}
+.tyrian-sale__rows-head { padding-block: var(--size-4-2); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: var(--font-semibold); }
+.tyrian-sale__rows-head > :nth-child(n + 3), .tyrian-sale__price, .tyrian-sale__value { text-align: end; }
+.tyrian-sale__row:hover { background: var(--background-modifier-hover); }
+.tyrian-sale__item { grid-area: item; display: flex; align-items: flex-start; gap: var(--size-4-2); min-width: 0; }
+.tyrian-sale__item > div { min-width: 0; }
+.tyrian-sale__item strong { display: block; font-weight: var(--font-semibold); overflow-wrap: anywhere; }
+.tyrian-sale__item small, .tyrian-sale__decision small, .tyrian-sale__price small, .tyrian-sale__value small { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tyrian-sale__decision { grid-area: decision; min-width: 0; }
+.tyrian-sale__decision small { margin-top: var(--size-2-2); }
+.tyrian-sale__decision small b { color: var(--text-normal); font-weight: var(--font-medium); }
+.tyrian-sale__price { grid-area: price; font-variant-numeric: tabular-nums; }
+.tyrian-sale__value { grid-area: value; font-variant-numeric: tabular-nums; font-weight: var(--font-semibold); }
+.tyrian-sale__value[data-unknown="true"], .tyrian-sale__price[data-unknown="true"] { color: var(--text-muted); font-weight: var(--font-normal); }
+.tyrian-sale__price .tyrian-sale__quote { display: block; }
+.tyrian-sale__price .tyrian-sale__quote .svg-icon { vertical-align: -2px; margin-inline-end: var(--size-2-2); }
+.tyrian-sale__price .tyrian-sale__quote > span { display: inline; }
+.tyrian-sale__value small { font-weight: var(--font-normal); }
+.tyrian-sale__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--size-4-2); margin: 0; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.tyrian-sale__foot p { margin: 0; flex: 1 1 16rem; }
+.tc-money { white-space: nowrap; }
+.ej { text-decoration: underline dotted rgba(var(--color-blue-rgb), .9) 2px; text-underline-offset: 3px; }
+
+/* [vivo] bandeja de avisos (.tyrian-companion-halloween*) */
+.tyrian-companion-halloween { display: grid; gap: var(--size-4-3); }
+.tyrian-companion-halloween__disclosure { border-block: 1px solid var(--background-modifier-border); }
+.tyrian-companion-halloween__disclosure > summary { display: grid; gap: var(--size-4-1); min-height: 44px; align-content: center; cursor: pointer; }
+.tyrian-companion-halloween__disclosure > summary small { color: var(--text-muted); overflow-wrap: anywhere; }
+.tyrian-companion-halloween__body { display: grid; gap: var(--size-4-3); padding-block: var(--size-4-3); }
+.tyrian-companion-halloween__body h3 { margin: 0; font-size: var(--font-ui-small); }
+.tyrian-companion-halloween__body p, .tyrian-companion-halloween__body ul { margin: 0; }
+.tyrian-companion-halloween__notice { border: 1px solid var(--background-modifier-border); border-inline-start: 4px solid var(--color-orange); border-radius: var(--radius-m); padding: var(--size-4-3); overflow-wrap: anywhere; }
+.tyrian-companion-halloween__notice time { display: block; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+
+/* Responsive por contenedor: los cortes de styles.css (759 / 520 / 400) */
+@container (max-width: 759px) {
+	.tyrian-sale__rows-head { display: none; }
+	.tyrian-sale__row {
+		grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+		grid-template-areas: "item value" "decision decision" "price price";
+		padding-inline: 0;
+	}
+	.tyrian-sale__decision, .tyrian-sale__price { padding-inline-start: 40px; }
+	.tyrian-sale__value { max-width: 9.5rem; }
+	.tyrian-sale__price { text-align: start; }
+
+
+	.tyrian-sale__windows li, .tyrian-sale__axis { grid-template-columns: minmax(0, 1fr); }
+	.tyrian-sale__axis > :first-child { display: none; }
+}
+@container (max-width: 520px) {
+	.tyrian-companion-session__figures { grid-template-columns: minmax(0, 1fr); gap: var(--size-4-3); }
+	.tyrian-companion-session__figure + .tyrian-companion-session__figure { padding-inline-start: 0; padding-block-start: var(--size-4-3); border-inline-start: 0; border-block-start: 1px solid var(--background-modifier-border); }
+	.tyrian-sale__card--hero { padding: var(--size-4-3); }
+}
+@container (max-width: 400px) {
+	.tyrian-product-shell__status { display: grid; gap: var(--size-2-2); }
+	.tyrian-product-shell__status > span + span::before { content: none; }
+	.tyrian-sale__card--hero .tyrian-sale__head h3 { font-size: var(--font-ui-medium); }
+	.tyrian-sale__foot button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tyrian-product-surface *, .tyrian-product-surface *::before { transition: none !important; animation: none !important; }
+}
+
+/* ==========================================================================
+ * CAPA 0 · Marco de la maqueta (conmutadores, láminas y notas). No se implementa.
+ * ========================================================================== */
+.bx { max-width: 1180px; margin: 0 auto; padding: var(--size-4-5) var(--size-4-4) var(--size-4-8); }
+.bx h1 { margin: 0; font-size: 22px; line-height: 1.25; }
+.bx-lede { max-width: 68ch; margin: var(--size-4-2) 0 var(--size-4-4); color: var(--text-muted); }
+.bx-controls { display: flex; flex-wrap: wrap; gap: var(--size-4-3); margin: 0 0 var(--size-4-4); padding: var(--size-4-3); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); }
+.bx-controls fieldset { display: flex; flex-wrap: wrap; gap: var(--size-4-1); margin: 0; padding: 0; border: 0; min-width: 0; }
+.bx-controls legend { width: 100%; margin-bottom: var(--size-4-1); color: var(--text-muted); font-size: 12px; font-weight: var(--font-semibold); letter-spacing: .06em; text-transform: uppercase; }
+.bx-controls label { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 var(--size-4-3); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); cursor: pointer; font-size: 13px; }
+.bx-controls input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.bx-controls label:has(input:checked) { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); font-weight: var(--font-semibold); }
+.bx-controls label:has(input:checked)::before { content: "\2713\00a0"; }
+.bx-controls label:has(input:focus-visible) { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.bx-controls label[data-sim] { border-style: dashed; }
+
+.bx-stage { display: grid; gap: var(--size-4-4); align-items: start; }
+.bx-variant { display: none; }
+.bx:has(#esc-hoy:checked):has(#esp-sobra:checked) .bx-variant[data-esc="hoy"][data-esp="sobra"],
+.bx:has(#esc-hoy:checked):has(#esp-poco:checked) .bx-variant[data-esc="hoy"][data-esp="poco"],
+.bx:has(#esc-sim:checked):has(#esp-sobra:checked) .bx-variant[data-esc="sim"][data-esp="sobra"],
+.bx:has(#esc-sim:checked):has(#esp-poco:checked) .bx-variant[data-esc="sim"][data-esp="poco"] { display: block; }
+@supports not selector(:has(*)) {
+	.bx-variant[data-esc="hoy"][data-esp="sobra"] { display: block; }
+	.bx-controls { display: none; }
+}
+.bx-simband { display: none; margin: 0 0 var(--size-4-3); padding: var(--size-4-2) var(--size-4-3); border: 2px dashed var(--color-orange); border-radius: var(--radius-m); background: rgba(var(--color-orange-rgb), .1); }
+.bx:has(#esc-sim:checked) .bx-simband { display: block; }
+.bx-simband strong { letter-spacing: .08em; }
+
+.leaf { width: 100%; max-width: 860px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); background: var(--background-primary); box-shadow: 0 1px 2px rgba(0, 0, 0, .06); overflow: hidden; }
+.bx:has(#ancho-lateral:checked) .bx-stage .leaf { max-width: 300px; }
+.leaf-title { display: flex; justify-content: space-between; gap: var(--size-4-2); padding: var(--size-4-2) var(--size-4-3); border-bottom: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.leaf-title b { color: var(--text-normal); font-weight: var(--font-semibold); }
+
+.bx h2 { margin: var(--size-4-8) 0 var(--size-4-2); font-size: 18px; }
+.bx-states { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--size-4-4); align-items: start; }
+.bx-state { display: grid; gap: var(--size-4-2); margin: 0; }
+.bx-state figcaption { color: var(--text-muted); font-size: 12px; }
+.bx-state figcaption b { color: var(--text-normal); }
+.bx-state .leaf { max-width: 300px; }
+.bx-state .tyrian-product-surface { gap: var(--size-4-3); padding: var(--size-4-3); }
+
+.bx-notes { display: grid; gap: var(--size-4-3); max-width: 90ch; }
+.bx-notes table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--background-primary); }
+.bx-notes caption { padding-bottom: var(--size-4-2); color: var(--text-muted); text-align: start; }
+.bx-notes th, .bx-notes td { padding: 6px 8px; border-bottom: 1px solid var(--background-modifier-border); text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.bx-notes thead th { color: var(--text-muted); font-weight: var(--font-semibold); }
+.bx-notes code { font-family: ui-monospace, "SF Mono", "JetBrains Mono", monospace; font-size: 12px; overflow-wrap: anywhere; }
+.bx-notes ul { margin: 0; padding-inline-start: 1.2em; }
+.bx-notes li { margin-bottom: var(--size-4-1); }
+.bx-tag { display: inline-block; padding: 0 6px; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); font-size: 11px; font-weight: var(--font-semibold); white-space: nowrap; }
+.bx-tag[data-kind="vivo"] { border-inline-start: 3px solid var(--text-muted); }
+.bx-tag[data-kind="h1831"] { border-inline-start: 3px solid var(--interactive-accent); }
+.bx-tag[data-kind="nuevo"] { border-inline-start: 3px dashed var(--color-orange); }
+.bx-scroll { max-width: 100%; overflow-x: auto; }
+
+/* Iconos reales del CDN de ArenaNet (render.guildwars2.com), incrustados: la página no pide nada a la red.
+   En el plugin son <img alt=""> con la URL del CDN (appendItemIdentity). */
+.tc-icon { display: block; background-size: contain; background-repeat: no-repeat; background-position: center; }
+.tc-icon[data-item="36038"] { background-image: url(data:image/png;base64,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); }
+.tc-icon[data-item="36041"] { background-image: url(data:image/png;base64,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); }
+.tc-icon[data-item="47909"] { background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAABXISURBVHhetZp/bNT3ecfvD6S6Ct2uMkm+CAO+2XG4cTW+9op95FrPV4jFNY7DpdeQi5yZXNyRXaCml1jQC2ykHk3oCYRr4cW7xirLQcJ0rHXnKCM9lI7WSeXKq5bONErltAuLl1LJyoJmKZ307Hk/d8/Hn+/ZpqmqRXrp88UB+16vz/P9JfDwf2Rz00f/SKj++kr4KsS8tZSpb6LhQJjSvmZyVjtC7UduceFdVevGU0POTRsW8Qapfl27wbc2TE6tX/Die3q8hlObgjQSaBUm2qKy5gLbqBSJCv7V/Gf494GmjzQIzir+HhbssCjj1AXJV+enW2rXuSL4V99kjpXQH3sFFc+3hIWOW/mHVOTBho813DCALe+7OUT+2+5yUx8TTAgrQGKNz8grKp9kFwRQ8eoAGScusMuiFAIst/vZRp8rAsTzgWCZijhACFteA9gRVHxtzQbBDiCyNwiACYA0dl6x5QEmAOKKikc+1irr1ps2CyZAzUe9RkyPqycAAYD+eu963+8dwL+Gd4Tx8YdSeTuA7P6HCKA7D/lp3mlIH6wPUJK/Bmx5DQD5+JqYrBpA8dTezOfBqhoLPl+86yjDP6Crrol66hwaCvgE/2ovDfghGzRrgcVtttRGWBKiQTmOru+iWH1cVrDZaaUN3gB5a3yyOmv4Q64LU8gXE5rXt7vYsnERH/9e7+owRW5t52tNTMg2xijJ1wqnhk8PJszXEJsofw4XNWFDuvYu8oTbwksCKIig8gqkFUQYuD3iChBZ2yniWCFuy4NwfdREAJCPbkqKPI5VPNSwXbADAMjv9W0XcCzSHw8t8iEDQL60KUOeptv9lnyN7D7QCPYEaACI++t4NBlnTZQ6+QNrCIgrtnx4XWeZSgDF3n2hIq5E/Ak3LG3jkq8K0MOfIe3Elg2guE6B8vHiBCDEcgG6G/gWUwkAeUTQELr7ikueseU1gI29+39ogEIgQ6WWrCsAdh6YACq/pbaWci1+Hq1Gitf5hCO3477ud1HgAJ0OLnY+Wf38IUA9/3Dg8/op4GwTgnUIxRc/iyDfZm38fF67qPr9mBibGH8umzBfE2yi3qiLzB0hitXwn6sQXcW/x2JJgGrh4K1lUr4yCDDQyBcvDgBsedDEV3rw/xngWG/UcCrdIPTd0SxUB7Dlbxigx7dhSQBMgQZQII8IGgDSDt9uNIDuvmLL9O6K0sDDEbr4D/cYxl9ICvsf5FhWgPSDXVT89l566dx+F5f/PiXYAUqjjmH0QBPt7wiZAJgAm8HEBiEV2Cx4sPMqj9Ue++oAHhbV0dfTQMUxCUG+JkBapwCo+MjfxGn6YsqI0/spYeH9jEEiWPLzbw/SwjU3NLcIQugEaIjJM2U0wre+3GS+BgqHvS48mc1NVGjzE1aQ+0SzId4Qog11YTe38i2MaVi/vbxWaF4fEXCvtsn0+Gjim+sMPx4PGObeitLClbgwezZCkwNNlGrx0NQ/dhHNZ4Srr99HC3NJw7uzPXT9v3oNC3Mpmrm0nyZOH6LhfYP0/JOtNHVhu6yDCT9lQ16a/m6H4ZXnwnT+G1EaPsDPEYzHlrcDTPLXsUK6gc89IMcs7m+MCzjWAIotv+OTzTR8cIMrwPljt5gAOIY0QAAw0t+0JIAdwZbXAApCQNyOgADgua/4JcDMpaBE0BCe6PpG8np9BscJy85rCJU3QLqCPQHAnoC93fw99oWXBLDlc/d7qLjDK2gIBNAI4KeXEgadAHsK7ABg/s24iYAJgLgNpCGPEMBjy2sABSFU3M+PnBpATwM7QLiRr9KMLb9cAIjb6M5XB9AIpfNxAyLMvr4YAawUAPJYF+Z5cipgAhBAQQhPTY1DwKnlC9n6bvI5eLDhK3uFJidCQX4Z0VV3WPHjBcQiyi9Ime4yuT1BeuYxN8VjPnrtwm7h6pWT9N7cdwxXr5yiX0wdo1fO9lLhSX60Zl55vtfF5QtlcIEsXySzLubfyglnvtYuvDG5ly+w/P+UaymaneoSisf5Bc+W1wB2BIjb/K4AD3x2+QADcb+sKk40WWZhWsQBIizMFwWEQIDRgyGDHUB5/VKPi9e+2ydAPptw6OJowh3BCgA8trzAtzINgFXF13m3CCqe7ummibMD9NILGaH/QX40rpoAAHGldDpsApgIHEB3f+bVjIgDjQBpyGd21gjpHQ6NfDViAnxnqF3QADoBACHy+6KCicABNIJMgAYIb0q7AgAc2/JAxWk+X+b9MhoBATAFSryFH6uZ5QKUKe+8fQrYzF3JmfFHCASwyfX5TAD7FFAgjSlABKz27k+ebyVPsDZMD/iSAo4DaxZpdfiittoxTLzAO8MPIC5+zQ80v+UHE2b+51EqPsW7FW+iML9EgVi9X7g8tI1oKkpzl+McLiss/HIfXf8FX80t5t7Munj35xnh9R+k+ULIT4FDnTS2MyJkPfyC43Ho/NfDLBQT6Lf8Z97s5+O0rFd/luZJG5S1eDhM47nN9Mb3+dpQwVOzyqFBfmO6UYB0kned5WmhdMMAOJ67xI+fVQGO3R80Aeb/jW9dLA4QAdLzfGX/4J0+YaUAGsEOAAa2+428Brh+bUDkNYAdAQFyPY47AMQVWx7Y8uCdf44I8z/FPbgsrvIfJoDKawiaT0sAhECAhWv9fHUfMCCSHWGOb3MaARNg7z5QeXsC7Ah0Le6KsGwAlY/yNUDlsYJZfp62mXvVtyjPxzcKABbFy6cApBFBJwABAL3PHxhUThfFDgCqA6g4VmAHkAgcwI7gwQtNaG3UEOQAysA9/EGv5eg3P+gR3hjZQjOnfcLk4xuEXw1xgMv+RcZ99NJhHx3cye/qfFeI1fDr66a1dHmnl+iRGnr3BZ9A14LCwlzaxQdv7+DgfFop81EX8/zhJ8f4yv6FoPDSUxF684eHZAXncq30+g/3G2anOPA1fqyu8IvJTg7MP4spHPaQp6k2aORxbAe4+I0zRlyx5cHUHkdACInBATSCHUAjvP4lr4kA5n+CR1x3AJvqACqf4e+LdbjLY+RxnE14XBEQwI6AAHYEjy1vB5Ddf3XGJQ9s+YkEP962eAWNYAfAFCCAHaHU6HFFeOe77QJCgOvTTQLksb7zQ752sDhWYMvbE6BA3o6gATSCBtAIK04AAmACJvd5FuX5WMULIX63ZjSARvgwATQCmD3tNxEkxMUaE0EDKBP7+M2VvxfAJOB0IJpw89uCiCMAyB/HdWExgh0AeG75mI8CuPhVCHtjQnFPjOb4Dw/1sOzjLMvguNjhUP7TN1NuU62sY60+errZESY6+H5/FK+2fGtizvU0UuJPmsm/yi/r0fYQDdd5ONZNtHA/h2LmdnnpN4/W0n9//WZa4Ivq/CU3C//K1wlm8ngzpTx+xkcjX4jQ1LndLJuhD37TS//7P2MsP1te388J7/4yS7NXMpQfjAmT/5Thu0qe5q9wuAqvvBApB7AjLBcAHNm+QYC4jcpnGr2yQlojYF0pwMyOW0wABSHeOOzQ1WcXgTgY3hFwBYC8HQAruP7rQReQRoBMgqeGI0B6xQBRJ24CZMJLA6QDPsrWeV0BIG6Ta/NJBA0AaY2gAewIdgAwzbcmgBBYIb4ov3yAhbd5mpjqAJgCBIA4AoChbKsA+RsG0Aj27msAZaUAGgEBij1h1xRoAHCjAIpbfvkAGmGlAHaEVFfQRAAeHz8H2EQD/ADEPPGXcWH8IZ+Qj5RJ17np95XJbSoTb3GE/l1bqTiUoRPH9lLvzh0U5O8NeusbDOldMRr7/FaauD9sKOxxkwvwA5UXf+fHAdc2UN7x0Oz5Jj7Pw2UWhmnhHX5q/Nl9shJHMPzHXUR8a52/khSmXwxT346Yi2UDTLyQovm5jKyvPVUOoBFOhtoFDZBYtxgBaABw8kCCSpdzKwboC7fS058NuagOAGkNAEp7apcEsCPQFf4axCsRID47yXcCBsejhx/iz8F3uwomQOIzDwgqr8xe8LkijHf1uCIgAB54sAI7AKYAAewpUHHsPoB0poXv7YwGOHJns6y7N7vl7QCK7LoVwZZHDIhj5zXC9ItZVwRXgNKz0y55nQCbmb6sRNAQGHuNAOwAAPL2FCRrvK4AtjxOAcgrQW95/HUK+hs2uOTB3OWwK4KRBxxDx19BAIDxlwDR1XzOV5i5VKS5t3LC5Qt9NHaknV7LeF1MH3KolHKoeHeZ/F1Jyq2OG+Lb2l10tzdT/nRS8K9xyM8RQE9np5BqiwtHU0kaO5mi0pkMneJTJyzyDn8uP6VbmmUdToTovdFmokt+Wa8+HqJ3h2rp+r/wQxMjp8R8it77904Bx3jxuToZMSy8laSXv30XHXmonaKNKwSAvAaYGfIaNIAdAQEUBHD4Kg3sAGAgvV3WlQKI/MW0BOjr2CryWFUelA6FRVzlwewejyuCEa+EgLS+AQI7AFgSQMVBtstx7f7L93pFvHoCQPEbKUHFNYIGUCA99LX9NHlpWFbsvAYAtrwdACsCqHh1AOXq9wOCPQEKYkD+9woAaVAMlcm3sXSF6gAlfv+evJCl3GM9JgLGvjoA5BXsOsQRAqi4hrDHHwFmdi2iARQEmDnjNRHAa2eaDMXDXiMOyqeAlx+AKsyeyNH0pQx9vT8opPj1dQL/EIkZC20TjvEF69Amv6ygt71bGHgwQbnDSRrme78SrPeTs4pPCaa/Z7eQY4nvne83vDKxl6YvZ806eTFDo38dp/134h80ePlC5dDu9g46kkkLL0djLn71lWZaOO6XFZQO+mnmLAdicHzmL9bR9Gk+dRkcH/xi2BD2et0Bzj/cvyQApKsDaASgAWL1MVnjd0aFzKNJWbcHIyKeP84vJswk3xHsAN97PmHkNYCCCBqgcHZYAqR6knSyOy7ycyHenI4wTd0fcgWwgbTN7wxwfiTuCvB0IGjkwXBbeEkAyFcHUGx5MDaUcKEBsAI7ACbB3n0cIwCAvAbQCKAQ4zdXi4HWJheQBgjw0rdS7gAD2xJG3g6QafSbNV3PT4AWKv/7BsDuYy2MRkUcK0LYAQB2XncfAbD7NhpAydXVuFDxWE1QUPmFt3OCp5NfepTEmjgV8DxuMbC1ieKbvIYgv/CAxMZ2IVIXEu5p7BRinwwbkvywceThLhrN7jbruaG4MDGeFIr8fGAz/ndxKo3zOwivYGI8Kww/lqDBBAftjrkoBsL09G2bhS9t3EA99Y2UxUtbhTDfcpXsFwM0w9/7vf88ZPCknCT/z6jII8KR+j4RH/pMt1AdQMU1BP46zI4A8fBGP9/rHRNAsQOAUfwjhZ1+yqfCJsC5wbK4Rih8c6+JgOPi2RydzKZNAEhHHa8BAZT2NTzylnzp261ElHMH0N1HCERIr8pKBDuAjQZQIA15DaHyGiDVFTUBJoZSLvncrqgJUHiCd7MyAYigISBtR0AAjRDnU9KW1wmAuK/GL7jkr0VFWiNc/UlfOQDEEQAggB2htIt3g3nmcxEhvyZvOLh2nxl9nQANoKcBAmgEDQB5O4AdQcXz+8qovK4qv1wAAHkNgFXlVwwQ9/Lzu0XGSbsY3OlzMRzhD2yR73GTO5SmB/4sZki2xWgg3kWnHu2m4rE47zKLPbGdcqlWyrJ4tivoYvSRCE2MpoRzT95Dxad4A17kX489IMeTF1L0fC4upHcGqSfAd6OdYVmjeH/gBy9lYEsDvz069MbzDTQ35Reu/7KH3xkGBRy7AhzamHDJj3QN0vNH/MLUeFCYOcHvBcwrGUcoPc73W8YOkOHbVLQxLAEgr2gAI79MgNwuv4mAAAWeFI2AFeIaQQPY2PLjMX4uWCbAB78+YPBAGox94j7BDnDxaJ5fi8MGDaDy5+/zuXY/u91vdt4O4JqCZQKMPByj8exDAgLYESCNCJgARNDdfzodlRW7DuwAKg+mBjcYeTB/JSYRFM9kJEk2doDZFydc8pgEFVdUHCT5A6i4AnkNAFzjXwkA8ekhfhJksOsaAccQ1ynAsX0KgOE+jl0JgNWWn+8Ly+7bIADA7kuAH29LETi/uUyujl9mKsyMF2jm1RhNnuUdOBajAv+w4q6gMBJtFgbbfHRgyzqh57ZbqPtP/UKyKykMtO2l3s90CTge3sO3PubQnSHh4K4Ijey7x5B/MkrPfIWfODnAyJ6gXDiLT/KpU2HyAm8U853T3TR6eDuNPBan/m38kOPxylroKDP15U6a5VNuZshH03/VKKvw/d3C/FsZwRUgV7c0AOSrA0D86KcCgi0fq/NSjK/ECJC4o0MCqLiux+5tFyCfbvMvCQB5O8JzB/hxtxIBxxCvDmDz0u6IAHlEgPyPHm0yAS79bcQVwQNxd4SlASCvAXTn7QCQtwNoBA2QCw2KPIC4HSAZckfQAAATkLemAAEgDXlFxUsXMgKkEQArgDwiaIjC4+UpMBPwhwRI831Y5VcKEONxVHnE0NHHaVAdYOJ4SgJAHKvE4GMdfxwP8nltR1gpgFK63y/iWHUCdAokwLc276PJNn4NrVAInBIGV2dpbl+JZs/k6EcHBwz5XWk60dFLR1v4lokXoPUhQ6zOocSt/IRYIR1JU9/WLuq+vVVW0H9HnI7d+QB/n5Ss8QBfuD7XTM8kt1PpQJIKJzI0fJCf+1NbhaFHOqlwiL/OHOG3vWOpDhqVp8byLfXE3m4687X9NPEs/m3gfo6ULHMvB7uTH6w+X+bldJymjyfp8rOdhtmLcfJk1veSHUEDgMmuc78zwMBGflxmEACrysdW8auyPyHSYcdnAiRb+BneigB5OwLk7QjVATL80GNHQACNYAJU5PNt/KQZiK4YAEiAGD8EaQg7AKbAlq8OAHL1aUEj2BOAANh9BMCa3ZGSABrBDqARIA15ReURQiegOgBupRrCBGB5O4BGgPS5oxGDKwCAtM1wI/+gu3uXDYAJ0ABATgWWtoG8ggAQtyNg1+0ImS7HjL8dAPJpfhTHBIAPG0DllVwfP21aeGIfv4vAQ7f2UrYuQ1knSyfqcrKC/JoCvfbJCZrt4OsBU4oU6Nynh+nUlkHKbsrQ0dsGaGTzKVnT9XihwotVnI5uPCTsbUwK0Tq/rIMtGUpv6hFwfGpHmm+tuEtwGH63jzU61Mf386P8qgv2dzXRIF/8sIJUBz/797TTya9ynNP8Z/nO8MTdAcMgX6iVdCxCXwq0CoMcA2v8U2FK3x2lwUf49zBLAkD+TH3erOMNRQERAOQ1AIB8dQCIj902ZgKcDORMhHh9p4hrCIgjAsAx5BFBQ6h4dQDII8Lwn7eKONYU/vKWpVUedNYHXCBA2AmaEB6IuyJUJgBMNC6KK5gAnQKgATQCxBU7wESoJMfyw60IkFYQAbtuR9jdtk7QAJDXCdAAGkEDxLdsMVQHwM+38QRXh0lBBASAuIbAKaATgFXFlWJL0UUpMGnkAeQ1AMCuawQcY+ztCDr6iACijfyez2gETICCENUBIK1/Twn0X7GDpQGC9H9wC2lpbxnVkAAAAABJRU5ErkJggg==); }
+.tc-icon[data-item="48805"] { background-image: url(data:image/png;base64,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); }
+.tc-icon[data-item="43320"] { background-image: url(data:image/png;base64,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); }
+.tc-icon[data-item="36059"] { background-image: url(data:image/png;base64,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); }
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+	<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+	<symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+	<symbol id="i-unplug" viewBox="0 0 24 24"><path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol>
+	<symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41A2 2 0 0 0 7 17.83V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></symbol>
+	<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+	<symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.31"/><path d="M14 9.3V2"/><path d="M8.5 2h7"/><path d="M14 9.3a6.5 6.5 0 1 1-4 0"/><path d="M5.52 16h12.96"/></symbol>
+	<symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/></symbol>
+</svg>
+<div class="bx" lang="es">
+	<h1>Bazar de Halloween · preview</h1>
+	<p class="bx-lede">Cómo se vería la venta de Halloween en Tyrian Companion. Precios reales del bazar leídos el 26 sep a las 07:35; las cantidades son de ejemplo y van subrayadas. Es una maqueta: no está implementada.</p>
+	<div class="bx-controls" role="group" aria-label="Controles de la maqueta">
+		<fieldset><legend>Escenario</legend>
+			<label><input type="radio" name="esc" id="esc-hoy" checked>Hoy, 26 sep</label>
+			<label data-sim><input type="radio" name="esc" id="esc-sim">14 oct · simulación</label>
+		</fieldset>
+		<fieldset><legend>Espacio libre</legend>
+			<label><input type="radio" name="esp" id="esp-sobra" checked>De sobra</label>
+			<label><input type="radio" name="esp" id="esp-poco">Poco</label>
+		</fieldset>
+		<fieldset><legend>Panel</legend>
+			<label><input type="radio" name="ancho" id="ancho-lateral" checked>Lateral, 300 px</label>
+			<label><input type="radio" name="ancho" id="ancho-ancho">Ancho</label>
+		</fieldset>
+	</div>
+	<p class="bx-simband" role="note"><strong>SIMULACIÓN</strong> · 14 oct de 2026, día 2 del festival. Ningún precio de esta vista es una lectura: son los reales del 26 sep movidos con la curva de festival medida.</p>
+	<div class="bx-stage"><div class="bx-variant" data-esc="hoy" data-esp="sobra"><div class="leaf">
+	<div class="leaf-title"><b>Tyrian Companion</b><span>26 sep, 07:38</span></div>
+	<div class="tyrian-product-surface">
+		<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false" tabindex="-1">Sesiones</button><button role="tab" aria-selected="false" tabindex="-1">Inventario</button><button role="tab" aria-selected="true">Venta</button></div>
+		<p class="tyrian-product-shell__status" role="status"><span>Precios leídos a las <time datetime="2026-09-26T05:35:01Z">07:35</time>, hace 3 min</span><span>Valen hasta las 07:50</span><span>Halloween empieza el 13 oct: faltan 17 días</span></p>
+		
+		<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="false">
+	<p class="tyrian-inventory-advisor__storage-verdict" data-low-space="false"><strong>Espacio de sobra:</strong> <span class="ej">64</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero el oro.</p>
+	<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="1" high="350" optimum="0" value="306" aria-label="Huecos ocupados entre bolsas y banco">306 de 370</meter>
+	<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">38</span>/160 · banco <span class="ej">26</span>/210 · almacén compartido <span class="ej">2</span>/6</p>
+</section>
+		<div class="tyrian-sale" aria-label="Venta de Halloween">
+			<article class="tyrian-sale__card tyrian-sale__card--hero" aria-labelledby="hero-hoy-sobra"><div class="tyrian-sale__head"><h3 id="hero-hoy-sobra"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span>Saco de Halloween</h3><small><span class="ej">2350</span> en bolsas · 10 huecos</small></div><p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> <span>En su ventana: <b>15 sep – 12 oct</b>, las 4 semanas antes del festival.</span></p><dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+		<div class="tyrian-companion-session__figure"><dt>Venta inmediata</dt><dd><span class="tc-money"><span aria-hidden="true">68g 31s 45c</span><span class="sr-only">68 oro, 31 plata y 45 cobre</span></span></dd><small><span class="ej">2350</span> × puja 0g 3s 42c, menos el 15 %</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Publicar</dt><dd><span class="tc-money"><span aria-hidden="true">80g 9s 97c</span><span class="sr-only">80 oro, 9 plata y 97 cobre</span></span></dd><small>a 0g 4s 1c, menos el 15 %, si alguien compra: puede tardar</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Umbral del año</dt><dd><span class="tc-money"><span aria-hidden="true">0g 3s 87c</span><span class="sr-only">0 oro, 3 plata y 87 cobre</span></span></dd><small>90 % del máximo: 0g 4s 30c, el 3 oct de 2025</small></div>
+	</dl><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span><span>· vale hasta las 07:50</span></p><p class="tyrian-sale__why">La puja no llega al umbral del año, pero <strong>esperar no tiene ventaja demostrada</strong>: en las 7 ediciones medidas el saco cae de 1,15 a 0,88 la semana en que empieza el festival y no se recupera hasta la primavera.</p><details><summary>De dónde sale</summary><p>Índices de la auditoría del 11 sep (§5, datawars2, 2019-2025). Umbral: 90 % del máximo de puja de los 365 días anteriores (evaluateSellSignal, paquete curado). «Sin ventaja demostrada» es la comparación del 24 sep (boceto H18.31, auditoría §3.D).</p></details></article>
+			<section class="tyrian-sale__windows" aria-labelledby="win-hoy-sobra">
+	<h3 id="win-hoy-sobra">Ventanas de venta</h3>
+	<div class="tyrian-sale__axis" aria-hidden="true"><span></span><span class="tyrian-sale__axis-scale"><span data-kind="today" style="--at:11">▾ hoy</span><span style="--at:21">6 oct</span><span data-kind="festival" style="--at:28">Halloween, 13 oct</span></span></div>
+	<ul><li><span class="tyrian-sale__win-label"><strong>Saco de Halloween</strong><small>15 sep – 12 oct · y en mayo · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:0;--to:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Colmillos de plástico de alta calidad</strong><small>22 sep – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:7;--to:35"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Barra de caramelo</strong><small>6 – 19 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:35"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Trozo de caramelo</strong><small>6 – 12 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Jorcamelo</strong><small>junio · fuera de este tramo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li></ul>
+	<p class="tyrian-sale__legend" aria-hidden="true"><span><i class="is-window"></i>ventana</span><span><i class="is-open"></i>abierta hoy</span><span><i class="is-today"></i>hoy, 26 sep</span><span><i class="is-festival"></i>festival, desde el 13 oct</span></p>
+</section>
+			<section class="tyrian-sale__group"><h3>Ahora</h3><p>Ordenado por oro.</p><ul class="tyrian-sale__rows"><li class="tyrian-sale__rows-head" aria-hidden="true"><span>Objeto</span><span>Qué hacer</span><span>Puja por unidad</span><span>Neto si vendes ya</span></li><li class="tyrian-sale__row" data-item="48805">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">38</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>22 sep – 19 oct</b>. El pico es la primera semana del festival.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 36s 3c</span><span class="sr-only">0 oro, 36 plata y 3 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">11g 63s 77c</span><span class="sr-only">11 oro, 63 plata y 77 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Esperar</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="47909">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="47909" aria-hidden="true"></span><div><strong>Barra de caramelo</strong><small><span class="ej">71</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="none">Todavía no</span><small>Su ventana es del <b>6 al 19 oct</b>: empieza en 10 días. La puja de hoy no llega al 90 % del máximo del año (4g 88s 26c).</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 13s 42c</span><span class="sr-only">4 oro, 13 plata y 42 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">249g 49s 90c</span><span class="sr-only">249 oro, 49 plata y 90 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="36041">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36041" aria-hidden="true"></span><div><strong>Trozo de caramelo</strong><small><span class="ej">1730</span> · 7 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="none">Todavía no</span><small>Su ventana es la semana previa: <b>6 – 12 oct</b>.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 0s 58c</span><span class="sr-only">0 oro, 0 plata y 58 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">8g 52s 89c</span><span class="sr-only">8 oro, 52 plata y 89 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="43320">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="43320" aria-hidden="true"></span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Fuera de temporada: su ventana es <b>junio</b>. Halloween le baja el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 30s 57c</span><span class="sr-only">4 oro, 30 plata y 57 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 31s 97c</span><span class="sr-only">7 oro, 31 plata y 97 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Sin datos</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36059">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36059" aria-hidden="true"></span><div><strong>Colmillos de plástico</strong><small><span class="ej">57</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin cotización</span><small>Nadie compra: 0 órdenes de compra. Solo se puede publicar, a 0g 0s 30c.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">Sin puja<p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">Sin cotización<small>publicado: 0g 14s 53c neto</small></div>
+</li></ul></section>
+			<div class="tyrian-sale__foot"><p>Los precios se releen al pulsar «Actualizar» y, si activas el histórico de precios, cada 15 min. La API de Guild Wars 2 los sirve con unos minutos de retraso.</p><button type="button"><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
+		</div>
+		<section class="tyrian-companion-halloween" aria-label="Bandeja de avisos" data-attention="false">
+	<details class="tyrian-companion-halloween__disclosure"><summary><strong>Avisos · opcional</strong><small>Sin avisos</small></summary>
+		<div class="tyrian-companion-halloween__body"><section><h3>Avisos emitidos</h3><p aria-live="polite">Todavía no se ha emitido ningún aviso en esta cuenta.</p></section></div>
+	</details>
+</section>
+	</div>
+</div></div><div class="bx-variant" data-esc="hoy" data-esp="poco"><div class="leaf">
+	<div class="leaf-title"><b>Tyrian Companion</b><span>26 sep, 07:38</span></div>
+	<div class="tyrian-product-surface">
+		<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false" tabindex="-1">Sesiones</button><button role="tab" aria-selected="false" tabindex="-1">Inventario</button><button role="tab" aria-selected="true">Venta</button></div>
+		<p class="tyrian-product-shell__status" role="status"><span>Precios leídos a las <time datetime="2026-09-26T05:35:01Z">07:35</time>, hace 3 min</span><span>Valen hasta las 07:50</span><span>Halloween empieza el 13 oct: faltan 17 días</span></p>
+		
+		<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="true">
+	<p class="tyrian-inventory-advisor__storage-verdict" data-low-space="true"><strong>Poco espacio:</strong> <span class="ej">9</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.</p>
+	<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="1" high="350" optimum="0" value="361" aria-label="Huecos ocupados entre bolsas y banco">361 de 370</meter>
+	<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">5</span>/160 · banco <span class="ej">4</span>/210 · almacén compartido <span class="ej">0</span>/6</p>
+</section>
+		<div class="tyrian-sale" aria-label="Venta de Halloween">
+			<article class="tyrian-sale__card tyrian-sale__card--hero" aria-labelledby="hero-hoy-poco"><div class="tyrian-sale__head"><h3 id="hero-hoy-poco"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span>Saco de Halloween</h3><small><span class="ej">2350</span> en bolsas · 10 huecos</small></div><p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> <span>En su ventana: <b>15 sep – 12 oct</b>, las 4 semanas antes del festival. Libera 10 huecos.</span></p><dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+		<div class="tyrian-companion-session__figure"><dt>Venta inmediata</dt><dd><span class="tc-money"><span aria-hidden="true">68g 31s 45c</span><span class="sr-only">68 oro, 31 plata y 45 cobre</span></span></dd><small><span class="ej">2350</span> × puja 0g 3s 42c, menos el 15 %</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Publicar</dt><dd><span class="tc-money"><span aria-hidden="true">80g 9s 97c</span><span class="sr-only">80 oro, 9 plata y 97 cobre</span></span></dd><small>a 0g 4s 1c, menos el 15 %, si alguien compra: puede tardar</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Umbral del año</dt><dd><span class="tc-money"><span aria-hidden="true">0g 3s 87c</span><span class="sr-only">0 oro, 3 plata y 87 cobre</span></span></dd><small>90 % del máximo: 0g 4s 30c, el 3 oct de 2025</small></div>
+	</dl><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span><span>· vale hasta las 07:50</span></p><p class="tyrian-sale__why">La puja no llega al umbral del año, pero <strong>esperar no tiene ventaja demostrada</strong>: en las 7 ediciones medidas el saco cae de 1,15 a 0,88 la semana en que empieza el festival y no se recupera hasta la primavera.</p><details><summary>De dónde sale</summary><p>Índices de la auditoría del 11 sep (§5, datawars2, 2019-2025). Umbral: 90 % del máximo de puja de los 365 días anteriores (evaluateSellSignal, paquete curado). «Sin ventaja demostrada» es la comparación del 24 sep (boceto H18.31, auditoría §3.D).</p></details></article>
+			<section class="tyrian-sale__windows" aria-labelledby="win-hoy-poco">
+	<h3 id="win-hoy-poco">Ventanas de venta</h3>
+	<div class="tyrian-sale__axis" aria-hidden="true"><span></span><span class="tyrian-sale__axis-scale"><span data-kind="today" style="--at:11">▾ hoy</span><span style="--at:21">6 oct</span><span data-kind="festival" style="--at:28">Halloween, 13 oct</span></span></div>
+	<ul><li><span class="tyrian-sale__win-label"><strong>Saco de Halloween</strong><small>15 sep – 12 oct · y en mayo · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:0;--to:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Colmillos de plástico de alta calidad</strong><small>22 sep – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:7;--to:35"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Barra de caramelo</strong><small>6 – 19 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:35"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Trozo de caramelo</strong><small>6 – 12 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Jorcamelo</strong><small>junio · fuera de este tramo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__today" style="--at:11"></span></span></li></ul>
+	<p class="tyrian-sale__legend" aria-hidden="true"><span><i class="is-window"></i>ventana</span><span><i class="is-open"></i>abierta hoy</span><span><i class="is-today"></i>hoy, 26 sep</span><span><i class="is-festival"></i>festival, desde el 13 oct</span></p>
+</section>
+			<section class="tyrian-sale__group"><h3>Ahora</h3><p>Ordenado por huecos que libera; a igualdad, por oro.</p><ul class="tyrian-sale__rows"><li class="tyrian-sale__rows-head" aria-hidden="true"><span>Objeto</span><span>Qué hacer</span><span>Puja por unidad</span><span>Neto si vendes ya</span></li><li class="tyrian-sale__row" data-item="36041">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36041" aria-hidden="true"></span><div><strong>Trozo de caramelo</strong><small><span class="ej">1730</span> · 7 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="deposit">Depositar material</span><small>Libera 7 huecos y no pierdes nada: véndelo desde el almacén del <b>6 al 12 oct</b>.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 0s 58c</span><span class="sr-only">0 oro, 0 plata y 58 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">8g 52s 89c</span><span class="sr-only">8 oro, 52 plata y 89 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="48805">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">38</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>22 sep – 19 oct</b>. El pico es la primera semana del festival. Libera 1 hueco.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 36s 3c</span><span class="sr-only">0 oro, 36 plata y 3 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">11g 63s 77c</span><span class="sr-only">11 oro, 63 plata y 77 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Esperar</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="47909">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="47909" aria-hidden="true"></span><div><strong>Barra de caramelo</strong><small><span class="ej">71</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="none">Todavía no</span><small>Su ventana es del <b>6 al 19 oct</b>: empieza en 10 días. La puja de hoy no llega al 90 % del máximo del año (4g 88s 26c).</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 13s 42c</span><span class="sr-only">4 oro, 13 plata y 42 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">249g 49s 90c</span><span class="sr-only">249 oro, 49 plata y 90 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="43320">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="43320" aria-hidden="true"></span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Fuera de temporada: su ventana es <b>junio</b>. Halloween le baja el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 30s 57c</span><span class="sr-only">4 oro, 30 plata y 57 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 31s 97c</span><span class="sr-only">7 oro, 31 plata y 97 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Sin datos</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36059">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36059" aria-hidden="true"></span><div><strong>Colmillos de plástico</strong><small><span class="ej">57</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin cotización</span><small>Nadie compra: 0 órdenes de compra. Solo se puede publicar, a 0g 0s 30c.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">Sin puja<p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">Sin cotización<small>publicado: 0g 14s 53c neto</small></div>
+</li></ul></section>
+			<div class="tyrian-sale__foot"><p>Los precios se releen al pulsar «Actualizar» y, si activas el histórico de precios, cada 15 min. La API de Guild Wars 2 los sirve con unos minutos de retraso.</p><button type="button"><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
+		</div>
+		<section class="tyrian-companion-halloween" aria-label="Bandeja de avisos" data-attention="false">
+	<details class="tyrian-companion-halloween__disclosure"><summary><strong>Avisos · opcional</strong><small>Sin avisos</small></summary>
+		<div class="tyrian-companion-halloween__body"><section><h3>Avisos emitidos</h3><p aria-live="polite">Todavía no se ha emitido ningún aviso en esta cuenta.</p></section></div>
+	</details>
+</section>
+	</div>
+</div></div><div class="bx-variant" data-esc="sim" data-esp="sobra"><div class="leaf">
+	<div class="leaf-title"><b>Tyrian Companion</b><span>14 oct, 19:10</span></div>
+	<div class="tyrian-product-surface">
+		<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false" tabindex="-1">Sesiones</button><button role="tab" aria-selected="false" tabindex="-1">Inventario</button><button role="tab" aria-selected="true">Venta</button></div>
+		<p class="tyrian-product-shell__status" role="status"><span data-tone="attention">Simulación</span><span>Halloween: día 2 del festival</span></p>
+		<p class="tyrian-sale__simulation"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span><strong>SIMULACIÓN</strong> · 14 oct de 2026. Los precios no son lecturas: salen de los reales del 26 sep con la curva de festival de la auditoría.</span></p>
+		<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="false">
+	<p class="tyrian-inventory-advisor__storage-verdict" data-low-space="false"><strong>Espacio de sobra:</strong> <span class="ej">64</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero el oro.</p>
+	<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="1" high="350" optimum="0" value="306" aria-label="Huecos ocupados entre bolsas y banco">306 de 370</meter>
+	<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">38</span>/160 · banco <span class="ej">26</span>/210 · almacén compartido <span class="ej">2</span>/6</p>
+</section>
+		<div class="tyrian-sale" aria-label="Venta de Halloween">
+			<article class="tyrian-sale__card tyrian-sale__card--hero" aria-labelledby="hero-sim-sobra"><div class="tyrian-sale__head"><h3 id="hero-sim-sobra"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span>Saco de Halloween</h3><small><span class="ej">2350</span> en bolsas · 10 huecos</small></div><p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="hold">Mantener</span> <span>Vuelve a subir antes del próximo festival o en mayo.</span></p><dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+		<div class="tyrian-companion-session__figure"><dt>Venta inmediata hoy</dt><dd><span class="tc-money"><span aria-hidden="true">52g 13s 47c</span><span class="sr-only">52 oro, 13 plata y 47 cobre</span></span></dd><small><span class="ej">2350</span> × puja 0g 2s 61c (simulada), menos el 15 %</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Mínimo del año</dt><dd><span class="tc-money"><span aria-hidden="true">0g 3s 10c</span><span class="sr-only">0 oro, 3 plata y 10 cobre</span></span></dd><small>la puja está en el mínimo: el 12 nov de 2025 fue 0g 3s 10c</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Próxima ventana</dt><dd>mayo</dd><small>o las 4 semanas antes del festival de 2027, fecha sin anunciar</small></div>
+	</dl><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p><p class="tyrian-sale__why">El festival es el suelo del saco: <strong>cae de 1,15 a 0,88</strong> la semana en que empieza y sigue bajando hasta 0,75 seis semanas después, en las 7 ediciones medidas.</p><details><summary>De dónde sale la simulación</summary><p>Puja real del 26 sep (0g 3s 42c) × 0,877 / 1,149, los índices «al empezar» y «antes» del saco en la auditoría del 11 sep (§5). No es una lectura de la API.</p></details></article>
+			<section class="tyrian-sale__windows" aria-labelledby="win-sim-sobra">
+	<h3 id="win-sim-sobra">Ventanas de venta</h3>
+	<div class="tyrian-sale__axis" aria-hidden="true"><span></span><span class="tyrian-sale__axis-scale"><span style="--at:0">15 sep</span><span style="--at:16">1 oct</span><span data-kind="today" style="--at:29">▾ 14 oct</span></span></div>
+	<ul><li><span class="tyrian-sale__win-label"><strong>Saco de Halloween</strong><small>15 sep – 12 oct · y en mayo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:0;--to:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Colmillos de plástico de alta calidad</strong><small>22 sep – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:7;--to:35"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Barra de caramelo</strong><small>6 – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:21;--to:35"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Trozo de caramelo</strong><small>6 – 12 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Jorcamelo</strong><small>junio · fuera de este tramo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li></ul>
+	<p class="tyrian-sale__legend" aria-hidden="true"><span><i class="is-window"></i>ventana</span><span><i class="is-open"></i>abierta hoy</span><span><i class="is-today"></i>14 oct</span><span><i class="is-festival"></i>festival, desde el 13 oct</span></p>
+</section>
+			<section class="tyrian-sale__group"><h3>Ahora</h3><p>Ordenado por oro.</p><ul class="tyrian-sale__rows"><li class="tyrian-sale__rows-head" aria-hidden="true"><span>Objeto</span><span>Qué hacer</span><span>Puja por unidad</span><span>Neto si vendes ya</span></li><li class="tyrian-sale__row" data-item="47909">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="47909" aria-hidden="true"></span><div><strong>Barra de caramelo</strong><small><span class="ej">71</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>6 – 19 oct</b>, quedan 6 días.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 36s 93c</span><span class="sr-only">4 oro, 36 plata y 93 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">263g 68s 73c</span><span class="sr-only">263 oro, 68 plata y 73 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="48805">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">38</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>13 – 19 oct</b>, la primera semana del festival.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 46s 72c</span><span class="sr-only">0 oro, 46 plata y 72 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">15g 9s 5c</span><span class="sr-only">15 oro, 9 plata y 5 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Esperar</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36041">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36041" aria-hidden="true"></span><div><strong>Trozo de caramelo</strong><small><span class="ej">1730</span> · 7 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Su ventana (6 – 12 oct) ya pasó. La próxima: la semana previa al festival de 2027, fecha sin anunciar.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 0s 47c</span><span class="sr-only">0 oro, 0 plata y 47 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">6g 91s 13c</span><span class="sr-only">6 oro, 91 plata y 13 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="43320">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="43320" aria-hidden="true"></span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Fuera de temporada: su ventana es <b>junio</b>. Halloween le baja el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 36s 63c</span><span class="sr-only">4 oro, 36 plata y 63 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 42s 27c</span><span class="sr-only">7 oro, 42 plata y 27 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Sin datos</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36059">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36059" aria-hidden="true"></span><div><strong>Colmillos de plástico</strong><small><span class="ej">57</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin cotización</span><small>Nadie compra: 0 órdenes de compra. Solo se puede publicar, a 0g 0s 30c.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">Sin puja<p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">Sin cotización<small>publicado: 0g 14s 53c neto</small></div>
+</li></ul></section>
+			<div class="tyrian-sale__foot"><p>Los precios se releen al pulsar «Actualizar» y, si activas el histórico de precios, cada 15 min. La API de Guild Wars 2 los sirve con unos minutos de retraso.</p><button type="button"><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
+		</div>
+		<section class="tyrian-companion-halloween" aria-label="Bandeja de alertas de Halloween" data-attention="false">
+	<details class="tyrian-companion-halloween__disclosure" open><summary><strong>Halloween · evento opcional</strong><small>1 aviso</small></summary>
+		<div class="tyrian-companion-halloween__body"><section><h3>Avisos emitidos</h3></section>
+			<article class="tyrian-companion-halloween__notice"><strong>Barra de caramelo ×<span class="ej">71</span></strong> · empieza su mejor semana de venta (13 – 19 oct)<time datetime="2026-10-13T07:12:00Z">ayer</time></article>
+		</div>
+	</details>
+</section>
+	</div>
+</div></div><div class="bx-variant" data-esc="sim" data-esp="poco"><div class="leaf">
+	<div class="leaf-title"><b>Tyrian Companion</b><span>14 oct, 19:10</span></div>
+	<div class="tyrian-product-surface">
+		<div class="tyrian-product-shell__tabs" role="tablist" aria-label="Tyrian Companion" inert><button role="tab" aria-selected="false" tabindex="-1">Sesiones</button><button role="tab" aria-selected="false" tabindex="-1">Inventario</button><button role="tab" aria-selected="true">Venta</button></div>
+		<p class="tyrian-product-shell__status" role="status"><span data-tone="attention">Simulación</span><span>Halloween: día 2 del festival</span></p>
+		<p class="tyrian-sale__simulation"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span><strong>SIMULACIÓN</strong> · 14 oct de 2026. Los precios no son lecturas: salen de los reales del 26 sep con la curva de festival de la auditoría.</span></p>
+		<section class="tyrian-inventory-advisor__storage-space" aria-label="Espacio en la cuenta" data-low-space="true">
+	<p class="tyrian-inventory-advisor__storage-verdict" data-low-space="true"><strong>Poco espacio:</strong> <span class="ej">9</span> huecos libres entre bolsas y banco (aviso con 20 o menos). Primero lo que libera huecos.</p>
+	<meter class="tyrian-inventory-advisor__storage-meter" min="0" max="370" low="1" high="350" optimum="0" value="361" aria-label="Huecos ocupados entre bolsas y banco">361 de 370</meter>
+	<p class="tyrian-inventory-advisor__storage-stores">Huecos libres: bolsas <span class="ej">5</span>/160 · banco <span class="ej">4</span>/210 · almacén compartido <span class="ej">0</span>/6</p>
+</section>
+		<div class="tyrian-sale" aria-label="Venta de Halloween">
+			<article class="tyrian-sale__card tyrian-sale__card--hero" aria-labelledby="hero-sim-poco"><div class="tyrian-sale__head"><h3 id="hero-sim-poco"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span>Saco de Halloween</h3><small><span class="ej">2350</span> en bolsas · 10 huecos</small></div><p class="tyrian-sale__verdict"><span class="tyrian-action" data-action="sell">Vender ahora</span> <span><b>Poco espacio:</b> libera 10 huecos. Con sitio de sobra, lo recomendado sería mantener hasta mayo.</span></p><dl class="tyrian-companion-session__figures" style="--tyrian-figures:3">
+		<div class="tyrian-companion-session__figure"><dt>Venta inmediata</dt><dd><span class="tc-money"><span aria-hidden="true">52g 13s 47c</span><span class="sr-only">52 oro, 13 plata y 47 cobre</span></span></dd><small><span class="ej">2350</span> × puja 0g 2s 61c (simulada), menos el 15 %</small></div>
+		<div class="tyrian-companion-session__figure"><dt>Huecos que libera</dt><dd>10</dd><small>250 por hueco</small></div>
+		<div class="tyrian-companion-session__figure" data-pending="true"><dt>Lo que dejas de ganar</dt><dd>sin medir</dd><small>no hay una comparación demostrada con mayo</small></div>
+	</dl><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p><p class="tyrian-sale__why">Con poco espacio, primero liberar (decisión del 24 sep). Se vende en el suelo del año, y se dice: aquí el hueco vale más que la espera.</p></article>
+			<section class="tyrian-sale__windows" aria-labelledby="win-sim-poco">
+	<h3 id="win-sim-poco">Ventanas de venta</h3>
+	<div class="tyrian-sale__axis" aria-hidden="true"><span></span><span class="tyrian-sale__axis-scale"><span style="--at:0">15 sep</span><span style="--at:16">1 oct</span><span data-kind="today" style="--at:29">▾ 14 oct</span></span></div>
+	<ul><li><span class="tyrian-sale__win-label"><strong>Saco de Halloween</strong><small>15 sep – 12 oct · y en mayo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:0;--to:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Colmillos de plástico de alta calidad</strong><small>22 sep – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:7;--to:35"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Barra de caramelo</strong><small>6 – 19 oct · <b>abierta hoy</b></small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="true" style="--from:21;--to:35"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Trozo de caramelo</strong><small>6 – 12 oct</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__bar" data-open="false" style="--from:21;--to:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li><li><span class="tyrian-sale__win-label"><strong>Jorcamelo</strong><small>junio · fuera de este tramo</small></span><span class="tyrian-sale__track" aria-hidden="true"><span class="tyrian-sale__festival" style="--from:28"></span><span class="tyrian-sale__today" style="--at:29"></span></span></li></ul>
+	<p class="tyrian-sale__legend" aria-hidden="true"><span><i class="is-window"></i>ventana</span><span><i class="is-open"></i>abierta hoy</span><span><i class="is-today"></i>14 oct</span><span><i class="is-festival"></i>festival, desde el 13 oct</span></p>
+</section>
+			<section class="tyrian-sale__group"><h3>Ahora</h3><p>Ordenado por huecos que libera; a igualdad, por oro.</p><ul class="tyrian-sale__rows"><li class="tyrian-sale__rows-head" aria-hidden="true"><span>Objeto</span><span>Qué hacer</span><span>Puja por unidad</span><span>Neto si vendes ya</span></li><li class="tyrian-sale__row" data-item="36041">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36041" aria-hidden="true"></span><div><strong>Trozo de caramelo</strong><small><span class="ej">1730</span> · 7 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="deposit">Depositar material</span><small>Libera 7 huecos y no pierdes nada: véndelo desde el almacén la semana previa al festival de 2027 (fecha sin anunciar).</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 0s 47c</span><span class="sr-only">0 oro, 0 plata y 47 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">6g 91s 13c</span><span class="sr-only">6 oro, 91 plata y 13 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="47909">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="47909" aria-hidden="true"></span><div><strong>Barra de caramelo</strong><small><span class="ej">71</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>6 – 19 oct</b>, quedan 6 días. Libera 1 hueco.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 36s 93c</span><span class="sr-only">4 oro, 36 plata y 93 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">263g 68s 73c</span><span class="sr-only">263 oro, 68 plata y 73 cobre</span></span><small>neto si vendes ya</small></div>
+</li><li class="tyrian-sale__row" data-item="48805">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">38</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>13 – 19 oct</b>, la primera semana del festival. Libera 1 hueco.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 46s 72c</span><span class="sr-only">0 oro, 46 plata y 72 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">15g 9s 5c</span><span class="sr-only">15 oro, 9 plata y 5 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Esperar</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="43320">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="43320" aria-hidden="true"></span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Fuera de temporada: su ventana es <b>junio</b>. Halloween le baja el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 36s 63c</span><span class="sr-only">4 oro, 36 plata y 63 cobre</span></span><p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 42s 27c</span><span class="sr-only">7 oro, 42 plata y 27 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></section><section class="tyrian-sale__group"><h3>Sin datos</h3><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36059">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36059" aria-hidden="true"></span><div><strong>Colmillos de plástico</strong><small><span class="ej">57</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin cotización</span><small>Nadie compra: 0 órdenes de compra. Solo se puede publicar, a 0g 0s 30c.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">Sin puja<p class="tyrian-sale__quote" data-state="simulated"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-flask"/></svg><span>puja simulada · base: lectura del 26 sep</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">Sin cotización<small>publicado: 0g 14s 53c neto</small></div>
+</li></ul></section>
+			<div class="tyrian-sale__foot"><p>Los precios se releen al pulsar «Actualizar» y, si activas el histórico de precios, cada 15 min. La API de Guild Wars 2 los sirve con unos minutos de retraso.</p><button type="button"><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
+		</div>
+		<section class="tyrian-companion-halloween" aria-label="Bandeja de alertas de Halloween" data-attention="false">
+	<details class="tyrian-companion-halloween__disclosure" open><summary><strong>Halloween · evento opcional</strong><small>1 aviso</small></summary>
+		<div class="tyrian-companion-halloween__body"><section><h3>Avisos emitidos</h3></section>
+			<article class="tyrian-companion-halloween__notice"><strong>Barra de caramelo ×<span class="ej">71</span></strong> · empieza su mejor semana de venta (13 – 19 oct)<time datetime="2026-10-13T07:12:00Z">ayer</time></article>
+		</div>
+	</details>
+</section>
+	</div>
+</div></div></div>
+	<h2>Estados</h2>
+	<div class="bx-states"><figure class="bx-state"><figcaption><b>Vender ahora</b> · precio fresco</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="48805">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">38</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>22 sep – 19 oct</b>. El pico es la primera semana del festival.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 36s 3c</span><span class="sr-only">0 oro, 36 plata y 3 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">11g 63s 77c</span><span class="sr-only">11 oro, 63 plata y 77 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Mantener</b> · fuera de temporada</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="43320">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="43320" aria-hidden="true"></span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Fuera de temporada: su ventana es <b>junio</b>. Halloween le baja el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">4g 30s 57c</span><span class="sr-only">4 oro, 30 plata y 57 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 31s 97c</span><span class="sr-only">7 oro, 31 plata y 97 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Todavía no</b> · sin señal hasta que abra su ventana</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36041">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36041" aria-hidden="true"></span><div><strong>Trozo de caramelo</strong><small><span class="ej">1730</span> · 7 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="none">Todavía no</span><small>Su ventana es la semana previa: <b>6 – 12 oct</b>.</small></div>
+	<div class="tyrian-sale__price"><span class="tyrian-sale__price-label sr-only">Puja por unidad: </span><span class="tc-money"><span aria-hidden="true">0g 0s 58c</span><span class="sr-only">0 oro, 0 plata y 58 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">8g 52s 89c</span><span class="sr-only">8 oro, 52 plata y 89 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Sin cotización</b> · nadie compra</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row" data-item="36059">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36059" aria-hidden="true"></span><div><strong>Colmillos de plástico</strong><small><span class="ej">57</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin cotización</span><small>Nadie compra: 0 órdenes de compra. Solo se puede publicar, a 0g 0s 30c.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">Sin puja<p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">Sin cotización<small>publicado: 0g 14s 53c neto</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Precio viejo</b> · más de 15 min (maxPriceAgeMs)</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span><div><strong>Saco de Halloween</strong><small><span class="ej">2350</span> · 10 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>Con un precio de hace 22 min: <b>actualiza antes de vender</b>.</small></div>
+	<div class="tyrian-sale__price"><span class="tc-money"><span aria-hidden="true">0g 3s 42c</span><span class="sr-only">0 oro, 3 plata y 42 cobre</span></span><p class="tyrian-sale__quote" data-state="stale"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>precio viejo · leído hace 22 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">68g 31s 45c</span><span class="sr-only">68 oro, 31 plata y 45 cobre</span></span><small>neto con ese precio</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Fallo de la API</b></figcaption><div class="leaf"><div class="tyrian-product-surface"><div class="callout" data-callout="error" role="alert"><div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-unplug"/></svg><span>La API de Guild Wars 2 no respondió</span></div>
+	<div class="callout-content"><p>Se ve el último precio, de hace 2 h 10 min. Sin un precio de ahora no se recomienda vender.</p></div>
+	<div class="callout-actions"><button type="button"><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Reintentar</button></div></div>
+<ul class="tyrian-sale__rows"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="47909" aria-hidden="true"></span><div><strong>Barra de caramelo</strong><small><span class="ej">71</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Sin recomendación</span><small>Hasta volver a leer el precio.</small></div>
+	<div class="tyrian-sale__price"><span class="tc-money"><span aria-hidden="true">4g 13s 42c</span><span class="sr-only">4 oro, 13 plata y 42 cobre</span></span><p class="tyrian-sale__quote" data-state="error"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-unplug"/></svg><span>fallo de la API · último precio hace 2 h 10 min</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">No disponible<small>sin precio de ahora</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Límite de peticiones</b> · el texto es el del plugin</figcaption><div class="leaf"><div class="tyrian-product-surface"><div class="callout" data-callout="warning" role="status"><div class="callout-title"><svg class="svg-icon" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Límite de peticiones</span></div>
+	<div class="callout-content"><p>Guild Wars 2 está limitando las peticiones. El enfriamiento compartido está activo; vuelve a actualizar cuando termine.</p></div>
+	<div class="callout-actions"><button type="button" disabled><svg class="svg-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar · en enfriamiento</button></div></div>
+<p class="tyrian-sale__quote" data-state="limited"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-hourglass"/></svg><span>Los precios de la lista son de hace 9 min y siguen valiendo hasta que cumplan 15.</span></p></div></div></figure><figure class="bx-state"><figcaption><b>Cargando</b> · sin animación: respeta reducir movimiento</figcaption><div class="leaf"><div class="tyrian-product-surface"><p class="tyrian-product-shell__status" role="status" aria-live="polite"><span><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-loader"/></svg> Leyendo precios del bazar…</span></p>
+<ul class="tyrian-sale__rows" aria-busy="true"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span><div><strong>Saco de Halloween</strong><small><span class="ej">2350</span> · 10 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="nodata">Esperando precio</span><small>La ventana sí se sabe: 15 sep – 12 oct.</small></div>
+	<div class="tyrian-sale__price" data-unknown="true">—<p class="tyrian-sale__quote"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-loader"/></svg><span>leyendo…</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">—<small>neto si vendes ya</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>0 unidades</b></figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="36038" aria-hidden="true"></span><div><strong>Saco de Halloween</strong><small><span class="ej">0</span> · ningún hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="none">Nada que vender</span><small>Su ventana sigue abierta hasta el 12 oct, por si consigues más.</small></div>
+	<div class="tyrian-sale__price"><span class="tc-money"><span aria-hidden="true">0g 3s 42c</span><span class="sr-only">0 oro, 3 plata y 42 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value" data-unknown="true">—<small>0 unidades</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Nombre largo y miles de unidades</b></figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory-advisor__item-icon tc-icon" data-item="48805" aria-hidden="true"></span><div><strong>Colmillos de plástico de alta calidad</strong><small><span class="ej">12.480</span> · 50 huecos</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="sell">Vender ahora</span><small>En su ventana: <b>22 sep – 19 oct</b>. Libera 50 huecos. Hay 8793 unidades pedidas a esa puja.</small></div>
+	<div class="tyrian-sale__price"><span class="tc-money"><span aria-hidden="true">0g 36s 3c</span><span class="sr-only">0 oro, 36 plata y 3 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">3822g 6s 24c</span><span class="sr-only">3822 oro, 6 plata y 24 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></div></div></figure><figure class="bx-state"><figcaption><b>Icono caído</b> · iniciales con borde discontinuo</figcaption><div class="leaf"><div class="tyrian-product-surface"><ul class="tyrian-sale__rows"><li class="tyrian-sale__row">
+	<div class="tyrian-sale__item"><span class="tyrian-inventory__icon" aria-hidden="true">JO</span><div><strong>Jorcamelo</strong><small><span class="ej">2</span> · 1 hueco</small></div></div>
+	<div class="tyrian-sale__decision"><span class="tyrian-action" data-action="hold">Mantener</span><small>Su ventana es <b>junio</b>.</small></div>
+	<div class="tyrian-sale__price"><span class="tc-money"><span aria-hidden="true">4g 30s 57c</span><span class="sr-only">4 oro, 30 plata y 57 cobre</span></span><p class="tyrian-sale__quote" data-state="fresh"><svg class="svg-icon is-small" aria-hidden="true"><use href="#i-clock"/></svg><span>puja leída a las <time datetime="2026-09-26T05:35:01Z">07:35</time> · hace 3 min</span></p></div>
+	<div class="tyrian-sale__value"><span class="tc-money"><span aria-hidden="true">7g 31s 97c</span><span class="sr-only">7 oro, 31 plata y 97 cobre</span></span><small>neto si vendes ya</small></div>
+</li></ul></div></div></figure></div>
+	<h2>Notas</h2>
+	
+<div class="bx-notes">
+	<div class="bx-scroll"><table>
+		<caption>Qué existe hoy y qué propone esta maqueta</caption>
+		<thead><tr><th scope="col">Pieza</th><th scope="col">Estado</th><th scope="col">Fuente</th></tr></thead>
+		<tbody>
+			<tr><td>Variables de color, texto, espacio y radio</td><td><span class="bx-tag" data-kind="vivo">vivo</span></td><td>las de Obsidian que usa <code>styles.css</code>; valores del tema por defecto</td></tr>
+			<tr><td>Bloque de espacio: textos, umbral de 20 y <code>meter</code></td><td><span class="bx-tag" data-kind="vivo">vivo</span> + marca lateral <span class="bx-tag" data-kind="h1831">H18.31</span></td><td><code>renderStorageSpace</code>, <code>advisor.view.storage.*</code></td></tr>
+			<tr><td>Orden por huecos con poco espacio, por oro con sitio</td><td><span class="bx-tag" data-kind="vivo">vivo</span></td><td><code>prioritizeSpaceFreeingActions</code></td></tr>
+			<tr><td>Cifras en grande (dt / dd / small)</td><td><span class="bx-tag" data-kind="vivo">vivo</span></td><td><code>.tyrian-companion-session__figure</code></td></tr>
+			<tr><td>Mínimo del año, umbral del 90 % y «Espera»</td><td><span class="bx-tag" data-kind="vivo">vivo</span></td><td><code>evaluateSellSignal</code>, <code>renderSellSignalLine</code></td></tr>
+			<tr><td>«Avisos» fuera de temporada, «Halloween» en octubre</td><td><span class="bx-tag" data-kind="vivo">vivo</span></td><td><code>renderHalloweenAlertPanel</code> (ventana 1 oct – 15 nov)</td></tr>
+			<tr><td>Pestaña Venta, línea de estado, marca de acción, tarjeta de venta</td><td><span class="bx-tag" data-kind="h1831">H18.31</span></td><td><code>docs/diseno/h18-31-interfaz</code>, sin implementar</td></tr>
+			<tr><td>Saco protagonista, calendario de ventanas, antigüedad por precio, franja de simulación</td><td><span class="bx-tag" data-kind="nuevo">nuevo</span></td><td>esta maqueta</td></tr>
+			<tr><td>Con poco espacio, el saco pasa de «Mantener» a «Vender ahora»</td><td><span class="bx-tag" data-kind="nuevo">nuevo</span></td><td>decisión del 24 sep; hoy el código solo reordena</td></tr>
+			<tr><td>Aviso «entra en su ventana de venta»</td><td><span class="bx-tag" data-kind="nuevo">nuevo</span></td><td>no existe ese motivo de aviso</td></tr>
+		</tbody>
+	</table></div>
+	<ul>
+		<li><b>Precios reales:</b> <code>curl -s "https://api.guildwars2.com/v2/commerce/prices?ids=36038,36041,47909,48805,43320"</code> a las 05:35:01 UTC del 26 sep (07:35 en la península). Puja = <code>buys.unit_price</code>, publicar = <code>sells.unit_price</code>. 36059, un minuto después: 0 órdenes de compra.</li>
+		<li><b>Neto:</b> 5 % por publicar y 10 % por vender, redondeo a medias hacia arriba (<code>GW2_TRADING_POST_FEE_POLICY</code>).</li>
+		<li><b>Máximo y mínimo del año:</b> histórico de datawars2 que usa el plugin (<code>PRICE_SEED_BASE_URL</code>), del 26 sep de 2025 al 25 sep de 2026, 360 días.</li>
+		<li><b>Ventanas:</b> <code>FESTIVAL_CALENDAR_ENTRIES</code> más el inicio del 13 oct (<code>halloween-festival-anchors.ts</code>).</li>
+		<li><b>Validez de 15 min:</b> <code>maxPriceAgeMs</code> y <code>PRICE_TTL_MS</code>. Relectura: al pulsar Actualizar, o cada 15 min con el histórico activado (<code>intervalMinutes</code> por defecto).</li>
+		<li><b>Subrayado punteado</b> = cantidad de ejemplo. «Barra de caramelo» es el nombre de la API para la mazorca (47909).</li>
+	</ul>
+</div>
+</div>
