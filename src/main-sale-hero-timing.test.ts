@@ -7,8 +7,9 @@ import TyrianCompanionPlugin, { resolveSaleSeasonalInputFor, saleOpenVsSellCoppe
 import { sellTimingHistoryBagDays } from './economy/__fixtures__/sell-timing-history-36038';
 import type { PriceHistoryDailyV1 } from './economy/price-history-model';
 import type { InventoryAdvisorViewModel, InventoryAdvisorViewRow } from './ui/inventory-advisor-view-model';
-import { buildSaleViewModel, type SaleViewModelInput } from './ui/sale-view-model';
+import { buildSaleViewModel, type SaleViewModel, type SaleViewModelInput } from './ui/sale-view-model';
 import { renderSaleView } from './ui/sale-view';
+import { INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL } from './advisor/inventory-advisor-builtin-bundle';
 
 /**
  * Review fix (26 sep 2026): the Saco de Halloween's hero card verdict comes from
@@ -206,6 +207,91 @@ describe('the Saco hero card verdict: real recommendPosition, real curated backt
 		};
 		await runComputeSaleHeroTiming(harness);
 		expect(harness.saleHeroTiming).toBeNull();
+	});
+
+	/**
+	 * H18.34: `getSaleViewModel` recomputes `bundleLoad` fresh against `Date.now()` on every call, but
+	 * `advisorModel.status` is whatever the LAST advisor refresh cached — it can still read `ready`
+	 * well after the curated bundle's `validUntil`, because nothing forces a refresh the instant the
+	 * clock crosses it. Before this fix, that left the Sale tab silently degrading to "Sin datos"
+	 * (`resolveSaleSeasonalInputFor` returning null) with no explanation, unlike the Halloween price
+	 * alert's own `out_of_season`, which always carries a dedicated, explained state. These run the
+	 * real `getSaleViewModel` (not a hand-built `SaleViewModel`) through the isolated-method pattern
+	 * this file already uses, then the real DOM (`renderSaleView`).
+	 */
+	describe('getSaleViewModel: an expired curated bundle is explained, never a silent "sin datos" (H18.34)', () => {
+		const AFTER_VALID_UNTIL_MS = Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) + 1;
+
+		function runGetSaleViewModel(harness: {
+			runtimeReady: boolean;
+			getInventoryAdvisorViewModel(): InventoryAdvisorViewModel;
+			inventoryAdvisor: { analysis(): null };
+			saleHeroTiming: unknown;
+			getSellSignalState(): null;
+		}): SaleViewModel {
+			type Harness = typeof harness & { buildSaleHeroInput: unknown };
+			const proto = TyrianCompanionPlugin.prototype as unknown as {
+				getSaleViewModel(this: Harness): SaleViewModel;
+				buildSaleHeroInput: unknown;
+			};
+			return proto.getSaleViewModel.call({ ...harness, buildSaleHeroInput: proto.buildSaleHeroInput });
+		}
+
+		function renderModel(model: SaleViewModel): string {
+			vi.stubGlobal('createEl', (tag: string, options?: { text?: string; cls?: string }) => makeEl(tag, options));
+			vi.stubGlobal('createDiv', (options?: { text?: string; cls?: string }) => makeEl('div', options));
+			vi.stubGlobal('createSpan', (options?: { text?: string; cls?: string }) => makeEl('span', options));
+			const container = makeEl('div');
+			renderSaleView(container as unknown as HTMLElement, model, createTranslator('es'));
+			return textOf(container);
+		}
+
+		it('shows the explained expiry, in the view-model AND the DOM, even while the cached advisor model still reads "ready"', () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(AFTER_VALID_UNTIL_MS);
+			const harness = {
+				runtimeReady: true,
+				// Deliberately stale: a real plugin would not necessarily have refreshed since validUntil
+				// passed, and this is exactly the state that used to hide the caducity.
+				getInventoryAdvisorViewModel: () => advisorModel(2350),
+				inventoryAdvisor: { analysis: () => null },
+				saleHeroTiming: null as unknown,
+				getSellSignalState: () => null,
+			};
+			const model = runGetSaleViewModel(harness);
+
+			expect(model.status).toBe('blocked');
+			expect(model.rulesExpiredAtMs).toBe(Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL));
+			expect(model.hero).toBeNull();
+
+			const text = renderModel(model);
+			expect(text).toContain('caducaron el');
+			expect(text).not.toContain('Sin datos');
+			expect(text).not.toContain('no está disponible ahora mismo');
+		});
+
+		it('does not override a merely stale-cache "ready" before validUntil is actually reached', () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(Date.parse(INVENTORY_ADVISOR_BUILTIN_BUNDLE_VALID_UNTIL) - 1);
+			const harness = {
+				runtimeReady: true,
+				getInventoryAdvisorViewModel: () => advisorModel(0),
+				inventoryAdvisor: { analysis: () => null },
+				saleHeroTiming: null as unknown,
+				getSellSignalState: () => null,
+			};
+			const model = runGetSaleViewModel(harness);
+
+			expect(model.rulesExpiredAtMs).toBeNull();
+			expect(model.status).toBe('ready');
+		});
+
+		/**
+		 * Sabotage: reverting the caducity check to trust only the cached `advisorModel.status` (the
+		 * pre-fix behaviour) makes this fail on `expect(model.status).toBe('blocked')` — it stays
+		 * `'ready'`, and the DOM assertion above fails on `expect(text).toContain('caducaron el')`
+		 * because `renderSaleView` never reaches `renderBlocked` at all.
+		 */
 	});
 });
 

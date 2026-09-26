@@ -270,3 +270,47 @@ describe('sale view model: instant-sell net fallback', () => {
 		expect(computeInstantSellNetCopper(100, -1)).toBeNull();
 	});
 });
+
+/**
+ * H18.34: a caller (`main.ts`'s `getSaleViewModel`) that already knows the curated bundle's
+ * `validUntil` was crossed passes `rulesExpiredAtMs`, which must win over whatever `status` it was
+ * also asked to carry — that `status` can be a stale `'ready'` cached from before the crossing. This
+ * is what stops the caducity from collapsing into a silent "sin datos" hero/row.
+ */
+describe('sale view model: an expired curated bundle overrides a stale "ready" status (H18.34)', () => {
+	const EXPIRED_AT_MS = Date.UTC(2027, 5, 1, 0, 0, 0);
+
+	it('forces status "blocked" and carries the expiry instant, discarding hero/rows/calendar', () => {
+		const model = buildSaleViewModel(baseInput({
+			status: 'ready',
+			rulesExpiredAtMs: EXPIRED_AT_MS,
+			hero: {
+				...row({ itemId: 36038, name: 'Saco de Halloween', ownedQuantity: 2350, decision: null }),
+				yearThresholdCopper: null, openVsSell: null,
+			},
+			rows: [row({ itemId: 47909, name: 'Barra de caramelo', decision: {
+				action: 'sell', reason: 'no_demonstrated_wait_advantage', until: null, priceQuotedAt: null, sellWindowFromDay: null, sellWindowToDay: null,
+			} })],
+			calendar: [{ itemId: 36038, name: 'Saco de Halloween', icon: null, candidates: [{ fromDay: '2026-05-01', toDay: '2026-05-31' }] }],
+		}));
+		expect(model.status).toBe('blocked');
+		expect(model.rulesExpiredAtMs).toBe(EXPIRED_AT_MS);
+		expect(model.hero).toBeNull();
+		expect(model.groups).toEqual({ now: [], wait: [], noData: [] });
+		expect(model.calendar).toEqual([]);
+	});
+
+	it('leaves status and blockedReason untouched when rulesExpiredAtMs is absent or null', () => {
+		expect(buildSaleViewModel(baseInput({ status: 'ready' })).rulesExpiredAtMs).toBeNull();
+		expect(buildSaleViewModel(baseInput({ status: 'ready', rulesExpiredAtMs: null })).status).toBe('ready');
+		expect(buildSaleViewModel(baseInput({
+			status: 'blocked', blockedReason: 'capture_rate_limited', rulesExpiredAtMs: null,
+		}))).toMatchObject({ status: 'blocked', blockedReason: 'capture_rate_limited', rulesExpiredAtMs: null });
+	});
+
+	/**
+	 * Sabotage: short-circuiting `buildSaleViewModel` to ignore `rulesExpiredAtMs` (returning the
+	 * normal, non-overridden model regardless) fails the first test here on
+	 * `expect(model.status).toBe('blocked')` — it stays `'ready'`.
+	 */
+});

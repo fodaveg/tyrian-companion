@@ -171,6 +171,25 @@ describe('sale view render', () => {
 		expect(text(container)).toContain('Guild Wars 2 está limitando las peticiones');
 	});
 
+	/**
+	 * H18.34: an expired curated bundle gets its own explained copy, with the exact date, instead of
+	 * the generic advisor "hace falta publicar una revisión" or a silent "sin datos". ES and EN.
+	 */
+	it('shows the curated-rules expiry copy with its exact date, in ES and EN, never "sin datos"', () => {
+		const model = buildSaleViewModel(baseInput({
+			status: 'ready', rulesExpiredAtMs: Date.UTC(2027, 5, 1, 0, 0, 0),
+			hero: { ...row({ itemId: 36038, name: 'Saco de Halloween', decision: null }), yearThresholdCopper: null, openVsSell: null },
+		}));
+		expect(model.status).toBe('blocked');
+		const es = text(render(model, 'es'));
+		expect(es).toContain('Las reglas de venta caducaron el');
+		expect(es).not.toContain('Sin datos');
+		expect(es).not.toContain('La venta no está disponible ahora mismo');
+		const en = text(render(model, 'en'));
+		expect(en).toContain('The sale rules expired on');
+		expect(en).not.toContain('No data');
+	});
+
 	it('shows the loading copy while loading, with no groups or hero rendered', () => {
 		const model = buildSaleViewModel(baseInput({ status: 'loading' }));
 		const container = render(model, 'es');
