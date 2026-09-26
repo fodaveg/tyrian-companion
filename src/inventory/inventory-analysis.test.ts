@@ -250,6 +250,37 @@ describe('inventory analysis: the moment stage inside the one result', () => {
 		}
 	});
 
+	/**
+	 * Review fix (26 sep 2026): David's real note for the Saco de Halloween (#36038, one unit,
+	 * 321 copper total sell value) read `tc_recommendation: review` /
+	 * `tc_recommendation_reason: insufficient_reference` even though datawars2 carries its daily
+	 * history back to 2020. `selectDerivedWatchListItemIds` (decision 3) ranks by CAPITAL, so a
+	 * single cheap container never clears any realistic threshold and never enters the list
+	 * `refreshPriceSeeds` (decision 4) actually downloads for — the datawars2 seed the seasonal rule
+	 * needs is never fetched, regardless of how much history the API actually has. A festival
+	 * calendar item (`seasonalInputFor` non-null) always needs its own price history for the
+	 * seasonal rule to work at all, independent of how little the position itself is worth: this
+	 * asserts the watch list still carries it even when its capital would otherwise exclude it.
+	 */
+	it('seeds a festival calendar item even when its own capital never clears the threshold (review fix, 26 sep 2026)', async () => {
+		const CHEAP_SEASONAL_ITEM = 36038;
+		const updateDerivedWatchList = vi.fn(async () => undefined);
+		const refreshPriceSeeds = vi.fn(async () => undefined);
+		const port = recommendationPort({
+			// The plugin's real default (`DEFAULT_RECOMMENDATION_PORT.capitalThresholdCopper`, main.ts).
+			capitalThresholdCopper: () => 100_000,
+			seasonalInputFor: (itemId) => itemId === CHEAP_SEASONAL_ITEM ? { window: WINDOW, parameters: SIGNAL } : null,
+			updateDerivedWatchList, refreshPriceSeeds,
+		});
+		// 1 unit at 3s21c net: 321 copper total, David's real note value — nowhere near 100_000.
+		await analyse([bank(CHEAP_SEASONAL_ITEM, 1, 0)], {
+			port, refreshSeeds: true, prices: { [CHEAP_SEASONAL_ITEM]: { bid: 321, ask: 330 } },
+		});
+
+		expect(updateDerivedWatchList).toHaveBeenCalledWith([CHEAP_SEASONAL_ITEM]);
+		expect(refreshPriceSeeds).toHaveBeenCalledWith([CHEAP_SEASONAL_ITEM]);
+	});
+
 	it('an empty legendary-target setting never reads the legendary armory and reserves nothing (M4 test 8)', async () => {
 		const readLegendaryArmoryCounts = vi.fn(async (): Promise<ReadonlyMap<number, number> | null> => null);
 		const port = recommendationPort({ legendaryTargetItemIds: () => [], readLegendaryArmoryCounts });

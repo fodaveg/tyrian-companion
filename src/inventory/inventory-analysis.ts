@@ -21,7 +21,7 @@ import {
 	legendaryMaterialsTableItemIds,
 	type LegendaryMaterialsTableV1,
 } from '../economy/legendary-materials';
-import { selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
+import { normalizePriceHistoryItemIds, selectDerivedWatchListItemIds, type PriceHistoryDailyV1 } from '../economy/price-history-model';
 import { mergePriceHistoryWithSeed } from '../economy/price-seed-history-merge';
 import type { PriceSeedV1 } from '../economy/price-seed-model';
 import { sellOrWaitForQuantity } from '../economy/sell-or-wait';
@@ -217,8 +217,18 @@ export class InventoryAnalysisService {
 				cores.map((core) => ({ itemId: core.itemId, totalSellCopper: core.totalSellCopper })),
 				capitalThresholdCopper,
 			);
-			await this.recommendation.updateDerivedWatchList(derivedItemIds);
-			await this.recommendation.refreshPriceSeeds(derivedItemIds);
+			// Review fix (26 sep 2026): a festival calendar item (`seasonalInputFor` non-null) needs its
+			// own datawars2 seed for the seasonal rule regardless of what it is worth — David's real Saco
+			// de Halloween note (#36038, one unit, 321 copper total) never cleared ANY realistic capital
+			// threshold and so never entered `derivedItemIds` above, leaving `recommendPosition` stuck on
+			// `review`/`insufficient_reference` even though datawars2 carries its history back to 2020.
+			// Owned quantity, not value, is what a calendar item needs history for.
+			const seasonalItemIds = cores
+				.map((core) => core.itemId)
+				.filter((itemId) => this.recommendation.seasonalInputFor(itemId) !== null);
+			const watchListItemIds = normalizePriceHistoryItemIds([...derivedItemIds, ...seasonalItemIds]);
+			await this.recommendation.updateDerivedWatchList(watchListItemIds);
+			await this.recommendation.refreshPriceSeeds(watchListItemIds);
 		}
 		const itemIds = [...new Set(cores.map((core) => core.itemId))];
 		// No point reading a store nothing writes to: price history is opt-in, and the moment stage
